@@ -2902,20 +2902,53 @@
         { key: 'counter',       icon: '🏪', name: 'Shop Counter',   desc: 'A sturdy counter for conducting business.',    price: 40, gives: { counterFurniture: 1 }, category: 'goods' },
       ];
 
-      const STORE_CLOTHING_DYES = [
-        { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
-        { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
-        { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
-        { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
-        { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
-        { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
-        { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
-        { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
-        { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
-        { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
-        { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
-        { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
-      ];
+      // ── Dye catalog (see docs/config/scratchbones-config.js game.dyes) ──
+      // Single source of truth for every clothing dye color in the game —
+      // character creation's Collections tab, the redye system, the General
+      // Store's daily clothing stock, and treasure-chest loot all draw from
+      // this same catalog so a given dye always looks the same (exact hex,
+      // not an approximate CSS filter) no matter where it came from.
+      function getDyeCatalog() {
+        return window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+      }
+      function getDyeById(dyeId) {
+        return getDyeCatalog().find(d => d.id === dyeId) || null;
+      }
+      // Trims a catalog entry down to the {h,s,v,hex,dyeId,label} shape
+      // clothing items store on colorA/colorB (see makeClothingItem in
+      // onboarding.js and makeClothingGearEntry above).
+      function dyeToClothingColor(dye) {
+        if (!dye) return null;
+        return { ...(dye.color || {}), hex: dye.hex, dyeId: dye.id, label: dye.label };
+      }
+      function ensureDyeCollection() {
+        if (!gearInventory) return;
+        if (!Array.isArray(gearInventory.dyeCollection)) {
+          gearInventory.dyeCollection = [...(window.SCRATCHBONES_CONFIG?.game?.dyes?.starterDyeIds || [])];
+        }
+      }
+      function ownsDye(dyeId) {
+        return Array.isArray(gearInventory?.dyeCollection) && gearInventory.dyeCollection.includes(dyeId);
+      }
+      function unlockDye(dyeId) {
+        ensureDyeCollection();
+        if (gearInventory.dyeCollection.includes(dyeId)) return false;
+        gearInventory.dyeCollection.push(dyeId);
+        saveGearInventory();
+        return true;
+      }
+      function ownedDyesByHue() {
+        const groups = new Map();
+        for (const dye of getDyeCatalog()) {
+          if (!ownsDye(dye.id)) continue;
+          const groupKey = dye.neutral ? 'neutral' : dye.hueFamilyId;
+          const groupLabel = dye.neutral ? 'Neutral' : dye.hueFamily;
+          if (!groups.has(groupKey)) groups.set(groupKey, { id: groupKey, label: groupLabel, dyes: [] });
+          groups.get(groupKey).dyes.push(dye);
+        }
+        for (const group of groups.values()) group.dyes.sort((a, b) => a.sortOrder - b.sortOrder);
+        return [...groups.values()];
+      }
 
       const STORE_CLOTHING_PIECES = [
         { id: 'rugged_poncho', label: 'Rugged Poncho',        category: 'overwear', usesB: true,  price: 70 },
@@ -2930,18 +2963,20 @@
 
       function generateDailyClothingStock(day) {
         const stock = [];
+        const catalog = getDyeCatalog();
         for (let i = 0; i < 4; i++) {
           const piece   = STORE_CLOTHING_PIECES[Math.floor(seededRandom(day * 97 + i * 31) * STORE_CLOTHING_PIECES.length)];
-          const dyeA    = STORE_CLOTHING_DYES[Math.floor(seededRandom(day * 53 + i * 71 + 13) * STORE_CLOTHING_DYES.length)];
-          const dyeB    = piece.usesB ? STORE_CLOTHING_DYES[Math.floor(seededRandom(day * 113 + i * 43 + 7) * STORE_CLOTHING_DYES.length)] : null;
+          const dyeA    = catalog[Math.floor(seededRandom(day * 53 + i * 71 + 13) * catalog.length)];
+          const dyeB    = piece.usesB ? catalog[Math.floor(seededRandom(day * 113 + i * 43 + 7) * catalog.length)] : null;
           const dyeLbl  = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
           stock.push({
             uid:        'citem_gs_' + day + '_' + i,
             cosmeticId: piece.id,
             slot:       piece.category,
             label:      dyeLbl + ' ' + piece.label,
-            colorA:     dyeA,
-            colorB:     dyeB,
+            baseLabel:  piece.label,
+            colorA:     dyeToClothingColor(dyeA),
+            colorB:     dyeToClothingColor(dyeB),
             price:      piece.price,
             sellPrice:  Math.floor(piece.price * 0.4),
             sprite:     clothingSpriteForCosmetic(piece.id),
@@ -13653,13 +13688,13 @@
         return keys;
       }
 
-      // A chest's full loot bundle: metal bars always, plus a chance each of
-      // gold, a random alchemy potion, and a random dyed clothing piece —
-      // the same clothing-piece/dye generators the General Store's daily
-      // stock rolls from (see generateDailyClothingStock), just freely
-      // randomized instead of seeded by day.
+      // A chest's full loot bundle: metal bars and dye items always, plus a
+      // chance each of gold, a random alchemy potion, and a random dyed
+      // clothing piece — the same clothing-piece/dye generators the General
+      // Store's daily stock rolls from (see generateDailyClothingStock), just
+      // freely randomized instead of seeded by day.
       function rollTreasureLootBundle() {
-        const bundle = { metalKeys: rollTreasureMetalKeys(), gold: 0, potionKey: null, clothing: null };
+        const bundle = { metalKeys: rollTreasureMetalKeys(), dyeItemKeys: rollTreasureDyeItemKeys(), gold: 0, potionKey: null, clothing: null };
         if (rnd() < 0.7) bundle.gold = 10 + Math.floor(rnd() * 5) * 8; // 10-42g
         if (rnd() < 0.35) {
           const effectKeys = Object.keys(ALCHEMY_EFFECT_DEFS);
@@ -13677,18 +13712,33 @@
           bundle.potionKey = ensurePotionItemDef(effects, reagentKeys);
         }
         if (rnd() < 0.25) {
+          const catalog = getDyeCatalog();
           const piece = STORE_CLOTHING_PIECES[Math.floor(rnd() * STORE_CLOTHING_PIECES.length)];
-          const dyeA  = STORE_CLOTHING_DYES[Math.floor(rnd() * STORE_CLOTHING_DYES.length)];
-          const dyeB  = piece.usesB ? STORE_CLOTHING_DYES[Math.floor(rnd() * STORE_CLOTHING_DYES.length)] : null;
+          const dyeA  = catalog[Math.floor(rnd() * catalog.length)];
+          const dyeB  = piece.usesB ? catalog[Math.floor(rnd() * catalog.length)] : null;
           const dyeLbl = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
           bundle.clothing = {
             uid: 'citem_chest_' + Date.now() + '_' + Math.floor(rnd() * 1e6),
-            cosmeticId: piece.id, slot: piece.category, label: dyeLbl + ' ' + piece.label,
-            colorA: dyeA, colorB: dyeB, price: piece.price, sellPrice: Math.floor(piece.price * 0.4),
+            cosmeticId: piece.id, slot: piece.category, label: dyeLbl + ' ' + piece.label, baseLabel: piece.label,
+            colorA: dyeToClothingColor(dyeA), colorB: dyeToClothingColor(dyeB), price: piece.price, sellPrice: Math.floor(piece.price * 0.4),
             sprite: clothingSpriteForCosmetic(piece.id),
           };
         }
         return bundle;
+      }
+
+      // Every chest guarantees at least one Mystery Dye item, averaging 1-3 —
+      // dye items are meant to be common treasure filler, unlike the rarer
+      // gold/potion/clothing rolls above which can come up empty.
+      function rollTreasureDyeItemKeys() {
+        const poolKeys = Object.keys(MYSTERY_DYE_ITEM_KEY_BY_POOL);
+        if (!poolKeys.length) return [];
+        const count = 1 + Math.floor(rnd() * 3); // 1-3, uniform
+        const keys = [];
+        for (let i = 0; i < count; i++) {
+          keys.push(MYSTERY_DYE_ITEM_KEY_BY_POOL[poolKeys[Math.floor(rnd() * poolKeys.length)]]);
+        }
+        return keys;
       }
 
       function scatterTreasureForZone(mapId) {
@@ -13754,6 +13804,10 @@
               const key = metalBarItemKey(metalKey);
               inventory[key] = Math.min(99, (inventory[key] || 0) + 1);
               parts.push((ITEM_DEFS[key]?.icon || '🔶') + ' ' + METAL_DEFS[metalKey].label + ' Bar');
+            }
+            for (const dyeItemKey of (loot.dyeItemKeys || [])) {
+              inventory[dyeItemKey] = Math.min(99, (inventory[dyeItemKey] || 0) + 1);
+              parts.push((ITEM_DEFS[dyeItemKey]?.icon || '🎨') + ' ' + (ITEM_DEFS[dyeItemKey]?.label || 'Mystery Dye'));
             }
             if (loot.gold > 0) {
               inventory.gold = (inventory.gold || 0) + loot.gold;
@@ -15566,6 +15620,43 @@
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
       };
 
+      // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
+      // Found in treasure chests (see rollTreasureDyeItemKeys), used from the
+      // inventory panel to permanently unlock one random dye from that pool's
+      // hue families into the character's dye collection (see gearInventory.
+      // dyeCollection / unlockDye). One item key per pool.
+      const MYSTERY_DYE_POOL_ICONS = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', indigo: '🟣', violet: '🟪' };
+      const MYSTERY_DYE_ITEM_KEY_BY_POOL = {};
+      const MYSTERY_DYE_POOL_BY_ITEM_KEY = {};
+      (window.SCRATCHBONES_CONFIG?.game?.dyes?.mysteryPools || []).forEach(pool => {
+        const key = 'mysteryDye' + pool.id.charAt(0).toUpperCase() + pool.id.slice(1);
+        MYSTERY_DYE_ITEM_KEY_BY_POOL[pool.id] = key;
+        MYSTERY_DYE_POOL_BY_ITEM_KEY[key] = pool;
+        const icon = MYSTERY_DYE_POOL_ICONS[pool.id] || '🎨';
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon, label: pool.label.toUpperCase(), max: 9 });
+        }
+        if (!ITEM_DEFS[key]) {
+          ITEM_DEFS[key] = {
+            icon, label: pool.label, cat: 'dye', sellPrice: Math.floor((window.SCRATCHBONES_CONFIG?.game?.dyes?.mysteryDyePrice || 35) * 0.4),
+            tags: ['Dye', 'Mystery', ...pool.hueFamilies],
+            desc: pool.description + ' Use it to add that dye to your collection permanently.',
+          };
+        }
+      });
+
+      function useMysteryDye(key) {
+        const pool = MYSTERY_DYE_POOL_BY_ITEM_KEY[key];
+        if (!pool || (inventory[key] || 0) < 1) return { ok: false, message: 'Nothing to use.' };
+        const candidates = getDyeCatalog().filter(d => !d.neutral && pool.hueFamilies.includes(d.hueFamily) && !ownsDye(d.id));
+        if (!candidates.length) return { ok: false, message: `You already own every dye ${pool.label} can grant.` };
+        const dye = candidates[Math.floor(Math.random() * candidates.length)];
+        unlockDye(dye.id);
+        inventory[key]--;
+        clampInventoryStack(key);
+        return { ok: true, message: `Unlocked ${dye.label} for your dye collection!` };
+      }
+
       // ── Metal bars (dug up from wilderness treasure chests — see
       // ensureZoneTreasure) — one per METAL_DEFS entry, verdigris-capable
       // or not; non-verdigris bars are only useful for cosmetic plating.
@@ -16039,6 +16130,15 @@
             b.textContent = label; b.onclick = fn;
             actEl.appendChild(b);
           }
+          // Mystery Dye items unlock a random unowned dye from their pool
+          // straight into the character's permanent dye collection.
+          if (MYSTERY_DYE_POOL_BY_ITEM_KEY[key] && count > 0) {
+            mkBtn('🎨 Use', 'equip', () => {
+              const result = useMysteryDye(key);
+              showToast(result.message, result.ok);
+              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+            });
+          }
           // Potions are drinkable from right here — the Inventory panel is
           // reachable from anywhere, so this is the "consume anywhere" path
           // (as opposed to brewing, which still needs the Alchemy Table).
@@ -16157,6 +16257,7 @@
           cosmeticId: item.cosmeticId,
           slot: item.slot,
           label: item.label,
+          baseLabel: item.baseLabel || item.label,
           colorA: item.colorA,
           colorB: item.colorB,
           sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
@@ -16520,7 +16621,146 @@
             };
             actEl.appendChild(btn);
           }
+          const redyeBtn = document.createElement('button');
+          redyeBtn.className = 'ii-btn redye';
+          redyeBtn.textContent = '🎨 Redye';
+          redyeBtn.onclick = () => openRedyePanel(slot, item);
+          actEl.appendChild(redyeBtn);
         }
+      }
+
+      // ── Redye panel ──────────────────────────────────────────────────
+      // Opened from a clothing item's info panel (see selectGearClothing's
+      // Redye button). Lets the player freely re-apply any dye already in
+      // their collection (gearInventory.dyeCollection) to an owned clothing
+      // piece — permanent world dyes are what grow that collection (see
+      // useMysteryDye/rollTreasureDyeItemKeys); this panel only ever spends
+      // from it, never consumes anything itself.
+      function closeRedyePanel() {
+        const panel = document.getElementById('dyePanel');
+        if (!panel) return;
+        panel.classList.remove('open');
+        panel.setAttribute('aria-hidden', 'true');
+      }
+
+      function openRedyePanel(slot, item) {
+        ensureDyeCollection();
+        const panel = document.getElementById('dyePanel');
+        const titleEl = document.getElementById('dyePanelTitle');
+        const subslotsEl = document.getElementById('dyePanelSubslots');
+        const groupsEl = document.getElementById('dyePanelGroups');
+        const previewEl = document.getElementById('dyePanelPreview');
+        if (!panel || !titleEl || !subslotsEl || !groupsEl || !previewEl) return;
+
+        const tintKeys = clothingTintKeysForSlot(slot);
+        const hasSecondary = tintKeys.length > 1;
+        const originalColorA = item.colorA ? { ...item.colorA } : null;
+        const originalColorB = item.colorB ? { ...item.colorB } : null;
+        const originalLabel = item.label;
+        let activeSubslot = 'A';
+        let pendingDyeIdA = item.colorA?.dyeId || null;
+        let pendingDyeIdB = item.colorB?.dyeId || null;
+
+        const currentPendingId = () => (activeSubslot === 'B' ? pendingDyeIdB : pendingDyeIdA);
+        const setPendingId = (id) => { if (activeSubslot === 'B') pendingDyeIdB = id; else pendingDyeIdA = id; };
+        const isWorn = () => gearInventory?.clothing?.[slot]?.uid === item.uid;
+
+        function applyPreview() {
+          const dyeA = pendingDyeIdA ? getDyeById(pendingDyeIdA) : null;
+          const dyeB = hasSecondary && pendingDyeIdB ? getDyeById(pendingDyeIdB) : null;
+          if (dyeA) item.colorA = dyeToClothingColor(dyeA);
+          if (hasSecondary && dyeB) item.colorB = dyeToClothingColor(dyeB);
+          const dyeLbl = hasSecondary && dyeB ? ((dyeA || {}).label + ' & ' + dyeB.label) : (dyeA || {}).label;
+          previewEl.innerHTML = '';
+          if (dyeA) {
+            const chipA = document.createElement('span');
+            chipA.className = 'dye-preview-chip';
+            chipA.style.background = dyeA.hex;
+            chipA.title = dyeA.label;
+            previewEl.appendChild(chipA);
+          }
+          if (hasSecondary && dyeB) {
+            const chipB = document.createElement('span');
+            chipB.className = 'dye-preview-chip';
+            chipB.style.background = dyeB.hex;
+            chipB.title = dyeB.label;
+            previewEl.appendChild(chipB);
+          }
+          const label = document.createElement('span');
+          label.className = 'dye-preview-label';
+          label.textContent = dyeLbl ? (dyeLbl + ' ' + (item.baseLabel || originalLabel)) : 'Pick a dye below';
+          previewEl.appendChild(label);
+          if (isWorn()) refreshPlayerAvatar();
+        }
+
+        function renderSubslots() {
+          subslotsEl.innerHTML = '';
+          if (!hasSecondary) return;
+          [['A', 'Primary'], ['B', 'Trim']].forEach(([which, label]) => {
+            const b = document.createElement('button');
+            b.className = 'dye-subslot-btn' + (activeSubslot === which ? ' active' : '');
+            b.textContent = label;
+            b.onclick = () => { activeSubslot = which; renderSubslots(); renderGroups(); };
+            subslotsEl.appendChild(b);
+          });
+        }
+
+        function renderGroups() {
+          groupsEl.innerHTML = '';
+          const groups = ownedDyesByHue();
+          if (!groups.length) {
+            groupsEl.innerHTML = '<div class="dye-panel-empty">No dyes collected yet.</div>';
+            return;
+          }
+          for (const group of groups) {
+            const section = document.createElement('div');
+            section.className = 'dye-hue-group';
+            const heading = document.createElement('div');
+            heading.className = 'dye-hue-heading';
+            heading.textContent = group.label;
+            section.appendChild(heading);
+            const row = document.createElement('div');
+            row.className = 'dye-swatch-row';
+            for (const dye of group.dyes) {
+              const sw = document.createElement('button');
+              sw.className = 'dye-swatch' + (currentPendingId() === dye.id ? ' selected' : '');
+              sw.style.background = dye.hex;
+              sw.title = dye.label;
+              sw.onclick = () => { setPendingId(dye.id); renderGroups(); applyPreview(); };
+              row.appendChild(sw);
+            }
+            section.appendChild(row);
+            groupsEl.appendChild(section);
+          }
+        }
+
+        titleEl.textContent = 'Redye — ' + (item.baseLabel || originalLabel);
+        renderSubslots();
+        renderGroups();
+        applyPreview();
+        panel.classList.add('open');
+        panel.setAttribute('aria-hidden', 'false');
+
+        const revert = () => {
+          item.colorA = originalColorA;
+          item.colorB = originalColorB;
+          item.label = originalLabel;
+          if (isWorn()) refreshPlayerAvatar();
+        };
+        document.getElementById('dyePanelCancel').onclick = () => { revert(); closeRedyePanel(); };
+        document.getElementById('dyePanelClose').onclick = () => { revert(); closeRedyePanel(); };
+        document.getElementById('dyePanelApply').onclick = () => {
+          if (!pendingDyeIdA) { showToast('Pick a dye first.', false); return; }
+          const dyeA = getDyeById(pendingDyeIdA);
+          const dyeB = hasSecondary && pendingDyeIdB ? getDyeById(pendingDyeIdB) : null;
+          const dyeLbl = hasSecondary && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
+          item.label = dyeLbl + ' ' + (item.baseLabel || originalLabel);
+          saveGearInventory();
+          if (isWorn()) refreshPlayerAvatar();
+          showToast('Redyed ' + item.label + '!', true);
+          closeRedyePanel();
+          selectGearClothing(slot, item);
+        };
       }
 
       function buildPackClothingSection() {
@@ -29248,6 +29488,7 @@
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
+        ensureDyeCollection();
 
         // Personal stable — same lazy-seed pattern as the whistles block just
         // above: a character with no stable yet gets the starter dabinggi-hound

@@ -310,9 +310,26 @@ function makeCSSFilter(color) {
 }
 
 
-// ── Tint descriptor / shade-fill helpers ─────────────────────────────────
+// ── Tint descriptor / hue+saturation-fill helpers ─────────────────────────
+//
+// Every clothing/body layer is recolored by ONE algorithm: each opaque
+// source pixel's HUE and SATURATION are replaced by the target dye's hue
+// and saturation while that pixel's own VALUE (brightness) is left exactly
+// as painted. This used to be two different implementations — an approximate
+// CSS hue-rotate()/saturate()/brightness() filter chain (a linear color-
+// matrix transform, not a true hue rotation, so its visual result drifted
+// depending on each sprite's own base pixel colors) for "legacy" delta-style
+// colors, and a separate luminance-multiply flat-hex flood fill (which
+// discarded the source's own hue/saturation AND derived brightness from a
+// multiplier rather than the pixel's real value) for dye-catalog colors that
+// happened to carry a `.hex`. That split is exactly why some clothing/body
+// sprites matched their swatch exactly while others were visibly off: which
+// path a given color took depended on incidental object shape, not on any
+// real difference in how "exact" the two produced. See sprite-recolor.js for
+// the original version of this per-pixel approach (used for item icons).
 
-const _SHADE_FILL_CACHE = new Map();
+const _HUESAT_FILL_CACHE = new Map();
+const _TARGET_HUESAT_CACHE = new Map();
 
 function parseHexColor(hex) {
   if (typeof hex !== 'string') return null;
@@ -335,39 +352,113 @@ function relativeLuminance(r, g, b) {
   return (0.2126 * (Number(r) || 0) + 0.7152 * (Number(g) || 0) + 0.0722 * (Number(b) || 0)) / 255;
 }
 
+// Pure HSV math, kept local (rather than shared with sprite-recolor.js's
+// copy) since portrait-utils.js is loaded standalone in several contexts
+// (character-tools, cutscene director, npc preview) with no guaranteed load
+// order against sprite-recolor.js.
+function _rgbToHsvPU(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : d / max;
+  return { h, s };
+}
+
+function _hsvToRgbPU(h, s, v) {
+  const hNorm = ((Number(h) % 360) + 360) % 360;
+  const c = v * s;
+  const x = c * (1 - Math.abs(((hNorm / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (hNorm < 60)       { r = c; g = x; b = 0; }
+  else if (hNorm < 120) { r = x; g = c; b = 0; }
+  else if (hNorm < 180) { r = 0; g = c; b = x; }
+  else if (hNorm < 240) { r = 0; g = x; b = c; }
+  else if (hNorm < 300) { r = x; g = 0; b = c; }
+  else                  { r = c; g = 0; b = x; }
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
 function getPortraitTintingConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
   return {
-    mode: cfg.mode || 'hexShadeFill',
-    shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
-    highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
-    neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
-    gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
     preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
     outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
     cacheEnabled: cfg.cacheEnabled !== false,
   };
 }
 
-function tintForBodyColor(color) {
-  if (!color) return { mode: 'none' };
-  const parsed = color.tintMode === 'hexShadeFill' || color.hex ? parseHexColor(color.hex) : null;
-  if (parsed && getPortraitTintingConfig().mode === 'hexShadeFill') {
-    return { mode: 'hexShadeFill', hex: parsed.hex, options: getPortraitTintingConfig() };
+// 1×1 canvas reused to resolve a legacy delta-style color ({h,s,v} tuned for
+// the CSS filter chain, no absolute `.hex`) to an absolute target hue/sat:
+// the same swatch-preview filter (see swatchStyle() in onboarding.js /
+// character-studio) is run against the same reference swatch base color the
+// picker itself shows, and the resulting pixel is read back. This makes the
+// actual sprite fill match what the swatch preview promises, consistently,
+// instead of re-running the filter against each sprite's own (unrelated)
+// base pixel colors, which is what produced inconsistent results before.
+let _filterSimCanvas = null;
+function _resolveTargetHueSat(color, referenceHex) {
+  if (!color) return null;
+  if (color.hex) {
+    const parsed = parseHexColor(color.hex);
+    if (parsed) return _rgbToHsvPU(parsed.r, parsed.g, parsed.b);
   }
-  return { mode: 'cssFilter', filter: makeCSSFilter(color) };
+  if (color.h == null && color.s == null && color.v == null) return null;
+  const ref = parseHexColor(referenceHex) || { r: 125, g: 200, b: 154 };
+  const filter = makeCSSFilter(color);
+  const cacheKey = ref.hex + '|' + filter;
+  if (_TARGET_HUESAT_CACHE.has(cacheKey)) return _TARGET_HUESAT_CACHE.get(cacheKey);
+  if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
+  const ctx = _filterSimCanvas.getContext('2d');
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.filter = filter;
+  ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  const result = _rgbToHsvPU(r, g, b);
+  _TARGET_HUESAT_CACHE.set(cacheKey, result);
+  return result;
 }
 
-function getTintedShadeFillCanvas(img, sourceKey, tintDescriptor) {
-  const parsed = parseHexColor(tintDescriptor?.hex);
-  if (!img || !parsed) return img;
-  const options = { ...getPortraitTintingConfig(), ...(tintDescriptor.options || {}) };
+function tintForBodyColor(color, referenceHex) {
+  const targetHS = _resolveTargetHueSat(color, referenceHex);
+  if (!targetHS) return { mode: 'none' };
+  return { mode: 'hueSatFill', hue: targetHS.h, sat: targetHS.s, options: getPortraitTintingConfig() };
+}
+
+// Body/fur tint slots are the bare letters A/B/C (see BODYCOLOR_LIMITS);
+// clothing dye tint slots are named keys (TORSO, HAT, HOOD, CLOTH, optionally
+// with a _B/_C suffix — see applyGearClothingToPlayerData/appliedDyes in
+// game.js). Body slots simulate against the character's own species swatch
+// base (what the Appearance tab's color picker itself previews against);
+// clothing slots simulate against the shared cloth dye swatch base.
+function _dyeReferenceHexForSlot(slot, speciesId) {
+  const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
+  const dyesCfg = window.SCRATCHBONES_CONFIG?.game?.dyes || {};
+  if (isBodySlot) {
+    const cfgSpecies = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+    const key = _normalizeSpeciesKey(speciesId);
+    return cfgSpecies[key]?.swatchBase || cfgSpecies[String(speciesId || '')]?.swatchBase || dyesCfg.swatchBase || '#7dc89a';
+  }
+  return dyesCfg.swatchBase || '#7dc89a';
+}
+
+function getHueSatFillCanvas(img, sourceKey, tint) {
+  if (!img || tint?.mode !== 'hueSatFill') return img;
+  const options = tint.options || getPortraitTintingConfig();
   const cacheKey = [
-    sourceKey || img.currentSrc || img.src || 'inline', parsed.hex, options.shadowFloor,
-    options.highlightBoost, options.neutralLuminance, options.gamma,
+    sourceKey || img.currentSrc || img.src || 'inline', tint.hue.toFixed(2), tint.sat.toFixed(4),
     options.preserveNearBlackOutlines, options.outlineThreshold
   ].join('|');
-  if (options.cacheEnabled && _SHADE_FILL_CACHE.has(cacheKey)) return _SHADE_FILL_CACHE.get(cacheKey);
+  if (options.cacheEnabled && _HUESAT_FILL_CACHE.has(cacheKey)) return _HUESAT_FILL_CACHE.get(cacheKey);
 
   const canvas = Object.assign(document.createElement('canvas'), {
     width: img.naturalWidth || img.width,
@@ -377,31 +468,24 @@ function getTintedShadeFillCanvas(img, sourceKey, tintDescriptor) {
   offCtx.drawImage(img, 0, 0);
   const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
-  const neutral = Math.max(0.0001, options.neutralLuminance);
   for (let i = 0; i < data.length; i += 4) {
     const a = data[i + 3];
     if (a === 0) continue;
-    const lum = relativeLuminance(data[i], data[i + 1], data[i + 2]);
-    if (options.preserveNearBlackOutlines && lum <= options.outlineThreshold) continue;
-    const normalized = Math.pow(Math.max(0, lum) / neutral, options.gamma);
-    const shade = Math.max(options.shadowFloor, Math.min(options.highlightBoost, normalized));
-    data[i] = clampByte(parsed.r * shade);
-    data[i + 1] = clampByte(parsed.g * shade);
-    data[i + 2] = clampByte(parsed.b * shade);
-    data[i + 3] = a;
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    if (options.preserveNearBlackOutlines && relativeLuminance(r, g, b) <= options.outlineThreshold) continue;
+    const v = Math.max(r, g, b) / 255;
+    const [nr, ng, nb] = _hsvToRgbPU(tint.hue, tint.sat, v);
+    data[i] = clampByte(nr);
+    data[i + 1] = clampByte(ng);
+    data[i + 2] = clampByte(nb);
   }
   offCtx.putImageData(imageData, 0, 0);
-  if (options.cacheEnabled) _SHADE_FILL_CACHE.set(cacheKey, canvas);
+  if (options.cacheEnabled) _HUESAT_FILL_CACHE.set(cacheKey, canvas);
   return canvas;
 }
 
 function _imageForTint(img, sourceKey, tint) {
-  return tint?.mode === 'hexShadeFill' ? getTintedShadeFillCanvas(img, sourceKey, tint) : img;
-}
-
-function _filterForTint(tint) {
-  if (typeof tint === 'string') return tint;
-  return tint?.mode === 'cssFilter' ? (tint.filter || 'none') : 'none';
+  return tint?.mode === 'hueSatFill' ? getHueSatFillCanvas(img, sourceKey, tint) : img;
 }
 
 // ── Canvas helpers ─────────────────────────────────────────
@@ -414,7 +498,7 @@ function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
   ctx.save();
   const drawImg = _imageForTint(img, sourceKey, tint);
-  ctx.filter = _filterForTint(tint);
+  ctx.filter = 'none';
   ctx.drawImage(drawImg, cx - w / 2, cy - h / 2, w, h);
   ctx.restore();
 }
@@ -507,7 +591,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
   if (!breathingPts && !staticDeform) {
     ctx.save();
-    ctx.filter = _filterForTint(tint);
+    ctx.filter = 'none';
     ctx.drawImage(drawImg, layerX, layerY, w, h);
     ctx.restore();
     return;
@@ -530,7 +614,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   }
 
   ctx.save();
-  ctx.filter = _filterForTint(tint);
+  ctx.filter = 'none';
   _drawPortraitLayerWarped(ctx, drawImg, layerX, layerY, w, h, neutralPts, finalPts, gridCols, gridRows);
   ctx.restore();
 }
@@ -798,8 +882,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (_needsScale) { ctx.save(); ctx.scale(_scaleX, _scaleY); }
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
-  const tintFor = (slot) => slot ? tintForBodyColor(bodyColors[slot]) : { mode: 'none' };
-  const tintA = tintForBodyColor(bodyColors.A);
+  const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
+  const tintFor = (slot) => slot ? tintForBodyColor(bodyColors[slot], _dyeReferenceHexForSlot(slot, _tintSpeciesId)) : { mode: 'none' };
+  const tintA = tintForBodyColor(bodyColors.A, _dyeReferenceHexForSlot('A', _tintSpeciesId));
 
   const baseLeftArmLayers = [];
   const baseTorsoLayers = [];
@@ -1047,7 +1132,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       ctx.save();
       ctx.globalAlpha = opacity;
       const drawImg = _imageForTint(img, sourceKey, tint);
-      ctx.filter = _filterForTint(tint);
+      ctx.filter = 'none';
       _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
       ctx.restore();
     } else if (opacity < 1) {

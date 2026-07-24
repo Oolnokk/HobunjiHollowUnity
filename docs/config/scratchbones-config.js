@@ -1190,16 +1190,11 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "portrait": {
-      // Tintable portrait PNG convention: alpha controls shape/opacity,
-      // source luminance controls shadows/highlights, and dye hue is replaced
-      // by the exact selected dye hex. Grayscale/value-mask PNGs are the
-      // desired asset format; existing colored PNGs still work by luminance.
+      // Tintable portrait PNG convention: alpha controls shape/opacity, and
+      // each opaque pixel's own VALUE (brightness) is kept exactly as
+      // painted while its HUE and SATURATION are replaced by the selected
+      // dye's — see portrait-utils.js's getHueSatFillCanvas/_resolveTargetHueSat.
       "tinting": {
-        "mode": "hexShadeFill",
-        "shadowFloor": 0.18,
-        "highlightBoost": 1.18,
-        "neutralLuminance": 0.55,
-        "gamma": 1.0,
         "preserveNearBlackOutlines": true,
         "outlineThreshold": 0.08,
         "cacheEnabled": true,

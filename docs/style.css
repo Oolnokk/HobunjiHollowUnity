@@ -1926,8 +1926,58 @@
     .ii-btn:hover { background: rgba(255,255,255,0.12); }
     .ii-btn.sell { border-color: rgba(240,208,64,0.42); color: #f0d040; }
     .ii-btn.sell:hover { background: rgba(240,208,64,0.10); }
+    .ii-btn.redye { border-color: rgba(180,140,255,0.42); color: #cbb2ff; }
+    .ii-btn.redye:hover { background: rgba(180,140,255,0.10); }
 
-
+    /* ── Redye panel: opened from a clothing item's Redye button ──────── */
+    .dye-panel {
+      position: fixed; inset: 0; z-index: 60;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55);
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    .dye-panel.open { opacity: 1; pointer-events: auto; }
+    .dye-panel-inner {
+      width: min(560px, 92vw); max-height: 84vh;
+      display: flex; flex-direction: column; gap: 10px;
+      background: var(--glass-2); border: 1.5px solid var(--border-bright);
+      border-radius: var(--r); padding: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    .dye-panel-header { display: flex; align-items: center; justify-content: space-between; }
+    .dye-panel-title { font-size: 15px; font-weight: bold; color: var(--text); }
+    .dye-panel-close {
+      width: 28px; height: 28px; border-radius: 8px; color: var(--muted);
+      border: 1px solid var(--border); background: rgba(255,255,255,0.05);
+    }
+    .dye-panel-close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+    .dye-panel-subslots { display: flex; gap: 8px; }
+    .dye-subslot-btn {
+      flex: 1; padding: 6px 0; border-radius: var(--inv-radius, 8px);
+      border: 1.5px solid var(--border); background: rgba(255,255,255,0.04);
+      color: var(--muted); font-size: 12px; font-family: inherit;
+    }
+    .dye-subslot-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .dye-panel-preview {
+      display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+      background: rgba(255,255,255,0.04); border-radius: var(--inv-radius, 8px);
+      min-height: 32px;
+    }
+    .dye-preview-chip { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid rgba(255,255,255,0.5); flex-shrink: 0; }
+    .dye-preview-label { font-size: 12px; color: var(--text); }
+    .dye-panel-groups { overflow-y: auto; flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; gap: 10px; }
+    .dye-panel-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0; }
+    .dye-hue-heading { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .dye-swatch-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .dye-swatch {
+      width: 26px; height: 26px; border-radius: 7px;
+      border: 2px solid rgba(255,255,255,0.25);
+    }
+    .dye-swatch:hover { border-color: rgba(255,255,255,0.55); }
+    .dye-swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+    .dye-panel-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 4px; }
+    .dye-panel-actions .ii-btn { min-height: 34px; padding: 0 16px; font-size: 13px; border-radius: 8px; }
 
     /* ── Shipping box transfer pane ─────────────────────────────
        Based on HHItemTransferLayoutV1: parent 60×32 transfer grid.

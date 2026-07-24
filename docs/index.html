@@ -926,6 +926,23 @@
     </div>
   </div>
 
+  <!-- Redye panel: opened from a clothing item's info panel (see selectGearClothing / openRedyePanel in game.js) -->
+  <div id="dyePanel" class="dye-panel" role="dialog" aria-modal="true" aria-label="Redye Clothing" aria-hidden="true">
+    <div class="dye-panel-inner">
+      <div class="dye-panel-header">
+        <div class="dye-panel-title" id="dyePanelTitle">Redye</div>
+        <button class="dye-panel-close" id="dyePanelClose" aria-label="Close">✕</button>
+      </div>
+      <div class="dye-panel-subslots" id="dyePanelSubslots"></div>
+      <div class="dye-panel-preview" id="dyePanelPreview"></div>
+      <div class="dye-panel-groups" id="dyePanelGroups"></div>
+      <div class="dye-panel-actions">
+        <button class="ii-btn" id="dyePanelCancel">Cancel</button>
+        <button class="ii-btn equip" id="dyePanelApply">Apply Dye</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Joystick -->
   <div id="joystickZone" class="control-zone" aria-label="Movement joystick">
     <div id="joystickBase"></div>
