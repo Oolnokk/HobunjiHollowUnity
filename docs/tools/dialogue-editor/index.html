@@ -39,11 +39,42 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   color:var(--muted);font-size:11px}
 #workspace{flex:1;min-height:0;display:flex}
 
-#npcSidebar{width:210px;min-width:170px;display:flex;flex-direction:column;flex-shrink:0;
+#npcSidebar{width:240px;min-width:190px;display:flex;flex-direction:column;flex-shrink:0;
   border-right:1px solid var(--line);
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
 .paneHead{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
   font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px}
+#condFilters{padding:8px 9px 6px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
+  display:flex;flex-direction:column;gap:7px;max-height:46vh;overflow-y:auto}
+
+/* Condition picker: appendable chip list + add popover (sidebar filters,
+   tree require/no-fly conditions all reuse this) */
+.condChipList{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.condChip{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 5px 3px 8px;
+  border-radius:999px;border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.14);
+  color:var(--text);white-space:nowrap}
+.condChip.exclude{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.12)}
+.condChipX{width:14px;height:14px;padding:0;border:none;background:transparent;color:var(--muted);
+  font-size:11px;line-height:1;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.condChipX:hover{background:rgba(255,255,255,.12);color:var(--text)}
+.condAddBtn{font-size:10px;padding:3px 8px}
+.condPopover{margin-top:6px;padding:8px;border-radius:9px;border:1px solid rgba(255,255,255,.13);
+  background:rgba(0,0,0,.22);display:flex;flex-direction:column;gap:6px}
+.condPopover.hidden{display:none}
+.condPopover select{font-size:11px;padding:5px 7px}
+.condPopMapScope.hidden{display:none}
+.condPopValList{display:flex;flex-direction:column;gap:1px;max-height:180px;overflow-y:auto;
+  border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:2px}
+.condCheckRow{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:5px;
+  font-size:11px;cursor:pointer;user-select:none;text-transform:none;color:var(--text)}
+.condCheckRow:hover{background:rgba(255,255,255,.05)}
+.condCheckRow input{width:auto;flex-shrink:0}
+.condPopRel{display:flex;align-items:center;gap:5px}
+.condPopRel.hidden{display:none}
+.condPopRel input{font-size:11px;padding:5px 7px;min-width:0}
+.condPopRel span{font-size:10px;color:var(--muted);flex-shrink:0}
+.condPopRel .condPopAdd{flex-shrink:0;font-size:10px;padding:5px 10px}
+.condPopClose{width:100%;font-size:10px;padding:5px 0}
 #npcSearch{padding:5px 7px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 #npcSearch input{font-size:12px;padding:5px 8px}
 #npcListEl{flex:1;overflow-y:auto;padding:5px}
@@ -51,23 +82,55 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   border:1px solid transparent}
 .npcItem:hover{background:rgba(255,255,255,.05)}
 .npcItem.sel{border-color:var(--acc);background:rgba(106,167,255,.1)}
-.npcName{font-size:12px;font-weight:750;line-height:1.2}
-.npcMeta{font-size:10px;color:var(--muted);margin-top:2px}
-.npcBadge{float:right;font-size:9px;background:rgba(106,167,255,.2);
-  border:1px solid rgba(106,167,255,.3);border-radius:999px;padding:1px 5px;
-  color:var(--acc);margin-top:1px}
+.npcRow{display:flex;align-items:center;gap:7px}
+.npcAvatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;
+  align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#07101a;
+  transition:filter .15s,opacity .15s}
+.npcNameWrap{flex:1;min-width:0}
+.npcName{font-size:12px;font-weight:750;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npcMeta{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.npcBadge{font-size:9px;background:rgba(106,167,255,.2);
+  border:1px solid rgba(106,167,255,.3);border-radius:999px;padding:2px 6px;
+  color:var(--acc);flex-shrink:0}
+.npcItem.covPartial .npcAvatar{filter:grayscale(.5);opacity:.6}
+.npcItem.covPartial .npcName{color:var(--muted)}
+.npcItem.covPartial .npcBadge{background:rgba(251,191,36,.15);border-color:rgba(251,191,36,.3);color:var(--warn)}
+.npcItem.covNone .npcAvatar{filter:grayscale(1);opacity:.28}
+.npcItem.covNone .npcName{color:var(--muted);opacity:.55}
+.npcItem.covNone .npcMeta{opacity:.55}
+.npcItem.covNone .npcBadge{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:var(--muted)}
 
 #centerPanel{flex:1;min-width:0;display:flex;flex-direction:column}
-#treeBar{display:flex;align-items:center;gap:6px;padding:5px 8px;flex-shrink:0;
-  border-bottom:1px solid var(--line);background:rgba(255,255,255,.015);min-height:44px}
-.treeTabs{display:flex;gap:5px;flex:1;overflow-x:auto;min-width:0}
-.treeTab{padding:4px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;
-  border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);
-  white-space:nowrap;flex-shrink:0}
-.treeTab.sel{border-color:var(--warn);background:rgba(251,191,36,.12);color:var(--warn)}
-.treeTab:hover:not(.sel){background:rgba(255,255,255,.08)}
 
-#canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a}
+/* Table of contents (landing view for a selected NPC) */
+#tocPanel{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;padding:14px 16px}
+#tocPanel.hidden{display:none}
+#tocHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;margin-bottom:10px}
+#tocNpcName{font-size:15px;font-weight:800;color:var(--text)}
+#tocList{display:flex;flex-direction:column;gap:6px}
+.tocItem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03)}
+.tocItem:hover{background:rgba(255,255,255,.06)}
+.tocItem.partial{border-style:dashed;opacity:.85}
+.tocDot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--acc)}
+.tocItem.partial .tocDot{background:var(--warn)}
+.tocMain{flex:1;min-width:0}
+.tocLabel{font-size:13px;font-weight:700;color:var(--text)}
+.tocCond{font-size:10px;color:var(--muted);margin-top:2px}
+.tocArrow{font-size:14px;color:var(--muted);flex-shrink:0}
+.tocEmptyState{color:var(--muted);font-size:12px;text-align:center;padding:30px 10px}
+#gapReadout{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);flex-shrink:0}
+#gapReadout h3{margin:0 0 3px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.gapRow{display:flex;align-items:center;gap:7px;font-size:11px;padding:3px 0;color:var(--muted)}
+.gapRow.zero{color:var(--bad);font-weight:700}
+.gapCount{margin-left:auto;flex-shrink:0;font-family:ui-monospace,Menlo,monospace;font-size:10px}
+
+/* Graph view (a single tree's node canvas) */
+#graphView{flex:1;min-height:0;display:flex;flex-direction:column}
+#graphView.hidden{display:none}
+#backToTocBtn{position:absolute;top:10px;left:10px;z-index:20;font-size:11px;padding:6px 12px 6px 10px}
+
+#canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a;touch-action:none}
 #canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 #svgLayer{position:absolute;top:0;left:0;width:9000px;height:9000px;
   pointer-events:none;overflow:visible}
@@ -159,9 +222,16 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .node-sequence .port-out[data-ci="exhaust"]:hover{transform:scale(1.55)}
 
 /* Inspector */
+#inspToggle{width:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;background:rgba(255,255,255,.03);border-left:1px solid var(--line);
+  color:var(--muted);font-size:18px;user-select:none;transition:background .12s,color .12s}
+#inspToggle:hover{background:rgba(106,167,255,.14);color:var(--acc)}
+#inspToggle:active{background:rgba(106,167,255,.22)}
 #inspector{width:260px;min-width:210px;flex-shrink:0;display:flex;flex-direction:column;
-  border-left:1px solid var(--line);
+  overflow:hidden;transition:width .16s ease,min-width .16s ease;
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
+#inspector.collapsed{width:0;min-width:0;border-left:none}
+#inspector.wide{width:min(680px,88vw);min-width:min(680px,88vw)}
 #inspBody{flex:1;overflow-y:auto;padding:8px}
 .iGroup{margin-bottom:10px}
 .iMuted{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
@@ -188,6 +258,15 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
   border:1px solid rgba(251,113,133,.3);background:rgba(251,113,133,.1);color:var(--bad);
   flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
 
+/* Click-to-insert dialogue tokens */
+.tokenBtnRow{display:flex;flex-wrap:wrap;gap:4px}
+.tokenBtn{font-size:9px;padding:3px 7px;border-radius:6px;
+  border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--muted);
+  font-weight:600;font-family:ui-monospace,Menlo,monospace}
+.tokenBtn:hover{background:rgba(106,167,255,.16);color:var(--text);border-color:rgba(106,167,255,.4)}
+.tokenBtn.poolTokenBtn{border-color:rgba(45,212,191,.3);background:rgba(45,212,191,.08);color:var(--seq)}
+.tokenBtn.poolTokenBtn:hover{background:rgba(45,212,191,.18);color:var(--text)}
+
 /* Action chips in choice inspector */
 .actChip{display:flex;align-items:center;gap:3px;margin-bottom:3px}
 .actLabel{font-size:9px;color:var(--seq);background:rgba(45,212,191,.1);border:1px solid rgba(45,212,191,.25);
@@ -206,6 +285,39 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 #importBox h2{margin:0;font-size:14px}
 #importPaste{min-height:160px;max-height:36vh;resize:vertical}
 .mrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+
+/* Phrase Pool Manager modal */
+#poolModal{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;
+  display:flex;align-items:center;justify-content:center}
+#poolModal.hidden{display:none}
+#poolBox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:18px;width:min(900px,94vw);height:min(640px,88vh);
+  display:flex;flex-direction:column;gap:12px}
+.poolBoxHead{position:relative;flex-shrink:0}
+.poolBoxHead h2{margin:0;font-size:14px}
+#poolBoxBody{flex:1;min-height:0;display:flex;gap:14px}
+#poolListCol{width:200px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;min-height:0}
+#poolList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;
+  border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:5px}
+.poolListItem{display:flex;align-items:center;gap:5px;padding:7px 8px;border-radius:7px;
+  cursor:pointer;font-size:12px;font-weight:700;border:1px solid transparent}
+.poolListItem:hover{background:rgba(255,255,255,.05)}
+.poolListItem.sel{border-color:var(--acc);background:rgba(106,167,255,.1)}
+.poolListItemName{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.poolListItemCount{font-size:9px;color:var(--muted);background:rgba(255,255,255,.06);
+  border-radius:999px;padding:1px 6px;flex-shrink:0}
+#poolDetailCol{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:2px}
+.poolEmptyState{color:var(--muted);font-size:12px;text-align:center;padding:40px 10px}
+.poolNameRow{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.poolNameRow input{font-size:13px;font-weight:700}
+.poolEntryCard{border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.02)}
+.poolEntryHead{display:flex;align-items:center;gap:6px;padding:8px 10px}
+.poolEntryTag{font-size:9px;font-weight:800;letter-spacing:.3px;color:var(--seq);
+  background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.28);border-radius:4px;padding:2px 6px;flex-shrink:0}
+.poolEntryText{flex:1;min-width:0;font-size:12px;resize:none;overflow:hidden;height:34px}
+.poolEntryExpandBtn{font-size:10px;padding:5px 9px;flex-shrink:0}
+.poolEntryBody{padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
+.poolEntryBody label{font-size:9px}
 </style>
 </head>
 <body>
@@ -214,44 +326,58 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
     <h1>Hobunji Dialogue Editor</h1>
     <button class="secondary" id="loadBtn">Load DB</button>
     <button class="good" id="exportBtn" disabled>Export DB</button>
+    <button class="secondary" id="poolModalBtn" disabled title="Select an NPC first">Phrase Pools</button>
     <div class="spacer"></div>
     <span class="pill" id="statusPill">No database loaded</span>
   </div>
   <div id="workspace">
     <div id="npcSidebar">
+      <div class="paneHead">Conditions</div>
+      <div id="condFilters">
+        <div id="filterPicker"></div>
+        <button class="secondary" id="clearFiltersBtn" style="width:100%;font-size:10px">Clear filters</button>
+      </div>
       <div class="paneHead">NPCs</div>
       <div id="npcSearch"><input id="npcQ" type="search" placeholder="Search…"></div>
       <div id="npcListEl"></div>
     </div>
     <div id="centerPanel">
-      <div id="treeBar">
-        <div class="treeTabs" id="treeTabs"></div>
-        <button id="addTreeBtn" disabled style="flex-shrink:0;font-size:11px">+ Tree</button>
-      </div>
-      <div id="canvasOuter">
-        <div id="emptyState">
-          <div id="emptyIcon">💬</div>
-          <p id="emptyMsg">Select an NPC to begin</p>
+      <div id="tocPanel">
+        <div id="tocHead">
+          <div id="tocNpcName">Trees</div>
+          <button class="good" id="addTreeBtn" disabled style="font-size:11px;flex-shrink:0">+ Add Tree</button>
         </div>
-        <div id="canvas">
-          <svg id="svgLayer" xmlns="http://www.w3.org/2000/svg"></svg>
-          <div id="nodesLayer"></div>
-        </div>
+        <div id="tocList"></div>
+        <div id="gapReadout"></div>
       </div>
-      <div id="canvasBar">
-        <button id="btnText"   disabled style="font-size:11px">+ Text</button>
-        <button id="btnChoice" disabled style="font-size:11px">+ Choice</button>
-        <button id="btnEnd"    disabled style="font-size:11px">+ End</button>
-        <button id="btnSeq"    disabled style="font-size:11px;border-color:rgba(45,212,191,.4);background:rgba(45,212,191,.1);color:var(--seq)">+ Sequence</button>
-        <div class="barSep"></div>
-        <button class="danger" id="btnDel"   disabled style="font-size:11px">Delete Node</button>
-        <button class="warn"   id="btnEntry" disabled style="font-size:11px">Set Entry</button>
-        <div class="spacer"></div>
-        <button class="secondary" id="btnOrg"   disabled style="font-size:11px">↻ Organize</button>
-        <button class="secondary" id="btnReset" style="font-size:11px">↺ View</button>
-        <span id="zoomLabel">100%</span>
+      <div id="graphView" class="hidden">
+        <div id="canvasOuter">
+          <button id="backToTocBtn" title="Back to table of contents">← Trees</button>
+          <div id="emptyState">
+            <div id="emptyIcon">💬</div>
+            <p id="emptyMsg">Select an NPC to begin</p>
+          </div>
+          <div id="canvas">
+            <svg id="svgLayer" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="nodesLayer"></div>
+          </div>
+        </div>
+        <div id="canvasBar">
+          <button id="btnText"   disabled style="font-size:11px">+ Text</button>
+          <button id="btnChoice" disabled style="font-size:11px">+ Choice</button>
+          <button id="btnEnd"    disabled style="font-size:11px">+ End</button>
+          <button id="btnSeq"    disabled style="font-size:11px;border-color:rgba(45,212,191,.4);background:rgba(45,212,191,.1);color:var(--seq)">+ Sequence</button>
+          <div class="barSep"></div>
+          <button class="danger" id="btnDel"   disabled style="font-size:11px">Delete Node</button>
+          <button class="warn"   id="btnEntry" disabled style="font-size:11px">Set Entry</button>
+          <div class="spacer"></div>
+          <button class="secondary" id="btnOrg"   disabled style="font-size:11px">↻ Organize</button>
+          <button class="secondary" id="btnReset" style="font-size:11px">↺ View</button>
+          <span id="zoomLabel">100%</span>
+        </div>
       </div>
     </div>
+    <div id="inspToggle" title="Cycle inspector width: normal → wide → collapsed">◂</div>
     <div id="inspector">
       <div class="paneHead">Inspector</div>
       <div id="inspBody">
@@ -278,15 +404,39 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
   </div>
 </div>
 
+<div id="poolModal" class="hidden">
+  <div id="poolBox">
+    <div class="poolBoxHead">
+      <h2>Phrase Pools — <span id="poolBoxNpcName"></span></h2>
+      <div class="iMuted" style="margin:2px 0 0">Reusable, conditioned snippets of text belonging to this NPC. Reference one anywhere in their dialogue as <code>{{pool:name}}</code> — it resolves to whichever entry best matches when that line plays, cycling through unheard entries before repeating.</div>
+      <button class="secondary" id="poolModalClose" style="position:absolute;top:14px;right:14px;font-size:11px">Close</button>
+    </div>
+    <div id="poolBoxBody">
+      <div id="poolListCol">
+        <div id="poolList"></div>
+        <button class="good" id="addPoolBtn" style="width:100%;font-size:11px">+ New Pool</button>
+      </div>
+      <div id="poolDetailCol"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 let db        = null;
 let sel       = { npcId: null, treeId: null, nodeId: null };
 let cam       = { panX: 60, panY: 60, zoom: 1 };
+let centerView = 'toc'; // 'toc' | 'graph' — which half of #centerPanel is showing
 let dragState = null;
 let connState = null;
 let panState  = null;
 let _seq      = 1;
+
+let filters = {
+  weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
+  maps: [], stations: [], playerSpecies: [],
+  relationship: { min: null, max: null }
+};
 
 const GRID = 20;
 const snap = v => Math.round(v / GRID) * GRID;
@@ -304,12 +454,103 @@ const setDirty = ()  => { $('exportBtn').disabled = false; };
 const EXPRESSIONS   = ['neutral','smile','frown','laugh','yap'];
 const REVEAL_SPEEDS = ['normal','slow','fast','instant'];
 
+const WEEKDAYS     = ['Anan','Hronu','Kruru','Muunu','Naru','Tothu','Uung'];
+const SEASONS      = ['Stormtide','Deadgrass','Longpour','Coldmuck'];
+const WEATHERS     = ['clear','rain','storm'];
+const TIMES_OF_DAY = ['dawn','day','dusk','night'];
+const ENCOUNTERS   = ['first','returning'];
+
+// Map/station registry — fetched from config/town-workspace-v1.json
+// (loadMapRegistry, called at startup) so "which map"/"which station"
+// options always reflect the actual town layout instead of a hand-copied
+// list going stale. Seeded with built-ins that aren't in that file (the
+// farm and the player's generic house interior) plus the two wilderness
+// zones as a fallback in case the fetch hasn't resolved yet/fails.
+let mapRegistry = [
+  { id: 'farm', name: 'Farm', stations: [] },
+  { id: 'interior', name: 'Player House', stations: [] },
+  { id: 'map_northern_cliffs', name: 'Northern Cliffs', stations: [] },
+  { id: 'map_southern_cloud_forest', name: 'Southern Cloud Forest', stations: [] },
+];
+function mapLabel(id) { return mapRegistry.find(m => m.id === id)?.name || id; }
+function stationsForMap(mapId) { return mapRegistry.find(m => m.id === mapId)?.stations || []; }
+async function loadMapRegistry() {
+  try {
+    const res = await fetch('../../config/town-workspace-v1.json');
+    if (!res.ok) return;
+    const data = await res.json();
+    const fromFile = (data.maps || []).map(m => ({
+      id: m.id, name: m.name || m.label || m.id,
+      stations: (m.npcStations || []).map(s => s.label).filter(Boolean),
+    }));
+    const builtins = mapRegistry.filter(m => !fromFile.some(f => f.id === m.id));
+    mapRegistry = [...builtins, ...fromFile];
+  } catch (e) { /* keep the built-in fallback list */ }
+}
+
+// Mirrors game.js's NPC_SPECIES_IDS — the game treats player and NPC
+// species as the same taxonomy (both read/write appearance.speciesId).
+const PLAYER_SPECIES = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
+
+const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay','encounter','maps','stations','playerSpecies'];
+const CONDITION_CATEGORIES = [
+  { key: 'weekdays',     label: 'Weekday',      values: () => WEEKDAYS },
+  { key: 'seasons',      label: 'Season',       values: () => SEASONS },
+  { key: 'weather',      label: 'Weather',      values: () => WEATHERS },
+  { key: 'timesOfDay',   label: 'Time of day',  values: () => TIMES_OF_DAY },
+  { key: 'encounter',    label: 'Encounter',    values: () => ENCOUNTERS },
+  { key: 'maps',         label: 'Map',          values: () => mapRegistry.map(m => m.id), labelFor: mapLabel },
+  { key: 'stations',     label: 'Station',      values: null, scopedByMap: true },
+  { key: 'playerSpecies',label: 'Player species', values: () => PLAYER_SPECIES },
+  { key: 'relationship', label: 'Relationship', values: null },
+];
+const emptyConditions = () => ({
+  weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
+  maps: [], stations: [], playerSpecies: [],
+  relationship: { min: null, max: null }
+});
+const normalizeConditions = (c) => ({
+  weekdays:      Array.isArray(c.weekdays)      ? c.weekdays      : [],
+  seasons:       Array.isArray(c.seasons)       ? c.seasons       : [],
+  weather:       Array.isArray(c.weather)       ? c.weather       : [],
+  timesOfDay:    Array.isArray(c.timesOfDay)    ? c.timesOfDay    : [],
+  encounter:     Array.isArray(c.encounter)     ? c.encounter     : [],
+  maps:          Array.isArray(c.maps)          ? c.maps          : [],
+  stations:      Array.isArray(c.stations)      ? c.stations      : [],
+  playerSpecies: Array.isArray(c.playerSpecies) ? c.playerSpecies : [],
+  relationship: {
+    min: c.relationship?.min ?? null,
+    max: c.relationship?.max ?? null
+  }
+});
+
+// A phrase pool is a named, reusable list of conditioned text snippets,
+// referenced from any dialogue line as {{pool:<id>}}. Entries share the
+// exact same conditions/excludeConditions shape as dialogue trees, and
+// resolve at runtime with the same eligibility/specificity/no-repeat
+// algorithm (see _pickBestEntry in game.js) — just picking a snippet of
+// text instead of a tree to navigate to.
+const emptyPoolEntry = () => ({ id: genId('pe_'), text: '', conditions: emptyConditions(), excludeConditions: emptyConditions() });
+const emptyPool = (name) => ({ id: genId('pool_'), name: name || 'New Pool', entries: [] });
+
 /* ── Database I/O ─────────────────────────────────────────── */
 function loadDatabase(json) {
   try {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
     if (!Array.isArray(parsed.npcs)) throw new Error('Expected .npcs array');
     for (const npc of parsed.npcs) {
+      if (!Array.isArray(npc.phrasePools)) npc.phrasePools = [];
+      for (const pool of npc.phrasePools) {
+        pool.id ??= genId('pool_');
+        pool.name ??= 'Untitled Pool';
+        if (!Array.isArray(pool.entries)) pool.entries = [];
+        for (const entry of pool.entries) {
+          entry.id ??= genId('pe_');
+          entry.text ??= '';
+          entry.conditions        = normalizeConditions(entry.conditions || {});
+          entry.excludeConditions = normalizeConditions(entry.excludeConditions || {});
+        }
+      }
       if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
       for (const tree of npc.dialogueTrees) {
         if (!Array.isArray(tree.nodes)) tree.nodes = [];
@@ -317,10 +558,13 @@ function loadDatabase(json) {
           nd.pos ??= { x: 60 + i * 260, y: 80 };
           nd.pos.x = snap(nd.pos.x); nd.pos.y = snap(nd.pos.y);
         });
+        tree.conditions        = normalizeConditions(tree.conditions || {});
+        tree.excludeConditions = normalizeConditions(tree.excludeConditions || {});
       }
     }
     db  = parsed;
     sel = { npcId: null, treeId: null, nodeId: null };
+    poolSel = { poolId: null, expandedEntryId: null };
     $('exportBtn').disabled = false;
     $('statusPill').textContent = `${db.npcs.length} NPC${db.npcs.length !== 1 ? 's' : ''} loaded`;
     renderAll();
@@ -342,17 +586,28 @@ function exportDatabase() {
 /* ── Selection ───────────────────────────────────────────── */
 function selectNpc(id) {
   sel.npcId = id; sel.treeId = null; sel.nodeId = null;
+  poolSel = { poolId: null, expandedEntryId: null };
   const npc = getNpc();
-  if (npc?.dialogueTrees?.length) sel.treeId = npc.dialogueTrees[0].id;
+  sel.treeId = null; sel.nodeId = null;
+  centerView = 'toc'; // the TOC is always the first thing you see for an NPC
   cam = { panX: 60, panY: 60, zoom: 1 };
-  $('addTreeBtn').disabled = false;
-  renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
+  $('addTreeBtn').disabled = !npc;
+  $('poolModalBtn').disabled = !npc;
+  $('poolModalBtn').title = npc ? `Manage ${npc.name || npc.id}'s reusable phrase pools` : 'Select an NPC first';
+  renderNpcList(); renderCenterPanel(); renderInspector(); updateBar();
 }
 
 function selectTree(id) {
   sel.treeId = id; sel.nodeId = null;
+  centerView = 'graph';
   cam = { panX: 60, panY: 60, zoom: 1 };
-  renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
+  renderCenterPanel(); renderInspector(); updateBar();
+}
+
+function backToToc() {
+  sel.treeId = null; sel.nodeId = null;
+  centerView = 'toc';
+  renderCenterPanel(); renderInspector(); updateBar();
 }
 
 function selectNode(id) {
@@ -367,19 +622,31 @@ function selectNode(id) {
 function addTree() {
   const npc = getNpc(); if (!npc) return;
   const id  = genId('tree_');
+  const conditions = emptyConditions();
+  conditions.weekdays   = [...filters.weekdays];
+  conditions.seasons    = [...filters.seasons];
+  conditions.weather    = [...filters.weather];
+  conditions.timesOfDay = [...filters.timesOfDay];
+  conditions.encounter  = [...filters.encounter];
+  conditions.maps       = [...filters.maps];
+  conditions.stations   = [...filters.stations];
+  conditions.playerSpecies = [...filters.playerSpecies];
+  conditions.relationship = { min: filters.relationship.min, max: filters.relationship.max };
   npc.dialogueTrees.push({ id, label: `Tree ${npc.dialogueTrees.length + 1}`,
-    trigger: 'interact', priority: 0, entryNode: null, nodes: [] });
+    trigger: 'interact', priority: 0, entryNode: null, nodes: [],
+    conditions, excludeConditions: emptyConditions() });
   sel.treeId = id; sel.nodeId = null;
+  centerView = 'graph'; // jump straight into editing the tree just created
   cam = { panX: 60, panY: 60, zoom: 1 };
-  setDirty(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
+  setDirty(); renderCenterPanel(); renderInspector(); updateBar();
 }
 
 function deleteTree(id) {
   const npc = getNpc();
   if (!npc || !confirm('Delete this dialogue tree?')) return;
   npc.dialogueTrees = npc.dialogueTrees.filter(t => t.id !== id);
-  if (sel.treeId === id) { sel.treeId = npc.dialogueTrees[0]?.id ?? null; sel.nodeId = null; }
-  setDirty(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector();
+  if (sel.treeId === id) { sel.treeId = null; sel.nodeId = null; centerView = 'toc'; }
+  setDirty(); renderNpcList(); renderCenterPanel(); renderInspector();
 }
 
 /* ── Node actions ────────────────────────────────────────── */
@@ -431,6 +698,321 @@ function connectNodes(fromId, ci, toId) {
   if (sel.nodeId === fromId) renderInspector();
 }
 
+/* ── Condition filtering ─────────────────────────────────── */
+function axisSelected(axis)       { return filters[axis].length > 0; }
+function relationshipSelected()   { return filters.relationship.min != null || filters.relationship.max != null; }
+
+function selectedAxesList() {
+  const axes = CONDITION_AXES.filter(axisSelected);
+  if (relationshipSelected()) axes.push('relationship');
+  return axes;
+}
+
+function treeConditionedAxes(tree) {
+  const c = tree.conditions || {};
+  const axes = CONDITION_AXES.filter(a => (c[a]||[]).length > 0);
+  const rel = c.relationship;
+  if (rel && (rel.min != null || rel.max != null)) axes.push('relationship');
+  return axes;
+}
+
+function axisCompatible(tree, axis) {
+  const c = tree.conditions || {};
+  if (axis === 'relationship') {
+    const rel = c.relationship;
+    const filt = filters.relationship;
+    const relSet  = rel  && (rel.min  != null || rel.max  != null);
+    const filtSet = filt && (filt.min != null || filt.max != null);
+    if (!relSet || !filtSet) return true; // wildcard on either side => compatible
+    const relMin = rel.min ?? -Infinity, relMax = rel.max ?? Infinity;
+    const filtMin = filt.min ?? -Infinity, filtMax = filt.max ?? Infinity;
+    return relMin <= filtMax && relMax >= filtMin; // ranges overlap
+  }
+  const vals = c[axis] || [];
+  if (!vals.length) return true;
+  return vals.some(v => filters[axis].includes(v));
+}
+
+// Classifies a tree against the active filter:
+//  'full'    — matches every selected condition axis (or has no conditions at all)
+//  'partial' — compatible with the filter, but only conditioned on some of the selected axes
+//  'hidden'  — conflicts with at least one selected axis
+function classifyTree(tree) {
+  const selected = selectedAxesList();
+  if (!selected.length) return { level: 'full', conditionedAxes: treeConditionedAxes(tree) };
+  for (const axis of selected) {
+    if (!axisCompatible(tree, axis)) return { level: 'hidden', conditionedAxes: [] };
+  }
+  const conditioned = treeConditionedAxes(tree);
+  const isFull = conditioned.length === 0 || selected.every(a => conditioned.includes(a));
+  return { level: isFull ? 'full' : 'partial', conditionedAxes: conditioned };
+}
+
+function npcCoverage(npc) {
+  let full = 0, partial = 0;
+  for (const tree of npc.dialogueTrees || []) {
+    const { level } = classifyTree(tree);
+    if (level === 'full') full++;
+    else if (level === 'partial') partial++;
+  }
+  return { full, partial };
+}
+
+function conditionLabel(cond, axes) {
+  const parts = [];
+  if (axes.includes('weekdays')   && cond.weekdays?.length)   parts.push(cond.weekdays.join('/'));
+  if (axes.includes('seasons')    && cond.seasons?.length)    parts.push(cond.seasons.join('/'));
+  if (axes.includes('weather')    && cond.weather?.length)    parts.push(cond.weather.join('/'));
+  if (axes.includes('timesOfDay') && cond.timesOfDay?.length) parts.push(cond.timesOfDay.join('/'));
+  if (axes.includes('encounter')  && cond.encounter?.length)  parts.push(cond.encounter.join('/'));
+  if (axes.includes('maps')       && cond.maps?.length)       parts.push(cond.maps.map(mapLabel).join('/'));
+  if (axes.includes('stations')   && cond.stations?.length)   parts.push(cond.stations.join('/'));
+  if (axes.includes('playerSpecies') && cond.playerSpecies?.length) parts.push(cond.playerSpecies.join('/'));
+  if (axes.includes('relationship') && cond.relationship) {
+    const { min, max } = cond.relationship;
+    if (min != null && max != null)      parts.push(`${min}–${max}♥`);
+    else if (min != null)                parts.push(`${min}+♥`);
+    else if (max != null)                parts.push(`≤${max}♥`);
+  }
+  return parts.join(' · ');
+}
+
+function conditionChipLabel(key, value) {
+  if (key === 'relationship') {
+    const { min, max } = value;
+    if (min != null && max != null) return `Relationship ${min}–${max}♥`;
+    if (min != null)                return `Relationship ${min}+♥`;
+    if (max != null)                return `Relationship ≤${max}♥`;
+    return '';
+  }
+  const cat = CONDITION_CATEGORIES.find(c => c.key === key);
+  const shown = cat?.labelFor ? cat.labelFor(value) : value;
+  return `${cat ? cat.label : key}: ${shown}`;
+}
+
+// Values for a category's checkbox list. "stations" is scoped by whichever
+// map is picked in the popover (its label list comes straight out of that
+// map's npcStations in the fetched town-workspace registry — see
+// stationsForMap) since a station label only means anything in context of
+// one map; every other category's list is fixed/global.
+function categoryValues(cat, scopeMapId) {
+  if (cat.key === 'stations') return scopeMapId ? stationsForMap(scopeMapId) : [];
+  return typeof cat.values === 'function' ? cat.values() : (cat.values || []);
+}
+
+// Renders an appendable chip list + "+ Add" popover into containerEl for a
+// condition bag (filters, tree.conditions, or tree.excludeConditions) of the
+// shape { weekdays:[], seasons:[], weather:[], timesOfDay:[], encounter:[],
+// maps:[], stations:[], relationship:{min,max} }. onChange fires after every
+// mutation so the caller can update anything that depends on it (NPC sort,
+// tree tabs, etc); the picker then re-renders itself, preserving popover
+// open/category/scope state so several conditions can be checked off
+// back-to-back without the popover closing between clicks.
+function renderConditionPicker(containerEl, bag, onChange, variant, state = {}) {
+  const popOpen = !!state.popOpen;
+  const curCat  = state.cat || CONDITION_CATEGORIES[0].key;
+  const curCatDef = CONDITION_CATEGORIES.find(c => c.key === curCat);
+  const stationMap = state.stationMap || mapRegistry.find(m => stationsForMap(m.id).length)?.id || mapRegistry[0]?.id || '';
+
+  const chips = [];
+  for (const cat of CONDITION_CATEGORIES) {
+    if (cat.key === 'relationship') {
+      const rel = bag.relationship;
+      if (rel && (rel.min != null || rel.max != null)) chips.push({ key: 'relationship', value: rel });
+    } else {
+      (bag[cat.key] || []).forEach(v => chips.push({ key: cat.key, value: v }));
+    }
+  }
+
+  containerEl.innerHTML = `
+    <div class="condChipList">
+      ${chips.map((c, i) => `<span class="condChip${variant==='exclude'?' exclude':''}" data-i="${i}">${esc(conditionChipLabel(c.key, c.value))}<button class="condChipX" data-i="${i}" type="button">×</button></span>`).join('')}
+      <button class="condAddBtn secondary" type="button">+ Add</button>
+    </div>
+    <div class="condPopover${popOpen?'':' hidden'}">
+      <select class="condPopCat">${CONDITION_CATEGORIES.map(c => `<option value="${c.key}"${c.key===curCat?' selected':''}>${esc(c.label)}</option>`).join('')}</select>
+      <select class="condPopMapScope${curCat==='stations'?'':' hidden'}">${mapRegistry.map(m => `<option value="${esc(m.id)}"${m.id===stationMap?' selected':''}>${esc(m.name)}</option>`).join('')}</select>
+      <div class="condPopValList"></div>
+      <div class="condPopRel${curCat==='relationship'?'':' hidden'}">
+        <input type="number" class="condPopRelMin" placeholder="min">
+        <span>to</span>
+        <input type="number" class="condPopRelMax" placeholder="max">
+        <button class="condPopAdd" type="button">Add</button>
+      </div>
+      <button class="condPopClose secondary" type="button">Done</button>
+    </div>`;
+
+  const rerender = next => renderConditionPicker(containerEl, bag, onChange, variant, next);
+
+  containerEl.querySelectorAll('.condChipX').forEach(btn => btn.addEventListener('click', () => {
+    const c = chips[+btn.dataset.i];
+    if (c.key === 'relationship') bag.relationship = { min: null, max: null };
+    else { const arr = bag[c.key]; const idx = arr.indexOf(c.value); if (idx !== -1) arr.splice(idx, 1); }
+    onChange(); rerender({ popOpen, cat: curCat, stationMap });
+  }));
+
+  const catSel   = containerEl.querySelector('.condPopCat');
+  const scopeSel = containerEl.querySelector('.condPopMapScope');
+  const valList  = containerEl.querySelector('.condPopValList');
+  const relMin   = containerEl.querySelector('.condPopRelMin');
+  const relMax   = containerEl.querySelector('.condPopRelMax');
+  if (curCatDef.key === 'relationship') {
+    relMin.value = bag.relationship?.min ?? '';
+    relMax.value = bag.relationship?.max ?? '';
+  } else {
+    const values = categoryValues(curCatDef, stationMap);
+    const active = bag[curCatDef.key] || [];
+    valList.innerHTML = values.length
+      ? values.map(v => `<label class="condCheckRow"><input type="checkbox" data-v="${esc(v)}"${active.includes(v)?' checked':''}><span>${esc(curCatDef.labelFor ? curCatDef.labelFor(v) : v)}</span></label>`).join('')
+      : `<div class="iMuted">${curCatDef.key==='stations' ? 'No named stations on this map.' : 'No options.'}</div>`;
+    valList.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      const arr = bag[curCatDef.key];
+      const v = cb.dataset.v;
+      const idx = arr.indexOf(v);
+      if (cb.checked && idx === -1) arr.push(v);
+      else if (!cb.checked && idx !== -1) arr.splice(idx, 1);
+      onChange(); rerender({ popOpen: true, cat: curCat, stationMap });
+    }));
+  }
+
+  containerEl.querySelector('.condAddBtn').addEventListener('click', () => rerender({ popOpen: !popOpen, cat: curCat, stationMap }));
+  containerEl.querySelector('.condPopClose').addEventListener('click', () => rerender({ popOpen: false, cat: curCat, stationMap }));
+  catSel.addEventListener('change', () => rerender({ popOpen: true, cat: catSel.value, stationMap }));
+  scopeSel?.addEventListener('change', () => rerender({ popOpen: true, cat: curCat, stationMap: scopeSel.value }));
+  containerEl.querySelector('.condPopAdd')?.addEventListener('click', () => {
+    const min = relMin.value === '' ? null : parseInt(relMin.value);
+    const max = relMax.value === '' ? null : parseInt(relMax.value);
+    if (min == null && max == null) return;
+    bag.relationship = { min, max };
+    onChange(); rerender({ popOpen: true, cat: curCat, stationMap });
+  });
+}
+
+function renderCondFilters() {
+  renderConditionPicker($('filterPicker'), filters, onFiltersChanged, 'require');
+}
+
+function onFiltersChanged() {
+  renderCondFilters(); renderNpcList();
+  const npc = getNpc();
+  const curTree = npc?.dialogueTrees?.find(t => t.id === sel.treeId);
+  if (npc && (!curTree || classifyTree(curTree).level === 'hidden')) {
+    selectNpc(npc.id); // current tree no longer valid — bounce back to the TOC
+    return;
+  }
+  renderCenterPanel(); renderInspector();
+}
+
+/* ── Phrase Pool Manager ─────────────────────────────────── */
+let poolSel = { poolId: null, expandedEntryId: null };
+
+function openPoolModal() {
+  const npc = getNpc();
+  if (!npc) return;
+  if (!poolSel.poolId && npc.phrasePools.length) poolSel.poolId = npc.phrasePools[0].id;
+  $('poolModal').classList.remove('hidden');
+  renderPoolModal();
+}
+function closePoolModal() { $('poolModal').classList.add('hidden'); }
+
+function renderPoolModal() {
+  const npc = getNpc();
+  if (!npc) return;
+  $('poolBoxNpcName').textContent = npc.name || npc.id;
+  renderPoolList();
+  renderPoolDetail();
+}
+
+function renderPoolList() {
+  const npc = getNpc();
+  const el = $('poolList');
+  el.innerHTML = npc.phrasePools.length
+    ? npc.phrasePools.map(p => `
+      <div class="poolListItem${p.id===poolSel.poolId?' sel':''}" data-id="${esc(p.id)}">
+        <span class="poolListItemName">${esc(p.name || 'Untitled Pool')}</span>
+        <span class="poolListItemCount">${p.entries.length}</span>
+      </div>`).join('')
+    : '<div class="poolEmptyState" style="padding:16px 6px">No pools yet.</div>';
+  el.querySelectorAll('.poolListItem').forEach(row => row.addEventListener('click', () => {
+    poolSel = { poolId: row.dataset.id, expandedEntryId: null };
+    renderPoolModal();
+  }));
+}
+
+function renderPoolDetail() {
+  const npc = getNpc();
+  const el = $('poolDetailCol');
+  const pool = npc.phrasePools.find(p => p.id === poolSel.poolId);
+  if (!pool) {
+    el.innerHTML = '<div class="poolEmptyState">Select a pool on the left, or create a new one.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="poolNameRow">
+      <input id="poolNameInput" value="${esc(pool.name)}" placeholder="Pool name">
+      <span class="pill" title="Reference this pool in any dialogue text as this token" style="cursor:text;user-select:all">{{pool:${esc(pool.name)}}}</span>
+      <button class="danger" id="deletePoolBtn" style="flex-shrink:0;font-size:11px">Delete Pool</button>
+    </div>
+    <div id="poolEntriesList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button class="good" id="addPoolEntryBtn" style="width:100%;font-size:11px">+ Add Entry</button>`;
+
+  $('poolNameInput').oninput = e => { pool.name = e.target.value; setDirty(); renderPoolList(); };
+  $('deletePoolBtn').onclick = () => {
+    if (!confirm(`Delete phrase pool "${pool.name}"? Any {{pool:...}} references to it will resolve to nothing.`)) return;
+    npc.phrasePools = npc.phrasePools.filter(p => p.id !== pool.id);
+    poolSel = { poolId: npc.phrasePools[0]?.id ?? null, expandedEntryId: null };
+    setDirty(); renderPoolModal();
+  };
+  $('addPoolEntryBtn').onclick = () => {
+    const entry = emptyPoolEntry();
+    pool.entries.push(entry);
+    poolSel.expandedEntryId = entry.id;
+    setDirty(); renderPoolDetail();
+  };
+
+  const list = $('poolEntriesList');
+  list.innerHTML = pool.entries.length ? '' : '<div class="poolEmptyState" style="padding:16px 6px">No entries yet — add one below.</div>';
+  pool.entries.forEach((entry, i) => {
+    const expanded = poolSel.expandedEntryId === entry.id;
+    const card = document.createElement('div');
+    card.className = 'poolEntryCard';
+    card.innerHTML = `
+      <div class="poolEntryHead">
+        <span class="poolEntryTag">${i + 1}</span>
+        <textarea class="poolEntryText" placeholder="Phrase text — can use {{playerName}}, {{pool:otherPool}}, etc.">${esc(entry.text)}</textarea>
+        <button class="secondary poolEntryExpandBtn">${expanded ? 'Hide conditions' : 'Conditions'}</button>
+        <button class="tagX" title="Delete entry">×</button>
+      </div>
+      <div class="poolEntryBody" style="${expanded ? '' : 'display:none'}">
+        <div><label>Required conditions</label><div class="entryReqPicker"></div></div>
+        <div><label>No-fly conditions</label><div class="entryExclPicker"></div></div>
+      </div>`;
+    card.querySelector('.poolEntryText').oninput = e => { entry.text = e.target.value; setDirty(); };
+    card.querySelector('.poolEntryExpandBtn').onclick = () => {
+      poolSel.expandedEntryId = expanded ? null : entry.id;
+      renderPoolDetail();
+    };
+    card.querySelector('.tagX').onclick = () => {
+      pool.entries = pool.entries.filter(e => e.id !== entry.id);
+      if (poolSel.expandedEntryId === entry.id) poolSel.expandedEntryId = null;
+      setDirty(); renderPoolDetail();
+    };
+    list.appendChild(card);
+    if (expanded) {
+      renderConditionPicker(card.querySelector('.entryReqPicker'), entry.conditions, setDirty, 'require');
+      renderConditionPicker(card.querySelector('.entryExclPicker'), entry.excludeConditions, setDirty, 'exclude');
+    }
+  });
+}
+
+function addPool() {
+  const npc = getNpc(); if (!npc) return;
+  const pool = emptyPool(`Pool ${npc.phrasePools.length + 1}`);
+  npc.phrasePools.push(pool);
+  poolSel = { poolId: pool.id, expandedEntryId: null };
+  setDirty(); renderPoolModal();
+}
+
 /* ── NPC list ────────────────────────────────────────────── */
 function renderNpcList() {
   const el = $('npcListEl');
@@ -440,20 +1022,115 @@ function renderNpcList() {
     (n.name||'').toLowerCase().includes(q) ||
     (n.role||'').toLowerCase().includes(q) ||
     (n.species||'').toLowerCase().includes(q));
-  el.innerHTML = list.map(n => `
-    <div class="npcItem${n.id === sel.npcId ? ' sel' : ''}" data-id="${esc(n.id)}">
-      <div class="npcName"><span class="npcBadge">${n.dialogueTrees?.length || 0}</span>${esc(n.name || n.id)}</div>
-      <div class="npcMeta">${esc(n.role || '—')} · ${esc(n.species || '—')}</div>
-    </div>`).join('');
+  const withCov = list.map(n => ({ n, cov: npcCoverage(n) }));
+  withCov.sort((a, b) =>
+    b.cov.full - a.cov.full ||
+    b.cov.partial - a.cov.partial ||
+    (a.n.name || a.n.id).localeCompare(b.n.name || b.n.id));
+  el.innerHTML = withCov.map(({ n, cov }) => {
+    const covClass = cov.full > 0 ? 'covFull' : (cov.partial > 0 ? 'covPartial' : 'covNone');
+    const chat  = n.appearance?.chatColor;
+    const swatch = chat ? `hsl(${chat.h},${chat.s}%,${chat.l}%)` : 'rgba(255,255,255,.15)';
+    const initial = esc((n.name || n.id || '?').trim().charAt(0).toUpperCase());
+    const badge = cov.partial ? `${cov.full}+${cov.partial}` : `${cov.full}`;
+    return `
+    <div class="npcItem ${covClass}${n.id === sel.npcId ? ' sel' : ''}" data-id="${esc(n.id)}">
+      <div class="npcRow">
+        <span class="npcAvatar" style="background:${swatch}">${initial}</span>
+        <div class="npcNameWrap">
+          <div class="npcName">${esc(n.name || n.id)}</div>
+          <div class="npcMeta">${esc(n.role || '—')} · ${esc(n.species || '—')}</div>
+        </div>
+        <span class="npcBadge" title="${cov.full} matching, ${cov.partial} related to selected conditions">${badge}</span>
+      </div>
+    </div>`;
+  }).join('');
   el.querySelectorAll('.npcItem').forEach(el => el.addEventListener('click', () => selectNpc(el.dataset.id)));
 }
 
-/* ── Tree bar ────────────────────────────────────────────── */
-function renderTreeBar() {
+/* ── Center panel: table of contents / graph view ───────────── */
+// A tree "specifically targets" an axis value if it conditions on that axis
+// (non-wildcard) and includes that value, and its no-fly side doesn't
+// exclude that same value — mirrors the runtime's per-axis eligibility
+// check (_dlgAxisMatch/_dlgEntryEligible in game.js) but for one axis value
+// in isolation rather than a full world state, since the gap readout is
+// asking "does anything address just this?" one value at a time.
+function treeAxisSpecificMatch(tree, axis, value) {
+  const vals = tree.conditions?.[axis];
+  if (!vals || !vals.includes(value)) return false;
+  const xvals = tree.excludeConditions?.[axis];
+  if (xvals && xvals.includes(value)) return false;
+  return true;
+}
+
+const GAP_AXES = [
+  { key: 'weekdays',   label: 'Weekday',     values: WEEKDAYS },
+  { key: 'seasons',    label: 'Season',      values: SEASONS },
+  { key: 'weather',    label: 'Weather',     values: WEATHERS },
+  { key: 'timesOfDay', label: 'Time of day', values: TIMES_OF_DAY },
+  { key: 'encounter',  label: 'Encounter',   values: ENCOUNTERS },
+];
+function computeConditionGaps(npc) {
+  const rows = [];
+  for (const axisDef of GAP_AXES) {
+    for (const value of axisDef.values) {
+      const count = (npc.dialogueTrees || []).filter(t => treeAxisSpecificMatch(t, axisDef.key, value)).length;
+      rows.push({ label: axisDef.label, value, count });
+    }
+  }
+  rows.sort((a, b) => a.count - b.count || a.label.localeCompare(b.label));
+  return rows;
+}
+
+function renderGapReadout(npc) {
+  const el = $('gapReadout');
+  const gaps = computeConditionGaps(npc);
+  const SHOW = 12;
+  const shown = gaps.slice(0, SHOW);
+  const worstCount = gaps[0]?.count ?? 0;
+  const zeroCount = gaps.filter(g => g.count === 0).length;
+  el.innerHTML = `
+    <h3>Gap check — fewest dedicated trees first</h3>
+    ${shown.map(g => `<div class="gapRow${g.count===0?' zero':''}">${g.count===0?'⚠':'·'} ${esc(g.label)} · ${esc(g.value)}<span class="gapCount">${g.count} tree${g.count!==1?'s':''}</span></div>`).join('')}
+    ${gaps.length > SHOW ? `<div class="iMuted" style="margin-top:4px">+ ${gaps.length - SHOW} more condition value${gaps.length-SHOW!==1?'s':''}${worstCount===0?`, ${Math.max(0,zeroCount-SHOW)} more also at 0`:''}</div>` : ''}`;
+}
+
+function renderToc() {
   const npc = getNpc();
-  $('treeTabs').innerHTML = !npc ? '' : npc.dialogueTrees.map(t => `
-    <div class="treeTab${t.id === sel.treeId ? ' sel' : ''}" data-id="${esc(t.id)}">${esc(t.label || t.id)}</div>`).join('');
-  $('treeTabs').querySelectorAll('.treeTab').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id)));
+  $('tocNpcName').textContent = npc ? `${npc.name || npc.id} — Trees` : 'Trees';
+  const listEl = $('tocList');
+  if (!npc) { listEl.innerHTML = ''; $('gapReadout').innerHTML = ''; return; }
+
+  const rows = [];
+  for (const t of npc.dialogueTrees) {
+    const { level, conditionedAxes } = classifyTree(t);
+    if (level === 'hidden') continue;
+    rows.push({ t, level, conditionedAxes });
+  }
+  rows.sort((a, b) => (a.level === 'full' ? 0 : 1) - (b.level === 'full' ? 0 : 1));
+
+  listEl.innerHTML = rows.length ? rows.map(({ t, level, conditionedAxes }) => {
+    const badge = conditionLabel(t.conditions || {}, conditionedAxes);
+    return `<div class="tocItem${level==='partial'?' partial':''}" data-id="${esc(t.id)}">
+      <span class="tocDot"></span>
+      <div class="tocMain">
+        <div class="tocLabel">${esc(t.label || t.id)}</div>
+        ${badge ? `<div class="tocCond">${esc(badge)}</div>` : '<div class="tocCond">No conditions — always available</div>'}
+      </div>
+      <span class="tocArrow">›</span>
+    </div>`;
+  }).join('') : '<div class="tocEmptyState">No dialogue trees yet — click "+ Add Tree" to create one.</div>';
+  listEl.querySelectorAll('.tocItem').forEach(el => el.addEventListener('click', () => selectTree(el.dataset.id)));
+
+  renderGapReadout(npc);
+}
+
+function renderCenterPanel() {
+  const inToc = centerView === 'toc';
+  $('tocPanel').classList.toggle('hidden', !inToc);
+  $('graphView').classList.toggle('hidden', inToc);
+  if (inToc) renderToc();
+  else renderCanvas();
 }
 
 function updateBar() {
@@ -494,7 +1171,10 @@ function renderCanvas() {
     nlayer.innerHTML = ''; $('svgLayer').innerHTML = '';
     empty.classList.remove('hidden');
     emsg.textContent = !getNpc()?.dialogueTrees?.length
-      ? 'Click "+ Tree" to create a dialogue tree' : 'Select a tree above to edit it';
+      ? 'Click "+ Add Tree" to create a dialogue tree'
+      : (selectedAxesList().length
+          ? 'No dialogue yet for the selected conditions — click "← Trees" then "+ Add Tree" to fill the gap.'
+          : 'Click "← Trees" to pick a tree to edit');
     return;
   }
   empty.classList.add('hidden');
@@ -675,6 +1355,47 @@ function renderSvg() {
 }
 
 /* ── Inspector helpers ───────────────────────────────────── */
+const BUILT_IN_TOKENS = [
+  { tok: '{{npcName}}',            hint: 'this NPC\'s name' },
+  { tok: '{{playerName}}',         hint: 'player\'s name' },
+  { tok: '{{playerNickname}}',     hint: 'player-set nickname' },
+  { tok: '{{playerLocalNickname}}',hint: 'NPC-specific nickname (set via a choice action)' },
+  { tok: '{{npcSpecies}}',         hint: 'this NPC\'s species' },
+  { tok: '{{playerSpecies}}',      hint: 'player\'s species' },
+  { tok: '{{role}}',               hint: 'this NPC\'s role (e.g. "researcher")' },
+  { tok: '{{playerPronoun1}}',     hint: 'he/she/they' },
+  { tok: '{{playerPronoun2}}',     hint: 'him/her/them' },
+  { tok: '{{playerPronoun3}}',     hint: 'his/her/their' },
+  { tok: '{{playerPronounSelf}}',  hint: 'himself/herself/themself' },
+  { tok: '{{playerFirstL2V1}}',    hint: 'leading consonants + first vowel of player name (e.g. "Bra" from "Brandon")' },
+];
+
+// Every built-in token plus one button per phrase pool defined in the
+// currently loaded database, so a newly-created pool is immediately
+// insertable without having to remember/type its {{pool:...}} syntax.
+function buildTokenButtonsHtml() {
+  const poolBtns = (getNpc()?.phrasePools || []).map(p =>
+    `<button type="button" class="tokenBtn poolTokenBtn" data-tok="{{pool:${esc(p.name)}}}" title="Phrase pool: ${esc(p.name)} (${p.entries.length} entr${p.entries.length===1?'y':'ies'})">pool: ${esc(p.name)}</button>`).join('');
+  const builtinBtns = BUILT_IN_TOKENS.map(t =>
+    `<button type="button" class="tokenBtn" data-tok="${esc(t.tok)}" title="${esc(t.hint)}">${esc(t.tok.replace(/[{}]/g,''))}</button>`).join('');
+  return builtinBtns + poolBtns;
+}
+
+function insertAtCursor(textarea, text) {
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end   = textarea.selectionEnd   ?? textarea.value.length;
+  const val   = textarea.value;
+  textarea.value = val.slice(0, start) + text + val.slice(end);
+  textarea.selectionStart = textarea.selectionEnd = start + text.length;
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  textarea.focus();
+}
+
+function wireTokenButtons(textarea) {
+  document.querySelectorAll('.tokenBtn').forEach(btn =>
+    btn.addEventListener('click', () => insertAtCursor(textarea, btn.dataset.tok)));
+}
+
 function buildTagsHtml(nd, tree) {
   const tags     = nd.tags || [];
   const seqNodes = (tree.nodes||[]).filter(n => n.type === 'sequence' && n.id !== nd.id);
@@ -751,12 +1472,24 @@ function renderInspector() {
           ${nodes.map(n => `<option value="${esc(n.id)}"${tree.entryNode===n.id?' selected':''}>${esc(n.id)} (${n.type})</option>`).join('')}
         </select></div>
       <hr class="idiv">
+      <div class="iGroup"><label>Conditions</label>
+        <div class="iMuted" style="margin-bottom:5px">This tree only counts as a full match when every added condition is satisfied.</div>
+        <div id="iReqConditions"></div>
+      </div>
+      <div class="iGroup"><label>No-fly conditions</label>
+        <div class="iMuted" style="margin-bottom:5px">This tree is skipped entirely whenever any of these are true — even if the required conditions above are met.</div>
+        <div id="iExclConditions"></div>
+      </div>
+      <hr class="idiv">
       <div class="iGroup">
         <button class="danger" id="iDelTree" style="width:100%;font-size:12px">Delete Tree</button></div>`;
-    $('iLabel').oninput    = e => { tree.label    = e.target.value; setDirty(); renderTreeBar(); };
+    $('iLabel').oninput    = e => { tree.label    = e.target.value; setDirty(); renderToc(); };
     $('iTrigger').onchange = e => { tree.trigger  = e.target.value; setDirty(); };
     $('iPrio').oninput     = e => { tree.priority = parseInt(e.target.value)||0; setDirty(); };
     $('iEntry').onchange   = e => { tree.entryNode = e.target.value||null; setDirty(); renderCanvas(); };
+    const onTreeConditionChange = () => { setDirty(); renderNpcList(); renderToc(); };
+    renderConditionPicker($('iReqConditions'),  tree.conditions,        onTreeConditionChange, 'require');
+    renderConditionPicker($('iExclConditions'), tree.excludeConditions, onTreeConditionChange, 'exclude');
     $('iDelTree').onclick  = () => deleteTree(sel.treeId);
     return;
   }
@@ -770,18 +1503,10 @@ function renderInspector() {
   if (nd.type === 'text') {
     specific = `
       <div class="iGroup"><label>Dialogue text</label>
-        <textarea id="iText" rows="5">${esc(nd.text||'')}</textarea>
-        <div class="iMuted">
-          <code>{{npcName}}</code> <code>{{playerName}}</code>
-          <code>{{npcSpecies}}</code> <code>{{playerSpecies}}</code> <code>{{role}}</code><br>
-          <code>{{playerPronoun1}}</code> he/she/they &nbsp;
-          <code>{{playerPronoun2}}</code> him/her/them &nbsp;
-          <code>{{playerPronoun3}}</code> his/her/their &nbsp;
-          <code>{{playerPronounSelf}}</code> himself/…<br>
-          <code>{{playerNickname}}</code> player-set nickname &nbsp;
-          <code>{{playerLocalNickname}}</code> NPC-specific nickname (set via choice action)<br>
-          <code>{{playerFirstL2V1}}</code> leading consonants + first vowel of player name (e.g. "Bra" from "Brandon")
-        </div></div>
+        <textarea id="iText" rows="${inspectorMode==='wide'?14:5}">${esc(nd.text||'')}</textarea>
+        <div class="iMuted" style="margin-bottom:3px">Click to insert at cursor:</div>
+        <div class="tokenBtnRow">${buildTokenButtonsHtml()}</div>
+      </div>
       <div class="iGroup"><label>Next node</label>
         <select id="iNext">${nextOpts(nd.next)}</select></div>
       <div class="iGroup"><label>Expression</label>
@@ -903,6 +1628,7 @@ function renderInspector() {
     const el = document.querySelector(`.node[data-nid="${nd.id}"] .nodeText`);
     if (el) { el.classList.toggle('empty', !nd.text); el.textContent = nd.text ? trunc(nd.text,140) : 'No text — click to edit'; }
   });
+  if ($('iText')) wireTokenButtons($('iText'));
   $('iNext')?.addEventListener('change', e => { nd.next = e.target.value||null; setDirty(); renderCanvas(); });
   $('iExpr')?.addEventListener('change', e => { nd.expression = e.target.value; setDirty(); renderCanvas(); });
   $('iExprHold')?.addEventListener('input', e => { nd.expressionHold = parseFloat(e.target.value)||0; setDirty(); });
@@ -1045,6 +1771,60 @@ function onWheel(e) {
   applyTransform(); renderSvg();
 }
 
+/* ── Touch pan/zoom (mobile) ─────────────────────────────── */
+// Node dragging/port-connecting stay mouse-first; a touch starting on a node
+// is left alone so its native tap-to-select still fires. A touch starting on
+// the bare canvas backdrop pans; two fingers pinch-zoom around their midpoint.
+let touchState = null;
+const touchDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
+    if (e.touches[0].target.closest?.('.node')) { touchState = null; return; }
+    const t = e.touches[0];
+    touchState = { mode: 'pan', sx: t.clientX, sy: t.clientY, px: cam.panX, py: cam.panY };
+  } else if (e.touches.length === 2) {
+    const [t0, t1] = e.touches;
+    touchState = {
+      mode: 'pinch', startDist: touchDist(t0, t1), startZoom: cam.zoom,
+      startPanX: cam.panX, startPanY: cam.panY,
+      midX: (t0.clientX + t1.clientX) / 2, midY: (t0.clientY + t1.clientY) / 2
+    };
+  }
+}
+
+function onTouchMove(e) {
+  if (!touchState) return;
+  if (touchState.mode === 'pan' && e.touches.length === 1) {
+    e.preventDefault();
+    const t = e.touches[0];
+    cam.panX = touchState.px + (t.clientX - touchState.sx);
+    cam.panY = touchState.py + (t.clientY - touchState.sy);
+    applyTransform(); renderSvg();
+  } else if (touchState.mode === 'pinch' && e.touches.length === 2) {
+    e.preventDefault();
+    const [t0, t1] = e.touches;
+    const dist = touchDist(t0, t1);
+    const nz = Math.max(0.15, Math.min(3, touchState.startZoom * (dist / touchState.startDist)));
+    const or = $('canvasOuter').getBoundingClientRect();
+    const mx = touchState.midX - or.left, my = touchState.midY - or.top;
+    cam.panX = mx - (mx - touchState.startPanX) * nz / touchState.startZoom;
+    cam.panY = my - (my - touchState.startPanY) * nz / touchState.startZoom;
+    cam.zoom = nz;
+    applyTransform(); renderSvg();
+  }
+}
+
+function onTouchEnd(e) {
+  if (e.touches.length === 0) { touchState = null; return; }
+  if (e.touches.length === 1) {
+    // Dropped from two fingers to one — restart as a pan from here instead
+    // of jumping/stopping abruptly.
+    const t = e.touches[0];
+    touchState = { mode: 'pan', sx: t.clientX, sy: t.clientY, px: cam.panX, py: cam.panY };
+  }
+}
+
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel.nodeId) { e.preventDefault(); deleteNode(sel.nodeId); }
@@ -1115,11 +1895,32 @@ function autoOrganize() {
   setDirty(); renderCanvas();
 }
 
-function renderAll() { renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
+// Cycles collapsed (canvas gets full width) -> normal (default working
+// width) -> wide (much more room for authoring line text) -> collapsed.
+const INSPECTOR_MODES = ['normal', 'wide', 'collapsed'];
+const INSPECTOR_MODE_ICON = { normal: '◂', wide: '«', collapsed: '▸' };
+let inspectorMode = 'normal';
+function setInspectorMode(mode) {
+  inspectorMode = mode;
+  const el = $('inspector');
+  el.classList.toggle('collapsed', mode === 'collapsed');
+  el.classList.toggle('wide', mode === 'wide');
+  $('inspToggle').textContent = INSPECTOR_MODE_ICON[mode];
+  renderInspector(); // text areas grow in wide mode — re-render to size them
+}
+function toggleInspector() {
+  const next = INSPECTOR_MODES[(INSPECTOR_MODES.indexOf(inspectorMode) + 1) % INSPECTOR_MODES.length];
+  setInspectorMode(next);
+}
+
+function renderAll() { renderCondFilters(); renderNpcList(); renderCenterPanel(); renderInspector(); updateBar(); }
 
 document.addEventListener('DOMContentLoaded', () => {
   $('loadBtn').onclick   = () => $('importModal').classList.remove('hidden');
   $('exportBtn').onclick = exportDatabase;
+  $('poolModalBtn').onclick   = openPoolModal;
+  $('poolModalClose').onclick = closePoolModal;
+  $('addPoolBtn').onclick     = addPool;
   $('importCancel').onclick = () => $('importModal').classList.add('hidden');
   $('fileBtn').onclick      = () => $('fileInput').click();
   $('fileInput').addEventListener('change', e => {
@@ -1133,7 +1934,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (j && loadDatabase(j)) { $('importModal').classList.add('hidden'); $('importPaste').value = ''; }
   };
   $('npcQ').oninput      = renderNpcList;
+  $('clearFiltersBtn').onclick = () => {
+    filters = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], playerSpecies: [], relationship: { min: null, max: null } };
+    onFiltersChanged();
+  };
+  $('inspToggle').onclick = toggleInspector;
   $('addTreeBtn').onclick = addTree;
+  $('backToTocBtn').onclick = backToToc;
   $('btnText').onclick   = () => addNode('text');
   $('btnChoice').onclick = () => addNode('choice');
   $('btnEnd').onclick    = () => addNode('end');
@@ -1148,10 +1955,15 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('mouseup',   onMouseUp);
   outer.addEventListener('wheel', onWheel, { passive: false });
   outer.addEventListener('contextmenu', e => e.preventDefault());
+  outer.addEventListener('touchstart', onTouchStart, { passive: true });
+  outer.addEventListener('touchmove',  onTouchMove,  { passive: false });
+  outer.addEventListener('touchend',   onTouchEnd,   { passive: true });
+  outer.addEventListener('touchcancel',onTouchEnd,   { passive: true });
   fetch('../../config/npcs/hobunji-starter-npc-database.json')
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(data => loadDatabase(data))
     .catch(() => {});
+  loadMapRegistry().then(() => { renderCondFilters(); renderInspector(); });
   renderAll();
 });
 </script>
