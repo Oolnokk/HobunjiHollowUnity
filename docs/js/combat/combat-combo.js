@@ -159,6 +159,7 @@
         pose: step.pose,
         holdS: step.holdS || 0,
         afflictionIds: Object.keys(effects.afflictions),
+        afflictions: effects.afflictions,
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
@@ -187,7 +188,10 @@
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : `${step.name} connects with nothing.`;
-          deps.showToast(msg, hits > 0);
+          // silent: every swing already has its own weaponSlash/creatureClawHit
+          // sfx — the generic confirm/error chime on top of that, on every
+          // single hit or miss, was redundant and noisy.
+          deps.showToast(msg, hits > 0, true);
           window.Combat.comboStreak?.registerHit(hits > 0);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },

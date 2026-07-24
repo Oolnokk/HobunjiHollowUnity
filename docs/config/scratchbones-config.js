@@ -3213,7 +3213,34 @@ window.SCRATCHBONES_CONFIG = {
         "sfxVolume": 0.92,
         "footsteps": {
           "enabled": true,
-          "volume": 0.85
+          "volume": 0.85,
+          "surfaces": {
+            "grass": {
+              "urls": [
+                "assets/audio/sfx/footsteps/sfx_grassstep_1.mp3",
+                "assets/audio/sfx/footsteps/sfx_grassstep_2.mp3",
+                "assets/audio/sfx/footsteps/sfx_grassstep_3.mp3"
+              ]
+            },
+            "gravel": {
+              "urls": [
+                "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+                "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+                "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+                "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+                "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+              ]
+            },
+            "water": {
+              "urls": [
+                "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+                "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+                "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+                "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+                "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+              ]
+            }
+          }
         },
         "bgmVolume": 0.48,
         // Played instead of the area's normal bgm/ambient cues whenever
@@ -3261,10 +3288,186 @@ window.SCRATCHBONES_CONFIG = {
           "wind1": "assets/audio/sfx/bgs/bgs_wind1.mp3",
           "wind1Volume": 0.24,
           "wind2": "assets/audio/sfx/bgs/bgs_wind2.mp3",
-          "wind2Volume": 0.18
+          "wind2Volume": 0.18,
+          "gentlerain": "assets/audio/sfx/bgs/bgs_gentlerain1.mp3",
+          "gentlerainVolume": 0.45,
+          "midrain": "assets/audio/sfx/bgs/bgs_midrain1.mp3",
+          "midrainVolume": 0.55,
+          "heavyrain": "assets/audio/sfx/bgs/bgs_heavyrain1.mp3",
+          "heavyrainVolume": 0.65
         },
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
+        },
+        // Generic object/machine/UI interaction sfx — see playObjectSfx in
+        // game.js and docs/assets/audio/sfx/README.md. Every entry names a
+        // real recording (`url`) that does NOT exist yet — a human needs to
+        // source/record/generate it, see the README — plus a placeholder
+        // that plays instead until the real file shows up in the repo:
+        // either a single generated `placeholderUrl` (committed, see
+        // scripts/generate-placeholder-sfx.js) or a `placeholderUrls` list
+        // reusing the real footstep recordings (also committed, see
+        // docs/assets/audio/sfx/footsteps/) at a different volume/pitch —
+        // a real recording standing in for a similar-enough sound beats a
+        // from-scratch synth attempt, so several material-impact cues
+        // (digging, mashing, grinding, a barrel knock) borrow gravel/water
+        // steps this way instead of having their own generated .wav.
+        "objectSfx": {
+          "enabled": true,
+          "uiClick": {
+            "url": "assets/audio/sfx/ui/sfx_ui_click.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
+            "volume": 0.35
+          },
+          "error": {
+            "url": "assets/audio/sfx/ui/sfx_ui_error.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_error.wav",
+            "volume": 0.5
+          },
+          "dig": {
+            "url": "assets/audio/sfx/farming/sfx_dig.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.95,
+            "pitch": 0.8,
+            "gainBoost": 3
+          },
+          "climbStep": {
+            "url": "assets/audio/sfx/farming/sfx_climb_step.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 0.5,
+            "gainBoost": 3
+          },
+          "harvest": {
+            "url": "assets/audio/sfx/farming/sfx_harvest.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_grassstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_grassstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_grassstep_3.mp3"
+            ],
+            "volume": 0.9,
+            "pitch": 0.95,
+            "gainBoost": 3
+          },
+          "fishCast": {
+            "url": "assets/audio/sfx/farming/sfx_fish_cast.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 0.9,
+            "pitch": 0.9,
+            "gainBoost": 3
+          },
+          "fishBite": {
+            "url": "assets/audio/sfx/farming/sfx_fish_bite.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 1,
+            "pitch": 0.85,
+            "gainBoost": 3
+          },
+          "fishMiss": {
+            "url": "assets/audio/sfx/farming/sfx_fish_miss.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 0.55,
+            "gainBoost": 3
+          },
+          "processStart": {
+            "url": "assets/audio/sfx/processing/sfx_process_start.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_start.wav",
+            "volume": 0.7
+          },
+          "processPestle": {
+            "url": "assets/audio/sfx/processing/sfx_process_pestle.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.85,
+            "pitch": 0.75
+          },
+          "processSqueezer": {
+            "url": "assets/audio/sfx/processing/sfx_process_squeezer.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 0.85
+          },
+          "processHandmill": {
+            "url": "assets/audio/sfx/processing/sfx_process_handmill.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 1.15
+          },
+          "processDryingrack": {
+            "url": "assets/audio/sfx/processing/sfx_process_dryingrack.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_dryingrack.wav",
+            "volume": 0.7
+          },
+          "processSmoker": {
+            "url": "assets/audio/sfx/processing/sfx_process_smoker.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_smoker.wav",
+            "volume": 0.7
+          },
+          "processAgingbarrel": {
+            "url": "assets/audio/sfx/processing/sfx_process_agingbarrel.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.85,
+            "pitch": 0.6
+          },
+          "processAgingvase": {
+            "url": "assets/audio/sfx/processing/sfx_process_agingvase.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_agingvase.wav",
+            "volume": 0.7
+          }
         },
         "combatSfx": {
           "enabled": true,

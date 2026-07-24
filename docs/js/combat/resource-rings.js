@@ -79,7 +79,7 @@
     return geometry;
   }
 
-  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
+  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, additive = false) {
     const geometry = makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments);
     geometry.translate(0, yOffset, 0);
     const material = new THREE.MeshBasicMaterial({
@@ -89,10 +89,65 @@
       // renderOrder (below) still controls draw order among the ring's own
       // stacked layers and against other depthTest:false objects.
       depthTest: false,
+      // MeshBasicMaterial is already unlit (ignores every scene light), but
+      // it's still fogged by default — scene.fog would otherwise wash these
+      // out toward the fog/sky color at distance or under night's darker fog
+      // tint, working against the whole point of a HUD that must always read
+      // clearly. Disabling fog is what actually makes this ring ignore every
+      // ambient/lighting influence in the scene, not just direct light.
+      fog: false,
+      // Additive lets the halo layer (see makeGlowArcMesh) spread its
+      // saturated color outward as a genuine glow instead of just alpha-
+      // blending flat color over flat color — same trick this file's
+      // sibling combat-cone-trail uses for its glowing swipe (see game.js).
+      ...(additive ? { blending: THREE.AdditiveBlending } : {}),
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.renderOrder = Math.round(yOffset * 100000);
     return mesh;
+  }
+
+  // Pushes `hex` to near-maximum HSL saturation (and clamps lightness into
+  // a mid-bright band) so the fill reads as a vivid neon hue instead of
+  // whatever pastel/muddy tone the source color happened to be — "neon"
+  // means vivid and saturated, not brightened toward white. Colors that are
+  // already essentially gray or black (EXHAUSTED_COLOR, windedStamina) are
+  // left completely alone: they have no real hue to push toward, and
+  // forcing one in would turn "drained"/"winded" some arbitrary random-
+  // looking color instead of reading as gray/dark on purpose.
+  const NEON_MIN_SOURCE_SATURATION = 0.12;
+  const NEON_MIN_SOURCE_LIGHTNESS = 0.08;
+  const NEON_SATURATION = 1;
+  const NEON_MIN_LIGHTNESS = 0.42;
+  const NEON_MAX_LIGHTNESS = 0.6;
+  function neonizeColor(hex) {
+    const hsl = {};
+    new THREE.Color(hex).getHSL(hsl);
+    if (hsl.s < NEON_MIN_SOURCE_SATURATION || hsl.l < NEON_MIN_SOURCE_LIGHTNESS) return hex;
+    const l = clamp(hsl.l, NEON_MIN_LIGHTNESS, NEON_MAX_LIGHTNESS);
+    return new THREE.Color().setHSL(hsl.h, NEON_SATURATION, l).getHex();
+  }
+
+  // A resource-color arc segment (normal fill or an affliction's claimed
+  // segment) rendered as two stacked layers: the crisp, fully-saturated
+  // fill itself, plus a wider additive halo bled outward past its own
+  // edges for a spreading glow. No brightened "hot core" on top anymore —
+  // that additive layer clipped individual channels toward 1.0 unevenly
+  // (whichever channel was already high clipped first), which reads as the
+  // color washing out toward white rather than getting more vivid. Pushing
+  // the fill itself to full saturation (see neonizeColor) up front, and
+  // letting the halo spread that same saturated hue outward instead of
+  // brightening it, is what actually reads as neon without any white in it.
+  const GLOW_HALO_PAD_FRAC = 0.34; // fraction of the bar's own radial width the halo bleeds past each edge — a real spreading glow, not a thin fringe
+  const GLOW_HALO_OPACITY_MUL = 0.75;
+  function makeGlowArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
+    const group = new THREE.Group();
+    const width = outerRadius - innerRadius;
+    const pad = width * GLOW_HALO_PAD_FRAC;
+    const neon = neonizeColor(color);
+    group.add(makeArcMesh(innerRadius - pad, outerRadius + pad, startDeg, endDeg, neon, opacity * GLOW_HALO_OPACITY_MUL, yOffset - 0.0006, segments, true));
+    group.add(makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, neon, opacity, yOffset, segments));
+    return group;
   }
 
   function makeDashedArc(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset) {
@@ -145,7 +200,7 @@
     if (isExhaustedStamina) {
       if (displayFraction > 0) {
         const fillEnd = spec.start + (spec.end - spec.start) * displayFraction;
-        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + .004, 34));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start, fillEnd, spec.color, .95, spec.y + .004, 34));
         boundaryPoints.add(displayFraction * max);
       }
       group.add(makeDashedArc(inner + radius * .04, outer - radius * .04, spec.start, spec.end, 0xffffff, .34, spec.y + .009));
@@ -180,7 +235,7 @@
       const normalPieces = max ? subtractRanges([{ start: 0, end: clamp(current, 0, max) }], claimed) : [];
       for (const p of normalPieces) {
         const sf = p.start / max, ef = p.end / max;
-        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + .004, 34));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, spec.color, .95, spec.y + .004, 34));
         boundaryPoints.add(p.start); boundaryPoints.add(p.end);
       }
 
@@ -188,7 +243,7 @@
         const def = RS.AFFLICTIONS[seg.id];
         const color = AFFLICTION_COLORS[seg.id] ?? 0xffffff;
         const sf = seg.start / max, ef = seg.end / max;
-        group.add(makeArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + .006 + def.priority * .00001, 24));
+        group.add(makeGlowArcMesh(inner + radius * .02, outer - radius * .02, spec.start + (spec.end - spec.start) * sf, spec.start + (spec.end - spec.start) * ef, color, .95, spec.y + .006 + def.priority * .00001, 24));
         boundaryPoints.add(seg.start); boundaryPoints.add(seg.end);
       }
 
@@ -267,17 +322,31 @@
   }
 
   // Black outline around the whole ring's rim (inner+outer edge, spanning
-  // the full arc even across empty/unfilled space) plus a thin radial line
-  // at every boundary between two differently-colored segments, so the
-  // whole bar reads as cleanly divided pieces rather than blended color.
+  // the full arc even across empty/unfilled space) plus a radial line at
+  // every boundary between two differently-colored segments — including the
+  // current-resource edge (current/max and 0 are always in boundaryPoints,
+  // see buildGroundResourceArc) and every affliction-to-affliction or
+  // affliction-to-normal seam — so the whole bar reads as cleanly divided,
+  // thickly bordered pieces rather than blended color. Both thicknesses
+  // deliberately run heavy (2.5x/2.4x the original) so the border stays
+  // legible against the neon glow fill (see makeGlowArcMesh) instead of
+  // getting lost in its bloom.
   function addSegmentOutlines(group, spec, radius, max, boundaryPoints) {
     const inner = radius * spec.innerMul, outer = radius * spec.outerMul;
-    const rim = radius * .02;
+    const rim = radius * .05;
     const outlineY = spec.y + .05;
-    group.add(makeArcMesh(inner - rim, inner, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
-    group.add(makeArcMesh(outer, outer + rim, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
+    // The colored fill itself is inset from inner/outer by radius*.02 (see
+    // buildGroundResourceArc's "inner + radius*.02"/"outer - radius*.02") —
+    // stopping the rim exactly at inner/outer left that inset strip as a
+    // bare, untouched sliver of background between the black border and
+    // where the color actually starts. Overlapping the rim past inner/outer
+    // by a bit more than that inset closes the gap with real paint instead
+    // of relying on the glow halo to visually paper over it.
+    const fillOverlap = radius * .03;
+    group.add(makeArcMesh(inner - rim, inner + fillOverlap, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
+    group.add(makeArcMesh(outer - fillOverlap, outer + rim, spec.start, spec.end, OUTLINE_COLOR, .95, outlineY, 36));
 
-    const halfWidthDeg = 1.1;
+    const halfWidthDeg = 2.6;
     for (const pt of boundaryPoints) {
       const frac = max ? clamp(pt / max, 0, 1) : 0;
       const angle = spec.start + (spec.end - spec.start) * frac;
@@ -423,5 +492,10 @@
     // reuse the exact same per-affliction color the resource bars themselves
     // use, instead of keeping a second copy of this mapping in sync by hand.
     AFFLICTION_COLORS,
+    // Exposed so other affliction-colored effects (game.js's lunge trail and
+    // weapon cone trail) get the same vivid-not-white neon treatment as the
+    // resource rings instead of using AFFLICTION_COLORS' raw, often-muddy
+    // source tone directly.
+    neonizeColor,
   };
 })();

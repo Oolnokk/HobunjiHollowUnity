@@ -266,11 +266,24 @@
       // ── Legend + old legend toggle removed — handled by menu now
       // ── Toast ──────────────────────────────────────────────
       let _toastTimer = null;
-      function showToast(msg, ok = true) {
+      // `silent` skips the "can't do that" error chime while still showing
+      // the visual toast — used by per-swing combat hit/miss results (combo/
+      // quick attacks/Charged Breaker/basic weapon tap), which fire on
+      // *every* attack and already have their own dedicated combat sfx
+      // (weaponSlash/creatureClawHit).
+      //
+      // Deliberately no sound on ok===true here: a ding on every successful
+      // action (dig, till, plant, harvest, process...) was just noise that
+      // meant "you pressed something and it worked" — no actual information
+      // beyond what the player already knows from doing the thing. The
+      // error chime survives because a *blocked* action is the one case
+      // that's actually worth a distinct "that didn't work" cue.
+      function showToast(msg, ok = true, silent = false) {
         toastEl.textContent = msg;
         toastEl.className = 'show ' + (ok ? 'ok' : 'fail');
         clearTimeout(_toastTimer);
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
+        if (!silent && !ok) playObjectSfx(objectSfxConfig().error);
       }
 
       function gameAudioConfig() {
@@ -1132,33 +1145,32 @@
       };
 
       // ── Footstep SFX ──────────────────────────────────────────────────
-      // Placeholder footfalls, keyed by a coarse "surface" rather than raw
-      // TileType — several tile types share a footstep (e.g. grass and weeds
-      // both sound like grass underfoot). Interior floors always map to
-      // 'wood' regardless of the (irrelevant) tile type beneath them.
+      // Real recordings (docs/assets/audio/sfx/footsteps), keyed by a coarse
+      // "surface" rather than raw TileType — several tile types share a
+      // footstep (e.g. grass and weeds both sound like grass underfoot).
+      // Interior floors always map to 'gravel' regardless of the
+      // (irrelevant) tile type beneath them, until interiors get their own
+      // recorded surface.
       //
-      // Every surface reuses the exact same oscillator+noise voice (the only
-      // one of our synth attempts that reads as a footstep rather than a
-      // sound effect) — they're differentiated purely by post effects
-      // (filter shape/cutoff/Q, pitch, decay length), not a different recipe.
-      // volume raised from its original 0.26 — at that gain, stacked with
-      // the other multipliers below (baseVolume/sfxVolume/falloff), footsteps
-      // were only barely audible even standing right next to their source.
+      // Each surface's clip list normally comes from config
+      // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
+      // FOOTSTEP_POST_FX below only carries the oscillator+noise synth
+      // fallback tuning (filter shape/cutoff/Q, pitch, decay length) used
+      // when no urls are configured for a surface.
       const FOOTSTEP_BASE = Object.freeze({
         waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
       });
 
-      // Swap in real recordings later by setting `url` on a surface's post-fx
-      // entry, same convention as _playNpcDialogueLetterSfx's cfg.url.
       const FOOTSTEP_POST_FX = Object.freeze({
-        grass: {},
-        dirt:  { filterFreqMul: 2.4, filterQ: 1.2, durationMul: 1.15 },
-        path:  { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6,  pitchMul: 1.2,  volumeMul: 0.9 },
-        mud:   { filterFreqMul: 1.5, filterQ: 0.9, durationMul: 1.8,  pitchMul: 0.7,  volumeMul: 1.1 },
-        water: { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3,  pitchMul: 1.7,  volumeMul: 1.0, filterType: 'highpass' },
-        rock:  { filterFreqMul: 5.2, filterQ: 2.8, durationMul: 0.5,  pitchMul: 1.35, volumeMul: 0.95 },
-        wood:  { filterFreqMul: 3.6, filterQ: 1.8, durationMul: 0.75, pitchMul: 1.1,  volumeMul: 0.9 },
+        grass:  {},
+        gravel: { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6, pitchMul: 1.2, volumeMul: 0.9 },
+        water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
       });
+
+      // How much of a ground footstep's own volume a simultaneous waterstep
+      // blends in at when the tile is fully flooded (tile.water === MAX_WATER)
+      // — scales linearly down to 0 at tile.water === 0. See playFootstepSfx.
+      const FOOTSTEP_WATER_BLEND_MAX = 0.8;
 
       // Distance an entity must travel between alternating footfalls, in world px
       // (TILE-scaled so the same constant works for player/creature px coords
@@ -1181,30 +1193,40 @@
       // silent even standing right next to the player.
       const FOOTSTEP_QUIET_SCALE = 0.7;
 
+      // Grass = grasstep. Path (and everything else that's hard-packed/
+      // exposed ground rather than turf — tilled/raised soil, dug trenches,
+      // rock, shrub, ramps) = gravelstep. Anything that actually holds
+      // standing water (river/stream/waterfall/paddy) = waterstep — this is
+      // "swimming" territory, not a moisture blend (see playFootstepSfx for
+      // the blend applied to grass/gravel ground tiles instead).
       function footstepSurfaceKey(area, type) {
-        if (area === 'interior' || _isBuildingArea(area)) return 'wood';
+        if (area === 'interior' || _isBuildingArea(area)) return 'gravel'; // temporary — no dedicated interior surface yet
         switch (type) {
           case TileType.PADDY:
           case TileType.RIVER:
-          case TileType.STREAM:  return 'water';
+          case TileType.STREAM:
+          case TileType.WATERFALL: return 'water';
+          case TileType.PATH:
+          case TileType.RAMP:
           case TileType.TILLED:
-          case TileType.RAISED:  return 'dirt';
-          case TileType.PATH:    return 'path';
-          case TileType.TRENCH:  return 'mud';
+          case TileType.RAISED:
+          case TileType.TRENCH:
           case TileType.ROCK:
-          case TileType.SHRUB:   return 'rock';
-          default:               return 'grass'; // GRASS, WEEDS
+          case TileType.SHRUB:     return 'gravel';
+          default:                 return 'grass'; // GRASS, WEEDS
         }
       }
 
-      // Returns the TileType at a world-px coordinate within `area`'s own grid
-      // (not necessarily the player's currentArea — used for NPCs/creatures
-      // walking around in areas the player isn't currently viewing).
-      function footstepTileTypeAt(area, wx, wy, grid) {
+      // Returns the tile object at a world-px coordinate within `area`'s own
+      // grid (not necessarily the player's currentArea — used for NPCs/
+      // creatures walking around in areas the player isn't currently
+      // viewing). Callers read both .type (surface) and .water (moisture
+      // blend) off the result.
+      function footstepTileAt(area, wx, wy, grid) {
         const g = grid || npcGridForArea(area);
         if (!g) return null;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
-        return g[row]?.[col]?.type ?? null;
+        return g[row]?.[col] ?? null;
       }
 
       // Advances a per-entity footstep stride accumulator; returns true (and
@@ -1219,27 +1241,54 @@
         return true;
       }
 
-      // `pan` is -1 (full left) .. 1 (full right); leave at 0 for the player
-      // (the listener) and companions (always close, not worth panning).
-      function playFootstepSfx(area, type, volumeScale = 1, pan = 0) {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) return;
-        const footstepCfg = audioCfg.footsteps || {};
-        if (footstepCfg.enabled === false) return;
-        const surfaceKey = footstepSurfaceKey(area, type);
-        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
-        const base = FOOTSTEP_BASE;
-        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
-        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
-          * Math.max(0, volumeScale) * Math.max(0, Number(base.volume) || 0.26)
-          * Math.max(0, Number(postFx.volumeMul) || 1);
-        if (volume <= 0.002) return;
-
-        if (postFx.url) {
-          const snd = new Audio(postFx.url);
-          snd.volume = Math.min(1, volume);
-          snd.playbackRate = 0.92 + Math.random() * 0.16;
+      // Routes a real footstep clip through the shared footstep AudioContext
+      // with a dulling lowpass instead of just setting .volume, so a "heavy"
+      // landing thud actually sounds tonally heavier (less high-end clack),
+      // not just louder — used by playFootstepSurface's heavy branch.
+      function playHeavyFilteredClip(snd, volume) {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) throw new Error('no AudioContext');
+          const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          const source = ctx.createMediaElementSource(snd);
+          const lpf = ctx.createBiquadFilter();
+          lpf.type = 'lowpass';
+          lpf.frequency.value = 900; // dulls the clip's high end into a thud instead of a clack
+          lpf.Q.value = 0.7;
+          const gain = ctx.createGain();
+          gain.gain.value = Math.min(1, volume * 1.15); // filtering loses perceived loudness; compensate
+          source.connect(lpf).connect(gain).connect(ctx.destination);
           snd.play().catch(() => {});
+        } catch (e) {
+          snd.volume = volume;
+          snd.play().catch(() => {});
+        }
+      }
+
+      // Plays one surface's footfall at `volume` — a random pick from that
+      // surface's configured clip list (audio.footsteps.surfaces[key].urls)
+      // when one exists, else the oscillator+noise synth fallback tuned by
+      // FOOTSTEP_POST_FX. `pan` only affects the synth fallback (a plain
+      // <audio> element, like every other one-shot sfx in this file, doesn't
+      // get routed through a StereoPannerNode).
+      //
+      // `heavy` is for a dodge/attack-lunge landing thud (see
+      // playHeavyLandingSfx): pitches noticeably down and, for real clips,
+      // runs through playHeavyFilteredClip's dulling lowpass so it reads as
+      // hitting the ground hard rather than an ordinary stride.
+      function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
+        if (volume <= 0.002) return;
+        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
+        const urls = postFx.urls || (postFx.url ? [postFx.url] : null);
+        const finalVolume = Math.min(1, volume * Math.max(0, Number(postFx.volumeMul) || 1));
+
+        if (urls && urls.length) {
+          const url = urls[Math.floor(Math.random() * urls.length)];
+          const snd = new Audio(url);
+          snd.playbackRate = heavy ? (0.6 + Math.random() * 0.1) : (0.92 + Math.random() * 0.16);
+          if (heavy) playHeavyFilteredClip(snd, finalVolume);
+          else { snd.volume = finalVolume; snd.play().catch(() => {}); }
           return;
         }
 
@@ -1248,8 +1297,9 @@
         const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
         if (ctx.state === 'suspended') ctx.resume().catch(() => {});
         const now = ctx.currentTime;
-        const pitchMul = Number(postFx.pitchMul) || 1;
-        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1));
+        const base = FOOTSTEP_BASE;
+        const pitchMul = (Number(postFx.pitchMul) || 1) * (heavy ? 0.55 : 1);
+        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1) * (heavy ? 2.2 : 1));
         const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
         const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
         const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
@@ -1266,7 +1316,7 @@
           const oscGain = ctx.createGain();
           osc.type = base.waveform || 'triangle';
           osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * variance;
-          oscGain.gain.setValueAtTime(volume * (1 - noiseMix), now);
+          oscGain.gain.setValueAtTime(finalVolume * (1 - noiseMix), now);
           oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
           osc.connect(oscGain).connect(outNode);
           osc.start(now);
@@ -1282,15 +1332,61 @@
           noise.buffer = buffer;
           const filter = ctx.createBiquadFilter();
           filter.type = postFx.filterType || 'bandpass';
-          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2);
+          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2) * (heavy ? 0.45 : 1);
           filter.Q.value = Number(postFx.filterQ) || 1.6;
           const noiseGain = ctx.createGain();
-          noiseGain.gain.setValueAtTime(volume * noiseMix, now);
+          noiseGain.gain.setValueAtTime(finalVolume * noiseMix, now);
           noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
           noise.connect(filter).connect(noiseGain).connect(outNode);
           noise.start(now);
           noise.stop(now + durationS);
         }
+      }
+
+      // `tile` is the grid tile the footstep lands on (see footstepTileAt) —
+      // null for NPCs/creatures whose area has no grid (shouldn't normally
+      // happen, just defends against it). `pan` is -1 (full left) .. 1 (full
+      // right); leave at 0 for the player (the listener) and companions
+      // (always close, not worth panning). `opts.heavy` — see
+      // playHeavyLandingSfx — plays both layers through playFootstepSurface's
+      // heavy (louder, pitched-down/filtered) mode instead of a plain stride.
+      //
+      // Ground surfaces (grass/gravel) layer in a second, simultaneous
+      // waterstep clip scaled by the tile's moisture (tile.water, 0..
+      // MAX_WATER) — a bone-dry tile blends none in, a fully flooded one
+      // blends it in at FOOTSTEP_WATER_BLEND_MAX (80%) of the footstep's own
+      // volume. Actual water tiles (river/stream/paddy/waterfall) already
+      // resolve straight to the 'water' surface via footstepSurfaceKey and
+      // skip this blend — they're pure waterstep, not a blend target.
+      function playFootstepSfx(area, tile, volumeScale = 1, pan = 0, opts = {}) {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false) return;
+        const footstepCfg = audioCfg.footsteps || {};
+        if (footstepCfg.enabled === false) return;
+        const heavy = !!opts.heavy;
+        const surfaceKey = footstepSurfaceKey(area, tile?.type ?? null);
+        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
+        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
+          * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
+        playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
+
+        if (surfaceKey !== 'water') {
+          const wetFraction = clamp((Number(tile?.water) || 0) / MAX_WATER, 0, 1);
+          playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
+        }
+      }
+
+      // Heavy "landing thud" used when a dodge or attack lunge comes to a
+      // stop — same surface/moisture-blend as an ordinary footstep (see
+      // playFootstepSfx) but louder and run through playFootstepSurface's
+      // heavy mode so it reads as hitting the ground hard after a leap,
+      // not just another stride in the cadence. Player-only: dodges and
+      // combat lunges are a player.dodging/player.lunging-only mechanic
+      // (see performDodge/beginCombatLunge) — no pan, matching the player's
+      // own unpanned regular footsteps.
+      const HEAVY_LANDING_VOLUME_MUL = 2.0;
+      function playHeavyLandingSfx(area, tile) {
+        playFootstepSfx(area, tile, HEAVY_LANDING_VOLUME_MUL, 0, { heavy: true });
       }
 
       function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
@@ -1310,6 +1406,89 @@
         const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
         snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
         snd.play().catch(() => {});
+      }
+
+      function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
+
+      // Generic one-shot player for object/machine/UI interaction sfx (see
+      // audio.objectSfx in scratchbones-config.js and
+      // docs/assets/audio/sfx/README.md) — like playOneShotSfx, but
+      // fallback-aware: every cfgEntry names a real recording (cfgEntry.url,
+      // not committed yet — a human needs to source it) *and* a placeholder
+      // that's played instead whenever the real file is missing/fails to
+      // load — either a single generated cfgEntry.placeholderUrl (see
+      // scripts/generate-placeholder-sfx.js), or a cfgEntry.placeholderUrls
+      // array to pick a random one from (several processing sfx reuse the
+      // real grasstep/gravelstep/waterstep footstep recordings this way,
+      // pitched/volumed for the moment — a real recording doing double duty
+      // reads better than a from-scratch synth attempt). cfgEntry.pitch is
+      // an optional baseline playback-rate multiplier on top of the
+      // `pitch` param, e.g. for pitching a footstep-derived placeholder
+      // down into something heavier. Failures are remembered via the same
+      // _audioFailedUrls/markAudioUrlFailed/audioUrlFailed bookkeeping the
+      // bgm system already uses, so later calls for the same cue go
+      // straight to the placeholder instead of re-attempting (and
+      // re-404ing) the missing real file every time.
+      // A plain <audio>.volume tops out at 1.0 (its natural recorded
+      // loudness) no matter what — there's no way to make a quiet source
+      // clip louder than that through the element alone. cfgEntry.gainBoost
+      // (a multiplier > 1, e.g. 3 for "300% volume") routes playback
+      // through the shared footstep AudioContext's GainNode instead, whose
+      // gain can genuinely exceed 1.0 and amplify the source — same trick
+      // playHeavyFilteredClip uses for a heavy landing thud, minus the
+      // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
+      // is unavailable or gainBoost isn't set.
+      function playObjectAudioElement(snd, volume, gainBoost) {
+        if (!(gainBoost > 1)) {
+          snd.volume = Math.min(1, volume);
+          snd.play().catch(() => {});
+          return;
+        }
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) throw new Error('no AudioContext');
+          const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          const source = ctx.createMediaElementSource(snd);
+          const gain = ctx.createGain();
+          gain.gain.value = Math.max(0, volume * gainBoost);
+          source.connect(gain).connect(ctx.destination);
+          snd.play().catch(() => {});
+        } catch (e) {
+          snd.volume = Math.min(1, volume);
+          snd.play().catch(() => {});
+        }
+      }
+
+      function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false || !cfgEntry) return;
+        if (objectSfxConfig().enabled === false) return;
+        const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+          * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
+        if (volume <= 0.002) return;
+        const gainBoost = Number(cfgEntry.gainBoost) || 1;
+        const pickPlaceholder = () => (cfgEntry.placeholderUrls?.length)
+          ? cfgEntry.placeholderUrls[Math.floor(Math.random() * cfgEntry.placeholderUrls.length)]
+          : cfgEntry.placeholderUrl;
+        const hasPlaceholder = !!(cfgEntry.placeholderUrl || cfgEntry.placeholderUrls?.length);
+        const preferReal = cfgEntry.url && !audioUrlFailed(cfgEntry.url);
+        const url = preferReal ? cfgEntry.url : pickPlaceholder();
+        if (!url) return;
+        const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
+        const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
+        const snd = new Audio(url);
+        snd.playbackRate = rate;
+        if (preferReal && hasPlaceholder) {
+          snd.addEventListener('error', () => {
+            if (!isRealMediaError(snd)) return;
+            markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
+            const fallback = new Audio(pickPlaceholder());
+            fallback.playbackRate = rate;
+            playObjectAudioElement(fallback, volume, gainBoost);
+          }, { once: true });
+        }
+        playObjectAudioElement(snd, volume, gainBoost);
       }
 
       // Distance falloff for a creature-originated combat sound (bark/claw
@@ -2358,6 +2537,17 @@
         },
       };
 
+      // furnitureKey -> audio.objectSfx key for that machine's distinctive
+      // "product's ready" cue (see makeProcessingFurniture's onAction) —
+      // layered on top of showToast's generic confirm chime, not instead
+      // of it, so a machine finishing still reads as a machine, not just
+      // another ding.
+      const PROCESSING_SFX_KEY = {
+        pestle: 'processPestle', squeezer: 'processSqueezer', handMill: 'processHandmill',
+        dryingRack: 'processDryingrack', smoker: 'processSmoker',
+        agingBarrel: 'processAgingbarrel', agingVase: 'processAgingvase',
+      };
+
       const PROCESSING_FURNITURE_CATALOG = Object.values(PROCESSING_FURNITURE_DEFS).map(def => ({
         key: def.itemKey,
         icon: def.icon,
@@ -3027,6 +3217,7 @@
               job = null;
               outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
               saveFarmLayout();
+              playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
             }
             const active = getActiveInventoryItem();
@@ -3039,9 +3230,11 @@
             if (isAging) {
               job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
               saveFarmLayout();
+              playObjectSfx(objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
             }
             outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+            playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
           reset() {
@@ -5095,12 +5288,12 @@
         // Linear, not squared — squared falloff made anything past ~30% of
         // earshot drop to near-silence, which was most of the usable range.
         const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-        const type = footstepTileTypeAt(c.areaId, c.x, c.y, c.areaGrid);
+        const tile = footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
         // Whistled companions stay quiet (like the player) and unpanned —
         // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { playFootstepSfx(c.areaId, type, falloff * FOOTSTEP_QUIET_SCALE); return; }
+        if (c.isCompanion) { playFootstepSfx(c.areaId, tile, falloff * FOOTSTEP_QUIET_SCALE); return; }
         const pan = Math.max(-1, Math.min(1, (c.x - player.x) / FOOTSTEP_PAN_RANGE_PX));
-        playFootstepSfx(c.areaId, type, falloff, pan);
+        playFootstepSfx(c.areaId, tile, falloff, pan);
       }
 
       // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
@@ -8331,14 +8524,12 @@
       }
 
       function unlockGameAudio(reason = 'user gesture') {
-        // Resuming suspended AudioContexts must happen on every gesture, not just
-        // the first: _musicAudioCtx/_rainAudioCtx are created lazily (the first
-        // time music or rain actually tries to play), which is often well after
-        // the player's first click/tap — by which point a one-shot unlock would
-        // already be spent and the newly-created context would stay suspended
-        // (silently) forever.
-        const rainCtx = window._rainAudioCtx;
-        if (rainCtx?.state === 'suspended') rainCtx.resume().catch(err => audioDebug('rain audio resume failed: ' + (err?.name || err), 'rain-resume-fail', 0));
+        // Resuming a suspended AudioContext must happen on every gesture, not just
+        // the first: _musicAudioCtx is created lazily (the first time music
+        // actually tries to play), which is often well after the player's
+        // first click/tap — by which point a one-shot unlock would already be
+        // spent and the newly-created context would stay suspended (silently)
+        // forever.
         if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
         if (!_gameAudioUnlocked) {
           _gameAudioUnlocked = true;
@@ -8363,6 +8554,21 @@
       document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
       document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
       document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
+
+      // Generic UI click tick — delegated (one listener, not one per
+      // button), scoped to buttons inside #menuPanel (the tabbed
+      // Inventory/Calendar/Map/Farm/Stable/.../Settings menu shell — see
+      // index.html's mp-tab/mp-pane markup). Deliberately does NOT cover
+      // the in-game action bar, world-object interaction buttons, or NPC
+      // dialogue — those are gameplay inputs, not menu navigation, and a
+      // tick on every single one of them (dig, till, plant, talk...) was
+      // just noise that meant nothing beyond "you pressed something",
+      // which showToast's error chime already covers for the one case
+      // that actually carries information (it didn't work).
+      document.addEventListener('pointerdown', (e) => {
+        const btn = e.target?.closest?.('button');
+        if (btn?.closest('#menuPanel')) playObjectSfx(objectSfxConfig().uiClick);
+      }, { capture: true });
 
       async function loadAudioCueIndexes() {
         try {
@@ -10994,8 +11200,8 @@
         // earshot drop to near-silence, which was most of the usable range.
         const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
             const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
-            const type = footstepTileTypeAt(this.area, wx, wy, npcGridForArea(this.area));
-            playFootstepSfx(this.area, type, falloff, pan);
+            const tile = footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
+            playFootstepSfx(this.area, tile, falloff, pan);
           },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
@@ -12915,6 +13121,7 @@
             const persisted = _zoneReagentPersist.get(mapId);
             if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
+            playObjectSfx(objectSfxConfig().harvest);
             return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
           },
         };
@@ -13177,6 +13384,7 @@
             const persisted = _zoneBerryPersist.get(mapId);
             if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
+            playObjectSfx(objectSfxConfig().harvest);
             return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
           },
         };
@@ -16619,8 +16827,8 @@
       function tickPlayerFootsteps(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
         if (!_footstepAdvance(player, dist, FOOTSTEP_PLAYER_STRIDE_PX)) return;
-        const type = footstepTileTypeAt(currentArea, player.x, player.y, getActiveGrid());
-        playFootstepSfx(currentArea, type, 1);
+        const tile = footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
+        playFootstepSfx(currentArea, tile, 1);
       }
 
       function updateMovement(dt) {
@@ -16647,6 +16855,7 @@
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
+            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
@@ -16677,7 +16886,9 @@
           if (isHostileInLungeCone(player.lungeHitTest)) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
+            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
             tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+            tickLungeTrail(_fsPrevX, _fsPrevY);
             return;
           }
           // Gently re-aim the lunge toward the locked target's *current*
@@ -16713,8 +16924,13 @@
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
-          if (player.lungeT <= 0) { player.lunging = false; player.lungeHopCurrent = 0; }
+          if (player.lungeT <= 0) {
+            player.lunging = false;
+            player.lungeHopCurrent = 0;
+            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+          }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          tickLungeTrail(_fsPrevX, _fsPrevY);
           return;
         }
 
@@ -17910,6 +18126,7 @@
         tile.cropAge = 0;
         tile.cropReady = false;
         tile.stress = '';
+        playObjectSfx(objectSfxConfig().harvest);
         return { ok: true, message: msg };
       }
 
@@ -18216,6 +18433,18 @@
         }
       }
 
+      // Looks up an affliction's color and pushes it through
+      // ResourceRings.neonizeColor — the same vivid-not-white saturation
+      // boost the resource rings use (see resource-rings.js) — so the
+      // combat cone trail and lunge trail read as the same neon palette
+      // instead of AFFLICTION_COLORS' raw, often muted/muddy source tone.
+      // Falls back to the raw color if ResourceRings hasn't loaded.
+      function neonAfflictionColor(id) {
+        const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id];
+        if (raw == null) return null;
+        return window.ResourceRings?.neonizeColor ? window.ResourceRings.neonizeColor(raw) : raw;
+      }
+
       // Combat swing trail — real 3D ribbon meshes (not a flat canvas
       // overlay decal) tracing the outer edge of the attack's own hit cone
       // (rangePx/halfConeRad/angle, captured in combatSwingCone by
@@ -18336,7 +18565,7 @@
           const mesh = ensureConeTrailLaneMesh(lane);
           if (lane >= laneCount) { mesh.visible = false; continue; }
           const colorNum = ids.length
-            ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
+            ? (neonAfflictionColor(ids[lane]) ?? 0xffffff)
             : 0xffffff;
           const cr = ((colorNum >> 16) & 0xff) / 255;
           const cg = ((colorNum >> 8) & 0xff) / 255;
@@ -18365,6 +18594,143 @@
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
           if (mesh.parent !== parent) parent.add(mesh);
+        }
+      }
+
+      // Attack-lunge movement trail — a series of flat single-color ring
+      // stamps dropped along the ground path an attack's lunge (see
+      // beginCombatLunge/tickLungeTrail, or a creature's Pounce leap —
+      // tickCreatureLungeTrail below) actually travels, distinct from
+      // updateCombatConeTrail's weapon-swipe ribbon above: this one traces
+      // the mover's own footprints through the dash, not the weapon/attack's
+      // hit cone.
+      //
+      // Each individual stamp is a single affliction's color, not a nested
+      // multi-color "onion ring" — with several afflictions in play, which
+      // color any given stamp gets is picked at random, weighted by that
+      // affliction's own per-hit multiplier (see pickWeightedAfflictionId),
+      // so it's the *sequence* of stamps along the trail — how many of each
+      // color show up, in what rough proportion — that reads as "this
+      // attack applies mostly bleed with a little poison mixed in", rather
+      // than trying to cram every affliction into one stamp's own rings.
+      // An attack with no afflictions to give it (a fresh, unleveled player
+      // attack; a creature whose attackTag maps to none) leaves no trail at
+      // all — there's nothing to color it by.
+      const LUNGE_TRAIL_STAMP_SPACING_PX = TILE * 0.4;
+      const LUNGE_TRAIL_OUTER_RADIUS = 0.46; // world units (tile-space)
+      const LUNGE_TRAIL_RING_THICKNESS = 0.14;
+      const LUNGE_TRAIL_LIFETIME_S = 0.55;
+      const LUNGE_TRAIL_BASE_OPACITY = 0.8;
+      const LUNGE_TRAIL_GROW_SCALE = 0.35; // how much each stamp expands over its lifetime as it fades
+      const _lungeTrailStamps = [];
+
+      // Picks one id from `ids`, weighted by its multiplier in `muls` — an
+      // affliction with a 0.35 mul gets picked roughly 3.5x as often as one
+      // with 0.1, which is what lets the trail's own color mix communicate
+      // "applies mostly X" without needing every color crammed into a
+      // single stamp. Falls back to uniform-random if every weight is 0.
+      function pickWeightedAfflictionId(ids, muls) {
+        if (ids.length === 1) return ids[0];
+        let total = 0;
+        for (const id of ids) total += Math.max(0, Number(muls?.[id]) || 0);
+        if (total <= 0) return ids[Math.floor(Math.random() * ids.length)];
+        let r = Math.random() * total;
+        for (const id of ids) {
+          const w = Math.max(0, Number(muls?.[id]) || 0);
+          if (r < w) return id;
+          r -= w;
+        }
+        return ids[ids.length - 1];
+      }
+
+      // areaId/grid/sceneObj let this same stamp-builder serve both the
+      // player (currentArea/getActiveGrid()/getActiveScene()) and a
+      // creature (c.areaId/c.areaGrid/c.scene||scene — see
+      // tickCreatureLungeTrail) without either caller needing to know how
+      // the other resolves its own area context.
+      function spawnLungeTrailStamp(wx, wy, areaId, grid, sceneObj, ids, muls) {
+        if (!ids || !ids.length) return; // nothing to color this lunge by — no trail
+        if (!sceneObj) return;
+        const chosenId = pickWeightedAfflictionId(ids, muls);
+        const color = neonAfflictionColor(chosenId) ?? 0xffffff;
+
+        const tile = footstepTileAt(areaId, wx, wy, grid);
+        const y = tileSurfaceYInArea(tile, areaId) + characterGroundShadowSurfaceOffset() + 0.02;
+        const group = new THREE.Group();
+        group.position.set(wx / TILE, y, wy / TILE);
+        group.rotation.x = -Math.PI / 2; // lie flat on the ground, same convention as every other ground-projected ring in this file
+
+        const innerR = LUNGE_TRAIL_OUTER_RADIUS - LUNGE_TRAIL_RING_THICKNESS;
+        const outerR = LUNGE_TRAIL_OUTER_RADIUS;
+
+        const geo = new THREE.RingGeometry(innerR, outerR, 24);
+        const mat = new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: LUNGE_TRAIL_BASE_OPACITY, depthWrite: false,
+          side: THREE.DoubleSide,
+          // Additive, same reasoning as the combat cone trail above — reads
+          // as a clear glowing footprint regardless of what's underneath.
+          blending: THREE.AdditiveBlending,
+          fog: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData.baseOpacity = LUNGE_TRAIL_BASE_OPACITY;
+        group.add(mesh);
+
+        sceneObj.add(group);
+        _lungeTrailStamps.push({ group, scene: sceneObj, age: 0 });
+      }
+
+      // Per-entity stride accumulator (see _footstepAdvance) tracking how far
+      // `entity` has traveled since the last dropped stamp — kept on the
+      // entity itself under its own key (not player.footstepAccum/
+      // c.footstepAccum, the ordinary footstep cadence, which keeps ticking
+      // during a lunge/leap too) so the two don't fight over the same
+      // counter. Shared by both tickLungeTrail (player) and
+      // tickCreatureLungeTrail (Pounce) below.
+      function tickLungeTrailForEntity(entity, distPx, ids, muls, areaId, grid, sceneObj) {
+        if (!ids || !ids.length) return;
+        if (!entity._lungeTrailStride) entity._lungeTrailStride = { footstepAccum: 0, footstepFoot: false };
+        if (!_footstepAdvance(entity._lungeTrailStride, distPx, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
+        spawnLungeTrailStamp(entity.x, entity.y, areaId, grid, sceneObj, ids, muls);
+      }
+
+      function tickLungeTrail(prevX, prevY) {
+        const dist = Math.hypot(player.x - prevX, player.y - prevY);
+        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, getActiveGrid(), getActiveScene());
+      }
+
+      // Pounce's leap (see combat-animal-attacks.js's pounceUpdate) covers
+      // real ground exactly like a player attack lunge, so it earns the
+      // same colored-by-affliction trail — using the creature's own
+      // dmgTag-derived afflictionBonuses (ResourceSystem.afflictionBonusesForTag,
+      // {id: mul} same shape as the player's combatSwingAfflictionMuls)
+      // instead of the player's chosen upgrades. Exposed to combat-*.js via
+      // window.Combat.deps.tickCreatureLungeTrail.
+      function tickCreatureLungeTrail(c, distPx, afflictionBonuses) {
+        if (!afflictionBonuses) return;
+        tickLungeTrailForEntity(c, distPx, Object.keys(afflictionBonuses), afflictionBonuses, c.areaId, c.areaGrid, c.scene || scene);
+      }
+
+      // Ages/fades/removes already-dropped stamps — runs every frame
+      // regardless of player.lunging so a stamp dropped right before the
+      // lunge ends still finishes its fade instead of vanishing or freezing.
+      function updateLungeTrailStamps(dt) {
+        for (let i = _lungeTrailStamps.length - 1; i >= 0; i--) {
+          const stamp = _lungeTrailStamps[i];
+          stamp.age += dt;
+          const t = stamp.age / LUNGE_TRAIL_LIFETIME_S;
+          if (t >= 1) {
+            stamp.group.parent?.remove(stamp.group);
+            stamp.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+            _lungeTrailStamps.splice(i, 1);
+            continue;
+          }
+          const fade = 1 - t;
+          const scale = 1 + t * LUNGE_TRAIL_GROW_SCALE;
+          stamp.group.scale.set(scale, scale, scale);
+          for (const child of stamp.group.children) {
+            child.material.opacity = (child.userData.baseOpacity ?? LUNGE_TRAIL_BASE_OPACITY) * fade;
+          }
         }
       }
 
@@ -18501,6 +18867,7 @@
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
             awardToolUseMasteryXp('pick');
+            playObjectSfx(objectSfxConfig().dig);
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
@@ -18510,6 +18877,7 @@
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           const digMsg = dugVegetation ? 'Loosened the earth and cleared the vegetation.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
           awardToolUseMasteryXp('pick');
+          if (action === 'dig') playObjectSfx(objectSfxConfig().dig);
           return { ok: true, message: digMsg };
         }
 
@@ -18698,7 +19066,10 @@
           result = applyAction(tool, action, col, row);
         }
         lastActionMessage = result.message;
-        showToast(result.message, result.ok !== false);
+        // Basic weapon-tap swings resolve through applyAction's tool ===
+        // 'weapon' branch — silence the chime same as the combo/quick/
+        // Charged Breaker ability swings below (see showToast's `silent`).
+        showToast(result.message, result.ok !== false, tool === 'weapon');
         spawnActionParticles(col, row, action, result.ok !== false);
         debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
         // The farm tile-mesh/water systems below are farm-grid specific; off
@@ -18814,6 +19185,9 @@
         facingAngle = player.angle;
         targetAimAngle = player.angle;
         lastMoveAngle = player.angle;
+        // -1 so updateClimb's hopIndex-change check always fires for hop 0
+        // (the very first stagger) instead of only from hop 1 onward.
+        player._climbLastHopIndex = -1;
       }
 
       function updateClimb(dt) {
@@ -18821,6 +19195,14 @@
         const totalDur = player.climbHopCount * cycle;
         player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
         const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
+        // One low gravel thud per stagger — each scripted hop up/down the
+        // cliff face lands like a foot planting on loose rock, distinct
+        // from ordinary footsteps (see playObjectSfx's climbStep cue,
+        // pitched well below a normal gravelstep).
+        if (hopIndex !== player._climbLastHopIndex) {
+          player._climbLastHopIndex = hopIndex;
+          playObjectSfx(objectSfxConfig().climbStep);
+        }
         const withinCycle = player.climbElapsed - hopIndex * cycle;
         const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
         const hopLocalT = hopActive ? clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;
@@ -19437,6 +19819,7 @@
           { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
           anchorWorld
         );
+        playObjectSfx(objectSfxConfig().fishCast);
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
         fishingOverlayEl.classList.add('open');
@@ -19510,6 +19893,14 @@
         if (!fm) return;
         if (fm.phase === 'bite') { beginFishingRing(fm); return; }
         if (fm.phase === 'active') { fireFishingBridge(); return; }
+        // The catch "showoff" view (beginFishCatchView) previously only
+        // dismissed via a pointerup listener on #fcvContinueBtn — keyboard
+        // (Space/Enter/E) and gamepad (interact/action1) both already route
+        // into fishingPrimaryAction for every other phase (see the keydown
+        // handler and runInputAction), but this phase fell through as a
+        // no-op, leaving controller/keyboard players stuck unable to
+        // continue without a mouse/touch tap.
+        if (fm.phase === 'caught') { continueFromFishCatch(); return; }
       }
 
       // The dynamic action-bar buttons (btnAction1-3/btnItemAction1-2) already
@@ -19624,6 +20015,7 @@
           fm.messageType = 'good';
           lastActionMessage = fm.message;
           awardToolUseMasteryXp('harpoon');
+          playWeaponSlashSfx();
           beginFishCatchView(fm, stars);
           return;
         }
@@ -19632,6 +20024,7 @@
         // fishing the same cast indefinitely. Now a single escape just
         // ends the round and drops back to normal gameplay.
         fm.resolved = true;
+        playObjectSfx(objectSfxConfig().fishMiss);
         showToast('The fish got away!', false);
         closeFishingMinigame();
       }
@@ -19832,6 +20225,7 @@
             fm.phaseTimer = 0;
           } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
             spawnFishingBiteSplash(fm.anchorWorld);
+            playObjectSfx(objectSfxConfig().fishBite);
             fm.phase = 'bite';
           }
           renderFishingOverlay();
@@ -20535,100 +20929,43 @@
         }
       }
 
-      // ── Layered rain audio (ported from ScratchbonesGame's outdoor weather) ──
-      // Three pink-noise sources at different playback rates, each narrowed by
-      // its own filter band (bright/mid/rumble), cross-faded by rain intensity.
-      function _buildRainPinkNoise(audioCtx) {
-        const len = audioCtx.sampleRate * 2;
-        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-        const d = buf.getChannelData(0);
-        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
-        for (let i = 0; i < len; i++) {
-          const w = Math.random() * 2 - 1;
-          b0 = 0.99886 * b0 + w * 0.0555179;
-          b1 = 0.99332 * b1 + w * 0.0750759;
-          b2 = 0.96900 * b2 + w * 0.1538520;
-          b3 = 0.86650 * b3 + w * 0.3104856;
-          b4 = 0.55000 * b4 + w * 0.5329522;
-          b5 = -0.7616 * b5 - w * 0.0168980;
-          d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.10;
-        }
-        return buf;
+      // ── Layered rain audio ──────────────────────────────────────────────
+      // Weather-driven mix of three real rain recordings (gentle/mid/heavy —
+      // see audio.bgs.gentlerain/midrain/heavyrain) instead of synthesized
+      // noise. Reuses the same looping-<audio>-element plumbing as the
+      // birds/wind/nightbugs bgs layers (setLoopingBgs) rather than Web
+      // Audio buffer sources, so all three tracks live in _loopingBgs and
+      // get the same autoplay-unlock/retry handling for free.
+      //
+      // Weights form a triangular crossfade over rainStrength/3 (0..1):
+      // gentle owns low intensity, mid the middle, heavy the high end, with
+      // neighboring bands overlapping instead of hard-cutting between them.
+      function rainLayerWeights(intensity) {
+        const gentle = clamp(1 - intensity / 0.66, 0, 1);
+        const mid    = clamp(1 - Math.abs(intensity - 0.5) / 0.5, 0, 1);
+        const heavy  = clamp((intensity - 0.34) / 0.66, 0, 1);
+        return { gentle, mid, heavy };
       }
 
-      function _createRainAudio() {
-        let ctx = null, gainH = null, gainM = null, gainL = null, lpf = null, started = false;
-
-        function start() {
-          if (started) return;
-          started = true;
-          try {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtx) return;
-            ctx = window._rainAudioCtx || (window._rainAudioCtx = new AudioCtx());
-            const buf = _buildRainPinkNoise(ctx);
-
-            function makeSource(rate) {
-              const s = ctx.createBufferSource();
-              s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start();
-              return s;
-            }
-            const srcH = makeSource(1.00);
-            const srcM = makeSource(0.95);
-            const srcL = makeSource(0.81);
-
-            // Tighter Q than the original port (and quieter master gain below) —
-            // same scuffy/noise-heavy, narrow-band treatment given to footsteps
-            // (FOOTSTEP_POST_FX bandpass Q ~0.9-2.8) instead of smooth broadband hiss.
-            const hpf = ctx.createBiquadFilter();
-            hpf.type = 'highpass'; hpf.frequency.value = 950; hpf.Q.value = 1.6;
-            const bpf = ctx.createBiquadFilter();
-            bpf.type = 'bandpass'; bpf.frequency.value = 330; bpf.Q.value = 1.8;
-            lpf = ctx.createBiquadFilter();
-            lpf.type = 'lowpass'; lpf.frequency.value = 115; lpf.Q.value = 1.4;
-
-            gainH = ctx.createGain(); gainH.gain.value = 0;
-            gainM = ctx.createGain(); gainM.gain.value = 0;
-            gainL = ctx.createGain(); gainL.gain.value = 0;
-
-            const master = ctx.createGain();
-            master.gain.value = Math.max(0, Number(gameAudioConfig().rainVolume) || 0.20);
-
-            srcH.connect(hpf); hpf.connect(gainH); gainH.connect(master);
-            srcM.connect(bpf); bpf.connect(gainM); gainM.connect(master);
-            srcL.connect(lpf); lpf.connect(gainL); gainL.connect(master);
-            master.connect(ctx.destination);
-          } catch (e) {
-            console.warn('[rainAudio] Web Audio unavailable:', e);
-          }
-        }
-
-        function setIntensity(v) {
-          if (!ctx || !gainH) return;
-          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-          const now = ctx.currentTime, tc = 1.2;
-          gainH.gain.setTargetAtTime(v * 1.0, now, tc);
-          gainM.gain.setTargetAtTime(v * 0.72, now, tc);
-          const lv = v > 0.5 ? Math.pow((v - 0.5) * 2, 1.6) : 0;
-          gainL.gain.setTargetAtTime(lv * 0.68, now, tc);
-          if (lpf) lpf.frequency.setTargetAtTime(145 - v * 73, now, tc);
-        }
-
-        return { start, setIntensity };
-      }
-
-      let _rainAudio = null;
       function updateRainAudio() {
         const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) return;
+        const bgs = audioCfg.bgs || {};
+        if (audioCfg.enabled === false) {
+          setLoopingBgs('raingentle', '', 0);
+          setLoopingBgs('rainmid', '', 0);
+          setLoopingBgs('rainheavy', '', 0);
+          return;
+        }
         const outdoors = currentArea === 'farm' || currentArea === 'town';
         const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
         const intensity = (outdoors && !indoors && calendar.isRaining)
           ? Math.min(1, (calendar.rainStrength || 0) / 3)
           : 0;
-        if (!_rainAudio) _rainAudio = _createRainAudio();
-        if (intensity > 0) _rainAudio.start();
-        _rainAudio.setIntensity(intensity);
+        const weights = rainLayerWeights(intensity);
+        const master = Math.max(0, Number(audioCfg.rainVolume) || 1);
+        setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master);
+        setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master);
+        setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master);
       }
 
       function tileSpeedAt(wx, wy) {
@@ -23129,6 +23466,13 @@
       // trail's coloring (see updateCombatConeTrail); empty means a plain
       // white trail.
       let combatSwingAfflictionIds = [];
+      // Companion map for combatSwingAfflictionIds: {id: mul}, the same
+      // per-hit damage multiplier map combat-*.js passes as
+      // damageCreature's opts.afflictionBonuses (see combat-progression.js's
+      // getEffects) — set via opts.afflictions alongside afflictionIds.
+      // Lets the lunge trail (see spawnLungeTrailStamp) rank "most applied"
+      // by actual magnitude instead of just tree-level insertion order.
+      let combatSwingAfflictionMuls = {};
       // The attack's own hit cone (world-space range/half-angle/facing),
       // set via opts.coneRangePx/coneHalfConeRad/coneAngle on
       // triggerWeaponSwingVisual, or later via setCombatSwingCone for
@@ -23207,6 +23551,7 @@
           combatSwingPower    = 1;
           combatSwingHoldS    = 0;
           combatSwingAfflictionIds = [];
+          combatSwingAfflictionMuls = {};
         } else {
           chargeAnimOverride = stageDef.anim || null;
           combatSwingAnim  = null;
@@ -23261,6 +23606,7 @@
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
         combatSwingAfflictionIds = opts.afflictionIds || [];
+        combatSwingAfflictionMuls = opts.afflictions || {};
         setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
       }
 
@@ -23997,7 +24343,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -25733,6 +26079,7 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
+        updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
@@ -28781,6 +29128,11 @@
         // — without this, that ground covered during the leap never ticked
         // a footstep (see combat-animal-attacks.js's pounceUpdate).
         tickCreatureFootsteps,
+        // Same idea as tickCreatureFootsteps but for the colored onion-ring
+        // lunge trail (see spawnLungeTrailStamp) — Pounce's leap passes its
+        // own dmgTag-derived afflictionBonuses since it has no upgrade tree
+        // to read from the way player attacks do.
+        tickCreatureLungeTrail,
         // Gates every weapon tap/hold ability (see combat-input.js) — no
         // attacking while swimming in a river/stream, player or creature.
         isPlayerSwimming,
