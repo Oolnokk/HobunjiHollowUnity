@@ -715,9 +715,11 @@
        single input: dodge, on the NW cardinal (135°, the direction that
        bisects the other two arcs' 90°-180° sweep). Keeping it on its own
        ring instead of sharing one with other buttons avoids the
-       radius/angle juggling that a shared ring would need. ── */
+       radius/angle juggling that a shared ring would need. R tracks
+       #actionStack's --ar (follows its +1 col push-out) so the gap
+       between this ring and the action arch stays put at 3.6 col. ── */
     #dodgeArch {
-      --ar0: calc(3 * var(--col));
+      --ar0: calc(4 * var(--col));
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0; overflow: visible; z-index: 3; touch-action: none;
     }
@@ -859,10 +861,15 @@
     /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
     /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
        5 buttons at 180°,157.5°,135°,112.5°,90°.
-       R = 6.6 col → centroid ≈ 0.6028×6.6 = 3.98 col from corner ≈ container centre.
+       R = 7.6 col (pushed out from 6.6 — the tool/item dial's own 10 col
+       radius reads with more room around it than it actually has, since
+       its buttons are much smaller than the action arch's; closing the
+       raw radius gap some corrects for that) → centroid ≈ 0.6028×7.6 =
+       4.58 col from corner ≈ container centre. #dodgeArch's --ar0 shifts
+       by the same +1 col so its gap to this ring is unchanged.
        No per-button margin; safe-area inset lives on #arcContainer.       */
     #actionStack {
-      --ar: calc(6.6 * var(--col));
+      --ar: calc(7.6 * var(--col));
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0;
       overflow: visible; z-index: 1; touch-action: none;
