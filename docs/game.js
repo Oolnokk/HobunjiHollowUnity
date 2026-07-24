@@ -18335,7 +18335,16 @@
       // correctly under AdditiveBlending: a dim vertex just adds little.
       const COMBAT_CONE_TRAIL_BASELINE_INTENSITY = 0.22;
       const COMBAT_CONE_TRAIL_SPIKE_WIDTH_U = 0.24;
+      // White glowing outline, one per lane, sharing the same taper/arch as
+      // its colored ribbon but radially wider by this pad on both edges —
+      // additive white rather than a solid black border, so the pad reads
+      // as a bright rim/glow instead of a hard line (and, being additive,
+      // doesn't need explicit draw-order-before-the-color-mesh care the way
+      // an opaque black outline would: additive sums regardless of order).
+      const COMBAT_CONE_TRAIL_OUTLINE_PAD_TILES = 0.045;
+      const COMBAT_CONE_TRAIL_OUTLINE_OPACITY = 0.7;
       const coneTrailLaneMeshes = [];
+      const coneTrailLaneOutlineMeshes = [];
       function ensureConeTrailLaneMesh(i) {
         let mesh = coneTrailLaneMeshes[i];
         if (mesh) return mesh;
@@ -18368,6 +18377,33 @@
         return mesh;
       }
 
+      function ensureConeTrailLaneOutlineMesh(i) {
+        let mesh = coneTrailLaneOutlineMeshes[i];
+        if (mesh) return mesh;
+        const geo = new THREE.BufferGeometry();
+        const vertCount = (COMBAT_CONE_TRAIL_SAMPLES + 1) * 2;
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        const indices = [];
+        for (let s = 0; s < COMBAT_CONE_TRAIL_SAMPLES; s++) {
+          const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
+          indices.push(a, b, c, b, d, c);
+        }
+        geo.setIndex(indices);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          fog: false,
+        });
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        coneTrailLaneOutlineMeshes[i] = mesh;
+        return mesh;
+      }
+
       // Called every frame alongside updateToolMesh (not from the 2D octx
       // draw pass) since it owns real scene-graph meshes, not canvas pixels.
       function updateCombatConeTrail() {
@@ -18375,6 +18411,7 @@
         const active = combatSwingAnim && combatSwingCone && toolSwingT > 0 && toolSwingDur > 0 && parent;
         if (!active) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          for (const mesh of coneTrailLaneOutlineMeshes) if (mesh) mesh.visible = false;
           return;
         }
         const progress = 1 - toolSwingT / toolSwingDur;
@@ -18388,6 +18425,7 @@
         // extended, rather than crawling across the whole windup too.
         if (progress < WF) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          for (const mesh of coneTrailLaneOutlineMeshes) if (mesh) mesh.visible = false;
           return;
         }
         const strikeT = Math.min(1, (progress - WF) / Math.max(1e-6, SF - WF));
@@ -18406,6 +18444,7 @@
         else alpha = 0;
         if (alpha <= 0.01) {
           for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          for (const mesh of coneTrailLaneOutlineMeshes) if (mesh) mesh.visible = false;
           return;
         }
 
@@ -18423,7 +18462,8 @@
 
         for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
           const mesh = ensureConeTrailLaneMesh(lane);
-          if (lane >= laneCount) { mesh.visible = false; continue; }
+          const outlineMesh = ensureConeTrailLaneOutlineMesh(lane);
+          if (lane >= laneCount) { mesh.visible = false; outlineMesh.visible = false; continue; }
           const colorNum = ids.length
             ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
             : 0xffffff;
@@ -18433,6 +18473,7 @@
           const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
           const posAttr = mesh.geometry.attributes.position;
           const colorAttr = mesh.geometry.attributes.color;
+          const outlinePosAttr = outlineMesh.geometry.attributes.position;
           for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
             const u = s / COMBAT_CONE_TRAIL_SAMPLES;
             const a = angle - halfConeRad + (2 * halfConeRad) * u;
@@ -18448,12 +18489,22 @@
             const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
             colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
             colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
+            // Same centerline/arch, just padded outward on both edges so a
+            // glowing white rim shows past the colored ribbon's own border.
+            const outlineInnerR = innerR - COMBAT_CONE_TRAIL_OUTLINE_PAD_TILES;
+            const outlineOuterR = outerR + COMBAT_CONE_TRAIL_OUTLINE_PAD_TILES;
+            outlinePosAttr.setXYZ(vi,     baseX + cosA * outlineInnerR, y + arch, baseZ + sinA * outlineInnerR);
+            outlinePosAttr.setXYZ(vi + 1, baseX + cosA * outlineOuterR, y + arch, baseZ + sinA * outlineOuterR);
           }
           posAttr.needsUpdate = true;
           colorAttr.needsUpdate = true;
+          outlinePosAttr.needsUpdate = true;
           mesh.material.opacity = alpha * 0.85;
           mesh.visible = true;
           if (mesh.parent !== parent) parent.add(mesh);
+          outlineMesh.material.opacity = alpha * COMBAT_CONE_TRAIL_OUTLINE_OPACITY;
+          outlineMesh.visible = true;
+          if (outlineMesh.parent !== parent) parent.add(outlineMesh);
         }
       }
 
@@ -18482,6 +18533,14 @@
       const LUNGE_TRAIL_LIFETIME_S = 0.55;
       const LUNGE_TRAIL_BASE_OPACITY = 0.8;
       const LUNGE_TRAIL_GROW_SCALE = 0.35; // how much each stamp expands over its lifetime as it fades
+      // White glowing outline (not black — see the weapon cone trail's
+      // matching treatment below) — a slightly wider, additive white ring
+      // drawn under the colored one; additive blending sums regardless of
+      // draw order, so it doesn't need explicit renderOrder to look right,
+      // it just needs to be radially wider so the pad's worth pokes past
+      // the colored ring's own edges as a bright rim.
+      const LUNGE_TRAIL_OUTLINE_PAD = 0.035;
+      const LUNGE_TRAIL_OUTLINE_OPACITY = 0.8;
       const _lungeTrailStamps = [];
 
       // Picks one id from `ids`, weighted by its multiplier in `muls` — an
@@ -18520,7 +18579,19 @@
         group.position.set(wx / TILE, y, wy / TILE);
         group.rotation.x = -Math.PI / 2; // lie flat on the ground, same convention as every other ground-projected ring in this file
 
-        const geo = new THREE.RingGeometry(LUNGE_TRAIL_OUTER_RADIUS - LUNGE_TRAIL_RING_THICKNESS, LUNGE_TRAIL_OUTER_RADIUS, 24);
+        const innerR = LUNGE_TRAIL_OUTER_RADIUS - LUNGE_TRAIL_RING_THICKNESS;
+        const outerR = LUNGE_TRAIL_OUTER_RADIUS;
+
+        const outlineGeo = new THREE.RingGeometry(Math.max(0.01, innerR - LUNGE_TRAIL_OUTLINE_PAD), outerR + LUNGE_TRAIL_OUTLINE_PAD, 24);
+        const outlineMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff, transparent: true, opacity: LUNGE_TRAIL_OUTLINE_OPACITY, depthWrite: false,
+          side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
+        });
+        const outlineMesh = new THREE.Mesh(outlineGeo, outlineMat);
+        outlineMesh.userData.baseOpacity = LUNGE_TRAIL_OUTLINE_OPACITY;
+        group.add(outlineMesh);
+
+        const geo = new THREE.RingGeometry(innerR, outerR, 24);
         const mat = new THREE.MeshBasicMaterial({
           color, transparent: true, opacity: LUNGE_TRAIL_BASE_OPACITY, depthWrite: false,
           side: THREE.DoubleSide,
