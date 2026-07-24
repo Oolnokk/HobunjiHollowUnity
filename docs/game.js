@@ -443,24 +443,42 @@
 
       // A tree's conditions/excludeConditions are authored in the dialogue
       // editor (docs/tools/dialogue-editor/) as { weekdays, seasons, weather,
-      // timesOfDay, encounter, relationship:{min,max} } — empty arrays/null
-      // bounds mean "unrestricted" on that axis. _dlgAxisMatch checks a single
-      // axis's current value against one of those bags.
-      const DLG_CONDITION_AXES = ['weekdays', 'seasons', 'weather', 'timesOfDay', 'encounter'];
+      // timesOfDay, encounter, maps, stations, relationship:{min,max} } —
+      // empty arrays/null bounds mean "unrestricted" on that axis.
+      // _dlgAxisMatch checks a single axis's current value against one of
+      // those bags. "maps" matches currentArea directly (editor's map ids —
+      // 'farm', 'town', 'map_i_general_store', etc — are the same strings
+      // the world engine already uses). "stations" matches the walker's
+      // current schedule-target label, normalized the same way the existing
+      // General Store/Carpenter on-duty checks do (see normalizeStationLabel).
+      const DLG_CONDITION_AXES = ['weekdays', 'seasons', 'weather', 'timesOfDay', 'encounter', 'maps', 'stations'];
+
+      // Station labels are authored with their nice display casing in the
+      // editor (e.g. "Carpentry Work") — normalize both sides the same way
+      // the existing on-duty station checks do, so whitespace/case drift
+      // between the two can't silently break a condition.
+      function _dlgAxisValueMatches(vals, axis, value) {
+        if (!vals || !vals.length) return false;
+        if (axis === 'stations') return vals.some(v => normalizeStationLabel(v) === value);
+        return vals.includes(value);
+      }
 
       function _dlgAxisMatch(bag, axis, value) {
         const vals = bag?.[axis];
-        return !vals || !vals.length || vals.includes(value);
+        return !vals || !vals.length || _dlgAxisValueMatches(vals, axis, value);
       }
 
       function _dlgWorldState(rec) {
         const st = _getNpcDlgState(rec?.id);
+        const target = _dialogueWalker?.currentScheduleTarget || null;
         return {
           weekdays:   currentWeekdayName(),
           seasons:    currentSeason().name,
           weather:    calendar.weather,
           timesOfDay: fishingTimeOfDay(),
           encounter:  (st.heardTrees || []).length ? 'returning' : 'first',
+          maps:       currentArea,
+          stations:   target ? normalizeStationLabel(target.label) : '',
           relationship: rec?.relationship ?? 0,
         };
       }
@@ -479,8 +497,7 @@
         // matches the current world state, regardless of the require side.
         const x = tree.excludeConditions || {};
         for (const axis of DLG_CONDITION_AXES) {
-          const vals = x[axis];
-          if (vals && vals.length && vals.includes(world[axis])) return false;
+          if (_dlgAxisValueMatches(x[axis], axis, world[axis])) return false;
         }
         const xrel = x.relationship;
         if (xrel && (xrel.min != null || xrel.max != null)) {

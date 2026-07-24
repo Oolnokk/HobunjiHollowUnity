@@ -62,13 +62,19 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   background:rgba(0,0,0,.22);display:flex;flex-direction:column;gap:6px}
 .condPopover.hidden{display:none}
 .condPopover select{font-size:11px;padding:5px 7px}
-.condPopVal.hidden{display:none}
+.condPopMapScope.hidden{display:none}
+.condPopValList{display:flex;flex-direction:column;gap:1px;max-height:180px;overflow-y:auto;
+  border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:2px}
+.condCheckRow{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:5px;
+  font-size:11px;cursor:pointer;user-select:none;text-transform:none;color:var(--text)}
+.condCheckRow:hover{background:rgba(255,255,255,.05)}
+.condCheckRow input{width:auto;flex-shrink:0}
 .condPopRel{display:flex;align-items:center;gap:5px}
 .condPopRel.hidden{display:none}
-.condPopRel input{font-size:11px;padding:5px 7px}
+.condPopRel input{font-size:11px;padding:5px 7px;min-width:0}
 .condPopRel span{font-size:10px;color:var(--muted);flex-shrink:0}
-.condPopBtns{display:flex;gap:5px}
-.condPopBtns button{flex:1;font-size:10px;padding:5px 0}
+.condPopRel .condPopAdd{flex-shrink:0;font-size:10px;padding:5px 10px}
+.condPopClose{width:100%;font-size:10px;padding:5px 0}
 #npcSearch{padding:5px 7px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 #npcSearch input{font-size:12px;padding:5px 8px}
 #npcListEl{flex:1;overflow-y:auto;padding:5px}
@@ -354,6 +360,7 @@ let _seq      = 1;
 
 let filters = {
   weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
+  maps: [], stations: [],
   relationship: { min: null, max: null }
 };
 
@@ -378,17 +385,49 @@ const SEASONS      = ['Stormtide','Deadgrass','Longpour','Coldmuck'];
 const WEATHERS     = ['clear','rain','storm'];
 const TIMES_OF_DAY = ['dawn','day','dusk','night'];
 const ENCOUNTERS   = ['first','returning'];
-const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay','encounter'];
+
+// Map/station registry — fetched from config/town-workspace-v1.json
+// (loadMapRegistry, called at startup) so "which map"/"which station"
+// options always reflect the actual town layout instead of a hand-copied
+// list going stale. Seeded with built-ins that aren't in that file (the
+// farm and the player's generic house interior) plus the two wilderness
+// zones as a fallback in case the fetch hasn't resolved yet/fails.
+let mapRegistry = [
+  { id: 'farm', name: 'Farm', stations: [] },
+  { id: 'interior', name: 'Player House', stations: [] },
+  { id: 'map_northern_cliffs', name: 'Northern Cliffs', stations: [] },
+  { id: 'map_southern_cloud_forest', name: 'Southern Cloud Forest', stations: [] },
+];
+function mapLabel(id) { return mapRegistry.find(m => m.id === id)?.name || id; }
+function stationsForMap(mapId) { return mapRegistry.find(m => m.id === mapId)?.stations || []; }
+async function loadMapRegistry() {
+  try {
+    const res = await fetch('../../config/town-workspace-v1.json');
+    if (!res.ok) return;
+    const data = await res.json();
+    const fromFile = (data.maps || []).map(m => ({
+      id: m.id, name: m.name || m.label || m.id,
+      stations: (m.npcStations || []).map(s => s.label).filter(Boolean),
+    }));
+    const builtins = mapRegistry.filter(m => !fromFile.some(f => f.id === m.id));
+    mapRegistry = [...builtins, ...fromFile];
+  } catch (e) { /* keep the built-in fallback list */ }
+}
+
+const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay','encounter','maps','stations'];
 const CONDITION_CATEGORIES = [
-  { key: 'weekdays',     label: 'Weekday',      values: WEEKDAYS },
-  { key: 'seasons',      label: 'Season',       values: SEASONS },
-  { key: 'weather',      label: 'Weather',      values: WEATHERS },
-  { key: 'timesOfDay',   label: 'Time of day',  values: TIMES_OF_DAY },
-  { key: 'encounter',    label: 'Encounter',    values: ENCOUNTERS },
+  { key: 'weekdays',     label: 'Weekday',      values: () => WEEKDAYS },
+  { key: 'seasons',      label: 'Season',       values: () => SEASONS },
+  { key: 'weather',      label: 'Weather',      values: () => WEATHERS },
+  { key: 'timesOfDay',   label: 'Time of day',  values: () => TIMES_OF_DAY },
+  { key: 'encounter',    label: 'Encounter',    values: () => ENCOUNTERS },
+  { key: 'maps',         label: 'Map',          values: () => mapRegistry.map(m => m.id), labelFor: mapLabel },
+  { key: 'stations',     label: 'Station',      values: null, scopedByMap: true },
   { key: 'relationship', label: 'Relationship', values: null },
 ];
 const emptyConditions = () => ({
   weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
+  maps: [], stations: [],
   relationship: { min: null, max: null }
 });
 
@@ -411,6 +450,8 @@ function loadDatabase(json) {
           weather:    Array.isArray(c.weather)    ? c.weather    : [],
           timesOfDay: Array.isArray(c.timesOfDay) ? c.timesOfDay : [],
           encounter:  Array.isArray(c.encounter)  ? c.encounter  : [],
+          maps:       Array.isArray(c.maps)       ? c.maps       : [],
+          stations:   Array.isArray(c.stations)   ? c.stations   : [],
           relationship: {
             min: c.relationship?.min ?? null,
             max: c.relationship?.max ?? null
@@ -478,6 +519,8 @@ function addTree() {
   conditions.weather    = [...filters.weather];
   conditions.timesOfDay = [...filters.timesOfDay];
   conditions.encounter  = [...filters.encounter];
+  conditions.maps       = [...filters.maps];
+  conditions.stations   = [...filters.stations];
   conditions.relationship = { min: filters.relationship.min, max: filters.relationship.max };
   npc.dialogueTrees.push({ id, label: `Tree ${npc.dialogueTrees.length + 1}`,
     trigger: 'interact', priority: 0, entryNode: null, nodes: [],
@@ -611,6 +654,8 @@ function conditionLabel(cond, axes) {
   if (axes.includes('weather')    && cond.weather?.length)    parts.push(cond.weather.join('/'));
   if (axes.includes('timesOfDay') && cond.timesOfDay?.length) parts.push(cond.timesOfDay.join('/'));
   if (axes.includes('encounter')  && cond.encounter?.length)  parts.push(cond.encounter.join('/'));
+  if (axes.includes('maps')       && cond.maps?.length)       parts.push(cond.maps.map(mapLabel).join('/'));
+  if (axes.includes('stations')   && cond.stations?.length)   parts.push(cond.stations.join('/'));
   if (axes.includes('relationship') && cond.relationship) {
     const { min, max } = cond.relationship;
     if (min != null && max != null)      parts.push(`${min}–${max}♥`);
@@ -629,19 +674,33 @@ function conditionChipLabel(key, value) {
     return '';
   }
   const cat = CONDITION_CATEGORIES.find(c => c.key === key);
-  return `${cat ? cat.label : key}: ${value}`;
+  const shown = cat?.labelFor ? cat.labelFor(value) : value;
+  return `${cat ? cat.label : key}: ${shown}`;
+}
+
+// Values for a category's checkbox list. "stations" is scoped by whichever
+// map is picked in the popover (its label list comes straight out of that
+// map's npcStations in the fetched town-workspace registry — see
+// stationsForMap) since a station label only means anything in context of
+// one map; every other category's list is fixed/global.
+function categoryValues(cat, scopeMapId) {
+  if (cat.key === 'stations') return scopeMapId ? stationsForMap(scopeMapId) : [];
+  return typeof cat.values === 'function' ? cat.values() : (cat.values || []);
 }
 
 // Renders an appendable chip list + "+ Add" popover into containerEl for a
 // condition bag (filters, tree.conditions, or tree.excludeConditions) of the
 // shape { weekdays:[], seasons:[], weather:[], timesOfDay:[], encounter:[],
-// relationship:{min,max} }. onChange fires after every mutation so the
-// caller can update anything that depends on it (NPC sort, tree tabs, etc);
-// the picker then re-renders itself, preserving popover open/category state
-// so several conditions can be added back-to-back without reopening it.
+// maps:[], stations:[], relationship:{min,max} }. onChange fires after every
+// mutation so the caller can update anything that depends on it (NPC sort,
+// tree tabs, etc); the picker then re-renders itself, preserving popover
+// open/category/scope state so several conditions can be checked off
+// back-to-back without the popover closing between clicks.
 function renderConditionPicker(containerEl, bag, onChange, variant, state = {}) {
   const popOpen = !!state.popOpen;
   const curCat  = state.cat || CONDITION_CATEGORIES[0].key;
+  const curCatDef = CONDITION_CATEGORIES.find(c => c.key === curCat);
+  const stationMap = state.stationMap || mapRegistry.find(m => stationsForMap(m.id).length)?.id || mapRegistry[0]?.id || '';
 
   const chips = [];
   for (const cat of CONDITION_CATEGORIES) {
@@ -660,16 +719,15 @@ function renderConditionPicker(containerEl, bag, onChange, variant, state = {}) 
     </div>
     <div class="condPopover${popOpen?'':' hidden'}">
       <select class="condPopCat">${CONDITION_CATEGORIES.map(c => `<option value="${c.key}"${c.key===curCat?' selected':''}>${esc(c.label)}</option>`).join('')}</select>
-      <select class="condPopVal"></select>
-      <div class="condPopRel">
+      <select class="condPopMapScope${curCat==='stations'?'':' hidden'}">${mapRegistry.map(m => `<option value="${esc(m.id)}"${m.id===stationMap?' selected':''}>${esc(m.name)}</option>`).join('')}</select>
+      <div class="condPopValList"></div>
+      <div class="condPopRel${curCat==='relationship'?'':' hidden'}">
         <input type="number" class="condPopRelMin" placeholder="min">
         <span>to</span>
         <input type="number" class="condPopRelMax" placeholder="max">
-      </div>
-      <div class="condPopBtns">
         <button class="condPopAdd" type="button">Add</button>
-        <button class="condPopClose secondary" type="button">Done</button>
       </div>
+      <button class="condPopClose secondary" type="button">Done</button>
     </div>`;
 
   const rerender = next => renderConditionPicker(containerEl, bag, onChange, variant, next);
@@ -678,49 +736,43 @@ function renderConditionPicker(containerEl, bag, onChange, variant, state = {}) 
     const c = chips[+btn.dataset.i];
     if (c.key === 'relationship') bag.relationship = { min: null, max: null };
     else { const arr = bag[c.key]; const idx = arr.indexOf(c.value); if (idx !== -1) arr.splice(idx, 1); }
-    onChange(); rerender({ popOpen, cat: curCat });
+    onChange(); rerender({ popOpen, cat: curCat, stationMap });
   }));
 
-  const catSel  = containerEl.querySelector('.condPopCat');
-  const valSel  = containerEl.querySelector('.condPopVal');
-  const relRow  = containerEl.querySelector('.condPopRel');
-  const relMin  = containerEl.querySelector('.condPopRelMin');
-  const relMax  = containerEl.querySelector('.condPopRelMax');
-
-  function syncValueControls() {
-    const cat = CONDITION_CATEGORIES.find(c => c.key === catSel.value);
-    const isRel = cat.key === 'relationship';
-    valSel.classList.toggle('hidden', isRel);
-    relRow.classList.toggle('hidden', !isRel);
-    if (isRel) {
-      relMin.value = bag.relationship?.min ?? '';
-      relMax.value = bag.relationship?.max ?? '';
-    } else {
-      const active = bag[cat.key] || [];
-      const remaining = cat.values.filter(v => !active.includes(v));
-      valSel.innerHTML = remaining.length
-        ? remaining.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')
-        : `<option disabled selected>— all added —</option>`;
-    }
+  const catSel   = containerEl.querySelector('.condPopCat');
+  const scopeSel = containerEl.querySelector('.condPopMapScope');
+  const valList  = containerEl.querySelector('.condPopValList');
+  const relMin   = containerEl.querySelector('.condPopRelMin');
+  const relMax   = containerEl.querySelector('.condPopRelMax');
+  if (curCatDef.key === 'relationship') {
+    relMin.value = bag.relationship?.min ?? '';
+    relMax.value = bag.relationship?.max ?? '';
+  } else {
+    const values = categoryValues(curCatDef, stationMap);
+    const active = bag[curCatDef.key] || [];
+    valList.innerHTML = values.length
+      ? values.map(v => `<label class="condCheckRow"><input type="checkbox" data-v="${esc(v)}"${active.includes(v)?' checked':''}><span>${esc(curCatDef.labelFor ? curCatDef.labelFor(v) : v)}</span></label>`).join('')
+      : `<div class="iMuted">${curCatDef.key==='stations' ? 'No named stations on this map.' : 'No options.'}</div>`;
+    valList.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+      const arr = bag[curCatDef.key];
+      const v = cb.dataset.v;
+      const idx = arr.indexOf(v);
+      if (cb.checked && idx === -1) arr.push(v);
+      else if (!cb.checked && idx !== -1) arr.splice(idx, 1);
+      onChange(); rerender({ popOpen: true, cat: curCat, stationMap });
+    }));
   }
-  syncValueControls();
-  catSel.addEventListener('change', syncValueControls);
 
-  containerEl.querySelector('.condAddBtn').addEventListener('click', () => rerender({ popOpen: !popOpen, cat: catSel.value }));
-  containerEl.querySelector('.condPopClose').addEventListener('click', () => rerender({ popOpen: false, cat: catSel.value }));
-  containerEl.querySelector('.condPopAdd').addEventListener('click', () => {
-    const cat = CONDITION_CATEGORIES.find(c => c.key === catSel.value);
-    if (cat.key === 'relationship') {
-      const min = relMin.value === '' ? null : parseInt(relMin.value);
-      const max = relMax.value === '' ? null : parseInt(relMax.value);
-      if (min == null && max == null) return;
-      bag.relationship = { min, max };
-    } else {
-      const v = valSel.value;
-      if (!v || (bag[cat.key]||[]).includes(v)) return;
-      bag[cat.key].push(v);
-    }
-    onChange(); rerender({ popOpen: true, cat: catSel.value });
+  containerEl.querySelector('.condAddBtn').addEventListener('click', () => rerender({ popOpen: !popOpen, cat: curCat, stationMap }));
+  containerEl.querySelector('.condPopClose').addEventListener('click', () => rerender({ popOpen: false, cat: curCat, stationMap }));
+  catSel.addEventListener('change', () => rerender({ popOpen: true, cat: catSel.value, stationMap }));
+  scopeSel?.addEventListener('change', () => rerender({ popOpen: true, cat: curCat, stationMap: scopeSel.value }));
+  containerEl.querySelector('.condPopAdd')?.addEventListener('click', () => {
+    const min = relMin.value === '' ? null : parseInt(relMin.value);
+    const max = relMax.value === '' ? null : parseInt(relMax.value);
+    if (min == null && max == null) return;
+    bag.relationship = { min, max };
+    onChange(); rerender({ popOpen: true, cat: curCat, stationMap });
   });
 }
 
@@ -1566,7 +1618,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   $('npcQ').oninput      = renderNpcList;
   $('clearFiltersBtn').onclick = () => {
-    filters = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], relationship: { min: null, max: null } };
+    filters = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], maps: [], stations: [], relationship: { min: null, max: null } };
     onFiltersChanged();
   };
   $('inspToggle').onclick = toggleInspector;
@@ -1593,6 +1645,7 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(data => loadDatabase(data))
     .catch(() => {});
+  loadMapRegistry().then(() => { renderCondFilters(); renderInspector(); });
   renderAll();
 });
 </script>
