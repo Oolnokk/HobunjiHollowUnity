@@ -17199,19 +17199,10 @@
         if (desiredY !== nextY) player.vy = 0;
 
         // ── Facing ────────────────────────────────────────────
-        // Computed once per frame: also drives the touch dodge button, which
-        // normally only matters in combat (same condition as the facing lock
-        // below) — but performContextAction() (what the button fires) also
-        // takes a pending entrance/exit spot transition first, so surface
-        // the button on that too. Otherwise a touch player standing on a
-        // doorway with an NPC hogging the action bar (see computeActionButtons'
-        // nearbyNpcWalker branch) would have no visible way to reach that
-        // "unstuck" input at all, only keyboard/gamepad's dedicated dodge key.
         // Auto-targeting only engages while an actual weapon item is
         // equipped in the weapon slot (not just the slot being active).
         const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
         const autoTarget = weaponEngaged ? findAutoTarget() : null;
-        dodgeBtn?.classList.toggle('combat-active', !!autoTarget || !!_pendingSpotTransition);
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
         btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon');
 
@@ -20094,11 +20085,6 @@
         const itemBtnEl = document.getElementById('itemBtn');
         if (itemBtnEl) itemBtnEl.style.display = display;
         if (btnWeaponSwitch) btnWeaponSwitch.style.display = display;
-        // dodgeBtn already defaults to hidden (see its own .combat-active
-        // toggle in updateMovement) — but that toggle stops running the
-        // instant fishing starts (updateMovement's own fishingMinigame.active
-        // guard), so whatever it was frozen at just before could otherwise
-        // stay stuck on screen for the whole round.
         if (dodgeBtn) dodgeBtn.style.display = display;
       }
 
@@ -28325,17 +28311,16 @@
       joystickZone.addEventListener('pointercancel', handleJoystickPointerUp);
 
       // Dodge button: a plain tap, dodging in the current facing direction.
-      // Only shown (via .combat-active, toggled in updateMovement) while a
-      // hostile is within auto-target range, since dodging is moot outside combat.
+      // Always visible on touch (see #dodgeBtn in style.css); hidden only
+      // during fishing, same as the other arc controls.
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         performContextAction();
       });
 
       // Weapon quick-switch button: a plain tap toggles in/out of the
-      // weapon tool slot (see toggleQuickWeaponSwitch). Always visible,
-      // unlike dodgeBtn — this isn't combat-only, it's how you get *into*
-      // combat stance to begin with.
+      // weapon tool slot (see toggleQuickWeaponSwitch) — this is how you
+      // get *into* combat stance to begin with.
       btnWeaponSwitch?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         toggleQuickWeaponSwitch();

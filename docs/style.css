@@ -721,10 +721,10 @@
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0; overflow: visible; z-index: 3; touch-action: none;
     }
-    /* ── Dodge button: hidden outside combat; shown only while
-       .combat-active is toggled on by updateMovement() (same condition
-       that drives the auto-target lock), and never on desktop (X key
-       covers it there instead). ── */
+    /* ── Dodge button: always visible on touch (never on desktop — X key
+       covers it there instead). Still force-hidden during fishing by
+       setNonFishingArcControlsHidden(), same as the tool/item/weapon-
+       switch buttons. ── */
     #dodgeBtn {
       position: absolute;
       right:  calc(-1*cos(135deg)*var(--ar0));
@@ -732,9 +732,8 @@
       transform: translate(50%, 50%);
       width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
       border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
-      display: none;
+      display: flex;
     }
-    #dodgeBtn.combat-active { display: flex; }
     button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
     #dodgeBtn .abt-icon { font-size: 1.3em; }
     @media (pointer: fine) {
