@@ -3299,6 +3299,70 @@ window.SCRATCHBONES_CONFIG = {
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
         },
+        // Generic object/machine/UI interaction sfx — see playObjectSfx in
+        // game.js and docs/assets/audio/sfx/README.md. Every entry names a
+        // real recording (`url`) that does NOT exist yet — a human needs to
+        // source/record/generate it, see the README — plus a generated
+        // `placeholderUrl` (committed, see scripts/generate-placeholder-sfx.js)
+        // that plays instead until the real file shows up in the repo.
+        "objectSfx": {
+          "enabled": true,
+          "uiClick": {
+            "url": "assets/audio/sfx/ui/sfx_ui_click.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
+            "volume": 0.35
+          },
+          "confirm": {
+            "url": "assets/audio/sfx/ui/sfx_ui_confirm.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_confirm.wav",
+            "volume": 0.5
+          },
+          "error": {
+            "url": "assets/audio/sfx/ui/sfx_ui_error.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_error.wav",
+            "volume": 0.5
+          },
+          "processStart": {
+            "url": "assets/audio/sfx/processing/sfx_process_start.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_start.wav",
+            "volume": 0.7
+          },
+          "processPestle": {
+            "url": "assets/audio/sfx/processing/sfx_process_pestle.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_pestle.wav",
+            "volume": 0.75
+          },
+          "processSqueezer": {
+            "url": "assets/audio/sfx/processing/sfx_process_squeezer.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_squeezer.wav",
+            "volume": 0.75
+          },
+          "processHandmill": {
+            "url": "assets/audio/sfx/processing/sfx_process_handmill.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_handmill.wav",
+            "volume": 0.75
+          },
+          "processDryingrack": {
+            "url": "assets/audio/sfx/processing/sfx_process_dryingrack.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_dryingrack.wav",
+            "volume": 0.7
+          },
+          "processSmoker": {
+            "url": "assets/audio/sfx/processing/sfx_process_smoker.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_smoker.wav",
+            "volume": 0.7
+          },
+          "processAgingbarrel": {
+            "url": "assets/audio/sfx/processing/sfx_process_agingbarrel.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_agingbarrel.wav",
+            "volume": 0.75
+          },
+          "processAgingvase": {
+            "url": "assets/audio/sfx/processing/sfx_process_agingvase.mp3",
+            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_agingvase.wav",
+            "volume": 0.7
+          }
+        },
         "combatSfx": {
           "enabled": true,
           "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },

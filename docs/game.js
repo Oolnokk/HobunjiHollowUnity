@@ -271,6 +271,13 @@
         toastEl.className = 'show ' + (ok ? 'ok' : 'fail');
         clearTimeout(_toastTimer);
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
+        // showToast is the universal action-feedback dispatcher (farming,
+        // shipping, processing furniture, placement, permission errors,
+        // buying — see firePendingAction/onAction callers throughout this
+        // file), so hooking a generic confirm/error chime in here gives
+        // blanket "input feedback" coverage in one place instead of a
+        // separate playObjectSfx call at every one of those call sites.
+        playObjectSfx(objectSfxConfig()[ok ? 'confirm' : 'error']);
       }
 
       function gameAudioConfig() {
@@ -1395,6 +1402,48 @@
         snd.play().catch(() => {});
       }
 
+      function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
+
+      // Generic one-shot player for object/machine/UI interaction sfx (see
+      // audio.objectSfx in scratchbones-config.js and
+      // docs/assets/audio/sfx/README.md) — like playOneShotSfx, but
+      // fallback-aware: every cfgEntry names a real recording (cfgEntry.url,
+      // not committed yet — a human needs to source it) *and* a generated
+      // placeholder (cfgEntry.placeholderUrl, committed, see
+      // scripts/generate-placeholder-sfx.js) that's played instead whenever
+      // the real file is missing/fails to load. Failures are remembered via
+      // the same _audioFailedUrls/markAudioUrlFailed/audioUrlFailed
+      // bookkeeping the bgm system already uses, so later calls for the
+      // same cue go straight to the placeholder instead of re-attempting
+      // (and re-404ing) the missing real file every time.
+      function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+        const audioCfg = gameAudioConfig();
+        if (audioCfg.enabled === false || !cfgEntry) return;
+        if (objectSfxConfig().enabled === false) return;
+        const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+          * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
+        if (volume <= 0.002) return;
+        const preferReal = cfgEntry.url && !audioUrlFailed(cfgEntry.url);
+        const url = preferReal ? cfgEntry.url : cfgEntry.placeholderUrl;
+        if (!url) return;
+        const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
+        const rate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
+        const snd = new Audio(url);
+        snd.volume = Math.min(1, volume);
+        snd.playbackRate = rate;
+        if (preferReal && cfgEntry.placeholderUrl) {
+          snd.addEventListener('error', () => {
+            if (!isRealMediaError(snd)) return;
+            markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
+            const fallback = new Audio(cfgEntry.placeholderUrl);
+            fallback.volume = snd.volume;
+            fallback.playbackRate = rate;
+            fallback.play().catch(() => {});
+          }, { once: true });
+        }
+        snd.play().catch(() => {});
+      }
+
       // Distance falloff for a creature-originated combat sound (bark/claw
       // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
       function playCreatureSfxAt(c, cfgEntry, pitch) {
@@ -2441,6 +2490,17 @@
         },
       };
 
+      // furnitureKey -> audio.objectSfx key for that machine's distinctive
+      // "product's ready" cue (see makeProcessingFurniture's onAction) —
+      // layered on top of showToast's generic confirm chime, not instead
+      // of it, so a machine finishing still reads as a machine, not just
+      // another ding.
+      const PROCESSING_SFX_KEY = {
+        pestle: 'processPestle', squeezer: 'processSqueezer', handMill: 'processHandmill',
+        dryingRack: 'processDryingrack', smoker: 'processSmoker',
+        agingBarrel: 'processAgingbarrel', agingVase: 'processAgingvase',
+      };
+
       const PROCESSING_FURNITURE_CATALOG = Object.values(PROCESSING_FURNITURE_DEFS).map(def => ({
         key: def.itemKey,
         icon: def.icon,
@@ -3110,6 +3170,7 @@
               job = null;
               outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
               saveFarmLayout();
+              playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
             }
             const active = getActiveInventoryItem();
@@ -3122,9 +3183,11 @@
             if (isAging) {
               job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
               saveFarmLayout();
+              playObjectSfx(objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
             }
             outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+            playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
           reset() {
@@ -8444,6 +8507,17 @@
       document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
       document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
       document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
+
+      // Generic UI click tick — delegated (one listener, not one per
+      // button) so every real <button> in the game's HUD/menus/dialogs
+      // gets tactile press feedback for free instead of needing a
+      // playObjectSfx call added to each of this file's ~100+ individual
+      // click handlers. Deliberately scoped to actual <button> elements
+      // (not every click anywhere) so it doesn't fire for clicks on the
+      // game canvas itself, world objects, or plain divs.
+      document.addEventListener('pointerdown', (e) => {
+        if (e.target?.closest?.('button')) playObjectSfx(objectSfxConfig().uiClick);
+      }, { capture: true });
 
       async function loadAudioCueIndexes() {
         try {
