@@ -204,14 +204,16 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .node-sequence .port-out[data-ci="exhaust"]:hover{transform:scale(1.55)}
 
 /* Inspector */
-#inspToggle{width:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+#inspToggle{width:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
   cursor:pointer;background:rgba(255,255,255,.03);border-left:1px solid var(--line);
-  color:var(--muted);font-size:11px;user-select:none;transition:background .12s,color .12s}
+  color:var(--muted);font-size:18px;user-select:none;transition:background .12s,color .12s}
 #inspToggle:hover{background:rgba(106,167,255,.14);color:var(--acc)}
+#inspToggle:active{background:rgba(106,167,255,.22)}
 #inspector{width:260px;min-width:210px;flex-shrink:0;display:flex;flex-direction:column;
   overflow:hidden;transition:width .16s ease,min-width .16s ease;
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
 #inspector.collapsed{width:0;min-width:0;border-left:none}
+#inspector.wide{width:min(680px,88vw);min-width:min(680px,88vw)}
 #inspBody{flex:1;overflow-y:auto;padding:8px}
 .iGroup{margin-bottom:10px}
 .iMuted{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
@@ -313,7 +315,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
         <span id="zoomLabel">100%</span>
       </div>
     </div>
-    <div id="inspToggle" title="Collapse/expand inspector">◂</div>
+    <div id="inspToggle" title="Cycle inspector width: normal → wide → collapsed">◂</div>
     <div id="inspector">
       <div class="paneHead">Inspector</div>
       <div id="inspBody">
@@ -1128,7 +1130,7 @@ function renderInspector() {
   if (nd.type === 'text') {
     specific = `
       <div class="iGroup"><label>Dialogue text</label>
-        <textarea id="iText" rows="5">${esc(nd.text||'')}</textarea>
+        <textarea id="iText" rows="${inspectorMode==='wide'?14:5}">${esc(nd.text||'')}</textarea>
         <div class="iMuted">
           <code>{{npcName}}</code> <code>{{playerName}}</code>
           <code>{{npcSpecies}}</code> <code>{{playerSpecies}}</code> <code>{{role}}</code><br>
@@ -1527,11 +1529,22 @@ function autoOrganize() {
   setDirty(); renderCanvas();
 }
 
-let inspectorCollapsed = false;
+// Cycles collapsed (canvas gets full width) -> normal (default working
+// width) -> wide (much more room for authoring line text) -> collapsed.
+const INSPECTOR_MODES = ['normal', 'wide', 'collapsed'];
+const INSPECTOR_MODE_ICON = { normal: '◂', wide: '«', collapsed: '▸' };
+let inspectorMode = 'normal';
+function setInspectorMode(mode) {
+  inspectorMode = mode;
+  const el = $('inspector');
+  el.classList.toggle('collapsed', mode === 'collapsed');
+  el.classList.toggle('wide', mode === 'wide');
+  $('inspToggle').textContent = INSPECTOR_MODE_ICON[mode];
+  renderInspector(); // text areas grow in wide mode — re-render to size them
+}
 function toggleInspector() {
-  inspectorCollapsed = !inspectorCollapsed;
-  $('inspector').classList.toggle('collapsed', inspectorCollapsed);
-  $('inspToggle').textContent = inspectorCollapsed ? '▸' : '◂';
+  const next = INSPECTOR_MODES[(INSPECTOR_MODES.indexOf(inspectorMode) + 1) % INSPECTOR_MODES.length];
+  setInspectorMode(next);
 }
 
 function renderAll() { renderCondFilters(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
