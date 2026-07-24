@@ -129,13 +129,6 @@ sounds.placeholder_ui_click = normalize(
   tone(1500, 900, 0.045, { wave: 'sine', ampStart: 0.9, ampEnd: 0, curve: 1.4 })
 );
 
-// UI: a bright two-note ascending chime — generic "it worked".
-sounds.placeholder_ui_confirm = normalize(concat(
-  tone(523.25, 523.25, 0.09, { ampStart: 0.9, ampEnd: 0.15, curve: 1 }),
-  silence(0.015),
-  tone(784, 784, 0.14, { ampStart: 0.9, ampEnd: 0, curve: 1.6 })
-));
-
 // UI: a short two-note descending buzz — generic "blocked/failed".
 sounds.placeholder_ui_error = normalize(concat(
   tone(300, 280, 0.09, { wave: 'square', ampStart: 0.5, ampEnd: 0.3, curve: 1 }),

@@ -266,24 +266,24 @@
       // ── Legend + old legend toggle removed — handled by menu now
       // ── Toast ──────────────────────────────────────────────
       let _toastTimer = null;
-      // `silent` skips the generic confirm/error chime while still showing
+      // `silent` skips the "can't do that" error chime while still showing
       // the visual toast — used by per-swing combat hit/miss results (combo/
       // quick attacks/Charged Breaker/basic weapon tap), which fire on
       // *every* attack and already have their own dedicated combat sfx
-      // (weaponSlash/creatureClawHit) — layering a generic ding/buzz on top
-      // of every single swing, hit or miss, was noisy and redundant.
+      // (weaponSlash/creatureClawHit).
+      //
+      // Deliberately no sound on ok===true here: a ding on every successful
+      // action (dig, till, plant, harvest, process...) was just noise that
+      // meant "you pressed something and it worked" — no actual information
+      // beyond what the player already knows from doing the thing. The
+      // error chime survives because a *blocked* action is the one case
+      // that's actually worth a distinct "that didn't work" cue.
       function showToast(msg, ok = true, silent = false) {
         toastEl.textContent = msg;
         toastEl.className = 'show ' + (ok ? 'ok' : 'fail');
         clearTimeout(_toastTimer);
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
-        // showToast is the universal action-feedback dispatcher (farming,
-        // shipping, processing furniture, placement, permission errors,
-        // buying — see firePendingAction/onAction callers throughout this
-        // file), so hooking a generic confirm/error chime in here gives
-        // blanket "input feedback" coverage in one place instead of a
-        // separate playObjectSfx call at every one of those call sites.
-        if (!silent) playObjectSfx(objectSfxConfig()[ok ? 'confirm' : 'error']);
+        if (!silent && !ok) playObjectSfx(objectSfxConfig().error);
       }
 
       function gameAudioConfig() {
@@ -8526,14 +8526,18 @@
       document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
 
       // Generic UI click tick — delegated (one listener, not one per
-      // button) so every real <button> in the game's HUD/menus/dialogs
-      // gets tactile press feedback for free instead of needing a
-      // playObjectSfx call added to each of this file's ~100+ individual
-      // click handlers. Deliberately scoped to actual <button> elements
-      // (not every click anywhere) so it doesn't fire for clicks on the
-      // game canvas itself, world objects, or plain divs.
+      // button), scoped to buttons inside #menuPanel (the tabbed
+      // Inventory/Calendar/Map/Farm/Stable/.../Settings menu shell — see
+      // index.html's mp-tab/mp-pane markup). Deliberately does NOT cover
+      // the in-game action bar, world-object interaction buttons, or NPC
+      // dialogue — those are gameplay inputs, not menu navigation, and a
+      // tick on every single one of them (dig, till, plant, talk...) was
+      // just noise that meant nothing beyond "you pressed something",
+      // which showToast's error chime already covers for the one case
+      // that actually carries information (it didn't work).
       document.addEventListener('pointerdown', (e) => {
-        if (e.target?.closest?.('button')) playObjectSfx(objectSfxConfig().uiClick);
+        const btn = e.target?.closest?.('button');
+        if (btn?.closest('#menuPanel')) playObjectSfx(objectSfxConfig().uiClick);
       }, { capture: true });
 
       async function loadAudioCueIndexes() {
@@ -18090,6 +18094,7 @@
         tile.cropAge = 0;
         tile.cropReady = false;
         tile.stress = '';
+        playObjectSfx(objectSfxConfig().harvest);
         return { ok: true, message: msg };
       }
 
@@ -18396,6 +18401,18 @@
         }
       }
 
+      // Looks up an affliction's color and pushes it through
+      // ResourceRings.neonizeColor — the same vivid-not-white saturation
+      // boost the resource rings use (see resource-rings.js) — so the
+      // combat cone trail and lunge trail read as the same neon palette
+      // instead of AFFLICTION_COLORS' raw, often muted/muddy source tone.
+      // Falls back to the raw color if ResourceRings hasn't loaded.
+      function neonAfflictionColor(id) {
+        const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id];
+        if (raw == null) return null;
+        return window.ResourceRings?.neonizeColor ? window.ResourceRings.neonizeColor(raw) : raw;
+      }
+
       // Combat swing trail — real 3D ribbon meshes (not a flat canvas
       // overlay decal) tracing the outer edge of the attack's own hit cone
       // (rangePx/halfConeRad/angle, captured in combatSwingCone by
@@ -18516,7 +18533,7 @@
           const mesh = ensureConeTrailLaneMesh(lane);
           if (lane >= laneCount) { mesh.visible = false; continue; }
           const colorNum = ids.length
-            ? (window.ResourceRings?.AFFLICTION_COLORS?.[ids[lane]] ?? 0xffffff)
+            ? (neonAfflictionColor(ids[lane]) ?? 0xffffff)
             : 0xffffff;
           const cr = ((colorNum >> 16) & 0xff) / 255;
           const cg = ((colorNum >> 8) & 0xff) / 255;
@@ -18603,7 +18620,7 @@
         if (!ids || !ids.length) return; // nothing to color this lunge by — no trail
         if (!sceneObj) return;
         const chosenId = pickWeightedAfflictionId(ids, muls);
-        const color = window.ResourceRings?.AFFLICTION_COLORS?.[chosenId] ?? 0xffffff;
+        const color = neonAfflictionColor(chosenId) ?? 0xffffff;
 
         const tile = footstepTileAt(areaId, wx, wy, grid);
         const y = tileSurfaceYInArea(tile, areaId) + characterGroundShadowSurfaceOffset() + 0.02;
@@ -19136,6 +19153,9 @@
         facingAngle = player.angle;
         targetAimAngle = player.angle;
         lastMoveAngle = player.angle;
+        // -1 so updateClimb's hopIndex-change check always fires for hop 0
+        // (the very first stagger) instead of only from hop 1 onward.
+        player._climbLastHopIndex = -1;
       }
 
       function updateClimb(dt) {
@@ -19143,6 +19163,14 @@
         const totalDur = player.climbHopCount * cycle;
         player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
         const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
+        // One low gravel thud per stagger — each scripted hop up/down the
+        // cliff face lands like a foot planting on loose rock, distinct
+        // from ordinary footsteps (see playObjectSfx's climbStep cue,
+        // pitched well below a normal gravelstep).
+        if (hopIndex !== player._climbLastHopIndex) {
+          player._climbLastHopIndex = hopIndex;
+          playObjectSfx(objectSfxConfig().climbStep);
+        }
         const withinCycle = player.climbElapsed - hopIndex * cycle;
         const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
         const hopLocalT = hopActive ? clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;

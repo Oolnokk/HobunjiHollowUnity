@@ -3319,11 +3319,6 @@ window.SCRATCHBONES_CONFIG = {
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
             "volume": 0.35
           },
-          "confirm": {
-            "url": "assets/audio/sfx/ui/sfx_ui_confirm.mp3",
-            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_confirm.wav",
-            "volume": 0.5
-          },
           "error": {
             "url": "assets/audio/sfx/ui/sfx_ui_error.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_error.wav",
@@ -3340,6 +3335,28 @@ window.SCRATCHBONES_CONFIG = {
             ],
             "volume": 0.95,
             "pitch": 0.8
+          },
+          "climbStep": {
+            "url": "assets/audio/sfx/farming/sfx_climb_step.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 0.5
+          },
+          "harvest": {
+            "url": "assets/audio/sfx/farming/sfx_harvest.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_grassstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_grassstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_grassstep_3.mp3"
+            ],
+            "volume": 0.9,
+            "pitch": 0.95
           },
           "processStart": {
             "url": "assets/audio/sfx/processing/sfx_process_start.mp3",

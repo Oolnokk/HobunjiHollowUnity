@@ -492,5 +492,10 @@
     // reuse the exact same per-affliction color the resource bars themselves
     // use, instead of keeping a second copy of this mapping in sync by hand.
     AFFLICTION_COLORS,
+    // Exposed so other affliction-colored effects (game.js's lunge trail and
+    // weapon cone trail) get the same vivid-not-white neon treatment as the
+    // resource rings instead of using AFFLICTION_COLORS' raw, often-muddy
+    // source tone directly.
+    neonizeColor,
   };
 })();
