@@ -9924,63 +9924,116 @@
         return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
       }
 
-      // Animal dens: one continuous, bump-displaced rock mound over a den's
-      // whole multi-tile footprint, 2 tiles high, with a simple rectangular
-      // gap cut into its south face for the walk-through mouth (see
-      // isAnimalDenCollisionTile's matching walkable cutout) — same
-      // buildRockMoundBumpField/sampleRockMoundBump technique buildCavernWalls
-      // already uses for a den's own cavern interior, so the outside reads as
-      // the same rock as the inside (and the loose rocks scattered on the
-      // ground via buildRockTileGeo) instead of a flat, hard-edged box.
+      // One coherent BFS-grown rock lobe — buildRockTileGeo's own single-
+      // 1x1-tile algorithm, generalized to an arbitrary col x row footprint
+      // and scaled to a target peak height, instead of the many-small-lobe
+      // buildRockMoundBumpField used for cavern walls. Reads as "one of the
+      // little loose rocks scattered on the ground, scaled up" — a single
+      // dome-shaped heightfield rising from ground level at the footprint's
+      // own edges to one irregular peak — rather than a box with a bumpy
+      // skin. The footprint's own w:h ratio (a den is wider than it is
+      // deep) reads as a horizontally-skewed/elongated mound for free, with
+      // no extra stretching needed. `mouthRect` ({u0,u1,v0}, same 0-1 space
+      // MOUTH_U0/U1 used before) keeps height suppressed near the entrance
+      // so the path in reads as a low gap in the rock instead of a wall.
+      function buildDenRockMoundGeo(colsTiles, rowsTiles, peakHeight, salt, mouthRect) {
+        const CX = Math.max(3, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const CZ = Math.max(3, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const VX = CX + 1, VZ = CZ + 1;
+        let _s = (Math.imul(Math.round(colsTiles * 97) + 1, 374761393) ^ Math.imul(Math.round(rowsTiles * 131) + 1, 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
+        const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        const seamDisp = (u, v) => {
+          const kx = Math.round(u * CX * 2) | 0, kz = Math.round(v * CZ * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const roughDisp = (u, v) => {
+          const kx = Math.round(u * CX * 8) | 0, kz = Math.round(v * CZ * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.05;
+        };
+        const Y = new Float32Array(VX * VZ);
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(vi / CX, vj / CZ);
+
+        // Unlike the 1-tile version's fixed 2-13-cell range, maxSize scales
+        // with the footprint's own interior so a bigger den still reads as
+        // ONE big lobe filling most of its shape, not a small lump lost in
+        // a large flat area.
+        const startCi = 1 + Math.floor(rng() * (CX - 2));
+        const startCj = 1 + Math.floor(rng() * (CZ - 2));
+        const interior = (CX - 2) * (CZ - 2);
+        const maxSize = Math.max(2, Math.round(interior * (0.55 + rng() * 0.35)));
+        const group = new Set([startCj * CX + startCi]);
+        const front = [[startCi, startCj]];
+        while (front.length && group.size < maxSize) {
+          const fi = Math.floor(rng() * front.length);
+          const [ci, cj] = front.splice(fi, 1)[0];
+          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const ni = ci + dc, nj = cj + dr;
+            if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
+            const nk = nj * CX + ni;
+            if (group.has(nk)) continue;
+            group.add(nk); front.push([ni, nj]);
+          }
+        }
+
+        let maxY = -Infinity;
+        const raised = new Set();
+        for (const ck of group) {
+          const ci = ck % CX, cj = (ck / CX) | 0;
+          for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
+            raised.add(vv);
+            if (Y[vv] > maxY) maxY = Y[vv];
+          }
+        }
+        const target = maxY + peakHeight;
+        for (const vv of raised) {
+          const vix = vv % VX, viy = (vv / VX) | 0;
+          const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
+          const blend = Math.min(1, edgeDist / 3);
+          if (blend <= 0) continue;
+          const u = vix / CX, v = viy / CZ;
+          const inMouth = mouthRect && u >= mouthRect.u0 && u <= mouthRect.u1 && v >= mouthRect.v0;
+          const h = seamDisp(u, v) + (inMouth ? 0 : blend * target) + roughDisp(u, v) * blend;
+          if (h > Y[vv]) Y[vv] = h;
+        }
+
+        const positions = [];
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) positions.push((vi / CX) * colsTiles, Y[vj * VX + vi], (vj / CZ) * rowsTiles);
+        const idx = [];
+        for (let cj = 0; cj < CZ; cj++) for (let ci = 0; ci < CX; ci++) {
+          const v00 = cj * VX + ci, v10 = cj * VX + ci + 1, v01 = (cj + 1) * VX + ci, v11 = (cj + 1) * VX + ci + 1;
+          idx.push(v00, v01, v11, v00, v11, v10);
+        }
+        return { positions, idx, vertexCount: VX * VZ };
+      }
+
+      // Animal dens: one continuous rock mound over a den's whole multi-tile
+      // footprint — "one of the little loose rocks scattered on the ground
+      // (see buildRockTileGeo), scaled up" — instead of a box with a bumpy
+      // skin. See buildDenRockMoundGeo above for the shape itself; this just
+      // places one per den (sunk slightly into the ground, same as before)
+      // and merges them into a single mesh.
       function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
         if (!dens || !dens.length) return;
-        const DEN_HEIGHT = 2.0, DEN_SINK = 0.5;
-        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V1 = 0.65;
+        const DEN_PEAK_HEIGHT = 2.0, DEN_SINK = 0.5;
+        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V0 = 0.6;
         const pos = [], idx = []; let vi = 0;
         let denSalt = 0;
-        // Every panel's own outer edge is pinned to exactly 0 bump (see
-        // buildRockMoundBumpField's tail), so independently-seeded adjacent
-        // faces — this wall's edge against the next wall's, or the mouth
-        // frame's three strips against each other — still meet without a
-        // visible seam, even though each is generated on its own.
-        const addRockQuad = (p00, p10, p01, widthTiles, heightTiles, nx, ny, nz, salt) => {
-          const segsU = Math.max(4, Math.round(widthTiles * ROCK_MOUND_CELLS_PER_TILE));
-          const segsV = Math.max(4, Math.round(heightTiles * ROCK_MOUND_CELLS_PER_TILE));
-          const ux = { x: p10.x - p00.x, y: p10.y - p00.y, z: p10.z - p00.z };
-          const vx = { x: p01.x - p00.x, y: p01.y - p00.y, z: p01.z - p00.z };
-          const bumpField = buildRockMoundBumpField(widthTiles, heightTiles, p00.x, p00.z, salt);
-          const base = vi;
-          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
-            const u = i / segsU, v = j / segsV;
-            const x = p00.x + ux.x * u + vx.x * v, y = p00.y + ux.y * u + vx.y * v, z = p00.z + ux.z * u + vx.z * v;
-            const d = sampleRockMoundBump(bumpField, u, v);
-            pos.push(x + nx * d, y + ny * d, z + nz * d);
-          }
-          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
-            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
-            idx.push(a, c0, d2, a, d2, b);
-          }
-          vi += (segsU + 1) * (segsV + 1);
-        };
         for (const den of dens) {
           const w = den.w || 1, h = den.h || 1;
           const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
           const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
-          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
-          const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
-          const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
-          const salt0 = (denSalt += 97); // varies the bump seed den-to-den so neighboring dens don't look identical
-          addRockQuad({ x: x1, y: yBase, z: z0 }, { x: x0, y: yBase, z: z0 }, { x: x1, y: yTop, z: z0 }, w, DEN_HEIGHT, 0, 0, -1, salt0 + 1); // north
-          addRockQuad({ x: x1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z0 }, { x: x1, y: yTop, z: z1 }, h, DEN_HEIGHT, 1, 0, 0, salt0 + 2); // east
-          addRockQuad({ x: x0, y: yBase, z: z0 }, { x: x0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z0 }, h, DEN_HEIGHT, -1, 0, 0, salt0 + 3); // west
-          addRockQuad({ x: x0, y: yTop, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }, w, h, 0, 1, 0, salt0 + 4); // top
-          // South face: same left/right/above-hole frame around the mouth
-          // gap as before, each strip its own bump-displaced slab.
-          const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
-          const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
-          addRockQuad({ x: x0, y: yBase, z: z1 }, { x: xm0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z1 }, xm0 - x0, DEN_HEIGHT, 0, 0, 1, salt0 + 5); // left strip
-          addRockQuad({ x: xm1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z1 }, { x: xm1, y: yTop, z: z1 }, x1 - xm1, DEN_HEIGHT, 0, 0, 1, salt0 + 6); // right strip
-          addRockQuad({ x: xm0, y: ym1, z: z1 }, { x: xm1, y: ym1, z: z1 }, { x: xm0, y: yTop, z: z1 }, xm1 - xm0, yTop - ym1, 0, 0, 1, salt0 + 7); // strip above the hole
+          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT - DEN_SINK;
+          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, (denSalt += 97), { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
+          const base = vi;
+          for (let p = 0; p < mound.vertexCount; p++) {
+            pos.push(den.x + mound.positions[p * 3], groundY + mound.positions[p * 3 + 1], den.y + mound.positions[p * 3 + 2]);
+          }
+          for (const i of mound.idx) idx.push(base + i);
+          vi += mound.vertexCount;
         }
         if (!idx.length) return;
         const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });
