@@ -710,21 +710,32 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Dodge button: lives on the same outer ring as the tool/item dials
-       (#toolSelect, radius --ar2), directly above the corner (90°). Hidden
-       outside combat; shown only while .combat-active is toggled on by
-       updateMovement() (same condition that drives the auto-target lock),
-       and never on desktop (X key covers it there instead). ── */
+    /* ── Dodge Arch: a third, innermost ring — closer to the corner than
+       the action arch (--ar) and the tool/item dial (--ar2) — carrying a
+       single input: dodge, on the NW cardinal (135°, the direction that
+       bisects the other two arcs' 90°-180° sweep). Keeping it on its own
+       ring instead of sharing one with other buttons avoids the
+       radius/angle juggling that a shared ring would need. R tracks
+       #actionStack's --ar (follows its +1 col push-out) so the gap
+       between this ring and the action arch stays put at 3.6 col. ── */
+    #dodgeArch {
+      --ar0: calc(4 * var(--col));
+      position: absolute; right: 0; bottom: 0;
+      width: 0; height: 0; overflow: visible; z-index: 3; touch-action: none;
+    }
+    /* ── Dodge button: always visible on touch (never on desktop — X key
+       covers it there instead). Still force-hidden during fishing by
+       setNonFishingArcControlsHidden(), same as the tool/item/weapon-
+       switch buttons. ── */
     #dodgeBtn {
       position: absolute;
-      right:  calc(-1*cos(90deg)*var(--ar2));
-      bottom: calc(   sin(90deg)*var(--ar2));
+      right:  calc(-1*cos(135deg)*var(--ar0));
+      bottom: calc(   sin(135deg)*var(--ar0));
       transform: translate(50%, 50%);
       width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
       border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
-      display: none;
+      display: flex;
     }
-    #dodgeBtn.combat-active { display: flex; }
     button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
     #dodgeBtn .abt-icon { font-size: 1.3em; }
     @media (pointer: fine) {
@@ -850,10 +861,15 @@
     /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
     /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
        5 buttons at 180°,157.5°,135°,112.5°,90°.
-       R = 6.6 col → centroid ≈ 0.6028×6.6 = 3.98 col from corner ≈ container centre.
+       R = 7.6 col (pushed out from 6.6 — the tool/item dial's own 10 col
+       radius reads with more room around it than it actually has, since
+       its buttons are much smaller than the action arch's; closing the
+       raw radius gap some corrects for that) → centroid ≈ 0.6028×7.6 =
+       4.58 col from corner ≈ container centre. #dodgeArch's --ar0 shifts
+       by the same +1 col so its gap to this ring is unchanged.
        No per-button margin; safe-area inset lives on #arcContainer.       */
     #actionStack {
-      --ar: calc(6.6 * var(--col));
+      --ar: calc(7.6 * var(--col));
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0;
       overflow: visible; z-index: 1; touch-action: none;

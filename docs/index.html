@@ -935,15 +935,19 @@
   <!-- Button/Prompt Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Zero-size fixed anchor at bottom-right; hidden during dialogue. -->
   <div id="arcContainer">
-    <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
-    <div id="toolSelect">
-      <!-- Dodge: tap dodges in current facing direction. Only shown (via
-           .combat-active) while a hostile is within auto-target range —
-           dodging doesn't matter outside combat. Desktop: X key, no button. -->
+    <!-- Innermost arch: dodge only, sitting on the NW cardinal (135°) —
+         one clear input, closest ring to the corner. Tap dodges in
+         current facing direction. Always visible on touch (hidden only
+         during fishing, along with the other arc controls). Desktop: X
+         key, no button. -->
+    <div id="dodgeArch">
       <button id="dodgeBtn" class="abt" aria-label="Dodge">
         <span class="abt-icon">💨</span>
         <span class="abt-label">Dodge</span>
       </button>
+    </div>
+    <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
+    <div id="toolSelect">
       <!-- Weapon quick-switch: tap once to drop everything and go straight to
            the weapon; tap again to return to whatever tool/item was active
            before. This is the only way into the weapon tool slot now — it's
