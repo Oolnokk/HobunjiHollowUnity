@@ -9924,22 +9924,43 @@
         return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
       }
 
-      // Animal dens: a deliberately plain placeholder block over a den's
-      // footprint — a flat, unlit dark box with a simple rectangular gap cut
-      // into its south face for the walk-through mouth (see
-      // isAnimalDenCollisionTile's matching walkable cutout). Stands in for
-      // authored art; no rock-mound shading, no carved tunnel depth — just
-      // enough geometry to read as "a den with a door."
+      // Animal dens: one continuous, bump-displaced rock mound over a den's
+      // whole multi-tile footprint, 2 tiles high, with a simple rectangular
+      // gap cut into its south face for the walk-through mouth (see
+      // isAnimalDenCollisionTile's matching walkable cutout) — same
+      // buildRockMoundBumpField/sampleRockMoundBump technique buildCavernWalls
+      // already uses for a den's own cavern interior, so the outside reads as
+      // the same rock as the inside (and the loose rocks scattered on the
+      // ground via buildRockTileGeo) instead of a flat, hard-edged box.
       function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
         if (!dens || !dens.length) return;
-        const DEN_HEIGHT = 2.4, DEN_SINK = 0.5;
+        const DEN_HEIGHT = 2.0, DEN_SINK = 0.5;
         const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V1 = 0.65;
         const pos = [], idx = []; let vi = 0;
-        const addFlatQuad = (p00, p10, p01, p11) => {
+        let denSalt = 0;
+        // Every panel's own outer edge is pinned to exactly 0 bump (see
+        // buildRockMoundBumpField's tail), so independently-seeded adjacent
+        // faces — this wall's edge against the next wall's, or the mouth
+        // frame's three strips against each other — still meet without a
+        // visible seam, even though each is generated on its own.
+        const addRockQuad = (p00, p10, p01, widthTiles, heightTiles, nx, ny, nz, salt) => {
+          const segsU = Math.max(4, Math.round(widthTiles * ROCK_MOUND_CELLS_PER_TILE));
+          const segsV = Math.max(4, Math.round(heightTiles * ROCK_MOUND_CELLS_PER_TILE));
+          const ux = { x: p10.x - p00.x, y: p10.y - p00.y, z: p10.z - p00.z };
+          const vx = { x: p01.x - p00.x, y: p01.y - p00.y, z: p01.z - p00.z };
+          const bumpField = buildRockMoundBumpField(widthTiles, heightTiles, p00.x, p00.z, salt);
           const base = vi;
-          pos.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
-          idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
-          vi += 4;
+          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
+            const u = i / segsU, v = j / segsV;
+            const x = p00.x + ux.x * u + vx.x * v, y = p00.y + ux.y * u + vx.y * v, z = p00.z + ux.z * u + vx.z * v;
+            const d = sampleRockMoundBump(bumpField, u, v);
+            pos.push(x + nx * d, y + ny * d, z + nz * d);
+          }
+          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
+            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
+            idx.push(a, c0, d2, a, d2, b);
+          }
+          vi += (segsU + 1) * (segsV + 1);
         };
         for (const den of dens) {
           const w = den.w || 1, h = den.h || 1;
@@ -9948,28 +9969,31 @@
           const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
           const x0 = den.x, x1 = den.x + w, z0 = den.y, z1 = den.y + h;
           const yBase = groundY - DEN_SINK, yTop = groundY + DEN_HEIGHT;
-          addFlatQuad({ x: x1, y: yBase, z: z0 }, { x: x0, y: yBase, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z0 }); // north
-          addFlatQuad({ x: x1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z0 }, { x: x1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z0 }); // east
-          addFlatQuad({ x: x0, y: yBase, z: z0 }, { x: x0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }); // west
-          addFlatQuad({ x: x0, y: yTop, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // top
-          // South face: a frame around a plain rectangular mouth gap.
+          const salt0 = (denSalt += 97); // varies the bump seed den-to-den so neighboring dens don't look identical
+          addRockQuad({ x: x1, y: yBase, z: z0 }, { x: x0, y: yBase, z: z0 }, { x: x1, y: yTop, z: z0 }, w, DEN_HEIGHT, 0, 0, -1, salt0 + 1); // north
+          addRockQuad({ x: x1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z0 }, { x: x1, y: yTop, z: z1 }, h, DEN_HEIGHT, 1, 0, 0, salt0 + 2); // east
+          addRockQuad({ x: x0, y: yBase, z: z0 }, { x: x0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z0 }, h, DEN_HEIGHT, -1, 0, 0, salt0 + 3); // west
+          addRockQuad({ x: x0, y: yTop, z: z0 }, { x: x1, y: yTop, z: z0 }, { x: x0, y: yTop, z: z1 }, w, h, 0, 1, 0, salt0 + 4); // top
+          // South face: same left/right/above-hole frame around the mouth
+          // gap as before, each strip its own bump-displaced slab.
           const xm0 = x0 + (x1 - x0) * MOUTH_U0, xm1 = x0 + (x1 - x0) * MOUTH_U1;
           const ym1 = yBase + (yTop - yBase) * MOUTH_V1;
-          addFlatQuad({ x: x0, y: yBase, z: z1 }, { x: xm0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z1 }, { x: xm0, y: yTop, z: z1 }); // left strip
-          addFlatQuad({ x: xm1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z1 }, { x: xm1, y: yTop, z: z1 }, { x: x1, y: yTop, z: z1 }); // right strip
-          addFlatQuad({ x: xm0, y: ym1, z: z1 }, { x: xm1, y: ym1, z: z1 }, { x: xm0, y: yTop, z: z1 }, { x: xm1, y: yTop, z: z1 }); // strip above the hole
+          addRockQuad({ x: x0, y: yBase, z: z1 }, { x: xm0, y: yBase, z: z1 }, { x: x0, y: yTop, z: z1 }, xm0 - x0, DEN_HEIGHT, 0, 0, 1, salt0 + 5); // left strip
+          addRockQuad({ x: xm1, y: yBase, z: z1 }, { x: x1, y: yBase, z: z1 }, { x: xm1, y: yTop, z: z1 }, x1 - xm1, DEN_HEIGHT, 0, 0, 1, salt0 + 6); // right strip
+          addRockQuad({ x: xm0, y: ym1, z: z1 }, { x: xm1, y: ym1, z: z1 }, { x: xm0, y: yTop, z: z1 }, xm1 - xm0, yTop - ym1, 0, 0, 1, salt0 + 7); // strip above the hole
         }
         if (!idx.length) return;
-        const mat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
+        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
         mesh.userData.cameraObstacle = true;
-        console.log(`%c[zone:${mapId}] animal den placeholders built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
+        console.log(`%c[zone:${mapId}] animal den rock mounds built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
       }
 
       // Root Totems (see wilderness-map-generator.js's placeRootTotems) — a
