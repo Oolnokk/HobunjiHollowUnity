@@ -9937,80 +9937,58 @@
         return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
       }
 
-      // One coherent BFS-grown rock lobe — buildRockTileGeo's own single-
-      // 1x1-tile algorithm, generalized to an arbitrary col x row footprint
-      // and scaled to a target peak height, instead of the many-small-lobe
-      // buildRockMoundBumpField used for cavern walls. Reads as "one of the
-      // little loose rocks scattered on the ground, scaled up" — a single
-      // dome-shaped heightfield rising from ground level at the footprint's
-      // own edges to one irregular peak — rather than a box with a bumpy
-      // skin. The footprint's own w:h ratio (a den is wider than it is
-      // deep) reads as a horizontally-skewed/elongated mound for free, with
-      // no extra stretching needed. `mouthRect` ({u0,u1,v0}, same 0-1 space
-      // MOUTH_U0/U1 used before) keeps height suppressed near the entrance
-      // so the path in reads as a low gap in the rock instead of a wall.
+      // A single rounded lump spanning a whole col x row footprint, with a
+      // hole cut into one side — not an organic BFS-grown blob (which read
+      // as an amoeba/horseshoe from directly above once scaled up), but a
+      // dome built from each point's distance to its NEAREST footprint edge
+      // (Chebyshev/L-infinity distance: contours of "distance to nearest
+      // edge = constant" are themselves smaller rectangles nested toward
+      // the center, not circles) — so the lump's own outline, measured at
+      // any height, is always a rectangle matching the footprint exactly,
+      // while it still reads as one rounded mass rising to a single peak at
+      // the center. The footprint's own w:h ratio (a den is wider than it
+      // is deep) reads as a horizontally-skewed/elongated lump for free.
+      // `mouthRect` ({u0,u1,v0}, 0-1 space) carves the hole near one edge.
       function buildDenRockMoundGeo(colsTiles, rowsTiles, peakHeight, salt, mouthRect) {
         const CX = Math.max(3, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
         const CZ = Math.max(3, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
         const VX = CX + 1, VZ = CZ + 1;
         let _s = (Math.imul(Math.round(colsTiles * 97) + 1, 374761393) ^ Math.imul(Math.round(rowsTiles * 131) + 1, 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
         const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-        const seamDisp = (u, v) => {
-          const kx = Math.round(u * CX * 2) | 0, kz = Math.round(v * CZ * 2) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
+        // Small per-vertex jitter for a natural rock-surface texture — never
+        // large enough to disturb the overall rectangular-contour shape.
+        const roughSeed = rng() * 1000;
         const roughDisp = (u, v) => {
           const kx = Math.round(u * CX * 8) | 0, kz = Math.round(v * CZ * 8) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263) ^ Math.imul(roughSeed | 0, 97)) >>> 0;
           h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.05;
+          return (h / 4294967296 - 0.5) * 0.16;
         };
+
         const Y = new Float32Array(VX * VZ);
-        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(vi / CX, vj / CZ);
-
-        // Unlike the 1-tile version's fixed 2-13-cell range, maxSize scales
-        // with the footprint's own interior so a bigger den still reads as
-        // ONE big lobe filling most of its shape, not a small lump lost in
-        // a large flat area.
-        const startCi = 1 + Math.floor(rng() * (CX - 2));
-        const startCj = 1 + Math.floor(rng() * (CZ - 2));
-        const interior = (CX - 2) * (CZ - 2);
-        const maxSize = Math.max(2, Math.round(interior * (0.55 + rng() * 0.35)));
-        const group = new Set([startCj * CX + startCi]);
-        const front = [[startCi, startCj]];
-        while (front.length && group.size < maxSize) {
-          const fi = Math.floor(rng() * front.length);
-          const [ci, cj] = front.splice(fi, 1)[0];
-          for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-            const ni = ci + dc, nj = cj + dr;
-            if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
-            const nk = nj * CX + ni;
-            if (group.has(nk)) continue;
-            group.add(nk); front.push([ni, nj]);
-          }
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
+          const u = vi / CX, v = vj / CZ;
+          const edgeDist = Math.min(u, 1 - u, v, 1 - v); // 0 at the true footprint edge, up to 0.5 at dead center
+          const norm = Math.min(1, edgeDist * 2);
+          const dome = norm * norm * (3 - 2 * norm); // smoothstep — rounded profile, not a flat-topped mesa
+          const idxv = vj * VX + vi;
+          Y[idxv] = Math.max(0, dome * peakHeight + roughDisp(u, v) * dome);
         }
 
-        let maxY = -Infinity;
-        const raised = new Set();
-        for (const ck of group) {
-          const ci = ck % CX, cj = (ck / CX) | 0;
-          for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
-            raised.add(vv);
-            if (Y[vv] > maxY) maxY = Y[vv];
+        // Carve the entrance — a straightforward drop to ~ground level
+        // within mouthRect, same as cutting a doorway into a real boulder's
+        // face; a thin blended collar around it keeps the cut edge from
+        // being a single razor-sharp ring of triangles.
+        if (mouthRect) {
+          for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
+            const u = vi / CX, v = vj / CZ;
+            const inU = u >= mouthRect.u0 && u <= mouthRect.u1;
+            const nearV = Math.max(0, (v - mouthRect.v0) / (1 - mouthRect.v0));
+            if (inU && nearV > 0) {
+              const idxv = vj * VX + vi;
+              Y[idxv] *= Math.max(0, 1 - nearV * 1.6);
+            }
           }
-        }
-        const target = maxY + peakHeight;
-        for (const vv of raised) {
-          const vix = vv % VX, viy = (vv / VX) | 0;
-          const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
-          const blend = Math.min(1, edgeDist / 3);
-          if (blend <= 0) continue;
-          const u = vix / CX, v = viy / CZ;
-          const inMouth = mouthRect && u >= mouthRect.u0 && u <= mouthRect.u1 && v >= mouthRect.v0;
-          const h = seamDisp(u, v) + (inMouth ? 0 : blend * target) + roughDisp(u, v) * blend;
-          if (h > Y[vv]) Y[vv] = h;
         }
 
         const positions = [];
@@ -10023,28 +10001,14 @@
         return { positions, idx, vertexCount: VX * VZ };
       }
 
-      // Animal dens: one continuous rock mound over a den's whole multi-tile
-      // footprint — "one of the little loose rocks scattered on the ground
-      // (see buildRockTileGeo), scaled up" — instead of a box with a bumpy
-      // skin. See buildDenRockMoundGeo above for the shape itself; this just
-      // places one per den (sunk slightly into the ground, same as before)
-      // and merges them into a single mesh.
+      // Animal dens: a single rounded lump over a den's whole multi-tile
+      // footprint, with a hole cut into one side — see buildDenRockMoundGeo
+      // above for the shape itself; this just places one per den (sunk
+      // slightly into the ground) and merges them into one mesh.
       function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
         if (!dens || !dens.length) return;
         const DEN_PEAK_HEIGHT = 2.0, DEN_SINK = 0.5;
         const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V0 = 0.6;
-        // The den object's own footprint (blocksMovement:true) ends at its
-        // south edge — the mouthAnchor transition tile, and one tile beyond
-        // it, sit just outside that footprint as genuinely open, walkable
-        // ground (see placeAnimalDens' mouthAnchor). LINTEL_DEPTH_TILES
-        // spans exactly those two tiles with a short rock slab bridging
-        // above them, so the entrance reads as a real overhang — rock
-        // visibly extending out over the approach — instead of just a
-        // notch cut into the mound's own face. The approach tiles
-        // themselves stay flat, open ground underneath; floating geometry
-        // doesn't affect movement in this game (collision is tile/object-
-        // based, not mesh-based), so there's no walkability concern here.
-        const LINTEL_DEPTH_TILES = 2, LINTEL_HEIGHT_FRAC = 0.7;
         const pos = [], idx = []; let vi = 0;
         let denSalt = 0;
         for (const den of dens) {
@@ -10052,32 +10016,13 @@
           const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
           const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
           const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT - DEN_SINK;
-          const salt0 = (denSalt += 97);
-          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, salt0, { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
+          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, (denSalt += 97), { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
           const base = vi;
           for (let p = 0; p < mound.vertexCount; p++) {
             pos.push(den.x + mound.positions[p * 3], groundY + mound.positions[p * 3 + 1], den.y + mound.positions[p * 3 + 2]);
           }
           for (const i of mound.idx) idx.push(base + i);
           vi += mound.vertexCount;
-
-          const doorWidth = w * (MOUTH_U1 - MOUTH_U0);
-          const lintelX0 = den.x + w * MOUTH_U0, lintelZ0 = den.y + h;
-          const lintelY = groundY + DEN_PEAK_HEIGHT * LINTEL_HEIGHT_FRAC;
-          const segsU = Math.max(4, Math.round(doorWidth * ROCK_MOUND_CELLS_PER_TILE));
-          const segsV = Math.max(4, Math.round(LINTEL_DEPTH_TILES * ROCK_MOUND_CELLS_PER_TILE));
-          const lintelBump = buildRockMoundBumpField(doorWidth, LINTEL_DEPTH_TILES, lintelX0, lintelZ0, salt0 + 8);
-          const lintelBase = vi;
-          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
-            const u = i / segsU, v = j / segsV;
-            const bump = sampleRockMoundBump(lintelBump, u, v);
-            pos.push(lintelX0 + doorWidth * u, lintelY + bump * 0.6, lintelZ0 + LINTEL_DEPTH_TILES * v);
-          }
-          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
-            const a = lintelBase + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
-            idx.push(a, c0, d2, a, d2, b);
-          }
-          vi += (segsU + 1) * (segsV + 1);
         }
         if (!idx.length) return;
         const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });
