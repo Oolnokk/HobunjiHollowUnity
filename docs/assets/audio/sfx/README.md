@@ -23,6 +23,16 @@ placeholder — no code changes needed. **As soon as you drop a correctly
 named file at the `url` path below, the game starts using it instead of the
 placeholder, immediately, with nothing else to wire up.**
 
+A plain `<audio>.volume` can't go above 1.0 (its natural recorded
+loudness) — a `"volume": 0.95` cue is already about as loud as the element
+can play it. Cues that need to read as louder than that anyway (the direct
+physical-action ones — digging, climbing, harvesting, fishing) set
+`"gainBoost": 3` instead, which routes playback through a Web Audio
+`GainNode` whose gain can genuinely exceed 1.0 and amplify the source. If a
+real recording you add for one of those still sounds too quiet once it's
+in, that's what to raise (or lower) — don't fight it by re-recording
+louder, the `gainBoost` number does that job.
+
 ## What's deliberately NOT wired up to a sound
 
 Only two kinds of "you did a thing" feedback exist on purpose:

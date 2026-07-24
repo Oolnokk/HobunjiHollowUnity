@@ -1429,6 +1429,37 @@
       // bgm system already uses, so later calls for the same cue go
       // straight to the placeholder instead of re-attempting (and
       // re-404ing) the missing real file every time.
+      // A plain <audio>.volume tops out at 1.0 (its natural recorded
+      // loudness) no matter what — there's no way to make a quiet source
+      // clip louder than that through the element alone. cfgEntry.gainBoost
+      // (a multiplier > 1, e.g. 3 for "300% volume") routes playback
+      // through the shared footstep AudioContext's GainNode instead, whose
+      // gain can genuinely exceed 1.0 and amplify the source — same trick
+      // playHeavyFilteredClip uses for a heavy landing thud, minus the
+      // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
+      // is unavailable or gainBoost isn't set.
+      function playObjectAudioElement(snd, volume, gainBoost) {
+        if (!(gainBoost > 1)) {
+          snd.volume = Math.min(1, volume);
+          snd.play().catch(() => {});
+          return;
+        }
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) throw new Error('no AudioContext');
+          const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          const source = ctx.createMediaElementSource(snd);
+          const gain = ctx.createGain();
+          gain.gain.value = Math.max(0, volume * gainBoost);
+          source.connect(gain).connect(ctx.destination);
+          snd.play().catch(() => {});
+        } catch (e) {
+          snd.volume = Math.min(1, volume);
+          snd.play().catch(() => {});
+        }
+      }
+
       function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
         const audioCfg = gameAudioConfig();
         if (audioCfg.enabled === false || !cfgEntry) return;
@@ -1436,6 +1467,7 @@
         const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
           * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
         if (volume <= 0.002) return;
+        const gainBoost = Number(cfgEntry.gainBoost) || 1;
         const pickPlaceholder = () => (cfgEntry.placeholderUrls?.length)
           ? cfgEntry.placeholderUrls[Math.floor(Math.random() * cfgEntry.placeholderUrls.length)]
           : cfgEntry.placeholderUrl;
@@ -1446,19 +1478,17 @@
         const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
         const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
         const snd = new Audio(url);
-        snd.volume = Math.min(1, volume);
         snd.playbackRate = rate;
         if (preferReal && hasPlaceholder) {
           snd.addEventListener('error', () => {
             if (!isRealMediaError(snd)) return;
             markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
             const fallback = new Audio(pickPlaceholder());
-            fallback.volume = snd.volume;
             fallback.playbackRate = rate;
-            fallback.play().catch(() => {});
+            playObjectAudioElement(fallback, volume, gainBoost);
           }, { once: true });
         }
-        snd.play().catch(() => {});
+        playObjectAudioElement(snd, volume, gainBoost);
       }
 
       // Distance falloff for a creature-originated combat sound (bark/claw

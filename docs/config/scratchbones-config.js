@@ -3334,7 +3334,8 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
             ],
             "volume": 0.95,
-            "pitch": 0.8
+            "pitch": 0.8,
+            "gainBoost": 3
           },
           "climbStep": {
             "url": "assets/audio/sfx/farming/sfx_climb_step.mp3",
@@ -3346,7 +3347,8 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
             ],
             "volume": 0.8,
-            "pitch": 0.5
+            "pitch": 0.5,
+            "gainBoost": 3
           },
           "harvest": {
             "url": "assets/audio/sfx/farming/sfx_harvest.mp3",
@@ -3356,7 +3358,8 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_grassstep_3.mp3"
             ],
             "volume": 0.9,
-            "pitch": 0.95
+            "pitch": 0.95,
+            "gainBoost": 3
           },
           "fishCast": {
             "url": "assets/audio/sfx/farming/sfx_fish_cast.mp3",
@@ -3368,7 +3371,8 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
             ],
             "volume": 0.9,
-            "pitch": 0.9
+            "pitch": 0.9,
+            "gainBoost": 3
           },
           "fishBite": {
             "url": "assets/audio/sfx/farming/sfx_fish_bite.mp3",
@@ -3380,7 +3384,8 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
             ],
             "volume": 1,
-            "pitch": 0.85
+            "pitch": 0.85,
+            "gainBoost": 3
           },
           "fishMiss": {
             "url": "assets/audio/sfx/farming/sfx_fish_miss.mp3",
@@ -3392,7 +3397,8 @@ window.SCRATCHBONES_CONFIG = {
               "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
             ],
             "volume": 0.8,
-            "pitch": 0.55
+            "pitch": 0.55,
+            "gainBoost": 3
           },
           "processStart": {
             "url": "assets/audio/sfx/processing/sfx_process_start.mp3",
