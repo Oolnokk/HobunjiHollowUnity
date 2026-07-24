@@ -25669,6 +25669,62 @@
         s_resScale = parseFloat(e.target.value) || 1;
         resizeCanvas();
       });
+
+      // Local Save Folder settings row — see docs/js/local-save-folder.js.
+      // window.LocalSaveFolder owns all the actual folder-handle/IndexedDB/
+      // File System Access API work; this just renders its status and
+      // wires the buttons.
+      (function initLocalSaveFolderSettings() {
+        const row = document.getElementById('localSaveFolderRow');
+        if (!row || !window.LocalSaveFolder) return;
+        const statusEl = document.getElementById('localSaveFolderStatus');
+        const chooseBtn = document.getElementById('localSaveFolderChooseBtn');
+        const changeBtn = document.getElementById('localSaveFolderChangeBtn');
+        const reconnectBtn = document.getElementById('localSaveFolderReconnectBtn');
+        const saveNowBtn = document.getElementById('localSaveFolderSaveNowBtn');
+        const loadBtn = document.getElementById('localSaveFolderLoadBtn');
+
+        function render(status) {
+          if (!status.supported) {
+            statusEl.textContent = 'Not supported in this browser (Chrome/Edge only).';
+            [chooseBtn, changeBtn, reconnectBtn, saveNowBtn, loadBtn].forEach(b => b.style.display = 'none');
+            return;
+          }
+          chooseBtn.style.display = (status.state === 'not-configured' || status.state === 'error') ? '' : 'none';
+          changeBtn.style.display = status.folderName ? '' : 'none';
+          reconnectBtn.style.display = status.state === 'needs-permission' ? '' : 'none';
+          saveNowBtn.style.display = status.state === 'ready' ? '' : 'none';
+          loadBtn.style.display = status.state === 'ready' ? '' : 'none';
+          if (status.state === 'ready') {
+            const when = status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleTimeString() : 'never';
+            statusEl.textContent = `Saving to "${status.folderName}" — last synced ${when}.`;
+          } else if (status.state === 'needs-permission') {
+            statusEl.textContent = `Folder "${status.folderName}" needs permission again this session.`;
+          } else if (status.state === 'error') {
+            statusEl.textContent = 'Error: ' + (status.lastError || 'unknown');
+          } else {
+            statusEl.textContent = 'No folder chosen yet.';
+          }
+        }
+
+        window.LocalSaveFolder.onChange(render);
+        render(window.LocalSaveFolder.getStatus());
+
+        chooseBtn.addEventListener('click', () => window.LocalSaveFolder.chooseFolder());
+        changeBtn.addEventListener('click', () => window.LocalSaveFolder.changeFolder());
+        reconnectBtn.addEventListener('click', () => window.LocalSaveFolder.reconnect());
+        saveNowBtn.addEventListener('click', async () => {
+          const status = await window.LocalSaveFolder.syncNow();
+          showToast(status.lastError ? ('Local save failed: ' + status.lastError) : 'Saved to local folder.', !status.lastError);
+        });
+        loadBtn.addEventListener('click', async () => {
+          if (!confirm('Load the save from your local folder? This overwrites your current browser save and reloads the page.')) return;
+          const result = await window.LocalSaveFolder.loadFromFolder();
+          showToast(result.message, result.ok);
+          if (result.ok) location.reload();
+        });
+      })();
+
       const settingShowHitboxesEl = document.getElementById('settingShowHitboxes');
       settingShowHitboxesEl.checked = s_showHitboxes;
       settingShowHitboxesEl.addEventListener('change', e => {
