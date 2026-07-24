@@ -3302,9 +3302,16 @@ window.SCRATCHBONES_CONFIG = {
         // Generic object/machine/UI interaction sfx — see playObjectSfx in
         // game.js and docs/assets/audio/sfx/README.md. Every entry names a
         // real recording (`url`) that does NOT exist yet — a human needs to
-        // source/record/generate it, see the README — plus a generated
-        // `placeholderUrl` (committed, see scripts/generate-placeholder-sfx.js)
-        // that plays instead until the real file shows up in the repo.
+        // source/record/generate it, see the README — plus a placeholder
+        // that plays instead until the real file shows up in the repo:
+        // either a single generated `placeholderUrl` (committed, see
+        // scripts/generate-placeholder-sfx.js) or a `placeholderUrls` list
+        // reusing the real footstep recordings (also committed, see
+        // docs/assets/audio/sfx/footsteps/) at a different volume/pitch —
+        // a real recording standing in for a similar-enough sound beats a
+        // from-scratch synth attempt, so several material-impact cues
+        // (digging, mashing, grinding, a barrel knock) borrow gravel/water
+        // steps this way instead of having their own generated .wav.
         "objectSfx": {
           "enabled": true,
           "uiClick": {
@@ -3322,6 +3329,18 @@ window.SCRATCHBONES_CONFIG = {
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_error.wav",
             "volume": 0.5
           },
+          "dig": {
+            "url": "assets/audio/sfx/farming/sfx_dig.mp3",
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.95,
+            "pitch": 0.8
+          },
           "processStart": {
             "url": "assets/audio/sfx/processing/sfx_process_start.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_start.wav",
@@ -3329,18 +3348,39 @@ window.SCRATCHBONES_CONFIG = {
           },
           "processPestle": {
             "url": "assets/audio/sfx/processing/sfx_process_pestle.mp3",
-            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_pestle.wav",
-            "volume": 0.75
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.85,
+            "pitch": 0.75
           },
           "processSqueezer": {
             "url": "assets/audio/sfx/processing/sfx_process_squeezer.mp3",
-            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_squeezer.wav",
-            "volume": 0.75
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_waterstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_waterstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 0.85
           },
           "processHandmill": {
             "url": "assets/audio/sfx/processing/sfx_process_handmill.mp3",
-            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_handmill.wav",
-            "volume": 0.75
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.8,
+            "pitch": 1.15
           },
           "processDryingrack": {
             "url": "assets/audio/sfx/processing/sfx_process_dryingrack.mp3",
@@ -3354,8 +3394,15 @@ window.SCRATCHBONES_CONFIG = {
           },
           "processAgingbarrel": {
             "url": "assets/audio/sfx/processing/sfx_process_agingbarrel.mp3",
-            "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_process_agingbarrel.wav",
-            "volume": 0.75
+            "placeholderUrls": [
+              "assets/audio/sfx/footsteps/sfx_gravelstep_1.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_2.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_3.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_4.mp3",
+              "assets/audio/sfx/footsteps/sfx_gravelstep_5.mp3"
+            ],
+            "volume": 0.85,
+            "pitch": 0.6
           },
           "processAgingvase": {
             "url": "assets/audio/sfx/processing/sfx_process_agingvase.mp3",

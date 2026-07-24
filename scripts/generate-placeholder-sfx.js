@@ -150,29 +150,11 @@ sounds.placeholder_process_start = normalize(concat(
   tone(260, 160, 0.05, { wave: 'triangle', ampStart: 0.9, ampEnd: 0, curve: 1 })
 ));
 
-// Pestle: three soft low thuds — mashing rhythm.
-sounds.placeholder_process_pestle = normalize(concat(
-  tone(120, 70, 0.07, { wave: 'triangle', ampStart: 0.9, ampEnd: 0, curve: 1.2 }),
-  silence(0.06),
-  tone(115, 65, 0.07, { wave: 'triangle', ampStart: 0.85, ampEnd: 0, curve: 1.2 }),
-  silence(0.06),
-  tone(110, 60, 0.09, { wave: 'triangle', ampStart: 1, ampEnd: 0, curve: 1.2 })
-));
-
-// Squeezer: a descending filtered-noise squelch/press.
-sounds.placeholder_process_squeezer = normalize(
-  noiseBurst(0.32, { ampStart: 0.9, ampEnd: 0, curve: 1.3, seed: 7, lowpassHz: 900 })
-);
-
-// Hand mill: a grinding crunch — filtered noise with amplitude ripples
-// (built from several short overlapping bursts instead of one smooth
-// envelope, so it reads as a repeated crank rather than a single hit).
-sounds.placeholder_process_handmill = normalize(concat(
-  noiseBurst(0.09, { ampStart: 0.8, ampEnd: 0.3, curve: 1, seed: 11, lowpassHz: 1800 }),
-  noiseBurst(0.09, { ampStart: 0.8, ampEnd: 0.3, curve: 1, seed: 12, lowpassHz: 1800 }),
-  noiseBurst(0.09, { ampStart: 0.8, ampEnd: 0.3, curve: 1, seed: 13, lowpassHz: 1800 }),
-  noiseBurst(0.11, { ampStart: 0.8, ampEnd: 0, curve: 1.3, seed: 14, lowpassHz: 1800 })
-));
+// Pestle, Squeezer, Hand Mill, Aging Barrel, and the farming "dig" cue all
+// reuse the real grasstep/gravelstep/waterstep footstep recordings instead
+// of a generated tone — see their placeholderUrls in scratchbones-config.js
+// — a real recording pitched/volumed for the moment reads better than a
+// from-scratch synth attempt at "mashing"/"grinding"/"digging".
 
 // Drying rack: a gentle airy noise swell — soft, no percussive attack.
 sounds.placeholder_process_dryingrack = normalize(
@@ -183,12 +165,6 @@ sounds.placeholder_process_dryingrack = normalize(
 sounds.placeholder_process_smoker = normalize(concat(
   noiseBurst(0.12, { ampStart: 0.05, ampEnd: 0.5, curve: 0.7, seed: 31, highpassHz: 2200 }),
   noiseBurst(0.22, { ampStart: 0.5, ampEnd: 0, curve: 1.1, seed: 32, highpassHz: 2200 })
-));
-
-// Aging barrel: a deep wooden knock plus a short low creak.
-sounds.placeholder_process_agingbarrel = normalize(concat(
-  tone(90, 55, 0.1, { wave: 'triangle', ampStart: 1, ampEnd: 0, curve: 1.3 }),
-  noiseBurst(0.16, { ampStart: 0.25, ampEnd: 0, curve: 1, seed: 41, lowpassHz: 500, highpassHz: 120 })
 ));
 
 // Aging vase: a bright glassy clink — a tone plus a quiet harmonic overtone.

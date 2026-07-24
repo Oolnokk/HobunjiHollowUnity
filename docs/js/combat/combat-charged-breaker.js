@@ -153,7 +153,9 @@
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
-          deps.showToast(msg, hits > 0);
+          // silent: same reasoning as combat-combo.js — every swing already
+          // has its own weaponSlash/creatureClawHit sfx.
+          deps.showToast(msg, hits > 0, true);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },
       });
