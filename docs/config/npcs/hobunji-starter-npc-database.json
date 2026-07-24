@@ -1,5 +1,269 @@
 {
   "schema": "hobunji_npc_database.v2",
+  "phrasePools": [
+    {
+      "id": "pool_discourse_markers",
+      "name": "Discourse Markers",
+      "entries": [
+        {
+          "id": "pe_dm_1",
+          "text": "Now that I think about it,",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_2",
+          "text": "If you're so inclined,",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_3",
+          "text": "Seeing as you asked,",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_4",
+          "text": "For what it’s worth,",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_5",
+          "text": "Between you and me,",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": 3,
+              "max": null
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_6",
+          "text": "Honestly?",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": 3,
+              "max": null
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_7",
+          "text": "If I'm being blunt,",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": -1
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        },
+        {
+          "id": "pe_dm_8",
+          "text": "Not that it's any of your business, but",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": -1
+            }
+          },
+          "excludeConditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": [],
+            "maps": [],
+            "stations": [],
+            "playerSpecies": [],
+            "relationship": {
+              "min": null,
+              "max": null
+            }
+          }
+        }
+      ]
+    }
+  ],
   "editor": {
     "name": "Hobunji Character Studio",
     "standalone": false,

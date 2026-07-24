@@ -359,7 +359,7 @@
       }
 
       function _getNpcDlgState(npcId) {
-        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: 0, memory: [], heardTrees: [] });
+        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: 0, memory: [], heardTrees: [], heardPoolEntries: [] });
         return _npcDlgState.get(npcId);
       }
 
@@ -378,6 +378,7 @@
             favor:           rel.favor || 0,
             memory:          [...(rel.memory || [])],
             heardTrees:      [...(rel.heardTrees || [])],
+            heardPoolEntries:[...(rel.heardPoolEntries || [])],
           });
         }
       }
@@ -391,6 +392,7 @@
             favor:           st.favor || 0,
             memory:          st.memory || [],
             heardTrees:      st.heardTrees || [],
+            heardPoolEntries:st.heardPoolEntries || [],
           };
         }
         return out;
@@ -415,7 +417,7 @@
         recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));
       }
 
-      function _resolveTokens(text, npcRec) {
+      function _resolveTokens(text, npcRec, _depth = 0) {
         if (!text) return '';
         const p     = _playerData;
         const name  = p?.nickname || 'Farmer';
@@ -429,7 +431,7 @@
         for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
         const st    = _getNpcDlgState(npcRec?.id);
         const local = st.localNickname || name;
-        return text
+        let out = text
           .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
           .replace(/\{\{playerName\}\}/g,          name)
           .replace(/\{\{playerNickname\}\}/g,      name)
@@ -438,20 +440,36 @@
           .replace(/\{\{playerPronoun2\}\}/g,      pr2)
           .replace(/\{\{playerPronoun3\}\}/g,      pr3)
           .replace(/\{\{playerPronounSelf\}\}/g,   prS)
-          .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1);
+          .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1)
+          .replace(/\{\{role\}\}/g,                npcRec?.role || '')
+          .replace(/\{\{npcSpecies\}\}/g,           npcRec?.appearance?.speciesId || npcRec?.species || '')
+          .replace(/\{\{playerSpecies\}\}/g,        p?.appearance?.speciesId || '');
+        // {{pool:<id>}} pulls a conditioned line from a phrase pool authored
+        // in the dialogue editor's Phrase Pool Manager — resolved recursively
+        // (a pool entry can itself use any token, including another pool),
+        // capped at a few levels deep so an accidental pool-references-itself
+        // loop can't hang the game.
+        if (_depth < 4) {
+          out = out.replace(/\{\{pool:([^}]+)\}\}/g, (m, poolId) => {
+            const entry = _pickPoolEntry(poolId.trim(), npcRec);
+            return entry ? _resolveTokens(entry.text, npcRec, _depth + 1) : '';
+          });
+        }
+        return out;
       }
 
-      // A tree's conditions/excludeConditions are authored in the dialogue
-      // editor (docs/tools/dialogue-editor/) as { weekdays, seasons, weather,
-      // timesOfDay, encounter, maps, stations, relationship:{min,max} } —
-      // empty arrays/null bounds mean "unrestricted" on that axis.
-      // _dlgAxisMatch checks a single axis's current value against one of
-      // those bags. "maps" matches currentArea directly (editor's map ids —
-      // 'farm', 'town', 'map_i_general_store', etc — are the same strings
-      // the world engine already uses). "stations" matches the walker's
-      // current schedule-target label, normalized the same way the existing
-      // General Store/Carpenter on-duty checks do (see normalizeStationLabel).
-      const DLG_CONDITION_AXES = ['weekdays', 'seasons', 'weather', 'timesOfDay', 'encounter', 'maps', 'stations'];
+      // A tree's (or phrase-pool entry's) conditions/excludeConditions are
+      // authored in the dialogue editor (docs/tools/dialogue-editor/) as
+      // { weekdays, seasons, weather, timesOfDay, encounter, maps, stations,
+      // playerSpecies, relationship:{min,max} } — empty arrays/null bounds
+      // mean "unrestricted" on that axis. _dlgAxisMatch checks a single
+      // axis's current value against one of those bags. "maps" matches
+      // currentArea directly (editor's map ids — 'farm', 'town',
+      // 'map_i_general_store', etc — are the same strings the world engine
+      // already uses). "stations" matches the walker's current
+      // schedule-target label, normalized the same way the existing General
+      // Store/Carpenter on-duty checks do (see normalizeStationLabel).
+      const DLG_CONDITION_AXES = ['weekdays', 'seasons', 'weather', 'timesOfDay', 'encounter', 'maps', 'stations', 'playerSpecies'];
 
       // Station labels are authored with their nice display casing in the
       // editor (e.g. "Carpentry Work") — normalize both sides the same way
@@ -468,6 +486,10 @@
         return !vals || !vals.length || _dlgAxisValueMatches(vals, axis, value);
       }
 
+      // World state is shared by both tree selection and phrase-pool entry
+      // resolution — "encounter" (first vs returning) is keyed off whichever
+      // NPC state is passed in, so a pool entry picked mid-conversation with
+      // a different NPC than the tree's still reads that NPC's own history.
       function _dlgWorldState(rec) {
         const st = _getNpcDlgState(rec?.id);
         const target = _dialogueWalker?.currentScheduleTarget || null;
@@ -479,12 +501,13 @@
           encounter:  (st.heardTrees || []).length ? 'returning' : 'first',
           maps:       currentArea,
           stations:   target ? normalizeStationLabel(target.label) : '',
+          playerSpecies: _playerData?.appearance?.speciesId || '',
           relationship: rec?.relationship ?? 0,
         };
       }
 
-      function _dlgTreeEligible(tree, world) {
-        const c = tree.conditions || {};
+      function _dlgEntryEligible(entry, world) {
+        const c = entry.conditions || {};
         for (const axis of DLG_CONDITION_AXES) {
           if (!_dlgAxisMatch(c, axis, world[axis])) return false;
         }
@@ -493,9 +516,9 @@
           if (rel.min != null && world.relationship < rel.min) return false;
           if (rel.max != null && world.relationship > rel.max) return false;
         }
-        // No-fly conditions: the tree is skipped if ANY set exclude axis
+        // No-fly conditions: the entry is skipped if ANY set exclude axis
         // matches the current world state, regardless of the require side.
-        const x = tree.excludeConditions || {};
+        const x = entry.excludeConditions || {};
         for (const axis of DLG_CONDITION_AXES) {
           if (_dlgAxisValueMatches(x[axis], axis, world[axis])) return false;
         }
@@ -509,8 +532,8 @@
         return true;
       }
 
-      function _dlgTreeSpecificity(tree) {
-        const c = tree.conditions || {};
+      function _dlgEntrySpecificity(entry) {
+        const c = entry.conditions || {};
         let n = 0;
         for (const axis of DLG_CONDITION_AXES) if (c[axis] && c[axis].length) n++;
         const rel = c.relationship;
@@ -518,13 +541,29 @@
         return n;
       }
 
-      // Dialogue priority: among trees whose conditions are met (and no-fly
-      // conditions aren't), the most specifically-targeted one that has never
-      // been heard before always wins — so a well-conditioned line for
-      // "today" plays before anything generic. Once every tree that matches
-      // the exact current combination of conditions has been heard at least
-      // once, selection among the remaining eligible trees is randomized
-      // instead of repeating the same priority order every time.
+      // Shared by dialogue-tree selection and phrase-pool entry resolution:
+      // among entries whose conditions are met (and no-fly conditions
+      // aren't), the most specifically-targeted one that has never been
+      // heard before always wins — so a well-conditioned entry for "today"
+      // plays before anything generic. Once every entry that matches the
+      // exact current combination has been heard at least once, selection
+      // among the remaining eligible entries is randomized instead of
+      // repeating the same priority order every time. `entries` is any list
+      // of { id, conditions, excludeConditions, priority? }; `heard` is the
+      // array of already-heard ids to check/rank against.
+      function _pickBestEntry(entries, world, heard) {
+        const eligible = (entries || []).filter(e => _dlgEntryEligible(e, world));
+        if (!eligible.length) return null;
+        const unheard = eligible.filter(e => !heard.includes(e.id));
+        if (unheard.length) {
+          return unheard.slice().sort((a, b) =>
+            _dlgEntrySpecificity(b) - _dlgEntrySpecificity(a) ||
+            (b.priority || 0) - (a.priority || 0) ||
+            String(a.id).localeCompare(String(b.id)))[0];
+        }
+        return eligible[Math.floor(Math.random() * eligible.length)];
+      }
+
       function _pickDialogueTree(rec) {
         // A tree can tag itself visibility: 'owner' or 'farmhand' to restrict
         // it to the world's protagonist or to non-owner members respectively;
@@ -532,26 +571,29 @@
         const all = (rec?.dialogueTrees || [])
           .filter(t => (t.trigger || 'interact') === 'interact' && canAccessContent(t.visibility));
         if (!all.length) return null;
-
-        const world    = _dlgWorldState(rec);
-        const eligible = all.filter(t => _dlgTreeEligible(t, world));
-        if (!eligible.length) return null;
-
-        const heard   = _getNpcDlgState(rec?.id).heardTrees || [];
-        const unheard = eligible.filter(t => !heard.includes(t.id));
-        if (unheard.length) {
-          return unheard.slice().sort((a, b) =>
-            _dlgTreeSpecificity(b) - _dlgTreeSpecificity(a) ||
-            (b.priority || 0) - (a.priority || 0) ||
-            String(a.id).localeCompare(String(b.id)))[0];
-        }
-        return eligible[Math.floor(Math.random() * eligible.length)];
+        const world = _dlgWorldState(rec);
+        const heard = _getNpcDlgState(rec?.id).heardTrees || [];
+        return _pickBestEntry(all, world, heard);
       }
 
       function _markDialogueTreeHeard(rec, tree) {
         if (!rec || !tree) return;
         const st = _getNpcDlgState(rec.id);
         if (!st.heardTrees.includes(tree.id)) st.heardTrees.push(tree.id);
+      }
+
+      // Resolves one {{pool:<id>}} reference against db.phrasePools for the
+      // NPC currently in the conversation, tracking which entries have been
+      // heard the same way dialogue trees are (see _markDialogueTreeHeard) so
+      // a pool cycles through its unheard entries before repeating.
+      function _pickPoolEntry(poolId, rec) {
+        const pool = _npcPhrasePools.find(p => p.id === poolId || p.name === poolId);
+        if (!pool || !pool.entries?.length) return null;
+        const world = _dlgWorldState(rec);
+        const st    = _getNpcDlgState(rec?.id);
+        const entry = _pickBestEntry(pool.entries, world, st.heardPoolEntries || []);
+        if (entry && !st.heardPoolEntries.includes(entry.id)) st.heardPoolEntries.push(entry.id);
+        return entry;
       }
 
       // Shrinks a .dlg-opt-label's font-size (down from the CSS default) until its
@@ -8168,6 +8210,10 @@
       let _dialogueWalker    = null;
       let _npcDialogueTypeTimer = null;
       let _npcDialogueTypeText  = '';
+      // Phrase pools (db-wide, not per-NPC) — populated alongside the NPC
+      // roster fetch in spawnScheduledNpcs, read by _pickPoolEntry when
+      // resolving a {{pool:<id>}} token.
+      let _npcPhrasePools = [];
       let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
@@ -11327,7 +11373,7 @@
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         let dbNpcs = extraRecords || [];
         if (!dbNpcs.length) {
-          try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; } catch {}
+          try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; _npcPhrasePools = json.phrasePools || []; } catch {}
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
