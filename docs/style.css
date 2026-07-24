@@ -710,37 +710,33 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Dodge button: nested inside the action arch, close to the actual
-       bottom-right screen corner rather than out on the tool/item ring.
-       Sits on the same 135° diagonal as the arch's centroid (btnAction1)
-       but at a much smaller radius, so it reads as sitting near the middle
-       of the fan instead of competing with the arc buttons for space —
-       hence the action arch (#actionStack, radius --ar) being pushed out a
-       bit, to leave this pocket near the corner clear. Hidden outside
-       combat; shown only while .combat-active is toggled on by
-       updateMovement() (same condition that drives the auto-target lock),
-       and never on desktop (X key covers it there instead). ── */
+    /* ── Dodge button: the mirror of the joystick — same size, same edge
+       margins, opposite corner. Viewport-anchored like #joystickZone
+       (not grid-anchored), so it stays reachable in letterboxed/pillar-
+       boxed layouts too. Hidden outside combat; shown only while
+       .combat-active is toggled on by updateMovement() (same condition
+       that drives the auto-target lock), and never on desktop (X key
+       covers it there instead). ── */
     #dodgeBtn {
-      --dr: calc(3.6 * var(--col));
-      position: absolute;
-      right:  calc(-1*cos(135deg)*var(--dr));
-      bottom: calc(   sin(135deg)*var(--dr));
-      transform: translate(50%, 50%);
-      width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
+      position: fixed;
+      right:  max(12px, calc(env(safe-area-inset-right) + 12px));
+      bottom: max(18px, calc(env(safe-area-inset-bottom) + 18px));
+      width: clamp(96px, 18vmin, 132px); height: clamp(96px, 18vmin, 132px);
+      transform: none;
       border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
       display: none;
     }
     #dodgeBtn.combat-active { display: flex; }
-    button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
-    #dodgeBtn .abt-icon { font-size: 1.3em; }
+    button.abt#dodgeBtn:active { transform: scale(0.92); }
+    #dodgeBtn .abt-icon { font-size: 2.4em; }
     @media (pointer: fine) {
       #dodgeBtn { display: none !important; }
     }
     /* ── Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Sized to exactly match the layout-spec bounding box.
        Safe-area insets handled here so child buttons need no margin.
-       Centroid of the 5-button action arc ≈ container center (R = 7.5 col,
-       centroid factor 0.6028 → 0.6028×7.5 = 4.52 ≈ 4.5 cols from corner).  */
+       Centroid of the 5-button action arc ≈ container center (R = 6.6 col,
+       centroid factor 0.6028 → 0.6028×6.6 = 3.98 ≈ 4 cols from corner).  */
     #arcContainer {
       position: fixed;
       right:   max(0px, env(safe-area-inset-right));
@@ -856,11 +852,10 @@
     /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
     /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
        5 buttons at 180°,157.5°,135°,112.5°,90°.
-       R = 7.5 col (pushed out from 6.6 to open up room near the corner for
-       #dodgeBtn) → centroid ≈ 0.6028×7.5 = 4.52 col from corner ≈ container centre.
+       R = 6.6 col → centroid ≈ 0.6028×6.6 = 3.98 col from corner ≈ container centre.
        No per-button margin; safe-area inset lives on #arcContainer.       */
     #actionStack {
-      --ar: calc(7.5 * var(--col));
+      --ar: calc(6.6 * var(--col));
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0;
       overflow: visible; z-index: 1; touch-action: none;
