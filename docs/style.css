@@ -710,25 +710,33 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Dodge button: the mirror of the joystick — same size, same edge
-       margins, opposite corner. Viewport-anchored like #joystickZone
-       (not grid-anchored), so it stays reachable in letterboxed/pillar-
-       boxed layouts too. Hidden outside combat; shown only while
+    /* ── Dodge Arch: a third, innermost ring — closer to the corner than
+       the action arch (--ar) and the tool/item dial (--ar2) — carrying a
+       single input: dodge, on the NW cardinal (135°, the direction that
+       bisects the other two arcs' 90°-180° sweep). Keeping it on its own
+       ring instead of sharing one with other buttons avoids the
+       radius/angle juggling that a shared ring would need. ── */
+    #dodgeArch {
+      --ar0: calc(3 * var(--col));
+      position: absolute; right: 0; bottom: 0;
+      width: 0; height: 0; overflow: visible; z-index: 3; touch-action: none;
+    }
+    /* ── Dodge button: hidden outside combat; shown only while
        .combat-active is toggled on by updateMovement() (same condition
        that drives the auto-target lock), and never on desktop (X key
        covers it there instead). ── */
     #dodgeBtn {
-      position: fixed;
-      right:  max(12px, calc(env(safe-area-inset-right) + 12px));
-      bottom: max(18px, calc(env(safe-area-inset-bottom) + 18px));
-      width: clamp(96px, 18vmin, 132px); height: clamp(96px, 18vmin, 132px);
-      transform: none;
+      position: absolute;
+      right:  calc(-1*cos(135deg)*var(--ar0));
+      bottom: calc(   sin(135deg)*var(--ar0));
+      transform: translate(50%, 50%);
+      width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
       border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
       display: none;
     }
     #dodgeBtn.combat-active { display: flex; }
-    button.abt#dodgeBtn:active { transform: scale(0.92); }
-    #dodgeBtn .abt-icon { font-size: 2.4em; }
+    button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
+    #dodgeBtn .abt-icon { font-size: 1.3em; }
     @media (pointer: fine) {
       #dodgeBtn { display: none !important; }
     }
