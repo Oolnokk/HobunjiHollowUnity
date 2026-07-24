@@ -710,15 +710,21 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; pointer-events: none;
     }
-    /* ── Dodge button: lives on the same outer ring as the tool/item dials
-       (#toolSelect, radius --ar2), directly above the corner (90°). Hidden
-       outside combat; shown only while .combat-active is toggled on by
+    /* ── Dodge button: nested inside the action arch, close to the actual
+       bottom-right screen corner rather than out on the tool/item ring.
+       Sits on the same 135° diagonal as the arch's centroid (btnAction1)
+       but at a much smaller radius, so it reads as sitting near the middle
+       of the fan instead of competing with the arc buttons for space —
+       hence the action arch (#actionStack, radius --ar) being pushed out a
+       bit, to leave this pocket near the corner clear. Hidden outside
+       combat; shown only while .combat-active is toggled on by
        updateMovement() (same condition that drives the auto-target lock),
        and never on desktop (X key covers it there instead). ── */
     #dodgeBtn {
+      --dr: calc(3.6 * var(--col));
       position: absolute;
-      right:  calc(-1*cos(90deg)*var(--ar2));
-      bottom: calc(   sin(90deg)*var(--ar2));
+      right:  calc(-1*cos(135deg)*var(--dr));
+      bottom: calc(   sin(135deg)*var(--dr));
       transform: translate(50%, 50%);
       width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
       border-color: rgba(120,200,255,0.46); background: rgba(120,200,255,0.09);
@@ -733,8 +739,8 @@
     /* ── Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Sized to exactly match the layout-spec bounding box.
        Safe-area insets handled here so child buttons need no margin.
-       Centroid of the 5-button action arc ≈ container center (R = 6.6 col,
-       centroid factor 0.6028 → 0.6028×6.6 = 3.98 ≈ 4 cols from corner).  */
+       Centroid of the 5-button action arc ≈ container center (R = 7.5 col,
+       centroid factor 0.6028 → 0.6028×7.5 = 4.52 ≈ 4.5 cols from corner).  */
     #arcContainer {
       position: fixed;
       right:   max(0px, env(safe-area-inset-right));
@@ -850,10 +856,11 @@
     /* ── Action Arch: 0-size anchor at the bottom-right corner ─ */
     /* Clock-face model: corner = clock centre. Hours 9-12 are visible.
        5 buttons at 180°,157.5°,135°,112.5°,90°.
-       R = 6.6 col → centroid ≈ 0.6028×6.6 = 3.98 col from corner ≈ container centre.
+       R = 7.5 col (pushed out from 6.6 to open up room near the corner for
+       #dodgeBtn) → centroid ≈ 0.6028×7.5 = 4.52 col from corner ≈ container centre.
        No per-button margin; safe-area inset lives on #arcContainer.       */
     #actionStack {
-      --ar: calc(6.6 * var(--col));
+      --ar: calc(7.5 * var(--col));
       position: absolute; right: 0; bottom: 0;
       width: 0; height: 0;
       overflow: visible; z-index: 1; touch-action: none;
