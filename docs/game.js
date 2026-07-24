@@ -359,7 +359,7 @@
       }
 
       function _getNpcDlgState(npcId) {
-        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: 0, memory: [] });
+        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: 0, memory: [], heardTrees: [] });
         return _npcDlgState.get(npcId);
       }
 
@@ -377,6 +377,7 @@
             localNickname:   rel.localNickname || null,
             favor:           rel.favor || 0,
             memory:          [...(rel.memory || [])],
+            heardTrees:      [...(rel.heardTrees || [])],
           });
         }
       }
@@ -389,6 +390,7 @@
             localNickname:   st.localNickname,
             favor:           st.favor || 0,
             memory:          st.memory || [],
+            heardTrees:      st.heardTrees || [],
           };
         }
         return out;
@@ -439,13 +441,100 @@
           .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1);
       }
 
+      // A tree's conditions/excludeConditions are authored in the dialogue
+      // editor (docs/tools/dialogue-editor/) as { weekdays, seasons, weather,
+      // timesOfDay, encounter, relationship:{min,max} } — empty arrays/null
+      // bounds mean "unrestricted" on that axis. _dlgAxisMatch checks a single
+      // axis's current value against one of those bags.
+      const DLG_CONDITION_AXES = ['weekdays', 'seasons', 'weather', 'timesOfDay', 'encounter'];
+
+      function _dlgAxisMatch(bag, axis, value) {
+        const vals = bag?.[axis];
+        return !vals || !vals.length || vals.includes(value);
+      }
+
+      function _dlgWorldState(rec) {
+        const st = _getNpcDlgState(rec?.id);
+        return {
+          weekdays:   currentWeekdayName(),
+          seasons:    currentSeason().name,
+          weather:    calendar.weather,
+          timesOfDay: fishingTimeOfDay(),
+          encounter:  (st.heardTrees || []).length ? 'returning' : 'first',
+          relationship: rec?.relationship ?? 0,
+        };
+      }
+
+      function _dlgTreeEligible(tree, world) {
+        const c = tree.conditions || {};
+        for (const axis of DLG_CONDITION_AXES) {
+          if (!_dlgAxisMatch(c, axis, world[axis])) return false;
+        }
+        const rel = c.relationship;
+        if (rel && (rel.min != null || rel.max != null)) {
+          if (rel.min != null && world.relationship < rel.min) return false;
+          if (rel.max != null && world.relationship > rel.max) return false;
+        }
+        // No-fly conditions: the tree is skipped if ANY set exclude axis
+        // matches the current world state, regardless of the require side.
+        const x = tree.excludeConditions || {};
+        for (const axis of DLG_CONDITION_AXES) {
+          const vals = x[axis];
+          if (vals && vals.length && vals.includes(world[axis])) return false;
+        }
+        const xrel = x.relationship;
+        if (xrel && (xrel.min != null || xrel.max != null)) {
+          const inExcludedBand =
+            (xrel.min == null || world.relationship >= xrel.min) &&
+            (xrel.max == null || world.relationship <= xrel.max);
+          if (inExcludedBand) return false;
+        }
+        return true;
+      }
+
+      function _dlgTreeSpecificity(tree) {
+        const c = tree.conditions || {};
+        let n = 0;
+        for (const axis of DLG_CONDITION_AXES) if (c[axis] && c[axis].length) n++;
+        const rel = c.relationship;
+        if (rel && (rel.min != null || rel.max != null)) n++;
+        return n;
+      }
+
+      // Dialogue priority: among trees whose conditions are met (and no-fly
+      // conditions aren't), the most specifically-targeted one that has never
+      // been heard before always wins — so a well-conditioned line for
+      // "today" plays before anything generic. Once every tree that matches
+      // the exact current combination of conditions has been heard at least
+      // once, selection among the remaining eligible trees is randomized
+      // instead of repeating the same priority order every time.
       function _pickDialogueTree(rec) {
         // A tree can tag itself visibility: 'owner' or 'farmhand' to restrict
         // it to the world's protagonist or to non-owner members respectively;
         // omitted/'any' (the default) is visible to everyone.
-        const trees = (rec?.dialogueTrees || [])
+        const all = (rec?.dialogueTrees || [])
           .filter(t => (t.trigger || 'interact') === 'interact' && canAccessContent(t.visibility));
-        return trees.sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
+        if (!all.length) return null;
+
+        const world    = _dlgWorldState(rec);
+        const eligible = all.filter(t => _dlgTreeEligible(t, world));
+        if (!eligible.length) return null;
+
+        const heard   = _getNpcDlgState(rec?.id).heardTrees || [];
+        const unheard = eligible.filter(t => !heard.includes(t.id));
+        if (unheard.length) {
+          return unheard.slice().sort((a, b) =>
+            _dlgTreeSpecificity(b) - _dlgTreeSpecificity(a) ||
+            (b.priority || 0) - (a.priority || 0) ||
+            String(a.id).localeCompare(String(b.id)))[0];
+        }
+        return eligible[Math.floor(Math.random() * eligible.length)];
+      }
+
+      function _markDialogueTreeHeard(rec, tree) {
+        if (!rec || !tree) return;
+        const st = _getNpcDlgState(rec.id);
+        if (!st.heardTrees.includes(tree.id)) st.heardTrees.push(tree.id);
       }
 
       // Shrinks a .dlg-opt-label's font-size (down from the CSS default) until its
@@ -726,6 +815,7 @@
       function _beginNpcConversation(rec) {
         const tree = _pickDialogueTree(rec);
         if (tree) {
+          _markDialogueTreeHeard(rec, tree);
           _dlgTree    = tree;
           _dlgNodeMap = Object.fromEntries((tree.nodes || []).map(n => [n.id, n]));
           _dlgNpcRec  = rec;

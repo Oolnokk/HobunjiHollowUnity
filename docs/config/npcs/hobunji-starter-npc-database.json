@@ -222,6 +222,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_garanki_gabu_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_garanki_gabu_1",
@@ -493,6 +501,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_gorobi_ginju_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_gorobi_ginju_1",
@@ -734,6 +750,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_gikali_ginju_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_gikali_ginju_1",
@@ -959,6 +983,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_mqgprd293",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_mqgprd293",
@@ -1512,6 +1544,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_gantami_ginju_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_gantami_ginju_1",
@@ -1725,6 +1765,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_leaf_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_leaf_1",
@@ -1927,6 +1975,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_pahu_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_pahu_1",
@@ -2338,6 +2394,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_furunji_funji_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_furunji_funji_1",
@@ -2771,6 +2835,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_foroji_funji_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_foroji_funji_1",
@@ -3008,6 +3080,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_kzubug_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_kzubug_1",
@@ -3229,6 +3309,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_sloomi_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_sloomi_1",
@@ -3458,6 +3546,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_hreesh_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_hreesh_1",
@@ -3675,6 +3771,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_jubmir_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_jubmir_1",
@@ -3907,6 +4011,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_father_hunundi_hodu_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_father_hunundi_hodu_1",
@@ -4167,6 +4279,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_namui_u_hakaru_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_namui_u_hakaru_1",
@@ -4400,6 +4520,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_takua_ao_hakaru_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_takua_ao_hakaru_1",
@@ -4630,6 +4758,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_kaboku_kunji_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_kaboku_kunji_1",
@@ -4942,6 +5078,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_kinami_kunji_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_kinami_kunji_1",
@@ -5262,6 +5406,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_dzibim_khibu_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_dzibim_khibu_1",
@@ -5807,6 +5959,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_teacup_unumanuk_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_teacup_unumanuk_1",
@@ -7148,6 +7308,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_bird_bone_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_bird_bone_1",
@@ -7328,6 +7496,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_khazud_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_khazud_1",
@@ -7492,6 +7668,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_nohuknuk_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_nohuknuk_1",
@@ -7663,6 +7847,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_hiki_hiki_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_hiki_hiki_1",
@@ -7832,6 +8024,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_banubu_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_banubu_1",
@@ -8001,6 +8201,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_mother_rahayobi_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_mother_rahayobi_1",
@@ -8170,6 +8378,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_baruhi_chief_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_baruhi_chief_1",
@@ -8338,6 +8554,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_porakaneki_chief_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_porakaneki_chief_1",
@@ -8507,6 +8731,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_khannibarri_agent_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_khannibarri_agent_1",
@@ -8676,6 +8908,14 @@
           "trigger": "interact",
           "priority": 100,
           "entryNode": "n_village_elder_1",
+          "conditions": {
+            "weekdays": [],
+            "seasons": [],
+            "weather": [],
+            "timesOfDay": [],
+            "encounter": ["first"],
+            "relationship": { "min": null, "max": null }
+          },
           "nodes": [
             {
               "id": "n_village_elder_1",

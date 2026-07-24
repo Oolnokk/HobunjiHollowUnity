@@ -46,19 +46,29 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
   font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px}
 #condFilters{padding:8px 9px 6px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
   display:flex;flex-direction:column;gap:7px;max-height:46vh;overflow-y:auto}
-.condGroup{display:flex;flex-direction:column;gap:3px}
-.condGroupLabel{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-.chipRow{display:flex;flex-wrap:wrap;gap:3px}
-.chip{font-size:10px;padding:3px 7px;border-radius:999px;cursor:pointer;
-  border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--muted);
-  user-select:none}
-.chip:hover{background:rgba(255,255,255,.08)}
-.chip.on{border-color:var(--acc);background:rgba(106,167,255,.22);color:var(--text)}
-.condRelHead{display:flex;align-items:center;gap:5px;cursor:pointer}
-.condRelHead input{width:auto;flex-shrink:0}
-.condRelRow{display:flex;align-items:center;gap:6px}
-.condRelRow input[type=range]{flex:1;width:auto}
-#relVal{font-size:10px;color:var(--muted);min-width:26px;text-align:right}
+
+/* Condition picker: appendable chip list + add popover (sidebar filters,
+   tree require/no-fly conditions all reuse this) */
+.condChipList{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.condChip{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 5px 3px 8px;
+  border-radius:999px;border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.14);
+  color:var(--text);white-space:nowrap}
+.condChip.exclude{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.12)}
+.condChipX{width:14px;height:14px;padding:0;border:none;background:transparent;color:var(--muted);
+  font-size:11px;line-height:1;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.condChipX:hover{background:rgba(255,255,255,.12);color:var(--text)}
+.condAddBtn{font-size:10px;padding:3px 8px}
+.condPopover{margin-top:6px;padding:8px;border-radius:9px;border:1px solid rgba(255,255,255,.13);
+  background:rgba(0,0,0,.22);display:flex;flex-direction:column;gap:6px}
+.condPopover.hidden{display:none}
+.condPopover select{font-size:11px;padding:5px 7px}
+.condPopVal.hidden{display:none}
+.condPopRel{display:flex;align-items:center;gap:5px}
+.condPopRel.hidden{display:none}
+.condPopRel input{font-size:11px;padding:5px 7px}
+.condPopRel span{font-size:10px;color:var(--muted);flex-shrink:0}
+.condPopBtns{display:flex;gap:5px}
+.condPopBtns button{flex:1;font-size:10px;padding:5px 0}
 #npcSearch{padding:5px 7px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 #npcSearch input{font-size:12px;padding:5px 8px}
 #npcListEl{flex:1;overflow-y:auto;padding:5px}
@@ -102,7 +112,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .extraTabsLabel{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);flex-shrink:0}
 .extraTabs{display:flex;gap:5px;flex-wrap:wrap;min-width:0}
 
-#canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a}
+#canvasOuter{flex:1;min-height:0;position:relative;overflow:hidden;background-color:#07101a;touch-action:none}
 #canvas{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 #svgLayer{position:absolute;top:0;left:0;width:9000px;height:9000px;
   pointer-events:none;overflow:visible}
@@ -194,9 +204,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 .node-sequence .port-out[data-ci="exhaust"]:hover{transform:scale(1.55)}
 
 /* Inspector */
+#inspToggle{width:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;background:rgba(255,255,255,.03);border-left:1px solid var(--line);
+  color:var(--muted);font-size:11px;user-select:none;transition:background .12s,color .12s}
+#inspToggle:hover{background:rgba(106,167,255,.14);color:var(--acc)}
 #inspector{width:260px;min-width:210px;flex-shrink:0;display:flex;flex-direction:column;
-  border-left:1px solid var(--line);
+  overflow:hidden;transition:width .16s ease,min-width .16s ease;
   background:linear-gradient(180deg,var(--panel),var(--panel2))}
+#inspector.collapsed{width:0;min-width:0;border-left:none}
 #inspBody{flex:1;overflow-y:auto;padding:8px}
 .iGroup{margin-bottom:10px}
 .iMuted{font-size:11px;color:var(--muted);line-height:1.4;margin-top:3px}
@@ -256,30 +271,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
     <div id="npcSidebar">
       <div class="paneHead">Conditions</div>
       <div id="condFilters">
-        <div class="condGroup">
-          <div class="condGroupLabel">Weekday</div>
-          <div class="chipRow" id="chipWeekday"></div>
-        </div>
-        <div class="condGroup">
-          <div class="condGroupLabel">Season</div>
-          <div class="chipRow" id="chipSeason"></div>
-        </div>
-        <div class="condGroup">
-          <div class="condGroupLabel">Weather</div>
-          <div class="chipRow" id="chipWeather"></div>
-        </div>
-        <div class="condGroup">
-          <div class="condGroupLabel">Time of day</div>
-          <div class="chipRow" id="chipTime"></div>
-        </div>
-        <div class="condGroup">
-          <label class="condRelHead"><input type="checkbox" id="relEnable">
-            <span class="condGroupLabel" style="margin:0">Relationship ≥</span></label>
-          <div class="condRelRow">
-            <input type="range" id="relSlider" min="-5" max="10" step="1" value="0" disabled>
-            <span id="relVal">0</span>
-          </div>
-        </div>
+        <div id="filterPicker"></div>
         <button class="secondary" id="clearFiltersBtn" style="width:100%;font-size:10px">Clear filters</button>
       </div>
       <div class="paneHead">NPCs</div>
@@ -321,6 +313,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
         <span id="zoomLabel">100%</span>
       </div>
     </div>
+    <div id="inspToggle" title="Collapse/expand inspector">◂</div>
     <div id="inspector">
       <div class="paneHead">Inspector</div>
       <div id="inspBody">
@@ -358,8 +351,8 @@ let panState  = null;
 let _seq      = 1;
 
 let filters = {
-  weekdays: [], seasons: [], weather: [], timesOfDay: [],
-  relationship: { enabled: false, min: 0 }
+  weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
+  relationship: { min: null, max: null }
 };
 
 const GRID = 20;
@@ -382,9 +375,18 @@ const WEEKDAYS     = ['Anan','Hronu','Kruru','Muunu','Naru','Tothu','Uung'];
 const SEASONS      = ['Stormtide','Deadgrass','Longpour','Coldmuck'];
 const WEATHERS     = ['clear','rain','storm'];
 const TIMES_OF_DAY = ['dawn','day','dusk','night'];
-const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay'];
+const ENCOUNTERS   = ['first','returning'];
+const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay','encounter'];
+const CONDITION_CATEGORIES = [
+  { key: 'weekdays',     label: 'Weekday',      values: WEEKDAYS },
+  { key: 'seasons',      label: 'Season',       values: SEASONS },
+  { key: 'weather',      label: 'Weather',      values: WEATHERS },
+  { key: 'timesOfDay',   label: 'Time of day',  values: TIMES_OF_DAY },
+  { key: 'encounter',    label: 'Encounter',    values: ENCOUNTERS },
+  { key: 'relationship', label: 'Relationship', values: null },
+];
 const emptyConditions = () => ({
-  weekdays: [], seasons: [], weather: [], timesOfDay: [],
+  weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
   relationship: { min: null, max: null }
 });
 
@@ -401,17 +403,19 @@ function loadDatabase(json) {
           nd.pos ??= { x: 60 + i * 260, y: 80 };
           nd.pos.x = snap(nd.pos.x); nd.pos.y = snap(nd.pos.y);
         });
-        const c = tree.conditions || {};
-        tree.conditions = {
+        const normalizeConditions = (c) => ({
           weekdays:   Array.isArray(c.weekdays)   ? c.weekdays   : [],
           seasons:    Array.isArray(c.seasons)    ? c.seasons    : [],
           weather:    Array.isArray(c.weather)    ? c.weather    : [],
           timesOfDay: Array.isArray(c.timesOfDay) ? c.timesOfDay : [],
+          encounter:  Array.isArray(c.encounter)  ? c.encounter  : [],
           relationship: {
             min: c.relationship?.min ?? null,
             max: c.relationship?.max ?? null
           }
-        };
+        });
+        tree.conditions        = normalizeConditions(tree.conditions || {});
+        tree.excludeConditions = normalizeConditions(tree.excludeConditions || {});
       }
     }
     db  = parsed;
@@ -471,9 +475,11 @@ function addTree() {
   conditions.seasons    = [...filters.seasons];
   conditions.weather    = [...filters.weather];
   conditions.timesOfDay = [...filters.timesOfDay];
-  if (filters.relationship.enabled) conditions.relationship.min = filters.relationship.min;
+  conditions.encounter  = [...filters.encounter];
+  conditions.relationship = { min: filters.relationship.min, max: filters.relationship.max };
   npc.dialogueTrees.push({ id, label: `Tree ${npc.dialogueTrees.length + 1}`,
-    trigger: 'interact', priority: 0, entryNode: null, nodes: [], conditions });
+    trigger: 'interact', priority: 0, entryNode: null, nodes: [],
+    conditions, excludeConditions: emptyConditions() });
   sel.treeId = id; sel.nodeId = null;
   cam = { panX: 60, panY: 60, zoom: 1 };
   setDirty(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar();
@@ -538,7 +544,7 @@ function connectNodes(fromId, ci, toId) {
 
 /* ── Condition filtering ─────────────────────────────────── */
 function axisSelected(axis)       { return filters[axis].length > 0; }
-function relationshipSelected()   { return filters.relationship.enabled; }
+function relationshipSelected()   { return filters.relationship.min != null || filters.relationship.max != null; }
 
 function selectedAxesList() {
   const axes = CONDITION_AXES.filter(axisSelected);
@@ -558,11 +564,13 @@ function axisCompatible(tree, axis) {
   const c = tree.conditions || {};
   if (axis === 'relationship') {
     const rel = c.relationship;
-    if (!rel || (rel.min == null && rel.max == null)) return true;
-    const v = filters.relationship.min;
-    if (rel.min != null && v < rel.min) return false;
-    if (rel.max != null && v > rel.max) return false;
-    return true;
+    const filt = filters.relationship;
+    const relSet  = rel  && (rel.min  != null || rel.max  != null);
+    const filtSet = filt && (filt.min != null || filt.max != null);
+    if (!relSet || !filtSet) return true; // wildcard on either side => compatible
+    const relMin = rel.min ?? -Infinity, relMax = rel.max ?? Infinity;
+    const filtMin = filt.min ?? -Infinity, filtMax = filt.max ?? Infinity;
+    return relMin <= filtMax && relMax >= filtMin; // ranges overlap
   }
   const vals = c[axis] || [];
   if (!vals.length) return true;
@@ -600,6 +608,7 @@ function conditionLabel(cond, axes) {
   if (axes.includes('seasons')    && cond.seasons?.length)    parts.push(cond.seasons.join('/'));
   if (axes.includes('weather')    && cond.weather?.length)    parts.push(cond.weather.join('/'));
   if (axes.includes('timesOfDay') && cond.timesOfDay?.length) parts.push(cond.timesOfDay.join('/'));
+  if (axes.includes('encounter')  && cond.encounter?.length)  parts.push(cond.encounter.join('/'));
   if (axes.includes('relationship') && cond.relationship) {
     const { min, max } = cond.relationship;
     if (min != null && max != null)      parts.push(`${min}–${max}♥`);
@@ -609,27 +618,112 @@ function conditionLabel(cond, axes) {
   return parts.join(' · ');
 }
 
-function renderCondFilters() {
-  const chipRow = (id, values, selectedArr, axis) => {
-    $(id).innerHTML = values.map(v =>
-      `<span class="chip${selectedArr.includes(v)?' on':''}" data-v="${esc(v)}">${esc(v)}</span>`).join('');
-    $(id).querySelectorAll('.chip').forEach(el => el.addEventListener('click', () => toggleFilter(axis, el.dataset.v)));
-  };
-  chipRow('chipWeekday', WEEKDAYS, filters.weekdays, 'weekdays');
-  chipRow('chipSeason',  SEASONS,  filters.seasons,  'seasons');
-  chipRow('chipWeather', WEATHERS, filters.weather,  'weather');
-  chipRow('chipTime',    TIMES_OF_DAY, filters.timesOfDay, 'timesOfDay');
-  $('relEnable').checked  = filters.relationship.enabled;
-  $('relSlider').disabled = !filters.relationship.enabled;
-  $('relSlider').value    = filters.relationship.min;
-  $('relVal').textContent = filters.relationship.min;
+function conditionChipLabel(key, value) {
+  if (key === 'relationship') {
+    const { min, max } = value;
+    if (min != null && max != null) return `Relationship ${min}–${max}♥`;
+    if (min != null)                return `Relationship ${min}+♥`;
+    if (max != null)                return `Relationship ≤${max}♥`;
+    return '';
+  }
+  const cat = CONDITION_CATEGORIES.find(c => c.key === key);
+  return `${cat ? cat.label : key}: ${value}`;
 }
 
-function toggleFilter(axis, v) {
-  const arr = filters[axis];
-  const i = arr.indexOf(v);
-  if (i === -1) arr.push(v); else arr.splice(i, 1);
-  onFiltersChanged();
+// Renders an appendable chip list + "+ Add" popover into containerEl for a
+// condition bag (filters, tree.conditions, or tree.excludeConditions) of the
+// shape { weekdays:[], seasons:[], weather:[], timesOfDay:[], encounter:[],
+// relationship:{min,max} }. onChange fires after every mutation so the
+// caller can update anything that depends on it (NPC sort, tree tabs, etc);
+// the picker then re-renders itself, preserving popover open/category state
+// so several conditions can be added back-to-back without reopening it.
+function renderConditionPicker(containerEl, bag, onChange, variant, state = {}) {
+  const popOpen = !!state.popOpen;
+  const curCat  = state.cat || CONDITION_CATEGORIES[0].key;
+
+  const chips = [];
+  for (const cat of CONDITION_CATEGORIES) {
+    if (cat.key === 'relationship') {
+      const rel = bag.relationship;
+      if (rel && (rel.min != null || rel.max != null)) chips.push({ key: 'relationship', value: rel });
+    } else {
+      (bag[cat.key] || []).forEach(v => chips.push({ key: cat.key, value: v }));
+    }
+  }
+
+  containerEl.innerHTML = `
+    <div class="condChipList">
+      ${chips.map((c, i) => `<span class="condChip${variant==='exclude'?' exclude':''}" data-i="${i}">${esc(conditionChipLabel(c.key, c.value))}<button class="condChipX" data-i="${i}" type="button">×</button></span>`).join('')}
+      <button class="condAddBtn secondary" type="button">+ Add</button>
+    </div>
+    <div class="condPopover${popOpen?'':' hidden'}">
+      <select class="condPopCat">${CONDITION_CATEGORIES.map(c => `<option value="${c.key}"${c.key===curCat?' selected':''}>${esc(c.label)}</option>`).join('')}</select>
+      <select class="condPopVal"></select>
+      <div class="condPopRel">
+        <input type="number" class="condPopRelMin" placeholder="min">
+        <span>to</span>
+        <input type="number" class="condPopRelMax" placeholder="max">
+      </div>
+      <div class="condPopBtns">
+        <button class="condPopAdd" type="button">Add</button>
+        <button class="condPopClose secondary" type="button">Done</button>
+      </div>
+    </div>`;
+
+  const rerender = next => renderConditionPicker(containerEl, bag, onChange, variant, next);
+
+  containerEl.querySelectorAll('.condChipX').forEach(btn => btn.addEventListener('click', () => {
+    const c = chips[+btn.dataset.i];
+    if (c.key === 'relationship') bag.relationship = { min: null, max: null };
+    else { const arr = bag[c.key]; const idx = arr.indexOf(c.value); if (idx !== -1) arr.splice(idx, 1); }
+    onChange(); rerender({ popOpen, cat: curCat });
+  }));
+
+  const catSel  = containerEl.querySelector('.condPopCat');
+  const valSel  = containerEl.querySelector('.condPopVal');
+  const relRow  = containerEl.querySelector('.condPopRel');
+  const relMin  = containerEl.querySelector('.condPopRelMin');
+  const relMax  = containerEl.querySelector('.condPopRelMax');
+
+  function syncValueControls() {
+    const cat = CONDITION_CATEGORIES.find(c => c.key === catSel.value);
+    const isRel = cat.key === 'relationship';
+    valSel.classList.toggle('hidden', isRel);
+    relRow.classList.toggle('hidden', !isRel);
+    if (isRel) {
+      relMin.value = bag.relationship?.min ?? '';
+      relMax.value = bag.relationship?.max ?? '';
+    } else {
+      const active = bag[cat.key] || [];
+      const remaining = cat.values.filter(v => !active.includes(v));
+      valSel.innerHTML = remaining.length
+        ? remaining.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')
+        : `<option disabled selected>— all added —</option>`;
+    }
+  }
+  syncValueControls();
+  catSel.addEventListener('change', syncValueControls);
+
+  containerEl.querySelector('.condAddBtn').addEventListener('click', () => rerender({ popOpen: !popOpen, cat: catSel.value }));
+  containerEl.querySelector('.condPopClose').addEventListener('click', () => rerender({ popOpen: false, cat: catSel.value }));
+  containerEl.querySelector('.condPopAdd').addEventListener('click', () => {
+    const cat = CONDITION_CATEGORIES.find(c => c.key === catSel.value);
+    if (cat.key === 'relationship') {
+      const min = relMin.value === '' ? null : parseInt(relMin.value);
+      const max = relMax.value === '' ? null : parseInt(relMax.value);
+      if (min == null && max == null) return;
+      bag.relationship = { min, max };
+    } else {
+      const v = valSel.value;
+      if (!v || (bag[cat.key]||[]).includes(v)) return;
+      bag[cat.key].push(v);
+    }
+    onChange(); rerender({ popOpen: true, cat: catSel.value });
+  });
+}
+
+function renderCondFilters() {
+  renderConditionPicker($('filterPicker'), filters, onFiltersChanged, 'require');
 }
 
 function onFiltersChanged() {
@@ -927,16 +1021,6 @@ function renderSvg() {
 }
 
 /* ── Inspector helpers ───────────────────────────────────── */
-const CONDITION_AXIS_LABEL = { weekdays: 'Weekday', seasons: 'Season', weather: 'Weather', timesOfDay: 'Time of day' };
-function condChipsBlock(key, values, selectedArr) {
-  return `<div style="margin-top:6px">
-    <div class="ceRowLabel" style="margin-bottom:3px">${CONDITION_AXIS_LABEL[key]}</div>
-    <div class="chipRow" data-key="${key}">
-      ${values.map(v => `<span class="chip${selectedArr.includes(v)?' on':''}" data-v="${esc(v)}">${esc(v)}</span>`).join('')}
-    </div>
-  </div>`;
-}
-
 function buildTagsHtml(nd, tree) {
   const tags     = nd.tags || [];
   const seqNodes = (tree.nodes||[]).filter(n => n.type === 'sequence' && n.id !== nd.id);
@@ -1014,17 +1098,12 @@ function renderInspector() {
         </select></div>
       <hr class="idiv">
       <div class="iGroup"><label>Conditions</label>
-        <div class="iMuted" style="margin-bottom:5px">Leave a row empty to allow it under any value. This tree only counts as a full match when every set row is satisfied.</div>
-        ${condChipsBlock('weekdays', WEEKDAYS, tree.conditions.weekdays)}
-        ${condChipsBlock('seasons', SEASONS, tree.conditions.seasons)}
-        ${condChipsBlock('weather', WEATHERS, tree.conditions.weather)}
-        ${condChipsBlock('timesOfDay', TIMES_OF_DAY, tree.conditions.timesOfDay)}
-        <div class="ceRow" style="margin-top:6px">
-          <span class="ceRowLabel" style="min-width:64px">relationship</span>
-          <input id="iRelMin" type="number" placeholder="min" value="${tree.conditions.relationship.min ?? ''}" style="width:56px;flex-shrink:0;font-size:11px">
-          <span style="color:var(--muted);font-size:10px">to</span>
-          <input id="iRelMax" type="number" placeholder="max" value="${tree.conditions.relationship.max ?? ''}" style="width:56px;flex-shrink:0;font-size:11px">
-        </div>
+        <div class="iMuted" style="margin-bottom:5px">This tree only counts as a full match when every added condition is satisfied.</div>
+        <div id="iReqConditions"></div>
+      </div>
+      <div class="iGroup"><label>No-fly conditions</label>
+        <div class="iMuted" style="margin-bottom:5px">This tree is skipped entirely whenever any of these are true — even if the required conditions above are met.</div>
+        <div id="iExclConditions"></div>
       </div>
       <hr class="idiv">
       <div class="iGroup">
@@ -1033,17 +1112,9 @@ function renderInspector() {
     $('iTrigger').onchange = e => { tree.trigger  = e.target.value; setDirty(); };
     $('iPrio').oninput     = e => { tree.priority = parseInt(e.target.value)||0; setDirty(); };
     $('iEntry').onchange   = e => { tree.entryNode = e.target.value||null; setDirty(); renderCanvas(); };
-    body.querySelectorAll('.chipRow[data-key]').forEach(row => {
-      const key = row.dataset.key;
-      row.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
-        const arr = tree.conditions[key];
-        const i = arr.indexOf(chip.dataset.v);
-        if (i === -1) arr.push(chip.dataset.v); else arr.splice(i, 1);
-        setDirty(); renderInspector(); renderNpcList(); renderTreeBar();
-      }));
-    });
-    $('iRelMin').oninput = e => { tree.conditions.relationship.min = e.target.value===''?null:parseInt(e.target.value); setDirty(); renderNpcList(); renderTreeBar(); };
-    $('iRelMax').oninput = e => { tree.conditions.relationship.max = e.target.value===''?null:parseInt(e.target.value); setDirty(); renderNpcList(); renderTreeBar(); };
+    const onTreeConditionChange = () => { setDirty(); renderNpcList(); renderTreeBar(); };
+    renderConditionPicker($('iReqConditions'),  tree.conditions,        onTreeConditionChange, 'require');
+    renderConditionPicker($('iExclConditions'), tree.excludeConditions, onTreeConditionChange, 'exclude');
     $('iDelTree').onclick  = () => deleteTree(sel.treeId);
     return;
   }
@@ -1332,6 +1403,60 @@ function onWheel(e) {
   applyTransform(); renderSvg();
 }
 
+/* ── Touch pan/zoom (mobile) ─────────────────────────────── */
+// Node dragging/port-connecting stay mouse-first; a touch starting on a node
+// is left alone so its native tap-to-select still fires. A touch starting on
+// the bare canvas backdrop pans; two fingers pinch-zoom around their midpoint.
+let touchState = null;
+const touchDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
+    if (e.touches[0].target.closest?.('.node')) { touchState = null; return; }
+    const t = e.touches[0];
+    touchState = { mode: 'pan', sx: t.clientX, sy: t.clientY, px: cam.panX, py: cam.panY };
+  } else if (e.touches.length === 2) {
+    const [t0, t1] = e.touches;
+    touchState = {
+      mode: 'pinch', startDist: touchDist(t0, t1), startZoom: cam.zoom,
+      startPanX: cam.panX, startPanY: cam.panY,
+      midX: (t0.clientX + t1.clientX) / 2, midY: (t0.clientY + t1.clientY) / 2
+    };
+  }
+}
+
+function onTouchMove(e) {
+  if (!touchState) return;
+  if (touchState.mode === 'pan' && e.touches.length === 1) {
+    e.preventDefault();
+    const t = e.touches[0];
+    cam.panX = touchState.px + (t.clientX - touchState.sx);
+    cam.panY = touchState.py + (t.clientY - touchState.sy);
+    applyTransform(); renderSvg();
+  } else if (touchState.mode === 'pinch' && e.touches.length === 2) {
+    e.preventDefault();
+    const [t0, t1] = e.touches;
+    const dist = touchDist(t0, t1);
+    const nz = Math.max(0.15, Math.min(3, touchState.startZoom * (dist / touchState.startDist)));
+    const or = $('canvasOuter').getBoundingClientRect();
+    const mx = touchState.midX - or.left, my = touchState.midY - or.top;
+    cam.panX = mx - (mx - touchState.startPanX) * nz / touchState.startZoom;
+    cam.panY = my - (my - touchState.startPanY) * nz / touchState.startZoom;
+    cam.zoom = nz;
+    applyTransform(); renderSvg();
+  }
+}
+
+function onTouchEnd(e) {
+  if (e.touches.length === 0) { touchState = null; return; }
+  if (e.touches.length === 1) {
+    // Dropped from two fingers to one — restart as a pan from here instead
+    // of jumping/stopping abruptly.
+    const t = e.touches[0];
+    touchState = { mode: 'pan', sx: t.clientX, sy: t.clientY, px: cam.panX, py: cam.panY };
+  }
+}
+
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel.nodeId) { e.preventDefault(); deleteNode(sel.nodeId); }
@@ -1402,6 +1527,13 @@ function autoOrganize() {
   setDirty(); renderCanvas();
 }
 
+let inspectorCollapsed = false;
+function toggleInspector() {
+  inspectorCollapsed = !inspectorCollapsed;
+  $('inspector').classList.toggle('collapsed', inspectorCollapsed);
+  $('inspToggle').textContent = inspectorCollapsed ? '▸' : '◂';
+}
+
 function renderAll() { renderCondFilters(); renderNpcList(); renderTreeBar(); renderCanvas(); renderInspector(); updateBar(); }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1420,13 +1552,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (j && loadDatabase(j)) { $('importModal').classList.add('hidden'); $('importPaste').value = ''; }
   };
   $('npcQ').oninput      = renderNpcList;
-  $('relEnable').onchange = e => { filters.relationship.enabled = e.target.checked; onFiltersChanged(); };
-  $('relSlider').oninput  = e => { filters.relationship.min = parseInt(e.target.value); $('relVal').textContent = filters.relationship.min; };
-  $('relSlider').onchange = onFiltersChanged;
   $('clearFiltersBtn').onclick = () => {
-    filters = { weekdays: [], seasons: [], weather: [], timesOfDay: [], relationship: { enabled: false, min: 0 } };
+    filters = { weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [], relationship: { min: null, max: null } };
     onFiltersChanged();
   };
+  $('inspToggle').onclick = toggleInspector;
   $('addTreeBtn').onclick = addTree;
   $('btnText').onclick   = () => addNode('text');
   $('btnChoice').onclick = () => addNode('choice');
@@ -1442,6 +1572,10 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('mouseup',   onMouseUp);
   outer.addEventListener('wheel', onWheel, { passive: false });
   outer.addEventListener('contextmenu', e => e.preventDefault());
+  outer.addEventListener('touchstart', onTouchStart, { passive: true });
+  outer.addEventListener('touchmove',  onTouchMove,  { passive: false });
+  outer.addEventListener('touchend',   onTouchEnd,   { passive: true });
+  outer.addEventListener('touchcancel',onTouchEnd,   { passive: true });
   fetch('../../config/npcs/hobunji-starter-npc-database.json')
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(data => loadDatabase(data))
