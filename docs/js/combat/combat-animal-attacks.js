@@ -143,10 +143,15 @@
         // fallback sprite for the leap's full duration (which, if it never
         // connects with a target, can run until it hits terrain or the map
         // edge — i.e. a long time).
-        const frameUrl = c.def.sprites.run[0];
-        const genotypeKind = deps.genotypeKindFor ? deps.genotypeKindFor(c) : null;
-        deps.setCreatureFrame(c.avatarRef, frameUrl, genotypeKind, 'run1', c.genotype);
-        c.currentFrameUrl = frameUrl;
+        // Portrait-avatar combatants (bandits — see game.js's buildBanditAvatar)
+        // have no sprite sheet to lock a frame from; the leap's movement,
+        // scaling and damage all still apply, there's just no frame to swap.
+        if (c.def.sprites) {
+          const frameUrl = c.def.sprites.run[0];
+          const genotypeKind = deps.genotypeKindFor ? deps.genotypeKindFor(c) : null;
+          deps.setCreatureFrame(c.avatarRef, frameUrl, genotypeKind, 'run1', c.genotype);
+          c.currentFrameUrl = frameUrl;
+        }
       }
       return true;
     }

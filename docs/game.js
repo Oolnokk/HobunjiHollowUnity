@@ -5266,6 +5266,11 @@
       // wiring (getWorldObjectAt → getButtons/onAction) can loot them with
       // no special-casing. Looting is what actually despawns the sprite.
       function makeCorpseWorldObject(c) {
+        // Bandits are butchered by nobody — they get looted instead, including
+        // a guaranteed drop of everything they were wearing. Same
+        // getButtons()/onAction() shape, so getCorpseObjectAt below and the
+        // action bar are unaware of the difference.
+        if (c.isBandit) return makeBanditCorpseWorldObject(c);
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
@@ -5339,6 +5344,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
+        _banditTentHoldT = 0; // ...and a bandit-tent loot/burn, same reasoning
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
         else player.health = Math.max(0, player.health - amount);
         if (player.health > 0) {
@@ -5627,7 +5633,11 @@
           ringHud.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         }
 
-        const rawTargetRotY = -(aimAngle ?? 0) + Math.PI / 2;
+        // def.aimAngleOffset is a fixed correction for a creature whose avatar
+        // doesn't follow buildAnimalPlaneAvatarModel's side-view plane
+        // convention — only bandits set it today (see buildBanditAvatar), and
+        // it's 0/absent for every CREATURE_DB animal.
+        const rawTargetRotY = -((aimAngle ?? 0) + (c.def.aimAngleOffset || 0)) + Math.PI / 2;
 
         // Prism (group) tracks the raw aim angle freely — deadzone only governs
         // the interior PNG plane, not the prism's spatial orientation or the
@@ -5663,9 +5673,13 @@
           : (c.genotype ? 0xffffff : (c.def.tint || 0xffffff));
         if (c._tintHex !== desiredTint) {
           c._tintHex = desiredTint;
-          for (const child of grp.children) {
+          // traverse rather than a direct children walk: an animal's two sprite
+          // planes are the group's own children, but a bandit's portrait planes
+          // sit one level down inside their pivot groups (see buildBanditAvatar),
+          // and they need the hit-flash/telegraph tint just the same.
+          grp.traverse(child => {
             if (child.material) child.material.color.setHex(desiredTint);
-          }
+          });
         }
       }
 
@@ -5692,6 +5706,12 @@
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
         const genotypeKind = c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
+        // single portrait plane baked once at spawn (see buildBanditAvatar), so
+        // it has no def.sprites to swap between — it still gets every
+        // position/rotation/facing update via updateCreatureMesh, just no
+        // idle/run frame swap.
+        if (!c.def.sprites) return;
         if (!moving) {
           const frameKey = 'idle';
           const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(frameKey);
@@ -7152,6 +7172,13 @@
           // shrinks as each zone claims one, and a zone that couldn't fit a
           // locale simply leaves it for the next zone to try.
           const localeDefs = await loadStampableLocaleDefs();
+          // Warm the bandit config/locale fetches now (both are cached-promise
+          // singletons) so the first wilderness visit doesn't have to wait on
+          // them before it can stamp a camp. Bandit camps are NOT part of this
+          // shift's stamping pass — they're temporary locales placed at runtime
+          // against the finished zone (see ensureCurrentZoneBanditCamps).
+          loadBanditGangConfig();
+          loadBanditCampLocaleDefs();
           let remainingLocales = localeDefs.slice();
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
@@ -7314,6 +7341,7 @@
             // respawn bookkeeping from the previous layout's den ids (see
             // ensureZoneDenPacks/spawnPackAtDen).
             forgetZoneDenState(zoneId);
+            forgetZoneBanditState(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -8085,12 +8113,994 @@
         denCheckTimer = DEN_CHECK_INTERVAL_S;
         if (!buildZoneScene(currentArea)) return;
         ensureCurrentZoneDenPacks();
+        ensureCurrentZoneBanditCamps();
         if (_zoneEntryAnimalLogPending === currentArea) {
           _zoneEntryAnimalLogPending = null;
           let alive = 0;
           for (const c of hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
           window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
         }
+      }
+
+
+      // ── Bandit Gangs ──────────────────────────────────────────────────
+      //
+      // A bandit camp is a `placement.mode: "temporary"` locale (see
+      // docs/js/temporary-locales.js) stamped into an ALREADY-generated
+      // wilderness zone at runtime, plus a gang of hostiles spawned around
+      // it. Bandits deliberately reuse the entire animal-hostile pipeline
+      // (hostileObjects -> updateHostiles -> damageCreature ->
+      // beginCreatureDeath -> updateCorpses -> makeCorpseWorldObject) by
+      // being shaped exactly like a makeCreatureEntity() result. Only two
+      // things differ: the avatar is a per-instance composed NPC portrait
+      // (species + clothing + dyes) rather than a species sprite sheet, and
+      // the corpse hands over everything the bandit was wearing on top of
+      // its rolled loot table. All tuning lives in
+      // docs/config/bandits/bandit-gang-config.json.
+
+      let _banditConfigPromise = null;
+      function loadBanditGangConfig() {
+        if (_banditConfigPromise) return _banditConfigPromise;
+        _banditConfigPromise = (async () => {
+          try {
+            const r = await fetch('config/bandits/bandit-gang-config.json');
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return await r.json();
+          } catch (e) {
+            debugLog('Bandits: gang config load failed: ' + e.message, 'warn');
+            return null;
+          }
+        })();
+        return _banditConfigPromise;
+      }
+
+      let _banditLocaleDefsPromise = null;
+      function loadBanditCampLocaleDefs() {
+        if (_banditLocaleDefsPromise) return _banditLocaleDefsPromise;
+        _banditLocaleDefsPromise = (async () => {
+          try {
+            const idxRes = await fetch('config/locales/index.json');
+            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
+            const idx = await idxRes.json();
+            const defs = [];
+            for (const entry of (idx.locales || []).filter(e => e.category === 'bandit_camp')) {
+              try {
+                const r = await fetch(entry.file);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                defs.push(await r.json());
+              } catch (e) { debugLog(`Bandits: camp locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
+            }
+            return defs;
+          } catch (e) {
+            debugLog('Bandits: locale index load failed: ' + e.message, 'warn');
+            return [];
+          }
+        })();
+        return _banditLocaleDefsPromise;
+      }
+
+      const _banditSpeciesDefPromises = new Map();
+      function loadBanditSpeciesDef(speciesId) {
+        if (_banditSpeciesDefPromises.has(speciesId)) return _banditSpeciesDefPromises.get(speciesId);
+        const p = (async () => {
+          try {
+            const r = await fetch(`config/species/${speciesId}.json`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return await r.json();
+          } catch (e) {
+            debugLog(`Bandits: species def load failed for ${speciesId}: ${e.message}`, 'warn');
+            return null;
+          }
+        })();
+        _banditSpeciesDefPromises.set(speciesId, p);
+        return p;
+      }
+
+      // ── Roster generation ─────────────────────────────────────────────
+
+      // appliedDyes is keyed by the *tint* slot a cosmetic resolves to, not by
+      // its wardrobe slot -- see portrait-utils.js's resolvedTintSlot ladder.
+      // Every item in bandit-gang-config.json's clothingPool resolves purely
+      // from its own `slot` under that ladder (torso with no colorRange but an
+      // explicit tintSlot -> TORSO; hat with a colorRange -> HAT; overwear with
+      // a colorRange and no `appearance` block -> CLOTH), which is why this is a
+      // flat slot->tintSlot map instead of a per-item JSON fetch. Confirmed
+      // against the appliedDyes samples in config/npcs/hobunji-starter-npc-database.json.
+      const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT' };
+
+      const BANDIT_NAME_PARTS = {
+        first: ['Nakku', 'Tobri', 'Hesk', 'Vurra', 'Ommi', 'Dagat', 'Renji', 'Sulko', 'Pahru', 'Marek', 'Iggo', 'Yavra'],
+        last: ['Ashjaw', 'Coldhand', 'Rustnail', 'Grinner', 'Sixteeth', 'Mudfoot', 'Blackrope', 'Splitlip', 'Farcry', 'Kettle'],
+      };
+      function _banditName(rank) {
+        const first = BANDIT_NAME_PARTS.first[Math.floor(rnd() * BANDIT_NAME_PARTS.first.length)];
+        const last = BANDIT_NAME_PARTS.last[Math.floor(rnd() * BANDIT_NAME_PARTS.last.length)];
+        return rank === 'captain' ? `${first} ${last}` : first;
+      }
+
+      function _banditWeightedPick(weights) {
+        const entries = Object.entries(weights || {}).filter(([k, v]) => !k.startsWith('_') && Number(v) > 0);
+        if (!entries.length) return null;
+        const total = entries.reduce((a, [, v]) => a + Number(v), 0);
+        let r = rnd() * total;
+        for (const [key, v] of entries) { r -= Number(v); if (r <= 0) return key; }
+        return entries[entries.length - 1][0];
+      }
+
+      // Species cosmeticWeights are keyed by wardrobe slot then by the item's
+      // BARE base name (`basic_headband`, not `appearance::hat::basic_headband`),
+      // and several whitelisted items (bandolier1/tankan_tunic) have no weights
+      // entry at all -- so allowedCosmetics is the authority on what a species
+      // may wear and cosmeticWeights only biases the pick when it happens to
+      // list the item.
+      function _banditClothingCandidates(speciesDef, gender, slot, poolIds) {
+        const genderData = speciesDef?.[gender] || speciesDef?.male || null;
+        const allowed = new Set(genderData?.allowedCosmetics || []);
+        const weights = genderData?.cosmeticWeights?.[slot] || null;
+        const out = {};
+        for (const id of (poolIds || [])) {
+          if (!allowed.has(id)) continue;
+          const bare = id.split('::').pop();
+          out[id] = Number(weights?.[bare]) > 0 ? Number(weights[bare]) : 1;
+        }
+        return out;
+      }
+
+      function _banditRollDyeId(cfg) {
+        const variants = cfg?.clothingPool?.dyeVariantPool || [];
+        const hues = cfg?.clothingPool?.dyeHueFamilyPool || [];
+        if (!variants.length || !hues.length) return null;
+        const variant = variants[Math.floor(rnd() * variants.length)];
+        const hue = hues[Math.floor(rnd() * hues.length)];
+        return `dye:CLOTH:${variant}_${hue}`;
+      }
+
+      // Produces exactly the record shape makeNpcWalker feeds into
+      // NpcAvatarPreview.buildProfileFromNpcExport, plus a `cosmeticSlots`
+      // side table the corpse-loot step reads to rebuild each worn item as a
+      // packClothing entry without re-deriving its slot.
+      async function rollBanditRoster(cfg, rank) {
+        const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
+        const gender = rnd() < 0.5 ? 'male' : 'female';
+        const speciesDef = await loadBanditSpeciesDef(speciesId);
+        const slots = cfg?.clothingPool?.slots || [];
+        const fillP = Number(cfg?.clothingPool?.fillProbabilityByRank?.[rank] ?? 0.5);
+        const equippedCosmetics = [];
+        const cosmeticSlots = {};
+        const appliedDyes = {};
+        const candidatesBySlot = {};
+        for (const slot of slots) {
+          candidatesBySlot[slot] = _banditClothingCandidates(
+            speciesDef, gender, slot, cfg?.clothingPool?.itemsBySlot?.[slot]);
+        }
+        const fillSlot = (slot) => {
+          const id = _banditWeightedPick(candidatesBySlot[slot]);
+          if (!id || equippedCosmetics.includes(id)) return false;
+          equippedCosmetics.push(id);
+          cosmeticSlots[id] = slot;
+          const tintSlot = BANDIT_TINT_SLOT_BY_SLOT[slot];
+          const dyeId = _banditRollDyeId(cfg);
+          if (tintSlot && dyeId) appliedDyes[tintSlot] = dyeId;
+          return true;
+        };
+        for (const slot of slots) { if (rnd() < fillP) fillSlot(slot); }
+        // See the config's _fillComment -- nobody walks around in nothing, so
+        // an all-empty roll force-fills one slot the species can actually wear.
+        if (!equippedCosmetics.length) {
+          const wearable = slots.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
+          if (wearable.length) fillSlot(wearable[Math.floor(rnd() * wearable.length)]);
+        }
+        return {
+          name: _banditName(rank),
+          appearance: { speciesId, gender, cosmetics: {} },
+          equippedCosmetics, appliedDyes, cosmeticSlots,
+        };
+      }
+
+      // ── Avatar ────────────────────────────────────────────────────────
+
+      async function buildBanditAvatar(roster) {
+        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
+          name: roster.name,
+          appearance: roster.appearance,
+          equippedCosmetics: roster.equippedCosmetics,
+          appliedDyes: roster.appliedDyes,
+        });
+        if (!profile) return null;
+        const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+        const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
+        const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
+        // forceEyesOpen for the same reason makeNpcWalker needs it: this bakes
+        // one static texture at spawn and never re-renders, so an unlucky
+        // blink roll would leave the bandit permanently squint-eyed.
+        const frontCanvas = document.createElement('canvas');
+        frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        const backCanvas = document.createElement('canvas');
+        backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+
+        const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
+          THREE, frontCanvas,
+          {
+            backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
+            alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait',
+          },
+        );
+        const assembly = portrait.children[0];
+        const frontMesh = assembly?.children?.[0];
+        const backMesh = assembly?.children?.[1];
+        if (!frontMesh || !backMesh) return null;
+
+        // updateCreatureMesh, beginCreatureDeath and updateCorpses all assume
+        // the ANIMAL two-plane convention: the flat cutout's face-normal lies
+        // along the group's own local X at rest (frontPlane.rotation.y = +PI/2,
+        // backPlane = -PI/2), which is exactly what makes rotating the group
+        // +PI/2 about Z tip a corpse over to lie face-up. A portrait plane
+        // (createSinglePlaneAssembly) instead has its normal along +Z, with the
+        // front at rotation.y 0 and the back at PI. Rather than special-casing
+        // three shared functions, each portrait mesh gets its own pivot Group
+        // standing in as the "plane" those functions rotate, while the mesh
+        // keeps rotation.y 0 inside it -- the net normal then lands on the
+        // group's +X/-X exactly like an animal's, and the 180 degrees between
+        // the two pivots preserves the front/back texture relationship
+        // (buildTextureSet already UV-flips the rear canvas).
+        //
+        // The one thing this convention costs is a quarter turn of apparent
+        // facing, which makeBanditEntity pays back via def.aimAngleOffset (see
+        // updateCreatureMesh's rawTargetRotY) -- so a bandit still faces the
+        // way it walks, and cameraRelativeCreaturePerps' edge-on dead zones
+        // land on the correct angles for a front-facing sprite too.
+        assembly.remove(frontMesh);
+        assembly.remove(backMesh);
+        frontMesh.rotation.y = 0;
+        backMesh.rotation.y = 0;
+        frontMesh.position.z = 0;
+        backMesh.position.z = 0;
+        const group = new THREE.Group();
+        group.name = 'bandit_avatar_group';
+        const frontPivot = new THREE.Group(); frontPivot.name = 'bandit_front_plane';
+        const backPivot = new THREE.Group(); backPivot.name = 'bandit_back_plane';
+        frontPivot.add(frontMesh);
+        backPivot.add(backMesh);
+        // Keeps the portrait's own species/gender grounding offset (the
+        // assembly's y position inside the model root) now that the meshes no
+        // longer sit under it.
+        frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
+        group.add(frontPivot);
+        group.add(backPivot);
+        return {
+          group, frontPlane: frontPivot, backPlane: backPivot,
+          modelWidth: portrait.userData?.portraitModelWidth || MODEL_W,
+          modelHeight: portrait.userData?.portraitModelHeight || MODEL_W,
+          dispose() { window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+        };
+      }
+
+      // ── Combatant ─────────────────────────────────────────────────────
+
+      // Tier-0 CAPTAIN baseline; every other rank/tier is this scaled by
+      // statWeakenMultiplierByRank * (1 + tier * tierStatBonusPerTier). Sized
+      // against CREATURE_DB's own hostiles: a gar-wolf is 38 HP / 12 damage
+      // and an alpha 78 / 18, so a tier-0 captain (70 / 17) reads a shade
+      // under an alpha, and a tier-0 grunt (x0.55 -> ~39 HP / ~9 damage) is a
+      // gar-wolf's worth of health that hits noticeably softer -- a lightly
+      // armed thug, not a predator.
+      const BANDIT_BASE_MAX_HEALTH = 70;
+      const BANDIT_BASE_ATTACK_DAMAGE = 17;
+      const BANDIT_BASE_MAX_STAMINA = 46;
+      // Rolled mastery is plain data on the combatant (bandits have no
+      // gearInventory and never touch the player's tool-mastery XP system) --
+      // it only ever scales damage, at this much per level.
+      const BANDIT_MASTERY_DAMAGE_PER_LEVEL = 0.06;
+      const BANDIT_RANK_LABEL = { grunt: 'Bandit', lieutenant: 'Bandit Lieutenant', captain: 'Bandit Captain' };
+
+      function banditMasteryFor(cfg, rank, tier) {
+        const base = Number(cfg?.masteryBaseByRank?.[rank] ?? 0);
+        return clamp(Math.round(base + tier), 0, 5);
+      }
+
+      // heldAbilitiesByRank is reflected as the richness of the attack roster,
+      // not as a literal run of the player's hold-charge input state machine:
+      // a grunt (0 held abilities) only ever swings via the generic bite
+      // telegraph, a lieutenant (1) also lunges, and a captain (2) lunges AND
+      // fights the circling behaviour-stage cycle -- the same way gar-wolf and
+      // gar-wolf-alpha differ in CREATURE_DB.
+      function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
+        const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
+        const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
+        const statMul = weaken * tierMul;
+        const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL);
+        const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
+        const def = {
+          label: BANDIT_RANK_LABEL[rank] || 'Bandit',
+          hostile: true, liveBirth: true,
+          maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
+          maxStamina: Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul)),
+          moveSpeed: 118 + tier * 4,
+          chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * 5,
+          attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
+          attackRangePx: TILE * 0.9,
+          attackHalfConeRad: 44 * Math.PI / 180,
+          attackStaminaCost: 12,
+          attackCooldownS: rank === 'captain' ? 0.95 : 1.15,
+          attacks: held >= 1 ? ['pounce'] : [],
+          attackTag: 'sharp',
+          aiType: 'vigilantProtector',
+          aggroRangePx: TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
+          leashRangePx: TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
+          canClimb: false, canSwim: false,
+          modelWidth, tint: 0xffffff,
+          // Quarter-turn correction for the portrait plane convention -- see
+          // buildBanditAvatar's long comment.
+          aimAngleOffset: Math.PI / 2,
+          loot: (cfg?.corpseLoot?.[rank] || []).map(e => ({ ...e })),
+        };
+        if (held >= 2) def.behaviorStages = ['pounceAttempt', 'evasiveOrbit'];
+        return def;
+      }
+
+      async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
+        const roster = await rollBanditRoster(cfg, rank);
+        const avatarRef = await buildBanditAvatar(roster);
+        if (!avatarRef) {
+          window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
+          return null;
+        }
+        // Building the portrait is two awaited canvas renders long, so the
+        // player can transition out of the zone mid-build. Everything below
+        // resolves against whatever area is current NOW (scene, grid, areaId),
+        // so a stale spawn would land a bandit in the wrong zone entirely —
+        // drop it instead and let the next visit re-seed the camp.
+        if (opts.zoneId && opts.zoneId !== currentArea) {
+          avatarRef.dispose();
+          return null;
+        }
+        const mastery = banditMasteryFor(cfg, rank, tier);
+        const def = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+        const targetScene = opts.scene || getActiveScene();
+        const targetGrid = opts.grid || getActiveGrid();
+        const gridCols = opts.cols || getActiveCols();
+        const gridRows = opts.rows || getActiveRows();
+        const halfH = avatarRef.modelHeight / 2;
+        const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
+        const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
+        const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
+        avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
+        _markPngPlane(avatarRef.group);
+        targetScene.add(avatarRef.group);
+
+        const groundShadow = makeCharacterGroundShadow('bandit_ground_shadow');
+        const shadowRadii = creatureGroundShadowRadii(def);
+        groundShadow.scale.set(shadowRadii.radiusX, 1, shadowRadii.radiusZ);
+        groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
+        targetScene.add(groundShadow);
+
+        const c = {
+          id: 'bandit_' + rank + '_' + (performance.now() | 0) + '_' + Math.floor(rnd() * 100000),
+          creatureKey: 'bandit-' + rank, def, avatarRef, groundShadow,
+          x, y, vx: 0, vy: 0,
+          halfHeight: halfH,
+          health: def.maxHealth, maxHealth: def.maxHealth,
+          stamina: def.maxStamina, maxStamina: def.maxStamina,
+          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
+          scaleY: 1,
+          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
+          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
+          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: null,
+          isCompanion: false, master: null,
+          name: roster.name,
+          state: 'idle',
+          wanderTarget: null, wanderT: 0,
+          homeX: x, homeY: y,
+          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
+          isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
+          rosterRecord: roster,
+          ...opts.extra,
+        };
+        window.ResourceSystem?.initEntity(c);
+        return c;
+      }
+
+      // ── Zone adapter for TemporaryLocales ─────────────────────────────
+      //
+      // TemporaryLocales operates on the wilderness generator's own workspace
+      // shape ({cols, rows, tiles: tiles[y][x], objects, entry}). A live
+      // zone's cached layout (_zoneLayouts) is a flatter RUNTIME form: a flat
+      // array of {c, r, type, elevTier, incline, floraKind} tile records with
+      // no `objects` list at all, because the generator folds its flora and
+      // resource objects down into tile types on the way out (a copse/bush/
+      // fruitBush/mushroomPatch/beehive all become a SHRUB tile carrying
+      // `floraKind`; ore and boulders become ROCK) -- see terrain-preview.js's
+      // buildMergedZoneGrid and mergeZoneTiles. So the module's
+      // DEFAULT_CLEARABLE_TYPES (which names the generator's pre-fold object
+      // types: 'copse', 'diggableRockOre', ...) can never match anything at
+      // runtime; _BANDIT_CLEARABLE_TYPES is passed as opts.clearableTypes
+      // instead, and this adapter re-inflates the tile grid into the shape
+      // findSite/stamp/release expect. Cached per zone so occupiedBy
+      // reservations from one camp are visible to the next.
+      const _BANDIT_CLEARABLE_TYPES = new Set(['shrub']);
+      const _banditZoneViews = new Map();
+
+      function _banditZoneView(zoneId) {
+        if (_banditZoneViews.has(zoneId)) return _banditZoneViews.get(zoneId);
+        const layout = _zoneLayouts.get(zoneId);
+        if (!layout?.cols || !layout?.rows) return null;
+        const cols = layout.cols, rows = layout.rows;
+        const tiles = Array.from({ length: rows }, () => new Array(cols).fill(null));
+        const objects = [];
+        const srcByKey = new Map();
+        for (const t of (layout.tiles || [])) {
+          if (!(t.r >= 0 && t.r < rows && t.c >= 0 && t.c < cols)) continue;
+          const view = {
+            height: t.elevTier || 0,
+            water: WATERWAY_TYPES.has(t.type),
+            path: t.type === TileType.PATH,
+            // An incline tile is solid to the game's own movement collision
+            // (tileSpeedAt), so it must never end up under a camp.
+            ramp: t.type === TileType.RAMP || !!t.incline,
+            waterfall: t.type === TileType.WATERFALL,
+            terrain: t.type,
+            occupiedBy: null,
+          };
+          tiles[t.r][t.c] = view;
+          srcByKey.set(`${t.c},${t.r}`, t);
+          // Flora and resource clutter, re-inflated as clearable objects.
+          // A generated zone's ROCK tiles are always a generator resource
+          // object (diggableRockOre/undiggableBoulder) — mergeZoneTiles
+          // suppresses any stray authored decorative rock back to grass unless
+          // it carries a generatedObjectType — and DEFAULT_CLEARABLE_TYPES
+          // names both, so they're bulldozeable clutter like anything else.
+          // release() puts the node straight back, so a camp only ever hides
+          // a mining spot for as long as it stands.
+          if (t.type === TileType.SHRUB || t.type === TileType.ROCK) {
+            const id = `zclutter_${t.c}_${t.r}`;
+            objects.push({
+              id, type: 'shrub', x: t.c, y: t.r, w: 1, h: 1,
+              srcType: t.type, floraKind: t.floraKind || null,
+            });
+            view.occupiedBy = id;
+          }
+        }
+        let uniqueSeq = 0;
+        const blockRect = (col, row, w, h) => {
+          if (!Number.isFinite(col) || !Number.isFinite(row)) return;
+          const id = `zunique_${uniqueSeq++}`;
+          // localeMeta short-circuits isBlocked -- never bulldozeable, whatever
+          // clearableTypes says.
+          objects.push({ id, type: 'unique', x: col, y: row, w: w || 1, h: h || 1, localeMeta: true });
+          for (let r = row; r < row + (h || 1); r++) {
+            for (let cc = col; cc < col + (w || 1); cc++) if (tiles[r]?.[cc]) tiles[r][cc].occupiedBy = id;
+          }
+        };
+        for (const b of (layout.buildings || [])) blockRect(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
+        for (const d of (layout.dens || [])) blockRect(d.x, d.y, d.w || 1, d.h || 1);
+        for (const d of (layout.decor || [])) blockRect(d.col, d.row, 1, 1);
+        for (const f of (layout.furniture || [])) blockRect(f.col, f.row, 1, 1);
+        for (const tr of (layout.transitions || [])) blockRect(tr.col, tr.row, 1, 1);
+        for (const t of (layout.rootTotems || [])) blockRect(t.x ?? t.col, t.y ?? t.row, t.w || 1, t.h || 1);
+        for (const inst of (layout.localeInstances || [])) {
+          for (const o of (inst.objects || [])) blockRect(o.x, o.y, o.w || 1, o.h || 1);
+        }
+        const zdef = EXTERIOR_ZONES[zoneId];
+        const entry = layout.toTownExit
+          ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
+          : (Number.isFinite(zdef?.entryCol) ? { x: zdef.entryCol, y: zdef.entryRow } : null);
+        const view = { cols, rows, tiles, objects, entry, _srcByKey: srcByKey };
+        _banditZoneViews.set(zoneId, view);
+        return view;
+      }
+
+      // stamp()/release() only ever touch the adapter view above, so the real
+      // zone layout (and, while the zone is built, its live scene grid) has to
+      // be brought in line by hand: a bulldozed flora tile becomes plain grass
+      // and its tree/bush mesh gets rebuilt away, exactly the way felling a
+      // tree with the axe already does.
+      function _syncBanditFlora(zoneId, snapshots, restore) {
+        const view = _banditZoneViews.get(zoneId);
+        const zi = _zoneScenes.get(zoneId);
+        let changed = 0;
+        for (const snap of (snapshots || [])) {
+          if (snap.type !== 'shrub') continue;
+          const nextType = restore ? (snap.srcType || TileType.SHRUB) : TileType.GRASS;
+          const src = view?._srcByKey.get(`${snap.x},${snap.y}`);
+          if (src) {
+            src.type = nextType;
+            if (restore) src.floraKind = snap.floraKind || null;
+          }
+          const gridTile = zi?.grid?.[snap.y]?.[snap.x];
+          if (gridTile) {
+            gridTile.type = nextType;
+            if (restore) gridTile.floraKind = snap.floraKind || null;
+          }
+          changed++;
+        }
+        if (changed && zi) refreshZoneGroundVisuals(zoneId);
+        return changed;
+      }
+
+      // ── Tent props ────────────────────────────────────────────────────
+
+      // Deliberately does not block movement, same as reagent plants and
+      // buried chests -- the tent is a hold-to-interact prop, and making it
+      // solid would need a matching entry in the zone's collision grid that
+      // release()/burning would then have to unpick.
+      function buildBanditTentMesh() {
+        const group = new THREE.Group();
+        const canvas = new THREE.Mesh(
+          new THREE.ConeGeometry(0.9, 1.2, 5),
+          new THREE.MeshLambertMaterial({ color: 0x8a7550 }));
+        canvas.position.y = 0.6;
+        canvas.castShadow = true;
+        const doorway = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.44, 0.6),
+          new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.DoubleSide }));
+        doorway.position.set(0, 0.3, 0.66);
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035, 0.035, 1.45, 5),
+          new THREE.MeshLambertMaterial({ color: 0x5a4326 }));
+        pole.position.y = 0.72;
+        group.add(canvas, doorway, pole);
+        return group;
+      }
+
+      // zoneId -> Map<stampedObjectId, { mesh, light, sfxSource }> for every
+      // prop a camp placed (tents plus the locale's own decor).
+      const _banditCampMeshes = new Map();
+
+      function banditTentCenterPx(obj) {
+        return { x: (obj.x + (obj.w || 1) / 2) * TILE, y: (obj.y + (obj.h || 1) / 2) * TILE };
+      }
+
+      // Each camp record caches its own tent objects at stamp time (see
+      // spawnBanditCamp) rather than re-filtering the zone view's whole object
+      // list — updateBanditTentInteraction runs this every frame, and a large
+      // zone's view holds one object per flora/rock tile.
+      function _banditZoneTents(zoneId) {
+        const out = [];
+        for (const rec of (_banditCampInstances.get(zoneId) || [])) {
+          for (const prop of rec.props) if (prop.type === 'tent') out.push(prop);
+        }
+        return out;
+      }
+
+      function _disposeBanditProp(zoneId, entry) {
+        const zScene = _zoneScenes.get(zoneId)?.scene;
+        if (zScene) {
+          zScene.remove(entry.mesh);
+          if (entry.light) zScene.remove(entry.light);
+        }
+        entry.mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
+        if (entry.sfxSource) unregisterFurnitureSfxSource(entry.sfxSource);
+      }
+
+      // (Re)builds every prop for whatever camps this zone currently tracks --
+      // idempotent, and re-run on every den-check tick so a zone scene that got
+      // disposed and rebuilt (leaving town and coming back) gets its camps back.
+      // Tents get their own procedural mesh; the locale's plain decor objects
+      // (campfire, supply crates) go through DECORATIVE_FURNITURE_DEFS the same
+      // way authored zone decor does, so the camp fire even lights the place.
+      function ensureBanditCampMeshes(zoneId) {
+        const zi = _zoneScenes.get(zoneId);
+        if (!zi) return;
+        let meshes = _banditCampMeshes.get(zoneId);
+        if (!meshes) { meshes = new Map(); _banditCampMeshes.set(zoneId, meshes); }
+        const live = new Set();
+        for (const rec of (_banditCampInstances.get(zoneId) || [])) {
+          for (const obj of rec.props) {
+            if (obj.destroyed) continue;
+            live.add(obj.id);
+            const existing = meshes.get(obj.id);
+            if (existing && existing.mesh.parent === zi.scene) continue;
+            if (existing) { _disposeBanditProp(zoneId, existing); meshes.delete(obj.id); }
+            const gridTile = zi.grid?.[obj.y]?.[obj.x];
+            const y = gridTile ? tileSurfaceYInArea(gridTile, zoneId) : NORMAL_TOP;
+            if (obj.type === 'tent') {
+              const mesh = buildBanditTentMesh();
+              const center = banditTentCenterPx(obj);
+              mesh.position.set(center.x / TILE, y, center.y / TILE);
+              _markOutline(mesh);
+              zi.scene.add(mesh);
+              meshes.set(obj.id, { mesh, light: null, sfxSource: null });
+            } else if (obj.key && window.ProceduralFurniture) {
+              const result = makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
+              if (!result) continue;
+              result.mesh.position.y += y;
+              if (result.light) result.light.position.y += y;
+              meshes.set(obj.id, result);
+            }
+          }
+        }
+        for (const [id, entry] of [...meshes]) {
+          if (live.has(id)) continue;
+          _disposeBanditProp(zoneId, entry);
+          meshes.delete(id);
+        }
+      }
+
+      function removeBanditCampProp(zoneId, propId) {
+        const meshes = _banditCampMeshes.get(zoneId);
+        const entry = meshes?.get(propId);
+        if (!entry) return;
+        _disposeBanditProp(zoneId, entry);
+        meshes.delete(propId);
+      }
+
+      // ── Camp lifecycle ────────────────────────────────────────────────
+
+      // zoneId -> [{ zoneId, instance, tier, gangIds: Set<creatureId>,
+      //              props: [stamped tent/decor objects] }]
+      const _banditCampInstances = new Map();
+      // Zones the player has just (re-)entered; consumed by
+      // ensureCurrentZoneBanditCamps so a cleared camp only ever re-rolls
+      // between visits, never under the player's feet mid-visit.
+      const _banditZoneEntryPending = new Set();
+      const _banditZoneWorkInFlight = new Set();
+
+      function banditTierForSite(cfg, view, site) {
+        const per = Number(cfg?.difficultyTiers?.tierDistanceTiles || 14);
+        const maxTier = Number(cfg?.difficultyTiers?.maxTier ?? 3);
+        if (!view?.entry || !(per > 0)) return 0;
+        const cx = site.x + site.w / 2, cy = site.y + site.h / 2;
+        const dist = Math.hypot(cx - view.entry.x, cy - view.entry.y);
+        return clamp(Math.floor(dist / per), 0, maxTier);
+      }
+
+      // A camp is cleared once every tent it placed has been burned down AND
+      // every bandit it spawned is dead -- the hostileObjects scan mirrors
+      // isDenPackAlive, keyed on banditCampInstanceId the way a pack member is
+      // keyed on denKey. Looting a tent deliberately does NOT count: it only
+      // strips the tent's supplies (interactable.lootable -> false) and leaves
+      // it standing, so clearing a camp always means burning it out.
+      function isBanditCampCleared(rec) {
+        const view = _banditZoneViews.get(rec.zoneId);
+        if (!view) return false;
+        if (window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
+        for (const c of hostileObjects) {
+          if (c.banditCampInstanceId === rec.instance.id && c.health > 0) return false;
+        }
+        return true;
+      }
+
+      // Stamps one camp into an already-generated zone and spawns its gang.
+      // Returns the TemporaryLocales instance record, or null if the zone had
+      // no room for the footprint.
+      async function spawnBanditCamp(zoneId, localeDef, cfg) {
+        const view = _banditZoneView(zoneId);
+        if (!view) return null;
+        const placement = localeDef.placement || {};
+        // The authored clearance (2 tiles all round) turns a 9x8 camp into a
+        // 13x12 rectangle, which simply does not fit in the two small 22x16
+        // zones once terrain is accounted for -- so fall back through tighter
+        // buffers rather than silently leaving half the wilderness camp-free.
+        let instance = null;
+        for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
+          instance = window.TemporaryLocales.stamp(view, localeDef, {
+            clearanceTiles: clearance,
+            requiresFlatGround: placement.requiresFlatGround !== false,
+            minDistanceFromEntry: placement.minDistanceFromEntry,
+            clearableTypes: _BANDIT_CLEARABLE_TYPES,
+            rng: rnd,
+          });
+          if (instance) break;
+        }
+        if (!instance) {
+          window.__farmLog?.(`[bandits] zone "${zoneId}": no site fits ${localeDef.id} (fallback: no camp placed here).`, 'wildlife');
+          return null;
+        }
+        _syncBanditFlora(zoneId, instance.removedObjectSnapshots, false);
+
+        const tier = banditTierForSite(cfg, view, instance.site);
+        const rec = {
+          zoneId, instance, tier, gangIds: new Set(),
+          props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
+        };
+        const tracked = _banditCampInstances.get(zoneId) || [];
+        tracked.push(rec);
+        _banditCampInstances.set(zoneId, tracked);
+        ensureBanditCampMeshes(zoneId);
+
+        const comp = cfg?.gangComposition || {};
+        const grunts = (comp.gruntsMin ?? 3) + Math.floor(rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
+        const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
+        const roster = [
+          ...Array(grunts).fill('grunt'),
+          ...Array(lieutenants).fill('lieutenant'),
+          ...Array(comp.captains ?? 1).fill('captain'),
+        ];
+        // Camp centre in world pixels -- the same homeX/homeY + angle/distance
+        // scatter spawnPackAtDen uses around a den's footprint.
+        const homeX = (instance.site.x + instance.site.w / 2) * TILE;
+        const homeY = (instance.site.y + instance.site.h / 2) * TILE;
+        let spawned = 0;
+        for (const rank of roster) {
+          if (zoneId !== currentArea) break; // player left mid-build; the next visit re-seeds
+          const angle = rnd() * Math.PI * 2;
+          const dist = TILE * (1.0 + rnd() * 2.6);
+          const c = await makeBanditEntity(cfg, rank, tier, homeX + Math.cos(angle) * dist, homeY + Math.sin(angle) * dist, {
+            zoneId,
+            extra: { homeX, homeY, banditCampInstanceId: instance.id, state: 'idle' },
+          });
+          if (!c) continue;
+          hostileObjects.add(c);
+          rec.gangIds.add(c.id);
+          spawned++;
+        }
+        window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${spawned}/${roster.length} gang members spawned.`, 'wildlife');
+        if (spawned > 0 && zoneId === currentArea) showToast('Smoke on the wind — a bandit camp is nearby.', false);
+        return instance;
+      }
+
+      async function seedBanditCampsForZone(zoneId) {
+        const [cfg, localeDefs] = await Promise.all([loadBanditGangConfig(), loadBanditCampLocaleDefs()]);
+        if (!cfg || !localeDefs.length) { _banditCampInstances.set(zoneId, []); return; }
+        if (!_banditCampInstances.has(zoneId)) _banditCampInstances.set(zoneId, []);
+        const maxCamps = Math.max(0, Number(cfg.campLifecycle?.maxCampsPerZone ?? 1));
+        for (let i = _banditCampInstances.get(zoneId).length; i < maxCamps; i++) {
+          const localeDef = localeDefs[Math.floor(rnd() * localeDefs.length)];
+          const maxInstances = Number(localeDef.placement?.maxInstances ?? maxCamps);
+          const already = _banditCampInstances.get(zoneId).filter(r => r.instance.localeId === localeDef.id).length;
+          if (already >= maxInstances) continue;
+          await spawnBanditCamp(zoneId, localeDef, cfg);
+        }
+      }
+
+      // Releases each cleared camp's footprint (restoring the flora it
+      // bulldozed) and stamps a fresh one somewhere else in the same zone, with
+      // a brand new gang. Only ever called from the zone-(re)entry branch of
+      // ensureCurrentZoneBanditCamps.
+      async function rerollBanditCamps(zoneId, clearedRecs) {
+        const [cfg, localeDefs] = await Promise.all([loadBanditGangConfig(), loadBanditCampLocaleDefs()]);
+        if (!cfg || !localeDefs.length) return;
+        const view = _banditZoneView(zoneId);
+        if (!view) return;
+        const tracked = _banditCampInstances.get(zoneId) || [];
+        for (const rec of clearedRecs) {
+          for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
+          window.TemporaryLocales.release(view, rec.instance);
+          _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
+          const idx = tracked.indexOf(rec);
+          if (idx >= 0) tracked.splice(idx, 1);
+        }
+        _banditCampInstances.set(zoneId, tracked);
+        await seedBanditCampsForZone(zoneId);
+      }
+
+      // A Tothal Shift replaces a zone's whole _zoneLayouts entry, so the cached
+      // adapter view, every camp instance stamped into it, and every tent mesh
+      // built from it all describe terrain that no longer exists. Mirrors
+      // forgetZoneDenState; the gang itself needs no cleanup here because
+      // performTothalShift's clearHostileObjects() already wipes them, and the
+      // zone scene is disposed/rebuilt with the tent meshes gone.
+      function forgetZoneBanditState(zoneId) {
+        _banditCampMeshes.delete(zoneId);
+        _banditCampInstances.delete(zoneId);
+        _banditZoneViews.delete(zoneId);
+        _banditZoneEntryPending.delete(zoneId);
+      }
+
+      // Called alongside ensureCurrentZoneDenPacks on the shared zone-tick (see
+      // updateHostileSpawning).
+      function ensureCurrentZoneBanditCamps() {
+        const zoneId = currentArea;
+        if (!_isZoneArea(zoneId) || zoneId === DEV_ARENA_ZONE_ID) return;
+        if (!window.TemporaryLocales) return;
+        // Checked before the pending flag is consumed, so a re-entry that lands
+        // while a seed/re-roll is still awaiting its config fetches isn't
+        // swallowed -- it's still pending on the next tick.
+        if (_banditZoneWorkInFlight.has(zoneId)) return;
+        const reentered = _banditZoneEntryPending.delete(zoneId);
+        if (!_banditCampInstances.has(zoneId)) {
+          _banditZoneWorkInFlight.add(zoneId);
+          seedBanditCampsForZone(zoneId)
+            .catch(e => debugLog('Bandits: camp seed failed: ' + e.message, 'warn'))
+            .finally(() => _banditZoneWorkInFlight.delete(zoneId));
+          return;
+        }
+        ensureBanditCampMeshes(zoneId);
+        if (!reentered) return;
+        const cleared = (_banditCampInstances.get(zoneId) || []).filter(isBanditCampCleared);
+        if (!cleared.length) return;
+        _banditZoneWorkInFlight.add(zoneId);
+        rerollBanditCamps(zoneId, cleared)
+          .catch(e => debugLog('Bandits: camp re-roll failed: ' + e.message, 'warn'))
+          .finally(() => _banditZoneWorkInFlight.delete(zoneId));
+      }
+
+      // ── Tent hold actions: loot, then burn ────────────────────────────
+      //
+      // Mirrors the Den-Mother nest's hold-to-take (NEST_TAKE_HOLD_S /
+      // updateNestInteraction): proximity plus the global actionHeldDown flag,
+      // no action-bar button to arm first, with a progress bar that resets the
+      // moment the player steps away or lets go. A tent has two held actions
+      // rather than the nest's one, and they're sequential rather than a menu:
+      // the first completed hold LOOTS it (grants the tent's supplies and
+      // clears interactable.lootable, leaving the tent standing), the second
+      // BURNS it (no loot, tent removed from the world). That keeps the nest's
+      // one-action-when-near UX exactly as-is while making both authored
+      // interactable flags meaningful, and means clearing a camp always
+      // requires burning every tent out rather than just rifling through them.
+      const BANDIT_TENT_HOLD_S = 4;
+      const BANDIT_TENT_NEAR_PX = TILE * 1.7;
+      const BANDIT_TENT_LOOT_TABLE = [
+        { key: 'gold', min: 4, max: 14 },
+        { key: 'banditScrapMetal', min: 0, max: 2 },
+      ];
+      let _banditTentHoldT = 0;
+      let _banditTentHoldId = null;
+      const _tentActionHudEl = document.getElementById('tentActionHud');
+      const _tentActionLabelEl = document.getElementById('tentActionLabel');
+      const _tentActionFillEl = document.getElementById('tentActionFill');
+
+      function nearestBanditTent(zoneId) {
+        let best = null, bestDist = Infinity;
+        for (const obj of _banditZoneTents(zoneId)) {
+          if (obj.destroyed) continue;
+          const center = banditTentCenterPx(obj);
+          const dist = Math.hypot(player.x - center.x, player.y - center.y);
+          if (dist <= BANDIT_TENT_NEAR_PX && dist < bestDist) { best = obj; bestDist = dist; }
+        }
+        return best;
+      }
+
+      function lootBanditTent(zoneId, obj) {
+        const gained = rollLootFromTable(BANDIT_TENT_LOOT_TABLE);
+        const parts = grantBanditLoot(gained);
+        if (obj.interactable) obj.interactable.lootable = false;
+        refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+        saveMemberWorldData();
+        showToast(parts.length
+          ? `Ransacked the tent: ${parts.join(' ')}`
+          : 'Nothing worth taking in the tent.', true);
+      }
+
+      function burnBanditTent(zoneId, obj) {
+        obj.destroyed = true;
+        if (obj.interactable) { obj.interactable.lootable = false; obj.interactable.burnable = false; }
+        const view = _banditZoneViews.get(zoneId);
+        if (view) {
+          const idx = view.objects.indexOf(obj);
+          if (idx >= 0) view.objects.splice(idx, 1);
+          // Hand the tent's tiles back to the instance's own reservation rather
+          // than clearing them outright: the whole padded rect still belongs to
+          // this camp until release() runs, and nulling these would let a
+          // second camp's findSite place itself inside the first one's footprint.
+          for (let r = obj.y; r < obj.y + (obj.h || 1); r++) {
+            for (let c = obj.x; c < obj.x + (obj.w || 1); c++) {
+              if (view.tiles[r]?.[c]?.occupiedBy === obj.id) view.tiles[r][c].occupiedBy = obj.temporaryLocaleInstanceId;
+            }
+          }
+        }
+        removeBanditCampProp(zoneId, obj.id);
+        showToast('🔥 Burned the bandit tent down.', true);
+      }
+
+      function updateBanditTentInteraction(dt) {
+        const zoneId = currentArea;
+        const tent = _isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
+        if (!tent || !actionHeldDown) {
+          if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
+          if (_tentActionHudEl?.classList.contains('visible')) _tentActionHudEl.classList.remove('visible');
+          return;
+        }
+        // Walking from one tent to another restarts the hold rather than
+        // carrying accumulated progress across to the new one.
+        if (_banditTentHoldId !== tent.id) { _banditTentHoldId = tent.id; _banditTentHoldT = 0; }
+        const looting = !!tent.interactable?.lootable;
+        // The locale authors its own hold duration per tent (interactable.
+        // holdSeconds); BANDIT_TENT_HOLD_S is only the fallback.
+        const holdS = Number(tent.interactable?.holdSeconds) > 0
+          ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
+        _banditTentHoldT += dt;
+        if (_tentActionLabelEl) _tentActionLabelEl.textContent = looting ? 'Looting Tent...' : 'Burning Tent...';
+        if (_tentActionFillEl) _tentActionFillEl.style.width = Math.min(100, (_banditTentHoldT / holdS) * 100) + '%';
+        _tentActionHudEl?.classList.add('visible');
+        if (_banditTentHoldT < holdS) return;
+        _banditTentHoldT = 0;
+        _banditTentHoldId = null;
+        _tentActionHudEl?.classList.remove('visible');
+        if (looting) lootBanditTent(zoneId, tent);
+        else burnBanditTent(zoneId, tent);
+      }
+
+      // ── Corpse loot ───────────────────────────────────────────────────
+
+      // `gold` is a currency, not an ITEM_DEFS entry (see itemsForScroll's
+      // explicit filter) -- it has no 99-stack cap and no icon lookup, so it
+      // can't go through the ordinary inventory path makeCorpseWorldObject
+      // uses for butchering byproducts.
+      function grantBanditLoot(gained) {
+        const parts = [];
+        for (const [key, qty] of Object.entries(gained || {})) {
+          if (key === 'gold') {
+            inventory.gold = (inventory.gold || 0) + qty;
+            parts.push('💰' + qty + 'g');
+            continue;
+          }
+          inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
+          clampInventoryStack(key);
+          parts.push(itemIconForKey(key) + '×' + qty);
+        }
+        return parts;
+      }
+
+      // STORE_CLOTHING_PIECES only lists what the General Store actually
+      // stocks, and the bandit pool includes two items it doesn't
+      // (tankan_bodywrap, riverlandskasa_low) — both of which are in the
+      // account shop catalog with a proper label/price/category, so fall
+      // through to that before resorting to prettifying the raw id.
+      function _banditClothingPiece(cosmeticId, rolledSlot) {
+        const store = STORE_CLOTHING_PIECES.find(p => p.id === cosmeticId);
+        if (store) return store;
+        const shop = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []).find(i => i.id === cosmeticId);
+        if (shop) return { id: cosmeticId, label: shop.label, category: shop.category || rolledSlot, usesB: false, price: shop.price ?? 40 };
+        const pretty = cosmeticId.split('::').pop().replace(/[_-]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+        return { id: cosmeticId, label: pretty, category: rolledSlot, usesB: false, price: 40 };
+      }
+
+      // Rebuilds each worn cosmetic as a packClothing entry -- the exact same
+      // owned-clothing storage a treasure chest's `clothing` bundle grants
+      // through (see makeTreasureChestObject), so a looted bandit's gear shows
+      // up in the pack and can be worn/sold like any other clothing item.
+      // Cosmetics are not ITEM_DEFS inventory keys, so there is no other path.
+      function banditWornClothingItems(roster) {
+        const catalog = getDyeCatalog();
+        const items = [];
+        for (const cosmeticId of (roster?.equippedCosmetics || [])) {
+          const slot = roster.cosmeticSlots?.[cosmeticId] || 'torso';
+          const piece = _banditClothingPiece(cosmeticId, slot);
+          const dyeId = roster.appliedDyes?.[BANDIT_TINT_SLOT_BY_SLOT[piece.category]] || null;
+          const dye = dyeId ? catalog.find(d => d.id === dyeId) : null;
+          items.push({
+            uid: 'citem_bandit_' + Date.now().toString(36) + '_' + Math.floor(rnd() * 1e6),
+            cosmeticId: piece.id,
+            slot: piece.category,
+            label: (dye ? dye.label + ' ' : '') + piece.label,
+            baseLabel: piece.label,
+            colorA: dyeToClothingColor(dye),
+            colorB: null,
+            price: piece.price,
+            sellPrice: Math.floor(piece.price * 0.4),
+            sprite: clothingSpriteForCosmetic(piece.id),
+          });
+        }
+        return items;
+      }
+
+      // Same { getButtons(), onAction() } shape as makeCorpseWorldObject, which
+      // branches here for bandits -- so getCorpseObjectAt and the action bar
+      // need no bandit-specific dispatch of their own.
+      function makeBanditCorpseWorldObject(c) {
+        return {
+          id: 'corpse_' + c.id,
+          type: 'bandit_corpse',
+          getButtons() {
+            return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+            const parts = grantBanditLoot(rollLootFromTable(c.def.loot));
+            // 100% of what they were wearing, on top of the rolled table.
+            for (const item of banditWornClothingItems(c.rosterRecord)) {
+              packClothing.push(item);
+              parts.push('👘 ' + item.label);
+            }
+            corpseObjects.delete(c);
+            despawnCreature(c);
+            refreshItemScroll();
+            buildInventoryGrid();
+            buildPackClothingSection();
+            saveMemberWorldData();
+            return {
+              ok: true,
+              message: parts.length
+                ? `Looted the ${c.def.label}: ${parts.join(' ')}`
+                : `The ${c.def.label} carried nothing.`,
+            };
+          },
+        };
       }
 
       function updatePlayerVitals(dt) {
@@ -13045,6 +14055,10 @@
         // wildlife populates promptly on arrival and the log reflects it.
         denCheckTimer = 0;
         _zoneEntryAnimalLogPending = mapId;
+        // A cleared bandit camp only ever re-rolls somewhere else BETWEEN
+        // visits, never under the player's feet — this is the one moment
+        // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
+        _banditZoneEntryPending.add(mapId);
       }
 
       // ── Town building detection ──────────────────────────────────────
@@ -15713,6 +16727,8 @@
         shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
         garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
+        banditScrapMetal: { icon: '🔩', label: 'Bandit Scrap Metal', cat: 'material', sellPrice: 6, tags: ['Material', 'Metal'], desc: 'Bent buckles, cut rivets and broken blade stock stripped off a fallen bandit. Sells on, or feeds the forge.' },
+        banditTreasureToken: { icon: '🪙', label: 'Bandit Treasure Token', cat: 'material', sellPrice: 40, tags: ['Material', 'Valuable'], desc: "A stamped brass token the gangs pass around in place of coin. Worth good money to someone who'll take it." },
         alphaGarWolfMeat: { icon: '🥩', label: 'Alpha Gar-wolf Meat', cat: 'material', sellPrice: 16, tags: ['Material', 'Meat'], desc: 'Prime meat butchered from a slain alpha gar-wolf.' },
         alphaGarWolfHide: { icon: '🟫', label: 'Alpha Gar-wolf Hide', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide'], desc: 'A thick, battle-scarred hide stripped from a slain alpha gar-wolf.' },
         dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
@@ -26606,6 +27622,7 @@
           }
 
           if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
+          if (_isZoneArea(currentArea)) updateBanditTentInteraction(dt);
 
           // Interior exit detection: player walks south through exit door
           if (currentArea === 'interior' && sceneTransDir === 0) {
