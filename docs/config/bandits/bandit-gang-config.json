@@ -1,0 +1,90 @@
+{
+  "schema": "hobunji_bandit_gang_config.v1",
+  "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, mastery/difficulty scaling, and corpse loot are all data so gangs can be rebalanced without touching game.js.",
+
+  "speciesWeights": {
+    "mao-ao": 40,
+    "mashtzarr": 35,
+    "engh-sho": 20,
+    "tletingan": 5
+  },
+
+  "clothingPool": {
+    "_comment": "Slots + item ids intersected against each rolled species' own docs/config/species/<id>.json allowedCosmetics/cosmeticWeights at generation time -- a species that doesn't whitelist an item here (e.g. mashtzarr and hats) just never rolls it, no per-species override needed here.",
+    "slots": ["torso", "overwear", "hat"],
+    "itemsBySlot": {
+      "torso": ["bandolier1"],
+      "overwear": ["tankan_bodywrap"],
+      "hat": ["appearance::hat::basic_headband", "appearance::hat::leather_headband", "appearance::hat::riverlandskasa_wide", "appearance::hat::riverlandskasa_low"]
+    },
+    "dyeVariantPool": ["muted", "dark_muted", "dusty", "smoky"],
+    "dyeHueFamilyPool": ["red", "red_orange", "orange", "yellow_orange", "yellow", "yellow_green", "green", "green_blue", "blue", "blue_indigo", "indigo", "indigo_violet", "violet"],
+    "_dyeComment": "Dye ids are constructed as `dye:CLOTH:<variant>_<hueFamily>` (see docs/config/scratchbones-config.js's catalog builder ~line 864-890, and appliedDyes samples in docs/config/npcs/hobunji-starter-npc-database.json) -- restricting variant to the mid/low-saturation set (60%/30% sat, darker brightness) gives the worn, mismatched look without needing the full runtime dye catalog. Each filled slot rolls its OWN variant+hue independently -- slots are never color-matched to each other.",
+    "fillProbabilityByRank": {
+      "grunt": 0.5,
+      "lieutenant": 0.7,
+      "captain": 0.9
+    },
+    "_fillComment": "3 slots x 0.5 = 1.5 average filled slots for a grunt, per design. Each slot is rolled independently; if a roll comes up with zero slots filled, one random slot is force-filled so every bandit wears at least one clothing item."
+  },
+
+  "gangComposition": {
+    "gruntsMin": 3,
+    "gruntsMax": 6,
+    "lieutenantsMin": 1,
+    "lieutenantsMax": 2,
+    "captains": 1
+  },
+
+  "masteryBaseByRank": {
+    "_comment": "Added to the current difficulty tier (see difficultyTiers below) and clamped to the tool mastery system's real 0-5 range (game.js MASTERY_XP_THRESHOLDS) to get a bandit's weapon mastery level.",
+    "grunt": 0,
+    "lieutenant": 1,
+    "captain": 2
+  },
+
+  "heldAbilitiesByRank": {
+    "_comment": "How many hold-family abilities (hold1/hold2 slots, see docs/js/combat/combat-loadout.js SLOT_CATEGORIES) this rank is given. Grunts get none (tap-only, weakest fighters); only the gang's lieutenants and captain fight with a held ability, and only the captain gets both slots filled.",
+    "grunt": 0,
+    "lieutenant": 1,
+    "captain": 2
+  },
+
+  "statWeakenMultiplierByRank": {
+    "_comment": "Applied to attackDamage/maxHealth relative to the tier-scaled captain baseline -- 'their abilities are weakened for all except their camp's bandit captain'.",
+    "grunt": 0.55,
+    "lieutenant": 0.8,
+    "captain": 1.0
+  },
+
+  "difficultyTiers": {
+    "_comment": "tier = floor(distanceFromWildernessEntrance / tierDistanceTiles), clamped to maxTier. Added to masteryBaseByRank per rank, and multiplies statWeakenMultiplierByRank's result by (1 + tier*tierStatBonus) so camps farther from town hit harder in both mastery-driven ability access and raw stats.",
+    "tierDistanceTiles": 14,
+    "maxTier": 3,
+    "tierStatBonusPerTier": 0.12
+  },
+
+  "campLifecycle": {
+    "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
+    "maxCampsPerZone": 2,
+    "tentsCountTowardClear": true
+  },
+
+  "corpseLoot": {
+    "_comment": "Rolled the same way as any other creature death loot (game.js rollLootFromTable -- every entry always contributes its own min..max roll). Guaranteed worn-clothing drop is handled separately in code (100% of equippedCosmetics), not listed here.",
+    "grunt": [
+      { "key": "gold", "min": 2, "max": 8 },
+      { "key": "banditScrapMetal", "min": 0, "max": 2 }
+    ],
+    "lieutenant": [
+      { "key": "gold", "min": 6, "max": 16 },
+      { "key": "banditScrapMetal", "min": 1, "max": 3 },
+      { "key": "banditTreasureToken", "min": 0, "max": 1 }
+    ],
+    "captain": [
+      { "key": "gold", "min": 15, "max": 35 },
+      { "key": "banditScrapMetal", "min": 2, "max": 5 },
+      { "key": "banditTreasureToken", "min": 1, "max": 2 }
+    ]
+  }
+}

@@ -1,0 +1,324 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_bandit_camp_small",
+  "name": "Bandit Camp (Small)",
+  "category": "bandit_camp",
+  "singleton": false,
+  "description": "A small mismatched-tent bandit camp, stamped as a temporary locale into already-generated wilderness -- clears whatever flora was there, and can be fully re-rolled elsewhere once every tent is looted or burned down and the player leaves and returns to the zone. See docs/js/temporary-locales.js and docs/js/bandit-gang-generator.js.",
+  "tags": [
+    "bandit",
+    "camp",
+    "temporary",
+    "hostile"
+  ],
+  "cols": 9,
+  "rows": 8,
+  "tiles": {
+    "0,0": {
+      "type": "grass"
+    },
+    "1,0": {
+      "type": "grass"
+    },
+    "2,0": {
+      "type": "grass"
+    },
+    "3,0": {
+      "type": "grass"
+    },
+    "4,0": {
+      "type": "grass"
+    },
+    "5,0": {
+      "type": "grass"
+    },
+    "6,0": {
+      "type": "grass"
+    },
+    "7,0": {
+      "type": "grass"
+    },
+    "8,0": {
+      "type": "grass"
+    },
+    "0,1": {
+      "type": "grass"
+    },
+    "1,1": {
+      "type": "grass"
+    },
+    "2,1": {
+      "type": "grass"
+    },
+    "3,1": {
+      "type": "grass"
+    },
+    "4,1": {
+      "type": "grass"
+    },
+    "5,1": {
+      "type": "grass"
+    },
+    "6,1": {
+      "type": "grass"
+    },
+    "7,1": {
+      "type": "grass"
+    },
+    "8,1": {
+      "type": "grass"
+    },
+    "0,2": {
+      "type": "grass"
+    },
+    "1,2": {
+      "type": "grass"
+    },
+    "2,2": {
+      "type": "grass"
+    },
+    "3,2": {
+      "type": "grass"
+    },
+    "4,2": {
+      "type": "grass"
+    },
+    "5,2": {
+      "type": "grass"
+    },
+    "6,2": {
+      "type": "grass"
+    },
+    "7,2": {
+      "type": "grass"
+    },
+    "8,2": {
+      "type": "grass"
+    },
+    "0,3": {
+      "type": "grass"
+    },
+    "1,3": {
+      "type": "grass"
+    },
+    "2,3": {
+      "type": "grass"
+    },
+    "3,3": {
+      "type": "grass"
+    },
+    "4,3": {
+      "type": "grass"
+    },
+    "5,3": {
+      "type": "grass"
+    },
+    "6,3": {
+      "type": "grass"
+    },
+    "7,3": {
+      "type": "grass"
+    },
+    "8,3": {
+      "type": "grass"
+    },
+    "0,4": {
+      "type": "grass"
+    },
+    "1,4": {
+      "type": "grass"
+    },
+    "2,4": {
+      "type": "grass"
+    },
+    "3,4": {
+      "type": "grass"
+    },
+    "4,4": {
+      "type": "grass"
+    },
+    "5,4": {
+      "type": "grass"
+    },
+    "6,4": {
+      "type": "grass"
+    },
+    "7,4": {
+      "type": "grass"
+    },
+    "8,4": {
+      "type": "grass"
+    },
+    "0,5": {
+      "type": "grass"
+    },
+    "1,5": {
+      "type": "grass"
+    },
+    "2,5": {
+      "type": "grass"
+    },
+    "3,5": {
+      "type": "grass"
+    },
+    "4,5": {
+      "type": "grass"
+    },
+    "5,5": {
+      "type": "grass"
+    },
+    "6,5": {
+      "type": "grass"
+    },
+    "7,5": {
+      "type": "grass"
+    },
+    "8,5": {
+      "type": "grass"
+    },
+    "0,6": {
+      "type": "grass"
+    },
+    "1,6": {
+      "type": "grass"
+    },
+    "2,6": {
+      "type": "grass"
+    },
+    "3,6": {
+      "type": "grass"
+    },
+    "4,6": {
+      "type": "grass"
+    },
+    "5,6": {
+      "type": "grass"
+    },
+    "6,6": {
+      "type": "grass"
+    },
+    "7,6": {
+      "type": "grass"
+    },
+    "8,6": {
+      "type": "grass"
+    },
+    "0,7": {
+      "type": "grass"
+    },
+    "1,7": {
+      "type": "grass"
+    },
+    "2,7": {
+      "type": "grass"
+    },
+    "3,7": {
+      "type": "grass"
+    },
+    "4,7": {
+      "type": "grass"
+    },
+    "5,7": {
+      "type": "grass"
+    },
+    "6,7": {
+      "type": "grass"
+    },
+    "7,7": {
+      "type": "grass"
+    },
+    "8,7": {
+      "type": "grass"
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_tent_1",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Bandit Tent",
+      "col": 1,
+      "row": 1,
+      "w": 2,
+      "h": 2,
+      "rot": 0,
+      "interactable": {
+        "lootable": true,
+        "burnable": true,
+        "holdSeconds": 4
+      }
+    },
+    {
+      "id": "obj_tent_2",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Bandit Tent",
+      "col": 6,
+      "row": 1,
+      "w": 2,
+      "h": 2,
+      "rot": 0,
+      "interactable": {
+        "lootable": true,
+        "burnable": true,
+        "holdSeconds": 4
+      }
+    },
+    {
+      "id": "obj_tent_3",
+      "kind": "tent",
+      "key": "tent",
+      "label": "Bandit Tent",
+      "col": 1,
+      "row": 5,
+      "w": 2,
+      "h": 2,
+      "rot": 0,
+      "interactable": {
+        "lootable": true,
+        "burnable": true,
+        "holdSeconds": 4
+      }
+    },
+    {
+      "id": "obj_campfire",
+      "kind": "decor",
+      "key": "hearth",
+      "label": "Camp Fire",
+      "col": 4,
+      "row": 3,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_crate",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Supply Crates",
+      "col": 6,
+      "row": 5,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [],
+  "placement": {
+    "mode": "temporary",
+    "maxInstances": 2,
+    "allowedZones": [],
+    "clearanceTiles": 2,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 6,
+    "sameSectorAsEntry": false,
+    "alwaysVisibleOnMap": false,
+    "groundOnly": false,
+    "notes": "Bandit camp: placed by scanning already-generated wilderness for a flat, unoccupied, river/path-free 9x8 (+clearance) rectangle, not reserved before generation. See temporary-locales.js findSite/stamp. Re-rolled elsewhere once cleared (all tents looted/burned) and the zone is revisited."
+  },
+  "meta": {
+    "createdAt": "2026-07-25T00:00:00.000Z",
+    "updatedAt": "2026-07-25T00:00:00.000Z"
+  }
+}

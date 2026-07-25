@@ -37,6 +37,10 @@
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
   <script src="js/wilderness-map-generator.js?v=20260712d"></script>
+  <!-- Generic post-generation locale placement (window.TemporaryLocales) —
+       scans an already-generated wilderness zone for a site instead of
+       reserving one before generation; used by bandit camps. -->
+  <script src="js/temporary-locales.js?v=20260725a"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
