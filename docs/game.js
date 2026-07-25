@@ -27378,14 +27378,38 @@
       // arena test subjects, never a real wild pack or summoned companion.
       const _arenaSpawnedCreatures = new Set();
       let devSpawnSelectedKey = Object.keys(CREATURE_DB)[0];
+      // Bandits aren't CREATURE_DB entries (see makeBanditEntity) and every
+      // spawn is async (portrait render), so they're addressable in this
+      // same species grid via a 'bandit:<rank>' key instead of a real
+      // CREATURE_DB key — spawnDevArenaCreature/spawnDevArenaBandit branch
+      // on that prefix. Camps never auto-place in the dev arena (see
+      // ensureCurrentZoneBanditCamps's DEV_ARENA_ZONE_ID exclusion, same
+      // reasoning as packSpecies/herbivoreSpecies being empty there) so this
+      // panel is the only way to get a bandit into it.
+      const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'lieutenant', 'captain'];
+      let devSpawnBanditTier = 0;
 
       function renderDevSpawnPanel() {
         const grid = document.getElementById('devSpawnSpeciesGrid');
         if (grid) {
-          grid.innerHTML = Object.keys(CREATURE_DB).map(key => {
+          const creatureBtns = Object.keys(CREATURE_DB).map(key => {
             const label = CREATURE_DB[key].label || key;
             const active = key === devSpawnSelectedKey ? ' fed-active' : '';
             return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">${esc(label)}</button>`;
+          });
+          const banditBtns = DEV_SPAWN_BANDIT_RANKS.map(rank => {
+            const key = 'bandit:' + rank;
+            const label = BANDIT_RANK_LABEL[rank] || rank;
+            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
+            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">🗡️ ${esc(label)}</button>`;
+          });
+          grid.innerHTML = creatureBtns.concat(banditBtns).join('');
+        }
+        const tierGrid = document.getElementById('devSpawnBanditTierGrid');
+        if (tierGrid) {
+          tierGrid.innerHTML = [0, 1, 2, 3].map(t => {
+            const active = t === devSpawnBanditTier ? ' fed-active' : '';
+            return `<button type="button" class="fed-btn${active}" data-tier="${t}">Tier ${t}</button>`;
           }).join('');
         }
         const countEl = document.getElementById('devArenaSpawnCount');
@@ -27395,6 +27419,12 @@
         const btn = e.target.closest('.fed-btn');
         if (!btn) return;
         devSpawnSelectedKey = btn.dataset.species;
+        renderDevSpawnPanel();
+      });
+      document.getElementById('devSpawnBanditTierGrid')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.fed-btn');
+        if (!btn) return;
+        devSpawnBanditTier = clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, 3);
         renderDevSpawnPanel();
       });
 
@@ -27441,7 +27471,41 @@
         console.log(msg);
         renderDevSpawnPanel();
       }
-      document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => spawnDevArenaCreature(devSpawnSelectedKey));
+
+      // Bandit counterpart to spawnDevArenaCreature — async because building
+      // a bandit's portrait avatar is (see buildBanditAvatar), and rolled
+      // against devSpawnBanditTier instead of the zone-distance tier a real
+      // camp would use, so every rank/tier combination in
+      // bandit-gang-config.json can be spawned on demand for testing.
+      async function spawnDevArenaBandit(rank, tier) {
+        if (currentArea !== DEV_ARENA_ZONE_ID) return;
+        const cfg = await loadBanditGangConfig();
+        if (!cfg) { showToast('Could not spawn bandit — bandit-gang-config.json failed to load.', false); return; }
+        if (currentArea !== DEV_ARENA_ZONE_ID) return; // player left mid-await
+        const angle = Math.random() * Math.PI * 2;
+        const dist = TILE * (1.5 + Math.random() * 2.5);
+        const x = player.x + Math.cos(angle) * dist;
+        const y = player.y + Math.sin(angle) * dist;
+        const creature = await makeBanditEntity(cfg, rank, tier, x, y, {
+          zoneId: DEV_ARENA_ZONE_ID,
+          extra: { homeX: x, homeY: y, state: 'idle' },
+        });
+        if (!creature) { showToast(`Could not spawn bandit "${rank}" — see console/log for details.`, false); return; }
+        hostileObjects.add(creature);
+        _arenaSpawnedCreatures.add(creature);
+        const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
+        window.__farmLog?.(msg, 'wildlife');
+        console.log(msg);
+        renderDevSpawnPanel();
+      }
+
+      document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => {
+        if (devSpawnSelectedKey?.startsWith('bandit:')) {
+          spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
+        } else {
+          spawnDevArenaCreature(devSpawnSelectedKey);
+        }
+      });
 
       function devArenaAutoKillAll() {
         const toKill = [..._arenaSpawnedCreatures];
