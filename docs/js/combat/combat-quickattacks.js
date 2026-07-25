@@ -171,4 +171,14 @@
   }
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);
+
+  // Read-only data export for game.js's bandit AI — see combat-combo.js's
+  // matching comment. exhaustCutter/backstabFlick/mercySpike's build(deps,
+  // target, cond) never actually reads `deps` (only `cond`), so a bandit can
+  // call build(null, player, banditCond) directly with its own condition
+  // check (player exhausted/behind/low-health from the bandit's point of
+  // view) and get the exact same damage/range/knockback numbers a player
+  // jab would. opportunistJab is excluded from the bandit pool — its bonus
+  // depends on telegraphState, which only creatures have, not the player.
+  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE };
 })();

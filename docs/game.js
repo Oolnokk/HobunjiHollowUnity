@@ -5312,7 +5312,33 @@
       // through the resource-afflictions system (bleeding/bruising/wounded
       // stamina/etc, plus the heavy-consumes-Bruised-Health bonus) instead
       // of a plain health subtraction. See docs/js/combat/resource-system.js.
+      // A captain's Counter Shield guard window (see updateBanditGuardWindow/
+      // fireBanditCounterRiposte, defined with the rest of the Bandit Gangs
+      // ability AI) intercepts here, mirroring how the player's OWN Counter
+      // Shield intercepts via window.Combat.setPlayerDamageInterceptor —
+      // this is the mirror-image (a creature's incoming hit) rather than the
+      // player's own (an outgoing one), so it lives on the damage-dealing
+      // side instead. Reduces the hit rather than fully no-selling it (a
+      // guarding captain still visibly flinches) and fires a real riposte on
+      // its own short cooldown so it can't fire on every single frame the
+      // window happens to be open.
+      const BANDIT_COUNTER_COOLDOWN_S = 0.6;
+      function banditTryGuard(c, amount, targetPlayer) {
+        if (!c.isBandit || !(c._banditGuardUntil > performance.now())) return amount;
+        const t = performance.now() / 1000;
+        if (t - (c._banditLastCounterAt || -99) >= BANDIT_COUNTER_COOLDOWN_S) {
+          c._banditLastCounterAt = t;
+          fireBanditCounterRiposte(c, c.def, targetPlayer);
+        }
+        return amount * (1 - BANDIT_GUARD_DAMAGE_ABSORB);
+      }
+
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        // Only the player currently ever calls damageCreature (see
+        // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
+        // combat-counter-shield.js) -- safe to assume `player` is the guarded
+        // captain's riposte target without needing a passed-in attacker.
+        amount = banditTryGuard(c, amount, player);
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, amount, dmgOpts || {});
         else c.health = Math.max(0, c.health - amount);
         c.hitFlashT = 0.25;
@@ -5334,11 +5360,10 @@
         // decays.
         window.Combat?.telegraph?.cancel(c);
         window.Combat?.animalAttacks?.cancel(c);
-        // Getting hit breaks a bandit grunt's in-progress combo (see
-        // BANDIT_GRUNT_COMBO_HITS below) the same way it cancels any other
-        // mid-attack state above, rather than letting it silently resume
-        // the count once it recovers.
-        c.banditComboHits = 0;
+        // Getting hit breaks a bandit's in-progress ability the same way it
+        // cancels any other mid-attack state above, rather than letting a
+        // combo silently resume its step count once it recovers.
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
@@ -5771,19 +5796,6 @@
       const JUMP_BACK_DUR_S = 0.4;
       const JUMP_BACK_SPEED = 260;
 
-      // A bandit with no held ability (no def.attacks — grunts, see
-      // heldAbilitiesByRank in bandit-gang-config.json) fights entirely
-      // through the plain bite-telegraph path below rather than a named/
-      // quick attack. Per design that path should chain BANDIT_GRUNT_COMBO_HITS
-      // swings back to back (a short recovery between each, not a full jump-
-      // back) before finally retreating on the last one, instead of jumping
-      // back after every single swing — a rank/tier'd hostile with a real
-      // named attack (lieutenant/captain's Pounce, or any future creature
-      // with one) is unaffected, since that's the "quick attack condition"
-      // this defers to.
-      const BANDIT_GRUNT_COMBO_HITS = 3;
-      const BANDIT_COMBO_CHAIN_COOLDOWN_S = 0.35;
-
       // Bite-attack telegraph timing, ported from the sandbox's dummy AI
       // attack (its only enemy-side attack: windup 0.54s, strike 0.20s) —
       // reused for both hostiles and companions since they share this same
@@ -5947,7 +5959,10 @@
           // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
-          if (c.state !== 'chase') { clearCreatureStage(c); c.banditComboHits = 0; }
+          if (c.state !== 'chase') {
+            clearCreatureStage(c);
+            if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; }
+          }
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -6000,7 +6015,16 @@
             }
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
-            if (c.retreatT > 0) {
+            if (c.isBandit) {
+              // Bandits fight through their own ability-driven AI (the real
+              // Combo/Quick Attack/Charged Breaker/Counter Shield numbers —
+              // see updateBanditCombatAI, defined with the rest of the
+              // Bandit Gangs section) instead of the plain bite-telegraph/
+              // behaviorStage machinery below, which stays wildlife-only.
+              const result = updateBanditCombatAI(c, dt, targetPlayer, distToPlayer);
+              aimAngle = result.aimAngle;
+              moving = result.moving;
+            } else if (c.retreatT > 0) {
               // Jump back after landing a bite, keeping eyes on the player.
               c.retreatT = Math.max(0, c.retreatT - dt);
               const awayAng = Math.atan2(-dyp, -dxp);
@@ -6061,20 +6085,6 @@
                       if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
                         playCreatureClawHit(c);
-                      }
-                      // Bandit grunts (no held ability -- see the constants'
-                      // comment above) keep swinging through up to
-                      // BANDIT_GRUNT_COMBO_HITS before jumping back; every
-                      // other plain-telegraph creature (wildlife, and any
-                      // bandit whose named/quick attack failed to start)
-                      // retreats after every single bite, unchanged.
-                      if (c.isBandit && !hadNamedAttack) {
-                        c.banditComboHits = (c.banditComboHits || 0) + 1;
-                        if (c.banditComboHits < BANDIT_GRUNT_COMBO_HITS) {
-                          c.attackCooldownT = BANDIT_COMBO_CHAIN_COOLDOWN_S;
-                          return;
-                        }
-                        c.banditComboHits = 0;
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
                     },
@@ -8428,6 +8438,9 @@
       // it only ever scales damage, at this much per level.
       const BANDIT_MASTERY_DAMAGE_PER_LEVEL = 0.06;
       const BANDIT_RANK_LABEL = { grunt: 'Bandit', lieutenant: 'Bandit Lieutenant', captain: 'Bandit Captain' };
+      // opportunistJab is excluded -- its bonus condition (target mid-strike-
+      // telegraph) has no equivalent on the player, who has no telegraphState.
+      const BANDIT_QUICK_ATTACK_IDS = ['exhaustCutter', 'backstabFlick', 'mercySpike'];
 
       function banditMasteryFor(cfg, rank, tier) {
         const base = Number(cfg?.masteryBaseByRank?.[rank] ?? 0);
@@ -8454,12 +8467,25 @@
         return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: metalDmgMultiplier(metalKey) };
       }
 
-      // heldAbilitiesByRank is reflected as the richness of the attack roster,
-      // not as a literal run of the player's hold-charge input state machine:
-      // a grunt (0 held abilities) only ever swings via the generic bite
-      // telegraph, a lieutenant (1) also lunges, and a captain (2) lunges AND
-      // fights the circling behaviour-stage cycle -- the same way gar-wolf and
-      // gar-wolf-alpha differ in CREATURE_DB.
+      // A bandit's real ability loadout -- tap1 (Combo) and tap2 (Quick
+      // Attack) are available to every rank (matching the player's own
+      // always-on tap slots), while hold1/hold2 are gated by
+      // heldAbilitiesByRank: only lieutenants/captains get hold1 (Charged
+      // Breaker), and only the captain also gets hold2 (Counter Shield).
+      // See updateBanditCombatAI for how these are actually executed
+      // (window.Combat.beginStagedAction + the real per-ability data tables
+      // exposed by combat-combo.js/combat-quickattacks.js/combat-charged-
+      // breaker.js/combat-counter-shield.js) -- this function only decides
+      // WHICH abilities a bandit carries, not how they run.
+      function banditAbilityLoadout(shapeKey, held) {
+        return {
+          tap1: TOOL_SHAPE_DEFS[shapeKey]?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo',
+          tap2: BANDIT_QUICK_ATTACK_IDS[Math.floor(rnd() * BANDIT_QUICK_ATTACK_IDS.length)],
+          hold1: held >= 1 ? 'chargedBreaker' : null,
+          hold2: held >= 2 ? 'counterShield' : null,
+        };
+      }
+
       function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
         const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
         const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
@@ -8467,7 +8493,7 @@
         const weapon = banditWeaponFor(cfg, rank, tier);
         const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
         const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
-        const def = {
+        return {
           label: BANDIT_RANK_LABEL[rank] || 'Bandit',
           hostile: true, liveBirth: true,
           maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
@@ -8479,9 +8505,9 @@
           attackHalfConeRad: 44 * Math.PI / 180,
           attackStaminaCost: 12,
           attackCooldownS: rank === 'captain' ? 0.95 : 1.15,
-          attacks: held >= 1 ? ['pounce'] : [],
           attackTag: weapon.dmgType,
           weaponKey: weapon.weaponKey,
+          banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
           aiType: 'vigilantProtector',
           aggroRangePx: TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
           leashRangePx: TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
@@ -8492,8 +8518,246 @@
           aimAngleOffset: Math.PI / 2,
           loot: (cfg?.corpseLoot?.[rank] || []).map(e => ({ ...e })),
         };
-        if (held >= 2) def.behaviorStages = ['pounceAttempt', 'evasiveOrbit'];
-        return def;
+      }
+
+      // ── Bandit ability AI ────────────────────────────────────────────
+      //
+      // Bandits attack through the SAME abilities the player has access to
+      // (real Combo/Quick Attack/Charged Breaker/Counter Shield numbers --
+      // see combat-combo.js/combat-quickattacks.js/combat-charged-
+      // breaker.js/combat-counter-shield.js's `window.Combat.*Data` read-only
+      // exports), not a bite-telegraph approximation. This is deliberately a
+      // PARALLEL executor rather than a shared one: the real ability modules
+      // are hardwired to the single player singleton (deps.player,
+      // window.Combat.deps.currentWeaponKey(), etc — see combat-core.js's
+      // own "every staged action in this pipeline is a player weapon-tool
+      // attack" comment), so reusing them for an NPC attacker would mean
+      // refactoring every one of those modules to take an attacker
+      // parameter -- real, working code with genuine risk of subtly
+      // changing how the player's own combat feels. What IS safely reusable
+      // is window.Combat.beginStagedAction (combat-core.js's generic
+      // windup/strike/recover timer, which takes no player-specific
+      // assumptions at all) and each ability's own numeric data tables,
+      // which is what this does. Per MULTIPLAYER.md's own analysis this
+      // isn't something multiplayer needs solved either way: multiplayer's
+      // model is one full client per player (each with its own independent
+      // copy of the singleton combat state), not one process simulating
+      // several attackers -- an NPC-vs-player fight is an orthogonal,
+      // single-client concern either way.
+      //
+      // Telegraphing: sets c.telegraphState ('windup'|'strike') exactly like
+      // combat-enemy-telegraph.js does, so updateCreatureMesh's existing
+      // tint code (amber windup / white strike) gives the player the same
+      // visible tell against a bandit as against a wolf, for free.
+
+      const BANDIT_COMBO_CHAIN_GAP_S = 0.3; // pause between chained combo taps (not a full retreat)
+      const BANDIT_HOLD1_COOLDOWN_S = 5;
+      const BANDIT_HOLD1_CHANCE = 0.4; // chance to open a fresh engagement with Charged Breaker instead of the combo
+      const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // chance to use tap2 instead of continuing tap1 when a condition is favorable
+      const BANDIT_GUARD_WINDOW_S = 1.6;
+      const BANDIT_GUARD_COOLDOWN_S = 6;
+      const BANDIT_GUARD_DAMAGE_ABSORB = 0.7; // fraction of incoming damage blocked while a captain is guarding
+
+      // The bandit-side equivalent of combat-combo.js/combat-quickattacks.js/
+      // combat-charged-breaker.js's `deps.weaponAbility('cut')` base numbers
+      // every step/technique multiplies from -- except a bandit's own
+      // def.attackDamage/attackRangePx already carries its full rank/tier/
+      // mastery/weapon-metal scaling, so this IS the scaled baseline, not a
+      // flat constant every bandit shares.
+      function banditAttackBaseline(def) {
+        return { damage: def.attackDamage, rangePx: def.attackRangePx, knockbackPxS: HOSTILE_BITE_KNOCKBACK_PX_S };
+      }
+
+      // Mirrors combat-quickattacks.js's getConditions(), but for a bandit
+      // attacking the player instead of the player attacking a creature --
+      // "behind" is recomputed from the player's own facing (player.angle)
+      // since the real version reads target.facing (a creature-only field);
+      // "enemyStriking" has no equivalent (the player has no telegraphState)
+      // and always reads false, which is exactly why opportunistJab (the
+      // only technique keyed on it) is excluded from BANDIT_QUICK_ATTACK_IDS.
+      function banditQuickAttackConditions(c, targetPlayer) {
+        const dxBP = c.x - targetPlayer.x, dyBP = c.y - targetPlayer.y;
+        const distBP = Math.max(0.001, Math.hypot(dxBP, dyBP));
+        const forwardX = Math.cos(targetPlayer.angle || 0), forwardY = Math.sin(targetPlayer.angle || 0);
+        const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
+        return {
+          enemyStriking: false,
+          exhausted: !!targetPlayer.exhaustion?.active || targetPlayer.stamina <= targetPlayer.maxStamina * 0.20,
+          behind: behindDot < -0.35,
+          lowHealth: targetPlayer.health > 0 && targetPlayer.health <= targetPlayer.maxHealth * 0.30,
+        };
+      }
+
+      // Ends the current staged action's telegraph tell and, if provided,
+      // runs extra bookkeeping (retreat, cooldowns) once it's actually done
+      // rather than the moment it's cancelled mid-flight.
+      function finishBanditAction(c) {
+        c._banditAction = null;
+        c.telegraphState = null;
+      }
+
+      function fireBanditComboStep(c, def, loadout, targetPlayer) {
+        const steps = window.Combat?.comboData?.[loadout.tap1];
+        if (!steps || !steps.length) return false;
+        const step = steps[c._banditComboIndex % steps.length];
+        const isFinalStep = (c._banditComboIndex % steps.length) === steps.length - 1;
+        c._banditComboIndex++;
+        const base = banditAttackBaseline(def);
+        const damage = Math.max(1, Math.round(base.damage * step.damageMul));
+        const rangePx = base.rangePx * step.rangeMul;
+        const halfConeRad = step.halfConeDeg * Math.PI / 180;
+        const knockbackPxS = base.knockbackPxS * step.knockbackMul;
+        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        c.telegraphState = 'windup';
+        c._banditAction = window.Combat.beginStagedAction({
+          windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
+          onStrike: () => {
+            c.telegraphState = 'strike';
+            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: step.dmgTag || def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(step.dmgTag || def.attackTag) });
+              playCreatureClawHit(c);
+            }
+          },
+          onComplete: () => {
+            finishBanditAction(c);
+            c.attackCooldownT = isFinalStep ? def.attackCooldownS : BANDIT_COMBO_CHAIN_GAP_S;
+            if (isFinalStep) { c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; }
+          },
+          onCancel: () => finishBanditAction(c),
+        });
+        return true;
+      }
+
+      function fireBanditQuickAttack(c, def, loadout, targetPlayer) {
+        const qa = window.Combat?.quickAttackData;
+        const techDef = qa?.TECHNIQUES?.[loadout.tap2];
+        if (!techDef) return false;
+        const cond = banditQuickAttackConditions(c, targetPlayer);
+        const tech = techDef.build(null, targetPlayer, cond);
+        const base = banditAttackBaseline(def);
+        const damage = Math.max(1, Math.round(base.damage * tech.damageMul));
+        const rangePx = base.rangePx * tech.rangeMul;
+        const halfConeRad = tech.halfConeDeg * Math.PI / 180;
+        const knockbackPxS = base.knockbackPxS * tech.knockbackMul;
+        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        c.telegraphState = 'windup';
+        c._banditAction = window.Combat.beginStagedAction({
+          windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
+          onStrike: () => {
+            c.telegraphState = 'strike';
+            // Every real Quick Attack technique hardcodes tag:'sharp'
+            // regardless of the equipped weapon's own dmgType (see
+            // combat-quickattacks.js's onTap) -- matched here rather than
+            // reading def.attackTag, for the same fidelity reason charged
+            // breaker below hardcodes 'blunt'.
+            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
+              playCreatureClawHit(c);
+            }
+          },
+          onComplete: () => { finishBanditAction(c); c.attackCooldownT = def.attackCooldownS; c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; },
+          onCancel: () => finishBanditAction(c),
+        });
+        return true;
+      }
+
+      function fireBanditChargedBreaker(c, def, targetPlayer) {
+        const cb = window.Combat?.chargedBreakerData;
+        if (!cb) return false;
+        const chargeT = 0.5 + rnd() * 0.5; // a bandit always "holds" for a decent charge, no button to under-hold
+        const base = banditAttackBaseline(def);
+        const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
+        const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
+        const halfConeRad = cb.HALF_CONE_DEG * Math.PI / 180;
+        const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT);
+        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        c.telegraphState = 'windup';
+        c._banditAction = window.Combat.beginStagedAction({
+          windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
+          onStrike: () => {
+            c.telegraphState = 'strike';
+            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('blunt') });
+              playCreatureClawHit(c);
+            }
+          },
+          onComplete: () => {
+            finishBanditAction(c);
+            c.attackCooldownT = def.attackCooldownS;
+            c.retreatT = JUMP_BACK_DUR_S;
+            c._banditComboIndex = 0;
+            c._banditHold1CdT = BANDIT_HOLD1_COOLDOWN_S;
+          },
+          onCancel: () => finishBanditAction(c),
+        });
+        return true;
+      }
+
+      // Captain-only, hold2. Not a held button either -- a periodic timed
+      // window instead: while `_banditGuardUntil` is in the future, an
+      // incoming hit (see damageCreature's isBandit branch) is reduced and
+      // answered with a real Counter Shield riposte using the exact damage/
+      // range/cone multipliers combat-counter-shield.js's own riposte uses.
+      function updateBanditGuardWindow(c, dt) {
+        if (c._banditGuardUntil > 0) { if (performance.now() >= c._banditGuardUntil) c._banditGuardUntil = 0; return; }
+        c._banditGuardCdT = Math.max(0, (c._banditGuardCdT || 0) - dt);
+        if (c._banditGuardCdT <= 0) { c._banditGuardUntil = performance.now() + BANDIT_GUARD_WINDOW_S * 1000; c._banditGuardCdT = BANDIT_GUARD_COOLDOWN_S; }
+      }
+
+      function fireBanditCounterRiposte(c, def, targetPlayer) {
+        const cs = window.Combat?.counterShieldData;
+        if (!cs) return;
+        const base = banditAttackBaseline(def);
+        const damage = Math.max(1, Math.round(base.damage * cs.COUNTER_DAMAGE_MUL));
+        const rangePx = base.rangePx * cs.COUNTER_RANGE_MUL;
+        const halfConeRad = cs.COUNTER_HALF_CONE_DEG * Math.PI / 180;
+        const knockbackPxS = base.knockbackPxS * cs.COUNTER_KNOCKBACK_MUL;
+        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        window.Combat.beginStagedAction({
+          windupS: 0.05, strikeS: 0.15, recoverS: 0,
+          onStrike: () => {
+            // Matches combat-counter-shield.js's own riposte, which also
+            // hardcodes tag:'sharp' regardless of weapon.
+            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
+              playCreatureClawHit(c);
+            }
+          },
+        });
+      }
+
+      // Called from updateHostiles' chase-state branch in place of the
+      // plain bite-telegraph/behaviorStage machinery for any c.isBandit.
+      function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
+        const def = c.def, loadout = def.banditAbilityLoadout;
+        const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
+        if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
+        if (c.retreatT > 0) {
+          c.retreatT = Math.max(0, c.retreatT - dt);
+          const awayAng = towardAngle + Math.PI;
+          const moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
+          return { aimAngle: towardAngle, moving };
+        }
+        if (c._banditAction) return { aimAngle: c.facing, moving: false };
+        if (distToPlayer > def.attackRangePx) {
+          const moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt);
+          return { aimAngle: towardAngle, moving };
+        }
+        if (c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return { aimAngle: towardAngle, moving: false };
+        window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
+        const openingFresh = c._banditComboIndex === 0;
+        let fired = false;
+        if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && rnd() < BANDIT_HOLD1_CHANCE) {
+          fired = fireBanditChargedBreaker(c, def, targetPlayer);
+        }
+        if (!fired) {
+          const cond = banditQuickAttackConditions(c, targetPlayer);
+          const conditionFavorable = cond.exhausted || cond.behind || cond.lowHealth;
+          if (conditionFavorable && rnd() < BANDIT_QUICK_ATTACK_CHANCE) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
+        }
+        if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
+        return { aimAngle: towardAngle, moving: false };
       }
 
       // makeToolPlaneMesh's plane is built to lie flat in the player's own
@@ -8580,6 +8844,11 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
           banditWeaponMeshAttached: !!weaponMesh,
+          // Ability-AI state -- see updateBanditCombatAI/damageCreature's
+          // isBandit branch/the leaving-chase reset above for where these
+          // get driven and cleared.
+          _banditAction: null, _banditComboIndex: 0,
+          _banditHold1CdT: 0, _banditGuardUntil: 0, _banditGuardCdT: 0, _banditLastCounterAt: -99,
           rosterRecord: roster,
           ...opts.extra,
         };
@@ -27612,19 +27881,17 @@
       // headless Chromium session can't render it either. The guide string
       // is the interpretation key for whichever Claude session receives it.
       const COMBAT_LOG_GUIDE = `HOBUNJI COMBAT LOG -- interpretation guide for AI review
-Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/combat-enemy-telegraph.js for the state machine these fields describe.
+Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/updateBanditCombatAI() (Bandit Gangs section) for the state machine these fields describe. Bandits fight through the SAME named abilities the player has (Combo/Quick Attack/Charged Breaker/Counter Shield -- real damage/range/cone numbers exposed read-only via window.Combat.comboData/quickAttackData/chargedBreakerData/counterShieldData), executed by a parallel bandit-only AI (updateBanditCombatAI) rather than the player-singleton combat-core/combo/quickattacks/holds modules themselves -- see the long comment above updateBanditCombatAI for why. Wildlife still uses the older plain bite-telegraph/behaviorStage/Pounce system (combat-enemy-telegraph.js/combat-animal-attacks.js) unchanged.
 Common fields:
   id            unique entity id (bandit ids look like "bandit_<rank>_<timestamp>_<rand>")
   kind          PLAYER | BANDIT | CREATURE | CORPSE (CORPSE = health<=0, still lootable via the action bar)
   state         idle|chase|return|patrol-chase|fleeing-low-health|dying|corpse
   hp/stam       current/max health and stamina
   pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (48px ~= 1 tile, see TILE)
-  tState        telegraphState: none|windup|strike -- mid-swing "tell"; a hit can only land during "strike"
-  aaBusy        1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
-  stage         behaviorStage cycle state (captains only): stageName/mode, e.g. "pounceAttempt/active" or "-/backingUp"
+  tState        telegraphState: none|windup|strike -- mid-swing "tell" (bandits set this from their own ability AI, not combat-enemy-telegraph.js); a hit can only land during "strike"
+  aaBusy        wildlife only: 1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
   retreatT      seconds left jumping backward after landing a hit (0 = not retreating)
   cdT           seconds left before the next attack attempt is allowed (attackCooldownT)
-  combo         bandit grunts only: N/3 hits landed in the current combo chain before it finally retreats (BANDIT_GRUNT_COMBO_HITS) -- always 0/3 for lieutenant/captain/wildlife, since having a real named attack (the "quick attack condition") skips combo-chaining entirely and retreats after one hit instead
   aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer
 Bandit-only fields:
   rank/tier/mastery   grunt|lieutenant|captain; difficulty tier 0-3 the camp/spawn used; rolled weapon-mastery level 0-5
@@ -27632,6 +27899,11 @@ Bandit-only fields:
   wpn                 def.weaponKey, a crafted "<shape>_<metal>" id (e.g. hatchet_lowTinBronze) -- "none" would mean banditWeaponFor() failed, should never happen
   wpnMeshOK           1 if the weapon prop mesh actually attached to the avatar (attachBanditWeaponProp) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen
   atkTag/atkDmg       attackTag (sharp/blunt, from the weapon's own dmgType) and attackDamage after rank/tier/mastery/metal multipliers
+  loadout             its banditAbilityLoadout as tap1/tap2/hold1/hold2 ability ids ("-" for a null hold slot) -- tap1/tap2 are on every rank, hold1 only lieutenant+/captain, hold2 only captain (see heldAbilitiesByRank)
+  comboIdx            which of tap1's 3 combo steps fires next (0-2); resets to 0 after the 3rd step completes and retreats
+  actionBusy          1 if a staged ability (windup or strike) is currently in flight (c._banditAction) -- while 1, the bandit is standing still finishing its swing
+  hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
+  guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(BANDIT_GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
   cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
 why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant`;
 
@@ -27653,22 +27925,13 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         if (c.state === 'idle') return `idle; distPlayer=${distP}px > aggroRangePx=${Math.round(def.aggroRangePx)}px, not aggro'd yet. nearest=${nearestOtherTxt}`;
         if (c.state === 'return') return `returning home; player out of leashRangePx=${Math.round(def.leashRangePx)}px or too far from its own homeX/Y`;
         if (c.state !== 'chase') return `state=${c.state}, not currently in combat`;
-        if (c.retreatT > 0) {
-          if (c.isBandit && !def.attacks?.length) {
-            return c.banditComboHits === 0
-              ? `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after finishing a ${BANDIT_GRUNT_COMBO_HITS}-hit combo (grunt, no held ability -- see heldAbilitiesByRank)`
-              : `mid-combo but retreatT>0 with banditComboHits=${c.banditComboHits} -- unexpected combination, flag as a possible state bug`;
-          }
-          return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after a single strike (has a real named/quick attack, e.g. Pounce -- no combo chaining by design)`;
-        }
-        if (c.telegraphState) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking now'} a plain bite (tState=${c.telegraphState}); distPlayer=${distP}px`;
-        if (window.Combat?.animalAttacks?.isBusy?.(c)) return `mid named-attack (Pounce/etc — owns position+facing until it finishes)`;
-        if (def.behaviorStages) return `behaviorStage cycle: ${(c._stage?.stages?.[c._stage.idx]) || c._stage?.mode || '?'}`;
-        if (c.attackCooldownT > 0) {
-          const chaining = c.isBandit && !def.attacks?.length && c.banditComboHits > 0;
-          return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left (${chaining ? `mid-combo, hit ${c.banditComboHits}/${BANDIT_GRUNT_COMBO_HITS} landed so far` : 'full attackCooldownS after a finishing/only blow'}); distPlayer=${distP}px`;
-        }
-        return `closing distance, distPlayer=${distP}px, waiting to enter attackRangePx=${Math.round(def.attackRangePx)}px (or the aim-collider reach for a pounce-capable rank)`;
+        if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
+        if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
+        if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
+        if (distP > def.attackRangePx) return `closing distance, distPlayer=${distP}px, waiting to enter attackRangePx=${Math.round(def.attackRangePx)}px`;
+        if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px`;
+        if (c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
+        return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
 
       function buildArenaCombatLogText() {
@@ -27684,14 +27947,17 @@ why="..."             free-text reasoning computed at snapshot time, referencing
             const clothTxt = (r.equippedCosmetics || []).length
               ? r.equippedCosmetics.map(id => `${r.cosmeticSlots?.[id] || '?'}:${id}:${r.appliedDyes?.[BANDIT_TINT_SLOT_BY_SLOT[r.cosmeticSlots?.[id]]] || '-'}`).join(';')
               : '-';
+            const loadout = def.banditAbilityLoadout || {};
+            const loadoutTxt = `${loadout.tap1 || '-'}/${loadout.tap2 || '-'}/${loadout.hold1 || '-'}/${loadout.hold2 || '-'}`;
             lines.push([
               `ENTITY kind=${kind}`, `id=${c.id}`, `rank=${c.banditRank}`, `tier=${c.banditTier}`, `mastery=${c.banditMastery}`,
               `species=${r.appearance?.speciesId}/${r.appearance?.gender}`,
               `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
               `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
-              `stage=${c._stage ? (c._stage.stages?.[c._stage.idx] || '-') + '/' + c._stage.mode : '-'}`,
-              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`, `combo=${c.banditComboHits || 0}/${BANDIT_GRUNT_COMBO_HITS}`,
+              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `actionBusy=${c._banditAction ? 1 : 0}`,
+              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
+              `loadout=${loadoutTxt}`, `comboIdx=${c._banditComboIndex || 0}`, `hold1CdT=${(c._banditHold1CdT || 0).toFixed(2)}`,
+              `guarding=${c._banditGuardUntil > performance.now() ? 1 : 0}`, `guardCdT=${(c._banditGuardCdT || 0).toFixed(2)}`,
               `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
               `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,
               `cloth=${clothTxt}`, `nearestOther=${nearestTxt}`,

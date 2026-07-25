@@ -210,4 +210,12 @@
   // sweeping attack uses this same authored pose rather than each falling
   // back to updateToolMesh's older hardcoded default sweep arc.
   window.Combat.poses = { SWEEP_POSE };
+  // Read-only data export — lets a non-player attacker (game.js's bandit AI)
+  // deal damage using these exact same step numbers without this module
+  // needing to know anything about who's swinging. onTap above stays the
+  // only thing that actually executes a PLAYER swing; this is just the data.
+  // Keyed by the same ability ids ('swingCombo'/'pokeCombo') a loadout slot
+  // stores, not the raw step-array constant names, so a lookup by loadout
+  // value works directly.
+  window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, RANGE_SCALE, COMBO_RESET_S };
 })();

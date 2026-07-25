@@ -165,4 +165,12 @@
   }
 
   register();
+
+  // Read-only data export for game.js's bandit AI — see combat-combo.js's
+  // matching comment. A bandit's own guard window is a timed toggle (see
+  // updateBanditCombatAI) rather than a held button, so only the riposte's
+  // own damage/range/cone numbers are needed here, not the hold mechanics.
+  window.Combat.counterShieldData = {
+    COUNTER_DAMAGE_MUL, COUNTER_RANGE_MUL, COUNTER_HALF_CONE_DEG, COUNTER_KNOCKBACK_MUL,
+  };
 })();
