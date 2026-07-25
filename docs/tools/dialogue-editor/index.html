@@ -123,6 +123,17 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
 #gapReadout h3{margin:0 0 3px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
 .gapRow{display:flex;align-items:center;gap:7px;font-size:11px;padding:3px 0;color:var(--muted)}
 .gapRow.zero{color:var(--bad);font-weight:700}
+#randomPromptPanel{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;padding:14px 16px}
+#randomPromptPanel.hidden{display:none}
+#randomPromptGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.promptCard{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.promptCard .pcNpc{font-size:14px;font-weight:800;color:var(--text)}
+.promptCard .pcNpcMeta{font-size:10px;color:var(--muted);margin-top:-4px}
+.promptCard .pcArchetype{font-size:12px;font-weight:700;color:var(--acc);margin-top:4px}
+.promptCard .pcDesc{font-size:11px;color:var(--muted);line-height:1.45;flex:1}
+.promptCard .pcCond{font-size:10px;color:var(--muted);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:7px;padding:5px 7px;line-height:1.4}
+.promptCard .pcAlready{font-size:10px;color:var(--warn);font-weight:700}
+.promptCard button.pcStart{margin-top:4px}
 .gapCount{margin-left:auto;flex-shrink:0;font-family:ui-monospace,Menlo,monospace;font-size:10px}
 
 /* Graph view (a single tree's node canvas) */
@@ -327,6 +338,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
     <button class="secondary" id="loadBtn">Load DB</button>
     <button class="good" id="exportBtn" disabled>Export DB</button>
     <button class="secondary" id="poolModalBtn" disabled title="Select an NPC first">Phrase Pools</button>
+    <button class="secondary" id="randomPromptBtn" disabled title="Load a database first">🎲 Random Prompt</button>
     <div class="spacer"></div>
     <span class="pill" id="statusPill">No database loaded</span>
   </div>
@@ -349,6 +361,17 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
         </div>
         <div id="tocList"></div>
         <div id="gapReadout"></div>
+      </div>
+      <div id="randomPromptPanel" class="hidden">
+        <div id="tocHead">
+          <div id="tocNpcName">🎲 Random Prompt <span style="color:var(--muted);font-weight:400;font-size:11px">— pick a card, write the line, move on</span></div>
+          <div style="display:flex;gap:6px">
+            <button class="secondary" id="rpBackBtn" style="font-size:11px">← Trees</button>
+            <button class="good" id="rerollBtn" style="font-size:11px;flex-shrink:0">🎲 Reroll</button>
+          </div>
+        </div>
+        <p style="color:var(--muted);font-size:11px;margin:0 0 10px;line-height:1.5">Five random NPCs, each paired with a common farming-sim dialogue situation they don't have written yet. Pick whichever grabs you — "Start Tree" jumps straight into a new dialogue tree with the conditions already set, so all that's left is the text.</p>
+        <div id="randomPromptGrid"></div>
       </div>
       <div id="graphView" class="hidden">
         <div id="canvasOuter">
@@ -566,6 +589,9 @@ function loadDatabase(json) {
     sel = { npcId: null, treeId: null, nodeId: null };
     poolSel = { poolId: null, expandedEntryId: null };
     $('exportBtn').disabled = false;
+    $('randomPromptBtn').disabled = false;
+    $('randomPromptBtn').title = '';
+    randomPromptPicks = [];
     $('statusPill').textContent = `${db.npcs.length} NPC${db.npcs.length !== 1 ? 's' : ''} loaded`;
     renderAll();
     if (db.npcs.length) selectNpc(db.npcs[0].id);
@@ -647,6 +673,162 @@ function deleteTree(id) {
   npc.dialogueTrees = npc.dialogueTrees.filter(t => t.id !== id);
   if (sel.treeId === id) { sel.treeId = null; sel.nodeId = null; centerView = 'toc'; }
   setDirty(); renderNpcList(); renderCenterPanel(); renderInspector();
+}
+
+/* ── Random Prompt ───────────────────────────────────────────
+   A burnout-avoidance tool, not a data feature: five random NPC + common
+   farming-sim dialogue-situation pairings at a time, so picking what to
+   write next is a five-second decision instead of a blank-page one.
+   "Start Tree" reuses addTree()'s own filters→conditions plumbing (set
+   `filters`, call addTree()) so a fresh tree is created with the right
+   conditions pre-set — no separate tree-creation code path to keep in sync. */
+function rpPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+const PROMPT_ARCHETYPES = [
+  { label: 'Dawn riser',           roll: () => ({ timesOfDay: ['dawn'] }),  desc: () => 'A line for catching them right at the start of the day.' },
+  { label: 'Dusk wind-down',       roll: () => ({ timesOfDay: ['dusk'] }),  desc: () => 'Something for the quiet transition into evening.' },
+  { label: 'Night owl',            roll: () => ({ timesOfDay: ['night'] }), desc: () => "Why they're still up, or a hushed late-night tone." },
+  { label: 'Rainy day',            roll: () => ({ weather: ['rain'] }),     desc: () => 'A reaction to the rain — mood, changed plans, a memory it stirs up.' },
+  { label: 'Storm warning',        roll: () => ({ weather: ['storm'] }),    desc: () => 'Caution, fear, excitement, or superstition about the storm.' },
+  { label: 'Clear-sky small talk', roll: () => ({ weather: ['clear'] }),    desc: () => 'Ordinary, low-stakes weather chatter for a nice day.' },
+  { label: 'First meeting',        roll: () => ({ encounter: ['first'] }),  desc: () => 'Their very first line to the player, ever.' },
+  { label: 'Welcome back',         roll: () => ({ encounter: ['returning'] }), desc: () => 'A callback line for a repeat visit the same day.' },
+  { label: 'Rainy night',          roll: () => ({ weather: ['rain'], timesOfDay: ['night'] }), desc: () => 'Rain plus the dark — a moodier, more atmospheric line.' },
+  { label: 'Still a stranger',     roll: () => ({ relationship: { max: 1 } }), desc: () => 'Guarded, formal, or curious-about-a-newcomer tone.' },
+  {
+    label: 'Weekday routine',
+    roll: () => ({ weekdays: [rpPick(WEEKDAYS)] }),
+    desc: c => `A line tied to whatever this NPC is usually doing on ${c.weekdays[0]}.`,
+  },
+  {
+    label: 'Seasonal shift',
+    roll: () => ({ seasons: [rpPick(SEASONS)] }),
+    desc: c => `How they feel about ${c.seasons[0]} specifically — weather, work, mood.`,
+  },
+  {
+    label: 'Close friend check-in',
+    roll: () => ({ relationship: { min: rpPick([4, 6, 8]) } }),
+    desc: c => `Warmer, more personal dialogue that only unlocks once the player is a heart-${c.relationship.min}+ friend.`,
+  },
+  {
+    label: "Visitor's origin",
+    roll: () => ({ playerSpecies: [rpPick(PLAYER_SPECIES)] }),
+    desc: c => `A species-flavored remark or question about a ${c.playerSpecies[0]} player.`,
+  },
+  {
+    label: 'Somewhere unexpected',
+    roll: () => ({ maps: [rpPick(mapRegistry).id] }),
+    desc: c => `Reacting to being found somewhere off their usual routine (${mapLabel(c.maps[0])}).`,
+  },
+  {
+    label: 'Caught at their post',
+    roll: () => {
+      const withStations = mapRegistry.filter(m => m.stations.length);
+      if (!withStations.length) return null;
+      const m = rpPick(withStations);
+      return { stations: [rpPick(m.stations)] };
+    },
+    desc: c => `A line about being spotted at "${c.stations[0]}" specifically.`,
+  },
+];
+
+let randomPromptPicks = [];
+
+// Order-independent signature so an already-written tree with the same
+// conditions in a different chip order still counts as a match.
+function rpConditionsSignature(c) {
+  const n = normalizeConditions(c || {});
+  const sorted = a => [...a].sort();
+  return JSON.stringify({
+    weekdays: sorted(n.weekdays), seasons: sorted(n.seasons), weather: sorted(n.weather),
+    timesOfDay: sorted(n.timesOfDay), encounter: sorted(n.encounter), maps: sorted(n.maps),
+    stations: sorted(n.stations), playerSpecies: sorted(n.playerSpecies),
+    relationship: { min: n.relationship.min ?? null, max: n.relationship.max ?? null },
+  });
+}
+function rpNpcAlreadyHas(npc, conditions) {
+  const sig = rpConditionsSignature(conditions);
+  return (npc.dialogueTrees || []).some(t => rpConditionsSignature(t.conditions) === sig);
+}
+
+function rpRollOne(excludeNpcIds) {
+  const npcs = (db?.npcs || []).filter(n => !excludeNpcIds.includes(n.id));
+  if (!npcs.length) return null;
+  let fallback = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const npc = rpPick(npcs);
+    const archetype = rpPick(PROMPT_ARCHETYPES);
+    const conditions = archetype.roll();
+    if (!conditions) continue;
+    const already = rpNpcAlreadyHas(npc, conditions);
+    const candidate = { npc, archetype, conditions, already };
+    if (!already) return candidate;
+    if (!fallback) fallback = candidate; // used only if every attempt landed on already-written combos
+  }
+  return fallback;
+}
+
+function rpRoll() {
+  const picks = [];
+  const usedNpcIds = [];
+  for (let i = 0; i < 5; i++) {
+    const p = rpRollOne(usedNpcIds);
+    if (!p) break;
+    picks.push(p);
+    usedNpcIds.push(p.npc.id);
+  }
+  randomPromptPicks = picks;
+}
+
+function openRandomPrompt() {
+  if (!db) return;
+  if (!randomPromptPicks.length) rpRoll();
+  centerView = 'random';
+  renderCenterPanel();
+}
+function rerollPrompts() { rpRoll(); renderRandomPrompt(); }
+
+function rpDescribeConditions(c) {
+  const parts = [];
+  if (c.weekdays?.length) parts.push('Day: ' + c.weekdays.join(', '));
+  if (c.seasons?.length) parts.push('Season: ' + c.seasons.join(', '));
+  if (c.weather?.length) parts.push('Weather: ' + c.weather.join(', '));
+  if (c.timesOfDay?.length) parts.push('Time: ' + c.timesOfDay.join(', '));
+  if (c.encounter?.length) parts.push('Encounter: ' + c.encounter.join(', '));
+  if (c.maps?.length) parts.push('Map: ' + c.maps.map(mapLabel).join(', '));
+  if (c.stations?.length) parts.push('Station: ' + c.stations.join(', '));
+  if (c.playerSpecies?.length) parts.push('Player species: ' + c.playerSpecies.join(', '));
+  if (c.relationship?.min != null) parts.push('Min hearts: ' + c.relationship.min);
+  if (c.relationship?.max != null) parts.push('Max hearts: ' + c.relationship.max);
+  return parts.join(' · ') || '(no conditions)';
+}
+
+function renderRandomPrompt() {
+  const grid = $('randomPromptGrid');
+  if (!db) { grid.innerHTML = '<p class="tocEmptyState">Load a database first.</p>'; return; }
+  if (!randomPromptPicks.length) { grid.innerHTML = '<p class="tocEmptyState">No NPCs to roll — load a database with NPCs in it.</p>'; return; }
+  grid.innerHTML = randomPromptPicks.map((p, i) => `
+    <div class="promptCard">
+      <div class="pcNpc">${esc(p.npc.name || p.npc.id)}</div>
+      <div class="pcNpcMeta">${esc(p.npc.role || p.npc.species || '')}</div>
+      <div class="pcArchetype">${esc(p.archetype.label)}</div>
+      <div class="pcDesc">${esc(p.archetype.desc(p.conditions))}</div>
+      <div class="pcCond">${esc(rpDescribeConditions(p.conditions))}</div>
+      ${p.already ? '<div class="pcAlready">⚠ Already has a tree for these exact conditions — Start Tree will add a second, near-duplicate one.</div>' : ''}
+      <button class="good pcStart" data-idx="${i}">Start Tree ▸</button>
+    </div>
+  `).join('');
+  grid.querySelectorAll('[data-idx]').forEach(btn => btn.addEventListener('click', () => startPromptTree(+btn.dataset.idx)));
+}
+
+function startPromptTree(idx) {
+  const p = randomPromptPicks[idx];
+  if (!p) return;
+  const full = emptyConditions();
+  Object.assign(full, p.conditions);
+  filters = normalizeConditions(full);
+  selectNpc(p.npc.id); // resets centerView to 'toc' first, same as clicking the NPC normally would
+  addTree();            // reads `filters`, creates+selects the tree, jumps to 'graph'
 }
 
 /* ── Node actions ────────────────────────────────────────── */
@@ -1126,10 +1308,11 @@ function renderToc() {
 }
 
 function renderCenterPanel() {
-  const inToc = centerView === 'toc';
-  $('tocPanel').classList.toggle('hidden', !inToc);
-  $('graphView').classList.toggle('hidden', inToc);
-  if (inToc) renderToc();
+  $('tocPanel').classList.toggle('hidden', centerView !== 'toc');
+  $('graphView').classList.toggle('hidden', centerView !== 'graph');
+  $('randomPromptPanel').classList.toggle('hidden', centerView !== 'random');
+  if (centerView === 'toc') renderToc();
+  else if (centerView === 'random') renderRandomPrompt();
   else renderCanvas();
 }
 
@@ -1941,6 +2124,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('inspToggle').onclick = toggleInspector;
   $('addTreeBtn').onclick = addTree;
   $('backToTocBtn').onclick = backToToc;
+  $('randomPromptBtn').onclick = openRandomPrompt;
+  $('rpBackBtn').onclick = backToToc;
+  $('rerollBtn').onclick = rerollPrompts;
   $('btnText').onclick   = () => addNode('text');
   $('btnChoice').onclick = () => addNode('choice');
   $('btnEnd').onclick    = () => addNode('end');
