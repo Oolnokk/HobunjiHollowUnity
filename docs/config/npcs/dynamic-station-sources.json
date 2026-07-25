@@ -1,0 +1,34 @@
+{
+  "schema": "hobunji_dynamic_station_sources.v1",
+  "note": "Station ids in this list are NOT authored in any docs/config/maps/*.json npcStations array — they're registered at runtime by procedural code, so they can't be hand-placed in the Map Editor's Station tool. Listed here so tooling (Schedule Editor, Map Editor) can label them instead of reporting them as broken/missing.",
+  "sources": [
+    {
+      "idPattern": "station_researchers_tent_desk",
+      "label": "Garanki's Desk",
+      "system": "Tothal Shift — Researcher's Tent locale",
+      "codeRef": "docs/game.js — tent decor station registration (search \"Garanki Gabu's desk + 3 specimen statues\")",
+      "description": "Registered from the researcher's tent locale's decor object position wherever the wilderness Tothal Shift stamps the tent this session. Moves with the tent, so it can't live in a static map file."
+    },
+    {
+      "idPattern": "station_researchers_tent_statue_1",
+      "label": "Specimen Statue 1",
+      "system": "Tothal Shift — Researcher's Tent locale",
+      "codeRef": "docs/game.js — tent decor station registration",
+      "description": "Same as station_researchers_tent_desk, for the first specimen statue prop."
+    },
+    {
+      "idPattern": "station_researchers_tent_statue_2",
+      "label": "Specimen Statue 2",
+      "system": "Tothal Shift — Researcher's Tent locale",
+      "codeRef": "docs/game.js — tent decor station registration",
+      "description": "Same as station_researchers_tent_desk, for the second specimen statue prop."
+    },
+    {
+      "idPattern": "station_researchers_tent_statue_3",
+      "label": "Specimen Statue 3",
+      "system": "Tothal Shift — Researcher's Tent locale",
+      "codeRef": "docs/game.js — tent decor station registration",
+      "description": "Same as station_researchers_tent_desk, for the third specimen statue prop."
+    }
+  ]
+}

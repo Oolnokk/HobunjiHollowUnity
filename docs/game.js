@@ -11262,24 +11262,16 @@
         return true;
       }
 
-      // Village-wide Temple Service (Anan 9-11am): any villager without a
-      // schedule rule of their own for that window joins the congregation in
-      // a pew instead of following their usual routine. Deceased/banished
-      // NPCs are excluded even though they still carry the "villager" tag.
-      const TEMPLE_SERVICE_DAY = 'Anan';
-      const TEMPLE_SERVICE_START_MIN = parseNpcTimeMinutes('09:00');
-      const TEMPLE_SERVICE_END_MIN   = parseNpcTimeMinutes('11:00');
-      const TEMPLE_SERVICE_EXCLUDED_NPC_IDS = new Set([
-        'talisman_hatayap',    // deceased
-        'bowstring_hatayap',   // deceased
-        'hammerhead_tuhupnuk', // banished from the clan
-      ]);
-      const TEMPLE_PEW_STATION_IDS = [
-        'station_temple_pew_1', 'station_temple_pew_2', 'station_temple_pew_3',
-        'station_temple_pew_4', 'station_temple_pew_5', 'station_temple_pew_6',
-        'station_temple_pew_7', 'station_temple_pew_8', 'station_temple_pew_9',
-        'station_temple_pew_10', 'station_temple_pew_11',
-      ];
+      // Village-wide shared schedule overrides (e.g. Temple Service, Anan
+      // 9-11am): any NPC tagged `appliesToTag`, without a rule of their own
+      // active for that window, joins the group at a round-robin-assigned
+      // station instead of following their usual routine. Authored data —
+      // see docs/config/npcs/hobunji-starter-npc-database.json's top-level
+      // `sharedSchedules[]` (editable in the Schedule Editor's Shared
+      // Events panel) — populated into npcSharedSchedules by
+      // spawnScheduledNpcs() below. Used to be hardcoded Temple-Service-only
+      // constants here; kept generic so any future event just needs data.
+      let npcSharedSchedules = [];
       function hashNpcIdToIndex(id, mod) {
         let h = 0;
         const s = String(id || '');
@@ -11291,6 +11283,7 @@
         const hooks = rec?.scheduleHooks || {};
         const now = currentGameMinutes();
         for (const rule of hooks.rules || []) {
+          if (rule.contentIncomplete) continue; // flagged by the Schedule Editor / migration — not a real target yet
           if (!isNpcRuleActiveOnDay(rule)) continue;
           const start = parseNpcTimeMinutes(rule.start ?? rule.from);
           const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
@@ -11316,20 +11309,30 @@
           if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
             return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
         }
-        if (currentWeekdayName() === TEMPLE_SERVICE_DAY
-            && isNowWithinNpcRuleWindow(now, TEMPLE_SERVICE_START_MIN, TEMPLE_SERVICE_END_MIN)
-            && (rec?.tags || []).includes('villager')
-            && !TEMPLE_SERVICE_EXCLUDED_NPC_IDS.has(rec?.id)) {
-          const pewId = TEMPLE_PEW_STATION_IDS[hashNpcIdToIndex(rec?.id, TEMPLE_PEW_STATION_IDS.length)];
-          const pewTarget = resolveNpcStationTarget(pewId);
-          if (pewTarget) return { ...pewTarget, activity: 'Temple Service' };
+        for (const shared of npcSharedSchedules) {
+          if (!shared || shared.contentIncomplete) continue;
+          const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
+          if (currentWeekdayName() !== shared.day) continue;
+          if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
+          if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
+          if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
+          const ids = shared.stationIds || [];
+          if (!ids.length) continue;
+          const target = resolveNpcStationTarget(ids[hashNpcIdToIndex(rec?.id, ids.length)]);
+          if (target) return { ...target, activity: shared.label || shared.id || 'Shared Event' };
         }
         if (hooks.defaultStationId) {
           const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
           if (stationTarget) return stationTarget;
           window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
         }
-        if (hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
+        // contentIncomplete NPCs (flagged by the migration/Schedule Editor —
+        // e.g. a defaultPosition that was only ever a {0,0} placeholder)
+        // skip the raw-position fallback entirely rather than spawn at a
+        // made-up tile; they fall through to "no target" below, which
+        // spawnScheduledNpcs()/​_retrySpawnDeferredNpcs() already treat as
+        // "defer and retry" instead of a visible glitch.
+        if (!hooks.contentIncomplete && hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
           const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
           logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
           return { ...hooks.defaultPosition, area: defArea };
@@ -11405,7 +11408,12 @@
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         let dbNpcs = extraRecords || [];
         if (!dbNpcs.length) {
-          try { const res = await fetch('config/npcs/hobunji-starter-npc-database.json'); const json = await res.json(); dbNpcs = json.npcs || []; } catch {}
+          try {
+            const res = await fetch('config/npcs/hobunji-starter-npc-database.json');
+            const json = await res.json();
+            dbNpcs = json.npcs || [];
+            npcSharedSchedules = json.sharedSchedules || [];
+          } catch {}
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
         const deferred = [];
@@ -13106,54 +13114,27 @@
             townScene.add(g);
             _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
 
-            // Entrance ring: compute position using rotation-aware porch/stair cells.
-            // rotateBuildingCollisionCell is hoisted (function declaration at line ~3490).
+            // Entrance ring: single-source door geometry from js/building-door.js
+            // (shared with the Map Editor's Building inspector, and with House
+            // Piece Author for the door preview) — resolves the piece's
+            // authored footprint.door point, or the old porch/south-edge
+            // heuristic for pieces nobody has placed a door on yet.
             const rotDeg = bldg.rotationDeg || bldg.rotation || 0;
-            const allBldgCells = []
-              .concat(piece?.footprint?.cells || [])
-              .concat(piece?.footprint?.extensions?.entryTunnels || [])
-              .concat(piece?.footprint?.extensions?.chimneys || [])
-              .concat(piece?.footprint?.extensions?.porches || [])
-              .concat(piece?.footprint?.extensions?.porchStairs || [])
-              .concat(piece?.footprint?.extensions?.railings || []);
-            const gc = Math.floor((piece?.gridSize || 18) / 2);
-            const bldgMinX = allBldgCells.length ? Math.min.apply(null, allBldgCells.map(c => c.x)) : gc - 3;
-            const bldgMinY = allBldgCells.length ? Math.min.apply(null, allBldgCells.map(c => c.y)) : gc - 3;
-            const bldgMaxX = allBldgCells.length ? Math.max.apply(null, allBldgCells.map(c => c.x)) : gc + 3;
-            const bldgMaxY = allBldgCells.length ? Math.max.apply(null, allBldgCells.map(c => c.y)) : gc + 3;
-            const bboxW = bldgMaxX - bldgMinX + 1;
-            const bboxD = bldgMaxY - bldgMinY + 1;
-            // Rotate all cells to get the world-space bounding box (for hasWorkspaceEntry)
-            let wBMinC = Infinity, wBMaxC = -Infinity, wBMinR = Infinity, wBMaxR = -Infinity;
-            for (const cell of allBldgCells) {
-              const r = rotateBuildingCollisionCell(cell.x - bldgMinX, cell.y - bldgMinY, bboxW, bboxD, rotDeg);
-              const wc = bldg.gridX + r.x, wr = bldg.gridZ + r.y;
-              if (wc < wBMinC) wBMinC = wc; if (wc > wBMaxC) wBMaxC = wc;
-              if (wr < wBMinR) wBMinR = wr; if (wr > wBMaxR) wBMaxR = wr;
-            }
-            const hasBldgCells = allBldgCells.length > 0;
-            // Porch + stair cells (non-colliding) determine where the entrance ring sits
-            const psCells = []
-              .concat(piece?.footprint?.extensions?.porches || [])
-              .concat(piece?.footprint?.extensions?.porchStairs || []);
-            let eCol, eRow;
-            if (psCells.length && hasBldgCells) {
-              let wPMinC = Infinity, wPMaxC = -Infinity, wPMinR = Infinity, wPMaxR = -Infinity;
-              for (const cell of psCells) {
-                const r = rotateBuildingCollisionCell(cell.x - bldgMinX, cell.y - bldgMinY, bboxW, bboxD, rotDeg);
-                const wc = bldg.gridX + r.x, wr = bldg.gridZ + r.y;
-                if (wc < wPMinC) wPMinC = wc; if (wc > wPMaxC) wPMaxC = wc;
-                if (wr < wPMinR) wPMinR = wr; if (wr > wPMaxR) wPMaxR = wr;
-              }
-              eCol = Math.floor((wPMinC + wPMaxC + 1) / 2);
-              // Use the porch row closest to the structural body (not outer stairs)
-              const bldgCentroidR = (wBMinR + wBMaxR) / 2;
-              const innerPorchR = Math.abs(wPMinR - bldgCentroidR) <= Math.abs(wPMaxR - bldgCentroidR) ? wPMinR : wPMaxR;
-              eRow = Math.min(TROWS_ENT - 1, innerPorchR);
+            const doorEnt = BuildingDoor.resolveDoorEntrance(piece);
+            const hasBldgCells = !!doorEnt;
+            let wBMinC, wBMaxC, wBMinR, wBMaxR, eCol, eRow;
+            if (hasBldgCells) {
+              const door = BuildingDoor.doorWorldFromBuilding(doorEnt, bldg.gridX, bldg.gridZ, rotDeg, TROWS_ENT - 1);
+              eCol = door.col; eRow = door.row;
+              wBMinC = door.bbox.minC; wBMaxC = door.bbox.maxC; wBMinR = door.bbox.minR; wBMaxR = door.bbox.maxR;
             } else {
-              // No porch data: south edge of rotated bounding box
-              eCol = hasBldgCells ? Math.floor((wBMinC + wBMaxC + 1) / 2) : Math.floor((bldg.gridX * 2 + (bldg.footprintW ?? 1) + 1) / 2);
-              eRow = hasBldgCells ? Math.min(TROWS_ENT - 1, wBMaxR + 1) : Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
+              // Piece never loaded (fetch failure etc.) — fall back to the
+              // building instance's own footprintW/footprintD hints so the
+              // town still gets *a* door instead of erroring out.
+              wBMinC = bldg.gridX; wBMaxC = bldg.gridX + (bldg.footprintW ?? 1) - 1;
+              wBMinR = bldg.gridZ; wBMaxR = bldg.gridZ + (bldg.footprintD ?? 1) - 1;
+              eCol = Math.floor((bldg.gridX * 2 + (bldg.footprintW ?? 1) + 1) / 2);
+              eRow = Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
             }
             const eid = 'bldg_entrance_' + bldg.id;
             // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
@@ -17153,12 +17134,11 @@
         return col >= houseCol && col < houseCol + HOUSE_FOOTPRINT_W
             && row >= houseRow && row < houseRow + HOUSE_FOOTPRINT_D;
       }
+      // Rotation math lives once in js/building-door.js (shared with the Map
+      // Editor and House Piece Author's door tooling) — this is just the
+      // local name collision detection already used before that file existed.
       function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
-        const rot = ((Math.round((rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
-        if (rot === 90)  return { x: localY, y: width - 1 - localX };
-        if (rot === 180) return { x: width - 1 - localX, y: depth - 1 - localY };
-        if (rot === 270) return { x: depth - 1 - localY, y: localX };
-        return { x: localX, y: localY };
+        return BuildingDoor.rotateCell(localX, localY, width, depth, rotationDeg);
       }
       function _buildingFootprintBlocks(bldg, piece, col, row) {
         const originX = bldg.gridX ?? bldg.col ?? 0;

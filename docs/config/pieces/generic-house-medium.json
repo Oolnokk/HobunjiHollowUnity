@@ -88,12 +88,6 @@
         "y": 10
       }
     ],
-    "entrances": [
-      {
-        "x": 11,
-        "y": 9
-      }
-    ],
     "connectors": [],
     "extensions": {
       "entryTunnels": [
@@ -133,6 +127,10 @@
         }
       ],
       "railings": []
+    },
+    "door": {
+      "x": 11,
+      "y": 9
     }
   },
   "base": {

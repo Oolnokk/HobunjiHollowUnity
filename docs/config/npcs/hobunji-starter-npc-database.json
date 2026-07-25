@@ -554,10 +554,6 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_market_gorobi",
-            "position": {
-              "c": 28,
-              "r": 30
-            },
             "activity": "selling produce at market"
           },
           {
@@ -565,10 +561,6 @@
             "to": "12:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_nw",
-            "position": {
-              "c": 41,
-              "r": 5
-            },
             "activity": "farming"
           },
           {
@@ -576,10 +568,6 @@
             "to": "14:00",
             "mapId": "map_i_ginju_farmstead",
             "stationId": "station_ginju_table_sit1",
-            "position": {
-              "c": 9,
-              "r": 3
-            },
             "activity": "resting"
           },
           {
@@ -587,10 +575,6 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_sw",
-            "position": {
-              "c": 41,
-              "r": 12
-            },
             "activity": "farming"
           },
           {
@@ -598,10 +582,6 @@
             "to": "06:00",
             "mapId": "map_i_ginju_farmstead_F2_R1",
             "stationId": "station_ginju_bed_parents",
-            "position": {
-              "c": 7,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -799,10 +779,6 @@
             "to": "18:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_market_gikali",
-            "position": {
-              "c": 28,
-              "r": 32
-            },
             "activity": "selling produce at market"
           },
           {
@@ -810,10 +786,6 @@
             "to": "09:00",
             "mapId": "map_i_ginju_farmstead",
             "stationId": "station_ginju_cook",
-            "position": {
-              "c": 3,
-              "r": 3
-            },
             "activity": "cooking breakfast"
           },
           {
@@ -821,10 +793,6 @@
             "to": "18:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_ne",
-            "position": {
-              "c": 49,
-              "r": 5
-            },
             "activity": "farming"
           },
           {
@@ -832,10 +800,6 @@
             "to": "07:00",
             "mapId": "map_i_ginju_farmstead_F2_R1",
             "stationId": "station_ginju_bed_parents",
-            "position": {
-              "c": 7,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -1027,10 +991,6 @@
             "to": "12:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_se",
-            "position": {
-              "c": 49,
-              "r": 14
-            },
             "activity": "farming"
           },
           {
@@ -1038,10 +998,6 @@
             "to": "17:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_stool_e_n",
-            "position": {
-              "c": 14,
-              "r": 7
-            },
             "activity": "having a drink at the inn"
           },
           {
@@ -1049,10 +1005,6 @@
             "to": "07:00",
             "mapId": "map_i_ginju_farmstead_F2_R2",
             "stationId": "station_ginju_bed_aliri",
-            "position": {
-              "c": 7,
-              "r": 6
-            },
             "activity": "home"
           }
         ],
@@ -1240,10 +1192,6 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_gantami_play",
-            "position": {
-              "c": 21,
-              "r": 29
-            },
             "activity": "playing"
           },
           {
@@ -1251,14 +1199,9 @@
             "to": "08:00",
             "mapId": "map_i_ginju_farmstead_F2_R2",
             "stationId": "station_ginju_bed_gantami",
-            "position": {
-              "c": 11,
-              "r": 6
-            },
             "activity": "sleeping"
           }
-        ],
-        "defaultStationId": "station_ginju_rug_gantami"
+        ]
       },
       "defaultStationId": "station_ginju_bed_gantami",
       "phrasePools": []
@@ -1457,10 +1400,6 @@
             "to": "18:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_stool_e_s",
-            "position": {
-              "c": 14,
-              "r": 11
-            },
             "activity": "relaxing at the inn"
           },
           {
@@ -1471,7 +1410,9 @@
               "c": 2,
               "r": 3
             },
-            "activity": "home"
+            "activity": "home",
+            "contentIncomplete": true,
+            "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
           }
         ],
         "defaultStationId": "station_inn_stool_e_s"
@@ -1663,10 +1604,6 @@
             "to": "14:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_stool_w_n",
-            "position": {
-              "c": 4,
-              "r": 7
-            },
             "activity": "socializing at the inn"
           },
           {
@@ -1674,10 +1611,6 @@
             "to": "20:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_stool_w_s",
-            "position": {
-              "c": 4,
-              "r": 11
-            },
             "activity": "enjoying the inn"
           },
           {
@@ -1688,7 +1621,9 @@
               "c": 3,
               "r": 3
             },
-            "activity": "home"
+            "activity": "home",
+            "contentIncomplete": true,
+            "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
           }
         ],
         "defaultStationId": "station_inn_stool_w_s"
@@ -2079,10 +2014,6 @@
             "to": "18:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_furunji_dayoff",
-            "position": {
-              "c": 29,
-              "r": 31
-            },
             "activity": "enjoying a day off"
           },
           {
@@ -2090,10 +2021,6 @@
             "to": "08:00",
             "mapId": "map_i_general_store",
             "stationId": "station_w9r6j",
-            "position": {
-              "c": 9,
-              "r": 2
-            },
             "activity": "cooking"
           },
           {
@@ -2101,10 +2028,6 @@
             "to": "18:00",
             "mapId": "map_i_general_store",
             "stationId": "station_p2x4t",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "activity": "sitting at counter"
           },
           {
@@ -2112,10 +2035,6 @@
             "to": "06:00",
             "mapId": "map_i_general_store_F2_R2",
             "stationId": "station_r3p5w",
-            "position": {
-              "c": 10,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -2507,10 +2426,6 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_foroji_music",
-            "position": {
-              "c": 31,
-              "r": 31
-            },
             "activity": "playing music all day, day off"
           },
           {
@@ -2518,20 +2433,12 @@
             "to": "14:00",
             "mapId": "map_i_general_store",
             "stationId": "station_k7m3q",
-            "position": {
-              "c": 2,
-              "r": 6
-            },
             "activity": "checking shelves"
           },
           {
             "from": "14:00",
             "to": "19:00",
             "mapId": "map_hobunji_town",
-            "position": {
-              "c": 31,
-              "r": 31
-            },
             "routeId": "route_wjhen",
             "activity": "playing music",
             "stationId": "station_foroji_music"
@@ -2541,10 +2448,6 @@
             "to": "08:00",
             "mapId": "map_i_general_store_F2_R1",
             "stationId": "station_v4n8x",
-            "position": {
-              "c": 7,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -2739,10 +2642,6 @@
             "to": "18:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_evening_kzubug",
-            "position": {
-              "c": 9,
-              "r": 5
-            },
             "activity": "resting at home, forge cold"
           },
           {
@@ -2750,10 +2649,6 @@
             "to": "12:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_forge",
-            "position": {
-              "c": 4,
-              "r": 3
-            },
             "activity": "smithing"
           },
           {
@@ -2761,10 +2656,6 @@
             "to": "13:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_evening_kzubug",
-            "position": {
-              "c": 9,
-              "r": 5
-            },
             "activity": "lunch break"
           },
           {
@@ -2772,10 +2663,6 @@
             "to": "18:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_forge",
-            "position": {
-              "c": 4,
-              "r": 3
-            },
             "activity": "smithing"
           },
           {
@@ -2783,10 +2670,6 @@
             "to": "07:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_evening_kzubug",
-            "position": {
-              "c": 9,
-              "r": 5
-            },
             "activity": "home"
           }
         ],
@@ -2959,10 +2842,6 @@
             "to": "12:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_apprentice",
-            "position": {
-              "c": 5,
-              "r": 4
-            },
             "activity": "apprentice smithing"
           },
           {
@@ -2970,10 +2849,6 @@
             "to": "13:00",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_evening_sloomi",
-            "position": {
-              "c": 9,
-              "r": 7
-            },
             "activity": "break"
           },
           {
@@ -2981,10 +2856,6 @@
             "to": "17:30",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_apprentice",
-            "position": {
-              "c": 5,
-              "r": 4
-            },
             "activity": "apprentice smithing"
           },
           {
@@ -2992,10 +2863,6 @@
             "to": "07:30",
             "mapId": "map_i_smithy",
             "stationId": "station_smi_evening_sloomi",
-            "position": {
-              "c": 9,
-              "r": 7
-            },
             "activity": "home"
           }
         ],
@@ -3188,10 +3055,6 @@
             "to": "16:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_bar_stand",
-            "position": {
-              "c": 3,
-              "r": 4
-            },
             "activity": "standing behind bar"
           },
           {
@@ -3199,10 +3062,6 @@
             "to": "22:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_bar_kegs",
-            "position": {
-              "c": 7,
-              "r": 4
-            },
             "activity": "checking kegs"
           },
           {
@@ -3210,10 +3069,6 @@
             "to": "06:00",
             "mapId": "map_i_inn_F2",
             "stationId": "station_inn_dorm_bed",
-            "position": {
-              "c": 9,
-              "r": 4
-            },
             "activity": "resting"
           }
         ],
@@ -3409,10 +3264,6 @@
             "to": "17:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_jubmir_explore",
-            "position": {
-              "c": 32,
-              "r": 31
-            },
             "activity": "exploring town"
           },
           {
@@ -3420,10 +3271,6 @@
             "to": "09:00",
             "mapId": "map_i_inn_F2",
             "stationId": "station_inn_dorm_bed",
-            "position": {
-              "c": 9,
-              "r": 4
-            },
             "activity": "sleeping"
           }
         ],
@@ -3640,10 +3487,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_hunundi",
-            "position": {
-              "c": 12,
-              "r": 11
-            },
             "activity": "watching the Spirit Counsel from a far pew"
           },
           {
@@ -3652,10 +3495,6 @@
             "to": "11:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_altar",
-            "position": {
-              "c": 9,
-              "r": 5
-            },
             "activity": "leading Temple Service"
           },
           {
@@ -3663,10 +3502,6 @@
             "to": "10:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_altar",
-            "position": {
-              "c": 9,
-              "r": 5
-            },
             "activity": "morning prayers"
           },
           {
@@ -3674,10 +3509,6 @@
             "to": "14:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_father_town",
-            "position": {
-              "c": 14,
-              "r": 31
-            },
             "activity": "in town"
           },
           {
@@ -3685,10 +3516,6 @@
             "to": "19:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_altar",
-            "position": {
-              "c": 9,
-              "r": 5
-            },
             "activity": "temple duties"
           },
           {
@@ -3696,10 +3523,6 @@
             "to": "22:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_evening",
-            "position": {
-              "c": 9,
-              "r": 11
-            },
             "activity": "evening prayers"
           },
           {
@@ -3707,10 +3530,6 @@
             "to": "07:00",
             "mapId": "map_i_temple_basement_hunundi",
             "stationId": "station_temple_bsmt_hunundi",
-            "position": {
-              "c": 7,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -3903,10 +3722,6 @@
             "to": "12:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_candles",
-            "position": {
-              "c": 11,
-              "r": 5
-            },
             "activity": "temple"
           },
           {
@@ -3914,10 +3729,6 @@
             "to": "17:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_namui_grounds",
-            "position": {
-              "c": 12,
-              "r": 37
-            },
             "activity": "temple grounds"
           },
           {
@@ -3925,10 +3736,6 @@
             "to": "21:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_candles",
-            "position": {
-              "c": 11,
-              "r": 5
-            },
             "activity": "temple"
           },
           {
@@ -3936,10 +3743,6 @@
             "to": "08:00",
             "mapId": "map_i_temple_basement_twins",
             "stationId": "station_temple_bsmt_namui",
-            "position": {
-              "c": 7,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -4140,10 +3943,6 @@
             "to": "13:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_reflection",
-            "position": {
-              "c": 6,
-              "r": 7
-            },
             "activity": "temple"
           },
           {
@@ -4151,10 +3950,6 @@
             "to": "18:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_takua_wander",
-            "position": {
-              "c": 16,
-              "r": 34
-            },
             "activity": "wandering"
           },
           {
@@ -4162,10 +3957,6 @@
             "to": "21:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_reflection",
-            "position": {
-              "c": 6,
-              "r": 7
-            },
             "activity": "temple"
           },
           {
@@ -4173,10 +3964,6 @@
             "to": "09:00",
             "mapId": "map_i_temple_basement_twins",
             "stationId": "station_temple_bsmt_takua",
-            "position": {
-              "c": 11,
-              "r": 6
-            },
             "activity": "sleeping"
           }
         ],
@@ -4375,10 +4162,6 @@
             "to": "19:00",
             "mapId": "map_i_kunjis_potions_F1",
             "stationId": "station_kaboku_dayoff",
-            "position": {
-              "c": 3,
-              "r": 9
-            },
             "activity": "enjoying a rare day off"
           },
           {
@@ -4386,10 +4169,6 @@
             "to": "09:00",
             "stationId": "station_6z6x4",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 7,
-              "r": 2
-            },
             "routeId": "route_oe4sm",
             "activity": "cooking potion stock"
           },
@@ -4398,10 +4177,6 @@
             "to": "10:20",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "morning counter shift"
           },
@@ -4410,10 +4185,6 @@
             "to": "10:30",
             "stationId": "station_0v1y7",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 2,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "checking potion shelves"
           },
@@ -4422,10 +4193,6 @@
             "to": "11:20",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "morning counter shift"
           },
@@ -4434,10 +4201,6 @@
             "to": "11:30",
             "stationId": "station_0v1y7",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 2,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "checking potion shelves"
           },
@@ -4446,10 +4209,6 @@
             "to": "12:00",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "morning counter shift"
           },
@@ -4457,10 +4216,6 @@
             "from": "12:00",
             "to": "19:00",
             "mapId": "map_hobunji_town",
-            "position": {
-              "c": 49,
-              "r": 26
-            },
             "routeId": "route_7g7ae",
             "activity": "staying out of Kinami's way",
             "stationId": "station_kaboku_avoid"
@@ -4470,10 +4225,6 @@
             "to": "22:00",
             "stationId": "station_jayis",
             "mapId": "map_i_kunjis_potions_F2",
-            "position": {
-              "c": 2,
-              "r": 9
-            },
             "routeId": "route_sww8w",
             "activity": "dinner upstairs"
           },
@@ -4482,10 +4233,6 @@
             "to": "06:00",
             "stationId": "station_di22s",
             "mapId": "map_i_kunjis_potions_F2",
-            "position": {
-              "c": 7,
-              "r": 2
-            },
             "routeId": "route_pogxw",
             "activity": "sleeping upstairs"
           }
@@ -4691,20 +4438,12 @@
             "to": "19:00",
             "mapId": "map_i_kunjis_potions_F1",
             "stationId": "station_kinami_dayoff",
-            "position": {
-              "c": 7,
-              "r": 9
-            },
             "activity": "enjoying a rare day off"
           },
           {
             "from": "06:00",
             "to": "12:00",
             "mapId": "map_hobunji_town",
-            "position": {
-              "c": 49,
-              "r": 37
-            },
             "routeId": "route_vjlr1",
             "activity": "morning errands away from Kaboku",
             "stationId": "station_kinami_errand"
@@ -4714,10 +4453,6 @@
             "to": "13:20",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "afternoon counter shift"
           },
@@ -4726,10 +4461,6 @@
             "to": "13:30",
             "stationId": "station_0v1y7",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 2,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "checking potion shelves"
           },
@@ -4738,10 +4469,6 @@
             "to": "15:20",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "afternoon counter shift"
           },
@@ -4750,10 +4477,6 @@
             "to": "15:30",
             "stationId": "station_0v1y7",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 2,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "checking potion shelves"
           },
@@ -4762,10 +4485,6 @@
             "to": "17:20",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "afternoon counter shift"
           },
@@ -4774,10 +4493,6 @@
             "to": "17:30",
             "stationId": "station_0v1y7",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 2,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "checking potion shelves"
           },
@@ -4786,10 +4501,6 @@
             "to": "19:00",
             "stationId": "station_0qpky",
             "mapId": "map_i_kunjis_potions_F1",
-            "position": {
-              "c": 5,
-              "r": 6
-            },
             "routeId": "route_lx49v",
             "activity": "afternoon counter shift"
           },
@@ -4798,10 +4509,6 @@
             "to": "22:00",
             "stationId": "station_njyek",
             "mapId": "map_i_kunjis_potions_F2",
-            "position": {
-              "c": 8,
-              "r": 9
-            },
             "routeId": "route_pogxw",
             "activity": "dinner upstairs"
           },
@@ -4810,10 +4517,6 @@
             "to": "06:00",
             "stationId": "station_20tpy",
             "mapId": "map_i_kunjis_potions_F2",
-            "position": {
-              "c": 8,
-              "r": 2
-            },
             "routeId": "route_pogxw",
             "activity": "sleeping upstairs"
           }
@@ -5015,10 +4718,6 @@
             "to": "17:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_dzibim_home",
-            "position": {
-              "c": 37,
-              "r": 25
-            },
             "activity": "day off, at home"
           },
           {
@@ -5026,10 +4725,6 @@
             "to": "12:00",
             "mapId": "map_i_carpenters",
             "stationId": "station_car_counter",
-            "position": {
-              "c": 4,
-              "r": 4
-            },
             "activity": "carpentry"
           },
           {
@@ -5037,10 +4732,6 @@
             "to": "13:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_dzibim_lunch",
-            "position": {
-              "c": 38,
-              "r": 26
-            },
             "activity": "lunch"
           },
           {
@@ -5048,10 +4739,6 @@
             "to": "17:00",
             "mapId": "map_i_carpenters",
             "stationId": "station_car_counter",
-            "position": {
-              "c": 4,
-              "r": 4
-            },
             "activity": "carpentry"
           },
           {
@@ -5059,10 +4746,6 @@
             "to": "07:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_dzibim_home",
-            "position": {
-              "c": 37,
-              "r": 25
-            },
             "activity": "home"
           }
         ],
@@ -5249,10 +4932,6 @@
             "to": "17:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_dzahiri_home",
-            "position": {
-              "c": 38,
-              "r": 25
-            },
             "activity": "day off, at home"
           },
           {
@@ -5260,10 +4939,6 @@
             "to": "17:00",
             "mapId": "map_i_carpenters",
             "stationId": "station_car_crates",
-            "position": {
-              "c": 4,
-              "r": 9
-            },
             "activity": "carpentry"
           },
           {
@@ -5271,10 +4946,6 @@
             "to": "08:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_dzahiri_home",
-            "position": {
-              "c": 38,
-              "r": 25
-            },
             "activity": "home"
           }
         ],
@@ -5455,10 +5126,6 @@
             "to": "17:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_nashka_home",
-            "position": {
-              "c": 39,
-              "r": 25
-            },
             "activity": "day off, at home"
           },
           {
@@ -5466,10 +5133,6 @@
             "to": "17:00",
             "mapId": "map_i_carpenters",
             "stationId": "station_car_inventory",
-            "position": {
-              "c": 9,
-              "r": 8
-            },
             "activity": "carpentry work"
           },
           {
@@ -5477,10 +5140,6 @@
             "to": "08:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_nashka_home",
-            "position": {
-              "c": 39,
-              "r": 25
-            },
             "activity": "home"
           }
         ],
@@ -5675,10 +5334,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_teacup",
-            "position": {
-              "c": 9,
-              "r": 9
-            },
             "activity": "leading the Spirit Counsel, eyes lowered"
           },
           {
@@ -5686,10 +5341,6 @@
             "to": "18:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_teacup_duties",
-            "position": {
-              "c": 32,
-              "r": 33
-            },
             "activity": "elder duties"
           },
           {
@@ -5697,10 +5348,6 @@
             "to": "09:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_teacup_bed",
-            "position": {
-              "c": 7,
-              "r": 8
-            },
             "activity": "home"
           }
         ],
@@ -5894,10 +5541,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_ring_1",
-            "position": {
-              "c": 9,
-              "r": 8
-            },
             "activity": "attending the Spirit Counsel"
           },
           {
@@ -5905,10 +5548,6 @@
             "to": "19:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_ginju_field_c",
-            "position": {
-              "c": 45,
-              "r": 16
-            },
             "activity": "working the farm"
           },
           {
@@ -5916,10 +5555,6 @@
             "to": "07:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_binding_bed",
-            "position": {
-              "c": 10,
-              "r": 8
-            },
             "activity": "resting at home"
           }
         ],
@@ -6116,10 +5751,6 @@
             "to": "20:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_spearhead_bed",
-            "position": {
-              "c": 8,
-              "r": 8
-            },
             "activity": "resting at home, off duty"
           },
           {
@@ -6128,10 +5759,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_ring_2",
-            "position": {
-              "c": 9,
-              "r": 10
-            },
             "activity": "attending the Spirit Counsel"
           },
           {
@@ -6139,10 +5766,6 @@
             "to": "12:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_spearhead_p1",
-            "position": {
-              "c": 28,
-              "r": 20
-            },
             "activity": "morning patrol"
           },
           {
@@ -6150,10 +5773,6 @@
             "to": "12:30",
             "mapId": "map_i_watchhouse",
             "stationId": "station_watch_desk_spearhead",
-            "position": {
-              "c": 8,
-              "r": 11
-            },
             "activity": "filing a patrol report at the watchhouse"
           },
           {
@@ -6161,10 +5780,6 @@
             "to": "15:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_spearhead_p2",
-            "position": {
-              "c": 20,
-              "r": 21
-            },
             "activity": "watch post"
           },
           {
@@ -6172,10 +5787,6 @@
             "to": "20:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_spearhead_p3",
-            "position": {
-              "c": 18,
-              "r": 32
-            },
             "activity": "afternoon patrol"
           },
           {
@@ -6183,10 +5794,6 @@
             "to": "07:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_spearhead_bed",
-            "position": {
-              "c": 8,
-              "r": 8
-            },
             "activity": "home"
           }
         ],
@@ -6388,10 +5995,6 @@
             "to": "20:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_oddclaw_bed",
-            "position": {
-              "c": 9,
-              "r": 8
-            },
             "activity": "resting at home, off duty"
           },
           {
@@ -6400,10 +6003,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_ring_3",
-            "position": {
-              "c": 8,
-              "r": 9
-            },
             "activity": "attending the Spirit Counsel"
           },
           {
@@ -6411,10 +6010,6 @@
             "to": "12:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_oddclaw_p1",
-            "position": {
-              "c": 17,
-              "r": 7
-            },
             "activity": "patrol"
           },
           {
@@ -6422,10 +6017,6 @@
             "to": "14:00",
             "mapId": "map_i_watchhouse",
             "stationId": "station_watch_desk_oddclaw",
-            "position": {
-              "c": 10,
-              "r": 11
-            },
             "activity": "lunch break at the watchhouse"
           },
           {
@@ -6433,10 +6024,6 @@
             "to": "20:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_oddclaw_p2",
-            "position": {
-              "c": 46,
-              "r": 14
-            },
             "activity": "patrol"
           },
           {
@@ -6444,10 +6031,6 @@
             "to": "08:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_oddclaw_bed",
-            "position": {
-              "c": 9,
-              "r": 8
-            },
             "activity": "home"
           }
         ],
@@ -6649,10 +6232,6 @@
             "to": "22:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_tooth_break",
-            "position": {
-              "c": 33,
-              "r": 32
-            },
             "activity": "day off, relaxing"
           },
           {
@@ -6661,10 +6240,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_ring_4",
-            "position": {
-              "c": 10,
-              "r": 9
-            },
             "activity": "attending the Spirit Counsel"
           },
           {
@@ -6672,10 +6247,6 @@
             "to": "15:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_bar_kegs",
-            "position": {
-              "c": 7,
-              "r": 4
-            },
             "activity": "morning shift at inn"
           },
           {
@@ -6683,10 +6254,6 @@
             "to": "17:00",
             "mapId": "map_hobunji_town",
             "stationId": "station_tooth_break",
-            "position": {
-              "c": 33,
-              "r": 32
-            },
             "activity": "break"
           },
           {
@@ -6694,10 +6261,6 @@
             "to": "22:00",
             "mapId": "map_i_inn",
             "stationId": "station_inn_bar_stand",
-            "position": {
-              "c": 3,
-              "r": 4
-            },
             "activity": "evening dinner shift"
           },
           {
@@ -6705,10 +6268,6 @@
             "to": "07:00",
             "mapId": "map_i_unumanuk_household_bedroom",
             "stationId": "station_unmh_tooth_bed",
-            "position": {
-              "c": 11,
-              "r": 8
-            },
             "activity": "resting at home"
           }
         ],
@@ -7049,7 +6608,9 @@
         "defaultMapId": "hobunji_main_town",
         "workBuildingId": "hatayap_clan_deceased",
         "shopHours": "",
-        "rules": []
+        "rules": [],
+        "contentIncomplete": true,
+        "contentIncompleteReason": "No schedule authored yet — this NPC never spawns (resolveNpcScheduleTarget has nothing to resolve to)."
       },
       "phrasePools": []
     },
@@ -7215,7 +6776,9 @@
         "defaultMapId": "hobunji_main_town",
         "workBuildingId": "hatayap_clan_deceased",
         "shopHours": "",
-        "rules": []
+        "rules": [],
+        "contentIncomplete": true,
+        "contentIncompleteReason": "No schedule authored yet — this NPC never spawns (resolveNpcScheduleTarget has nothing to resolve to)."
       },
       "phrasePools": []
     },
@@ -7384,10 +6947,6 @@
             "to": "03:00",
             "mapId": "map_i_temple",
             "stationId": "station_temple_counsel_ring_5",
-            "position": {
-              "c": 8,
-              "r": 8
-            },
             "activity": "attending the Spirit Counsel"
           }
         ],
@@ -7395,7 +6954,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "questHooks": [
         "Sells rare animal parts directly (at a steep price) for Mother Rahayobi's multi-mixture potion quest.",
@@ -7566,7 +7127,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "phrasePools": []
     },
@@ -7734,7 +7297,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Asks for an offering of vegetables from each of the four seasons, since he's never tasted any. In return he raises a great blizzard wall along the town's western side, redirecting the Harlyao Ghost Army's weekly patrol on his designated day. <suggestion: quest design — which weekday his redirection covers, and the specific named vegetables that satisfy each season's offering>",
       "questHooks": [
@@ -7909,7 +7474,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Each correct offering earns the player his current hat and reveals a new riddle pointing toward the next offering. <suggestion: quest design — the full riddle text and answers, how many offerings the chain has, and what the collected hats are used for>",
       "questHooks": [
@@ -8082,7 +7649,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Needs a 'Fifteen Fish Pie' to get the energy to help — quite literally fifteen different fish, each one only catchable in a specific season + weather + time + location combination around the town's outskirts. <suggestion: quest design — the actual list of fifteen fish and their catch conditions, plus the pie recipe itself>",
       "questHooks": [
@@ -8255,7 +7824,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Her potion needs separate mixtures made from foragables and animal parts from every zone × weather × season combination; rare animal parts can be bought directly (expensively) from Bird Bone. Each turned-in mixture teaches the player a free set of special potion recipes. <suggestion: quest design — her real motive for wanting the Ghost Army gone, the full mixture list/recipes, and exactly which special potions each mixture unlocks>",
       "questHooks": [
@@ -8428,7 +7999,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "The Baruhi/Porakaneki war is a major subplot the player can get drawn into, possibly choosing a side or brokering peace. <suggestion: plot design — what triggers player involvement, whether peace is achievable, what each side wants, and how this ties (if at all) to the Khannibarri Trade Shortage crisis or the Ghost Army>",
       "questHooks": [
@@ -8600,7 +8173,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Mirror counterpart to the Baruhi chief. <suggestion: plot design — the Porakaneki's side of the grievance, whether it's morally one-sided or genuinely two-sided, and what resolution (victory/peace/mutual destruction) the design intends>",
       "questHooks": [
@@ -8773,7 +8348,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Represents the Khannibarri Imperial Mining Company, which exploits the Trade Shortage to gain a foothold in the village, undercutting local trade and eventually expressing interest in the Infested Old Mine after the <suggestion: plot detail — the village elder is the one who tips them off about the old mine — confirm whether this agent is the one who receives that tip, or a separate company official>. <suggestion: plot design — the full arc of the company's takeover attempt, what the player can do to resist/undermine it, and how it resolves>",
       "questHooks": [
@@ -8946,7 +8523,9 @@
           "area": "town",
           "c": 0,
           "r": 0
-        }
+        },
+        "contentIncomplete": true,
+        "contentIncompleteReason": "defaultPosition is a placeholder {0,0} — this NPC spawns (or falls back) to world origin whenever no schedule rule is active. Needs a real station."
       },
       "loreBackground": "Pivotal to the Trade Shortage/Infested Old Mine crossover: this elder is the one who informs the Khannibarri Imperial Mining Company about the Infested Old Mine's existence, setting the company's sights on it. <suggestion: plot design — the elder's motive for telling them, whether the player can prevent/discover this beforehand, and the fallout once it's known>",
       "questHooks": [
@@ -8962,5 +8541,34 @@
     "romanceableCount": 6,
     "placeholderCount": 1
   },
-  "mapEditorNote": "NPC schedules provide target positions. Map Editor routes are shared navigation infrastructure; legacy npcPaths may still be imported for compatibility."
+  "mapEditorNote": "NPC schedules provide target positions. Map Editor routes are shared navigation infrastructure; legacy npcPaths may still be imported for compatibility.",
+  "sharedSchedules": [
+    {
+      "id": "shared_temple_service",
+      "label": "Temple Service",
+      "appliesToTag": "villager",
+      "day": "Anan",
+      "from": "09:00",
+      "to": "11:00",
+      "stationIds": [
+        "station_temple_pew_1",
+        "station_temple_pew_2",
+        "station_temple_pew_3",
+        "station_temple_pew_4",
+        "station_temple_pew_5",
+        "station_temple_pew_6",
+        "station_temple_pew_7",
+        "station_temple_pew_8",
+        "station_temple_pew_9",
+        "station_temple_pew_10",
+        "station_temple_pew_11"
+      ],
+      "excludeNpcIds": [
+        "talisman_hatayap",
+        "bowstring_hatayap",
+        "hammerhead_tuhupnuk"
+      ],
+      "note": "Any NPC with appliesToTag who has no schedule rule of their own for this window joins the congregation (least-recently-used pew, see game.js hashNpcIdToIndex)."
+    }
+  ]
 }
