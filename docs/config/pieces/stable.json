@@ -92,7 +92,6 @@
         "y": 9
       }
     ],
-    "entrances": [],
     "connectors": [],
     "extensions": {
       "entryTunnels": [],
@@ -100,6 +99,10 @@
       "porches": [],
       "porchStairs": [],
       "railings": []
+    },
+    "door": {
+      "x": 3,
+      "y": 3
     }
   },
   "base": {

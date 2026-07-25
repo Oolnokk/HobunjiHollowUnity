@@ -69,6 +69,16 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 .palBtn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;margin-bottom:4px;padding:6px 9px}
 .palSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.4);flex:0 0 auto}
 .itemlist{max-height:200px;overflow-y:auto;padding-right:2px}
+/* ── shared "?" help popover — same pattern duplicated verbatim across the
+   Schedule Editor, House Piece Author, and Building Interior Author (this
+   suite has no shared CSS/JS file convention; only QHELP's contents differ
+   per tool) ── */
+.qhelp{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:rgba(255,255,255,.14);color:#9fb4cf;font-size:10px;font-weight:800;cursor:pointer;vertical-align:middle;border:1px solid rgba(255,255,255,.2);user-select:none;flex-shrink:0}
+.qhelp:hover{background:rgba(106,167,255,.3);color:#edf5ff}
+#qhelpPopover{position:fixed;max-width:340px;background:#0d1825;border:1px solid rgba(106,167,255,.45);border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.65);padding:11px 13px;font-size:12px;line-height:1.55;color:#edf5ff;z-index:99999;display:none}
+#qhelpPopover b{color:#6aa7ff;display:block;margin-bottom:4px;font-size:12.5px}
+#qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:#9fb4cf;font-weight:800;font-size:13px}
+#qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
 </head>
 <body>
@@ -218,6 +228,14 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
               <div><label>Grid X</label><input id="bldgGridX" type="number" step="1" value="0"></div>
               <div><label>Grid Z</label><input id="bldgGridZ" type="number" step="1" value="0"></div>
             </div>
+            <div class="g2" style="margin-bottom:8px">
+              <div><label>Rotation</label><select id="bldgRotationDeg"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></div>
+              <div><label>Door <span class="qhelp" data-help="bldg-door">?</span></label><div class="pill" id="bldgDoorPos" style="text-align:center">—</div></div>
+            </div>
+            <div style="margin-bottom:8px">
+              <label>Door leads to <span class="qhelp" data-help="bldg-door-target">?</span></label>
+              <div id="bldgDoorTarget"></div>
+            </div>
             <div class="row" style="gap:4px">
               <button class="ok" id="saveBldgBtn" style="flex:1">Save</button>
               <button class="bad" id="delBldgBtn">Remove</button>
@@ -261,7 +279,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
   </div>
 </div>
 
+<div id="qhelpPopover"></div>
+
 <script src="../../js/repo-picker.js"></script>
+<script src="../../js/building-door.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
@@ -272,6 +293,39 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 const uid = p => `${p}_${Math.random().toString(36).slice(2,7)}`;
+
+// ── Shared "?" help popover — see docs/tools/schedule-editor/index.html's
+// copy of this same engine for the full explanation of why it's duplicated
+// per tool instead of a shared JS file. Only QHELP's contents differ.
+const QHELP = {
+  'bldg-door': { title: 'Door', body: "This placed structure's single entrance, read from its piece file (docs/config/pieces/*.json footprint.door), rotated/translated by this building's own position and rotation. Edit where the door itself sits on the House Editor tab — every placement of this piece shares the same door position." },
+  'bldg-door-target': { title: 'Door leads to', body: "Where walking through this building's door takes the player — set here instead of switching to Spot mode. If the target is a building interior (map_i_...), spawn position on arrival is worked out automatically from that interior's own Front Door exit zone (see Interior Editor)." },
+  'station-rot': { title: 'Rot Y°', body: 'Which way the NPC faces while standing at this station, in degrees (0 = default facing).' },
+  'station-tool': { title: 'Tool', body: 'Optional tool item key (e.g. "hatchet") the NPC visibly swings/uses on a loop while at this station — leave blank for a plain stand/sit/idle pose.' },
+  'station-id': { title: 'Station id', body: 'Referenced by NPC schedule rules (Schedule Editor tab) as stationId — renaming this id will break any rule that already points at it. Copy it from here when wiring up a schedule.' },
+};
+let _qhelpBtn = null;
+function showHelp(btn) {
+  const entry = QHELP[btn.dataset.help];
+  const pop = $('qhelpPopover');
+  if (!pop) return;
+  if (!entry) { pop.style.display = 'none'; return; }
+  pop.innerHTML = `<span class="qhelp-close">✕</span><b>${entry.title}</b>${entry.body}`;
+  pop.style.display = 'block';
+  const r = btn.getBoundingClientRect();
+  const pw = 340;
+  const left = Math.min(r.left, window.innerWidth - pw - 16);
+  pop.style.left = Math.max(8, left) + 'px';
+  pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 60) + 'px';
+  pop.querySelector('.qhelp-close').addEventListener('click', () => { pop.style.display = 'none'; });
+  _qhelpBtn = btn;
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.qhelp');
+  if (btn) { showHelp(btn); e.stopPropagation(); return; }
+  const pop = $('qhelpPopover');
+  if (pop && pop.style.display === 'block' && !pop.contains(e.target)) pop.style.display = 'none';
+});
 
 // ── Game contracts (single source of truth: docs/game.js) ────────────────────
 const GAME = {
@@ -534,8 +588,21 @@ ws.maps.forEach(captureBaseline);
 recomputeAllElevations();
 // Lets the dev-tools hub (docs/tools/index.html) read the live in-memory workspace
 // — including unsaved edits — when its "Open Game" button is clicked, rather than
-// only whatever was last written to localStorage.
-window._mapEditorBridge = { getWorkspace: () => ws };
+// only whatever was last written to localStorage. focusStation is the other
+// direction: the Schedule Editor asks the hub to jump here and select a
+// specific rule's station so it can be seen/edited in place.
+window._mapEditorBridge = {
+  getWorkspace: () => ws,
+  focusStation: (mapId, stationId) => {
+    if (!mapId || !mapById(mapId)) return false;
+    ws.activeId = mapId;
+    undoStack.length = 0; redoStack.length = 0;
+    setMode('station');
+    activeStationId = stationId || null;
+    updateAll();
+    return true;
+  },
+};
 
 function normalizeWorkspaceTileRecord(t) {
   if (!t || typeof t !== 'object') return null;
@@ -941,80 +1008,26 @@ function _drawGizmoBtn(type, sx, sy, R) {
 }
 
 // ── Building door auto-derivation ───────────────────────────────────────────
-// Mirrors docs/game.js's own auto-entrance-detection exactly (see
-// _spawnTownBuildings / rotateBuildingCollisionCell), so a door placed here
-// matches where the live game actually puts its entrance ring. footprint.
-// entrances is NOT used — the game never reads it. We cache the piece's
-// structural+porch cell geometry (building-local, pre-rotation) on the
-// building as doorEntrance so the door's world position can be recomputed
-// from gridX/gridZ/rotationDeg alone, without re-fetching the piece file.
-function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
-  const rot = ((Math.round((rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
-  if (rot === 90)  return { x: localY, y: width - 1 - localX };
-  if (rot === 180) return { x: width - 1 - localX, y: depth - 1 - localY };
-  if (rot === 270) return { x: depth - 1 - localY, y: localX };
-  return { x: localX, y: localY };
-}
+// Geometry now lives once in js/building-door.js (window.BuildingDoor),
+// shared with docs/game.js's _spawnTownBuildings and with House Piece
+// Author's door-tool preview, so a door placed/previewed anywhere always
+// matches where the live game actually puts its entrance. Prefers the
+// piece's authored footprint.door point; falls back to the old
+// porch/south-edge-of-bbox heuristic for pieces nobody has placed a door on
+// yet. We cache the piece's resolved door geometry (building-local,
+// pre-rotation) on the building as doorEntrance so the door's world
+// position can be recomputed from gridX/gridZ/rotationDeg alone, without
+// re-fetching the piece file.
 function deriveDoorLocal(pieceData) {
-  const allBldgCells = []
-    .concat(pieceData?.footprint?.cells || [])
-    .concat(pieceData?.footprint?.extensions?.entryTunnels || [])
-    .concat(pieceData?.footprint?.extensions?.chimneys || [])
-    .concat(pieceData?.footprint?.extensions?.porches || [])
-    .concat(pieceData?.footprint?.extensions?.porchStairs || [])
-    .concat(pieceData?.footprint?.extensions?.railings || []);
-  if (!allBldgCells.length) return null;
-  const psCells = []
-    .concat(pieceData?.footprint?.extensions?.porches || [])
-    .concat(pieceData?.footprint?.extensions?.porchStairs || []);
-  const minX = Math.min(...allBldgCells.map(c => c.x));
-  const minY = Math.min(...allBldgCells.map(c => c.y));
-  const maxX = Math.max(...allBldgCells.map(c => c.x));
-  const maxY = Math.max(...allBldgCells.map(c => c.y));
-  return {
-    bboxW: maxX - minX + 1,
-    bboxD: maxY - minY + 1,
-    cells: allBldgCells.map(c => ({ x: c.x - minX, y: c.y - minY })),
-    psCells: psCells.map(c => ({ x: c.x - minX, y: c.y - minY })),
-  };
+  return BuildingDoor.resolveDoorEntrance(pieceData);
 }
 
 // Resolve the cached local door geometry through the building's placement
-// (gridX/gridZ/rotationDeg) into a town-map world tile, using the exact
-// porch-first / world-south-fallback rule the game itself uses. `m` (if
-// given) supplies rows for the same south-edge clamp the game applies.
+// (gridX/gridZ/rotationDeg) into a town-map world tile. `m` (if given)
+// supplies rows for the same south-edge clamp the game applies.
 function doorWorldFromBuilding(b, m) {
-  const ent = b.doorEntrance;
-  if (!ent || !ent.cells || !ent.cells.length) return null;
-  const { bboxW, bboxD, cells, psCells } = ent;
-  const rotDeg = b.rotationDeg || 0;
-  const gx = b.gridX || 0, gz = b.gridZ || 0;
   const maxRow = Number.isFinite(m?.rows) ? m.rows - 1 : Infinity;
-  let wBMinC = Infinity, wBMaxC = -Infinity, wBMinR = Infinity, wBMaxR = -Infinity;
-  for (const c of cells) {
-    const r = rotateBuildingCollisionCell(c.x, c.y, bboxW, bboxD, rotDeg);
-    const wc = gx + r.x, wr = gz + r.y;
-    if (wc < wBMinC) wBMinC = wc; if (wc > wBMaxC) wBMaxC = wc;
-    if (wr < wBMinR) wBMinR = wr; if (wr > wBMaxR) wBMaxR = wr;
-  }
-  let eCol, eRow;
-  if (psCells && psCells.length) {
-    let wPMinC = Infinity, wPMaxC = -Infinity, wPMinR = Infinity, wPMaxR = -Infinity;
-    for (const c of psCells) {
-      const r = rotateBuildingCollisionCell(c.x, c.y, bboxW, bboxD, rotDeg);
-      const wc = gx + r.x, wr = gz + r.y;
-      if (wc < wPMinC) wPMinC = wc; if (wc > wPMaxC) wPMaxC = wc;
-      if (wr < wPMinR) wPMinR = wr; if (wr > wPMaxR) wPMaxR = wr;
-    }
-    eCol = Math.floor((wPMinC + wPMaxC + 1) / 2);
-    const bldgCentroidR = (wBMinR + wBMaxR) / 2;
-    const innerPorchR = Math.abs(wPMinR - bldgCentroidR) <= Math.abs(wPMaxR - bldgCentroidR) ? wPMinR : wPMaxR;
-    eRow = Math.min(maxRow, innerPorchR);
-  } else {
-    eCol = Math.floor((wBMinC + wBMaxC + 1) / 2);
-    eRow = Math.min(maxRow, wBMaxR + 1);
-  }
-  return { col: eCol, row: eRow };
+  return BuildingDoor.doorWorldFromBuilding(b.doorEntrance, b.gridX, b.gridZ, b.rotationDeg || 0, maxRow);
 }
 
 // Create (or update, if already linked) the transition spot that represents
@@ -1127,7 +1140,52 @@ function renderBuildingPanel() {
     $('bldgGridX').value   = selB.gridX   ?? 0;
     $('bldgGridZ').value   = selB.gridZ   ?? 0;
     $('bldgPieceFile').value = selB.pieceFile || '';
+    $('bldgRotationDeg').value = String(((selB.rotationDeg || 0) % 360 + 360) % 360);
+    const door = doorWorldFromBuilding(selB, m);
+    $('bldgDoorPos').textContent = door ? `(${door.col}, ${door.row})` : '—';
+    // The door's destination is a transitions[] entry linked by buildingId
+    // (see syncBuildingSpot) — surfaced here so a placed structure's target
+    // location can be set from the same panel it's selected in, instead of
+    // needing to switch to Spot mode and hunt for "Enter <Label>" by eye.
+    syncBuildingSpot(selB, m);
+    const t = (m.transitions || []).find(x => x.buildingId === selB.id);
+    $('bldgDoorTarget').innerHTML = renderDoorTargetRow(t, m, 'bldgdoor');
+    wireDoorTargetRow('bldgdoor', () => (activeMap().transitions || []).find(x => x.buildingId === _selectedBuildingId), () => { renderBuildingPanel(); refreshPreview(); saveWorkspace(); });
   }
+}
+
+// Shared by the Building panel (one door per structure, see selB above) and
+// Spot mode's own list — both need the exact same "which map / which spot
+// on it does this transition lead to" controls, so the markup (and the
+// isBuildingInterior bridge-to-Interior-Editor shortcut) lives in one place.
+function renderDoorTargetRow(t, m, prefix, idAttr) {
+  if (!t) return '<p class="muted" style="margin:2px 0 0">No linked door yet — move or save the building to create one.</p>';
+  const idPart = idAttr != null ? `="${idAttr}"` : '';
+  const others = ws.maps.filter(x => x.id !== m.id);
+  const target = mapById(t.targetMapId);
+  const spotOpts = (target?.transitions || []).map(s =>
+    `<option value="${s.id}" ${t.targetSpotId===s.id?'selected':''}>${s.label}</option>`).join('');
+  const isBuildingInterior = t.targetMapId && t.targetMapId.startsWith('map_i_');
+  if (isBuildingInterior) {
+    return `<div class="row" style="margin-top:4px">
+      <span class="pill" style="flex:1;overflow:hidden;text-overflow:ellipsis">🏠 ${t.targetMapId}</span>
+      <button class="sec" style="padding:3px 8px;white-space:nowrap" onclick="window.parent.postMessage({type:'openBuildingInterior',mapId:'${t.targetMapId}'},'*')">Edit Interior ↗</button>
+    </div>`;
+  }
+  return `<div class="g2" style="margin-top:4px">
+    <select data-${prefix}target${idPart}><option value="">→ target map…</option>${others.map(x =>
+      `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
+    <select data-${prefix}spot${idPart}><option value="">→ arrive at…</option>${spotOpts}</select>
+  </div>`;
+}
+function wireDoorTargetRow(prefix, getT, onChange) {
+  const box = $('bldgDoorTarget');
+  box.querySelectorAll(`[data-${prefix}target]`).forEach(el => el.addEventListener('change', () => {
+    const t = getT(); if (t) { t.targetMapId = el.value; t.targetSpotId = ''; onChange(); }
+  }));
+  box.querySelectorAll(`[data-${prefix}spot]`).forEach(el => el.addEventListener('change', () => {
+    const t = getT(); if (t) { t.targetSpotId = el.value; onChange(); }
+  }));
 }
 
 // ── Plateau group list (sidebar) ─────────────────────────────────────────────
@@ -1793,44 +1851,32 @@ function renderPalette() {
     }
   } else if (mode === 'spot') {
     html = m.transitions.map(t => {
-      const others = ws.maps.filter(x => x.id !== m.id);
-      const target = mapById(t.targetMapId);
-      const spotOpts = (target?.transitions || []).map(s =>
-        `<option value="${s.id}" ${t.targetSpotId===s.id?'selected':''}>${s.label}</option>`).join('');
-      const isBuildingInterior = t.targetMapId && t.targetMapId.startsWith('map_i_');
-      const targetRow = isBuildingInterior
-        ? `<div class="row" style="margin-top:4px">
-            <span class="pill" style="flex:1;overflow:hidden;text-overflow:ellipsis">🏠 ${t.targetMapId}</span>
-            <button class="sec" style="padding:3px 8px;white-space:nowrap" onclick="window.parent.postMessage({type:'openBuildingInterior',mapId:'${t.targetMapId}'},'*')">Edit Interior ↗</button>
-          </div>`
-        : `<div class="g2" style="margin-top:4px">
-            <select data-spottarget="${t.id}"><option value="">→ target map…</option>${others.map(x =>
-              `<option value="${x.id}" ${t.targetMapId===x.id?'selected':''}>${x.name}</option>`).join('')}</select>
-            <select data-spotspot="${t.id}"><option value="">→ arrive at…</option>${spotOpts}</select>
-          </div>`;
+      const targetRow = renderDoorTargetRow(t, m, 'spot', t.id);
+      const buildingTag = t.buildingId ? `<div class="item-meta">🏠 linked to building — also editable from Buildings mode</div>` : '';
       return `<div class="item ${t.id===activeSpotId?'sel':''}" data-spotsel="${t.id}">
         <div class="row"><input data-spotlabel="${t.id}" value="${t.label.replace(/"/g,'&quot;')}" style="flex:1">
           <button class="bad" data-spotdel="${t.id}" style="padding:3px 8px">✕</button></div>
         ${targetRow}
+        ${buildingTag}
         <div class="item-meta">at (${t.col}, ${t.row})</div>
       </div>`;
     }).join('') || '<p class="muted">No transition spots yet.</p>';
-    html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. In-game, spots warp the player when their target is the linked Farm or Farmhouse map; other targets are kept in the map JSON for future zones.</p>';
+    html += '<p class="muted" style="margin-top:5px">Click the map to place a spot, then pick which map (and which spot on it) it leads to. In-game, spots warp the player when their target is the linked Farm or Farmhouse map; other targets are kept in the map JSON for future zones. A building\'s door spot is created/synced automatically — set its target from the Buildings panel instead of here.</p>';
   } else if (mode === 'station') {
     html = (m.npcStations || []).map(st => `<div class="item ${st.id===activeStationId?'sel':''}" data-stationsel="${st.id}">
       <div class="row"><input data-stationlabel="${st.id}" value="${(st.label||st.id).replace(/"/g,'&quot;')}" style="flex:1"><button class="bad" data-stationdel="${st.id}" style="padding:3px 8px">✕</button></div>
       <div class="g3" style="margin-top:4px">
-        <div><label>Rot Y°</label><input data-stationrot="${st.id}" type="number" value="${st.rotY||0}"></div>
+        <div><label>Rot Y° <span class="qhelp" data-help="station-rot">?</span></label><input data-stationrot="${st.id}" type="number" value="${st.rotY||0}"></div>
         <div><label>Pose</label><select data-stationpose="${st.id}">${['stand','sit','lie','kneel'].map(p => `<option value="${p}" ${st.pose===p?'selected':''}>${p}</option>`).join('')}</select></div>
-        <div><label>Tool</label><input data-stationtool="${st.id}" value="${st.toolKey||''}" placeholder="hatchet"></div>
+        <div><label>Tool <span class="qhelp" data-help="station-tool">?</span></label><input data-stationtool="${st.id}" value="${st.toolKey||''}" placeholder="hatchet"></div>
       </div>
       <div class="g2" style="margin-top:4px">
         <div><label>Tool interval sec</label><input data-stationinterval="${st.id}" type="number" step="0.1" min="0" value="${st.toolIntervalSec||0}"></div>
         <div><label>Tool anim</label><input data-stationanim="${st.id}" value="${st.toolAnimStyle||''}" placeholder="sweep/chop/thrust"></div>
       </div>
-      <div class="item-meta">id: ${st.id} · at (${st.col}, ${st.row})</div>
+      <div class="item-meta">id: ${st.id} · at (${st.col}, ${st.row}) <span class="qhelp" data-help="station-id">?</span></div>
     </div>`).join('') || '<p class="muted">No NPC stations yet.</p>';
-    html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. Schedules can use <code>stationId</code> instead of x/y positions; rotation, pose, and optional tool loop metadata travel with the station.</p>';
+    html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. NPC schedules reference these by <code>stationId</code> instead of raw x/y — author time-window → station rules in the Schedule Editor tab. Rotation, pose, and optional tool loop metadata travel with the station.</p>';
   } else if (mode === 'fill') {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     html = set.map(t => {
@@ -3717,6 +3763,7 @@ $('saveBldgBtn').addEventListener('click', () => {
   b.label  = $('bldgLabel').value.trim() || b.label;
   b.gridX  = parseInt($('bldgGridX').value) || 0;
   b.gridZ  = parseInt($('bldgGridZ').value) || 0;
+  b.rotationDeg = parseInt($('bldgRotationDeg').value) || 0;
   syncBuildingSpot(b, m);
   renderBuildingPanel(); draw(); saveWorkspace(); setStatus('Building saved.');
 });

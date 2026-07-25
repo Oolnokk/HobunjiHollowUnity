@@ -40,6 +40,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 .catBtn{font-size:11px;padding:5px 7px;border-radius:8px;text-align:left;background:#172034;border-color:#2e4060;white-space:pre-line;line-height:1.25}
 .catBtn:hover{background:#1f2f48} .catBtn.active{outline:2px solid var(--accent);background:#1a3050}
 @media(max-width:1050px){body{overflow:auto}.app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 58vh auto 130px}.viewer{height:58vh}.debug{height:130px}}
+/* shared "?" help popover — see docs/tools/schedule-editor/index.html's copy for the full explanation; only QHELP's contents differ per tool */
+.qhelp{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:rgba(255,255,255,.14);color:var(--muted);font-size:10px;font-weight:800;cursor:pointer;vertical-align:middle;border:1px solid rgba(255,255,255,.2);user-select:none;flex-shrink:0}
+.qhelp:hover{background:rgba(118,184,255,.3);color:var(--text)}
+#qhelpPopover{position:fixed;max-width:340px;background:#0d1825;border:1px solid rgba(118,184,255,.45);border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.65);padding:11px 13px;font-size:12px;line-height:1.55;color:var(--text);z-index:99999;display:none}
+#qhelpPopover b{color:var(--accent);display:block;margin-bottom:4px;font-size:12.5px}
+#qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
+#qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -103,7 +110,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
       <div id="exitZoneFields" class="hidden" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
         <div class="grid2">
           <div class="field"><label>Label</label><input id="exitZoneLabel" placeholder="Front door"></div>
-          <div class="field"><label>Target map</label><input id="exitTargetMap" placeholder="map_town_01"></div>
+          <div class="field"><label>Target map <span class="qhelp" data-help="bia-exit-target">?</span></label><input id="exitTargetMap" placeholder="map_town_01"></div>
         </div>
         <div class="grid2" style="margin-top:4px">
           <div class="field"><label>Spawn col</label><input id="exitSpawnCol" type="number" min="0" value="0"></div>
@@ -219,6 +226,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
   <pre id="debugLog" class="debug">loading…</pre>
 </div>
 
+<div id="qhelpPopover"></div>
+
 <!-- Same Three.js approach as the game (r128 global from CloudFlare CDN) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../../js/GLTFLoader.js"></script>
@@ -231,6 +240,32 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script>
 (function () {
 'use strict';
+
+// Shared "?" help popover — see docs/tools/schedule-editor/index.html's copy
+// for the full explanation; only QHELP's contents differ per tool.
+var QHELP = {
+  'bia-exit-target': { title: 'Target map', body: 'Leave blank for this interior\'s one Front Door (leads back outside — the map wall-builder cuts a gap here, and the exterior side computes its spawn point from this zone). Any other exit (stairs, another room) needs a real map id here, e.g. "map_i_inn_F2".' },
+};
+function showHelp(btn) {
+  var entry = QHELP[btn.getAttribute('data-help')];
+  var pop = document.getElementById('qhelpPopover');
+  if (!pop) return;
+  if (!entry) { pop.style.display = 'none'; return; }
+  pop.innerHTML = '<span class="qhelp-close">✕</span><b>' + entry.title + '</b>' + entry.body;
+  pop.style.display = 'block';
+  var r = btn.getBoundingClientRect();
+  var pw = 340;
+  var left = Math.min(r.left, window.innerWidth - pw - 16);
+  pop.style.left = Math.max(8, left) + 'px';
+  pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 60) + 'px';
+  pop.querySelector('.qhelp-close').addEventListener('click', function () { pop.style.display = 'none'; });
+}
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('.qhelp');
+  if (btn) { showHelp(btn); e.stopPropagation(); return; }
+  var pop = document.getElementById('qhelpPopover');
+  if (pop && pop.style.display === 'block' && !pop.contains(e.target)) pop.style.display = 'none';
+});
 
 // ─── Boot check ───────────────────────────────────────────────────────────────
 if (typeof THREE === 'undefined') {
@@ -668,14 +703,29 @@ $('clearFloorBtn').addEventListener('click',function(){
 });
 
 // ─── Exit zone management ─────────────────────────────────────────────────────
+// A blank Target map means "leads back outside" — the runtime treats it as
+// this interior's one true front door (see buildWallPanelsForRoom /
+// buildingSpawnFromExit in docs/game.js, which both have to defensively
+// guess which one you meant if there's more than one). Only one exit should
+// ever have a blank target; everything else (stairs, other floors) needs a
+// real targetMap.
+function primaryEntranceExits(){ return (state.interior.exits||[]).filter(function(e){ return !(e.targetMap||'').trim(); }); }
 function renderExitList(){
   var el=$('exitZoneList'); el.innerHTML='';
+  var primaries=primaryEntranceExits();
+  if(primaries.length>1){
+    var warn=document.createElement('div');
+    warn.className='hint'; warn.style.cssText='color:#ffb84d;border:1px solid #ffb84d;border-radius:6px;padding:5px 7px';
+    warn.textContent='⚠ '+primaries.length+' exits have a blank Target map ('+primaries.map(function(e){return e.label||e.id;}).join(', ')+'). Only one should — the game picks the largest tile cluster among them as a guess, which may not be the one you want. Give the others a real Target map (e.g. a stairway\'s destination floor).';
+    el.appendChild(warn);
+  }
   (state.interior.exits||[]).forEach(function(ez){
     var isActive=ez.id===state.activeExitId;
+    var isPrimary=!(ez.targetMap||'').trim();
     var div=document.createElement('div'); div.className='listItem';
-    div.style.outline=isActive?'2px solid var(--accent)':'';
-    div.innerHTML='<span><b>'+(ez.label||ez.id)+'</b><br><span class="chip">'+
-      (ez.tiles||[]).length+' tiles → '+(ez.targetMap||'(no target)')+'</span></span>'+
+    div.style.outline=isActive?'2px solid var(--accent)':(isPrimary&&primaries.length>1?'2px solid #ffb84d':'');
+    div.innerHTML='<span><b>'+(ez.label||ez.id)+'</b>'+(isPrimary?' <span class="chip" style="background:var(--accent)">front door</span>':'')+'<br><span class="chip">'+
+      (ez.tiles||[]).length+' tiles → '+(ez.targetMap||'(no target — leads outside)')+'</span></span>'+
       '<button type="button" onclick="window.__biaSelExit(\''+ez.id+'\')">Edit</button>';
     el.appendChild(div);
   });
@@ -699,9 +749,14 @@ $('addExitBtn').addEventListener('click',function(){
 $('applyExitBtn').addEventListener('click',function(){
   if(!state.activeExitId) return;
   var ez=(state.interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0]; if(!ez) return;
+  var newTargetMap=$('exitTargetMap').value.trim();
+  if(!newTargetMap){
+    var otherPrimaries=primaryEntranceExits().filter(function(e){return e.id!==ez.id;});
+    if(otherPrimaries.length && !confirm('"'+otherPrimaries[0].label+'" already has a blank Target map (the front door). Only one exit should lead back outside — the game will have to guess which one you meant. Save "'+(ez.label||ez.id)+'" with a blank target too anyway?')) return;
+  }
   pushUndo();
   ez.label=$('exitZoneLabel').value.trim()||ez.label;
-  ez.targetMap=$('exitTargetMap').value.trim();
+  ez.targetMap=newTargetMap;
   ez.spawnCol=+$('exitSpawnCol').value||0;
   ez.spawnRow=+$('exitSpawnRow').value||0;
   renderExitList(); refreshExport(); log('Exit zone updated.');

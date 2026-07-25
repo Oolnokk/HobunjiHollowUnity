@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Schedule Editor</title>
+<style>
+:root{--bg:#07101a;--panel:#111b28;--panel2:#0c141e;--border:rgba(255,255,255,.12);--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
+body{overflow:hidden}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);border-radius:9px;padding:7px 11px;font-weight:700;cursor:pointer}
+button:hover{background:rgba(106,167,255,.26)}
+button:active{transform:translateY(1px)}
+button.sec{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.ok{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.warn{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.12)}
+button.bad{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
+button.act{outline:2px solid var(--acc);outline-offset:1px}
+button.tiny{padding:3px 8px;font-size:11px;border-radius:6px}
+input,select,textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--acc)}
+input.bad-value{border-color:var(--bad);background:rgba(251,113,133,.1)}
+textarea{min-height:50px;resize:vertical}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:11px;line-height:1.4}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:11px;white-space:nowrap}
+.pill.warn{border-color:rgba(251,191,36,.4);color:var(--warn);background:rgba(251,191,36,.1)}
+.pill.bad{border-color:rgba(251,113,133,.4);color:var(--bad);background:rgba(251,113,133,.1)}
+.pill.ok{border-color:rgba(52,211,153,.4);color:var(--ok);background:rgba(52,211,153,.1)}
+.item{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:8px;padding:7px 9px;cursor:pointer;margin-bottom:4px}
+.item:hover{background:rgba(255,255,255,.07)}
+.item.sel{outline:2px solid var(--acc);outline-offset:1px}
+.item-name{font-weight:700;font-size:12px}
+.item-meta{color:var(--muted);font-size:11px;margin-top:2px}
+#shell{display:flex;flex-direction:column;height:100%}
+#topbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#topbar h1{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.3px;margin-right:4px}
+#topbar-right{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#main{display:flex;flex:1;min-height:0}
+#sidebar{width:320px;min-width:230px;max-width:46vw;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border);flex-shrink:0;transition:margin-left .15s}
+#sidebar.collapsed{margin-left:-320px}
+#sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px}
+#viewTabs{display:flex;gap:4px;padding:6px 8px;background:var(--panel2);border-bottom:1px solid var(--border)}
+#viewTabs button{flex:1;padding:6px 4px;font-size:11px}
+#npcSearch{margin-bottom:8px}
+#view{flex:1;overflow-y:auto;padding:14px 18px 60px;min-width:0}
+.card{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:10px;padding:12px;margin-bottom:12px}
+.card h3{font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.rule-card{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);border-radius:10px;padding:10px;margin-bottom:8px}
+.rule-card.incomplete{border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.05)}
+.rule-card.unresolved{border-color:rgba(251,113,133,.45);background:rgba(251,113,133,.06)}
+.daychk{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:3px 5px;cursor:pointer}
+.daychk input{width:auto;margin:0}
+.daychk.on{color:var(--text);border-color:var(--acc);background:rgba(106,167,255,.15)}
+.vIssue{border-radius:6px;padding:6px 8px;margin-bottom:5px;font-size:11px;line-height:1.4;cursor:pointer}
+.vIssue:hover{filter:brightness(1.15)}
+.vIssue.error{background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.35)}
+.vIssue.warning{background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.32)}
+.vIssue.info{background:rgba(106,167,255,.1);border:1px solid rgba(106,167,255,.28)}
+hr.sep{border:none;border-top:1px solid rgba(255,255,255,.1);margin:10px 0}
+/* ── shared "?" help popover (same pattern reused verbatim across the map
+   editor, house piece author, and building interior author — see the
+   comment above QHELP below for why it's duplicated instead of shared) ── */
+.qhelp{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:rgba(255,255,255,.14);color:var(--muted);font-size:10px;font-weight:800;cursor:pointer;vertical-align:middle;border:1px solid rgba(255,255,255,.2);user-select:none;flex-shrink:0}
+.qhelp:hover{background:rgba(106,167,255,.3);color:var(--text)}
+#qhelpPopover{position:fixed;max-width:340px;background:#0d1825;border:1px solid rgba(106,167,255,.45);border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.65);padding:11px 13px;font-size:12px;line-height:1.55;color:var(--text);z-index:99999;display:none}
+#qhelpPopover b{color:var(--acc);display:block;margin-bottom:4px;font-size:12.5px}
+#qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
+#qhelpPopover .qhelp-close:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="topbar">
+    <h1>SCHEDULE EDITOR</h1>
+    <span class="pill" id="loadStatusPill">loading…</span>
+    <span class="pill warn" id="issueCountPill" style="display:none"></span>
+    <div id="topbar-right">
+      <button class="sec" id="toggleSidebarBtn" title="Hide the NPC list for maximum workspace while editing one NPC's rules">⛶ Focus</button>
+      <button class="sec" id="reloadBtn">↺ Reload from disk</button>
+      <button class="sec" id="importBtn">Import JSON</button>
+      <input id="importFile" type="file" hidden accept=".json,application/json">
+      <button class="ok" id="exportBtn">⬇ Export npc-database.json</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div id="viewTabs">
+        <button class="sec act" data-view="npcs">NPCs</button>
+        <button class="sec" data-view="shared">Shared Events</button>
+        <button class="sec" data-view="issues">Issues</button>
+      </div>
+      <div id="sidebar-scroll">
+        <input id="npcSearch" placeholder="Search NPCs…">
+        <div id="npcList"></div>
+      </div>
+    </aside>
+
+    <div id="view"></div>
+  </div>
+</div>
+
+<div id="qhelpPopover"></div>
+
+<script>
+'use strict';
+
+// ── Data sources ─────────────────────────────────────────────────────────
+const NPC_DB_URL = '../../config/npcs/hobunji-starter-npc-database.json';
+const MAPS_INDEX_URL = '../../config/maps/index.json';
+const DYNAMIC_SOURCES_URL = '../../config/npcs/dynamic-station-sources.json';
+const WS_KEY = 'hobunji_schedule_editor_draft_v1';
+const WEEKDAYS = ['Anan','Hronu','Kruru','Muunu','Naru','Tothu','Uung'];
+
+let db = null;
+let mapsIndex = [];
+let dynamicSources = { sources: [] };
+let stationsById = new Map(); // id -> {id,label,mapId,mapName,col,row,pose,dynamic}
+let selectedNpcId = null;
+let activeView = 'npcs';
+
+const $ = id => document.getElementById(id);
+
+function resolveStation(id) { return id ? stationsById.get(id) || null : null; }
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+async function boot() {
+  try {
+    const [dbRes, idxRes] = await Promise.all([fetch(NPC_DB_URL), fetch(MAPS_INDEX_URL)]);
+    db = await dbRes.json();
+    const idxJson = await idxRes.json();
+    mapsIndex = idxJson.maps || [];
+  } catch (e) {
+    $('loadStatusPill').textContent = 'load failed: ' + e.message;
+    $('loadStatusPill').className = 'pill bad';
+    return;
+  }
+  try { const r = await fetch(DYNAMIC_SOURCES_URL); dynamicSources = await r.json(); } catch (e) { dynamicSources = { sources: [] }; }
+  if (!Array.isArray(db.sharedSchedules)) db.sharedSchedules = [];
+  await loadAllStations();
+  restoreDraftIfPresent();
+  $('loadStatusPill').textContent = `${(db.npcs||[]).length} NPCs · ${stationsById.size} stations known`;
+  $('loadStatusPill').className = 'pill ok';
+  render();
+}
+
+async function loadAllStations() {
+  stationsById.clear();
+  await Promise.all(mapsIndex.map(async m => {
+    try {
+      const r = await fetch('../../' + m.file);
+      if (!r.ok) return;
+      const data = await r.json();
+      (data.npcStations || []).forEach(st => {
+        if (!st?.id) return;
+        stationsById.set(st.id, { id: st.id, label: st.label || st.id, mapId: m.id, mapName: m.name || m.id, col: st.col, row: st.row, pose: st.pose || 'stand', dynamic: false });
+      });
+    } catch (e) { /* map failed to load — its stations just won't resolve in the picker */ }
+  }));
+  (dynamicSources.sources || []).forEach(s => {
+    if (!stationsById.has(s.idPattern)) {
+      stationsById.set(s.idPattern, { id: s.idPattern, label: s.label || s.idPattern, mapId: '(dynamic)', mapName: s.system || 'procedural', dynamic: true, description: s.description });
+    }
+  });
+}
+
+// ── Draft autosave (localStorage) — safety net only; Export is the real save ──
+let _saveT = null;
+function saveDraft() {
+  clearTimeout(_saveT);
+  _saveT = setTimeout(() => { try { localStorage.setItem(WS_KEY, JSON.stringify(db)); } catch (_) {} }, 400);
+}
+function restoreDraftIfPresent() {
+  try {
+    const raw = localStorage.getItem(WS_KEY);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (draft && Array.isArray(draft.npcs) && confirm('Restore your last unsaved Schedule Editor session? (Cancel loads the file fresh from disk instead.)')) {
+      db = draft;
+      if (!Array.isArray(db.sharedSchedules)) db.sharedSchedules = [];
+    }
+  } catch (_) {}
+}
+$('reloadBtn').addEventListener('click', async () => {
+  if (!confirm('Reload from disk? Any unsaved edits in this session will be lost (Export first if you want to keep them).')) return;
+  localStorage.removeItem(WS_KEY);
+  selectedNpcId = null;
+  await boot();
+});
+
+// ── Export / Import ──────────────────────────────────────────────────────
+function download(name, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('exportBtn').addEventListener('click', () => download('hobunji-starter-npc-database.json', db));
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async e => {
+  const f = e.target.files?.[0]; if (!f) return;
+  try {
+    const json = JSON.parse(await f.text());
+    if (!Array.isArray(json.npcs)) throw new Error('Not a recognized NPC database file (missing npcs[]).');
+    db = json;
+    if (!Array.isArray(db.sharedSchedules)) db.sharedSchedules = [];
+    selectedNpcId = null;
+    saveDraft();
+    render();
+  } catch (err) { alert('Import failed: ' + err.message); }
+  e.target.value = '';
+});
+
+$('toggleSidebarBtn').addEventListener('click', () => {
+  $('sidebar').classList.toggle('collapsed');
+  $('toggleSidebarBtn').classList.toggle('act');
+});
+
+document.querySelectorAll('#viewTabs button').forEach(b => b.addEventListener('click', () => {
+  activeView = b.dataset.view;
+  document.querySelectorAll('#viewTabs button').forEach(x => x.classList.toggle('act', x === b));
+  render();
+}));
+
+$('npcSearch').addEventListener('input', renderNpcList);
+
+// ── Issue scanning ───────────────────────────────────────────────────────
+// Everything a Schedule Editor author should be told about without having
+// to read docs/game.js's resolver — mirrors resolveNpcScheduleTarget's
+// exact fallback order in docs/game.js so "would this NPC actually show up
+// somewhere sensible right now" matches what the live game will do.
+function computeIssues() {
+  const issues = [];
+  const mapIds = new Set(mapsIndex.map(m => m.id));
+  for (const npc of db.npcs || []) {
+    const hooks = npc.scheduleHooks || {};
+    if (hooks.contentIncomplete) {
+      issues.push({ npcId: npc.id, severity: 'warning', message: `${npc.name || npc.id}: flagged content-incomplete — ${hooks.contentIncompleteReason || 'no reason given'}` });
+    }
+    for (const [i, rule] of (hooks.rules || []).entries()) {
+      if (rule.contentIncomplete) {
+        issues.push({ npcId: npc.id, ruleIndex: i, severity: 'warning', message: `${npc.name || npc.id}, rule ${i + 1}: flagged content-incomplete — ${rule.contentIncompleteReason || 'no reason given'}` });
+        continue;
+      }
+      if (rule.stationId && !resolveStation(rule.stationId)) {
+        issues.push({ npcId: npc.id, ruleIndex: i, severity: 'error', message: `${npc.name || npc.id}, rule ${i + 1}: stationId "${rule.stationId}" doesn't match any known station.` });
+      }
+      if (rule.mapId && !mapIds.has(rule.mapId)) {
+        issues.push({ npcId: npc.id, ruleIndex: i, severity: 'warning', message: `${npc.name || npc.id}, rule ${i + 1}: mapId "${rule.mapId}" isn't in the map index — check for a typo.` });
+      }
+      if (!rule.stationId && !(Number.isFinite(rule.c ?? rule.position?.c) && Number.isFinite(rule.r ?? rule.position?.r))) {
+        issues.push({ npcId: npc.id, ruleIndex: i, severity: 'error', message: `${npc.name || npc.id}, rule ${i + 1}: no stationId and no position — this rule can never resolve to anywhere.` });
+      }
+      if (rule.position && rule.stationId) {
+        issues.push({ npcId: npc.id, ruleIndex: i, severity: 'info', message: `${npc.name || npc.id}, rule ${i + 1}: still carries a legacy raw position alongside its stationId (stationId wins at runtime — safe to ignore, or clear it with "Drop legacy position").` });
+      }
+    }
+    if (hooks.defaultStationId && !resolveStation(hooks.defaultStationId)) {
+      issues.push({ npcId: npc.id, severity: 'error', message: `${npc.name || npc.id}: defaultStationId "${hooks.defaultStationId}" doesn't match any known station.` });
+    }
+    // Best-effort overlap check: only compares rules with no day restriction
+    // or an identical single day — matches how isNpcRuleActiveOnDay actually
+    // decides "does this rule apply today", without trying to reason about
+    // every possible days[] combination.
+    const rules = hooks.rules || [];
+    for (let a = 0; a < rules.length; a++) {
+      for (let b = a + 1; b < rules.length; b++) {
+        const ra = rules[a], rb = rules[b];
+        const sameDayScope = (ra.day || null) === (rb.day || null) && !ra.days && !rb.days;
+        if (!sameDayScope) continue;
+        const s1 = parseTimeMin(ra.from), e1 = parseTimeMin(ra.to), s2 = parseTimeMin(rb.from), e2 = parseTimeMin(rb.to);
+        if (s1 == null || e1 == null || s2 == null || e2 == null) continue;
+        if (rangesOverlap(s1, e1, s2, e2)) {
+          issues.push({ npcId: npc.id, ruleIndex: a, severity: 'warning', message: `${npc.name || npc.id}: rules ${a + 1} and ${b + 1} have overlapping time windows on the same day(s) — rule ${a + 1} (listed first) will always win.` });
+        }
+      }
+    }
+  }
+  for (const [i, shared] of (db.sharedSchedules || []).entries()) {
+    for (const sid of shared.stationIds || []) {
+      if (!resolveStation(sid)) issues.push({ sharedIndex: i, severity: 'error', message: `Shared Event "${shared.label || shared.id}": stationId "${sid}" doesn't match any known station.` });
+    }
+  }
+  return issues;
+}
+function parseTimeMin(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
+function rangesOverlap(s1, e1, s2, e2) {
+  // Handles overnight wraparound (e.g. 20:00→08:00) the same way
+  // isNowWithinNpcRuleWindow does, by expanding each window into one or two
+  // same-day [start,end) segments over a 48h line, then checking overlap.
+  const expand = (s, e) => s <= e ? [[s, e]] : [[s, 1440], [0, e]];
+  for (const [a0, a1] of expand(s1, e1)) for (const [b0, b1] of expand(s2, e2)) if (a0 < b1 && b0 < a1) return true;
+  return false;
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+function render() {
+  renderNpcList();
+  if (activeView === 'shared') renderSharedEventsView();
+  else if (activeView === 'issues') renderIssuesView();
+  else renderNpcView();
+  const issues = computeIssues();
+  const errCount = issues.filter(i => i.severity === 'error').length;
+  const pill = $('issueCountPill');
+  if (issues.length) {
+    pill.style.display = '';
+    pill.className = 'pill ' + (errCount ? 'bad' : 'warn');
+    pill.textContent = `⚠ ${issues.length} issue${issues.length===1?'':'s'}`;
+  } else pill.style.display = 'none';
+}
+
+function renderNpcList() {
+  const q = ($('npcSearch').value || '').toLowerCase();
+  const list = $('npcList');
+  const npcs = (db.npcs || []).filter(n => !q || (n.id||'').includes(q) || (n.name||'').toLowerCase().includes(q) || (n.role||'').toLowerCase().includes(q));
+  list.innerHTML = npcs.map(n => {
+    const hooks = n.scheduleHooks || {};
+    const ruleCount = (hooks.rules || []).length;
+    const flags = [];
+    if (hooks.contentIncomplete) flags.push('<span class="pill warn" style="padding:1px 6px">incomplete</span>');
+    if (!ruleCount && !hooks.defaultStationId) flags.push('<span class="pill bad" style="padding:1px 6px">no schedule</span>');
+    return `<div class="item ${n.id===selectedNpcId && activeView==='npcs' ? 'sel' : ''}" data-npc="${n.id}">
+      <div class="item-name">${n.name || n.id}</div>
+      <div class="item-meta">${ruleCount} rule${ruleCount===1?'':'s'} · ${n.role || n.species || ''}</div>
+      <div style="margin-top:3px">${flags.join(' ')}</div>
+    </div>`;
+  }).join('') || '<p class="muted" style="padding:8px">No NPCs match.</p>';
+  list.querySelectorAll('[data-npc]').forEach(el => el.addEventListener('click', () => {
+    selectedNpcId = el.dataset.npc;
+    activeView = 'npcs';
+    document.querySelectorAll('#viewTabs button').forEach(x => x.classList.toggle('act', x.dataset.view === 'npcs'));
+    render();
+  }));
+}
+
+function mapOptionsHtml(selected) {
+  return `<option value="">— none —</option>` + mapsIndex.map(m => `<option value="${m.id}" ${m.id===selected?'selected':''}>${m.name || m.id}</option>`).join('');
+}
+function stationDatalistHtml() {
+  const rows = [...stationsById.values()].sort((a,b) => a.id.localeCompare(b.id));
+  return rows.map(s => `<option value="${s.id}">${s.label} — ${s.mapName}${s.dynamic?' (procedural)':''}</option>`).join('');
+}
+
+function renderNpcView() {
+  const view = $('view');
+  const npc = (db.npcs || []).find(n => n.id === selectedNpcId);
+  if (!npc) { view.innerHTML = '<p class="muted">Select an NPC from the list.</p>'; return; }
+  const hooks = npc.scheduleHooks || (npc.scheduleHooks = { rules: [] });
+  if (!Array.isArray(hooks.rules)) hooks.rules = [];
+  const issues = computeIssues().filter(i => i.npcId === npc.id);
+
+  view.innerHTML = `
+    <datalist id="stationDatalist">${stationDatalistHtml()}</datalist>
+    <h2 style="font-size:16px;margin-bottom:2px">${npc.name || npc.id} <span class="muted">(${npc.id})</span></h2>
+    <p class="muted" style="margin-bottom:12px">${npc.role || ''}${npc.role && npc.species ? ' · ' : ''}${npc.species || ''}</p>
+
+    ${issues.length ? `<div class="card"><h3>⚠ Issues for this NPC</h3>${issues.map(i => `<div class="vIssue ${i.severity==='error'?'error':i.severity==='warning'?'warning':'info'}">${i.message}</div>`).join('')}</div>` : ''}
+
+    <div class="card">
+      <h3>Defaults <span class="qhelp" data-help="npc-defaults">?</span></h3>
+      <div class="g2">
+        <div><label>Default map <span class="qhelp" data-help="npc-defaultMapId">?</span></label><select id="f_defaultMapId">${mapOptionsHtml(hooks.defaultMapId)}<option value="${hooks.defaultMapId||''}" ${hooks.defaultMapId && !mapsIndex.some(m=>m.id===hooks.defaultMapId)?'selected':''} hidden>${hooks.defaultMapId||''}</option></select></div>
+        <div><label>Work building id <span class="qhelp" data-help="npc-workBuildingId">?</span></label><input id="f_workBuildingId" value="${(hooks.workBuildingId||'').replace(/"/g,'&quot;')}"></div>
+      </div>
+      <div class="g2" style="margin-top:6px">
+        <div><label>Default station (used when no rule matches) <span class="qhelp" data-help="npc-defaultStationId">?</span></label><input id="f_defaultStationId" list="stationDatalist" value="${hooks.defaultStationId||''}" class="${hooks.defaultStationId && !resolveStation(hooks.defaultStationId)?'bad-value':''}"></div>
+        <div><label>Shop hours (display text) <span class="qhelp" data-help="npc-shopHours">?</span></label><input id="f_shopHours" value="${(hooks.shopHours||'').replace(/"/g,'&quot;')}"></div>
+      </div>
+      ${hooks.defaultPosition ? `<p class="muted" style="margin-top:6px">Legacy defaultPosition on file: area=${hooks.defaultPosition.area||''} c=${hooks.defaultPosition.c} r=${hooks.defaultPosition.r}. ${hooks.contentIncomplete ? 'Currently ignored — this NPC is flagged content-incomplete (see below), so the engine skips this and defers spawning instead of using it.' : 'Still used as a last-resort fallback since defaultStationId above is set/resolves.'}</p>` : ''}
+      <hr class="sep">
+      <label class="row" style="cursor:pointer">
+        <input type="checkbox" id="f_contentIncomplete" style="width:auto" ${hooks.contentIncomplete?'checked':''}>
+        <span>Flag as content-incomplete <span class="qhelp" data-help="npc-contentIncomplete">?</span></span>
+      </label>
+      ${hooks.contentIncomplete ? `<div style="margin-top:6px"><label>Reason</label><input id="f_contentIncompleteReason" value="${(hooks.contentIncompleteReason||'').replace(/"/g,'&quot;')}"></div>` : ''}
+    </div>
+
+    <div class="card">
+      <h3>Schedule rules <span class="qhelp" data-help="npc-rules">?</span><button class="sec tiny" id="addRuleBtn" style="margin-left:auto">+ Add rule</button></h3>
+      <div id="ruleList"></div>
+    </div>
+  `;
+
+  $('f_defaultMapId').addEventListener('change', e => { hooks.defaultMapId = e.target.value || undefined; saveDraft(); });
+  $('f_workBuildingId').addEventListener('change', e => { hooks.workBuildingId = e.target.value; saveDraft(); });
+  $('f_defaultStationId').addEventListener('change', e => { hooks.defaultStationId = e.target.value || undefined; saveDraft(); render(); });
+  $('f_shopHours').addEventListener('change', e => { hooks.shopHours = e.target.value; saveDraft(); });
+  $('f_contentIncomplete').addEventListener('change', e => { hooks.contentIncomplete = e.target.checked || undefined; if (!e.target.checked) delete hooks.contentIncompleteReason; saveDraft(); render(); });
+  const reasonEl = $('f_contentIncompleteReason');
+  if (reasonEl) reasonEl.addEventListener('change', e => { hooks.contentIncompleteReason = e.target.value; saveDraft(); });
+  $('addRuleBtn').addEventListener('click', () => {
+    hooks.rules.push({ from: '08:00', to: '18:00', mapId: hooks.defaultMapId || '', stationId: '', activity: '' });
+    saveDraft(); render();
+  });
+
+  renderRuleList(npc, hooks);
+}
+
+function renderRuleList(npc, hooks) {
+  const box = $('ruleList');
+  box.innerHTML = hooks.rules.map((rule, i) => ruleCardHtml(rule, i)).join('') || '<p class="muted">No rules yet — this NPC only ever uses its default station/position above.</p>';
+
+  hooks.rules.forEach((rule, i) => {
+    const p = `r${i}_`;
+    $(p+'from').addEventListener('change', e => { rule.from = e.target.value; saveDraft(); render(); });
+    $(p+'to').addEventListener('change', e => { rule.to = e.target.value; saveDraft(); render(); });
+    $(p+'mapId').addEventListener('change', e => { rule.mapId = e.target.value || undefined; saveDraft(); render(); });
+    $(p+'stationId').addEventListener('change', e => { rule.stationId = e.target.value || undefined; saveDraft(); render(); });
+    $(p+'routeId').addEventListener('change', e => { rule.routeId = e.target.value || undefined; saveDraft(); });
+    $(p+'activity').addEventListener('change', e => { rule.activity = e.target.value; saveDraft(); });
+    document.querySelectorAll(`[data-dayof="${i}"]`).forEach(cb => cb.addEventListener('change', () => {
+      const checked = [...document.querySelectorAll(`[data-dayof="${i}"]:checked`)].map(x => x.value);
+      delete rule.day; delete rule.days;
+      if (checked.length === 1) rule.day = checked[0];
+      else if (checked.length > 1 && checked.length < 7) rule.days = checked;
+      saveDraft(); render();
+    }));
+    const delBtn = $(p+'del'); if (delBtn) delBtn.addEventListener('click', () => { if (confirm('Delete this rule?')) { hooks.rules.splice(i,1); saveDraft(); render(); } });
+    const upBtn = $(p+'up'); if (upBtn) upBtn.addEventListener('click', () => { if (i>0) { [hooks.rules[i-1],hooks.rules[i]]=[hooks.rules[i],hooks.rules[i-1]]; saveDraft(); render(); } });
+    const downBtn = $(p+'down'); if (downBtn) downBtn.addEventListener('click', () => { if (i<hooks.rules.length-1) { [hooks.rules[i+1],hooks.rules[i]]=[hooks.rules[i],hooks.rules[i+1]]; saveDraft(); render(); } });
+    const incBtn = $(p+'incomplete'); if (incBtn) incBtn.addEventListener('change', e => { rule.contentIncomplete = e.target.checked || undefined; if (!e.target.checked) delete rule.contentIncompleteReason; saveDraft(); render(); });
+    const dropPosBtn = $(p+'droppos'); if (dropPosBtn) dropPosBtn.addEventListener('click', () => { delete rule.position; delete rule.c; delete rule.r; saveDraft(); render(); });
+    const jumpBtn = $(p+'jump'); if (jumpBtn) jumpBtn.addEventListener('click', () => {
+      const st = resolveStation(rule.stationId);
+      window.parent.postMessage({ type: 'openMapEditorStation', mapId: (st && !st.dynamic) ? st.mapId : (rule.mapId||''), stationId: rule.stationId || '' }, '*');
+    });
+  });
+}
+
+function ruleCardHtml(rule, i) {
+  const station = resolveStation(rule.stationId);
+  const unresolved = rule.stationId && !station && !rule.contentIncomplete;
+  const selectedDays = rule.day ? [rule.day] : (rule.days || []);
+  const dayChecks = WEEKDAYS.map(d => `<label class="daychk ${selectedDays.includes(d)?'on':''}"><input type="checkbox" data-dayof="${i}" value="${d}" ${selectedDays.includes(d)?'checked':''}>${d.slice(0,3)}</label>`).join('');
+  return `<div class="rule-card ${rule.contentIncomplete?'incomplete':''} ${unresolved?'unresolved':''}">
+    <div class="row" style="justify-content:space-between">
+      <b>Rule ${i+1}${rule.activity ? ' — '+rule.activity : ''}</b>
+      <div class="row" style="gap:3px">
+        <button class="sec tiny" id="r${i}_up" title="Move up">↑</button>
+        <button class="sec tiny" id="r${i}_down" title="Move down">↓</button>
+        <button class="bad tiny" id="r${i}_del">✕</button>
+      </div>
+    </div>
+    <div style="margin:6px 0"><label>Days (none checked = every day) <span class="qhelp" data-help="rule-day">?</span></label><div class="row">${dayChecks}</div></div>
+    <div class="g4">
+      <div><label>From</label><input id="r${i}_from" type="time" value="${rule.from||rule.start||''}"></div>
+      <div><label>To</label><input id="r${i}_to" type="time" value="${rule.to||rule.end||''}"></div>
+      <div><label>Map <span class="qhelp" data-help="rule-mapId">?</span></label><select id="r${i}_mapId">${mapOptionsHtml(rule.mapId)}</select></div>
+      <div><label>Route id (optional) <span class="qhelp" data-help="rule-routeId">?</span></label><input id="r${i}_routeId" value="${rule.routeId||''}"></div>
+    </div>
+    <div class="g2" style="margin-top:6px">
+      <div><label>Station <span class="qhelp" data-help="rule-stationId">?</span></label><input id="r${i}_stationId" list="stationDatalist" value="${rule.stationId||''}" class="${unresolved?'bad-value':''}"></div>
+      <div><label>Activity (shown as "currently…") <span class="qhelp" data-help="rule-activity">?</span></label><input id="r${i}_activity" value="${(rule.activity||'').replace(/"/g,'&quot;')}"></div>
+    </div>
+    ${station ? `<p class="muted" style="margin-top:5px">→ ${station.label} · ${station.mapName}${station.dynamic ? ' (procedurally placed — ' + (station.description||'') + ')' : ` (${station.col}, ${station.row})`}</p>` : ''}
+    ${rule.position || Number.isFinite(rule.c) ? `<p class="muted" style="margin-top:5px">Legacy position on file: (${rule.position?.c ?? rule.c}, ${rule.position?.r ?? rule.r}) <button class="sec tiny" id="r${i}_droppos">Drop legacy position</button></p>` : ''}
+    <hr class="sep">
+    <label class="row" style="cursor:pointer">
+      <input type="checkbox" id="r${i}_incomplete" style="width:auto" ${rule.contentIncomplete?'checked':''}>
+      <span>Flag this rule as content-incomplete <span class="qhelp" data-help="rule-contentIncomplete">?</span></span>
+    </label>
+    ${rule.contentIncomplete ? `<p class="muted" style="margin-top:4px">${rule.contentIncompleteReason||'(no reason recorded)'}</p>` : ''}
+    <button class="sec tiny" id="r${i}_jump" style="margin-top:6px">Open station in Map Editor ↗</button>
+  </div>`;
+}
+
+// ── Shared Events (village-wide overrides, e.g. Temple Service) ──────────
+function renderSharedEventsView() {
+  const view = $('view');
+  view.innerHTML = `
+    <datalist id="stationDatalist">${stationDatalistHtml()}</datalist>
+    <h2 style="font-size:16px;margin-bottom:4px">Shared Events <span class="qhelp" data-help="shared-overview">?</span></h2>
+    <p class="muted" style="margin-bottom:12px">Village-wide schedule overrides — any NPC without a rule of their own active for the window joins the group. Replaces what used to be hardcoded constants in docs/game.js (e.g. Temple Service); this list is the only source of truth now.</p>
+    <button class="ok" id="addSharedBtn" style="margin-bottom:10px">+ Add shared event</button>
+    <div id="sharedList"></div>
+  `;
+  $('addSharedBtn').addEventListener('click', () => {
+    db.sharedSchedules.push({ id: 'shared_' + Date.now().toString(36), label: 'New Event', appliesToTag: 'villager', day: WEEKDAYS[0], from: '09:00', to: '11:00', stationIds: [], excludeNpcIds: [] });
+    saveDraft(); render();
+  });
+  renderSharedList();
+}
+function renderSharedList() {
+  const box = $('sharedList');
+  box.innerHTML = (db.sharedSchedules || []).map((s, i) => sharedCardHtml(s, i)).join('') || '<p class="muted">No shared events.</p>';
+  (db.sharedSchedules || []).forEach((s, i) => {
+    const p = `s${i}_`;
+    $(p+'label').addEventListener('change', e => { s.label = e.target.value; saveDraft(); });
+    $(p+'tag').addEventListener('change', e => { s.appliesToTag = e.target.value; saveDraft(); });
+    $(p+'day').addEventListener('change', e => { s.day = e.target.value; saveDraft(); });
+    $(p+'from').addEventListener('change', e => { s.from = e.target.value; saveDraft(); });
+    $(p+'to').addEventListener('change', e => { s.to = e.target.value; saveDraft(); });
+    $(p+'stations').addEventListener('change', e => { s.stationIds = e.target.value.split(',').map(x => x.trim()).filter(Boolean); saveDraft(); render(); });
+    $(p+'exclude').addEventListener('change', e => { s.excludeNpcIds = e.target.value.split(',').map(x => x.trim()).filter(Boolean); saveDraft(); });
+    $(p+'note').addEventListener('change', e => { s.note = e.target.value; saveDraft(); });
+    $(p+'del').addEventListener('click', () => { if (confirm('Delete shared event "'+(s.label||s.id)+'"?')) { db.sharedSchedules.splice(i,1); saveDraft(); render(); } });
+  });
+}
+function sharedCardHtml(s, i) {
+  const badIds = (s.stationIds||[]).filter(id => !resolveStation(id));
+  return `<div class="card ${badIds.length?'':''}">
+    <h3>${s.label||s.id} <button class="bad tiny" id="s${i}_del" style="margin-left:auto">Delete</button></h3>
+    <div class="g2">
+      <div><label>Label</label><input id="s${i}_label" value="${(s.label||'').replace(/"/g,'&quot;')}"></div>
+      <div><label>Applies to tag <span class="qhelp" data-help="shared-appliesToTag">?</span></label><input id="s${i}_tag" value="${s.appliesToTag||''}"></div>
+    </div>
+    <div class="g3" style="margin-top:6px">
+      <div><label>Day <span class="qhelp" data-help="shared-day">?</span></label><select id="s${i}_day">${WEEKDAYS.map(d=>`<option ${s.day===d?'selected':''}>${d}</option>`).join('')}</select></div>
+      <div><label>From</label><input id="s${i}_from" type="time" value="${s.from||''}"></div>
+      <div><label>To</label><input id="s${i}_to" type="time" value="${s.to||''}"></div>
+    </div>
+    <div style="margin-top:6px"><label>Station pool (comma-separated ids — one is round-robin-assigned per NPC) <span class="qhelp" data-help="shared-stationIds">?</span></label>
+      <input id="s${i}_stations" value="${(s.stationIds||[]).join(', ')}" class="${badIds.length?'bad-value':''}">
+      ${badIds.length ? `<p class="muted" style="color:var(--bad)">Unresolved: ${badIds.join(', ')}</p>` : ''}
+    </div>
+    <div style="margin-top:6px"><label>Excluded NPC ids (comma-separated) <span class="qhelp" data-help="shared-excludeNpcIds">?</span></label><input id="s${i}_exclude" value="${(s.excludeNpcIds||[]).join(', ')}"></div>
+    <div style="margin-top:6px"><label>Note</label><input id="s${i}_note" value="${(s.note||'').replace(/"/g,'&quot;')}"></div>
+  </div>`;
+}
+
+// ── Issues view ───────────────────────────────────────────────────────────
+function renderIssuesView() {
+  const issues = computeIssues();
+  const view = $('view');
+  view.innerHTML = `
+    <h2 style="font-size:16px;margin-bottom:4px">Issues <span class="qhelp" data-help="issues-overview">?</span></h2>
+    <p class="muted" style="margin-bottom:12px">${issues.length} issue${issues.length===1?'':'s'} found across ${(db.npcs||[]).length} NPCs and ${(db.sharedSchedules||[]).length} shared events.</p>
+    ${issues.map(i => `<div class="vIssue ${i.severity==='error'?'error':i.severity==='warning'?'warning':'info'}" data-jumpnpc="${i.npcId||''}">${i.message}</div>`).join('') || '<p class="muted">No issues — every rule resolves to a known station or is explicitly flagged.</p>'}
+  `;
+  view.querySelectorAll('[data-jumpnpc]').forEach(el => el.addEventListener('click', () => {
+    const id = el.dataset.jumpnpc; if (!id) return;
+    selectedNpcId = id; activeView = 'npcs';
+    document.querySelectorAll('#viewTabs button').forEach(x => x.classList.toggle('act', x.dataset.view === 'npcs'));
+    render();
+  }));
+}
+
+// ── Shared "?" help popover engine ─────────────────────────────────────────
+// No shared JS/CSS file across this tool suite (each tool is a self-contained
+// single HTML file, by convention) — so this small engine is intentionally
+// duplicated verbatim into map-editor, house-piece-author, and
+// building-interior-author too. Only QHELP's contents differ per tool.
+const QHELP = {
+  'npc-defaults': { title: 'Schedule defaults', body: 'Used whenever no rule below is active for the current time/day. Checked in this order at runtime: rules (top to bottom) → Shared Events → Default station → legacy default position (deprecated) → nothing (NPC is deferred and never spawns).' },
+  'npc-defaultMapId': { title: 'Default map', body: 'The map this NPC is considered "at" when nothing else specifies one — used to resolve a rule\'s area when that rule omits mapId.' },
+  'npc-workBuildingId': { title: 'Work building id', body: 'Free-text reference to a building id this NPC is associated with (e.g. for shop-open/closed logic). Not used to resolve schedule targets directly — that\'s what stationId on a rule is for.' },
+  'npc-defaultStationId': { title: 'Default station', body: 'Station used when no rule matches the current time/day and no Shared Event applies. Should always resolve to a real station — type to search known stations (including procedurally-placed ones, labeled "procedural").' },
+  'npc-shopHours': { title: 'Shop hours', body: 'Display-only text (e.g. "9am–6pm") shown to the player — not read by the schedule resolver. Leave blank unless this NPC runs a shop.' },
+  'npc-contentIncomplete': { title: 'Content-incomplete', body: 'Marks this NPC\'s schedule as not ready — the engine skips the legacy default-position fallback entirely rather than spawning at a placeholder tile, and instead defers the NPC (it simply won\'t appear) until this is unchecked. Use this instead of leaving a fake position in place.' },
+  'npc-rules': { title: 'Schedule rules', body: 'Checked top to bottom; the first rule whose day and time window matches "now" wins. A rule needs a Station to be usable — raw positions are legacy-only and shown read-only when present on already-authored data.' },
+  'rule-day': { title: 'Days', body: 'Leave every day unchecked for "applies every day". Check exactly one day for a single-day rule (stored as "day"); check several for a multi-day rule (stored as "days"). Checking all 7 is the same as none.' },
+  'rule-mapId': { title: 'Map', body: 'Which map/area this rule\'s station or position lives on. Must match a real map id — mismatches are flagged under Issues.' },
+  'rule-stationId': { title: 'Station', body: 'The NPC stands here (transformed into a world tile by the map that authored this station) whenever this rule is active. Start typing to search every known station across every map, including dynamic ones (procedurally placed, e.g. a wilderness tent\'s desk) labeled "procedural".' },
+  'rule-routeId': { title: 'Route id (optional)', body: 'Forces the NPC to walk this specific authored route (from the destination map\'s routes[], edited in Map Editor\'s Route tool) instead of the default beeline-then-nearest-route pathing. Leave blank unless you need a specific path.' },
+  'rule-activity': { title: 'Activity', body: 'Free text shown to the player as what the NPC is currently doing (e.g. "farming", "selling produce at market"). Also used as the Shared Event label when a village-wide override applies instead.' },
+  'rule-contentIncomplete': { title: 'Content-incomplete rule', body: 'Marks just this one rule as not ready — the resolver skips it entirely (as if it weren\'t there) and falls through to the next rule or default, instead of trying to resolve a station/map that isn\'t ready yet.' },
+  'shared-overview': { title: 'Shared Events', body: 'Village-wide schedule overrides checked after an NPC\'s own rules fail to match, before their Default station. Any NPC with the given tag (and not in the exclusion list) without a rule of their own active for this window joins the event at a round-robin-assigned station from the pool.' },
+  'shared-appliesToTag': { title: 'Applies to tag', body: 'Only NPCs whose tags[] array includes this exact string are considered for this event (e.g. "villager").' },
+  'shared-day': { title: 'Day / time window', body: 'The event is only active on this single day, within this time window (24h, can wrap past midnight).' },
+  'shared-stationIds': { title: 'Station pool', body: 'Comma-separated station ids. Each eligible NPC is assigned one deterministically (hashed from their id), so the same NPC always gets the same seat and the group spreads evenly across the pool.' },
+  'shared-excludeNpcIds': { title: 'Excluded NPC ids', body: 'Comma-separated NPC ids who should never join this event even though they match the tag (e.g. NPCs who are deceased, banished, or already accounted for elsewhere).' },
+  'issues-overview': { title: 'Issues', body: 'Automatically scanned problems: unresolved station references, unknown map ids, rules that can never resolve to anywhere, overlapping time windows, and anything explicitly flagged content-incomplete. Click an issue to jump to that NPC.' },
+};
+let _qhelpBtn = null;
+function showHelp(btn) {
+  const entry = QHELP[btn.dataset.help];
+  const pop = $('qhelpPopover');
+  if (!entry) { pop.style.display = 'none'; return; }
+  pop.innerHTML = `<span class="qhelp-close">✕</span><b>${entry.title}</b>${entry.body}`;
+  pop.style.display = 'block';
+  const r = btn.getBoundingClientRect();
+  const pw = 340;
+  let left = Math.min(r.left, window.innerWidth - pw - 16);
+  pop.style.left = Math.max(8, left) + 'px';
+  pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 60) + 'px';
+  pop.querySelector('.qhelp-close').addEventListener('click', () => { pop.style.display = 'none'; });
+  _qhelpBtn = btn;
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.qhelp');
+  if (btn) { showHelp(btn); e.stopPropagation(); return; }
+  const pop = $('qhelpPopover');
+  if (pop.style.display === 'block' && !pop.contains(e.target)) pop.style.display = 'none';
+});
+
+// ── Hub bridge — lets the hub's NPC sidebar jump straight to an NPC's schedule ──
+window._scheduleEditorBridge = {
+  selectNpc: function(npcId) {
+    if (!db) { setTimeout(() => window._scheduleEditorBridge.selectNpc(npcId), 300); return; }
+    selectedNpcId = npcId; activeView = 'npcs';
+    document.querySelectorAll('#viewTabs button').forEach(x => x.classList.toggle('act', x.dataset.view === 'npcs'));
+    render();
+  },
+};
+
+boot();
+</script>
+</body>
+</html>
