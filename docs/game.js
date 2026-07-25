@@ -5334,6 +5334,11 @@
         // decays.
         window.Combat?.telegraph?.cancel(c);
         window.Combat?.animalAttacks?.cancel(c);
+        // Getting hit breaks a bandit grunt's in-progress combo (see
+        // BANDIT_GRUNT_COMBO_HITS below) the same way it cancels any other
+        // mid-attack state above, rather than letting it silently resume
+        // the count once it recovers.
+        c.banditComboHits = 0;
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
@@ -5766,6 +5771,19 @@
       const JUMP_BACK_DUR_S = 0.4;
       const JUMP_BACK_SPEED = 260;
 
+      // A bandit with no held ability (no def.attacks — grunts, see
+      // heldAbilitiesByRank in bandit-gang-config.json) fights entirely
+      // through the plain bite-telegraph path below rather than a named/
+      // quick attack. Per design that path should chain BANDIT_GRUNT_COMBO_HITS
+      // swings back to back (a short recovery between each, not a full jump-
+      // back) before finally retreating on the last one, instead of jumping
+      // back after every single swing — a rank/tier'd hostile with a real
+      // named attack (lieutenant/captain's Pounce, or any future creature
+      // with one) is unaffected, since that's the "quick attack condition"
+      // this defers to.
+      const BANDIT_GRUNT_COMBO_HITS = 3;
+      const BANDIT_COMBO_CHAIN_COOLDOWN_S = 0.35;
+
       // Bite-attack telegraph timing, ported from the sandbox's dummy AI
       // attack (its only enemy-side attack: windup 0.54s, strike 0.20s) —
       // reused for both hostiles and companions since they share this same
@@ -5929,7 +5947,7 @@
           // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
-          if (c.state !== 'chase') clearCreatureStage(c);
+          if (c.state !== 'chase') { clearCreatureStage(c); c.banditComboHits = 0; }
 
           let moving = false, aimAngle = c.facing || 0;
           if (c.knockbackT > 0) {
@@ -6043,6 +6061,20 @@
                       if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
                         playCreatureClawHit(c);
+                      }
+                      // Bandit grunts (no held ability -- see the constants'
+                      // comment above) keep swinging through up to
+                      // BANDIT_GRUNT_COMBO_HITS before jumping back; every
+                      // other plain-telegraph creature (wildlife, and any
+                      // bandit whose named/quick attack failed to start)
+                      // retreats after every single bite, unchanged.
+                      if (c.isBandit && !hadNamedAttack) {
+                        c.banditComboHits = (c.banditComboHits || 0) + 1;
+                        if (c.banditComboHits < BANDIT_GRUNT_COMBO_HITS) {
+                          c.attackCooldownT = BANDIT_COMBO_CHAIN_COOLDOWN_S;
+                          return;
+                        }
+                        c.banditComboHits = 0;
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
                     },
@@ -8402,6 +8434,26 @@
         return clamp(Math.round(base + tier), 0, 5);
       }
 
+      // A bandit's actual held weapon -- see weaponMetalTierRangeByRank's
+      // _comment in bandit-gang-config.json. Reuses the player's own
+      // TOOL_SHAPE_DEFS/METAL_DEFS/craftedToolItemKey/metalDmgMultiplier
+      // rather than inventing a parallel weapon system, so a bandit's
+      // hatchet/fishing-mace/fishing-spear/pick-shovel renders with the
+      // exact same crafted-tool sprite+metal recolor the player's own gear
+      // uses (see refreshMetalToolWorldTexture).
+      function banditWeaponFor(cfg, rank, tier) {
+        const shapeKeys = Object.keys(TOOL_SHAPE_DEFS);
+        const shapeKey = shapeKeys[Math.floor(rnd() * shapeKeys.length)];
+        const shape = TOOL_SHAPE_DEFS[shapeKey];
+        const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
+        const bonusT = tier;
+        const loT = clamp(Math.round(minT), 1, 7), hiT = clamp(Math.round(maxT) + bonusT, loT, 7);
+        const tierPool = VERDIGRIS_METAL_KEYS.filter(k => METAL_DEFS[k].tier >= loT && METAL_DEFS[k].tier <= hiT);
+        const metalKey = (tierPool.length ? tierPool : VERDIGRIS_METAL_KEYS)[Math.floor(rnd() * (tierPool.length || VERDIGRIS_METAL_KEYS.length))];
+        const weaponKey = craftedToolItemKey(shapeKey, metalKey);
+        return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: metalDmgMultiplier(metalKey) };
+      }
+
       // heldAbilitiesByRank is reflected as the richness of the attack roster,
       // not as a literal run of the player's hold-charge input state machine:
       // a grunt (0 held abilities) only ever swings via the generic bite
@@ -8412,7 +8464,8 @@
         const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
         const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
         const statMul = weaken * tierMul;
-        const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL);
+        const weapon = banditWeaponFor(cfg, rank, tier);
+        const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
         const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
         const def = {
           label: BANDIT_RANK_LABEL[rank] || 'Bandit',
@@ -8427,7 +8480,8 @@
           attackStaminaCost: 12,
           attackCooldownS: rank === 'captain' ? 0.95 : 1.15,
           attacks: held >= 1 ? ['pounce'] : [],
-          attackTag: 'sharp',
+          attackTag: weapon.dmgType,
+          weaponKey: weapon.weaponKey,
           aiType: 'vigilantProtector',
           aggroRangePx: TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
           leashRangePx: TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
@@ -8440,6 +8494,28 @@
         };
         if (held >= 2) def.behaviorStages = ['pounceAttempt', 'evasiveOrbit'];
         return def;
+      }
+
+      // makeToolPlaneMesh's plane is built to lie flat in the player's own
+      // swing plane (rotation.x = -PI/2, driven per-frame by updateToolMesh)
+      // -- a bandit has no swing animation to drive it, so that baked
+      // rotation is undone and the plane is instead posed as a static prop
+      // slung at the avatar's side, the same "no arms to actually grip
+      // anything" compromise heldItemHolder already makes for the player's
+      // own bag-item icon plane. Parented directly to avatarRef.group so it
+      // rides along with every existing group-level transform for free --
+      // walking, hit-flash tint (updateCreatureMesh's grp.traverse), and the
+      // death tumble/flatten all just work with no bandit-specific code.
+      function attachBanditWeaponProp(avatarRef, weaponKey) {
+        const mesh = makeToolPlaneMesh(weaponKey);
+        if (!mesh) return null;
+        const plane = mesh.userData.toolPlane;
+        if (plane) plane.rotation.x = 0;
+        mesh.scale.setScalar(0.8);
+        mesh.rotation.z = Math.PI * 0.14;
+        mesh.position.set(0.3, -0.05, 0.08);
+        avatarRef.group.add(mesh);
+        return mesh;
       }
 
       async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
