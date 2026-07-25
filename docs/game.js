@@ -8509,6 +8509,7 @@
       function attachBanditWeaponProp(avatarRef, weaponKey) {
         const mesh = makeToolPlaneMesh(weaponKey);
         if (!mesh) return null;
+        mesh.name = 'banditWeaponProp';
         const plane = mesh.userData.toolPlane;
         if (plane) plane.rotation.x = 0;
         mesh.scale.setScalar(0.8);
@@ -8547,6 +8548,11 @@
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
+        // BUG FIX (was defined but never called -- every bandit spawned with
+        // a real def.weaponKey but nothing rendered it): attaches the static
+        // weapon prop described on attachBanditWeaponProp above.
+        const weaponMesh = attachBanditWeaponProp(avatarRef, def.weaponKey);
+        if (!weaponMesh) window.__farmLog?.(`[bandits] weapon prop failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
 
         const groundShadow = makeCharacterGroundShadow('bandit_ground_shadow');
         const shadowRadii = creatureGroundShadowRadii(def);
@@ -8573,6 +8579,7 @@
           homeX: x, homeY: y,
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
+          banditWeaponMeshAttached: !!weaponMesh,
           rosterRecord: roster,
           ...opts.extra,
         };
@@ -27593,6 +27600,128 @@
         renderDevSpawnPanel();
       }
       document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
+
+      // ── Combat log (for AI/Claude review, not players) ─────────────────
+      // One button dumps every arena entity's internal AI/combat state as
+      // dense coded lines, meant to be pasted into a chat with an AI session
+      // that has no other way to see a live browser — a static code review
+      // can (and did, twice: attachBanditWeaponProp was defined but never
+      // called, and the "1 hit then retreat" report) miss things that only
+      // show up once the AI loop is actually ticking, and this environment's
+      // egress policy blocks the CDN this game loads three.js from, so a
+      // headless Chromium session can't render it either. The guide string
+      // is the interpretation key for whichever Claude session receives it.
+      const COMBAT_LOG_GUIDE = `HOBUNJI COMBAT LOG -- interpretation guide for AI review
+Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/combat-enemy-telegraph.js for the state machine these fields describe.
+Common fields:
+  id            unique entity id (bandit ids look like "bandit_<rank>_<timestamp>_<rand>")
+  kind          PLAYER | BANDIT | CREATURE | CORPSE (CORPSE = health<=0, still lootable via the action bar)
+  state         idle|chase|return|patrol-chase|fleeing-low-health|dying|corpse
+  hp/stam       current/max health and stamina
+  pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (48px ~= 1 tile, see TILE)
+  tState        telegraphState: none|windup|strike -- mid-swing "tell"; a hit can only land during "strike"
+  aaBusy        1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
+  stage         behaviorStage cycle state (captains only): stageName/mode, e.g. "pounceAttempt/active" or "-/backingUp"
+  retreatT      seconds left jumping backward after landing a hit (0 = not retreating)
+  cdT           seconds left before the next attack attempt is allowed (attackCooldownT)
+  combo         bandit grunts only: N/3 hits landed in the current combo chain before it finally retreats (BANDIT_GRUNT_COMBO_HITS) -- always 0/3 for lieutenant/captain/wildlife, since having a real named attack (the "quick attack condition") skips combo-chaining entirely and retreats after one hit instead
+  aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer
+Bandit-only fields:
+  rank/tier/mastery   grunt|lieutenant|captain; difficulty tier 0-3 the camp/spawn used; rolled weapon-mastery level 0-5
+  species/gender      rolled from speciesWeights in bandit-gang-config.json
+  wpn                 def.weaponKey, a crafted "<shape>_<metal>" id (e.g. hatchet_lowTinBronze) -- "none" would mean banditWeaponFor() failed, should never happen
+  wpnMeshOK           1 if the weapon prop mesh actually attached to the avatar (attachBanditWeaponProp) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen
+  atkTag/atkDmg       attackTag (sharp/blunt, from the weapon's own dmgType) and attackDamage after rank/tier/mastery/metal multipliers
+  cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
+why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant`;
+
+      function _combatLogDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+      function _combatLogNearestOther(c, all) {
+        let best = null, bestDist = Infinity;
+        for (const o of all) {
+          if (o === c) continue;
+          const d = _combatLogDist(c, o);
+          if (d < bestDist) { bestDist = d; best = o; }
+        }
+        return best ? `${best.id || 'player'}@${Math.round(bestDist)}px` : 'none';
+      }
+
+      function _combatLogBanditWhy(c, def, targetPlayer, nearestOtherTxt) {
+        if (c.health <= 0) return `dead; corpse lootable via action bar (rolled loot table + 100% of worn clothing)`;
+        const distP = Math.round(_combatLogDist(c, targetPlayer));
+        if (c.state === 'idle') return `idle; distPlayer=${distP}px > aggroRangePx=${Math.round(def.aggroRangePx)}px, not aggro'd yet. nearest=${nearestOtherTxt}`;
+        if (c.state === 'return') return `returning home; player out of leashRangePx=${Math.round(def.leashRangePx)}px or too far from its own homeX/Y`;
+        if (c.state !== 'chase') return `state=${c.state}, not currently in combat`;
+        if (c.retreatT > 0) {
+          if (c.isBandit && !def.attacks?.length) {
+            return c.banditComboHits === 0
+              ? `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after finishing a ${BANDIT_GRUNT_COMBO_HITS}-hit combo (grunt, no held ability -- see heldAbilitiesByRank)`
+              : `mid-combo but retreatT>0 with banditComboHits=${c.banditComboHits} -- unexpected combination, flag as a possible state bug`;
+          }
+          return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after a single strike (has a real named/quick attack, e.g. Pounce -- no combo chaining by design)`;
+        }
+        if (c.telegraphState) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking now'} a plain bite (tState=${c.telegraphState}); distPlayer=${distP}px`;
+        if (window.Combat?.animalAttacks?.isBusy?.(c)) return `mid named-attack (Pounce/etc — owns position+facing until it finishes)`;
+        if (def.behaviorStages) return `behaviorStage cycle: ${(c._stage?.stages?.[c._stage.idx]) || c._stage?.mode || '?'}`;
+        if (c.attackCooldownT > 0) {
+          const chaining = c.isBandit && !def.attacks?.length && c.banditComboHits > 0;
+          return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left (${chaining ? `mid-combo, hit ${c.banditComboHits}/${BANDIT_GRUNT_COMBO_HITS} landed so far` : 'full attackCooldownS after a finishing/only blow'}); distPlayer=${distP}px`;
+        }
+        return `closing distance, distPlayer=${distP}px, waiting to enter attackRangePx=${Math.round(def.attackRangePx)}px (or the aim-collider reach for a pounce-capable rank)`;
+      }
+
+      function buildArenaCombatLogText() {
+        const all = [player, ..._arenaSpawnedCreatures];
+        const lines = [COMBAT_LOG_GUIDE, '', `--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} ---`,
+          `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)})`];
+        for (const c of _arenaSpawnedCreatures) {
+          const def = c.def || {};
+          const nearestTxt = _combatLogNearestOther(c, all);
+          const kind = c.health <= 0 ? 'CORPSE' : (c.isBandit ? 'BANDIT' : 'CREATURE');
+          if (c.isBandit) {
+            const r = c.rosterRecord || {};
+            const clothTxt = (r.equippedCosmetics || []).length
+              ? r.equippedCosmetics.map(id => `${r.cosmeticSlots?.[id] || '?'}:${id}:${r.appliedDyes?.[BANDIT_TINT_SLOT_BY_SLOT[r.cosmeticSlots?.[id]]] || '-'}`).join(';')
+              : '-';
+            lines.push([
+              `ENTITY kind=${kind}`, `id=${c.id}`, `rank=${c.banditRank}`, `tier=${c.banditTier}`, `mastery=${c.banditMastery}`,
+              `species=${r.appearance?.speciesId}/${r.appearance?.gender}`,
+              `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
+              `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
+              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
+              `stage=${c._stage ? (c._stage.stages?.[c._stage.idx] || '-') + '/' + c._stage.mode : '-'}`,
+              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`, `combo=${c.banditComboHits || 0}/${BANDIT_GRUNT_COMBO_HITS}`,
+              `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
+              `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,
+              `cloth=${clothTxt}`, `nearestOther=${nearestTxt}`,
+              `why="${_combatLogBanditWhy(c, def, player, nearestTxt)}"`,
+            ].join(' '));
+          } else {
+            lines.push([
+              `ENTITY kind=${kind}`, `id=${c.id}`, `species=${c.creatureKey}`,
+              `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
+              `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
+              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
+              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
+              `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `nearestOther=${nearestTxt}`,
+            ].join(' '));
+          }
+        }
+        return lines.join('\n');
+      }
+
+      async function copyArenaCombatLog() {
+        const text = buildArenaCombatLogText();
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Combat log copied to clipboard.', true);
+        } catch (e) {
+          console.log(text);
+          showToast('Clipboard blocked — full log printed to console instead (check devtools).', false);
+        }
+      }
+      document.getElementById('devCombatLogBtn')?.addEventListener('click', copyArenaCombatLog);
 
       window._devSpawner = {
         toggle() {
