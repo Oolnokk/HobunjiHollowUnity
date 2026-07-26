@@ -8689,12 +8689,37 @@
         };
       }
 
+      // The weapon's own natural at-rest swing style (sweep for hatchet/
+      // fishing-mace, thrust for the rest) -- used both at spawn and to
+      // reset back to after any ability that plays a DIFFERENT style
+      // finishes (see finishBanditAction below).
+      function banditNaturalSwing(def) {
+        const isSweep = TOOL_ITEM_DEFS[def.weaponKey]?.animStyle === 'sweep';
+        return { anim: isSweep ? 'sweep' : 'thrust', pose: isSweep ? window.Combat?.poses?.SWEEP_POSE : null };
+      }
+
       // Ends the current staged action's telegraph tell and, if provided,
       // runs extra bookkeeping (retreat, cooldowns) once it's actually done
       // rather than the moment it's cancelled mid-flight.
       function finishBanditAction(c) {
         c._banditAction = null;
         c.telegraphState = null;
+        // Quick Attack and Charged Breaker both hardcode their OWN anim/
+        // pose regardless of the equipped weapon ('thrust'/null and
+        // 'sweep'/SWEEP_POSE respectively -- see fireBanditQuickAttack/
+        // fireBanditChargedBreaker's own comments) and, unlike
+        // fireBanditComboStep, nothing ever set these back afterward --
+        // once ANY bandit used either ability even once, its idle-between-
+        // attacks stance got stuck showing that ability's style forever
+        // (regardless of its real weapon) until a combo step happened to
+        // fire and correct it by coincidence. Reset unconditionally here so
+        // "idle" always means the weapon's own natural rest stance, not
+        // whatever the last-fired ability happened to want.
+        const natural = banditNaturalSwing(c.def);
+        c._banditSwingAnim = natural.anim;
+        c._banditSwingPose = natural.pose;
+        c._banditSwingDirSign = 1;
+        c._banditSwingPower = 1;
       }
 
       // ── Bandit lunge ─────────────────────────────────────────────────
@@ -9432,7 +9457,21 @@
         if (!holder) return;
         const action = c._banditAction;
         if (!action) {
-          if (performance.now() < (c._banditToolSettleUntil || 0)) return; // hold last pose briefly
+          if (performance.now() < (c._banditToolSettleUntil || 0)) {
+            // Holding last pose briefly -- the weapon holder's own
+            // quaternion/position are frozen (nothing below runs), but
+            // updateCreatureMesh (which now runs BEFORE this every frame,
+            // unconditionally) keeps smoothing c.groupRot/the avatar's
+            // rotation.y back toward the plain aim angle the whole time,
+            // since it has no idea a swing was ever leaning it. Without
+            // reasserting the lean here too, the body visibly turns back
+            // to facing the player while the weapon stays frozen leaned
+            // out from the swing -- "the character turns independently of
+            // the weapon." Keeps both in sync until the settle window
+            // actually ends and they reset to plain θ together below.
+            if (c._banditToolLastVθ != null) { c.avatarRef.group.rotation.y = c._banditToolLastVθ; c.groupRot = c._banditToolLastVθ; }
+            return;
+          }
         }
         const anim = c._banditSwingAnim || 'thrust';
         const pose = c._banditSwingPose;
@@ -9496,6 +9535,7 @@
           // rest, since bodyYawRad is 0 at progress=0 for every style here.
           c.avatarRef.group.rotation.y = vθ;
           c.groupRot = vθ;
+          c._banditToolLastVθ = vθ; // reasserted during the settle window below
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
@@ -9522,6 +9562,7 @@
           // matching comment in the sweep branch above.
           c.avatarRef.group.rotation.y = vθ;
           c.groupRot = vθ;
+          c._banditToolLastVθ = vθ; // reasserted during the settle window above
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
@@ -9608,12 +9649,14 @@
           banditWeaponMeshAttached: !!banditToolHolder,
           _banditToolHolder: banditToolHolder,
           // Idle/approach rest pose matches the weapon's own natural swing
-          // style (sweep for hatchet/fishingmace, thrust for the rest) until
-          // an ability fire overwrites these with its own (see
-          // fireBanditComboStep/fireBanditQuickAttack/fireBanditChargedBreaker
-          // /fireBanditCounterRiposte) -- see updateBanditToolMesh.
-          _banditSwingAnim: TOOL_ITEM_DEFS[def.weaponKey]?.animStyle === 'sweep' ? 'sweep' : 'thrust',
-          _banditSwingPose: TOOL_ITEM_DEFS[def.weaponKey]?.animStyle === 'sweep' ? window.Combat?.poses?.SWEEP_POSE : null,
+          // style (see banditNaturalSwing) until an ability fire overwrites
+          // these with its own (see fireBanditComboStep/fireBanditQuickAttack
+          // /fireBanditChargedBreaker/fireBanditCounterRiposte) -- reset
+          // back to this same natural style once the action completes (see
+          // finishBanditAction) rather than staying stuck on whichever
+          // ability last fired -- see updateBanditToolMesh.
+          _banditSwingAnim: banditNaturalSwing(def).anim,
+          _banditSwingPose: banditNaturalSwing(def).pose,
           _banditSwingDirSign: 1, _banditSwingPower: 1, _banditToolSettleUntil: 0,
           // Ability-AI state -- see updateBanditCombatAI/damageCreature's
           // isBandit branch/the leaving-chase reset above for where these
