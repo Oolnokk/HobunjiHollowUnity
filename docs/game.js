@@ -8712,6 +8712,20 @@
       const BANDIT_GUARD_COOLDOWN_S = 6;
       const BANDIT_GUARD_DAMAGE_ABSORB = 0.7; // fraction of incoming damage blocked while a captain is guarding
 
+      // A bandit's post-attack "jump back" used to always play at the same
+      // full JUMP_BACK_DUR_S regardless of whether the attack that
+      // triggered it actually landed -- a combo where every step connected
+      // looked identical to a total whiff, both backing off by the same
+      // amount. Scales the retreat duration down the more of the attempt
+      // actually landed (successFrac: 0 = total whiff, 1 = every step/the
+      // one attack landed) -- a clean, fully-landed combo barely backs off
+      // at all, while a total whiff still gets the complete jump-back (it
+      // needs the space to reset and re-approach).
+      const BANDIT_RETREAT_MIN_SCALE = 0.3;
+      function banditRetreatDurationS(successFrac) {
+        return JUMP_BACK_DUR_S * (1 - (1 - BANDIT_RETREAT_MIN_SCALE) * clamp(successFrac, 0, 1));
+      }
+
       // The bandit-side equivalent of combat-combo.js/combat-quickattacks.js/
       // combat-charged-breaker.js's `deps.weaponAbility('cut')` base numbers
       // every step/technique multiplies from -- except a bandit's own
@@ -8902,6 +8916,10 @@
         if (!steps || !steps.length) return false;
         const step = steps[c._banditComboIndex % steps.length];
         const isFinalStep = (c._banditComboIndex % steps.length) === steps.length - 1;
+        // Landed-step tally for this combo cycle, reset at the opening step
+        // -- see banditRetreatDurationS, which uses it to size the eventual
+        // retreat to how much of the combo actually connected.
+        if (c._banditComboIndex % steps.length === 0) c._banditComboLandCount = 0;
         c._banditComboIndex++;
         const base = banditAttackBaseline(def);
         const damage = Math.max(1, Math.round(base.damage * step.damageMul));
@@ -8943,6 +8961,7 @@
             spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
             if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               comboStepHit = true;
+              c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
               // def.attackTag (the bandit's actual rolled weapon material,
               // see weaponDamageTypeForTool/weapon.dmgType) determines both
               // the affliction dealt and the impact sound -- matches the
@@ -8960,7 +8979,11 @@
             // 1-2 chains straight into the next step instead of retreating.
             const shouldRetreat = isFinalStep || !comboStepHit;
             c.attackCooldownT = shouldRetreat ? def.attackCooldownS : BANDIT_COMBO_CHAIN_GAP_S;
-            if (shouldRetreat) { c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; }
+            if (shouldRetreat) {
+              c.retreatT = banditRetreatDurationS((c._banditComboLandCount || 0) / steps.length);
+              c._banditComboIndex = 0;
+              c._banditComboLandCount = 0;
+            }
           },
           onCancel: () => finishBanditAction(c),
         });
@@ -8987,6 +9010,7 @@
         c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
         c._banditSwingDirSign = 1; c._banditSwingPower = 1;
         beginBanditLunge(c, TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
+        let techHit = false;
         c._banditAction = window.Combat.beginStagedAction({
           windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
           data: { isBandit: true }, // see fireBanditComboStep's matching comment
@@ -9000,11 +9024,17 @@
             // combat-quickattacks.js's onTap, which no longer hardcodes
             // 'sharp' regardless of the equipped weapon either.
             if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              techHit = true;
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
               playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
-          onComplete: () => { finishBanditAction(c); c.attackCooldownT = def.attackCooldownS; c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; },
+          onComplete: () => {
+            finishBanditAction(c);
+            c.attackCooldownT = def.attackCooldownS;
+            c.retreatT = banditRetreatDurationS(techHit ? 1 : 0);
+            c._banditComboIndex = 0;
+          },
           onCancel: () => finishBanditAction(c),
         });
         return true;
@@ -9035,6 +9065,7 @@
         // the windup->strike boundary, without needing a second staged
         // action just to match the real system's exact timing split.
         beginBanditLunge(c, TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
+        let techHit = false;
         c._banditAction = window.Combat.beginStagedAction({
           windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
           data: { isBandit: true }, // see fireBanditComboStep's matching comment
@@ -9047,6 +9078,7 @@
             // affliction and the impact sound -- see combat-charged-
             // breaker.js's matching fix (no longer hardcodes 'blunt').
             if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              techHit = true;
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
               playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
@@ -9054,7 +9086,7 @@
           onComplete: () => {
             finishBanditAction(c);
             c.attackCooldownT = def.attackCooldownS;
-            c.retreatT = JUMP_BACK_DUR_S;
+            c.retreatT = banditRetreatDurationS(techHit ? 1 : 0);
             c._banditComboIndex = 0;
             c._banditHold1CdT = BANDIT_HOLD1_COOLDOWN_S;
           },
@@ -29025,7 +29057,7 @@ Common fields:
   pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (TILE=55px is 1 tile)
   tState        telegraphState: none|windup|strike -- mid-swing "tell" (bandits set this from their own ability AI, not combat-enemy-telegraph.js); a hit can only land during "strike"
   aaBusy        wildlife only: 1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
-  retreatT      seconds left jumping backward after landing a hit (0 = not retreating)
+  retreatT      seconds left jumping backward after an attack (0 = not retreating); duration scales with how much of the attempt actually landed (see banditRetreatDurationS -- a total whiff gets the full jump-back, a fully-landed combo barely backs off)
   cdT           seconds left before the next attack attempt is allowed (attackCooldownT)
   aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer -- NOTE for bandits: atkRangePx is only the flat melee baseline, NOT the real approach/attack-commit threshold (that's engageRangePx, its current combo step's own hit range + lunge distance -- see banditEngagementReachPx and the bandit's own why= text, which reports the real number)
 Bandit-only fields:
