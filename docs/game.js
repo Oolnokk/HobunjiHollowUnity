@@ -8849,6 +8849,17 @@
         beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
+          // isBandit -- see cancelAllStaged's own comment: without this tag
+          // damagePlayer's stagger-on-hit call cancels EVERY staged action
+          // in the shared registry, including THIS one, the instant its own
+          // onStrike lands (damagePlayer runs synchronously from inside the
+          // onStrike below) -- self-cancelling mid-strike, every time, on
+          // every bandit that actually connects. onCancel only clears the
+          // swing pose (finishBanditAction), never sets attackCooldownT or
+          // (on the final combo step) retreatT/resets comboIndex -- a
+          // landing bandit attack was silently skipping its own cooldown
+          // and never retreating after its 3-hit combo.
+          data: { isBandit: true },
           onStrike: () => {
             c.telegraphState = 'strike';
             // c.facing, not the fire-time aimAngle local -- see
@@ -8897,6 +8908,7 @@
         beginBanditLunge(c, TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
+          data: { isBandit: true }, // see fireBanditComboStep's matching comment
           onStrike: () => {
             c.telegraphState = 'strike';
             // c.facing, not the fire-time aimAngle local -- see
@@ -8944,6 +8956,7 @@
         beginBanditLunge(c, TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
+          data: { isBandit: true }, // see fireBanditComboStep's matching comment
           onStrike: () => {
             c.telegraphState = 'strike';
             // c.facing, not the fire-time aimAngle local -- see
@@ -8996,6 +9009,7 @@
         // parallel progress channel just for this) is an acceptable gap.
         window.Combat.beginStagedAction({
           windupS: 0.05, strikeS: 0.15, recoverS: 0,
+          data: { isBandit: true }, // see fireBanditComboStep's matching comment
           onStrike: () => {
             // def.attackTag (bandit's real weapon material) drives both the
             // affliction and the impact sound -- matches
@@ -9578,7 +9592,17 @@
           // (same windup-back/jab-forward/lateral/pitch/yaw formulas), used
           // for pokeCombo, every Quick Attack, and the Counter Shield riposte.
           const windupBack = -0.40 * power;
-          const jabOff = banditPoseLerp(progress, wf, windupBack, 0.32 * power, windupBack);
+          // neutralV=0, NOT windupBack -- matches the player's own thrust
+          // branch, whose equivalent fourPhaseLerp call for jabOff omits an
+          // explicit neutralV entirely (defaulting to 0), which is verified
+          // intentional (not just "happened to be 0") by STYLE_NEUTRAL_POSE.
+          // thrust.z === 0, the authored attack-animation-editor rest value
+          // this whole style is built to match at progress=0. Passing
+          // windupBack here instead left a bandit's thrust weapon
+          // permanently held pulled back (as if crouched mid-windup) even
+          // at true idle, never resting at the same neutral extension the
+          // player's own weapon sits at.
+          const jabOff = banditPoseLerp(progress, wf, windupBack, 0.32 * power, 0);
           const lateral = banditPoseLerp(progress, wf, 0, -0.23 * power, 0);
           const pitchRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
           const yawRad = banditPoseLerp(progress, wf, 0, THREE.MathUtils.degToRad(-45) * power, 0);
