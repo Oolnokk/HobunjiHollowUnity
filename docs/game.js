@@ -9261,7 +9261,19 @@
           // "back off when waiting" and "sway side to side" both fall out
           // of this same call instead of being two separate movements.
           const targetPoint = banditPersonalSpaceAdjust(c, ringPoint);
-          const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, BANDIT_STRAFE_SPEED_PX_S, dt);
+          // BANDIT_STRAFE_SPEED_PX_S (55px/s) is deliberately slow -- right
+          // for the final small-amplitude sway once already near the ring,
+          // but an outer queue ring can sit 500-800px out for a big gang
+          // (BANDIT_QUEUE_RING_STEP_MUL compounding per ring). Using the
+          // sway speed for that ENTIRE approach too meant an outer-ring
+          // bandit could take 10+ seconds just to reach its assigned spot,
+          // reading as vaguely wandering rather than "queued and waiting."
+          // Closes the real distance at normal chase speed, same as
+          // everything else in this state machine, and only downshifts to
+          // the gentle sway speed once actually close to the target point.
+          const distToTarget = Math.hypot(targetPoint.x - c.x, targetPoint.y - c.y);
+          const travelSpeed = distToTarget > TILE * 1.5 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S;
+          const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
           return { aimAngle: towardAngle, moving };
         }
         window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
