@@ -4025,6 +4025,14 @@
           note: 'Root Totem — a wilderness respawn checkpoint'
         });
         reserveDesignClearing(tile.x, tile.y, 2, 'rootTotemClearing');
+        // nearestFreeWalkableNeighbor searches outward ring by ring up to 7
+        // tiles away, so in a crowded sector (dense forest, other landmarks
+        // already placed) pathAnchor can land well outside the 2-tile
+        // clearing reserved above -- reserve its own small clearing too, or
+        // a later flora pass (which only checks tile.designReserve, not
+        // "is this some totem's pathAnchor") is free to plant a tree right
+        // on top of it, spawning a respawning player inside that tree.
+        if (pathAnchor) reserveDesignClearing(pathAnchor.x, pathAnchor.y, 1, 'rootTotemPathAnchor');
         placed++;
       }
     }
