@@ -8705,14 +8705,19 @@
       }
 
       function fireBanditComboStep(c, def, loadout, targetPlayer) {
-        const steps = window.Combat?.comboData?.[loadout.tap1];
+        const comboData = window.Combat?.comboData;
+        const steps = comboData?.[loadout.tap1];
         if (!steps || !steps.length) return false;
         const step = steps[c._banditComboIndex % steps.length];
         const isFinalStep = (c._banditComboIndex % steps.length) === steps.length - 1;
         c._banditComboIndex++;
         const base = banditAttackBaseline(def);
         const damage = Math.max(1, Math.round(base.damage * step.damageMul));
-        const rangePx = base.rangePx * step.rangeMul;
+        // combat-combo.js's own RANGE_SCALE (0.6) shrinks the raw
+        // rangeMul-scaled cone down from what "read as oversized in
+        // practice" for the player -- omitting it here would give bandits a
+        // ~67% bigger hit cone than the identical player attack.
+        const rangePx = base.rangePx * step.rangeMul * (comboData.RANGE_SCALE ?? 1);
         const halfConeRad = step.halfConeDeg * Math.PI / 180;
         const knockbackPxS = base.knockbackPxS * step.knockbackMul;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
@@ -8720,7 +8725,6 @@
         c.telegraphState = 'windup';
         c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
         c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
-        const comboData = window.Combat?.comboData;
         beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
@@ -8750,7 +8754,10 @@
         const tech = techDef.build(null, targetPlayer, cond);
         const base = banditAttackBaseline(def);
         const damage = Math.max(1, Math.round(base.damage * tech.damageMul));
-        const rangePx = base.rangePx * tech.rangeMul;
+        // combat-quickattacks.js's own RANGE_SCALE (0.6) shrinks the raw
+        // rangeMul-scaled cone -- see the matching comment in
+        // fireBanditComboStep, same "read as oversized" fix applies here.
+        const rangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
         const halfConeRad = tech.halfConeDeg * Math.PI / 180;
         const knockbackPxS = base.knockbackPxS * tech.knockbackMul;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
@@ -8884,13 +8891,13 @@
         const steps = combo?.[loadout.tap1];
         if (steps?.length) {
           const step0 = steps[0];
-          reach = Math.max(reach, base.rangePx * step0.rangeMul + TILE * (step0.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5));
+          reach = Math.max(reach, base.rangePx * step0.rangeMul * (combo.RANGE_SCALE ?? 1) + TILE * (step0.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5));
         }
         const qa = window.Combat?.quickAttackData;
         const techDef = qa?.TECHNIQUES?.[loadout.tap2];
         if (techDef) {
           const preview = techDef.build(null, null, { enemyStriking: false, exhausted: false, behind: false, lowHealth: false });
-          reach = Math.max(reach, base.rangePx * preview.rangeMul + TILE * (qa.LUNGE_TILE_MUL || 5.5));
+          reach = Math.max(reach, base.rangePx * preview.rangeMul * (qa.RANGE_SCALE ?? 1) + TILE * (qa.LUNGE_TILE_MUL || 5.5));
         }
         const cb = window.Combat?.chargedBreakerData;
         if (loadout.hold1 === 'chargedBreaker' && cb) {
@@ -9026,19 +9033,28 @@
 
         const engageRangePx = banditEngagementReachPx(def, loadout);
         const slot = claimBanditAttackSlot(c, towardAngle);
-        if (distToPlayer > engageRangePx || !slot) {
-          // Either still closing, or both attack slots belong to other
-          // bandits right now -- either way this isn't an attack attempt
-          // this frame, just positioning: a slot-holder heads for its own
-          // flank point just inside reach, a queued bandit holds a wider
-          // standoff ring and keeps clear of its gang-mates.
+        // attackCooldownS (0.95-1.15s) runs noticeably longer than the
+        // post-attack retreat step (JUMP_BACK_DUR_S, 0.4s), and retreating
+        // only backs up one tile -- well short of engageRangePx once lunge
+        // distance is folded in -- so a bandit reliably lands back here
+        // still "in range" with real cooldown left on the clock. Gating on
+        // cooldown/stamina here alongside range/slot (instead of after, as
+        // its own dead-stop return) means that remaining wait is spent the
+        // same way "still closing" is: holding/adjusting its ring position
+        // and tracking the player, instead of a frozen no-op stand -- this
+        // was the actual source of the awkward post-attack pause, not any
+        // missing animation. Wildlife's own chase branch never has this gap
+        // since it keeps calling moveCreatureToward every frame regardless
+        // of its own attackCooldownT.
+        const readyToStrike = distToPlayer <= engageRangePx && !!slot
+          && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c);
+        if (!readyToStrike) {
           const targetPoint = slot
             ? banditRingPoint(targetPlayer, slot.angle, engageRangePx * 0.85)
             : banditPersonalSpaceAdjust(c, banditRingPoint(targetPlayer, towardAngle, engageRangePx * BANDIT_STANDOFF_RANGE_MUL));
           const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, def.chaseSpeed, dt);
           return { aimAngle: towardAngle, moving };
         }
-        if (c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return { aimAngle: towardAngle, moving: false };
         window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
         const openingFresh = c._banditComboIndex === 0;
         let fired = false;
@@ -9168,12 +9184,24 @@
         c._banditTrailAge = 0;
       }
 
-      const BANDIT_TRAIL_FADE_S = 0.22;
+      // The real cone trail (updateCombatConeTrail) stays at FULL opacity for
+      // its entire visible window and only fades (or, for a tap attack whose
+      // strikeFrac is 1, just vanishes outright) right at the very end -- it
+      // never dims gradually from the moment it appears. The previous
+      // version here faded linearly from spawn across its whole (short)
+      // lifetime, so it spent most of its life at low opacity under additive
+      // blending -- easy to miss entirely. HOLD_S now keeps it fully bright
+      // first, matching how a tap attack's own trail reads, before a brief
+      // fade-out standing in for the real system's end-of-swing return tail.
+      const BANDIT_TRAIL_HOLD_S = 0.22;
+      const BANDIT_TRAIL_FADE_S = 0.16;
       function updateBanditTrailArc(c, dt) {
         const mesh = c._banditTrailMesh;
         if (!mesh || !mesh.visible) return;
         c._banditTrailAge = (c._banditTrailAge || 0) + dt;
-        const alpha = 1 - c._banditTrailAge / BANDIT_TRAIL_FADE_S;
+        if (c._banditTrailAge < BANDIT_TRAIL_HOLD_S) { mesh.material.opacity = 0.85; return; }
+        const fadeT = c._banditTrailAge - BANDIT_TRAIL_HOLD_S;
+        const alpha = 1 - fadeT / BANDIT_TRAIL_FADE_S;
         if (alpha <= 0.01) { mesh.visible = false; return; }
         mesh.material.opacity = alpha * 0.85;
       }
