@@ -8939,22 +8939,32 @@
       const BANDIT_SLOT_MIN_ANGLE_RAD = 60 * Math.PI / 180;
       const BANDIT_STANDOFF_RANGE_MUL = 1.8;
       const BANDIT_PERSONAL_SPACE_PX = TILE * 0.85;
-      // Idle side-to-side sway applied to a waiting bandit's ring/standoff
-      // point (see the !readyToStrike branch below) -- a slow guard-stance
-      // shift, not a dodge, so it reads as "still in the fight, waiting its
-      // turn" instead of a dead stand while a slot/cooldown/stamina frees up.
+      // Idle sway applied to a waiting bandit's ring/standoff point (see the
+      // !readyToStrike branch below) -- a slow guard-stance shift, not a
+      // dodge, so it reads as "still in the fight, waiting its turn"
+      // instead of a dead stand while a slot/cooldown/stamina frees up.
+      // Swept as an ANGLE around the player (see banditRingPoint), not a
+      // straight-line Cartesian offset -- a linear offset from a point
+      // already at some radius moves partly toward/away from the player as
+      // well as sideways (chord vs. arc), and combined with the emergency
+      // too-close retreat that branch used to also have (a second, separate
+      // target formula it could disagree with frame to frame), that read as
+      // shivering forward/backward rather than a clean side-to-side stride.
+      // Sweeping the angle instead keeps the bandit on the ring at a
+      // constant radius by construction; there's now only ONE positioning
+      // formula for the whole waiting state (see readyToStrike below), with
+      // the personal-space nudge as the only thing allowed to pull it off
+      // the ring, and only when actually crowding another bandit.
       // Chased with BANDIT_STRAFE_SPEED_PX_S (a dedicated slow walking
       // speed), not def.chaseSpeed -- at full chase speed the bandit closes
       // most of the gap to this continuously-recalculated target in a
       // single frame and ends up snapping almost exactly onto it every
       // frame, which (moveCreatureToward never overshoots, so it can't be a
       // bounce-back oscillation) just means any frame-timing irregularity
-      // gets reproduced directly in its position with no damping -- reading
-      // as a shiver/vibration instead of the intended long, deliberate
-      // stride. Capping the speed well below the sway's own peak velocity
-      // forces a real lag between the bandit and its target, which acts as
-      // a low-pass filter smoothing that out.
-      const BANDIT_STRAFE_AMPLITUDE_PX = TILE * 0.65;
+      // gets reproduced directly in its position with no damping. Capping
+      // the speed well below the sway's own peak velocity forces a real lag
+      // between the bandit and its target, acting as a low-pass filter.
+      const BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD = 30 * Math.PI / 180;
       const BANDIT_STRAFE_HZ = 0.14;
       const BANDIT_STRAFE_SPEED_PX_S = 55;
       const _banditAttackSlots = []; // [{ bandit, angle }]
@@ -8974,6 +8984,49 @@
         const slot = { bandit: c, angle };
         _banditAttackSlots.push(slot);
         return slot;
+      }
+
+      // Queued (non-slot-holding) bandits used to all share one single
+      // standoff ring, relying entirely on banditPersonalSpaceAdjust to
+      // keep them apart -- fine for 2-3 spares, but a bigger gang (up to
+      // gruntsMax+lieutenantsMax+1 per bandit-gang-config.json) packs
+      // everyone onto that one ring at once. Spreads them across multiple
+      // concentric rings instead, BANDIT_QUEUE_RING_CAPACITY bandits per
+      // ring before the next one queues onto a ring further out (see
+      // BANDIT_QUEUE_RING_STEP_MUL, applied in the !readyToStrike branch).
+      // Mirrors claimBanditAttackSlot's own prune/persist pattern -- a
+      // bandit keeps its ring+angle once assigned rather than being
+      // reshuffled every frame, which also fixes queued bandits' ring point
+      // otherwise recomputing at a fresh towardAngle every single frame
+      // (jittering with the player's/bandit's own minor position noise).
+      const BANDIT_QUEUE_RING_CAPACITY = 3;
+      const BANDIT_QUEUE_RING_STEP_MUL = 0.6;
+      const _banditQueueRings = []; // [{ bandit, ringIndex, angle }]
+
+      function claimBanditQueueRing(c, towardAngle) {
+        for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
+          const q = _banditQueueRings[i];
+          if (q.bandit.health <= 0 || q.bandit.state !== 'chase') _banditQueueRings.splice(i, 1);
+        }
+        const existing = _banditQueueRings.find(q => q.bandit === c);
+        if (existing) return existing;
+        const countByRing = [];
+        for (const q of _banditQueueRings) countByRing[q.ringIndex] = (countByRing[q.ringIndex] || 0) + 1;
+        let ringIndex = 0;
+        while ((countByRing[ringIndex] || 0) >= BANDIT_QUEUE_RING_CAPACITY) ringIndex++;
+        // Spread bandits already on this same ring apart by angle -- not a
+        // hard minimum-separation lock like attack slots (queue rings don't
+        // need that guarantee), just an even starting spacing so a ring
+        // doesn't spawn its members all bunched at the same bearing.
+        const onRing = _banditQueueRings.filter(q => q.ringIndex === ringIndex);
+        const slice = Math.PI * 2 / (BANDIT_QUEUE_RING_CAPACITY + 1);
+        let angle = towardAngle;
+        for (const q of onRing) {
+          if (Math.abs(angleDiff(angle, q.angle)) < slice) angle += slice;
+        }
+        const rec = { bandit: c, ringIndex, angle };
+        _banditQueueRings.push(rec);
+        return rec;
       }
 
       // A point on a ring of the given radius around the target, at the
@@ -9082,42 +9135,38 @@
         const readyToStrike = distToPlayer <= engageRangePx && !!slot
           && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c);
         if (!readyToStrike) {
-          // A bandit that isn't the one actually swinging right now (on
-          // cooldown, short on stamina, or not holding one of the 2 attack
-          // slots) has no business lingering shoulder-to-shoulder with the
-          // player -- back it off first, like the post-attack jump-back,
-          // whenever it's inside its own melee baseline rather than trusting
-          // the ring/standoff point below to already be far enough out. That
-          // point is *supposed* to sit well outside melee (engageRangePx*
-          // 0.85 or *1.8), but a crowded arena (several bandits' own
-          // personal-space pushes shoving each other around) can otherwise
-          // leave a non-attacking bandit parked right next to the player
-          // with nothing pulling it back out.
-          if (distToPlayer < def.attackRangePx * 1.5) {
-            const awayAng = towardAngle + Math.PI;
-            const retreatTarget = banditPersonalSpaceAdjust(c, { x: c.x + Math.cos(awayAng) * TILE, y: c.y + Math.sin(awayAng) * TILE });
-            const moving = moveCreatureToward(c, retreatTarget.x, retreatTarget.y, def.chaseSpeed, dt);
-            return { aimAngle: towardAngle, moving };
-          }
-          const targetPoint = slot
-            ? banditRingPoint(targetPlayer, slot.angle, engageRangePx * 0.85)
-            : banditPersonalSpaceAdjust(c, banditRingPoint(targetPlayer, towardAngle, engageRangePx * BANDIT_STANDOFF_RANGE_MUL));
-          // Once a bandit has actually reached its ring/standoff point,
-          // moveCreatureToward has nowhere left to send it -- without this,
-          // a bandit waiting out a cooldown/stamina/slot-contention gap (see
-          // the comment above readyToStrike) just parks dead still, which
-          // reads as "not attacking" rather than "waiting its turn." Sways
-          // the target point itself side to side, perpendicular to the
-          // player-facing line, on a slow per-bandit-phased sine wave, so
-          // it keeps drifting like a guard stance instead of freezing.
+          // One unified ring formula for the whole waiting state (slot-
+          // holder-on-cooldown, stamina-short, or genuinely queued alike),
+          // instead of a separate too-close emergency retreat and a
+          // separate ring/standoff target that could disagree frame to
+          // frame about where the bandit should be -- see the comment on
+          // BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD for why that disagreement was
+          // reading as forward/backward shivering. baseAngle sweeps with the
+          // idle sway (a slot holder swings around its locked flank angle; a
+          // queued bandit around its own claimed queue-ring angle -- see
+          // claimBanditQueueRing, spreading a big gang's spares across
+          // several concentric rings instead of packing them all onto one)
+          // and baseRadius is clamped to never sit inside melee range even
+          // if engageRangePx*0.85/1.8 would otherwise put it there (a
+          // crowded arena's personal-space pushes can shove the "supposed
+          // to be far enough out" ring/flank point closer than intended).
+          const queueRing = slot ? null : claimBanditQueueRing(c, towardAngle);
+          const baseAngle = slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle);
+          const baseRadius = Math.max(
+            def.attackRangePx * 1.5,
+            slot
+              ? engageRangePx * 0.85
+              : engageRangePx * BANDIT_STANDOFF_RANGE_MUL * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL)
+          );
           const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
-          const strafeOffset = Math.sin(strafeT) * BANDIT_STRAFE_AMPLITUDE_PX;
-          const perpAngle = towardAngle + Math.PI / 2;
-          const strafedTarget = {
-            x: targetPoint.x + Math.cos(perpAngle) * strafeOffset,
-            y: targetPoint.y + Math.sin(perpAngle) * strafeOffset,
-          };
-          const moving = moveCreatureToward(c, strafedTarget.x, strafedTarget.y, BANDIT_STRAFE_SPEED_PX_S, dt);
+          const swayAngle = Math.sin(strafeT) * BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD;
+          const ringPoint = banditRingPoint(targetPlayer, baseAngle + swayAngle, baseRadius);
+          // Only pulls the bandit off the ring when actually crowding
+          // another bandit -- the common case is a pure ring point, so
+          // "back off when waiting" and "sway side to side" both fall out
+          // of this same call instead of being two separate movements.
+          const targetPoint = banditPersonalSpaceAdjust(c, ringPoint);
+          const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, BANDIT_STRAFE_SPEED_PX_S, dt);
           return { aimAngle: towardAngle, moving };
         }
         window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
