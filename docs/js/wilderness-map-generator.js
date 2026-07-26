@@ -4024,15 +4024,26 @@
           pathAnchor,
           note: 'Root Totem — a wilderness respawn checkpoint'
         });
-        reserveDesignClearing(tile.x, tile.y, 2, 'rootTotemClearing');
+        // Radius 4, not 1-2 as originally tried -- reserveDesignClearing
+        // only keeps a tree's own TRUNK tile (its occupiedBy origin) off
+        // the reserved area; it says nothing about a tree planted just
+        // OUTSIDE that area, whose CANOPY is allowed (by design -- see
+        // TREE_SPACING_MIN_DIST's own comment) to reach ~2.75-6 tiles out
+        // from its trunk so the forest reads as a continuous canopy mass.
+        // A 1-2 tile clearing left a totem/pathAnchor easily still standing
+        // under a neighboring tree's canopy, visually and (per player
+        // report, twice now) apparently physically "inside a tree" on
+        // respawn. 4 tiles clears the common case without eating so much
+        // area that landmark/path placement elsewhere gets starved.
+        reserveDesignClearing(tile.x, tile.y, 4, 'rootTotemClearing');
         // nearestFreeWalkableNeighbor searches outward ring by ring up to 7
         // tiles away, so in a crowded sector (dense forest, other landmarks
-        // already placed) pathAnchor can land well outside the 2-tile
-        // clearing reserved above -- reserve its own small clearing too, or
-        // a later flora pass (which only checks tile.designReserve, not
-        // "is this some totem's pathAnchor") is free to plant a tree right
-        // on top of it, spawning a respawning player inside that tree.
-        if (pathAnchor) reserveDesignClearing(pathAnchor.x, pathAnchor.y, 1, 'rootTotemPathAnchor');
+        // already placed) pathAnchor can land well outside the clearing
+        // reserved above -- reserve its own clearing too, or a later flora
+        // pass (which only checks tile.designReserve, not "is this some
+        // totem's pathAnchor") is free to plant a tree right on top of it,
+        // spawning a respawning player inside that tree.
+        if (pathAnchor) reserveDesignClearing(pathAnchor.x, pathAnchor.y, 4, 'rootTotemPathAnchor');
         placed++;
       }
     }

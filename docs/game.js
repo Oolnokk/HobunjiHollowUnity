@@ -1112,7 +1112,7 @@
       // tied to a fixed ability's own windup/strike timing, not "how fast
       // does this thing walk," so scaling them would desync a swing's
       // animation from where its hit lands rather than just changing pace.
-      let devGlobalSpeedMul = 1;
+      let devGlobalSpeedMul = 0.75;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
@@ -5053,14 +5053,20 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
-        // Without this, a creature walking behind a tree/wall just vanishes
-        // outright instead of showing the same see-through stencil ghost the
-        // player gets (see addOccludedGhostSiblings's other call sites,
-        // spawnPlayerAvatar/makeToolPlaneMesh/makeBanditEntity) -- this was
-        // never called for any animal at all, wild or companion, so "the
-        // occlusion silhouette doesn't even show animals" was true of every
-        // single one of them.
-        addOccludedGhostSiblings(avatarRef.group);
+        // Companion-only. The stencil ghost mechanism marks a tree as
+        // "blocking" per-PIXEL (isBetweenCameraAndPlayer2D, checked against
+        // camera-to-player/camera-to-companion lines only -- see
+        // updateZoneVegetationCulling) and reveals ANY ghost sibling behind
+        // that tree at that screen position, not just the specific
+        // creature the LOS check was computed for. Calling this for every
+        // wild animal too (as an earlier version of this fix did) meant an
+        // unrelated animal standing behind the SAME faded tree became
+        // visible right along with the player/companion -- x-ray vision
+        // into vegetation the player has no actual line of sight through,
+        // for a creature the check was never actually run against. Only
+        // the player's own avatar and their active companion are ever a
+        // revealTarget, so only they should ever get a ghost sibling.
+        if (opts.isCompanion) addOccludedGhostSiblings(avatarRef.group);
         targetScene.add(avatarRef.group);
 
         // Separate top-level object (not parented under avatarRef.group) so
@@ -9945,11 +9951,13 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
-        // See makeCreatureEntity's matching comment -- bandits vanish
-        // outright behind a tree/wall instead of showing the same
-        // see-through stencil ghost the player gets, for the same reason
-        // (this was never called for them either).
-        addOccludedGhostSiblings(avatarRef.group);
+        // No ghost sibling here -- see makeCreatureEntity's matching
+        // comment. A bandit is never a revealTarget (only the player and
+        // their active companion are), so giving it a ghost sibling meant
+        // it became visible x-rayed through vegetation whenever it
+        // happened to stand behind the SAME tree the player/companion was
+        // fading through, which is real line-of-sight the player doesn't
+        // actually have to that bandit.
         targetScene.add(avatarRef.group);
         const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
         if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
