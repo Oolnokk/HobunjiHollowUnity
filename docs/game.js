@@ -9288,7 +9288,28 @@
           const moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
           return { aimAngle: towardAngle, moving };
         }
-        if (c._banditAction) return { aimAngle: c.facing, moving: false };
+        if (c._banditAction) {
+          // Keep tracking the target's CURRENT position with c.facing for
+          // the rest of the windup/strike, even after updateBanditLunge's
+          // own translational movement already halted (see its own
+          // halt-margin comment). The real hit-check (fireBandit*'s
+          // onStrike) fires later and reads whatever c.facing is AT THAT
+          // MOMENT, but nothing kept re-aiming it once the lunge stopped
+          // moving early -- which happens routinely, e.g. a bandit that
+          // was already near point-blank when it committed to a short step
+          // like Forehand Swing halts its lunge almost immediately, then
+          // stood frozen facing a stale angle for the rest of the ~0.3s
+          // windup+strike with zero further correction. A player free to
+          // sidestep, unopposed, for that whole remaining window slips
+          // outside even a short-range cone without ever looking like they
+          // dodged anything -- a whiff that reads as "missed at point-blank
+          // range" in a combat log.
+          if (targetPlayer.health > 0) {
+            const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+            c.facing += angleDiff(desiredFacing, c.facing) * Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
+          }
+          return { aimAngle: c.facing, moving: false };
+        }
 
         // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
         // other bandits -- once a bandit is "in range" (below) it stops
