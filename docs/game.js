@@ -1867,9 +1867,10 @@
           // companion (see COMPANION_AI_TYPES) — 'vigilantProtector' is
           // updateCompanions()'s existing follow/fight behavior.
           aiType: 'vigilantProtector',
-          // How far away (in tiles) this species can sense a nearby bandit
-          // camp or animal den through cover/foliage — see
-          // updateCompanionPerception. A hunting dog's nose beats a farm
+          // Base sense range (tiles) for a nearby bandit camp or animal den
+          // through cover/foliage — scaled by PERCEPTION_TILES_MULTIPLIER
+          // for the real in-game range (see updateCompanionPerception /
+          // _companionPerceptionRangePx). A hunting dog's nose beats a farm
           // bird's (see uumkaoii's own value below); species with no
           // perceptionTiles set fall back to DEFAULT_PERCEPTION_TILES.
           perceptionTiles: 10,
@@ -10075,11 +10076,17 @@
       const PERCEPTION_CHECK_INTERVAL_S = 0.6;
       let _perceptionCheckAccum = 0;
       const DEFAULT_PERCEPTION_TILES = 6;
+      // Global tuning knob on top of each species' own base perceptionTiles
+      // (10 tiles "as the crow flies" read as "it's basically already on top
+      // of you" in actual play, not a meaningful early-warning distance) --
+      // scale every species' range from here rather than re-tuning each
+      // CREATURE_DB entry by hand.
+      const PERCEPTION_TILES_MULTIPLIER = 4;
       // key ('camp:'+instanceId or 'den:'+denKey) -> { kind, zoneId, col, row, label }
       const _perceivedThreats = new Map();
 
       function _companionPerceptionRangePx(c) {
-        return (c.def?.perceptionTiles ?? DEFAULT_PERCEPTION_TILES) * TILE;
+        return (c.def?.perceptionTiles ?? DEFAULT_PERCEPTION_TILES) * PERCEPTION_TILES_MULTIPLIER * TILE;
       }
 
       function updateCompanionPerception(dt) {
