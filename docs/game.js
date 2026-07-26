@@ -29019,7 +29019,7 @@ This is a CONVEYOR BELT of up to ${BANDIT_COMBAT_LOG_BUFFER_SIZE} snapshots, one
 Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/updateBanditCombatAI() (Bandit Gangs section) for the state machine these fields describe. Bandits fight through the SAME named abilities the player has (Combo/Quick Attack/Charged Breaker/Counter Shield -- real damage/range/cone numbers exposed read-only via window.Combat.comboData/quickAttackData/chargedBreakerData/counterShieldData), executed by a parallel bandit-only AI (updateBanditCombatAI) rather than the player-singleton combat-core/combo/quickattacks/holds modules themselves -- see the long comment above updateBanditCombatAI for why. Wildlife still uses the older plain bite-telegraph/behaviorStage/Pounce system (combat-enemy-telegraph.js/combat-animal-attacks.js) unchanged.
 Common fields:
   id            unique entity id (bandit ids look like "bandit_<rank>_<timestamp>_<rand>")
-  kind          PLAYER | BANDIT | CREATURE | CORPSE (CORPSE = health<=0, still lootable via the action bar)
+  kind          PLAYER | BANDIT | CREATURE | COMPANION | CORPSE (CORPSE = health<=0, still lootable via the action bar; a dead companion also reports CORPSE)
   state         idle|chase|return|patrol-chase|fleeing-low-health|dying|corpse
   hp/stam       current/max health and stamina
   pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (TILE=55px is 1 tile)
@@ -29043,7 +29043,11 @@ Bandit-only fields:
   idle/settleT        idle=1 means no staged action is in flight AND the brief post-swing settle window (BANDIT_TOOL_SETTLE_S) has elapsed -- the bandit is truly at rest, not just between windup/strike. settleT is seconds left in that settle window (0 outside it). stanceMatch/bodyLeanDeg below are only meaningful (worth flagging as a bug) once idle=1 -- mid-swing or mid-settle they're expected to differ from their "rest" values.
   stanceAnim/stanceExpected/stanceMatch   stanceAnim is the bandit's CURRENT rest-pose style (c._banditSwingAnim: sweep|thrust); stanceExpected is what its equipped weapon's own animStyle says it should be (banditNaturalSwing(def) -- sweep for hatchet/fishingmace, thrust for the rest); stanceMatch=0 while idle=1 means the idle stance is stuck showing a DIFFERENT ability's style than the one its weapon actually plays at rest (this exact bug happened once already -- Quick Attack/Charged Breaker hardcode their own anim/pose and finishBanditAction has to reset it back afterward).
   facingDeg/groupRotDeg/bodyLeanDeg   facingDeg is c.facing (the bandit's true aim/facing angle, degrees) and groupRotDeg is c.groupRot (its avatar body's actual rendered rotation.y, in the portrait-rig's own reflected+offset space -- see updateCreatureMesh's rawTargetRotY) -- these are NOT the same convention and are not meant to numerically match. bodyLeanDeg is the signed difference between groupRotDeg and where the body SHOULD be sitting at rest for the current facingDeg (0 = body exactly at its rest angle); a large bodyLeanDeg while idle=1 means the avatar body is stuck leaned into a swing that already ended -- the other half of the same class of bug as stanceMatch above (this also happened once already, from the settle window not reasserting the lean on both the weapon and the body together).
-why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant`;
+why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant
+Companion-only fields (kind=COMPANION -- the player's own active whistle/stable companion, only listed when it's actually in this zone):
+  name          the companion's given name (stable) or "-" if whistle-summoned with none set
+  master        always "player" today (companions are player-only; the field exists in case that changes)
+  perceptionPx  this companion's own _companionPerceptionRangePx(c) -- the radius within which it senses/marks a nearby bandit camp or animal den (see updateCompanionPerception); compare against distances to camps/dens, not distPlayer alone, since perception is centered on the COMPANION, not the player`;
 
       function _combatLogDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
@@ -29138,7 +29142,13 @@ why="..."             free-text reasoning computed at snapshot time, referencing
       }
 
       function captureBanditCombatSnapshotText() {
-        const all = [player, ..._arenaSpawnedCreatures];
+        // companionObjects is a separate tracking Set from
+        // _arenaSpawnedCreatures (the dev-spawner's own bookkeeping) -- a
+        // whistle/stable companion summoned the normal way was previously
+        // invisible to this log entirely, silently omitted even though it's
+        // a real participant standing right next to the player.
+        const companions = [...companionObjects].filter(c => c.areaId === currentArea);
+        const all = [player, ..._arenaSpawnedCreatures, ...companions];
         const lines = [`--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
           `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)})`];
         for (const c of _arenaSpawnedCreatures) {
@@ -29176,6 +29186,20 @@ why="..."             free-text reasoning computed at snapshot time, referencing
               `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `nearestOther=${nearestTxt}`,
             ].join(' '));
           }
+        }
+        for (const c of companions) {
+          const def = c.def || {};
+          const nearestTxt = _combatLogNearestOther(c, all);
+          const kind = c.health <= 0 ? 'CORPSE' : 'COMPANION';
+          lines.push([
+            `ENTITY kind=${kind}`, `id=${c.id}`, `species=${c.creatureKey}`, `name=${c.name || '-'}`, `master=${c.master === player ? 'player' : (c.master?.id || 'none')}`,
+            `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
+            `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
+            `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
+            `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
+            `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `perceptionPx=${Math.round(_companionPerceptionRangePx(c))}`,
+            `nearestOther=${nearestTxt}`,
+          ].join(' '));
         }
         return lines.join('\n');
       }
