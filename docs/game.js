@@ -1867,6 +1867,12 @@
           // companion (see COMPANION_AI_TYPES) — 'vigilantProtector' is
           // updateCompanions()'s existing follow/fight behavior.
           aiType: 'vigilantProtector',
+          // How far away (in tiles) this species can sense a nearby bandit
+          // camp or animal den through cover/foliage — see
+          // updateCompanionPerception. A hunting dog's nose beats a farm
+          // bird's (see uumkaoii's own value below); species with no
+          // perceptionTiles set fall back to DEFAULT_PERCEPTION_TILES.
+          perceptionTiles: 10,
           canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
           sprites: {
@@ -1895,6 +1901,9 @@
           attacks: ['pounce'],
           attackTag: 'blunt', // a peaceable farm bird's bump/peck, not a real bite
           aiType: 'vigilantProtector',
+          // See dabinggi-hound's matching comment — a farm bird's senses are
+          // no match for a hound's nose.
+          perceptionTiles: 5,
           canClimb: false, canSwim: false,
           modelWidth: 1.6, tint: 0xffffff,
           sprites: {
@@ -7735,6 +7744,26 @@
           ctx.fill();
           ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
         }
+        // Threats a companion's Perception has sensed nearby (see
+        // updateCompanionPerception) — a distinct red danger marker rather
+        // than a WMAP_LOCALE_COLORS dot, since this is a temporary alert
+        // tied to an active, uncleared threat, not a permanently-remembered
+        // point of interest. Disappears the moment the threat is actually
+        // cleared, at which point it's pruned from _perceivedThreats itself.
+        const threatMarkerR = Math.max(4, markerR * 1.2);
+        for (const info of _perceivedThreats.values()) {
+          if (info.zoneId !== zoneId) continue;
+          const mx = info.col * scaleX, my = info.row * scaleY;
+          ctx.beginPath();
+          ctx.arc(mx, my, threatMarkerR, 0, Math.PI * 2);
+          ctx.fillStyle = '#c0392b';
+          ctx.fill();
+          ctx.strokeStyle = '#2a0d0a'; ctx.lineWidth = 1.5; ctx.stroke();
+          ctx.fillStyle = '#fff2d0';
+          ctx.font = `bold ${Math.max(7, Math.round(threatMarkerR * 1.1))}px system-ui`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('!', mx, my + 0.5);
+        }
         // Garanki Gabu's live position, drawn as his own portrait (the same
         // baked head-with-cosmetics canvas his world model and dialogue
         // portrait use — see makeNpcWalker's avatarFrontCanvas) instead of a
@@ -10018,6 +10047,89 @@
           if (c.banditCampInstanceId === rec.instance.id && c.health > 0) return false;
         }
         return true;
+      }
+
+      // ── Companion Perception: sensing nearby bandit camps/dens ─────────
+      //
+      // A companion's own species-defined perceptionTiles (see CREATURE_DB —
+      // a hunting dog's nose beats a farm bird's) is how far away it can
+      // sense danger through cover/foliage that fog-of-war alone wouldn't
+      // reveal. An active companion (whistle-summoned, actually present and
+      // following the player — not just sitting in the stable) periodically
+      // checks every live camp/den in the current zone against this range.
+      // The first time one comes into range it's announced once and marked
+      // on the map/minimap with its own danger marker (see
+      // _drawWildernessMapOnCanvas) until the threat is actually cleared —
+      // a camp once every tent is burned and every bandit dead (see
+      // isBanditCampCleared), a den once its current pack is wiped (see
+      // isDenPackAlive). Clearing removes the marker outright rather than
+      // leaving a stale "already handled" icon on the map — a den that
+      // later repopulates needs sensing again from scratch, same as never
+      // having found it the first time.
+      //
+      // Deliberately in-memory only, not saved to localStorage: camps
+      // re-roll to a new spot once cleared and dens are re-seeded per zone
+      // visit already (see forgetZoneBanditState/ensureCurrentZoneDenPacks),
+      // so there's no stable location to persist a reveal against across a
+      // reload the way _loadDiscoveredLocales persists a fixed landmark.
+      const PERCEPTION_CHECK_INTERVAL_S = 0.6;
+      let _perceptionCheckAccum = 0;
+      const DEFAULT_PERCEPTION_TILES = 6;
+      // key ('camp:'+instanceId or 'den:'+denKey) -> { kind, zoneId, col, row, label }
+      const _perceivedThreats = new Map();
+
+      function _companionPerceptionRangePx(c) {
+        return (c.def?.perceptionTiles ?? DEFAULT_PERCEPTION_TILES) * TILE;
+      }
+
+      function updateCompanionPerception(dt) {
+        _perceptionCheckAccum += dt;
+        if (_perceptionCheckAccum < PERCEPTION_CHECK_INTERVAL_S) return;
+        _perceptionCheckAccum = 0;
+
+        // Prune anything that's since been cleared before scanning for new
+        // reveals, so a freshly-repopulated den isn't left permanently
+        // unmarked just because it was sensed once, long ago, before it was
+        // wiped out the first time.
+        for (const [key, info] of _perceivedThreats) {
+          if (info.kind === 'camp') {
+            const rec = (_banditCampInstances.get(info.zoneId) || []).find(r => r.instance.id === info.instanceId);
+            if (!rec || isBanditCampCleared(rec)) _perceivedThreats.delete(key);
+          } else if (info.kind === 'den') {
+            if (!isDenPackAlive(info.denKey)) _perceivedThreats.delete(key);
+          }
+        }
+
+        if (!_isZoneArea(currentArea)) return;
+        const layout = _zoneLayouts.get(currentArea);
+        for (const c of companionObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          // Only the human player's own perception drives map reveals — an
+          // NPC's or another master's companion sensing danger wouldn't mean
+          // anything to the player.
+          if ((c.master || player) !== player) continue;
+          const rangePx = _companionPerceptionRangePx(c);
+          const label = c.name || c.def?.label || 'Your companion';
+
+          for (const rec of (_banditCampInstances.get(currentArea) || [])) {
+            const key = 'camp:' + rec.instance.id;
+            if (_perceivedThreats.has(key) || isBanditCampCleared(rec)) continue;
+            const col = rec.instance.site.x + rec.instance.site.w / 2, row = rec.instance.site.y + rec.instance.site.h / 2;
+            if (Math.hypot(col * TILE - c.x, row * TILE - c.y) > rangePx) continue;
+            _perceivedThreats.set(key, { kind: 'camp', zoneId: currentArea, instanceId: rec.instance.id, col, row, label: 'Bandit Camp' });
+            showToast(`${label} senses a bandit camp nearby — marked on the map!`, false);
+          }
+
+          for (const den of (layout?.dens || [])) {
+            const denKey = denKeyFor(currentArea, den);
+            const key = 'den:' + denKey;
+            if (_perceivedThreats.has(key) || !isDenPackAlive(denKey)) continue;
+            const col = den.x + (den.w || 1) / 2, row = den.y + (den.h || 1) / 2;
+            if (Math.hypot(col * TILE - c.x, row * TILE - c.y) > rangePx) continue;
+            _perceivedThreats.set(key, { kind: 'den', zoneId: currentArea, denKey, col, row, label: 'Animal Den' });
+            showToast(`${label} senses an animal den nearby — marked on the map!`, false);
+          }
+        }
       }
 
       // Stamps one camp into an already-generated zone and spawns its gang.
@@ -29146,6 +29258,7 @@ why="..."             free-text reasoning computed at snapshot time, referencing
             // scene it was last synced into.
             syncCompanionFromWhistle();
             updateCompanions(dt);
+            updateCompanionPerception(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
