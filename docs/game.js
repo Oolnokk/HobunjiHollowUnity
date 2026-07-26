@@ -5053,6 +5053,14 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
+        // Without this, a creature walking behind a tree/wall just vanishes
+        // outright instead of showing the same see-through stencil ghost the
+        // player gets (see addOccludedGhostSiblings's other call sites,
+        // spawnPlayerAvatar/makeToolPlaneMesh/makeBanditEntity) -- this was
+        // never called for any animal at all, wild or companion, so "the
+        // occlusion silhouette doesn't even show animals" was true of every
+        // single one of them.
+        addOccludedGhostSiblings(avatarRef.group);
         targetScene.add(avatarRef.group);
 
         // Separate top-level object (not parented under avatarRef.group) so
@@ -9733,6 +9741,11 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
+        // See makeCreatureEntity's matching comment -- bandits vanish
+        // outright behind a tree/wall instead of showing the same
+        // see-through stencil ghost the player gets, for the same reason
+        // (this was never called for them either).
+        addOccludedGhostSiblings(avatarRef.group);
         targetScene.add(avatarRef.group);
         const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
         if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
@@ -24768,7 +24781,19 @@
         const rearRange = VEG_CULL_REAR_TILES;
         const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
-        const playerWX = player.x / TILE, playerWZ = player.y / TILE;
+        // Every character worth revealing an occluder for, not just the
+        // player -- an active companion (or, before this, any other
+        // creature) walking behind a tree/wall previously just vanished
+        // outright, with no ghost silhouette, because the fade/stencil
+        // trigger below only ever checked the camera-to-PLAYER line. A tree
+        // can easily sit on the camera-to-companion line without also
+        // sitting on the camera-to-player line (they're rarely standing on
+        // exactly the same spot), so this needs its own check per target
+        // rather than reusing the player's.
+        const revealTargets = [{ x: player.x / TILE, z: player.y / TILE }];
+        for (const c of companionObjects) {
+          if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
+        }
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
           const dx = s.x - camX, dz = s.z - camZ;
@@ -24781,8 +24806,9 @@
           if (force || show !== obj.visible) obj.visible = show;
 
           if (show) {
+            const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
             const blocking = !obj.userData.skipOcclusionFade
-              && isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, playerWX, playerWZ, (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL);
+              && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
             const target = blocking ? TREE_FADE_OPACITY : 1;
             if (target !== 1 || obj.userData._fadeMaterials) {
               const mats = ensureTreeFadeMaterials(obj);
