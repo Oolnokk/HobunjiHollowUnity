@@ -5965,7 +5965,24 @@
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
           const onFleeCooldown = c._fleeCooldownUntil > performance.now();
 
-          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
+          // distFromHome <= leashRangePx is required to re-aggro, not just
+          // distToPlayer <= aggroRangePx, specifically to break a real
+          // oscillation: aggroRangePx (341) is smaller than leashRangePx
+          // (550), so a player following a fleeing 'return' bandit at a
+          // similar pace easily keeps distToPlayer under aggroRangePx while
+          // distFromHome hovers right around leashRangePx. Without this
+          // check, that flips the bandit straight back to 'chase' the
+          // instant it's in aggro range regardless of how far from home it
+          // still is; it then walks AWAY from home chasing the player,
+          // pushing distFromHome back over leashRangePx within a frame or
+          // two and re-triggering 'return' -- a genuine multi-frame
+          // chase<->return flicker (not the png-plane deadzone, which only
+          // ever governs the interior plane split, see updateCreatureMesh).
+          // 'chase' and 'return' compute totally different facing angles
+          // (toward the player vs. toward home), so this reads exactly as
+          // rotational flicker between two unrelated angles, and since
+          // 'return' never attacks, it also reads as "won't attack either."
+          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 
@@ -8926,8 +8943,20 @@
       // point (see the !readyToStrike branch below) -- a slow guard-stance
       // shift, not a dodge, so it reads as "still in the fight, waiting its
       // turn" instead of a dead stand while a slot/cooldown/stamina frees up.
-      const BANDIT_STRAFE_AMPLITUDE_PX = TILE * 0.4;
-      const BANDIT_STRAFE_HZ = 0.3;
+      // Chased with BANDIT_STRAFE_SPEED_PX_S (a dedicated slow walking
+      // speed), not def.chaseSpeed -- at full chase speed the bandit closes
+      // most of the gap to this continuously-recalculated target in a
+      // single frame and ends up snapping almost exactly onto it every
+      // frame, which (moveCreatureToward never overshoots, so it can't be a
+      // bounce-back oscillation) just means any frame-timing irregularity
+      // gets reproduced directly in its position with no damping -- reading
+      // as a shiver/vibration instead of the intended long, deliberate
+      // stride. Capping the speed well below the sway's own peak velocity
+      // forces a real lag between the bandit and its target, which acts as
+      // a low-pass filter smoothing that out.
+      const BANDIT_STRAFE_AMPLITUDE_PX = TILE * 0.65;
+      const BANDIT_STRAFE_HZ = 0.14;
+      const BANDIT_STRAFE_SPEED_PX_S = 55;
       const _banditAttackSlots = []; // [{ bandit, angle }]
 
       function claimBanditAttackSlot(c, towardAngle) {
@@ -9088,7 +9117,7 @@
             x: targetPoint.x + Math.cos(perpAngle) * strafeOffset,
             y: targetPoint.y + Math.sin(perpAngle) * strafeOffset,
           };
-          const moving = moveCreatureToward(c, strafedTarget.x, strafedTarget.y, def.chaseSpeed, dt);
+          const moving = moveCreatureToward(c, strafedTarget.x, strafedTarget.y, BANDIT_STRAFE_SPEED_PX_S, dt);
           return { aimAngle: towardAngle, moving };
         }
         window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
@@ -9262,9 +9291,20 @@
           c._banditToolSettleUntil = performance.now() + BANDIT_TOOL_SETTLE_S * 1000;
         }
 
-        const θ = c.facing || 0;
-        // Bandits face along their own `facing` the same way the player
-        // faces along `playerFacing` -- see updateCreatureMesh's aimAngle.
+        // c.groupRot, NOT c.facing -- groupRot is what actually drives the
+        // avatar body's own rotation.y (see updateCreatureMesh), already
+        // converted from raw aimAngle into that space (negated, offset by
+        // def.aimAngleOffset, +PI/2 for the portrait-plane convention) and
+        // smoothed. c.facing is the RAW, untransformed aim angle -- using it
+        // here directly (as this used to) put the weapon's own forward/right
+        // basis in a different, unrelated convention than the body's actual
+        // rendered orientation, drifting apart by up to a full 180 degrees
+        // depending on facing (they only happen to agree at aimAngle 0/PI)
+        // and reading as the weapon being held backwards. This mirrors
+        // exactly how the player's own updateToolMesh does it: θ =
+        // playerFacing, the SAME value that drives playerMesh.rotation.y
+        // directly, not some other player-facing field.
+        const θ = c.groupRot || 0;
         const base = banditToolBaseXY(c.avatarRef);
         // playerMesh.position.y is a feet-level origin (playerToolBaseY then
         // adds the hand height on top of that) -- avatarRef.group.position.y
