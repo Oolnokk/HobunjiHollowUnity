@@ -8707,9 +8707,24 @@
         c._banditLungeHitTest = hitTest;
       }
 
+      // Halts the lunge at a margin INSIDE the real hit-cone (see
+      // BANDIT_LUNGE_HALT_MARGIN), not right at its edge -- the actual
+      // damage hit-check (fireBandit*'s own onStrike) still uses the real,
+      // unshrunk rangePx/halfConeRad, so this margin only affects when the
+      // lunge itself stops moving, not what counts as a hit. Without it,
+      // the lunge halts the instant the player is barely inside the cone
+      // (zero cushion) and the hit-check doesn't actually fire until
+      // strikeS later, since the halt only ends the windup-phase movement
+      // early -- a real human player, unlike a hostile creature's target,
+      // routinely drifts during that gap, and with the real hit-cone now
+      // correctly sized (see banditEngagementReachPx's RANGE_SCALE fix,
+      // e.g. ~30px for a Forehand Swing) that's enough room to step back
+      // outside it before the hit-check ever runs, whiffing an attack that
+      // looked like it landed.
+      const BANDIT_LUNGE_HALT_MARGIN = 0.68;
       function isPlayerInBanditLungeCone(c, hitTest, targetPlayer) {
         if (!hitTest || targetPlayer.health <= 0) return false;
-        return inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, hitTest.rangePx, hitTest.halfConeRad);
+        return inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN, hitTest.halfConeRad);
       }
 
       // Returns true while a lunge is in flight (caller should skip its own
@@ -8770,8 +8785,14 @@
             c.telegraphState = 'strike';
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: step.dmgTag || def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(step.dmgTag || def.attackTag) });
-              playWeaponHitSfx(step.dmgTag || def.attackTag, c.x, c.y, c.areaId);
+              // def.attackTag (the bandit's actual rolled weapon material,
+              // see weaponDamageTypeForTool/weapon.dmgType) determines both
+              // the affliction dealt and the impact sound -- matches the
+              // player's own combat-combo.js fix, which no longer tags a
+              // swing by combo family (sweep=blunt/thrust=sharp) regardless
+              // of the equipped weapon's real material.
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
           onComplete: () => {
@@ -8809,14 +8830,13 @@
           onStrike: () => {
             c.telegraphState = 'strike';
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
-            // Every real Quick Attack technique hardcodes tag:'sharp'
-            // regardless of the equipped weapon's own dmgType (see
-            // combat-quickattacks.js's onTap) -- matched here rather than
-            // reading def.attackTag, for the same fidelity reason charged
-            // breaker below hardcodes 'blunt'.
+            // def.attackTag (the bandit's real weapon material) determines
+            // both the affliction and the impact sound -- see
+            // combat-quickattacks.js's onTap, which no longer hardcodes
+            // 'sharp' regardless of the equipped weapon either.
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
-              playWeaponHitSfx('sharp', c.x, c.y, c.areaId);
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
           onComplete: () => { finishBanditAction(c); c.attackCooldownT = def.attackCooldownS; c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; },
@@ -8855,9 +8875,12 @@
           onStrike: () => {
             c.telegraphState = 'strike';
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
+            // def.attackTag (bandit's real weapon material) drives both the
+            // affliction and the impact sound -- see combat-charged-
+            // breaker.js's matching fix (no longer hardcodes 'blunt').
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('blunt') });
-              playWeaponHitSfx('blunt', c.x, c.y, c.areaId);
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
           onComplete: () => {
@@ -8900,12 +8923,14 @@
         window.Combat.beginStagedAction({
           windupS: 0.05, strikeS: 0.15, recoverS: 0,
           onStrike: () => {
-            // Matches combat-counter-shield.js's own riposte, which also
-            // hardcodes tag:'sharp' regardless of weapon.
+            // def.attackTag (bandit's real weapon material) drives both the
+            // affliction and the impact sound -- matches
+            // combat-counter-shield.js's own riposte fix (no longer
+            // hardcodes 'sharp' regardless of weapon).
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
-              playWeaponHitSfx('sharp', c.x, c.y, c.areaId);
+              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
         });
@@ -28614,6 +28639,25 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
         if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
         if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
+        // Non-mutating read of _banditAttackSlots/_banditQueueRings (does
+        // NOT call claimBanditAttackSlot/claimBanditQueueRing, which would
+        // claim/allocate one as a side effect just from generating a log
+        // line) -- checked BEFORE the closing-distance branch below, not
+        // after: a queued bandit's real target is its assigned standoff
+        // ring (see updateBanditCombatAI's !readyToStrike branch), whose
+        // radius is deliberately well past engageRangePx (BANDIT_STANDOFF_
+        // RANGE_MUL, bumped further per ring for a big gang's outer rings)
+        // -- checking distance first would misreport an already-correctly-
+        // positioned queued bandit as "closing distance, waiting to enter
+        // engageRangePx" forever, since it's never actually trying to reach
+        // that number. Only BANDIT_MAX_ATTACK_SLOTS=2 bandits are ever
+        // allowed to close in and swing at once.
+        if (!_banditAttackSlots.some(s => s.bandit === c)) {
+          const queueRing = _banditQueueRings.find(q => q.bandit === c);
+          return queueRing
+            ? `queued on standoff ring ${queueRing.ringIndex} (not one of the ${BANDIT_MAX_ATTACK_SLOTS} bandits currently holding an attack slot) -- holding/swaying at its assigned ring, NOT trying to close the distance; distPlayer=${distP}px`
+            : `queued, not yet assigned a standoff ring (should self-correct next frame -- flag as a bug if this persists); distPlayer=${distP}px`;
+        }
         // The real approach/attack-commit gate is banditEngagementReachPx
         // (its current combo step's own reach, folding in that step's own
         // lunge distance) -- NOT the flat def.attackRangePx shown in the
@@ -28626,17 +28670,6 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
         if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         if (c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
-        // Non-mutating read of _banditAttackSlots (does NOT call
-        // claimBanditAttackSlot, which would claim/allocate one as a side
-        // effect just from generating a log line) -- distance/cooldown/
-        // stamina alone all read "ready" for any bandit in range, but only
-        // BANDIT_MAX_ATTACK_SLOTS=2 are ever actually allowed to close in
-        // and swing at once (see updateBanditCombatAI's readyToStrike,
-        // which also requires !!slot); everyone else backs off instead.
-        // Omitting this check used to report a queued, non-attacking bandit
-        // as "about to pick an ability" indefinitely, which read as a stuck
-        // bandit rather than one correctly waiting its turn.
-        if (!_banditAttackSlots.some(s => s.bandit === c)) return `in range and off cooldown, but not one of the ${BANDIT_MAX_ATTACK_SLOTS} bandits currently holding an attack slot -- backing off/queued, not stuck; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
 

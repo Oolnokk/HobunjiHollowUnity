@@ -145,8 +145,11 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.('blunt', c.x, c.y, c.areaId);
+            // Sharp/blunt comes from whichever tool occupies the weapon
+            // slot (see combat-combo.js's matching comment) -- this used to
+            // hardcode 'blunt' regardless of the equipped weapon.
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), heavy: true, afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;
           }
