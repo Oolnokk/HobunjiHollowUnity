@@ -6255,7 +6255,6 @@
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
-          if (c.isBandit) { updateBanditToolMesh(c); updateBanditTrailArc(c, dt); }
 
           // One line per AI-state transition for den-spawned wildlife (not
           // scripted combat-card creatures, which have no denKey) — lets the
@@ -6270,6 +6269,16 @@
           }
 
           updateCreatureMesh(c, dt, aimAngle);
+          // Runs AFTER updateCreatureMesh, not before -- during an active
+          // swing, updateBanditToolMesh leans the avatar body's own rotation
+          // into the same bodyYaw the weapon uses (see its own comment),
+          // matching the player's updateToolMesh (playerMesh.rotation.y =
+          // vθ in every branch); updateCreatureMesh would otherwise
+          // overwrite that lean right back to the plain aim angle the very
+          // same frame, since it always hard-sets grp.rotation.y from
+          // c.groupRot. Also lets feetY read this frame's fresh avatar Y
+          // position instead of last frame's.
+          if (c.isBandit) { updateBanditToolMesh(c); updateBanditTrailArc(c, dt); }
           // A modular attack in its leap stage owns the sprite frame (locked
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
@@ -8535,8 +8544,15 @@
       // hatchet/fishing-mace/fishing-spear/pick-shovel renders with the
       // exact same crafted-tool sprite+metal recolor the player's own gear
       // uses (see refreshMetalToolWorldTexture).
+      // Only shapes that actually go in the weapon slot (see TOOL_SHAPE_DEFS
+      // -- hoe is 'hoe' slot only, no dmgType at all) can be rolled here.
+      // Recomputed fresh each call rather than cached at module load so a
+      // shape added to TOOL_SHAPE_DEFS later is picked up automatically.
+      function banditWeaponShapeKeys() {
+        return Object.keys(TOOL_SHAPE_DEFS).filter(k => TOOL_SHAPE_DEFS[k].slots?.includes('weapon'));
+      }
       function banditWeaponFor(cfg, rank, tier) {
-        const shapeKeys = Object.keys(TOOL_SHAPE_DEFS);
+        const shapeKeys = banditWeaponShapeKeys();
         const shapeKey = shapeKeys[Math.floor(rnd() * shapeKeys.length)];
         const shape = TOOL_SHAPE_DEFS[shapeKey];
         const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
@@ -8727,6 +8743,11 @@
         return inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN, hitTest.halfConeRad);
       }
 
+      // Re-aim rate (rad/sec) for the lunge homing below -- same value and
+      // reasoning as the player's own lunge homing (game.js's
+      // LUNGE_HOMING_RATE in updateMovement).
+      const BANDIT_LUNGE_HOMING_RATE = 6;
+
       // Returns true while a lunge is in flight (caller should skip its own
       // normal movement/approach logic for the frame).
       function updateBanditLunge(c, dt, targetPlayer) {
@@ -8734,6 +8755,28 @@
         if (isPlayerInBanditLungeCone(c, c._banditLungeHitTest, targetPlayer)) {
           c._banditLunging = false;
           return true;
+        }
+        // Re-aims c.facing toward the target's CURRENT position every
+        // frame, capped at BANDIT_LUNGE_HOMING_RATE -- mirrors the player's
+        // own lunge homing instead of Pounce's lock-at-fire-and-never-
+        // correct precedent this used to follow. Pounce's prey doesn't
+        // actively strafe against it; a human player does, and the swing's
+        // own hit-cone is narrow (13-42 degree half-angle) and was never
+        // re-checked against anything but the frozen fire-time angle, so
+        // even a moderate sidestep during the ~0.2-0.4s windup+strike
+        // window routinely carried the player clean outside the cone
+        // despite being well within range -- a systematic whiff source no
+        // amount of range-margin tuning (BANDIT_LUNGE_HALT_MARGIN) could
+        // fix, since that only ever widens the RANGE cushion, not the
+        // ANGULAR one. fireBandit*'s onStrike/spawnBanditTrailArc calls
+        // read c.facing live (not a fire-time-frozen local) so the eventual
+        // hit-check and the visual trail both land on wherever this homing
+        // actually ends up aiming.
+        if (targetPlayer.health > 0) {
+          const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+          c.facing += angleDiff(desiredFacing, c.facing) * Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
+          c._banditLungeDirX = Math.cos(c.facing);
+          c._banditLungeDirY = Math.sin(c.facing);
         }
         c._banditLungeT = Math.max(0, c._banditLungeT - dt);
         const t = 1 - c._banditLungeT / c._banditLungeDur;
@@ -8783,8 +8826,10 @@
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
           onStrike: () => {
             c.telegraphState = 'strike';
-            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
-            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+            // c.facing, not the fire-time aimAngle local -- see
+            // updateBanditLunge's homing comment.
+            spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
+            if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               // def.attackTag (the bandit's actual rolled weapon material,
               // see weaponDamageTypeForTool/weapon.dmgType) determines both
               // the affliction dealt and the impact sound -- matches the
@@ -8829,12 +8874,14 @@
           windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
           onStrike: () => {
             c.telegraphState = 'strike';
-            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
+            // c.facing, not the fire-time aimAngle local -- see
+            // updateBanditLunge's homing comment.
+            spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
             // def.attackTag (the bandit's real weapon material) determines
             // both the affliction and the impact sound -- see
             // combat-quickattacks.js's onTap, which no longer hardcodes
             // 'sharp' regardless of the equipped weapon either.
-            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+            if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
               playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
@@ -8874,11 +8921,13 @@
           windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
           onStrike: () => {
             c.telegraphState = 'strike';
-            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
+            // c.facing, not the fire-time aimAngle local -- see
+            // updateBanditLunge's homing comment.
+            spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
             // def.attackTag (bandit's real weapon material) drives both the
             // affliction and the impact sound -- see combat-charged-
             // breaker.js's matching fix (no longer hardcodes 'blunt').
-            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+            if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
               playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
@@ -9423,6 +9472,18 @@
           const rollRad = THREE.MathUtils.degToRad(chan('roll', true));
           const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
           const vθ = θ + bodyYawRad;
+          // Leans the avatar body itself into the swing too, not just the
+          // weapon -- matches the player's own updateToolMesh, which sets
+          // playerMesh.rotation.y = vθ in every branch (the whole character
+          // visibly winds up and follows through, not just their weapon).
+          // Also updates c.groupRot itself (not just the live mesh
+          // rotation.y), so next frame's updateCreatureMesh lerp continues
+          // from this leaned angle instead of snapping back to the plain
+          // aim angle and re-leaning from scratch every single frame while
+          // the swing is active. Resolves to plain θ (no visible change) at
+          // rest, since bodyYawRad is 0 at progress=0 for every style here.
+          c.avatarRef.group.rotation.y = vθ;
+          c.groupRot = vθ;
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
@@ -9445,6 +9506,10 @@
           const yawRad = banditPoseLerp(progress, wf, 0, THREE.MathUtils.degToRad(-45) * power, 0);
           const bodyYawRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power, 0);
           const vθ = θ + bodyYawRad;
+          // Leans the avatar body itself into the thrust too -- see the
+          // matching comment in the sweep branch above.
+          c.avatarRef.group.rotation.y = vθ;
+          c.groupRot = vθ;
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
