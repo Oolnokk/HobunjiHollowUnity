@@ -8956,6 +8956,26 @@
         return { x: px, y: py };
       }
 
+      // A bandit's own rough body radius plus the player's (PLAYER_RADIUS) --
+      // the minimum center-to-center distance normal (non-lunging) bandit
+      // movement is allowed to close to. Deliberately NOT enforced while
+      // updateBanditLunge is active (returns early above, before this ever
+      // runs) or c._banditAction is busy (also returns early) -- a lunge
+      // legitimately needs to close all the way in for its own hit-cone
+      // check to pass, and yanking position mid-swing would look worse than
+      // the contact it's trying to prevent.
+      const BANDIT_PLAYER_COLLISION_RADIUS_PX = PLAYER_RADIUS + TILE * 0.32;
+      function enforceBanditPlayerCollision(c, targetPlayer) {
+        const dx = c.x - targetPlayer.x, dy = c.y - targetPlayer.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= BANDIT_PLAYER_COLLISION_RADIUS_PX || dist < 0.001) return;
+        const push = BANDIT_PLAYER_COLLISION_RADIUS_PX - dist;
+        const nx = dx / dist, ny = dy / dist;
+        const desiredX = c.x + nx * push, desiredY = c.y + ny * push;
+        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
+        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
+      }
+
       // Called from updateHostiles' chase-state branch in place of the
       // plain bite-telegraph/behaviorStage machinery for any c.isBandit.
       function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
@@ -8971,15 +8991,19 @@
           return { aimAngle: towardAngle, moving };
         }
         if (c._banditAction) return { aimAngle: c.facing, moving: false };
+        enforceBanditPlayerCollision(c, targetPlayer);
 
         // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
         // other bandits -- once a bandit is "in range" (below) it stops
         // approaching entirely and just holds position to fight, so with
         // nothing else keeping them apart a fast-moving player can walk two
         // stationary attackers onto the exact same tile as each other.
-        // Applied every frame regardless of engage/queued state (but never
-        // against the player itself -- standing at melee range, even
-        // point-blank, is normal) so gang-mates never fully overlap.
+        // Applied every frame regardless of engage/queued state. Player
+        // separation is handled separately just above, by
+        // enforceBanditPlayerCollision -- that one's a hard positional
+        // clamp (the player has no "movement target" a bandit could aim
+        // short of), this one only ever nudges where a bandit is walking
+        // toward, never teleports it.
         const unstack = banditPersonalSpaceAdjust(c, { x: c.x, y: c.y });
         if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
