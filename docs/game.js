@@ -27887,7 +27887,7 @@ Common fields:
   kind          PLAYER | BANDIT | CREATURE | CORPSE (CORPSE = health<=0, still lootable via the action bar)
   state         idle|chase|return|patrol-chase|fleeing-low-health|dying|corpse
   hp/stam       current/max health and stamina
-  pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (48px ~= 1 tile, see TILE)
+  pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (TILE=55px is 1 tile)
   tState        telegraphState: none|windup|strike -- mid-swing "tell" (bandits set this from their own ability AI, not combat-enemy-telegraph.js); a hit can only land during "strike"
   aaBusy        wildlife only: 1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
   retreatT      seconds left jumping backward after landing a hit (0 = not retreating)
