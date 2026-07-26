@@ -8788,8 +8788,26 @@
       // reinventing it. tickCreatureLungeTrail (the ground-stamp trail) and
       // tickCreatureFootsteps are already entity-generic -- called exactly
       // the way pounceUpdate already calls them.
-      function beginBanditLunge(c, distancePx, durationS, hitTest) {
+      function beginBanditLunge(c, distancePx, durationS, hitTest, targetPlayer) {
         if (durationS <= 0 || distancePx <= 0 || c._banditLunging) return;
+        // Cap the travel distance so an already-close bandit can't lunge
+        // straight past a stationary target -- distancePx above is a FIXED
+        // per-ability budget (e.g. Step Thrust's full tile*lungeMul) applied
+        // regardless of current range, and the ease-out curve below front-
+        // loads most of that travel very early, so at point-blank range the
+        // bandit shot clean through the target and ended up on the far
+        // side with c.facing now ~180 degrees off (confirmed live:
+        // diffDeg=180.0 on a Step Thrust that was already within rangePx).
+        // Never lunge past haltDist -- the same margin-inside-the-cone
+        // distance isPlayerInBanditLungeCone/updateBanditLunge already halt
+        // at -- so a close target simply skips the lunge (distancePx <= 0)
+        // instead of overshooting it.
+        if (targetPlayer && hitTest) {
+          const currentDist = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
+          const haltDist = hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN;
+          distancePx = Math.min(distancePx, Math.max(0, currentDist - haltDist));
+          if (distancePx <= 0) return;
+        }
         c._banditLunging = true;
         c._banditLungeT = durationS;
         c._banditLungeDur = durationS;
@@ -8899,7 +8917,7 @@
         c.telegraphState = 'windup';
         c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
         c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
-        beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad });
+        beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad }, targetPlayer);
         c._banditAction = window.Combat.beginStagedAction({
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
           // isBandit -- see cancelAllStaged's own comment: without this tag
@@ -8958,7 +8976,7 @@
         c.telegraphState = 'windup';
         c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
         c._banditSwingDirSign = 1; c._banditSwingPower = 1;
-        beginBanditLunge(c, TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad });
+        beginBanditLunge(c, TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
         c._banditAction = window.Combat.beginStagedAction({
           windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
           data: { isBandit: true }, // see fireBanditComboStep's matching comment
@@ -9006,7 +9024,7 @@
         // most of the distance well before onStrike's hit-check fires at
         // the windup->strike boundary, without needing a second staged
         // action just to match the real system's exact timing split.
-        beginBanditLunge(c, TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad });
+        beginBanditLunge(c, TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
         c._banditAction = window.Combat.beginStagedAction({
           windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
           data: { isBandit: true }, // see fireBanditComboStep's matching comment
@@ -9245,23 +9263,28 @@
       // A bandit's own rough body radius plus the player's (PLAYER_RADIUS) --
       // the minimum center-to-center distance bandit movement is allowed to
       // close to, enforced unconditionally (including mid-lunge and mid-
-      // swing, see updateBanditCombatAI/updateBanditLunge). This used to be
-      // skipped during a lunge/busy swing on the theory that the hit-cone
-      // check "needs" to close all the way in -- it doesn't: every bandit
-      // ability's own rangePx (~47-95px, see banditEngagementReachPx) is
-      // already bigger than this radius (~32.6px), so updateBanditLunge's
-      // own cone-entry halt always stops a legitimate attack well outside
-      // contact range on its own. Enforcing this collision continuously is
-      // a no-op for a normal successful hit and only ever actually pushes
-      // in the edge cases this radius exists for: the player dodging into
-      // contact range during a stationary swing, or a lunge overshooting
-      // because (unlike the player's own lunge) it doesn't home mid-flight.
+      // swing, see updateBanditCombatAI/updateBanditLunge). This used to
+      // assume every bandit ability's own rangePx was comfortably bigger
+      // than this radius (~32.6px) -- false after combat-combo.js's
+      // RANGE_SCALE (0.6) shrunk the real hit cones down: Forehand Swing's
+      // rangePx is ~29.7px and Backhand Swing's ~31.2px, BOTH already
+      // smaller than this floor, so the push was pinning distance at 32.6px
+      // and making those two attacks geometrically impossible to land no
+      // matter how well aimed (confirmed live: dist=32.6 on repeated
+      // Forehand Swing whiffs). enforceBanditPlayerCollision now caps its
+      // own push radius to the active attack's real range (via
+      // c._banditLungeHitTest) so this anti-clip floor can never itself
+      // exceed what that attack needs to reach.
       const BANDIT_PLAYER_COLLISION_RADIUS_PX = PLAYER_RADIUS + TILE * 0.32;
       function enforceBanditPlayerCollision(c, targetPlayer) {
+        const activeHitTest = (c._banditLunging || c._banditAction) ? c._banditLungeHitTest : null;
+        const radiusPx = activeHitTest
+          ? Math.min(BANDIT_PLAYER_COLLISION_RADIUS_PX, activeHitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN)
+          : BANDIT_PLAYER_COLLISION_RADIUS_PX;
         const dx = c.x - targetPlayer.x, dy = c.y - targetPlayer.y;
         const dist = Math.hypot(dx, dy);
-        if (dist >= BANDIT_PLAYER_COLLISION_RADIUS_PX || dist < 0.001) return;
-        const push = BANDIT_PLAYER_COLLISION_RADIUS_PX - dist;
+        if (dist >= radiusPx || dist < 0.001) return;
+        const push = radiusPx - dist;
         const nx = dx / dist, ny = dy / dist;
         const desiredX = c.x + nx * push, desiredY = c.y + ny * push;
         if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
