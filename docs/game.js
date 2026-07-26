@@ -8955,6 +8955,17 @@
         }
         if (c._banditAction) return { aimAngle: c.facing, moving: false };
 
+        // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
+        // other bandits -- once a bandit is "in range" (below) it stops
+        // approaching entirely and just holds position to fight, so with
+        // nothing else keeping them apart a fast-moving player can walk two
+        // stationary attackers onto the exact same tile as each other.
+        // Applied every frame regardless of engage/queued state (but never
+        // against the player itself -- standing at melee range, even
+        // point-blank, is normal) so gang-mates never fully overlap.
+        const unstack = banditPersonalSpaceAdjust(c, { x: c.x, y: c.y });
+        if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
+
         const engageRangePx = banditEngagementReachPx(def, loadout);
         const slot = claimBanditAttackSlot(c, towardAngle);
         if (distToPlayer > engageRangePx || !slot) {
