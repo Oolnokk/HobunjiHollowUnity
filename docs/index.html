@@ -886,6 +886,12 @@
 
   <!-- Toast -->
   <div id="toast" role="status" aria-live="polite"></div>
+  <!-- Location title card -- fades in near the top of the screen when
+       entering a named area's radius (e.g. a bandit camp), same genre
+       convention as an "Entering X" banner. Separate from #toast (a small
+       corner pill meant for quick status pings), since this needs to read
+       as a deliberate, cinematic reveal. -->
+  <div id="zoneBanner" role="status" aria-live="polite"></div>
 
   <!-- Contextual action prompt (bottom-center) — device-aware "press X to
        do Y" prompt shared across the game; see showActionPrompt/

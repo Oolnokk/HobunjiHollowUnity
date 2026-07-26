@@ -47,6 +47,7 @@
       const menuPauseBtn   = document.getElementById('menuPauseBtn');
       const menuResetBtn   = document.getElementById('menuResetBtn');
       const toastEl   = document.getElementById('toast');
+      const zoneBannerEl = document.getElementById('zoneBanner');
       const keyHudEl  = document.getElementById('keyHud');
       const isDesktop = window.matchMedia('(pointer: fine)').matches;
       const dialogueZoomIndicator = document.createElement('div');
@@ -284,6 +285,20 @@
         clearTimeout(_toastTimer);
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
         if (!silent && !ok) playObjectSfx(objectSfxConfig().error);
+      }
+
+      // A location title card -- fades in near the top of the screen and
+      // holds, then fades out, same genre convention as an "Entering X"
+      // banner. Separate from showToast (a small ok/fail status ping):
+      // this holds noticeably longer (a title card is meant to be READ,
+      // not just glanced at) and has no ok/fail styling since it's never
+      // reporting an outcome.
+      let _zoneBannerTimer = null;
+      function showZoneBanner(text) {
+        zoneBannerEl.textContent = text;
+        zoneBannerEl.classList.add('show');
+        clearTimeout(_zoneBannerTimer);
+        _zoneBannerTimer = setTimeout(() => zoneBannerEl.classList.remove('show'), 4200);
       }
 
       function gameAudioConfig() {
@@ -10275,6 +10290,49 @@
         return true;
       }
 
+      // Location title card ("<Captain>'s Bandit Camp") when the player
+      // crosses INTO a live camp's radius from outside it -- tracks the
+      // inside/outside boolean per instance so it fires again on a real
+      // re-entry (walk away and come back) instead of only ever once per
+      // camp, matching how a genre "Entering X" banner usually behaves.
+      // Independent of updateCompanionPerception's own map-reveal system:
+      // that one requires an active companion and a much larger sensed
+      // range before marking a camp on the map at all; this is a plain
+      // proximity trigger off the player's own position, no companion
+      // needed, since it's just naming what's already visually right
+      // there rather than revealing a hidden threat.
+      const BANDIT_CAMP_BANNER_RADIUS_TILES = 10;
+      const BANDIT_CAMP_BANNER_CHECK_INTERVAL_S = 0.5;
+      let _banditCampBannerAccum = 0;
+      // instance.id -> was the player inside the banner radius last check
+      const _banditCampBannerInside = new Map();
+      function updateBanditCampBanners(dt) {
+        _banditCampBannerAccum += dt;
+        if (_banditCampBannerAccum < BANDIT_CAMP_BANNER_CHECK_INTERVAL_S) return;
+        _banditCampBannerAccum = 0;
+        if (!_isZoneArea(currentArea)) return;
+        const live = new Set();
+        for (const rec of (_banditCampInstances.get(currentArea) || [])) {
+          if (isBanditCampCleared(rec)) continue;
+          live.add(rec.instance.id);
+          const col = rec.instance.site.x + rec.instance.site.w / 2;
+          const row = rec.instance.site.y + rec.instance.site.h / 2;
+          const distTiles = Math.hypot(col - player.x / TILE, row - player.y / TILE);
+          const inside = distTiles <= BANDIT_CAMP_BANNER_RADIUS_TILES;
+          if (inside && !_banditCampBannerInside.get(rec.instance.id)) {
+            showZoneBanner(rec.captainName ? `${rec.captainName}'s Bandit Camp` : 'Bandit Camp');
+          }
+          _banditCampBannerInside.set(rec.instance.id, inside);
+        }
+        // Drop tracking for any instance no longer live (cleared/re-rolled)
+        // so a brand new camp that happens to reuse a stale id-adjacent
+        // slot starts from a clean "outside" state rather than inheriting
+        // whatever the old, unrelated camp's inside/outside flag was.
+        for (const id of _banditCampBannerInside.keys()) {
+          if (!live.has(id)) _banditCampBannerInside.delete(id);
+        }
+      }
+
       // ── Companion Perception: sensing nearby bandit camps/dens ─────────
       //
       // A companion's own species-defined perceptionTiles (see CREATURE_DB —
@@ -10427,6 +10485,12 @@
           hostileObjects.add(c);
           rec.gangIds.add(c.id);
           spawned++;
+          // _banditName(rank) only appends a surname for rank==='captain'
+          // (see its own comment), so c.name is already the captain's full
+          // "First Last" -- captured here for the camp-entry title banner
+          // (updateBanditCampBanners) rather than re-deriving it. First
+          // captain found wins if gangComposition.captains is ever >1.
+          if (rank === 'captain' && !rec.captainName) rec.captainName = c.name;
         }
         window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${spawned}/${roster.length} gang members spawned.`, 'wildlife');
         if (spawned > 0 && zoneId === currentArea) showToast('Smoke on the wind — a bandit camp is nearby.', false);
@@ -29564,6 +29628,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             syncCompanionFromWhistle();
             updateCompanions(dt);
             updateCompanionPerception(dt);
+            updateBanditCampBanners(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
