@@ -6003,7 +6003,22 @@
           // (toward the player vs. toward home), so this reads exactly as
           // rotational flicker between two unrelated angles, and since
           // 'return' never attacks, it also reads as "won't attack either."
-          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
+          //
+          // That fix alone leaves a NARROWER version of the same flicker:
+          // both the re-entry check above and the leave check below compare
+          // distFromHome against the exact same leashRangePx value, with no
+          // gap between them. A creature whose home genuinely sits close to
+          // that boundary distance can drift a single tile back and forth
+          // (chasing pulls it slightly farther, a moment of 'return' pulls
+          // it slightly closer) and cross the SAME threshold every time --
+          // re-entering chase, immediately tripping the leave check again,
+          // over and over. LEASH_REENTER_FRAC creates a dead zone: leaving
+          // chase still triggers at the full leashRangePx, but re-entering
+          // requires being noticeably closer to home (85% of it) again, so
+          // a small drift near the boundary can't flip both checks back to
+          // back.
+          const LEASH_REENTER_FRAC = 0.85;
+          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 
