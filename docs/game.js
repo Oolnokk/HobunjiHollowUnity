@@ -9053,6 +9053,23 @@
         const readyToStrike = distToPlayer <= engageRangePx && !!slot
           && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c);
         if (!readyToStrike) {
+          // A bandit that isn't the one actually swinging right now (on
+          // cooldown, short on stamina, or not holding one of the 2 attack
+          // slots) has no business lingering shoulder-to-shoulder with the
+          // player -- back it off first, like the post-attack jump-back,
+          // whenever it's inside its own melee baseline rather than trusting
+          // the ring/standoff point below to already be far enough out. That
+          // point is *supposed* to sit well outside melee (engageRangePx*
+          // 0.85 or *1.8), but a crowded arena (several bandits' own
+          // personal-space pushes shoving each other around) can otherwise
+          // leave a non-attacking bandit parked right next to the player
+          // with nothing pulling it back out.
+          if (distToPlayer < def.attackRangePx * 1.5) {
+            const awayAng = towardAngle + Math.PI;
+            const retreatTarget = banditPersonalSpaceAdjust(c, { x: c.x + Math.cos(awayAng) * TILE, y: c.y + Math.sin(awayAng) * TILE });
+            const moving = moveCreatureToward(c, retreatTarget.x, retreatTarget.y, def.chaseSpeed, dt);
+            return { aimAngle: towardAngle, moving };
+          }
           const targetPoint = slot
             ? banditRingPoint(targetPlayer, slot.angle, engageRangePx * 0.85)
             : banditPersonalSpaceAdjust(c, banditRingPoint(targetPlayer, towardAngle, engageRangePx * BANDIT_STANDOFF_RANGE_MUL));
@@ -28499,6 +28516,17 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
         if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         if (c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
+        // Non-mutating read of _banditAttackSlots (does NOT call
+        // claimBanditAttackSlot, which would claim/allocate one as a side
+        // effect just from generating a log line) -- distance/cooldown/
+        // stamina alone all read "ready" for any bandit in range, but only
+        // BANDIT_MAX_ATTACK_SLOTS=2 are ever actually allowed to close in
+        // and swing at once (see updateBanditCombatAI's readyToStrike,
+        // which also requires !!slot); everyone else backs off instead.
+        // Omitting this check used to report a queued, non-attacking bandit
+        // as "about to pick an ability" indefinitely, which read as a stuck
+        // bandit rather than one correctly waiting its turn.
+        if (!_banditAttackSlots.some(s => s.bandit === c)) return `in range and off cooldown, but not one of the ${BANDIT_MAX_ATTACK_SLOTS} bandits currently holding an attack slot -- backing off/queued, not stuck; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
 
