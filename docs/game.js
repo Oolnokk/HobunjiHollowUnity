@@ -8918,6 +8918,11 @@
         c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
         c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
         beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad }, targetPlayer);
+        // Tracked so onComplete below can tell a whiff from a landed hit --
+        // a bandit should only break off (retreat) on a miss or after
+        // landing its 3rd/final step, never after landing steps 1-2, which
+        // should chain straight into the next step instead.
+        let comboStepHit = false;
         c._banditAction = window.Combat.beginStagedAction({
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
           // isBandit -- see cancelAllStaged's own comment: without this tag
@@ -8937,6 +8942,7 @@
             // updateBanditLunge's homing comment.
             spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
             if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
+              comboStepHit = true;
               // def.attackTag (the bandit's actual rolled weapon material,
               // see weaponDamageTypeForTool/weapon.dmgType) determines both
               // the affliction dealt and the impact sound -- matches the
@@ -8949,8 +8955,12 @@
           },
           onComplete: () => {
             finishBanditAction(c);
-            c.attackCooldownT = isFinalStep ? def.attackCooldownS : BANDIT_COMBO_CHAIN_GAP_S;
-            if (isFinalStep) { c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; }
+            // Break off on a miss (whiffing a swing isn't worth pressing
+            // through) or after landing the final step -- a landed step
+            // 1-2 chains straight into the next step instead of retreating.
+            const shouldRetreat = isFinalStep || !comboStepHit;
+            c.attackCooldownT = shouldRetreat ? def.attackCooldownS : BANDIT_COMBO_CHAIN_GAP_S;
+            if (shouldRetreat) { c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; }
           },
           onCancel: () => finishBanditAction(c),
         });
@@ -9363,8 +9373,27 @@
         // missing animation. Wildlife's own chase branch never has this gap
         // since it keeps calling moveCreatureToward every frame regardless
         // of its own attackCooldownT.
-        const readyToStrike = distToPlayer <= engageRangePx && !!slot
-          && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c);
+        // A continuing combo step (comboIdx > 0, already mid-flurry after
+        // landing/chaining a prior step -- see fireBanditComboStep's
+        // shouldRetreat, which only resets comboIdx to 0 on a miss or the
+        // final step) skips the hard stamina gate an opening attack still
+        // needs. attackStaminaCost is a flat per-swing cost (e.g. 12)
+        // steep against bandits' small stamina pools (16-46 depending on
+        // rank/tier), so requiring a full recharge before EVERY step of an
+        // already-landing 3-hit combo dropped the bandit out of "ready"
+        // between steps into the ring-strafe waiting branch below for up
+        // to ~1.5s -- a big, awkward pause with a lot of visible movement
+        // mid-combo even while the combo was actively landing.
+        // spendStamina below already lets an overspend go into Exhausted
+        // debt instead of hard-refusing (see resource-system.js's own
+        // "Overspending Stamina never blocks the action" comment) -- this
+        // just lets a continuing combo step use that same path instead of
+        // hard-blocking on it first, matching how the player's own combo
+        // (combat-combo.js) spends stamina unconditionally per step rather
+        // than pre-checking it.
+        const continuingCombo = c._banditComboIndex > 0;
+        const readyToStrike = distToPlayer <= engageRangePx && !!slot && c.attackCooldownT <= 0
+          && (continuingCombo || c.stamina >= def.attackStaminaCost) && !isCreatureSwimming(c);
         if (!readyToStrike) {
           // One unified ring formula for the whole waiting state (slot-
           // holder-on-cooldown, stamina-short, or genuinely queued alike),
@@ -29067,7 +29096,10 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         const engageReach = Math.round(banditEngagementReachPx(c, def, def.banditAbilityLoadout || {}));
         if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
         if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
-        if (c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
+        // Mid-combo continuation (comboIdx > 0) skips this gate -- see
+        // updateBanditCombatAI's continuingCombo comment -- so it's only
+        // ever the real block for an opening attack.
+        if (c._banditComboIndex === 0 && c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
         return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
 
