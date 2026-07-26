@@ -8922,6 +8922,12 @@
       const BANDIT_SLOT_MIN_ANGLE_RAD = 60 * Math.PI / 180;
       const BANDIT_STANDOFF_RANGE_MUL = 1.8;
       const BANDIT_PERSONAL_SPACE_PX = TILE * 0.85;
+      // Idle side-to-side sway applied to a waiting bandit's ring/standoff
+      // point (see the !readyToStrike branch below) -- a slow guard-stance
+      // shift, not a dodge, so it reads as "still in the fight, waiting its
+      // turn" instead of a dead stand while a slot/cooldown/stamina frees up.
+      const BANDIT_STRAFE_AMPLITUDE_PX = TILE * 0.4;
+      const BANDIT_STRAFE_HZ = 0.3;
       const _banditAttackSlots = []; // [{ bandit, angle }]
 
       function claimBanditAttackSlot(c, towardAngle) {
@@ -9050,7 +9056,22 @@
           const targetPoint = slot
             ? banditRingPoint(targetPlayer, slot.angle, engageRangePx * 0.85)
             : banditPersonalSpaceAdjust(c, banditRingPoint(targetPlayer, towardAngle, engageRangePx * BANDIT_STANDOFF_RANGE_MUL));
-          const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, def.chaseSpeed, dt);
+          // Once a bandit has actually reached its ring/standoff point,
+          // moveCreatureToward has nowhere left to send it -- without this,
+          // a bandit waiting out a cooldown/stamina/slot-contention gap (see
+          // the comment above readyToStrike) just parks dead still, which
+          // reads as "not attacking" rather than "waiting its turn." Sways
+          // the target point itself side to side, perpendicular to the
+          // player-facing line, on a slow per-bandit-phased sine wave, so
+          // it keeps drifting like a guard stance instead of freezing.
+          const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
+          const strafeOffset = Math.sin(strafeT) * BANDIT_STRAFE_AMPLITUDE_PX;
+          const perpAngle = towardAngle + Math.PI / 2;
+          const strafedTarget = {
+            x: targetPoint.x + Math.cos(perpAngle) * strafeOffset,
+            y: targetPoint.y + Math.sin(perpAngle) * strafeOffset,
+          };
+          const moving = moveCreatureToward(c, strafedTarget.x, strafedTarget.y, def.chaseSpeed, dt);
           return { aimAngle: towardAngle, moving };
         }
         window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
@@ -9370,6 +9391,10 @@
           // get driven and cleared.
           _banditAction: null, _banditComboIndex: 0,
           _banditHold1CdT: 0, _banditGuardUntil: 0, _banditGuardCdT: 0, _banditLastCounterAt: -99,
+          // Per-bandit phase offset for the idle side-to-side strafe applied
+          // while queued/waiting (see BANDIT_STRAFE_* below) -- randomized so
+          // a gang doesn't all sway in unison.
+          _banditStrafePhase: rnd() * Math.PI * 2,
           rosterRecord: roster,
           ...opts.extra,
         };
