@@ -5075,6 +5075,11 @@
           c.groundShadow.geometry.dispose();
           c.groundShadow.material.dispose();
         }
+        if (c._banditToolHolder) {
+          (c.scene || scene).remove(c._banditToolHolder);
+          c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+          c._banditToolHolder = null;
+        }
         window.ResourceRings?.disposeRingHud(c);
       }
 
@@ -5120,6 +5125,11 @@
         // its resource ring synced/rebuilt, so drop it now rather than
         // leaving a stale 0-health ring hovering over the corpse forever.
         window.ResourceRings?.disposeRingHud(c);
+        // A bandit's weapon lives in its own world-space toolHolder (see
+        // updateBanditToolMesh), not parented under the avatar the tumble
+        // below animates -- hide it now rather than leaving it floating in
+        // place, disconnected from the corpse, once the fall starts.
+        if (c._banditToolHolder) c._banditToolHolder.visible = false;
         const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
         const rest = findDeathRestTile(c, awayAngle);
         c.state = 'dying';
@@ -6183,6 +6193,7 @@
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          if (c.isBandit) updateBanditToolMesh(c);
 
           // One line per AI-state transition for den-spawned wildlife (not
           // scripted combat-card creatures, which have no denKey) — lets the
@@ -8550,7 +8561,11 @@
       // tint code (amber windup / white strike) gives the player the same
       // visible tell against a bandit as against a wolf, for free.
 
-      const BANDIT_COMBO_CHAIN_GAP_S = 0.3; // pause between chained combo taps (not a full retreat)
+      // Effectively no pause between the 3 combo steps -- next frame's
+      // attackCooldownT check (updateBanditCombatAI) passes immediately once
+      // the prior step's own onComplete fires, same as a player tapping the
+      // Combo button again the instant the last swing resolves.
+      const BANDIT_COMBO_CHAIN_GAP_S = 0.02;
       const BANDIT_HOLD1_COOLDOWN_S = 5;
       const BANDIT_HOLD1_CHANCE = 0.4; // chance to open a fresh engagement with Charged Breaker instead of the combo
       const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // chance to use tap2 instead of continuing tap1 when a condition is favorable
@@ -8609,6 +8624,8 @@
         const knockbackPxS = base.knockbackPxS * step.knockbackMul;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
         c.telegraphState = 'windup';
+        c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
+        c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
         c._banditAction = window.Combat.beginStagedAction({
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
           onStrike: () => {
@@ -8641,6 +8658,8 @@
         const knockbackPxS = base.knockbackPxS * tech.knockbackMul;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
         c.telegraphState = 'windup';
+        c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
+        c._banditSwingDirSign = 1; c._banditSwingPower = 1;
         c._banditAction = window.Combat.beginStagedAction({
           windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
           onStrike: () => {
@@ -8672,6 +8691,10 @@
         const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT);
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
         c.telegraphState = 'windup';
+        // Charged Breaker always plays the sweep pose at POWER 1.7 regardless
+        // of the equipped weapon's own style (see combat-charged-breaker.js).
+        c._banditSwingAnim = 'sweep'; c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
+        c._banditSwingDirSign = 1; c._banditSwingPower = 1.7;
         c._banditAction = window.Combat.beginStagedAction({
           windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
           onStrike: () => {
@@ -8713,6 +8736,11 @@
         const halfConeRad = cs.COUNTER_HALF_CONE_DEG * Math.PI / 180;
         const knockbackPxS = base.knockbackPxS * cs.COUNTER_KNOCKBACK_MUL;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        // Deliberately doesn't touch c._banditAction (a captain can be
+        // mid-combo when guarded damage triggers this) or c._banditSwing* --
+        // the riposte's own 0.2s swing is brief enough that skipping its
+        // dedicated weapon-pose animation (rather than adding a second
+        // parallel progress channel just for this) is an acceptable gap.
         window.Combat.beginStagedAction({
           windupS: 0.05, strikeS: 0.15, recoverS: 0,
           onStrike: () => {
@@ -8760,27 +8788,142 @@
         return { aimAngle: towardAngle, moving: false };
       }
 
-      // makeToolPlaneMesh's plane is built to lie flat in the player's own
-      // swing plane (rotation.x = -PI/2, driven per-frame by updateToolMesh)
-      // -- a bandit has no swing animation to drive it, so that baked
-      // rotation is undone and the plane is instead posed as a static prop
-      // slung at the avatar's side, the same "no arms to actually grip
-      // anything" compromise heldItemHolder already makes for the player's
-      // own bag-item icon plane. Parented directly to avatarRef.group so it
-      // rides along with every existing group-level transform for free --
-      // walking, hit-flash tint (updateCreatureMesh's grp.traverse), and the
-      // death tumble/flatten all just work with no bandit-specific code.
-      function attachBanditWeaponProp(avatarRef, weaponKey) {
+      // ── Bandit weapon visuals ────────────────────────────────────────
+      //
+      // Reuses the PLAYER's own tool-swing pose math verbatim (fourPhaseLerp,
+      // STYLE_NEUTRAL_POSE, window.Combat.poses.SWEEP_POSE, and the same
+      // thrust/sweep formulas updateToolMesh itself computes from) instead of
+      // a static prop or an invented animation -- "use the player
+      // animations," per design direction. What's NOT reused is
+      // updateToolMesh itself or the single shared toolHolder/toolSwingT/
+      // combatSwing* variables it reads: those are one-per-game singletons
+      // (see combat-core.js's own "every staged action in this pipeline is a
+      // player weapon-tool attack" comment) that assume exactly one attacker
+      // exists. Each bandit gets its own toolHolder-equivalent group
+      // (_banditToolHolder, added straight to the scene and repositioned in
+      // world space every frame, exactly like the player's toolHolder is),
+      // driven by that SAME pure pose math against its own facing/position
+      // and its own current ability's windup/strike timing (c._banditAction)
+      // instead of the player's. fourPhaseLerp/STYLE_NEUTRAL_POSE/SWEEP_POSE
+      // are already stateless pure functions/data -- the only reason this
+      // isn't a one-line call into updateToolMesh is that updateToolMesh
+      // hardcodes which entity it's posing for throughout.
+      function makeBanditToolHolder(scene, weaponKey) {
         const mesh = makeToolPlaneMesh(weaponKey);
         if (!mesh) return null;
-        mesh.name = 'banditWeaponProp';
-        const plane = mesh.userData.toolPlane;
-        if (plane) plane.rotation.x = 0;
-        mesh.scale.setScalar(0.8);
-        mesh.rotation.z = Math.PI * 0.14;
-        mesh.position.set(0.3, -0.05, 0.08);
-        avatarRef.group.add(mesh);
-        return mesh;
+        const holder = new THREE.Group();
+        holder.name = 'banditToolHolder';
+        holder.add(mesh);
+        scene.add(holder);
+        return holder;
+      }
+
+      // Two-phase version of updateToolMesh's fourPhaseLerp: 0->wf rises from
+      // neutral to the windup pose (identical formula), then HOLDS at the
+      // strike pose for the rest of the action instead of also modeling a
+      // separate strike/hold/return split -- a bandit's own staged action has
+      // no cosmetic return-tail duration of its own (recoverS is always 0;
+      // see fireBanditComboStep etc), so there's no real "SF"/"HF" window to
+      // ease across the way the player's longer toolSwingDur has room for.
+      // The brief hold-then-freeze in updateBanditToolMesh below covers the
+      // return instead.
+      function banditPoseLerp(progress, wf, windupV, strikeV, neutralV) {
+        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
+        return strikeV;
+      }
+
+      // How long the weapon keeps showing its last (strike) pose once
+      // c._banditAction completes, before resetting straight to neutral --
+      // a cheap stand-in for the player's own eased return-to-neutral tail.
+      const BANDIT_TOOL_SETTLE_S = 0.15;
+
+      function updateBanditToolMesh(c) {
+        const holder = c._banditToolHolder;
+        if (!holder) return;
+        const action = c._banditAction;
+        if (!action) {
+          if (performance.now() < (c._banditToolSettleUntil || 0)) return; // hold last pose briefly
+        }
+        const anim = c._banditSwingAnim || 'thrust';
+        const pose = c._banditSwingPose;
+        const dirSign = c._banditSwingDirSign || 1;
+        const power = c._banditSwingPower || 1;
+
+        let progress = 0, wf = 0.16;
+        if (action) {
+          const totalS = Math.max(0.0001, action.windupS + action.strikeS);
+          progress = Math.min(1, action.t / totalS);
+          wf = action.windupS / totalS;
+          c._banditToolSettleUntil = performance.now() + BANDIT_TOOL_SETTLE_S * 1000;
+        }
+
+        const θ = c.facing || 0;
+        // Bandits face along their own `facing` the same way the player
+        // faces along `playerFacing` -- see updateCreatureMesh's aimAngle.
+        const base = banditToolBaseXY(c.avatarRef);
+        // playerMesh.position.y is a feet-level origin (playerToolBaseY then
+        // adds the hand height on top of that) -- avatarRef.group.position.y
+        // is a CENTER-of-model anchor instead (see makeBanditEntity's
+        // surfY+halfH spawn position and updateCreatureMesh's ty), so the
+        // same +base.y offset needs feet-level Y here too, not center Y.
+        const feetY = c.avatarRef.group.position.y - (c.halfHeight || 0);
+
+        if (anim === 'sweep' && pose) {
+          const styleNeutral = STYLE_NEUTRAL_POSE.sweep;
+          const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+          const chan = (ch, mirror = false) => {
+            const w = (neutral[ch] + ((pose.windup?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
+            const s = (neutral[ch] + ((pose.strike?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
+            const n = neutral[ch] * (mirror ? dirSign : 1);
+            return banditPoseLerp(progress, wf, w, s, n);
+          };
+          const x = chan('x', true), y = chan('y'), z = chan('z');
+          const pitchRad = THREE.MathUtils.degToRad(chan('pitch'));
+          const yawRad = THREE.MathUtils.degToRad(chan('yaw', true));
+          const rollRad = THREE.MathUtils.degToRad(chan('roll', true));
+          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
+          const vθ = θ + bodyYawRad;
+          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          _qRoll.setFromAxisAngle(_zAxis, rollRad);
+          holder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+          holder.position.set(
+            c.x / TILE + vRX * (base.x + x) + vFX * z,
+            feetY + base.y + y,
+            c.y / TILE + vRZ * (base.x + x) + vFZ * z,
+          );
+        } else {
+          // THRUST -- mirrors updateToolMesh's own thrust branch exactly
+          // (same windup-back/jab-forward/lateral/pitch/yaw formulas), used
+          // for pokeCombo, every Quick Attack, and the Counter Shield riposte.
+          const windupBack = -0.40 * power;
+          const jabOff = banditPoseLerp(progress, wf, windupBack, 0.32 * power, windupBack);
+          const lateral = banditPoseLerp(progress, wf, 0, -0.23 * power, 0);
+          const pitchRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
+          const yawRad = banditPoseLerp(progress, wf, 0, THREE.MathUtils.degToRad(-45) * power, 0);
+          const bodyYawRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power, 0);
+          const vθ = θ + bodyYawRad;
+          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
+          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
+          holder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim);
+          holder.position.set(
+            c.x / TILE + vRX * (base.x + lateral) + vFX * jabOff,
+            feetY + base.y,
+            c.y / TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
+          );
+        }
+      }
+
+      // Same fallback formula the player's own playerToolBaseX/Y use when no
+      // bespoke handAttachX/Y is baked into the avatar (see game.js's own
+      // spawnPlayerAvatar-adjacent setup) -- bandits never bake one either.
+      function banditToolBaseXY(avatarRef) {
+        const w = avatarRef?.modelWidth || 0.9, h = avatarRef?.modelHeight || 0.9;
+        return { x: -w / 2, y: h / 2 };
       }
 
       async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
@@ -8812,11 +8955,8 @@
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
         targetScene.add(avatarRef.group);
-        // BUG FIX (was defined but never called -- every bandit spawned with
-        // a real def.weaponKey but nothing rendered it): attaches the static
-        // weapon prop described on attachBanditWeaponProp above.
-        const weaponMesh = attachBanditWeaponProp(avatarRef, def.weaponKey);
-        if (!weaponMesh) window.__farmLog?.(`[bandits] weapon prop failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
+        const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
+        if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
 
         const groundShadow = makeCharacterGroundShadow('bandit_ground_shadow');
         const shadowRadii = creatureGroundShadowRadii(def);
@@ -8843,7 +8983,16 @@
           homeX: x, homeY: y,
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
-          banditWeaponMeshAttached: !!weaponMesh,
+          banditWeaponMeshAttached: !!banditToolHolder,
+          _banditToolHolder: banditToolHolder,
+          // Idle/approach rest pose matches the weapon's own natural swing
+          // style (sweep for hatchet/fishingmace, thrust for the rest) until
+          // an ability fire overwrites these with its own (see
+          // fireBanditComboStep/fireBanditQuickAttack/fireBanditChargedBreaker
+          // /fireBanditCounterRiposte) -- see updateBanditToolMesh.
+          _banditSwingAnim: TOOL_ITEM_DEFS[def.weaponKey]?.animStyle === 'sweep' ? 'sweep' : 'thrust',
+          _banditSwingPose: TOOL_ITEM_DEFS[def.weaponKey]?.animStyle === 'sweep' ? window.Combat?.poses?.SWEEP_POSE : null,
+          _banditSwingDirSign: 1, _banditSwingPower: 1, _banditToolSettleUntil: 0,
           // Ability-AI state -- see updateBanditCombatAI/damageCreature's
           // isBandit branch/the leaving-chase reset above for where these
           // get driven and cleared.
@@ -27897,7 +28046,7 @@ Bandit-only fields:
   rank/tier/mastery   grunt|lieutenant|captain; difficulty tier 0-3 the camp/spawn used; rolled weapon-mastery level 0-5
   species/gender      rolled from speciesWeights in bandit-gang-config.json
   wpn                 def.weaponKey, a crafted "<shape>_<metal>" id (e.g. hatchet_lowTinBronze) -- "none" would mean banditWeaponFor() failed, should never happen
-  wpnMeshOK           1 if the weapon prop mesh actually attached to the avatar (attachBanditWeaponProp) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen
+  wpnMeshOK           1 if the weapon's own toolHolder mesh actually built (makeBanditToolHolder) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen. The weapon is animated (updateBanditToolMesh), not a static prop -- it reuses the player's own fourPhaseLerp/STYLE_NEUTRAL_POSE/SWEEP_POSE swing pose math against the bandit's own facing/position and its own current ability's windup/strike timing.
   atkTag/atkDmg       attackTag (sharp/blunt, from the weapon's own dmgType) and attackDamage after rank/tier/mastery/metal multipliers
   loadout             its banditAbilityLoadout as tap1/tap2/hold1/hold2 ability ids ("-" for a null hold slot) -- tap1/tap2 are on every rank, hold1 only lieutenant+/captain, hold2 only captain (see heldAbilitiesByRank)
   comboIdx            which of tap1's 3 combo steps fires next (0-2); resets to 0 after the 3rd step completes and retreats
