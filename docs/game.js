@@ -9486,20 +9486,32 @@
           c._banditToolSettleUntil = performance.now() + BANDIT_TOOL_SETTLE_S * 1000;
         }
 
-        // c.groupRot, NOT c.facing -- groupRot is what actually drives the
-        // avatar body's own rotation.y (see updateCreatureMesh), already
-        // converted from raw aimAngle into that space (negated, offset by
-        // def.aimAngleOffset, +PI/2 for the portrait-plane convention) and
-        // smoothed. c.facing is the RAW, untransformed aim angle -- using it
-        // here directly (as this used to) put the weapon's own forward/right
-        // basis in a different, unrelated convention than the body's actual
-        // rendered orientation, drifting apart by up to a full 180 degrees
-        // depending on facing (they only happen to agree at aimAngle 0/PI)
-        // and reading as the weapon being held backwards. This mirrors
-        // exactly how the player's own updateToolMesh does it: θ =
-        // playerFacing, the SAME value that drives playerMesh.rotation.y
-        // directly, not some other player-facing field.
-        const θ = c.groupRot || 0;
+        // c.facing, NOT c.groupRot -- c.facing is the TRUE spatial aim
+        // direction (exactly the convention fireBandit*'s own cone/lunge
+        // checks use, and exactly what the player's own updateToolMesh uses
+        // for θ = playerFacing), where (cos θ, sin θ) is a real world
+        // right/forward basis. c.groupRot is NOT that -- it's rig-space
+        // plumbing for the portrait/billboard plane pivots (see
+        // buildBanditAvatar/updateCreatureMesh's rawTargetRotY), which
+        // NEGATES the aim angle (a mirror, not a rotation) before adding
+        // def.aimAngleOffset (a correction for the portrait rig's own
+        // internal axis quirk, not a real spatial rotation) and +PI/2. A
+        // previous version of this code used c.groupRot here directly on
+        // the theory that it was "the value that actually drives the body's
+        // rendered rotation" -- but for a bandit's aimAngleOffset (PI/2 for
+        // every bandit, see makeBanditDef), groupRot's negation+offset
+        // collapse to exactly -c.facing, which fed into these same
+        // forward/right formulas produces a basis that's MIRRORED across
+        // one axis rather than simply rotated (e.g. at aimAngle 0 it
+        // happens to agree, but at aimAngle PI/2 it comes out fully
+        // reversed) -- reading as the weapon randomly backwards/flipped
+        // depending on which way the bandit faces, not a fixed offset.
+        // Using the true angle here avoids that reflection entirely; see
+        // toGroupRotSpace below for converting a true-space lean angle back
+        // into groupRot's own convention when driving the avatar body.
+        const θ = c.facing || 0;
+        const aimOffset = c.def.aimAngleOffset || 0;
+        const toGroupRotSpace = trueAngle => -(trueAngle + aimOffset) + Math.PI / 2;
         const base = banditToolBaseXY(c.avatarRef);
         // playerMesh.position.y is a feet-level origin (playerToolBaseY then
         // adds the hand height on top of that) -- avatarRef.group.position.y
@@ -9527,15 +9539,20 @@
           // weapon -- matches the player's own updateToolMesh, which sets
           // playerMesh.rotation.y = vθ in every branch (the whole character
           // visibly winds up and follows through, not just their weapon).
-          // Also updates c.groupRot itself (not just the live mesh
-          // rotation.y), so next frame's updateCreatureMesh lerp continues
-          // from this leaned angle instead of snapping back to the plain
-          // aim angle and re-leaning from scratch every single frame while
-          // the swing is active. Resolves to plain θ (no visible change) at
-          // rest, since bodyYawRad is 0 at progress=0 for every style here.
-          c.avatarRef.group.rotation.y = vθ;
-          c.groupRot = vθ;
-          c._banditToolLastVθ = vθ; // reasserted during the settle window below
+          // vθ is in TRUE-space (see θ above) -- c.avatarRef.group.rotation.y/
+          // c.groupRot need the rig's own reflected+offset convention
+          // instead (see toGroupRotSpace), or the body would spin off in
+          // the wrong direction the instant a swing leans it. Also updates
+          // c.groupRot itself (not just the live mesh rotation.y), so next
+          // frame's updateCreatureMesh lerp continues from this leaned angle
+          // instead of snapping back to the plain aim angle and re-leaning
+          // from scratch every single frame while the swing is active.
+          // Resolves to plain rest angle (no visible change) at rest, since
+          // bodyYawRad is 0 at progress=0 for every style here.
+          const vθRig = toGroupRotSpace(vθ);
+          c.avatarRef.group.rotation.y = vθRig;
+          c.groupRot = vθRig;
+          c._banditToolLastVθ = vθRig; // reasserted during the settle window below (already in groupRot-space)
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
@@ -9559,10 +9576,12 @@
           const bodyYawRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power, 0);
           const vθ = θ + bodyYawRad;
           // Leans the avatar body itself into the thrust too -- see the
-          // matching comment in the sweep branch above.
-          c.avatarRef.group.rotation.y = vθ;
-          c.groupRot = vθ;
-          c._banditToolLastVθ = vθ; // reasserted during the settle window above
+          // matching comment in the sweep branch above (vθ is true-space,
+          // the avatar body needs it converted via toGroupRotSpace first).
+          const vθRig = toGroupRotSpace(vθ);
+          c.avatarRef.group.rotation.y = vθRig;
+          c.groupRot = vθRig;
+          c._banditToolLastVθ = vθRig; // reasserted during the settle window above (already in groupRot-space)
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
