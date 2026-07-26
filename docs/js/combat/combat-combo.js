@@ -182,6 +182,7 @@
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: step.dmgTag, heavy: step.heavy, afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(step.dmgTag, c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;
           }

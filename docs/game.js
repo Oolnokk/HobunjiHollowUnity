@@ -1681,6 +1681,27 @@
         playOneShotSfx(combatSfxConfig().weaponSlash, 1, 1);
       }
 
+      // Impact sound for any WEAPON hit landing (player Combo/Quick Attack/
+      // Charged Breaker/Counter Shield riposte, or a bandit's own mirror of
+      // the same abilities) -- distinct from playCreatureClawHit, which
+      // stays wildlife-bite-only. tag is the attacker's own weapon dmgType
+      // ('sharp'/'blunt', already threaded through every one of those
+      // abilities' damageCreature/damagePlayer calls as dmgOpts.tag), not
+      // the target's -- "chosen based on the attacker's weapon" per design.
+      // Takes a plain x/y/areaId instead of a creature-shaped object so it
+      // works equally for a bandit attacker (which has all three already)
+      // and the player attacker (which has no .areaId field of its own --
+      // see combat-core.js's deps.getCurrentArea()).
+      function playWeaponHitSfx(tag, x, y, areaId) {
+        if (areaId !== currentArea) return;
+        const cfgEntry = combatSfxConfig()[tag === 'blunt' ? 'weaponHitBlunt' : 'weaponHitSharp'];
+        if (!cfgEntry) return;
+        const distToPlayer = Math.hypot(x - player.x, y - player.y);
+        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+        playOneShotSfx(cfgEntry, falloff, 1);
+      }
+
       // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
       function floorZ(type, depth = 1) {
         if (type === TileType.RAISED) return  1;
@@ -8750,7 +8771,7 @@
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: step.dmgTag || def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(step.dmgTag || def.attackTag) });
-              playCreatureClawHit(c);
+              playWeaponHitSfx(step.dmgTag || def.attackTag, c.x, c.y, c.areaId);
             }
           },
           onComplete: () => {
@@ -8795,7 +8816,7 @@
             // breaker below hardcodes 'blunt'.
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
-              playCreatureClawHit(c);
+              playWeaponHitSfx('sharp', c.x, c.y, c.areaId);
             }
           },
           onComplete: () => { finishBanditAction(c); c.attackCooldownT = def.attackCooldownS; c.retreatT = JUMP_BACK_DUR_S; c._banditComboIndex = 0; },
@@ -8836,7 +8857,7 @@
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('blunt') });
-              playCreatureClawHit(c);
+              playWeaponHitSfx('blunt', c.x, c.y, c.areaId);
             }
           },
           onComplete: () => {
@@ -8884,7 +8905,7 @@
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
-              playCreatureClawHit(c);
+              playWeaponHitSfx('sharp', c.x, c.y, c.areaId);
             }
           },
         });
@@ -31995,6 +32016,7 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         playCreatureBark,
         playCreatureClawHit,
         playWeaponSlashSfx,
+        playWeaponHitSfx,
         // Named animal attacks (e.g. Pounce) own the creature's position
         // directly for their leap instead of going through moveCreatureToward
         // — without this, that ground covered during the leap never ticked
