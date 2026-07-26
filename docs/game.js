@@ -24954,6 +24954,29 @@
           ghost.userData.isOccludedGhost = true;
           ghost.matrixAutoUpdate = mesh.matrixAutoUpdate;
           mesh.parent.add(ghost);
+          // The copies above only match the source mesh's transform at THIS
+          // instant. A tool's sprite plane keeps getting its OWN local
+          // rotation.z animated every frame after this (the sweep style's
+          // blade-parallel twist / mace "spinning" twirl -- see
+          // updateToolMesh's spinPlane block), and the ghost, being a
+          // wholly separate Object3D, never picks that up on its own --
+          // confirmed live as a weapon that visibly swings normally but
+          // shows a second, frozen-orientation copy of itself whenever
+          // ghosted behind a tree. Tracking the pair here and re-copying
+          // the transform every frame (syncOccludedGhostTransforms, called
+          // once from the main loop) keeps every ghost -- tool or body --
+          // correct regardless of what animates the source mesh's own
+          // local transform, without needing every such animation site to
+          // know or care that a ghost even exists.
+          _occludedGhostPairs.push({ mesh, ghost });
+        }
+      }
+      const _occludedGhostPairs = [];
+      function syncOccludedGhostTransforms() {
+        for (const { mesh, ghost } of _occludedGhostPairs) {
+          ghost.position.copy(mesh.position);
+          ghost.rotation.copy(mesh.rotation);
+          ghost.scale.copy(mesh.scale);
         }
       }
       // Is (px,pz) actually BETWEEN (ax,az) [camera] and (bx,bz) [player],
@@ -26927,8 +26950,18 @@
         });
       }
 
-      // Build a PNG plane mesh sized to the sprite's pixel aspect ratio
-      function makeToolPlaneMesh(itemKey) {
+      // Build a PNG plane mesh sized to the sprite's pixel aspect ratio.
+      // `ghost` defaults to false -- this factory is shared by the player's
+      // own equipped-tool mesh (rebuildToolMeshes, the one call site that
+      // opts in below), a bandit's weapon (makeBanditToolHolder), and an
+      // NPC work station's displayed tool -- only the player's own tool
+      // should ever get a see-through ghost sibling, for the same reason
+      // makeCreatureEntity/makeBanditEntity's own ghost call is now
+      // player/companion-only: a bandit or NPC is never a revealTarget, so
+      // giving its weapon a ghost sibling let the player see it x-rayed
+      // through vegetation whenever it stood behind the same tree fading
+      // for the player/companion's sake.
+      function makeToolPlaneMesh(itemKey, opts = {}) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
         const imgW = def?._imgW || 1;
@@ -26946,7 +26979,7 @@
         const plane = new THREE.Mesh(geo, mat);
         plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
         g.add(plane);
-        addOccludedGhostSiblings(g);
+        if (opts.ghost) addOccludedGhostSiblings(g);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
         // from whichever anim is actually playing rather than baked in per-item here — see
@@ -26962,7 +26995,7 @@
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         for (const slot of Object.keys(toolActions)) {
           const itemKey = equipmentSlots[slot] ?? null;
-          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey) : null;
+          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { ghost: true }) : null;
         }
         // machete alias → weapon mesh for legacy code paths
         if (!toolMeshMap.machete) toolMeshMap.machete = toolMeshMap.weapon;
@@ -29625,6 +29658,14 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // arena, so combat has to work there too (see _isCavernBuildingArea).
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateToolMesh(dt);
+          // Re-copy every ghosted mesh's live transform onto its ghost
+          // sibling -- see addOccludedGhostSiblings' matching comment.
+          // Placed right after updateToolMesh since that's what actually
+          // animates a per-mesh local transform (the tool sprite's own
+          // rotation.z) after ghost creation; body-avatar ghosts move via
+          // their shared parent group instead and need no such recopy, but
+          // this catches them too if that ever changes.
+          syncOccludedGhostTransforms();
           updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
