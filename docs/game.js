@@ -1103,6 +1103,16 @@
       const TILE = 55;          // birds-eye tile size in px
       const PLAYER_RADIUS = 15;
       const MOVE_SPEED    = 238;  // px/s world units; used by updateMovement() target velocity.
+      // Dev balancing knob (Testing Arena's "Base movement speed" slider) --
+      // multiplies the PLAYER's own target speed (updateMovement) and every
+      // creature/bandit's speed at moveCreatureToward, the single choke
+      // point essentially all non-player movement (walk/chase/wander/
+      // retreat) already runs through. Deliberately does NOT touch lunges
+      // (beginCombatLunge/updateBanditLunge) or Pounce's leap -- those are
+      // tied to a fixed ability's own windup/strike timing, not "how fast
+      // does this thing walk," so scaling them would desync a swing's
+      // animation from where its hit lands rather than just changing pace.
+      let devGlobalSpeedMul = 1;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
@@ -5629,7 +5639,8 @@
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const nx = dx / dist, ny = dy / dist;
-        const effectiveSpeed = isCreatureSwimming(c) ? speed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? speed * CLIMB_SPEED_MUL : speed;
+        const baseSpeed = speed * devGlobalSpeedMul;
+        const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
         // slides along it instead of freezing outright (mirrors the player's
@@ -19339,7 +19350,7 @@
         // Lets a held movement ability (Blink Dodge) slow normal walking
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * getAlchemySpeedMul();
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -28379,7 +28390,7 @@ why="..."             free-text reasoning computed at snapshot time, referencing
 
       function buildArenaCombatLogText() {
         const all = [player, ..._arenaSpawnedCreatures];
-        const lines = [COMBAT_LOG_GUIDE, '', `--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} ---`,
+        const lines = [COMBAT_LOG_GUIDE, '', `--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
           `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)})`];
         for (const c of _arenaSpawnedCreatures) {
           const def = c.def || {};
@@ -28431,6 +28442,12 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         }
       }
       document.getElementById('devCombatLogBtn')?.addEventListener('click', copyArenaCombatLog);
+
+      document.getElementById('devSpeedMulSlider')?.addEventListener('input', (e) => {
+        devGlobalSpeedMul = clamp(Number(e.target.value) || 100, 25, 300) / 100;
+        const label = document.getElementById('devSpeedMulLabel');
+        if (label) label.textContent = Math.round(devGlobalSpeedMul * 100) + '%';
+      });
 
       window._devSpawner = {
         toggle() {
