@@ -9319,7 +9319,20 @@
       // exceed what that attack needs to reach.
       const BANDIT_PLAYER_COLLISION_RADIUS_PX = PLAYER_RADIUS + TILE * 0.32;
       function enforceBanditPlayerCollision(c, targetPlayer) {
-        const activeHitTest = (c._banditLunging || c._banditAction) ? c._banditLungeHitTest : null;
+        // Also constrained through the brief inter-step gap of an active
+        // combo (comboIdx > 0, both this step's lunge and its staged action
+        // already finished, but the next step is about to fire within
+        // BANDIT_COMBO_CHAIN_GAP_S) -- without this, the instant a landed
+        // step's own action completed, this fell back to the full uncapped
+        // floor and physically snapped the bandit back out from wherever it
+        // had just landed (often well under the floor) to the full 32.6px
+        // right before the next combo step fired, pushing steps with a
+        // real range near that floor (e.g. Backhand Swing, ~31.2px) outside
+        // their own reach for a hit that should have connected (confirmed
+        // live: Backhand Swing whiffing at dist=38.7/84.3px immediately
+        // after the preceding Forehand Swing landed well inside range).
+        const midComboGap = c._banditComboIndex > 0 && !c._banditLunging && !c._banditAction;
+        const activeHitTest = (c._banditLunging || c._banditAction || midComboGap) ? c._banditLungeHitTest : null;
         const radiusPx = activeHitTest
           ? Math.min(BANDIT_PLAYER_COLLISION_RADIUS_PX, activeHitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN)
           : BANDIT_PLAYER_COLLISION_RADIUS_PX;
