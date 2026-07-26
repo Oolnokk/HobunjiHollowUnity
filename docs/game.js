@@ -28763,6 +28763,9 @@ Bandit-only fields:
   hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
   guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(BANDIT_GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
   cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
+  idle/settleT        idle=1 means no staged action is in flight AND the brief post-swing settle window (BANDIT_TOOL_SETTLE_S) has elapsed -- the bandit is truly at rest, not just between windup/strike. settleT is seconds left in that settle window (0 outside it). stanceMatch/bodyLeanDeg below are only meaningful (worth flagging as a bug) once idle=1 -- mid-swing or mid-settle they're expected to differ from their "rest" values.
+  stanceAnim/stanceExpected/stanceMatch   stanceAnim is the bandit's CURRENT rest-pose style (c._banditSwingAnim: sweep|thrust); stanceExpected is what its equipped weapon's own animStyle says it should be (banditNaturalSwing(def) -- sweep for hatchet/fishingmace, thrust for the rest); stanceMatch=0 while idle=1 means the idle stance is stuck showing a DIFFERENT ability's style than the one its weapon actually plays at rest (this exact bug happened once already -- Quick Attack/Charged Breaker hardcode their own anim/pose and finishBanditAction has to reset it back afterward).
+  facingDeg/groupRotDeg/bodyLeanDeg   facingDeg is c.facing (the bandit's true aim/facing angle, degrees) and groupRotDeg is c.groupRot (its avatar body's actual rendered rotation.y, in the portrait-rig's own reflected+offset space -- see updateCreatureMesh's rawTargetRotY) -- these are NOT the same convention and are not meant to numerically match. bodyLeanDeg is the signed difference between groupRotDeg and where the body SHOULD be sitting at rest for the current facingDeg (0 = body exactly at its rest angle); a large bodyLeanDeg while idle=1 means the avatar body is stuck leaned into a swing that already ended -- the other half of the same class of bug as stanceMatch above (this also happened once already, from the settle window not reasserting the lean on both the weapon and the body together).
 why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant`;
 
       function _combatLogDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -28820,6 +28823,40 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
 
+      // Idle REST pose/orientation diagnostic -- deliberately separate from
+      // the attack-frame fields above (tState/actionBusy/comboIdx etc, which
+      // describe an in-flight swing). Reports what the bandit's stance
+      // currently IS and where it SHOULD be at rest, to catch either half
+      // of the two bugs already found once each: the idle stance getting
+      // stuck showing whichever ability last fired instead of the equipped
+      // weapon's own style (see finishBanditAction/banditNaturalSwing), and
+      // the avatar body rotating independently of (leaning a different
+      // amount than) the weapon it's holding (see updateBanditToolMesh's
+      // settle-window reassertion). stanceMatch/bodyLeanDeg are only worth
+      // reading as "wrong" once idle=1 -- mid-swing or mid-settle they're
+      // supposed to differ from their rest values.
+      function _combatLogBanditStance(c, def) {
+        const settleT = Math.max(0, ((c._banditToolSettleUntil || 0) - performance.now()) / 1000);
+        const idle = !c._banditAction && settleT <= 0;
+        const natural = banditNaturalSwing(def);
+        const stanceAnim = c._banditSwingAnim || 'thrust';
+        // c.groupRot's own rest value for the CURRENT facing (see
+        // updateCreatureMesh's rawTargetRotY, the same formula) -- diffed
+        // against the actual live c.groupRot via angleDiff (wrap-safe) so a
+        // stuck lean shows up as a nonzero bodyLeanDeg regardless of which
+        // way c.facing happens to be pointing right now.
+        const aimOffset = def.aimAngleOffset || 0;
+        const restGroupRot = -((c.facing || 0) + aimOffset) + Math.PI / 2;
+        const bodyLeanDeg = Math.round(THREE.MathUtils.radToDeg(angleDiff(c.groupRot || 0, restGroupRot)));
+        return [
+          `idle=${idle ? 1 : 0}`, `settleT=${settleT.toFixed(2)}`,
+          `stanceAnim=${stanceAnim}`, `stanceExpected=${natural.anim}`, `stanceMatch=${stanceAnim === natural.anim ? 1 : 0}`,
+          `facingDeg=${Math.round(THREE.MathUtils.radToDeg(c.facing || 0))}`,
+          `groupRotDeg=${Math.round(THREE.MathUtils.radToDeg(c.groupRot || 0))}`,
+          `bodyLeanDeg=${bodyLeanDeg}`,
+        ].join(' ');
+      }
+
       function captureBanditCombatSnapshotText() {
         const all = [player, ..._arenaSpawnedCreatures];
         const lines = [`--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
@@ -28846,7 +28883,7 @@ why="..."             free-text reasoning computed at snapshot time, referencing
               `guarding=${c._banditGuardUntil > performance.now() ? 1 : 0}`, `guardCdT=${(c._banditGuardCdT || 0).toFixed(2)}`,
               `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
               `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,
-              `cloth=${clothTxt}`, `nearestOther=${nearestTxt}`,
+              `cloth=${clothTxt}`, _combatLogBanditStance(c, def), `nearestOther=${nearestTxt}`,
               `why="${_combatLogBanditWhy(c, def, player, nearestTxt)}"`,
             ].join(' '));
           } else {
