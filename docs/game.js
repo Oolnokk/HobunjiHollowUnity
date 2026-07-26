@@ -28358,7 +28358,20 @@
       // egress policy blocks the CDN this game loads three.js from, so a
       // headless Chromium session can't render it either. The guide string
       // is the interpretation key for whichever Claude session receives it.
+      //
+      // A single frozen instant wasn't enough to read state actually
+      // CHANGING over time (a combo step advancing, a cooldown counting
+      // down) -- captureBanditCombatSnapshot runs on its own real-time
+      // interval (not the game's own dt, so it keeps ticking at a steady
+      // rate regardless of framerate) independently of the copy button,
+      // pushing into a capped ring buffer; the button only ever copies
+      // whatever's currently buffered, it doesn't take a fresh snapshot.
+      const BANDIT_COMBAT_LOG_BUFFER_SIZE = 7;
+      const BANDIT_COMBAT_LOG_INTERVAL_S = 1;
+      const _banditCombatLogBuffer = []; // [{ t, text }], oldest first
+
       const COMBAT_LOG_GUIDE = `HOBUNJI COMBAT LOG -- interpretation guide for AI review
+This is a CONVEYOR BELT of up to ${BANDIT_COMBAT_LOG_BUFFER_SIZE} snapshots, one captured automatically every ${BANDIT_COMBAT_LOG_INTERVAL_S}s in the background (oldest dropped once an extra one would push the buffer past ${BANDIT_COMBAT_LOG_BUFFER_SIZE}) while the Testing Arena is active -- pressing the copy button doesn't take a fresh snapshot, it just copies whatever's currently buffered, oldest first. Read consecutive snapshots together to see state actually CHANGE over ~${BANDIT_COMBAT_LOG_BUFFER_SIZE} real seconds (comboIdx advancing, cdT counting down, retreatT/guarding windows opening and closing, hp dropping) instead of guessing from one frozen instant.
 Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/updateBanditCombatAI() (Bandit Gangs section) for the state machine these fields describe. Bandits fight through the SAME named abilities the player has (Combo/Quick Attack/Charged Breaker/Counter Shield -- real damage/range/cone numbers exposed read-only via window.Combat.comboData/quickAttackData/chargedBreakerData/counterShieldData), executed by a parallel bandit-only AI (updateBanditCombatAI) rather than the player-singleton combat-core/combo/quickattacks/holds modules themselves -- see the long comment above updateBanditCombatAI for why. Wildlife still uses the older plain bite-telegraph/behaviorStage/Pounce system (combat-enemy-telegraph.js/combat-animal-attacks.js) unchanged.
 Common fields:
   id            unique entity id (bandit ids look like "bandit_<rank>_<timestamp>_<rand>")
@@ -28412,9 +28425,9 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
 
-      function buildArenaCombatLogText() {
+      function captureBanditCombatSnapshotText() {
         const all = [player, ..._arenaSpawnedCreatures];
-        const lines = [COMBAT_LOG_GUIDE, '', `--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
+        const lines = [`--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
           `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)})`];
         for (const c of _arenaSpawnedCreatures) {
           const def = c.def || {};
@@ -28455,11 +28468,24 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         return lines.join('\n');
       }
 
+      // Runs on its own real-time interval (see the comment above
+      // BANDIT_COMBAT_LOG_BUFFER_SIZE) -- pushes one snapshot, then drops
+      // the oldest once the buffer would exceed BANDIT_COMBAT_LOG_BUFFER_SIZE.
+      function captureBanditCombatSnapshot() {
+        if (currentArea !== DEV_ARENA_ZONE_ID) return;
+        _banditCombatLogBuffer.push({ t: Date.now(), text: captureBanditCombatSnapshotText() });
+        while (_banditCombatLogBuffer.length > BANDIT_COMBAT_LOG_BUFFER_SIZE) _banditCombatLogBuffer.shift();
+      }
+      setInterval(captureBanditCombatSnapshot, BANDIT_COMBAT_LOG_INTERVAL_S * 1000);
+
       async function copyArenaCombatLog() {
-        const text = buildArenaCombatLogText();
+        const body = _banditCombatLogBuffer.length
+          ? _banditCombatLogBuffer.map(s => s.text).join('\n\n')
+          : '(no buffered snapshots yet -- wait a second and try again; the Testing Arena must be the active zone for the background capture to run)';
+        const text = [COMBAT_LOG_GUIDE, '', body].join('\n');
         try {
           await navigator.clipboard.writeText(text);
-          showToast('Combat log copied to clipboard.', true);
+          showToast(`Combat log copied (${_banditCombatLogBuffer.length} snapshot${_banditCombatLogBuffer.length === 1 ? '' : 's'}).`, true);
         } catch (e) {
           console.log(text);
           showToast('Clipboard blocked — full log printed to console instead (check devtools).', false);
