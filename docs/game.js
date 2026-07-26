@@ -5440,7 +5440,13 @@
         player.x = COLS * TILE * 0.5;
         player.y = ROWS * TILE * 0.72;
         player.vx = 0; player.vy = 0;
-        player.health = Math.round(player.maxHealth * 0.5);
+        // Full health/stamina here specifically (unlike the Root Totem
+        // branch above, which stays a 50%-health lesser convenience) --
+        // dying with no totem nearby already means losing all the ground
+        // you'd covered back to the farmhouse; topping off on top of that
+        // punishes twice over.
+        player.health = player.maxHealth;
+        player.stamina = player.maxStamina;
         player.invulnUntil = performance.now() + 1000;
         _snapCameraTarget();
         showToast('You black out and stumble back to the farmhouse...', false);

@@ -58,9 +58,9 @@
   },
 
   "statWeakenMultiplierByRank": {
-    "_comment": "Applied to attackDamage/maxHealth relative to the tier-scaled captain baseline -- 'their abilities are weakened for all except their camp's bandit captain'.",
-    "grunt": 0.55,
-    "lieutenant": 0.8,
+    "_comment": "Applied to attackDamage/maxHealth relative to the tier-scaled captain baseline -- 'their abilities are weakened for all except their camp's bandit captain'. Grunts in particular should read as genuinely weak fodder next to a captain, not just a smaller version of the same fighter.",
+    "grunt": 0.35,
+    "lieutenant": 0.62,
     "captain": 1.0
   },
 
