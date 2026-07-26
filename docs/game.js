@@ -9507,6 +9507,26 @@
         const dirSign = c._banditSwingDirSign || 1;
         const power = c._banditSwingPower || 1;
 
+        // The sprite plane's own local twist/mirror -- mirrors updateToolMesh's
+        // spinPlane handling exactly (see its own comment there): a sweep-style
+        // blade needs an extra -90 degree z-twist to lie edge-on into the swing
+        // plane instead of sitting flat the way a thrust weapon's sprite does,
+        // and dirSign mirrors it across (x-scale flip) for a Backhand-style
+        // step. makeBanditToolHolder builds the exact same flat plane mesh
+        // (makeToolPlaneMesh) the player equips, but nothing here was ever
+        // applying this twist -- every bandit SWEEP weapon (hatchet, fishing
+        // mace) rendered lying flat regardless of anim/pose, reading as "held
+        // like a thrust weapon" even while stanceAnim/stanceExpected both
+        // correctly reported "sweep". Player-only cosmetics (the harpoon-cast
+        // twirl, refillTwistOut/Back) don't apply to a bandit's own combat
+        // swing, so only the two channels real combat swings actually use are
+        // ported here.
+        const spinPlane = holder.children[0]?.userData?.toolPlane;
+        if (spinPlane) {
+          spinPlane.rotation.z = anim === 'sweep' ? -Math.PI / 2 : 0;
+          spinPlane.scale.x = anim === 'sweep' ? dirSign : 1;
+        }
+
         let progress = 0, wf = 0.16;
         if (action) {
           const totalS = Math.max(0.0001, action.windupS + action.strikeS);
