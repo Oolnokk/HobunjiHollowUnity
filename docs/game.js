@@ -8873,38 +8873,36 @@
         });
       }
 
-      // "Choose an attack, then judge how close to get" -- rather than
-      // approaching to one flat def.attackRangePx and picking an ability
-      // afterward, this estimates the farthest any ability this bandit
-      // could plausibly open with can actually reach (its own hit rangePx
-      // plus how far its lunge travels), and that's what gates the
-      // approach. Only combo step 0 and the loadout's quick-attack
-      // technique are read here (both have a range/lunge fixed regardless
-      // of streak/condition -- see banditQuickAttackConditions/TECHNIQUES'
-      // own build()), plus chargedBreaker at a representative mid-charge --
-      // exact numbers still get finalized when an ability actually fires;
-      // this is only ever used to decide "close enough to try."
-      function banditEngagementReachPx(def, loadout) {
+      // "Choose an attack, then judge how close to get" -- gates the
+      // approach on whichever combo step is actually about to fire
+      // (c._banditComboIndex), not always step 0 -- later steps in a chain
+      // often have a noticeably shorter lunge (see SWING_STEPS/POKE_STEPS:
+      // step 0 is lungeMul 2.0, steps 1-2 are 1.0), so gating on step 0's
+      // bigger number let a bandit commit to swing 2/3 from farther than
+      // that step's own lunge could actually close.
+      //
+      // This used to also take the MAX reach across quickAttack/
+      // chargedBreaker on top of combo -- both have a much bigger lunge
+      // than combo (quick attack's LUNGE_TILE_MUL alone is 5.5 tiles,
+      // ~300px). Since combo is the guaranteed fallback that fires
+      // whenever quickAttack/chargedBreaker don't roll (see
+      // updateBanditCombatAI), that let a bandit commit to attacking from
+      // up to ~330px away and then actually throw a combo swing whose own
+      // ~115-195px lunge fell well short -- striking (and, per the combat
+      // log, being read as striking) from nowhere near its real hit cone,
+      // and inflating the standoff/flank ring radii derived from this same
+      // number into an unintentionally huge "keep-away" distance too.
+      // Combo's own current-step reach is always the smallest of the
+      // three -- quickAttack/chargedBreaker's lunges are both bigger --
+      // so gating on it alone still guarantees enough reach for whichever
+      // ability actually ends up firing.
+      function banditEngagementReachPx(c, def, loadout) {
         const base = banditAttackBaseline(def);
-        let reach = base.rangePx;
         const combo = window.Combat?.comboData;
         const steps = combo?.[loadout.tap1];
-        if (steps?.length) {
-          const step0 = steps[0];
-          reach = Math.max(reach, base.rangePx * step0.rangeMul * (combo.RANGE_SCALE ?? 1) + TILE * (step0.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5));
-        }
-        const qa = window.Combat?.quickAttackData;
-        const techDef = qa?.TECHNIQUES?.[loadout.tap2];
-        if (techDef) {
-          const preview = techDef.build(null, null, { enemyStriking: false, exhausted: false, behind: false, lowHealth: false });
-          reach = Math.max(reach, base.rangePx * preview.rangeMul * (qa.RANGE_SCALE ?? 1) + TILE * (qa.LUNGE_TILE_MUL || 5.5));
-        }
-        const cb = window.Combat?.chargedBreakerData;
-        if (loadout.hold1 === 'chargedBreaker' && cb) {
-          const midRangeMul = (cb.RANGE_MUL_MIN + cb.RANGE_MUL_MAX) / 2;
-          reach = Math.max(reach, base.rangePx * midRangeMul + TILE * (cb.LUNGE_TILE_MUL || 2.0));
-        }
-        return reach;
+        if (!steps?.length) return base.rangePx;
+        const step = steps[(c._banditComboIndex || 0) % steps.length];
+        return base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1) + TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
       }
 
       // ── Multi-attacker coordination ─────────────────────────────────
@@ -9031,7 +9029,7 @@
         const unstack = banditPersonalSpaceAdjust(c, { x: c.x, y: c.y });
         if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
-        const engageRangePx = banditEngagementReachPx(def, loadout);
+        const engageRangePx = banditEngagementReachPx(c, def, loadout);
         const slot = claimBanditAttackSlot(c, towardAngle);
         // attackCooldownS (0.95-1.15s) runs noticeably longer than the
         // post-attack retreat step (JUMP_BACK_DUR_S, 0.4s), and retreating
@@ -28428,7 +28426,7 @@ Common fields:
   aaBusy        wildlife only: 1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
   retreatT      seconds left jumping backward after landing a hit (0 = not retreating)
   cdT           seconds left before the next attack attempt is allowed (attackCooldownT)
-  aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer
+  aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer -- NOTE for bandits: atkRangePx is only the flat melee baseline, NOT the real approach/attack-commit threshold (that's engageRangePx, its current combo step's own hit range + lunge distance -- see banditEngagementReachPx and the bandit's own why= text, which reports the real number)
 Bandit-only fields:
   rank/tier/mastery   grunt|lieutenant|captain; difficulty tier 0-3 the camp/spawn used; rolled weapon-mastery level 0-5
   species/gender      rolled from speciesWeights in bandit-gang-config.json
@@ -28464,8 +28462,17 @@ why="..."             free-text reasoning computed at snapshot time, referencing
         if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
         if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
         if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
-        if (distP > def.attackRangePx) return `closing distance, distPlayer=${distP}px, waiting to enter attackRangePx=${Math.round(def.attackRangePx)}px`;
-        if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px`;
+        // The real approach/attack-commit gate is banditEngagementReachPx
+        // (its current combo step's own reach, folding in that step's own
+        // lunge distance) -- NOT the flat def.attackRangePx shown in the
+        // ENTITY line's atkRangePx field, which is only the melee baseline
+        // before any per-step range/lunge math. Reporting attackRangePx
+        // here instead used to make a bandit committing to (and, before the
+        // engagement-reach fix, whiffing) an attack from well outside its
+        // real hit cone look like ordinary "still closing" text.
+        const engageReach = Math.round(banditEngagementReachPx(c, def, def.banditAbilityLoadout || {}));
+        if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
+        if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         if (c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
         return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
       }
