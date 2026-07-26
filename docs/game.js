@@ -8690,6 +8690,12 @@
         const swept = sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
         const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
         c.x = swept.x; c.y = swept.y;
+        // Same-frame overshoot correction: a lunge's own cone-halt (above)
+        // normally stops it well outside contact range, but the lunge
+        // doesn't home like the player's own does, so a target that
+        // sidesteps out of the locked cone mid-flight can otherwise carry
+        // the bandit straight through it -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
+        enforceBanditPlayerCollision(c, targetPlayer);
         const dmgTag = c.def.attackTag || 'sharp';
         const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
         tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
@@ -8957,13 +8963,19 @@
       }
 
       // A bandit's own rough body radius plus the player's (PLAYER_RADIUS) --
-      // the minimum center-to-center distance normal (non-lunging) bandit
-      // movement is allowed to close to. Deliberately NOT enforced while
-      // updateBanditLunge is active (returns early above, before this ever
-      // runs) or c._banditAction is busy (also returns early) -- a lunge
-      // legitimately needs to close all the way in for its own hit-cone
-      // check to pass, and yanking position mid-swing would look worse than
-      // the contact it's trying to prevent.
+      // the minimum center-to-center distance bandit movement is allowed to
+      // close to, enforced unconditionally (including mid-lunge and mid-
+      // swing, see updateBanditCombatAI/updateBanditLunge). This used to be
+      // skipped during a lunge/busy swing on the theory that the hit-cone
+      // check "needs" to close all the way in -- it doesn't: every bandit
+      // ability's own rangePx (~47-95px, see banditEngagementReachPx) is
+      // already bigger than this radius (~32.6px), so updateBanditLunge's
+      // own cone-entry halt always stops a legitimate attack well outside
+      // contact range on its own. Enforcing this collision continuously is
+      // a no-op for a normal successful hit and only ever actually pushes
+      // in the edge cases this radius exists for: the player dodging into
+      // contact range during a stationary swing, or a lunge overshooting
+      // because (unlike the player's own lunge) it doesn't home mid-flight.
       const BANDIT_PLAYER_COLLISION_RADIUS_PX = PLAYER_RADIUS + TILE * 0.32;
       function enforceBanditPlayerCollision(c, targetPlayer) {
         const dx = c.x - targetPlayer.x, dy = c.y - targetPlayer.y;
@@ -8983,6 +8995,12 @@
         const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
         if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
         if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
+        // Unconditional now (was only called from the engaged branch below,
+        // skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
+        // Covers the retreat/busy states below too: a stationary swinging
+        // bandit should still get pushed off if the player walks into it,
+        // even though it isn't the one closing the distance.
+        enforceBanditPlayerCollision(c, targetPlayer);
         if (updateBanditLunge(c, dt, targetPlayer)) return { aimAngle: c.facing, moving: true };
         if (c.retreatT > 0) {
           c.retreatT = Math.max(0, c.retreatT - dt);
@@ -8991,7 +9009,6 @@
           return { aimAngle: towardAngle, moving };
         }
         if (c._banditAction) return { aimAngle: c.facing, moving: false };
-        enforceBanditPlayerCollision(c, targetPlayer);
 
         // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
         // other bandits -- once a bandit is "in range" (below) it stops
@@ -8999,8 +9016,8 @@
         // nothing else keeping them apart a fast-moving player can walk two
         // stationary attackers onto the exact same tile as each other.
         // Applied every frame regardless of engage/queued state. Player
-        // separation is handled separately just above, by
-        // enforceBanditPlayerCollision -- that one's a hard positional
+        // separation is handled separately, unconditionally at the top of
+        // this function, by enforceBanditPlayerCollision -- that one's a hard positional
         // clamp (the player has no "movement target" a bandit could aim
         // short of), this one only ever nudges where a bandit is walking
         // toward, never teleports it.
