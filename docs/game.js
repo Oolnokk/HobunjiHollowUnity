@@ -9485,6 +9485,26 @@
           if (conditionFavorable && rnd() < BANDIT_QUICK_ATTACK_CHANCE) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
         }
         if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
+        // The staged action just created above (inside whichever fire*
+        // call ran) gets its own first tick later THIS SAME FRAME --
+        // window.Combat.update(dt) runs after updateHostiles in the main
+        // loop, so a brand-new action always advances from t=0 the instant
+        // it's created. updateBanditLunge's own countdown has no such
+        // same-frame catch-up: it only ticks from calls made earlier in
+        // THIS invocation of updateBanditCombatAI, before the attack fired,
+        // so without this the lunge silently runs exactly one frame's dt
+        // BEHIND the staged action for its entire lifetime -- onStrike
+        // (driven by the staged action's clock) checks the hit-cone before
+        // the lunge has covered as much ground as it should have. Confirmed
+        // live: every combo/quick-attack step landed short by a fixed
+        // ~1-frame amount regardless of the ability's own duration (e.g.
+        // Short Thrust's lungeT read 0.130s remaining out of a 0.210s
+        // budget right at onStrike -- only 0.08s had elapsed on the lunge's
+        // clock against the staged action's own windupS=0.12s), whiffing
+        // attacks with otherwise perfect aim. Ticking the fresh lunge once
+        // immediately gives it the same same-frame head start the staged
+        // action already has.
+        if (fired) updateBanditLunge(c, dt, targetPlayer);
         return { aimAngle: towardAngle, moving: false };
       }
 
