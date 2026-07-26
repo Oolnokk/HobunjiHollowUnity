@@ -5080,6 +5080,12 @@
           c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
           c._banditToolHolder = null;
         }
+        if (c._banditTrailMesh) {
+          (c.scene || scene).remove(c._banditTrailMesh);
+          c._banditTrailMesh.geometry.dispose();
+          c._banditTrailMesh.material.dispose();
+          c._banditTrailMesh = null;
+        }
         window.ResourceRings?.disposeRingHud(c);
       }
 
@@ -5130,6 +5136,7 @@
         // below animates -- hide it now rather than leaving it floating in
         // place, disconnected from the corpse, once the fall starts.
         if (c._banditToolHolder) c._banditToolHolder.visible = false;
+        if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
         const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
         const rest = findDeathRestTile(c, awayAngle);
         c.state = 'dying';
@@ -5373,7 +5380,7 @@
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; }
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
       }
 
@@ -5971,7 +5978,7 @@
           if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
-            if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; }
+            if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
           }
 
           let moving = false, aimAngle = c.facing || 0;
@@ -6193,7 +6200,7 @@
           c.facing = aimAngle;
           c.x = clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
-          if (c.isBandit) updateBanditToolMesh(c);
+          if (c.isBandit) { updateBanditToolMesh(c); updateBanditTrailArc(c, dt); }
 
           // One line per AI-state transition for den-spawned wildlife (not
           // scripted combat-card creatures, which have no denKey) — lets the
@@ -8428,6 +8435,14 @@
           group, frontPlane: frontPivot, backPlane: backPivot,
           modelWidth: portrait.userData?.portraitModelWidth || MODEL_W,
           modelHeight: portrait.userData?.portraitModelHeight || MODEL_W,
+          // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
+          // scans from the actual rendered portrait (png-plane-avatar.js's
+          // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
+          // refreshPlayerAvatar reads the same fields (game.js's
+          // playerToolBaseX/Y) instead of banditToolBaseXY's generic
+          // -width/2,height/2 fallback.
+          handAttachX: portrait.userData?.handAttachX,
+          handAttachY: portrait.userData?.handAttachY,
           dispose() { window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
         };
       }
@@ -8611,6 +8626,61 @@
         c.telegraphState = null;
       }
 
+      // ── Bandit lunge ─────────────────────────────────────────────────
+      //
+      // Mirrors beginCombatLunge/updateMovement's player-only lunge block
+      // (game.js ~18958-19012) rather than reusing it directly (it writes
+      // straight to the single global `player` object throughout). Angle
+      // locks at fire time and never re-aims mid-flight -- Pounce's own
+      // leap (combat-animal-attacks.js) is the existing creature-side
+      // precedent for that choice ("nothing during windup/leap re-aims it,
+      // which is what makes the leap genuinely dodgeable"), so this skips
+      // the player lunge's mid-flight homing correction rather than
+      // reinventing it. tickCreatureLungeTrail (the ground-stamp trail) and
+      // tickCreatureFootsteps are already entity-generic -- called exactly
+      // the way pounceUpdate already calls them.
+      function beginBanditLunge(c, distancePx, durationS, hitTest) {
+        if (durationS <= 0 || distancePx <= 0 || c._banditLunging) return;
+        c._banditLunging = true;
+        c._banditLungeT = durationS;
+        c._banditLungeDur = durationS;
+        c._banditLungeStartX = c.x;
+        c._banditLungeStartY = c.y;
+        c._banditLungeDirX = Math.cos(c.facing || 0);
+        c._banditLungeDirY = Math.sin(c.facing || 0);
+        c._banditLungeDistancePx = distancePx;
+        c._banditLungeHitTest = hitTest;
+      }
+
+      function isPlayerInBanditLungeCone(c, hitTest, targetPlayer) {
+        if (!hitTest || targetPlayer.health <= 0) return false;
+        return inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, hitTest.rangePx, hitTest.halfConeRad);
+      }
+
+      // Returns true while a lunge is in flight (caller should skip its own
+      // normal movement/approach logic for the frame).
+      function updateBanditLunge(c, dt, targetPlayer) {
+        if (!c._banditLunging) return false;
+        if (isPlayerInBanditLungeCone(c, c._banditLungeHitTest, targetPlayer)) {
+          c._banditLunging = false;
+          return true;
+        }
+        c._banditLungeT = Math.max(0, c._banditLungeT - dt);
+        const t = 1 - c._banditLungeT / c._banditLungeDur;
+        const eased = 1 - Math.pow(1 - t, 3);
+        const desiredX = c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
+        const desiredY = c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
+        const swept = sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
+        const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
+        c.x = swept.x; c.y = swept.y;
+        const dmgTag = c.def.attackTag || 'sharp';
+        const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
+        tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
+        tickCreatureFootsteps?.(c, stepPx);
+        if (c._banditLungeT <= 0) c._banditLunging = false;
+        return true;
+      }
+
       function fireBanditComboStep(c, def, loadout, targetPlayer) {
         const steps = window.Combat?.comboData?.[loadout.tap1];
         if (!steps || !steps.length) return false;
@@ -8623,13 +8693,17 @@
         const halfConeRad = step.halfConeDeg * Math.PI / 180;
         const knockbackPxS = base.knockbackPxS * step.knockbackMul;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        c.facing = aimAngle; // lunge direction locks off c.facing -- must be fresh, not last frame's
         c.telegraphState = 'windup';
         c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
         c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
+        const comboData = window.Combat?.comboData;
+        beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
           onStrike: () => {
             c.telegraphState = 'strike';
+            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: step.dmgTag || def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(step.dmgTag || def.attackTag) });
               playCreatureClawHit(c);
@@ -8657,13 +8731,16 @@
         const halfConeRad = tech.halfConeDeg * Math.PI / 180;
         const knockbackPxS = base.knockbackPxS * tech.knockbackMul;
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        c.facing = aimAngle;
         c.telegraphState = 'windup';
         c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
         c._banditSwingDirSign = 1; c._banditSwingPower = 1;
+        beginBanditLunge(c, TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
           onStrike: () => {
             c.telegraphState = 'strike';
+            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             // Every real Quick Attack technique hardcodes tag:'sharp'
             // regardless of the equipped weapon's own dmgType (see
             // combat-quickattacks.js's onTap) -- matched here rather than
@@ -8690,15 +8767,26 @@
         const halfConeRad = cb.HALF_CONE_DEG * Math.PI / 180;
         const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT);
         const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+        c.facing = aimAngle;
         c.telegraphState = 'windup';
-        // Charged Breaker always plays the sweep pose at POWER 1.7 regardless
-        // of the equipped weapon's own style (see combat-charged-breaker.js).
+        // Charged Breaker always plays the sweep pose regardless of the
+        // equipped weapon's own style (see combat-charged-breaker.js).
         c._banditSwingAnim = 'sweep'; c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
-        c._banditSwingDirSign = 1; c._banditSwingPower = 1.7;
+        c._banditSwingDirSign = 1; c._banditSwingPower = cb.POWER || 1.7;
+        // Real chargedBreaker.js only lunges during the strike (a separate,
+        // windupS:0 staged action started once the hold is released) --
+        // simplified here to span the bandit's own whole windup+strike
+        // instead: ease-out is front-loaded (fastest right at the start),
+        // so ticking updateBanditLunge across the full action still closes
+        // most of the distance well before onStrike's hit-check fires at
+        // the windup->strike boundary, without needing a second staged
+        // action just to match the real system's exact timing split.
+        beginBanditLunge(c, TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad });
         c._banditAction = window.Combat.beginStagedAction({
           windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
           onStrike: () => {
             c.telegraphState = 'strike';
+            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('blunt') });
               playCreatureClawHit(c);
@@ -8746,12 +8834,109 @@
           onStrike: () => {
             // Matches combat-counter-shield.js's own riposte, which also
             // hardcodes tag:'sharp' regardless of weapon.
+            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag('sharp') });
               playCreatureClawHit(c);
             }
           },
         });
+      }
+
+      // "Choose an attack, then judge how close to get" -- rather than
+      // approaching to one flat def.attackRangePx and picking an ability
+      // afterward, this estimates the farthest any ability this bandit
+      // could plausibly open with can actually reach (its own hit rangePx
+      // plus how far its lunge travels), and that's what gates the
+      // approach. Only combo step 0 and the loadout's quick-attack
+      // technique are read here (both have a range/lunge fixed regardless
+      // of streak/condition -- see banditQuickAttackConditions/TECHNIQUES'
+      // own build()), plus chargedBreaker at a representative mid-charge --
+      // exact numbers still get finalized when an ability actually fires;
+      // this is only ever used to decide "close enough to try."
+      function banditEngagementReachPx(def, loadout) {
+        const base = banditAttackBaseline(def);
+        let reach = base.rangePx;
+        const combo = window.Combat?.comboData;
+        const steps = combo?.[loadout.tap1];
+        if (steps?.length) {
+          const step0 = steps[0];
+          reach = Math.max(reach, base.rangePx * step0.rangeMul + TILE * (step0.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5));
+        }
+        const qa = window.Combat?.quickAttackData;
+        const techDef = qa?.TECHNIQUES?.[loadout.tap2];
+        if (techDef) {
+          const preview = techDef.build(null, null, { enemyStriking: false, exhausted: false, behind: false, lowHealth: false });
+          reach = Math.max(reach, base.rangePx * preview.rangeMul + TILE * (qa.LUNGE_TILE_MUL || 5.5));
+        }
+        const cb = window.Combat?.chargedBreakerData;
+        if (loadout.hold1 === 'chargedBreaker' && cb) {
+          const midRangeMul = (cb.RANGE_MUL_MIN + cb.RANGE_MUL_MAX) / 2;
+          reach = Math.max(reach, base.rangePx * midRangeMul + TILE * (cb.LUNGE_TILE_MUL || 2.0));
+        }
+        return reach;
+      }
+
+      // ── Multi-attacker coordination ─────────────────────────────────
+      //
+      // At most BANDIT_MAX_ATTACK_SLOTS bandits are ever actively closing
+      // to melee range against a given target at once, each locked to a
+      // world angle (around the target) at least BANDIT_SLOT_MIN_ANGLE_RAD
+      // from every other slot's angle -- so two attackers flank from
+      // genuinely different sides instead of both approaching down the same
+      // line. Everyone else stays queued: it orbits at a standoff distance
+      // and keeps personal space from other nearby bandits rather than
+      // piling into melee range for free hits. Slots aren't explicitly
+      // handed back on retreat -- claimBanditAttackSlot's own prune (below)
+      // drops a slot the instant its holder dies or leaves 'chase', which
+      // covers every release case without needing a separate teardown path.
+      const BANDIT_MAX_ATTACK_SLOTS = 2;
+      const BANDIT_SLOT_MIN_ANGLE_RAD = 60 * Math.PI / 180;
+      const BANDIT_STANDOFF_RANGE_MUL = 1.8;
+      const BANDIT_PERSONAL_SPACE_PX = TILE * 0.85;
+      const _banditAttackSlots = []; // [{ bandit, angle }]
+
+      function claimBanditAttackSlot(c, towardAngle) {
+        for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
+          const s = _banditAttackSlots[i];
+          if (s.bandit.health <= 0 || s.bandit.state !== 'chase') _banditAttackSlots.splice(i, 1);
+        }
+        const existing = _banditAttackSlots.find(s => s.bandit === c);
+        if (existing) return existing;
+        if (_banditAttackSlots.length >= BANDIT_MAX_ATTACK_SLOTS) return null;
+        let angle = towardAngle;
+        for (const s of _banditAttackSlots) {
+          if (Math.abs(angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
+        }
+        const slot = { bandit: c, angle };
+        _banditAttackSlots.push(slot);
+        return slot;
+      }
+
+      // A point on a ring of the given radius around the target, at the
+      // given world angle -- moving toward this (rather than straight at
+      // the target) is what actually draws a bandit around to its assigned
+      // flank/standoff side as it closes in, instead of just walking the
+      // direct line and hoping the angle check above sorts itself out.
+      function banditRingPoint(targetPlayer, angle, radiusPx) {
+        return { x: targetPlayer.x + Math.cos(angle) * radiusPx, y: targetPlayer.y + Math.sin(angle) * radiusPx };
+      }
+
+      // Nudges a movement target away from any other live bandit closer
+      // than BANDIT_PERSONAL_SPACE_PX -- keeps queued gang-mates from
+      // stacking on each other while they wait for an attack slot.
+      function banditPersonalSpaceAdjust(c, point) {
+        let px = point.x, py = point.y;
+        for (const o of hostileObjects) {
+          if (o === c || !o.isBandit || o.health <= 0) continue;
+          const dx = px - o.x, dy = py - o.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 0.001 && dist < BANDIT_PERSONAL_SPACE_PX) {
+            const push = BANDIT_PERSONAL_SPACE_PX - dist;
+            px += (dx / dist) * push; py += (dy / dist) * push;
+          }
+        }
+        return { x: px, y: py };
       }
 
       // Called from updateHostiles' chase-state branch in place of the
@@ -8761,6 +8946,7 @@
         const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
         if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
         if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
+        if (updateBanditLunge(c, dt, targetPlayer)) return { aimAngle: c.facing, moving: true };
         if (c.retreatT > 0) {
           c.retreatT = Math.max(0, c.retreatT - dt);
           const awayAng = towardAngle + Math.PI;
@@ -8768,8 +8954,19 @@
           return { aimAngle: towardAngle, moving };
         }
         if (c._banditAction) return { aimAngle: c.facing, moving: false };
-        if (distToPlayer > def.attackRangePx) {
-          const moving = moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt);
+
+        const engageRangePx = banditEngagementReachPx(def, loadout);
+        const slot = claimBanditAttackSlot(c, towardAngle);
+        if (distToPlayer > engageRangePx || !slot) {
+          // Either still closing, or both attack slots belong to other
+          // bandits right now -- either way this isn't an attack attempt
+          // this frame, just positioning: a slot-holder heads for its own
+          // flank point just inside reach, a queued bandit holds a wider
+          // standoff ring and keeps clear of its gang-mates.
+          const targetPoint = slot
+            ? banditRingPoint(targetPlayer, slot.angle, engageRangePx * 0.85)
+            : banditPersonalSpaceAdjust(c, banditRingPoint(targetPlayer, towardAngle, engageRangePx * BANDIT_STANDOFF_RANGE_MUL));
+          const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, def.chaseSpeed, dt);
           return { aimAngle: towardAngle, moving };
         }
         if (c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return { aimAngle: towardAngle, moving: false };
@@ -8836,6 +9033,81 @@
       // c._banditAction completes, before resetting straight to neutral --
       // a cheap stand-in for the player's own eased return-to-neutral tail.
       const BANDIT_TOOL_SETTLE_S = 0.15;
+
+      // ── Bandit weapon swing trail ────────────────────────────────────
+      //
+      // A single-lane simplification of updateCombatConeTrail's ribbon-arc
+      // mesh (same tapered/arched shape, same BufferGeometry layout) built
+      // per-bandit instead of reading the singleton toolHolder/combatSwing*
+      // state: the real version's affliction-colored multi-lane system
+      // (up to 4 lanes, one per possible affliction) isn't reproduced --
+      // every bandit swing draws one lane, tinted by its own attackTag,
+      // which is enough to sell "the blade is sweeping through here" without
+      // needing combat-progression.js's player-only upgrade-affliction data.
+      const BANDIT_TRAIL_SAMPLES = 12;
+      const BANDIT_TRAIL_HALF_THICKNESS_TILES = 0.06;
+      const BANDIT_TRAIL_ARCH_UNITS = 0.2;
+      const BANDIT_TRAIL_COLOR_BY_TAG = { sharp: 0xd9ffe0, blunt: 0xffc23d };
+
+      function makeBanditTrailMesh() {
+        const geo = new THREE.BufferGeometry();
+        const vertCount = (BANDIT_TRAIL_SAMPLES + 1) * 2;
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        const indices = [];
+        for (let s = 0; s < BANDIT_TRAIL_SAMPLES; s++) {
+          const a = s * 2, b = a + 1, cc = a + 2, d = a + 3;
+          indices.push(a, b, cc, b, d, cc);
+        }
+        geo.setIndex(indices);
+        const mat = new THREE.MeshBasicMaterial({
+          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide, color: 0xffffff,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        return mesh;
+      }
+
+      // Called from each fireBandit*'s onStrike (the same moment
+      // updateCombatConeTrail's own sweep starts -- WF, not fire-time) so
+      // the arc appears exactly when the hit actually lands, not during the
+      // windup telegraph.
+      function spawnBanditTrailArc(c, rangePx, halfConeRad, angle) {
+        const mesh = c._banditTrailMesh || (c._banditTrailMesh = makeBanditTrailMesh());
+        if (mesh.parent !== c.scene) c.scene.add(mesh);
+        mesh.material.color.setHex(BANDIT_TRAIL_COLOR_BY_TAG[c.def.attackTag] || 0xffffff);
+        const rangeTiles = rangePx / TILE;
+        const baseX = c.x / TILE, baseZ = c.y / TILE;
+        const y = (c._banditToolHolder?.position.y ?? c.avatarRef.group.position.y) + 0.05;
+        const posAttr = mesh.geometry.attributes.position;
+        for (let s = 0; s <= BANDIT_TRAIL_SAMPLES; s++) {
+          const u = s / BANDIT_TRAIL_SAMPLES;
+          const a = angle - halfConeRad + (2 * halfConeRad) * u;
+          const cosA = Math.cos(a), sinA = Math.sin(a);
+          const taper = Math.sin(u * Math.PI);
+          const half = BANDIT_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
+          const arch = BANDIT_TRAIL_ARCH_UNITS * taper;
+          const innerR = rangeTiles - half, outerR = rangeTiles + half;
+          const vi = s * 2;
+          posAttr.setXYZ(vi, baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
+          posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+        }
+        posAttr.needsUpdate = true;
+        mesh.material.opacity = 0.85;
+        mesh.visible = true;
+        c._banditTrailAge = 0;
+      }
+
+      const BANDIT_TRAIL_FADE_S = 0.22;
+      function updateBanditTrailArc(c, dt) {
+        const mesh = c._banditTrailMesh;
+        if (!mesh || !mesh.visible) return;
+        c._banditTrailAge = (c._banditTrailAge || 0) + dt;
+        const alpha = 1 - c._banditTrailAge / BANDIT_TRAIL_FADE_S;
+        if (alpha <= 0.01) { mesh.visible = false; return; }
+        mesh.material.opacity = alpha * 0.85;
+      }
 
       function updateBanditToolMesh(c) {
         const holder = c._banditToolHolder;
@@ -8918,12 +9190,17 @@
         }
       }
 
-      // Same fallback formula the player's own playerToolBaseX/Y use when no
-      // bespoke handAttachX/Y is baked into the avatar (see game.js's own
-      // spawnPlayerAvatar-adjacent setup) -- bandits never bake one either.
+      // Mirrors refreshPlayerAvatar's own playerToolBaseX/Y exactly: prefers
+      // the real per-species/gender hand-attach point scanned off the
+      // rendered portrait (buildBanditAvatar's handAttachX/Y, forwarded from
+      // buildSinglePlaneAvatarModel), falling back to the generic
+      // -width/2,height/2 guess only if that scan didn't produce one.
       function banditToolBaseXY(avatarRef) {
         const w = avatarRef?.modelWidth || 0.9, h = avatarRef?.modelHeight || 0.9;
-        return { x: -w / 2, y: h / 2 };
+        return {
+          x: avatarRef?.handAttachX ?? (-w / 2),
+          y: avatarRef?.handAttachY ?? (h / 2),
+        };
       }
 
       async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {

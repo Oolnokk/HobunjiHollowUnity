@@ -217,5 +217,5 @@
   // Keyed by the same ability ids ('swingCombo'/'pokeCombo') a loadout slot
   // stores, not the raw step-array constant names, so a lookup by loadout
   // value works directly.
-  window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, RANGE_SCALE, COMBO_RESET_S };
+  window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
 })();

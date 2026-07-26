@@ -180,5 +180,5 @@
   // view) and get the exact same damage/range/knockback numbers a player
   // jab would. opportunistJab is excluded from the bandit pool — its bonus
   // depends on telegraphState, which only creatures have, not the player.
-  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE };
+  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S };
 })();
