@@ -9146,27 +9146,93 @@
       // that step's own lunge could actually close.
       //
       // This used to also take the MAX reach across quickAttack/
-      // chargedBreaker on top of combo -- both have a much bigger lunge
-      // than combo (quick attack's LUNGE_TILE_MUL alone is 5.5 tiles,
-      // ~300px). Since combo is the guaranteed fallback that fires
-      // whenever quickAttack/chargedBreaker don't roll (see
-      // updateBanditCombatAI), that let a bandit commit to attacking from
-      // up to ~330px away and then actually throw a combo swing whose own
-      // ~115-195px lunge fell well short -- striking (and, per the combat
-      // log, being read as striking) from nowhere near its real hit cone,
-      // and inflating the standoff/flank ring radii derived from this same
-      // number into an unintentionally huge "keep-away" distance too.
-      // Combo's own current-step reach is always the smallest of the
-      // three -- quickAttack/chargedBreaker's lunges are both bigger --
-      // so gating on it alone still guarantees enough reach for whichever
-      // ability actually ends up firing.
-      function banditEngagementReachPx(c, def, loadout) {
+      // chargedBreaker on top of combo, on the theory that combo's own
+      // current-step reach (rangePx + its FULL lunge budget) is always the
+      // smallest of the three since quickAttack/chargedBreaker both have a
+      // much bigger raw lunge budget (quick attack's LUNGE_TILE_MUL alone
+      // is 5.5 tiles, ~300px vs combo's ~115-195px). That's true of the
+      // raw budget, but false of how much of it is actually COVERED by
+      // onStrike time: onStrike fires at windupS elapsed, not the lunge's
+      // full windupS+strikeS duration, and the ease-out curve is front-
+      // loaded, so what matters is windupS as a FRACTION of the whole
+      // duration -- a combo step's windupS is typically 55-77% of its
+      // total (leaving little of the ease curve uncovered by strike time),
+      // while quick attacks share one WINDUP_S/STRIKE_S pair that's only
+      // ~42% of their own total. A quick attack's bigger raw budget times
+      // a smaller covered fraction can net out SHORTER, by strike time,
+      // than combo's smaller budget times its bigger covered fraction --
+      // confirmed live: quick attacks committing from the combo-gated
+      // ~150-200px range were consistently whiffing 10-50px short, while
+      // combo steps from the same gate landed cleanly. banditLungeEaseAtStrike
+      // below computes that covered fraction so this can take the real
+      // minimum SAFE reach across every ability that could actually fire
+      // this cycle, instead of assuming combo's is automatically smallest.
+      function banditLungeEaseAtStrike(windupS, strikeS) {
+        const total = windupS + strikeS;
+        if (total <= 0) return 1;
+        const t = Math.min(1, windupS / total);
+        return 1 - Math.pow(1 - t, 3);
+      }
+      // The max currentDist an ability can safely COMMIT from and still
+      // land, given only `eased` of its lunge budget is covered by strike
+      // time. beginBanditLunge caps the actual travel to (currentDist -
+      // haltDist) whenever that's less than the raw budget, so at strike
+      // time the bandit sits at currentDist - (currentDist-haltDist)*eased.
+      // Solving currentDist - (currentDist-haltDist)*eased <= rangePx for
+      // currentDist gives the bound below -- NOT rangePx + budget*eased,
+      // which was tried first and is still too generous (confirmed live:
+      // quick attacks kept committing from ~150-200px and landing 5-20px
+      // short even after that "fix") because it ignores that the UNCOVERED
+      // fraction (1-eased) applies to currentDist itself, which grows
+      // right along with how far the bandit is allowed to commit from.
+      function banditAbilitySafeReachPx(rangePx, lungeBudgetPx, windupS, strikeS) {
+        const eased = banditLungeEaseAtStrike(windupS, strikeS);
+        if (eased >= 0.999) return rangePx + lungeBudgetPx;
+        const haltDist = rangePx * BANDIT_LUNGE_HALT_MARGIN;
+        const safeReach = (rangePx - haltDist * eased) / (1 - eased);
+        // Can't exceed what's physically reachable if the raw budget ends
+        // up being the binding cap instead (a small lungeMul ability).
+        return Math.max(rangePx, Math.min(safeReach, haltDist + lungeBudgetPx));
+      }
+      function banditEngagementReachPx(c, def, loadout, targetPlayer) {
         const base = banditAttackBaseline(def);
+        let reach = base.rangePx;
         const combo = window.Combat?.comboData;
         const steps = combo?.[loadout.tap1];
-        if (!steps?.length) return base.rangePx;
-        const step = steps[(c._banditComboIndex || 0) % steps.length];
-        return base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1) + TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
+        if (steps?.length) {
+          const step = steps[(c._banditComboIndex || 0) % steps.length];
+          const comboRangePx = base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1);
+          const comboLungePx = TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
+          reach = banditAbilitySafeReachPx(comboRangePx, comboLungePx, step.windupS, step.strikeS);
+        }
+        // Quick attack (tap2) can fire on ANY cycle regardless of which
+        // combo step is current (see updateBanditCombatAI's conditionFavorable
+        // roll), so its own safe reach always constrains this gate too.
+        const qa = window.Combat?.quickAttackData;
+        const techDef = qa?.TECHNIQUES?.[loadout.tap2];
+        if (techDef && targetPlayer) {
+          const cond = banditQuickAttackConditions(c, targetPlayer);
+          const tech = techDef.build(null, targetPlayer, cond);
+          const qaRangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
+          const qaLungePx = TILE * (qa.LUNGE_TILE_MUL || 5.5);
+          reach = Math.min(reach, banditAbilitySafeReachPx(qaRangePx, qaLungePx, qa.WINDUP_S, qa.STRIKE_S));
+        }
+        // Charged Breaker (hold1) only ever fires as a fresh opener
+        // (comboIndex 0) -- only worth constraining the gate for it when
+        // that's actually possible this cycle.
+        if ((c._banditComboIndex || 0) === 0 && loadout.hold1 === 'chargedBreaker') {
+          const cb = window.Combat?.chargedBreakerData;
+          if (cb) {
+            // A bandit always "holds" for a decent charge (see
+            // fireBanditChargedBreaker) -- a representative mid charge is
+            // a reasonable stand-in for this gate's range/lunge.
+            const chargeT = 0.75;
+            const cbRangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
+            const cbLungePx = TILE * (cb.LUNGE_TILE_MUL || 2.0);
+            reach = Math.min(reach, banditAbilitySafeReachPx(cbRangePx, cbLungePx, cb.WINDUP_S, cb.STRIKE_S));
+          }
+        }
+        return reach;
       }
 
       // ── Multi-attacker coordination ─────────────────────────────────
@@ -9403,7 +9469,7 @@
         const unstack = banditPersonalSpaceAdjust(c, { x: c.x, y: c.y });
         if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
-        const engageRangePx = banditEngagementReachPx(c, def, loadout);
+        const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
         const slot = claimBanditAttackSlot(c, towardAngle);
         // attackCooldownS (0.95-1.15s) runs noticeably longer than the
         // post-attack retreat step (JUMP_BACK_DUR_S, 0.4s), and retreating
@@ -29162,7 +29228,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // here instead used to make a bandit committing to (and, before the
         // engagement-reach fix, whiffing) an attack from well outside its
         // real hit cone look like ordinary "still closing" text.
-        const engageReach = Math.round(banditEngagementReachPx(c, def, def.banditAbilityLoadout || {}));
+        const engageReach = Math.round(banditEngagementReachPx(c, def, def.banditAbilityLoadout || {}, targetPlayer));
         if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
         if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         // Mid-combo continuation (comboIdx > 0) skips this gate -- see
