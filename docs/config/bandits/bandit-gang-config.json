@@ -10,13 +10,16 @@
   },
 
   "clothingPool": {
-    "_comment": "Slots + item ids intersected against each rolled species' own docs/config/species/<id>.json allowedCosmetics/cosmeticWeights at generation time -- a species that doesn't whitelist an item here (e.g. mashtzarr and hats) just never rolls it, no per-species override needed here.",
-    "slots": ["torso", "overwear", "hat"],
+    "_comment": "Slots + item ids intersected against each rolled species' own docs/config/species/<id>.json allowedCosmetics/cosmeticWeights at generation time -- a species that doesn't whitelist an item here (e.g. mashtzarr and hats) just never rolls it, no per-species override needed here. Exception: banditExclusiveIds (see below) bypass that whitelist check entirely.",
+    "slots": ["torso", "overwear", "hat", "hood"],
     "itemsBySlot": {
       "torso": ["bandolier1"],
       "overwear": ["tankan_bodywrap"],
-      "hat": ["appearance::hat::basic_headband", "appearance::hat::leather_headband", "appearance::hat::riverlandskasa_wide", "appearance::hat::riverlandskasa_low"]
+      "hat": ["appearance::hat::basic_headband", "appearance::hat::leather_headband"],
+      "hood": ["fine_hood", "facewrap"]
     },
+    "banditExclusiveIds": ["facewrap"],
+    "_banditExclusiveComment": "facewrap is deliberately left out of every species' allowedCosmetics so ordinary NPCs/players never randomly roll it -- it's meant to be found exclusively on bandits (and thus lootable from their corpses). Listing it here lets bandit rolls use it anyway, bypassing the normal per-species whitelist intersection.",
     "dyeVariantPool": ["muted", "dark_muted", "dusty", "smoky"],
     "dyeHueFamilyPool": ["red", "red_orange", "orange", "yellow_orange", "yellow", "yellow_green", "green", "green_blue", "blue", "blue_indigo", "indigo", "indigo_violet", "violet"],
     "_dyeComment": "Dye ids are constructed as `dye:CLOTH:<variant>_<hueFamily>` (see docs/config/scratchbones-config.js's catalog builder ~line 864-890, and appliedDyes samples in docs/config/npcs/hobunji-starter-npc-database.json) -- restricting variant to the mid/low-saturation set (60%/30% sat, darker brightness) gives the worn, mismatched look without needing the full runtime dye catalog. Each filled slot rolls its OWN variant+hue independently -- slots are never color-matched to each other.",
@@ -25,7 +28,7 @@
       "lieutenant": 0.7,
       "captain": 0.9
     },
-    "_fillComment": "3 slots x 0.5 = 1.5 average filled slots for a grunt, per design. Each slot is rolled independently; if a roll comes up with zero slots filled, one random slot is force-filled so every bandit wears at least one clothing item."
+    "_fillComment": "4 slots x 0.5 = 2 average filled slots for a grunt, per design. Each slot is rolled independently; if a roll comes up with zero slots filled, one random slot is force-filled so every bandit wears at least one clothing item. On top of that, hat and hood are independently guaranteed: every bandit ends up wearing a fine_hood, a facewrap, or a headband -- if that first pass leaves both empty, one is force-filled from whichever the bandit's species/gender allows."
   },
 
   "gangComposition": {

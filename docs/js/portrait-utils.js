@@ -393,6 +393,14 @@ function getPortraitTintingConfig() {
     preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
     outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
     cacheEnabled: cfg.cacheEnabled !== false,
+    // shadeFill-only knobs -- same config surface (and same defaults) as
+    // creature-genetics-render.js's shadeFillConfig(), so a mashtzarr set to
+    // bodyTintMode: "shadeFill" paints with literally the same math as
+    // animal fur/pattern layers, not just a visually-similar approximation.
+    shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
+    highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
+    neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
+    gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
   };
 }
 
@@ -432,6 +440,67 @@ function tintForBodyColor(color, referenceHex) {
   const targetHS = _resolveTargetHueSat(color, referenceHex);
   if (!targetHS) return { mode: 'none' };
   return { mode: 'hueSatFill', hue: targetHS.h, sat: targetHS.s, options: getPortraitTintingConfig() };
+}
+
+// Same reference-swatch CSS-filter simulation as _resolveTargetHueSat above,
+// but returns the raw absolute RGB instead of converting it to hue/sat --
+// shadeFill scales that absolute color by each pixel's own luminance rather
+// than replacing hue/sat while keeping the pixel's own value, so it needs the
+// literal target color, not a hue/sat pair. Kept as its own cache/function
+// (rather than reusing _TARGET_HUESAT_CACHE) to avoid touching the existing
+// hueSatFill path at all.
+const _TARGET_RGB_CACHE = new Map();
+function _resolveTargetRgbColor(color, referenceHex) {
+  if (!color) return null;
+  if (color.hex) {
+    const parsed = parseHexColor(color.hex);
+    if (parsed) return [parsed.r, parsed.g, parsed.b];
+  }
+  if (color.h == null && color.s == null && color.v == null) return null;
+  const ref = parseHexColor(referenceHex) || { r: 125, g: 200, b: 154 };
+  const filter = makeCSSFilter(color);
+  const cacheKey = ref.hex + '|' + filter;
+  if (_TARGET_RGB_CACHE.has(cacheKey)) return _TARGET_RGB_CACHE.get(cacheKey);
+  if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
+  const ctx = _filterSimCanvas.getContext('2d');
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.filter = filter;
+  ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  const result = [r, g, b];
+  _TARGET_RGB_CACHE.set(cacheKey, result);
+  return result;
+}
+
+// Multiplicative luminance-based tint -- literally the same algorithm as
+// creature-genetics-render.js's recolorPixels (see that file's comment for
+// why: it reads correctly on dark, cel-shaded art where a hue/sat value-
+// replace crushes everything toward one muddy tone). Used for species whose
+// body art needs to look like animal fur/pattern layers rather than the
+// standard NPC hueSatFill skin.
+function shadeFillTintForBodyColor(color, referenceHex) {
+  const rgb = _resolveTargetRgbColor(color, referenceHex);
+  if (!rgb) return { mode: 'none' };
+  return { mode: 'shadeFill', rgb, options: getPortraitTintingConfig() };
+}
+
+// shadeFill is the default tint algorithm everywhere now (body colors AND
+// clothing dyes) -- the hue/sat value-replace crushes dark, cel-shaded art
+// toward one muddy tone regardless of whether that art is skin, fur, or
+// cloth, which is exactly why animals never used it. A species (bodyTintMode)
+// or the whole game (tinting.clothingTintMode) can still opt back into the
+// old hueSatFill behavior explicitly if some particular art needs it.
+function bodyTintModeForSpecies(speciesId) {
+  const key = _normalizeSpeciesKey(speciesId);
+  const speciesCfg = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+  const entry = speciesCfg[key] || speciesCfg[String(speciesId || '')];
+  return entry?.bodyTintMode === 'hueSatFill' ? 'hueSatFill' : 'shadeFill';
+}
+
+function clothingTintMode() {
+  const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+  return cfg.clothingTintMode === 'hueSatFill' ? 'hueSatFill' : 'shadeFill';
 }
 
 // Body/fur tint slots are the bare letters A/B/C (see BODYCOLOR_LIMITS);
@@ -484,8 +553,47 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
   return canvas;
 }
 
+const _SHADE_FILL_CACHE = new Map();
+function getShadeFillCanvas(img, sourceKey, tint) {
+  if (!img || tint?.mode !== 'shadeFill') return img;
+  const options = tint.options || getPortraitTintingConfig();
+  const [tr, tg, tb] = tint.rgb;
+  const cacheKey = [
+    sourceKey || img.currentSrc || img.src || 'inline', tr, tg, tb,
+    options.shadowFloor, options.highlightBoost, options.neutralLuminance, options.gamma,
+    options.preserveNearBlackOutlines, options.outlineThreshold,
+  ].join('|');
+  if (options.cacheEnabled && _SHADE_FILL_CACHE.has(cacheKey)) return _SHADE_FILL_CACHE.get(cacheKey);
+
+  const canvas = Object.assign(document.createElement('canvas'), {
+    width: img.naturalWidth || img.width,
+    height: img.naturalHeight || img.height,
+  });
+  const offCtx = canvas.getContext('2d');
+  offCtx.drawImage(img, 0, 0);
+  const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const neutral = Math.max(0.0001, options.neutralLuminance);
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const lum = relativeLuminance(r, g, b);
+    if (options.preserveNearBlackOutlines && lum <= options.outlineThreshold) continue;
+    const normalized = Math.pow(Math.max(0, lum) / neutral, options.gamma);
+    const shade = Math.max(options.shadowFloor, Math.min(options.highlightBoost, normalized));
+    data[i] = clampByte(tr * shade);
+    data[i + 1] = clampByte(tg * shade);
+    data[i + 2] = clampByte(tb * shade);
+  }
+  offCtx.putImageData(imageData, 0, 0);
+  if (options.cacheEnabled) _SHADE_FILL_CACHE.set(cacheKey, canvas);
+  return canvas;
+}
+
 function _imageForTint(img, sourceKey, tint) {
-  return tint?.mode === 'hueSatFill' ? getHueSatFillCanvas(img, sourceKey, tint) : img;
+  if (tint?.mode === 'hueSatFill') return getHueSatFillCanvas(img, sourceKey, tint);
+  if (tint?.mode === 'shadeFill') return getShadeFillCanvas(img, sourceKey, tint);
+  return img;
 }
 
 // ── Canvas helpers ─────────────────────────────────────────
@@ -637,6 +745,7 @@ function getPortraitLayeringConfig() {
   return {
     hatUnderHoodTag: layering.hatUnderHoodTag || null,
     eyeAccessoryAboveUnderHoodHatTag: layering.eyeAccessoryAboveUnderHoodHatTag || null,
+    hoodHidesFacialHairTag: layering.hoodHidesFacialHairTag || null,
   };
 }
 
@@ -648,6 +757,16 @@ function hasPortraitTag(option, tag) {
 function hatLayersUnderHood(hat) {
   const { hatUnderHoodTag } = getPortraitLayeringConfig();
   return hat?.hoodLayering === 'under' || hasPortraitTag(hat, hatUnderHoodTag);
+}
+
+// Face-covering hoods (e.g. a facewrap) hide facial hair entirely rather than
+// just layering over it, since the beard sprite would otherwise poke out past
+// the wrap's edges. Fine hoods leave facial hair visible, so this is opt-in
+// per cosmetic via a tag rather than tied to "any hood equipped" like the
+// existing hairFront/hairSide hiding below.
+function hoodHidesFacialHair(hood) {
+  const { hoodHidesFacialHairTag } = getPortraitLayeringConfig();
+  return hasPortraitTag(hood, hoodHidesFacialHairTag);
 }
 
 function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
@@ -831,6 +950,11 @@ function _getBehindLayerUrl(layer, group, gender) {
     if (rule.hairSlot && group?.hairSlot !== rule.hairSlot) continue;
     if (rule.idIncludes && !_textMatchesAny(idText, rule.idIncludes)) continue;
     if (rule.urlIncludes && !_textMatchesAny(layer.url, rule.urlIncludes)) continue;
+    // A matched rule with no replacement URL (hide: true) means this layer has
+    // no behind-view equivalent at all (e.g. a hood's face-opening trim, or a
+    // facial-feature overlay that isn't visible from the back of the head) and
+    // should simply not be drawn, rather than falling back to its front-view art.
+    if (rule.hide) return null;
     if (rule.genderUrls) {
       const genderKey = _portraitGenderKey(gender);
       return rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
@@ -843,6 +967,25 @@ function _getBehindLayerUrl(layer, group, gender) {
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
   return { ...layer, url: _getBehindLayerUrl(layer, group, gender) };
+}
+
+// A layer's paletteColorKey normally selects a sub-slot of its OWN group's
+// dye (e.g. a hood's "trim" role -> `${group.tintSlot}_B`). Two reserved keys
+// opt out of that entirely instead of naming a sub-slot:
+//  - "BODY" routes to the character's own literal body/skin tint slot 'A' --
+//    used by exposed-skin overlays (a hood's cutout showing bare ear/trunk)
+//    that must always match the wearer's skin regardless of the hood's dye.
+//  - "NONE" routes to no tint slot at all (always mode:'none', raw art) --
+//    used by overlays that must NEVER be recolored (a tusk poking through a
+//    hood's cutout keeps its own painted color). This has to be a real
+//    bypass rather than just "leave paletteColorKey unset": randomProfileSeeded's
+//    usedPaletteKeys() (further down this file) generates a random color for
+//    every distinct non-'A' paletteColorKey it finds across a hood's layers,
+//    so an ordinary/undeclared key would still pick up a random dye.
+function resolveLayerTintSlot(key, baseTintSlot) {
+  if (key === 'BODY') return 'A';
+  if (key === 'NONE') return null;
+  return (!key || key === 'A') ? baseTintSlot : (baseTintSlot ? `${baseTintSlot}_${key}` : null);
 }
 
 // ── Rendering ──────────────────────────────────────────────
@@ -883,8 +1026,18 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
-  const tintFor = (slot) => slot ? tintForBodyColor(bodyColors[slot], _dyeReferenceHexForSlot(slot, _tintSpeciesId)) : { mode: 'none' };
-  const tintA = tintForBodyColor(bodyColors.A, _dyeReferenceHexForSlot('A', _tintSpeciesId));
+  const _bodyTintMode = bodyTintModeForSpecies(_tintSpeciesId);
+  const _clothingTintMode = clothingTintMode();
+  const tintFor = (slot) => {
+    if (!slot) return { mode: 'none' };
+    const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
+    const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
+    const mode = isBodySlot ? _bodyTintMode : _clothingTintMode;
+    return mode === 'shadeFill'
+      ? shadeFillTintForBodyColor(bodyColors[slot], referenceHex)
+      : tintForBodyColor(bodyColors[slot], referenceHex);
+  };
+  const tintA = tintFor('A');
 
   const baseLeftArmLayers = [];
   const baseTorsoLayers = [];
@@ -906,8 +1059,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     for (const layer of groupLayers) {
       const target = group?.slot === 'torso' ? torsoClothingLayers : overwearLayers;
       const key = layer.paletteColorKey;
-      const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-        : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+      const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
       target.push({ layer, tint: tintFor(layerTintSlot || 'A') });
     }
   }
@@ -916,7 +1068,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatIsUnderHood = hatLayersUnderHood(hat);
   const eyesLayerAboveUnderHoodHat = eyeAccessoryLayersAboveUnderHoodHat(eyes, hat);
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
-  const hiddenCosmeticGroups = hoodHideFrontAndSideHair ? new Set([hairFront, hairSide, hairSideL]) : null;
+  const hiddenCosmeticGroups = new Set([
+    ...(hoodHideFrontAndSideHair ? [hairFront, hairSide, hairSideL] : []),
+    ...(hoodHidesFacialHair(hood) ? [facialHair] : []),
+  ].filter(Boolean));
 
   const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
   const sideLeftLayers   = [];  // left side hairstyle, drawn before head
@@ -937,8 +1092,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (!groupLayers.length) return;
     for (const layer of groupLayers) {
       const key = layer.paletteColorKey;
-      const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-        : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+      const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
       target.push({ layer, tint: tintFor(layerTintSlot), group });
     }
   };
@@ -951,8 +1105,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const layer of groupLayers) {
         if (layer.pos === 'back') {
           const key = layer.paletteColorKey;
-          const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-            : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+          const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
           preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group });
         }
       }
@@ -968,8 +1121,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const layer of groupLayers) {
         if (layer.pos !== 'back') {
           const key = layer.paletteColorKey;
-          const layerTintSlot = (!key || key === 'A') ? hat.tintSlot
-            : (hat.tintSlot ? `${hat.tintSlot}_${key}` : null);
+          const layerTintSlot = resolveLayerTintSlot(key, hat.tintSlot);
           (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat });
         }
       }
@@ -985,8 +1137,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       if (!groupLayers.length) continue;
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
-        const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-          : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+        const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
         (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group });
       }
     }
@@ -1209,14 +1360,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
   drawEmoteLayers(frontHairLayers);
   drawEmoteLayers(eyesLayers);
+  // Most ur-head overlays sit at their usual spot (before the hood, so a hood
+  // can cover them normally). A layer tagged renderOrder: 'topLayer' (e.g.
+  // mashtzarr's separated-out ur-head_tusks.png) instead draws after the
+  // hood/pauldron/hat-over stack below, so tusks poke out past a hood rather
+  // than being hidden underneath it.
+  const topUrLayers = urLayerSource.filter(l => l?.renderOrder === 'topLayer');
+  const normalUrLayers = urLayerSource.filter(l => l?.renderOrder !== 'topLayer');
   // Kenkari mask species: draw ur-head layers onto an offscreen canvas then punch out the
   // mouth shape (destination-out) before compositing the result onto the main canvas.
   // All other species draw ur-head directly.
-  if (_isMaskSpecies && urLayerSource.length) {
+  if (_isMaskSpecies && normalUrLayers.length) {
     const { canvas: urOff, ctx: urCtx } = _getUrMaskCanvas(PORTRAIT_CW, PORTRAIT_CH);
     urCtx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
     const urXform = getPortraitXformPreset('B');
-    for (const mid of urLayerSource) {
+    for (const mid of normalUrLayers) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
       const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
       if (!img) continue;
@@ -1249,7 +1407,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ctx.drawImage(urOff, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
     ctx.restore();
   } else {
-    for (const mid of urLayerSource) {
+    for (const mid of normalUrLayers) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
       const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
       if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
@@ -1263,6 +1421,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(hoodLayers);
   drawEmoteLayers(pauldronLayers);
   drawEmoteLayers(hatOverLayers);
+  for (const mid of topUrLayers) {
+    const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
+    const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
+    if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
+  }
   if (opacityMaskLayer?.url) {
     const maskImg = imgMap.get(opacityMaskLayer.url);
     if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
@@ -2145,9 +2308,14 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
   const hatMaterialRange = materialColorRangeFor(hat);
   const hatSourceRange = hatMaterialRange
     || (hatUsesClothMaterial ? (ruleRange || hat?.colorRange || null) : (hat?.colorRange || null));
+  // 'BODY' and 'NONE' are resolveLayerTintSlot's reserved bypass keys (see
+  // that function) -- neither is ever actually read as a `${group.tintSlot}_*`
+  // color, so generating a random one for them here would be pure clutter
+  // (and, before this exclusion existed, was exactly why an "always
+  // untinted" overlay like a tusk still ended up with a random dye color).
   const usedPaletteKeys = (layers) => new Set((layers || [])
     .map(layer => layer?.paletteColorKey)
-    .filter(key => typeof key === 'string' && key && key !== 'A'));
+    .filter(key => typeof key === 'string' && key && key !== 'A' && key !== 'BODY' && key !== 'NONE'));
 
   if ((hasClothPiece || (useSharedClothingRuleRange && hasHoodPiece)) && clothSourceRange) {
     bodyColors.CLOTH = randomColorFromRangeSeeded(clothingRangeForPalette('A') || clothSourceRange, rng);

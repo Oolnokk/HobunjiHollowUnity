@@ -56,7 +56,8 @@
       },
       "hood": {
         "none": 35,
-        "fine_hood": 65
+        "fine_hood": 65,
+        "facewrap": 40
       },
       "hairFront": {
         "none": 0,
@@ -553,7 +554,8 @@
       },
       "hood": {
         "none": 35,
-        "fine_hood": 65
+        "fine_hood": 65,
+        "facewrap": 40
       },
       "hairFront": {
         "none": 0,

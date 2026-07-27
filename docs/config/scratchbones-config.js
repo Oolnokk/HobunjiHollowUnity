@@ -92,6 +92,7 @@ window.SCRATCHBONES_CONFIG = {
         "rugged_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
+        "facewrap": "assets/cosmetics/clothes/hood/facewrap_m.png",
         "tankan_tunic": "assets/cosmetics/clothes/torso/portrait/tankantunic_mao-ao_m.png",
         "bandolier1": "assets/cosmetics/clothes/torso/portrait/bandolier1_mao-ao_m.png",
         "appearance::hat::basic_headband": "assets/cosmetics/clothes/hat/headband.png",
@@ -460,7 +461,8 @@ window.SCRATCHBONES_CONFIG = {
         },
         "mashtzarr": {
           "label": "Mashtzarr",
-          "genders": ["male"],
+          "genders": ["male", "female"],
+          "bodyTintMode": "shadeFill",
           "male": {
             "slots": [
               { "slot": "hairFront", "label": "Front Hair", "options": [
@@ -487,6 +489,45 @@ window.SCRATCHBONES_CONFIG = {
               { "slot": "facialHair", "label": "Facial Hair", "options": [
                 { "id": null, "label": "None" },
                 { "id": "appearance::Mashtzarr_M::mashtz_wildbeard", "label": "Wild Beard" }
+              ]}
+            ],
+            "colorOptions": [
+              { "label": "Earth",   "h": -70,  "s": -0.80, "v": -0.55 },
+              { "label": "Olive",   "h": -40,  "s": -0.70, "v": -0.45 },
+              { "label": "Sage",    "h":   0,  "s": -0.70, "v": -0.30 },
+              { "label": "Seafoam", "h":  30,  "s": -0.60, "v": -0.15 },
+              { "label": "Ash",     "h":  10,  "s": -0.90, "v":  0.25 },
+              { "label": "Onyx",    "h":   0,  "s": -0.90, "v": -0.85 },
+              { "label": "Brown",   "h": -113, "s": -0.45, "v": -0.45 },
+              { "label": "Rust",    "h": -143, "s": -0.40, "v": -0.40 },
+              { "label": "Amber",   "h": -113, "s": -0.35, "v": -0.25 },
+              { "label": "Ochre",   "h":  -83, "s": -0.45, "v": -0.20 },
+              { "label": "Lichen",  "h":  -23, "s": -0.55, "v": -0.25 },
+              { "label": "Slate",   "h":   77, "s": -0.75, "v": -0.20 }
+            ]
+          },
+          "female": {
+            "slots": [
+              { "slot": "hairFront", "label": "Front Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_F::mao-ao_tuft", "label": "Tuft" },
+                { "id": "appearance::Mao-ao_F::mao-ao_forwardtuft_short", "label": "Forward Tuft (Short)" },
+                { "id": "appearance::Mao-ao_F::mao-ao_forwardtuft_long", "label": "Forward Tuft (Long)" }
+              ]},
+              { "slot": "hairBack", "label": "Back Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_F::mao-ao_splayedknot_medium", "label": "Splayed Knot" },
+                { "id": "appearance::Mao-ao_F::mao-ao_long_ponytail", "label": "Long Ponytail" }
+              ]},
+              { "slot": "hairSide", "label": "Side Hair (R)", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_F::mao-ao_shoulder_length_drape", "label": "Shoulder Drape" },
+                { "id": "appearance::Mao-ao_F::mao-ao_braid-R", "label": "Braid (Right)" },
+                { "id": "appearance::Mao-ao_F::mao-ao_braidcluster-R", "label": "Braid Cluster (Right)" }
+              ]},
+              { "slot": "hairSideL", "label": "Side Hair (L)", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Mao-ao_F::mao-ao_braid-L", "label": "Braid (Left)" }
               ]}
             ],
             "colorOptions": [
@@ -1288,7 +1329,8 @@ window.SCRATCHBONES_CONFIG = {
       },
       "layering": {
         "hatUnderHoodTag": "hood-layer:under",
-        "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat"
+        "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat",
+        "hoodHidesFacialHairTag": "hides-facial-hair"
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,
@@ -3741,6 +3783,53 @@ window.SCRATCHBONES_CONFIG = {
               "hairSlot": "back",
               "idIncludes": ["splayedknot"],
               "url": "cosmetics/appearance/shared/splayedknot-behind.png"
+            },
+            {
+              "_comment": "Fine hood's face-opening trim isn't visible from behind the head at all -- the single finehood-back sprite below stands in for the whole hood.",
+              "idIncludes": ["fine-hood"],
+              "urlIncludes": ["trim"],
+              "hide": true
+            },
+            {
+              "_comment": "Mashtzarr's exposed ear/tusk/trunk overlays are front-facing facial features with no behind-view art; the species' own finehood-back/facewrap sprite already bakes in whatever's visible from the back (e.g. the ears).",
+              "urlIncludes": ["exposed_ear.png", "exposed_tusk.png", "exposed_trunk.png"],
+              "hide": true
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/finehood-base_m.png"],
+              "url": "cosmetics/clothes/hood/finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/finehood-base_f.png"],
+              "url": "cosmetics/clothes/hood/finehood-back_f.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/tl_finehood-base.png"],
+              "url": "cosmetics/clothes/hood/tl_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/kenk_finehood-base_m.png"],
+              "url": "cosmetics/clothes/hood/kenk_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/kenk_finehood-base_f.png"],
+              "url": "cosmetics/clothes/hood/kenk_finehood-back_f.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/engh_finehood_base_m.png"],
+              "url": "cosmetics/clothes/hood/engh_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/engh_finehood_base_f.png"],
+              "url": "cosmetics/clothes/hood/engh_finehood-back_f.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/mashtz_finehood-base_m.png"],
+              "url": "cosmetics/clothes/hood/mashtz_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/mashtz_finehood-base_f.png"],
+              "url": "cosmetics/clothes/hood/mashtz_finehood-back_f.png"
             }
           ]
         },

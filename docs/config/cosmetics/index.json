@@ -355,6 +355,10 @@
       "path": "./fine_hood.json"
     },
     {
+      "id": "facewrap",
+      "path": "./facewrap.json"
+    },
+    {
       "id": "appearance::Engh-sho_M::engh_snowgoggles",
       "path": "./appearance/engh-sho/snowgoggles.json"
     },
