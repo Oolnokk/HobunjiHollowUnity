@@ -1992,6 +1992,38 @@
         },
       };
 
+      // Overrides CREATURE_DB's per-species attack* fields and the bandit
+      // baseline melee constants (see BANDIT_BASE_ATTACK_DAMAGE etc., set
+      // near makeBanditDef) from docs/config/combat/attack-values.json once
+      // docs/js/combat/combat-config-loader.js's fetch resolves — same
+      // synchronous-default-then-override pattern as every combat-*.js
+      // module's applyXConfig, just without a dedicated module of its own
+      // since CREATURE_DB/the bandit constants live directly in game.js.
+      window.__attackValuesConfigPromise?.then(cfg => {
+        if (!cfg) return;
+        if (cfg.creatures) {
+          for (const [speciesId, def] of Object.entries(CREATURE_DB)) {
+            const o = cfg.creatures[speciesId];
+            if (!o) continue;
+            if (o.attackDamage != null) def.attackDamage = o.attackDamage;
+            if (o.attackRangeTiles != null) def.attackRangePx = TILE * o.attackRangeTiles;
+            if (o.attackHalfConeDeg != null) def.attackHalfConeRad = o.attackHalfConeDeg * Math.PI / 180;
+            if (o.attackStaminaCost != null) def.attackStaminaCost = o.attackStaminaCost;
+            if (o.attackCooldownS != null) def.attackCooldownS = o.attackCooldownS;
+            if (o.attackTag != null) def.attackTag = o.attackTag;
+            if (Array.isArray(o.attacks)) def.attacks = o.attacks;
+          }
+        }
+        if (cfg.bandit) {
+          if (cfg.bandit.BASE_ATTACK_DAMAGE != null) BANDIT_BASE_ATTACK_DAMAGE = cfg.bandit.BASE_ATTACK_DAMAGE;
+          if (cfg.bandit.attackRangeTiles != null) BANDIT_ATTACK_RANGE_TILES = cfg.bandit.attackRangeTiles;
+          if (cfg.bandit.attackHalfConeDeg != null) BANDIT_ATTACK_HALF_CONE_DEG = cfg.bandit.attackHalfConeDeg;
+          if (cfg.bandit.attackStaminaCost != null) BANDIT_ATTACK_STAMINA_COST = cfg.bandit.attackStaminaCost;
+          if (cfg.bandit.attackCooldownSCaptain != null) BANDIT_ATTACK_COOLDOWN_S_CAPTAIN = cfg.bandit.attackCooldownSCaptain;
+          if (cfg.bandit.attackCooldownSOther != null) BANDIT_ATTACK_COOLDOWN_S_OTHER = cfg.bandit.attackCooldownSOther;
+        }
+      });
+
       // Minimal standalone exterior zones reachable from the town's pre-authored
       // "To Northern Cliffs" / "To Southern Cloud Forest" transition spots. Each
       // is a small flat all-grass map built lazily the first time it's entered;
