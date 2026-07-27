@@ -2801,12 +2801,22 @@
         wardrobe:      { itemKey: 'wardrobeFurniture',      icon: '🚪', name: 'Tall Wardrobe',        modelFile: 'wardrobe_tall.glb',            price: 48, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A tall wardrobe for clothing storage.' },
         washTub:       { itemKey: 'washTubFurniture',       icon: '🛁', name: 'Copper Wash Tub',      modelFile: 'wash_tub_copper.glb',          price: 25, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A copper tub for bathing or laundry.' },
         counter:       { itemKey: 'counterFurniture',       icon: '🏪', name: 'Shop Counter',          modelFile: 'counter_shop.glb',             price: 40, fw: 3, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A sturdy shop counter for conducting business.' },
+        // Game-authored fixtures (fixture: true) — spawned by the game itself
+        // inside specific building interiors (see BUILDING_FIXTURE_INTERACTABLES
+        // below), never bought/carried by the player, so they're excluded from
+        // DECORATIVE_FURNITURE_CATALOG just below. They're still ordinary
+        // mapData.furniture entries otherwise: placeable, moveable and
+        // duplicateable in the Interior Editor like anything else.
+        alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
+        bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
       };
 
-      const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS).map(([, def]) => ({
-        key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
-        price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
-      }));
+      const DECORATIVE_FURNITURE_CATALOG = Object.entries(DECORATIVE_FURNITURE_DEFS)
+        .filter(([, def]) => !def.fixture)
+        .map(([, def]) => ({
+          key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
+          price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
+        }));
 
       // ── Alchemy: effects, reagents & active buffs ───────────────────
       // Standard Elder-Scrolls-style setup: every reagent carries up to 3
@@ -11181,24 +11191,41 @@
       let _townBuildingGroups = [];    // { group, bldg, piece, wbOpts, wbGableOpts }[]
       const _buildingScenes = new Map(); // mapId → { scene, grid, cols, rows, transitions } | null
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
-      // Game-authored (not player-placed) furniture that opens a custom
-      // panel on interact — currently just the Alchemy Table. Ordinary
-      // building furniture (mapData.furniture) is purely visual (see
-      // loadBuildingScene's furniture loop), so this is a small side
-      // registry, "mapId,col,row" -> { getButtons(), onAction() }, that
+      // Some placed furniture opens a custom panel on interact instead of
+      // being purely decorative (e.g. the Alchemy Table, the Bulletin
+      // Board). Ordinary building furniture (mapData.furniture) has no
+      // interaction at all, so this is a small side registry,
+      // "mapId,col,row" -> { getButtons(), onAction() }, that
       // computeActionButtons/the obj_ dispatcher check for building areas.
+      // It's populated from BUILDING_FIXTURE_INTERACTABLES while walking
+      // mapData.furniture in loadBuildingScene, so any furniture instance
+      // using one of those itemKeys gets the interaction wherever the map
+      // author (or a duplicate/move in the Interior Editor) places it.
       const _buildingInteractables = new Map();
-      // mapId -> { col, row } — which building interiors get an Alchemy
-      // Table spawned automatically, and where (see loadBuildingScene).
-      const BUILDING_ALCHEMY_TABLES = {
-        map_i_kunjis_potions_F1: { col: 5, row: 1 }, // beside the hearth at (6,1)
-      };
-      // mapId -> { col, row } — same idea as BUILDING_ALCHEMY_TABLES, for the
-      // public task Bulletin Board (see the procedural task system above).
-      // Placed in the General Store's open floor between its shelving
-      // (rows 1-7) and the front door (row 11).
-      const BUILDING_BULLETIN_BOARDS = {
-        map_i_general_store: { col: 9, row: 9 },
+      // itemKey -> () => { getButtons(), onAction() } factory, for furniture
+      // whose placement should also register a _buildingInteractables entry.
+      const BUILDING_FIXTURE_INTERACTABLES = {
+        alchemyTableFurniture: () => ({
+          getButtons() {
+            return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_alchemy') return { ok: false, message: 'Unknown action.' };
+            openMenu('alchemy');
+            return { ok: true, message: 'Opened the alchemy table.' };
+          },
+        }),
+        bulletinBoardFurniture: () => ({
+          getButtons() {
+            return [{ icon: '📋', label: 'Read Board', action: 'obj_bulletin', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
+            maybeRefreshBoardTask();
+            openMenu('tasks');
+            return { ok: true, message: 'Read the notice board.' };
+          },
+        }),
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
@@ -15536,54 +15563,15 @@
               bScene.add(ph);
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
             }
-          }
-          // Game-authored Alchemy Table (see BUILDING_ALCHEMY_TABLES) — spawned
-          // the same way as ordinary furniture, but registered into
-          // _buildingInteractables so interacting with it opens the Alchemy
-          // panel instead of doing nothing (ordinary building furniture has
-          // no interaction at all — see the comment on _buildingInteractables).
-          const alchemyTableSpot = BUILDING_ALCHEMY_TABLES[mapId];
-          if (alchemyTableSpot && window.ProceduralFurniture?.CATALOG?.alchemyTable) {
-            const { col: atCol, row: atRow } = alchemyTableSpot;
-            const atModel = window.ProceduralFurniture.buildFurnitureGroup('alchemyTable', 0x6b4a8a);
-            atModel.position.set(atCol + 0.5, 0, atRow + 0.5);
-            _markOutline(atModel);
-            _markFurnitureEdgeId(atModel);
-            bScene.add(atModel);
-            if (bGrid[atRow]?.[atCol]) bGrid[atRow][atCol].type = TileType.ROCK; // solid, like the hearth/pestle/mill tiles beside it
-            _buildingInteractables.set(mapId + ',' + atCol + ',' + atRow, {
-              getButtons() {
-                return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
-              },
-              onAction(action) {
-                if (action !== 'obj_alchemy') return { ok: false, message: 'Unknown action.' };
-                openMenu('alchemy');
-                return { ok: true, message: 'Opened the alchemy table.' };
-              },
-            });
-          }
-          // Game-authored Bulletin Board (see BUILDING_BULLETIN_BOARDS) —
-          // same pattern as the Alchemy Table just above.
-          const bulletinBoardSpot = BUILDING_BULLETIN_BOARDS[mapId];
-          if (bulletinBoardSpot && window.ProceduralFurniture?.CATALOG?.bulletinBoard) {
-            const { col: bbCol, row: bbRow } = bulletinBoardSpot;
-            const bbModel = window.ProceduralFurniture.buildFurnitureGroup('bulletinBoard', 0x8a6a3a);
-            bbModel.position.set(bbCol + 0.5, 0, bbRow + 0.5);
-            _markOutline(bbModel);
-            _markFurnitureEdgeId(bbModel);
-            bScene.add(bbModel);
-            if (bGrid[bbRow]?.[bbCol]) bGrid[bbRow][bbCol].type = TileType.ROCK;
-            _buildingInteractables.set(mapId + ',' + bbCol + ',' + bbRow, {
-              getButtons() {
-                return [{ icon: '📋', label: 'Read Board', action: 'obj_bulletin', style: 'primary', allowed: true }];
-              },
-              onAction(action) {
-                if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
-                maybeRefreshBoardTask();
-                openMenu('tasks');
-                return { ok: true, message: 'Read the notice board.' };
-              },
-            });
+            // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
+            // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
+            // a custom interaction registered at this instance's actual
+            // placed tile — so moving/duplicating it in the Interior Editor
+            // just works, unlike the old hardcoded-per-mapId spawn it replaced.
+            const interactableFactory = BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
+            if (interactableFactory) {
+              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, interactableFactory());
+            }
           }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
