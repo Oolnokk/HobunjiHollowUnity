@@ -28,9 +28,15 @@
       "appearance::Mao-ao_M::mao-ao_braid-R",
       "appearance::Mao-ao_M::mao-ao_braidcluster-R",
       "appearance::Mao-ao_M::mao-ao_braid-L",
-      "appearance::Mashtzarr_M::mashtz_wildbeard"
+      "appearance::Mashtzarr_M::mashtz_wildbeard",
+      "fine_hood"
     ],
     "cosmeticWeights": {
+      "hood": {
+        "none": 80,
+        "fine_hood": 20,
+        "facewrap": 20
+      },
       "overwear": {
         "none": 40,
         "rugged_poncho": 30,
@@ -194,9 +200,15 @@
       "appearance::Mao-ao_F::mao-ao_shoulder_length_drape",
       "appearance::Mao-ao_F::mao-ao_braid-R",
       "appearance::Mao-ao_F::mao-ao_braidcluster-R",
-      "appearance::Mao-ao_F::mao-ao_braid-L"
+      "appearance::Mao-ao_F::mao-ao_braid-L",
+      "fine_hood"
     ],
     "cosmeticWeights": {
+      "hood": {
+        "none": 80,
+        "fine_hood": 20,
+        "facewrap": 20
+      },
       "overwear": {
         "none": 40,
         "rugged_poncho": 30,

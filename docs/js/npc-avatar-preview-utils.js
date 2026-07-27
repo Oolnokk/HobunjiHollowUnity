@@ -134,7 +134,15 @@
       return [equippedId, ...candidates.map(i => i.id)].find(id => optionCache?.has(id)) ?? equippedId;
     };
     const applyEquip = (category, key, noneOpt) => {
-      const equippedId = catalog.find(i => i.category === category && equippedIds.includes(i.id))?.id ?? null;
+      // Most equipped ids are shop-catalog items, whose category the catalog
+      // itself carries. Bandit-exclusive/loot-only cosmetics (e.g. facewrap)
+      // are deliberately never listed in the shop catalog -- so it never
+      // shows up as a free pick in character creation's Collections tab --
+      // which means their category has to come from the cosmetic JSON's own
+      // `slot` (already recorded on the optionCache entry) instead.
+      const equippedId = catalog.find(i => i.category === category && equippedIds.includes(i.id))?.id
+        ?? equippedIds.find(id => optionCache?.get(id)?.slot === category)
+        ?? null;
       const resolvedId = resolveVariantId(category, equippedId);
       profile[key] = (resolvedId && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt || { id: 'none', tintSlot: null, layers: [] });
     };

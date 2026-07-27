@@ -8701,7 +8701,7 @@
       // a colorRange and no `appearance` block -> CLOTH), which is why this is a
       // flat slot->tintSlot map instead of a per-item JSON fetch. Confirmed
       // against the appliedDyes samples in config/npcs/hobunji-starter-npc-database.json.
-      const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT' };
+      const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD' };
 
       const BANDIT_NAME_PARTS = {
         first: ['Nakku', 'Tobri', 'Hesk', 'Vurra', 'Ommi', 'Dagat', 'Renji', 'Sulko', 'Pahru', 'Marek', 'Iggo', 'Yavra'],
@@ -8728,13 +8728,14 @@
       // entry at all -- so allowedCosmetics is the authority on what a species
       // may wear and cosmeticWeights only biases the pick when it happens to
       // list the item.
-      function _banditClothingCandidates(speciesDef, gender, slot, poolIds) {
+      function _banditClothingCandidates(speciesDef, gender, slot, poolIds, exclusiveIds) {
         const genderData = speciesDef?.[gender] || speciesDef?.male || null;
         const allowed = new Set(genderData?.allowedCosmetics || []);
+        const exclusive = new Set(exclusiveIds || []);
         const weights = genderData?.cosmeticWeights?.[slot] || null;
         const out = {};
         for (const id of (poolIds || [])) {
-          if (!allowed.has(id)) continue;
+          if (!allowed.has(id) && !exclusive.has(id)) continue;
           const bare = id.split('::').pop();
           out[id] = Number(weights?.[bare]) > 0 ? Number(weights[bare]) : 1;
         }
@@ -8766,7 +8767,7 @@
         const candidatesBySlot = {};
         for (const slot of slots) {
           candidatesBySlot[slot] = _banditClothingCandidates(
-            speciesDef, gender, slot, cfg?.clothingPool?.itemsBySlot?.[slot]);
+            speciesDef, gender, slot, cfg?.clothingPool?.itemsBySlot?.[slot], cfg?.clothingPool?.banditExclusiveIds);
         }
         const fillSlot = (slot) => {
           const id = _banditWeightedPick(candidatesBySlot[slot]);
@@ -8784,6 +8785,15 @@
         if (!equippedCosmetics.length) {
           const wearable = slots.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
           if (wearable.length) fillSlot(wearable[Math.floor(rnd() * wearable.length)]);
+        }
+        // Head covering is never left to chance: every bandit wears a fine_hood,
+        // a facewrap, or a headband. The independent per-slot rolls above already
+        // land one most of the time -- this only force-fills hat or hood when
+        // both came up empty (or unwearable) for this species/gender.
+        const HEAD_SLOTS = ['hat', 'hood'];
+        if (!HEAD_SLOTS.some(s => Object.values(cosmeticSlots).includes(s))) {
+          const headWearable = HEAD_SLOTS.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
+          if (headWearable.length) fillSlot(headWearable[Math.floor(rnd() * headWearable.length)]);
         }
         return {
           // nameOverride pins a captain to a specific bounty's persisted

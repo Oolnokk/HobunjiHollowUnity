@@ -92,6 +92,7 @@ window.SCRATCHBONES_CONFIG = {
         "rugged_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
+        "facewrap": "assets/cosmetics/clothes/hood/facewrap_m.png",
         "tankan_tunic": "assets/cosmetics/clothes/torso/portrait/tankantunic_mao-ao_m.png",
         "bandolier1": "assets/cosmetics/clothes/torso/portrait/bandolier1_mao-ao_m.png",
         "appearance::hat::basic_headband": "assets/cosmetics/clothes/hat/headband.png",
@@ -1288,7 +1289,8 @@ window.SCRATCHBONES_CONFIG = {
       },
       "layering": {
         "hatUnderHoodTag": "hood-layer:under",
-        "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat"
+        "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat",
+        "hoodHidesFacialHairTag": "hides-facial-hair"
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,
@@ -3741,6 +3743,49 @@ window.SCRATCHBONES_CONFIG = {
               "hairSlot": "back",
               "idIncludes": ["splayedknot"],
               "url": "cosmetics/appearance/shared/splayedknot-behind.png"
+            },
+            {
+              "_comment": "Fine hood's face-opening trim isn't visible from behind the head at all -- the single finehood-back sprite below stands in for the whole hood.",
+              "idIncludes": ["fine-hood"],
+              "urlIncludes": ["trim"],
+              "hide": true
+            },
+            {
+              "_comment": "Mashtzarr's exposed ear/tusk/trunk overlays are front-facing facial features with no behind-view art; the species' own finehood-back/facewrap sprite already bakes in whatever's visible from the back (e.g. the ears).",
+              "urlIncludes": ["exposed_ear.png", "exposed_tusk.png", "exposed_trunk.png"],
+              "hide": true
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/finehood-base_m.png"],
+              "url": "cosmetics/clothes/hood/finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/finehood-base_f.png"],
+              "url": "cosmetics/clothes/hood/finehood-back_f.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/tl_finehood-base.png"],
+              "url": "cosmetics/clothes/hood/tl_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/kenk_finehood-base_m.png"],
+              "url": "cosmetics/clothes/hood/kenk_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/kenk_finehood-base_f.png"],
+              "url": "cosmetics/clothes/hood/kenk_finehood-back_f.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/engh_finehood_base_m.png"],
+              "url": "cosmetics/clothes/hood/engh_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/engh_finehood_base_f.png"],
+              "url": "cosmetics/clothes/hood/engh_finehood-back_f.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/mashtz_finehood-base.png"],
+              "url": "cosmetics/clothes/hood/mashtz_finehood-back.png"
             }
           ]
         },

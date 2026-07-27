@@ -637,6 +637,7 @@ function getPortraitLayeringConfig() {
   return {
     hatUnderHoodTag: layering.hatUnderHoodTag || null,
     eyeAccessoryAboveUnderHoodHatTag: layering.eyeAccessoryAboveUnderHoodHatTag || null,
+    hoodHidesFacialHairTag: layering.hoodHidesFacialHairTag || null,
   };
 }
 
@@ -648,6 +649,16 @@ function hasPortraitTag(option, tag) {
 function hatLayersUnderHood(hat) {
   const { hatUnderHoodTag } = getPortraitLayeringConfig();
   return hat?.hoodLayering === 'under' || hasPortraitTag(hat, hatUnderHoodTag);
+}
+
+// Face-covering hoods (e.g. a facewrap) hide facial hair entirely rather than
+// just layering over it, since the beard sprite would otherwise poke out past
+// the wrap's edges. Fine hoods leave facial hair visible, so this is opt-in
+// per cosmetic via a tag rather than tied to "any hood equipped" like the
+// existing hairFront/hairSide hiding below.
+function hoodHidesFacialHair(hood) {
+  const { hoodHidesFacialHairTag } = getPortraitLayeringConfig();
+  return hasPortraitTag(hood, hoodHidesFacialHairTag);
 }
 
 function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
@@ -831,6 +842,11 @@ function _getBehindLayerUrl(layer, group, gender) {
     if (rule.hairSlot && group?.hairSlot !== rule.hairSlot) continue;
     if (rule.idIncludes && !_textMatchesAny(idText, rule.idIncludes)) continue;
     if (rule.urlIncludes && !_textMatchesAny(layer.url, rule.urlIncludes)) continue;
+    // A matched rule with no replacement URL (hide: true) means this layer has
+    // no behind-view equivalent at all (e.g. a hood's face-opening trim, or a
+    // facial-feature overlay that isn't visible from the back of the head) and
+    // should simply not be drawn, rather than falling back to its front-view art.
+    if (rule.hide) return null;
     if (rule.genderUrls) {
       const genderKey = _portraitGenderKey(gender);
       return rule.genderUrls[genderKey] || rule.genderUrls[genderKey?.[0]] || layer.url;
@@ -916,7 +932,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatIsUnderHood = hatLayersUnderHood(hat);
   const eyesLayerAboveUnderHoodHat = eyeAccessoryLayersAboveUnderHoodHat(eyes, hat);
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
-  const hiddenCosmeticGroups = hoodHideFrontAndSideHair ? new Set([hairFront, hairSide, hairSideL]) : null;
+  const hiddenCosmeticGroups = new Set([
+    ...(hoodHideFrontAndSideHair ? [hairFront, hairSide, hairSideL] : []),
+    ...(hoodHidesFacialHair(hood) ? [facialHair] : []),
+  ].filter(Boolean));
 
   const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
   const sideLeftLayers   = [];  // left side hairstyle, drawn before head
