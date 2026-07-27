@@ -7308,6 +7308,133 @@
         return { ok: true, message: 'Task turned in.' };
       }
 
+      // ── Bounty board: hunt a named bandit captain, destroy his camp ────
+      //
+      // A bounty rides the same questProgress/setQuestStatus scaffold as a
+      // board/favor task (kind: 'bounty' instead of 'board'/'favor'), so it
+      // needs no new save fields either -- questProgress is already part of
+      // saveMemberWorldData()'s persisted blob, which is what makes a
+      // bounty survive a reload despite bandit camps themselves being
+      // deliberately session-only (see the big comment above
+      // _banditCampInstances). Shape: { kind:'bounty', captainName,
+      // zoneId, tier, rewardGold, postedDay }. Status: 'posted' (on the
+      // board) -> 'available' (accepted, tracked on the map) -> 'completed'
+      // (that captain's camp confirmed destroyed -- paid out automatically,
+      // no turn-in NPC needed, unlike board/favor tasks).
+      const BOUNTY_RANK_LABELS = ['Petty', 'Notorious', 'Ruthless', 'Infamous'];
+      const BOUNTY_REWARD_GOLD_BY_TIER = [80, 160, 280, 450];
+
+      function _zoneHasAnyBounty(zoneId) {
+        return Object.values(questProgress).some(st =>
+          st.progress?.kind === 'bounty' && st.progress.zoneId === zoneId
+          && (st.status === 'posted' || st.status === 'available'));
+      }
+      // The live, accepted bounty (if any) targeting this zone -- used by
+      // spawnBanditCamp to decide whether a freshly-generated camp there
+      // needs its tier/captain forced to match a promise already posted.
+      function _activeBountyForZone(zoneId) {
+        for (const [id, st] of Object.entries(questProgress)) {
+          if (st.progress?.kind === 'bounty' && st.progress.zoneId === zoneId && st.status === 'available') {
+            return { id, ...st.progress };
+          }
+        }
+        return null;
+      }
+      function hasActiveBounty() {
+        return Object.values(questProgress).some(st => st.progress?.kind === 'bounty' && (st.status === 'posted' || st.status === 'available'));
+      }
+      function getCurrentBountyPosting() {
+        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'bounty' && st.status === 'posted');
+        entries.sort((a, b) => (b[1].progress.postedDay || 0) - (a[1].progress.postedDay || 0));
+        return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
+      }
+      // Rolls a new wanted poster only when there's genuinely none up right
+      // now (posted-but-unclaimed or accepted-but-unresolved both count) --
+      // unlike the daily board notice, a bounty isn't superseded just
+      // because a day passed; a captain stays wanted until someone claims
+      // the poster or brings the camp down.
+      function maybeRefreshBountyPosting() {
+        if (hasActiveBounty()) return;
+        generateBountyTask();
+      }
+      // Prefers naming a captain who already has a real, live camp
+      // somewhere the player's already generated (adopting a real identity
+      // outright, no future generation needs steering at all). Only when
+      // NO zone currently has a live captain-led camp does it fall back to
+      // rolling a fresh identity and pinning it for whichever zone gets
+      // that camp generated next (see spawnBanditCamp's bountyPin check).
+      function generateBountyTask() {
+        const liveCandidates = [];
+        for (const [zoneId, recs] of _banditCampInstances) {
+          if (_zoneHasAnyBounty(zoneId)) continue;
+          for (const rec of recs) {
+            if (rec.captainName && !isBanditCampCleared(rec)) liveCandidates.push({ zoneId, tier: rec.tier, captainName: rec.captainName });
+          }
+        }
+        let target;
+        if (liveCandidates.length) {
+          target = liveCandidates[Math.floor(Math.random() * liveCandidates.length)];
+        } else {
+          const zoneIds = Object.keys(WMAP_ZONE_LABELS).filter(z => !_zoneHasAnyBounty(z));
+          if (!zoneIds.length) return null;
+          const zoneId = zoneIds[Math.floor(Math.random() * zoneIds.length)];
+          target = { zoneId, tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length), captainName: _banditName('captain') };
+        }
+        const id = _makeTaskId();
+        const task = {
+          kind: 'bounty', captainName: target.captainName, zoneId: target.zoneId, tier: target.tier,
+          rewardGold: BOUNTY_REWARD_GOLD_BY_TIER[target.tier], postedDay: calendar.day,
+        };
+        setQuestStatus(id, 'posted', task);
+        return { id, ...task };
+      }
+      function takeBountyTask(taskId) {
+        const st = questProgress[taskId];
+        if (!st || st.status !== 'posted' || st.progress?.kind !== 'bounty') return { ok: false, message: 'That bounty is no longer available.' };
+        setQuestStatus(taskId, 'available', {});
+        showToast(`🎯 Bounty accepted — hunt down ${st.progress.captainName} and destroy their camp.`, true);
+        updateBountyTracking(); // populate the map marker right away if that camp's already known
+        return { ok: true, message: 'Bounty added to your log.' };
+      }
+      // key: bounty taskId -> { zoneId, col, row, label } for the map/
+      // minimap marker (see _drawWildernessMapOnCanvas's matching loop).
+      const _bountyMarkers = new Map();
+      // Zone-independent on purpose (unlike updateBanditCampBanners, which
+      // only runs in the player's CURRENT zone) -- the bountied camp can be
+      // anywhere, and isBanditCampCleared/rec lookups are already safely
+      // zone-scoped internally (a zone with no cached view just reads as
+      // "not cleared yet," never a false completion), so this can run
+      // regardless of where the player currently is.
+      const BOUNTY_TRACKING_CHECK_INTERVAL_S = 1;
+      let _bountyTrackingAccum = 0;
+      function updateBountyTracking(dt) {
+        if (dt != null) {
+          _bountyTrackingAccum += dt;
+          if (_bountyTrackingAccum < BOUNTY_TRACKING_CHECK_INTERVAL_S) return;
+          _bountyTrackingAccum = 0;
+        }
+        for (const [id, st] of Object.entries(questProgress)) {
+          if (st.progress?.kind !== 'bounty') continue;
+          if (st.status !== 'available') { _bountyMarkers.delete(id); continue; }
+          const bounty = st.progress;
+          const rec = (_banditCampInstances.get(bounty.zoneId) || []).find(r => r.captainName === bounty.captainName);
+          if (!rec) continue; // camp not generated/found yet -- no marker until then
+          if (isBanditCampCleared(rec)) {
+            setQuestStatus(id, 'completed', {});
+            inventory.gold = (inventory.gold || 0) + bounty.rewardGold;
+            showToast(`🎯 Bounty complete! ${bounty.captainName}'s camp is destroyed. +${bounty.rewardGold}g`, true);
+            _bountyMarkers.delete(id);
+            continue;
+          }
+          _bountyMarkers.set(id, {
+            zoneId: bounty.zoneId,
+            col: rec.instance.site.x + rec.instance.site.w / 2,
+            row: rec.instance.site.y + rec.instance.site.h / 2,
+            label: bounty.captainName,
+          });
+        }
+      }
+
       let _tothalShiftInFlight = false;
       // Set while a shift is running so enterZone() can wait for it instead
       // of building a zone scene from the about-to-be-replaced authored/prior
@@ -7793,6 +7920,26 @@
           ctx.font = `bold ${Math.max(7, Math.round(threatMarkerR * 1.1))}px system-ui`;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText('!', mx, my + 0.5);
+        }
+        // An accepted bounty's target camp, once its actual location is
+        // known (see updateBountyTracking) -- a gold skull marker so it
+        // reads as "wanted target" rather than the red !  of a sensed
+        // threat or an ordinary discovered-locale dot. Stays up until the
+        // camp is confirmed destroyed, at which point the bounty completes
+        // and this is pruned from _bountyMarkers itself.
+        const bountyMarkerR = Math.max(4, markerR * 1.25);
+        for (const info of _bountyMarkers.values()) {
+          if (info.zoneId !== zoneId) continue;
+          const mx = info.col * scaleX, my = info.row * scaleY;
+          ctx.beginPath();
+          ctx.arc(mx, my, bountyMarkerR, 0, Math.PI * 2);
+          ctx.fillStyle = '#e0b23c';
+          ctx.fill();
+          ctx.strokeStyle = '#4a3308'; ctx.lineWidth = 1.5; ctx.stroke();
+          ctx.fillStyle = '#2a1c05';
+          ctx.font = `bold ${Math.max(7, Math.round(bountyMarkerR * 1.1))}px system-ui`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('☠', mx, my + 0.5);
         }
         // Garanki Gabu's live position, drawn as his own portrait (the same
         // baked head-with-cosmetics canvas his world model and dialogue
@@ -8457,7 +8604,7 @@
       // NpcAvatarPreview.buildProfileFromNpcExport, plus a `cosmeticSlots`
       // side table the corpse-loot step reads to rebuild each worn item as a
       // packClothing entry without re-deriving its slot.
-      async function rollBanditRoster(cfg, rank) {
+      async function rollBanditRoster(cfg, rank, nameOverride) {
         const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
         const gender = rnd() < 0.5 ? 'male' : 'female';
         const speciesDef = await loadBanditSpeciesDef(speciesId);
@@ -8489,7 +8636,11 @@
           if (wearable.length) fillSlot(wearable[Math.floor(rnd() * wearable.length)]);
         }
         return {
-          name: _banditName(rank),
+          // nameOverride pins a captain to a specific bounty's persisted
+          // identity (see _activeBountyForZone/spawnBanditCamp) instead of
+          // a fresh random roll -- unused for grunts/lieutenants, which are
+          // never a bounty target.
+          name: nameOverride || _banditName(rank),
           appearance: { speciesId, gender, cosmetics: {} },
           equippedCosmetics, appliedDyes, cosmeticSlots,
         };
@@ -9939,7 +10090,7 @@
       }
 
       async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-        const roster = await rollBanditRoster(cfg, rank);
+        const roster = await rollBanditRoster(cfg, rank, opts.nameOverride);
         const avatarRef = await buildBanditAvatar(roster);
         if (!avatarRef) {
           window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
@@ -10450,7 +10601,20 @@
         }
         _syncBanditFlora(zoneId, instance.removedObjectSnapshots, false);
 
-        const tier = banditTierForSite(cfg, view, instance.site);
+        // A bounty pin (see _activeBountyForZone/generateBountyTask) forces
+        // this camp's tier and captain identity to match a wanted poster
+        // already promising a specific captain in this zone, but only
+        // while that zone doesn't already HAVE a camp carrying the pinned
+        // name -- most bounties are generated by adopting an already-live
+        // camp's real identity outright (no pin needed at all), so this
+        // path only matters for the fallback case: a bounty rolled when no
+        // live camp existed anywhere, which has to steer whatever camp
+        // gets generated next instead of naming one that already exists.
+        const bountyPin = _activeBountyForZone(zoneId);
+        const alreadyHasPinnedCaptain = bountyPin
+          && (_banditCampInstances.get(zoneId) || []).some(r => r.captainName === bountyPin.captainName);
+        const pinThisCamp = bountyPin && !alreadyHasPinnedCaptain;
+        const tier = pinThisCamp ? bountyPin.tier : banditTierForSite(cfg, view, instance.site);
         const rec = {
           zoneId, instance, tier, gangIds: new Set(),
           props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
@@ -10480,6 +10644,7 @@
           const c = await makeBanditEntity(cfg, rank, tier, homeX + Math.cos(angle) * dist, homeY + Math.sin(angle) * dist, {
             zoneId,
             extra: { homeX, homeY, banditCampInstanceId: instance.id, state: 'idle' },
+            nameOverride: (pinThisCamp && rank === 'captain') ? bountyPin.captainName : undefined,
           });
           if (!c) continue;
           hostileObjects.add(c);
@@ -17908,6 +18073,7 @@
       // ── Tasks panel (board requests + accepted NPC favors) ───────────
       function renderTasksPanel() {
         maybeRefreshBoardTask();
+        maybeRefreshBountyPosting();
 
         // Today's board notice — not yet in the player's log. Taking it is
         // the only action this panel offers; turning a task in (board or
@@ -17938,33 +18104,80 @@
           }
         }
 
-        // The player's actual quest log — everything accepted, board or
-        // favor, with no completion deadline. Read-only: no turn-in button
-        // here on purpose (see above).
+        // Wanted poster for a bandit captain — separate from the board
+        // notice above (its own slot, its own refresh rule: see
+        // maybeRefreshBountyPosting). Accepting marks that captain's camp
+        // on the map the moment it's known (see updateBountyTracking) and
+        // pays out automatically once the camp is destroyed — no NPC
+        // turn-in, unlike board/favor tasks.
+        const bountyEl = document.getElementById('tasksBountyPosting');
+        if (bountyEl) {
+          bountyEl.innerHTML = '';
+          const posting = getCurrentBountyPosting();
+          if (posting) {
+            const rank = BOUNTY_RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
+            const zoneLabel = WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.innerHTML = `
+              <div class="sh-icon">🎯</div>
+              <div class="sh-info">
+                <div class="sh-name">Wanted: ${esc(posting.captainName)} — ${esc(rank)}</div>
+                <div class="sh-desc">Last seen in the ${esc(zoneLabel)}. Destroy his camp for ${posting.rewardGold}g.</div>
+              </div>
+              <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
+            `;
+            row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
+              takeBountyTask(posting.id);
+              renderTasksPanel();
+            });
+            bountyEl.appendChild(row);
+          } else {
+            bountyEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">🎯</span><span class="dr-name">No bounties posted right now.</span><span class="dr-eta">—</span></div>';
+          }
+        }
+
+        // The player's actual quest log — everything accepted, board,
+        // favor, or an active bounty, with no completion deadline. Read-
+        // only: no turn-in button here on purpose (see above) -- a bounty
+        // resolves itself via updateBountyTracking, not this panel.
         const list = document.getElementById('tasksList');
         if (!list) return;
         list.innerHTML = '';
         const active = Object.entries(questProgress)
-          .filter(([, st]) => st.status === 'available' && (st.progress?.kind === 'board' || st.progress?.kind === 'favor'))
+          .filter(([, st]) => st.status === 'available' && ['board', 'favor', 'bounty'].includes(st.progress?.kind))
           .map(([id, st]) => ({ id, ...st.progress }))
-          .sort((a, b) => (a.kind === 'board' ? 0 : 1) - (b.kind === 'board' ? 0 : 1));
+          .sort((a, b) => (a.kind === 'board' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'board' ? 0 : b.kind === 'favor' ? 1 : 2));
         if (!active.length) {
           list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
           return;
         }
         active.forEach(task => {
-          const def = ITEM_DEFS[task.itemKey];
-          const have = inventory[task.itemKey] || 0;
-          const source = task.kind === 'board' ? `${esc(task.npcName)}'s board request` : `${esc(task.npcName)}'s favor`;
           const row = document.createElement('div');
           row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
-            <div class="sh-info">
-              <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
-              <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${esc(task.npcName)}.</div>
-            </div>
-          `;
+          if (task.kind === 'bounty') {
+            const rank = BOUNTY_RANK_LABELS[task.tier] || `Tier ${task.tier}`;
+            const zoneLabel = WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
+            const marked = _bountyMarkers.has(task.id);
+            row.innerHTML = `
+              <div class="sh-icon">🎯</div>
+              <div class="sh-info">
+                <div class="sh-name">Bounty: ${esc(task.captainName)} — ${esc(rank)}</div>
+                <div class="sh-desc">${esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : 'Still tracking him down...'} Reward: ${task.rewardGold}g on his camp\'s destruction.</div>
+              </div>
+            `;
+          } else {
+            const def = ITEM_DEFS[task.itemKey];
+            const have = inventory[task.itemKey] || 0;
+            const source = task.kind === 'board' ? `${esc(task.npcName)}'s board request` : `${esc(task.npcName)}'s favor`;
+            row.innerHTML = `
+              <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
+              <div class="sh-info">
+                <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
+                <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${esc(task.npcName)}.</div>
+              </div>
+            `;
+          }
           list.appendChild(row);
         });
       }
@@ -29617,6 +29830,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           updateZoneFogAroundPlayer();
           updatePlayerVitals(dt);
           updateAlchemyEffects();
+          updateBountyTracking(dt);
 
           if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
             // Den-Mother caverns are the one building exception (boss arena,
