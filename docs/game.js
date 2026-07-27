@@ -1637,7 +1637,8 @@
       // their own url+species entry without touching this function.
       function playCreatureBark(c) {
         const cfg = combatSfxConfig().creatureBark;
-        playCreatureSfxAt(c, cfg, Number(cfg?.species?.[c.creatureKey]?.pitch) || 1);
+        const speciesCfg = cfg?.species?.[c.creatureKey];
+        playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
       }
 
       function playCreatureClawHit(c) {
@@ -1908,6 +1909,28 @@
           },
           lootPool: 'creature_gar-wolf',
         },
+        grehlr: {
+          label: 'Grehlr', hostile: true, liveBirth: true,
+          maxHealth: 52, maxStamina: 38, moveSpeed: 135, chaseSpeed: 205,
+          attackDamage: 14, attackRangePx: TILE * 0.9, attackHalfConeRad: 44 * Math.PI / 180,
+          attackStaminaCost: 13, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6.5, leashRangePx: TILE * 9,
+          canClimb: true, canSwim: false, modelWidth: 2.2, spriteAspect: 2250 / 3000, tint: 0xffffff,
+          sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
+          lootPool: 'creature_grehlr',
+        },
+        drenkirra: {
+          label: 'Drenkirra', hostile: true, liveBirth: true,
+          maxHealth: 44, maxStamina: 36, moveSpeed: 145, chaseSpeed: 210,
+          attackDamage: 13, attackRangePx: TILE * 0.85, attackHalfConeRad: 43 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 0.95,
+          attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
+          canClimb: false, canSwim: false, modelWidth: 2.05, spriteAspect: 523 / 831, tint: 0xffffff,
+          sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
+          lootPool: 'creature_drenkirra',
+        },
         'gar-wolf-alpha': {
           label: 'Gar-wolf Alpha', hostile: true, liveBirth: true,
           maxHealth: 78, maxStamina: 46,
@@ -2037,7 +2060,7 @@
           // spawnPackAtDen) — no longer a single fixed hostileKey, since a
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
-          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          packSpecies: ['grehlr'],
           // Species pool a den's next HERD is randomly drawn from, when a den
           // rolls a herbivore population instead of a predator pack this
           // cycle (see spawnPackAtDen) — kept as a sibling pool to packSpecies
@@ -2052,7 +2075,7 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
-          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          packSpecies: ['drenkirra'],
           herbivoreSpecies: ['uumkaoii-wild'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
@@ -4057,6 +4080,8 @@
       const LIVESTOCK_PATTERN_DEFS = {
         'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
         'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
+        grehlr: ['mitts', 'spectacles'],
+        drenkirra: ['bodystripes', 'spectacles'],
       };
       // CREATURE_DB variants that reuse a pattern-species' sprite/pattern
       // assets under a different creatureKey (different stats/label, same
@@ -4111,13 +4136,18 @@
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
         if (patterns) {
           const [first, second] = pickTwoLivestockFurColors();
-          // Each pattern layer gets an independent 1/3 chance of showing up
+          // Each pattern layer gets an independently configured chance of showing up
           // (rather than rolling "how many, then which") — with 3 patterns
           // that's ~70% odds of at least one being visible per specimen,
           // instead of leaving a pack looking plain too often.
           const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
+          const geneticsCfg = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics || {};
           for (const id of patterns) {
-            const enabled = Math.random() < (1 / 3);
+            const configuredChance = geneticsCfg.patternChances?.[kind]?.[id];
+            const chance = Number.isFinite(Number(configuredChance))
+              ? Number(configuredChance)
+              : Number(geneticsCfg.defaultPatternChance) || (1 / 3);
+            const enabled = Math.random() < chance;
             genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
           const enabledIds = patterns.filter(id => genotype[id].enabled);
@@ -5032,7 +5062,10 @@
         const gridCols = optCols || getActiveCols();
         const gridRows = optRows || getActiveRows();
         const modelWidth = def.modelWidth;
-        const modelHeight = modelWidth * (600 / 1375); // all creature sprites are 1375×600px
+        // New creature art is not required to use the legacy 1375×600 canvas.
+        // Definitions with a different source canvas provide its width/height
+        // ratio so the avatar plane preserves the uploaded sprite's aspect.
+        const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
         const halfH = modelHeight / 2;
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
@@ -18751,6 +18784,10 @@
         alphaGarWolfHide: { icon: '🟫', label: 'Alpha Gar-wolf Hide', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide'], desc: 'A thick, battle-scarred hide stripped from a slain alpha gar-wolf.' },
         dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
         dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
+        grehlrMeat: { icon: '🥩', label: 'Grehlr Meat', cat: 'material', sellPrice: 11, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a northern-cliff grehlr.' },
+        grehlrHide: { icon: '🟫', label: 'Grehlr Hide', cat: 'material', sellPrice: 17, tags: ['Material', 'Hide'], desc: 'A dense hide stripped from a fallen grehlr.' },
+        drenkirraMeat: { icon: '🥩', label: 'Drenkirra Meat', cat: 'material', sellPrice: 10, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a cloud-forest drenkirra.' },
+        drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },

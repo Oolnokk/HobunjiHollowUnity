@@ -12,6 +12,10 @@ window.SCRATCHBONES_CONFIG = {
   clothingLightOffset: 0,
 
   game: {
+    "creatureGenetics": {
+      "defaultPatternChance": 0.3333333333333333,
+      "patternChances": { "grehlr": { "mitts": 0.08 } }
+    },
     "debug": {
       "enabled": true,
       "includeConsoleDebug": true,
@@ -3486,7 +3490,9 @@ window.SCRATCHBONES_CONFIG = {
             "species": {
               "gar-wolf": { "pitch": 1.0 },
               "gar-wolf-alpha": { "pitch": 0.78 },
-              "dabinggi-hound": { "pitch": 1.32 }
+              "dabinggi-hound": { "pitch": 1.32 },
+              "grehlr": { "url": "assets/audio/sfx/sfx_grehlr_rawr.wav", "pitch": 1.0 },
+              "drenkirra": { "pitch": 1.15 }
             }
           }
         },

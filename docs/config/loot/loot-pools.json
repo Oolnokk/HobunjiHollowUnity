@@ -13,6 +13,20 @@
       "label": "Uumkao'ii (companion)",
       "entries": []
     },
+    "creature_grehlr": {
+      "label": "Grehlr",
+      "entries": [
+        { "id": "meat", "itemKey": "grehlrMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} },
+        { "id": "hide", "itemKey": "grehlrHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+      ]
+    },
+    "creature_drenkirra": {
+      "label": "Drenkirra",
+      "entries": [
+        { "id": "meat", "itemKey": "drenkirraMeat", "min": 2, "max": 3, "chance": 1, "conditions": {} },
+        { "id": "hide", "itemKey": "drenkirraHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+      ]
+    },
     "creature_gar-wolf": {
       "label": "Gar-wolf",
       "entries": [

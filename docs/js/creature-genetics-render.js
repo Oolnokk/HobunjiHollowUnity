@@ -43,6 +43,16 @@
       },
       patterns: ['mitts', 'spectacles', 'stripes'],
     },
+    grehlr: {
+      prefix: 'grehlr',
+      base: { idle: 'assets/creaturesprites/grehlr_idle.png', run1: 'assets/creaturesprites/grehlr_run1.png', run2: 'assets/creaturesprites/grehlr_run2.png' },
+      patterns: ['mitts', 'spectacles'],
+    },
+    drenkirra: {
+      prefix: 'drnk',
+      base: { idle: 'assets/creaturesprites/drenkirra_idle.png', run1: 'assets/creaturesprites/drenkirra_run1.png', run2: 'assets/creaturesprites/drenkirra_run2.png' },
+      patterns: ['bodystripes', 'spectacles'],
+    },
     // Uumkao'ii has one static sprite (no run1/run2 art — see CREATURE_DB's
     // sprites.run reusing the idle frame), and its two regions are always
     // both present (see makeDefaultGenotype's uumkaoii branch: fur/plates
