@@ -1921,7 +1921,7 @@
           lootPool: 'creature_grehlr',
         },
         drenkirra: {
-          label: 'Drenkirra', hostile: true, liveBirth: true,
+          label: 'Drenkirra', hostile: false, diet: 'herbivore', liveBirth: false,
           maxHealth: 44, maxStamina: 36, moveSpeed: 145, chaseSpeed: 210,
           attackDamage: 13, attackRangePx: TILE * 0.85, attackHalfConeRad: 43 * Math.PI / 180,
           attackStaminaCost: 12, attackCooldownS: 0.95,
@@ -2013,6 +2013,28 @@
           },
           lootPool: 'creature_uumkaoii-wild-den-mother',
         },
+        'grehlr-den-mother': {
+          label: 'Grehlr Den-Mother', hostile: true, liveBirth: true,
+          maxHealth: 260, maxStamina: 95, moveSpeed: 120, chaseSpeed: 180,
+          attackDamage: 26, attackRangePx: TILE, attackHalfConeRad: 46 * Math.PI / 180,
+          attackStaminaCost: 17, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6, leashRangePx: TILE * 4.5,
+          canClimb: true, canSwim: false, modelWidth: 3.1, spriteAspect: 2250 / 3000, tint: 0x806b74,
+          sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
+          lootPool: 'creature_grehlr-den-mother',
+        },
+        'drenkirra-den-mother': {
+          label: 'Drenkirra Den-Mother', hostile: true, diet: 'herbivore', liveBirth: false,
+          maxHealth: 220, maxStamina: 85, moveSpeed: 125, chaseSpeed: 185,
+          attackDamage: 22, attackRangePx: TILE * 0.95, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 15, attackCooldownS: 1.1,
+          attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
+          canClimb: false, canSwim: false, modelWidth: 2.9, spriteAspect: 523 / 831, tint: 0x789078,
+          sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
+          lootPool: 'creature_drenkirra-den-mother',
+        },
       };
 
       // Overrides CREATURE_DB's per-species attack* fields and the bandit
@@ -2075,8 +2097,7 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
-          packSpecies: ['drenkirra'],
-          herbivoreSpecies: ['uumkaoii-wild'],
+          herbivoreSpecies: ['drenkirra'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -4094,6 +4115,8 @@
         'gar-wolf-den-mother': 'gar-wolf',
         'uumkaoii-wild': 'uumkaoii',
         'uumkaoii-wild-den-mother': 'uumkaoii',
+        'grehlr-den-mother': 'grehlr',
+        'drenkirra-den-mother': 'drenkirra',
       };
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
@@ -4459,7 +4482,7 @@
       // directly. A kind missing here falls back to dabinggi-hound's 1.7
       // rather than silently mis-sizing — add an entry for any new
       // pattern-layer species instead of expanding a size ternary.
-      const LIVESTOCK_ANIMAL_WIDTH = { 'gar-wolf': 1.9, 'dabinggi-hound': 1.7 };
+      const LIVESTOCK_ANIMAL_WIDTH = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
 
       // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
       // livestock — same tile-hopping wander/no-combat shape as
@@ -4469,7 +4492,7 @@
       // below, until that async compose resolves).
       function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
         const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
-        const ANIMAL_H = ANIMAL_W * (600 / 1375); // sprite is 1375x600px, same convention as CREATURE_DB
+        const ANIMAL_H = ANIMAL_W * (CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
         const halfH = ANIMAL_H / 2;
         const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
 
@@ -4569,11 +4592,17 @@
       function makeDabinggiHoundAnimal(col, row, livestockId, genotype) {
         return makePatternLivestockAnimal('dabinggi-hound', 'Dabinggi-hound', '🐕', col, row, livestockId, genotype);
       }
+      function makeGrehlrAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('grehlr', 'Grehlr', '🐾', col, row, livestockId, genotype);
+      }
+      function makeDrenkirraAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('drenkirra', 'Drenkirra', '🪿', col, row, livestockId, genotype);
+      }
 
       // Livestock kind → factory, so restoring saved livestock on world load
       // can dispatch by kind without hardcoding uumkao'ii — the array this
       // reads is meant to grow into other livestock types later.
-      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal };
+      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal };
 
       // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
       // Grows alongside LIVESTOCK_FACTORIES as more species ship. Both new
@@ -4588,7 +4617,7 @@
       // hound isn't a hostile wild-pack species, so it has no "-den-mother"
       // CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below) — its only
       // source is Jubmir's daily trader stock (see _loadJubmirStock).
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf', dabinggiHoundEgg: 'dabinggi-hound' };
+      const LIVESTOCK_ITEM_KINDS = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {};
 
       // Den-Mother CREATURE_DB key -> which item her nest hands out — read
       // directly off her species (see loadBuildingScene's 'map_i_den_'
@@ -4597,7 +4626,8 @@
       // uumkaoii-wild-den-mother: false), which is exactly the kind of
       // coincidence that silently breaks the moment a third Den-Mother
       // species ships sharing a liveBirth value with one of these two.
-      const DEN_MOTHER_ITEM_KEYS = { 'gar-wolf-den-mother': 'garWolfBaby', 'uumkaoii-wild-den-mother': 'uumkaoiiEgg' };
+      const DEN_MOTHER_DEFS = window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers || {};
+      const DEN_MOTHER_ITEM_KEYS = Object.fromEntries(Object.values(DEN_MOTHER_DEFS).map(def => [def.creatureKey, def.nestItemKey]));
 
       // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
       // that item — populated when a Den-Mother's nest grants an egg/baby
@@ -15498,17 +15528,21 @@
       // The seed is the mapId itself (already unique per zone+den, see
       // performTothalShift's denTransitions), so re-entering the same den
       // always reaches the same cavern.
-      // Deterministic per den (same mapId -> same pick every time, independent
-      // of the wilderness zone's own ever-re-rolled exterior pack/herd
-      // species) — which Den-Mother variant guards this den's nest. Picks
-      // uniformly from DEN_MOTHER_ITEM_KEYS' own keys (the same registry
-      // that already maps a Den-Mother species to her nest's item) instead
-      // of a hardcoded 2-way coin flip, so a third Den-Mother species is a
-      // single new entry there rather than also needing this rewritten from
-      // a `< 0.5` ternary into a 3-way split.
+      // Deterministic per den (same mapId -> same pick every time): choose a
+      // Den-Mother only from the predator/herbivore species native to this
+      // cavern's exterior zone. DEN_MOTHER_DEFS maps each base species to its
+      // mother variant and nest reward, keeping Grehlr in the north and
+      // Drenkirra in the southern cloud forest all the way through the den.
       function pickDenMotherKind(mapId) {
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
-        const kinds = Object.keys(DEN_MOTHER_ITEM_KEYS);
+        const zoneId = _denCavernZoneOf.get(mapId);
+        const zoneDef = EXTERIOR_ZONES[zoneId];
+        const nativeSpecies = [...(zoneDef?.packSpecies || []), ...(zoneDef?.herbivoreSpecies || [])];
+        const kinds = nativeSpecies.map(kind => DEN_MOTHER_DEFS[kind]?.creatureKey).filter(Boolean);
+        if (!kinds.length) {
+          window.__farmLog?.(`[wildlife] ${mapId}: no native Den-Mother configured for zone "${zoneId || 'unknown'}".`, 'warn');
+          return null;
+        }
         return kinds[Math.floor(rng() * kinds.length)];
       }
 
@@ -15717,7 +15751,7 @@
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
           if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
             const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
-            const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
+            const motherKey = mapData.denMotherKind;
             const motherDef = CREATURE_DB[motherKey];
             // Same shared per-family genotype as this den's exterior pack
             // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
@@ -15740,21 +15774,20 @@
             }
             const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
               ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
-            const remaining = 1 + Math.floor(nestRng() * 3); // 1-3
+            const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
+            const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
+            const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
+            const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
             const liveBirth = !!motherDef?.liveBirth;
-            let itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
-            if (!itemKey) {
-              // No mapped item for this Den-Mother species — fall back to
-              // the old liveBirth guess so the nest still hands out SOMETHING
-              // rather than breaking, but flag it since it means
-              // DEN_MOTHER_ITEM_KEYS is missing an entry for a real species.
-              itemKey = liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg';
-              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey}" has no DEN_MOTHER_ITEM_KEYS entry — guessing "${itemKey}" from liveBirth=${liveBirth}, may be wrong.`, 'warn');
+            const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+            if (itemKey) {
+              _denNests.set(mapId, {
+                col: nestCol, row: nestRow, w: 2, h: 2,
+                itemKey, liveBirth, remaining, genotype: denGenotype,
+              });
+            } else {
+              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
             }
-            _denNests.set(mapId, {
-              col: nestCol, row: nestRow, w: 2, h: 2,
-              itemKey, liveBirth, remaining, genotype: denGenotype,
-            });
             // Simple nest marker so the 2x2 chamber reads as an objective.
             const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
             const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
@@ -17519,11 +17552,7 @@
       // Per-species farm-resource output: item produced + how many in-game
       // days the cooldown takes. A kind with no entry here can be housed but
       // won't produce anything yet.
-      const LIVESTOCK_RESOURCE_DEFS = {
-        uumkaoii: { itemKey: 'uumkaoiiEgg', cooldownDays: 2 },
-        'gar-wolf': { itemKey: 'garWolfMilk', cooldownDays: 1 },
-        'dabinggi-hound': { itemKey: 'dabinggiHoundVenom', cooldownDays: 1 },
-      };
+      const LIVESTOCK_RESOURCE_DEFS = window.SCRATCHBONES_CONFIG?.game?.livestock?.resources || {};
 
       // Which action verb the in-world "Collect" button shows, per kind —
       // gar-wolf/dabinggi-hound's resource is milked out of them rather than
@@ -17531,7 +17560,7 @@
       // resourceReady/collectLivestockResource machinery (see
       // _farmAnimalGetButtons) — this only changes the button's label/action
       // string, not the mechanic.
-      const LIVESTOCK_RESOURCE_VERB = { 'gar-wolf': 'Milk', 'dabinggi-hound': 'Milk' };
+      const LIVESTOCK_RESOURCE_VERB = Object.fromEntries(Object.entries(LIVESTOCK_RESOURCE_DEFS).filter(([, def]) => def.verb).map(([kind, def]) => [kind, def.verb]));
 
       // A housed uumkao'ii's dew cooldown is tracked separately from its
       // LIVESTOCK_RESOURCE_DEFS egg cooldown (see dewDaysUntil/dewReady on
@@ -18742,6 +18771,9 @@
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
         { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
+        { key: 'grehlrBaby',          icon: '🐾', label: 'GREHLR BABY', max: 9  },
+        { key: 'fertileDrenkirraEgg', icon: '🥚', label: 'FERTILE DRENKIRRA EGG', max: 9  },
+        { key: 'drenkirraEgg',        icon: '🥚', label: 'DRENKIRRA EGG', max: 99 },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -18793,6 +18825,9 @@
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
+        grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
+        fertileDrenkirraEgg: { icon: '🥚', label: 'Fertile Drenkirra Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a southern-cloud-forest den. Add it to a farm or stable to hatch the drenkirra inside.' },
+        drenkirraEgg: { icon: '🥚', label: 'Drenkirra Egg', cat: 'material', sellPrice: 8, tags: ['Ingredient', 'Egg', 'Food'], desc: 'A regular unfertilized egg laid by a farmed drenkirra, suitable for eating or cooking.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },

@@ -16,6 +16,31 @@ window.SCRATCHBONES_CONFIG = {
       "defaultPatternChance": 0.3333333333333333,
       "patternChances": { "grehlr": { "mitts": 0.08 } }
     },
+    // Wildlife reproduction and farm-livestock data. Den mothers are
+    // selected only from species actually native to the den's exterior zone.
+    "wildlife": {
+      "denMothers": {
+        "gar-wolf": { "creatureKey": "gar-wolf-den-mother", "nestItemKey": "garWolfBaby" },
+        "uumkaoii-wild": { "creatureKey": "uumkaoii-wild-den-mother", "nestItemKey": "uumkaoiiEgg" },
+        "grehlr": { "creatureKey": "grehlr-den-mother", "nestItemKey": "grehlrBaby" },
+        "drenkirra": { "creatureKey": "drenkirra-den-mother", "nestItemKey": "fertileDrenkirraEgg" }
+      },
+      "nestClutch": { "min": 1, "max": 3 }
+    },
+    "livestock": {
+      "itemKinds": {
+        "uumkaoiiCrate": "uumkaoii", "uumkaoiiEgg": "uumkaoii",
+        "garWolfBaby": "gar-wolf", "dabinggiHoundEgg": "dabinggi-hound",
+        "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
+      },
+      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 2.05 },
+      "resources": {
+        "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
+        "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk" },
+        "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk" },
+        "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 }
+      }
+    },
     "debug": {
       "enabled": true,
       "includeConsoleDebug": true,

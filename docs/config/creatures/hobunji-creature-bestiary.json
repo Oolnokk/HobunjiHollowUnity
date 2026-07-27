@@ -39,15 +39,49 @@
     {
       "id": "drenkirra",
       "label": "Drenkirra",
-      "hostile": true,
-      "aggroRangeTiles": 6,
-      "leashRangeTiles": 8.5,
+      "hostile": false,
+      "diet": "herbivore",
       "attackRangeTiles": 0.85,
       "attacks": ["pounce"],
       "attackTag": "sharp",
       "modelWidth": 2.05,
       "spriteAspect": 0.62936,
       "tint": "#ffffff",
+      "sprites": {
+        "idle": "assets/creaturesprites/drenkirra_idle.png",
+        "run": ["assets/creaturesprites/drenkirra_run1.png", "assets/creaturesprites/drenkirra_run2.png"]
+      }
+    },
+    {
+      "id": "grehlr-den-mother",
+      "label": "Grehlr Den-Mother",
+      "hostile": true,
+      "aggroRangeTiles": 6,
+      "leashRangeTiles": 4.5,
+      "attackRangeTiles": 1,
+      "attacks": ["pounce"],
+      "attackTag": "sharp",
+      "modelWidth": 3.1,
+      "spriteAspect": 0.75,
+      "tint": "#806b74",
+      "sprites": {
+        "idle": "assets/creaturesprites/grehlr_idle.png",
+        "run": ["assets/creaturesprites/grehlr_run1.png", "assets/creaturesprites/grehlr_run2.png"]
+      }
+    },
+    {
+      "id": "drenkirra-den-mother",
+      "label": "Drenkirra Den-Mother",
+      "hostile": true,
+      "diet": "herbivore",
+      "aggroRangeTiles": 5.5,
+      "leashRangeTiles": 4.5,
+      "attackRangeTiles": 0.95,
+      "attacks": ["pounce"],
+      "attackTag": "blunt",
+      "modelWidth": 2.9,
+      "spriteAspect": 0.62936,
+      "tint": "#789078",
       "sprites": {
         "idle": "assets/creaturesprites/drenkirra_idle.png",
         "run": ["assets/creaturesprites/drenkirra_run1.png", "assets/creaturesprites/drenkirra_run2.png"]
