@@ -5329,9 +5329,15 @@
       let _lootShopConfigPromise = null;
       function loadLootShopConfig() {
         if (_lootShopConfigPromise) return _lootShopConfigPromise;
+        // Routed through window.LocalDBOverrides.loadDatabase() (see
+        // docs/js/local-db-overrides.js) so the onboarding "Database Source"
+        // toggle can swap in a locally-saved loot-shop-editor edit of either
+        // file without touching the repo copy — falls back to a direct fetch
+        // if that module somehow isn't loaded.
+        const loadOne = (id, path) => (window.LocalDBOverrides ? window.LocalDBOverrides.loadDatabase(id) : fetch(path).then(r => r.ok ? r.json() : null)).catch(() => null);
         _lootShopConfigPromise = Promise.all([
-          fetch('config/loot/loot-pools.json').then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch('config/shops/shop-stock.json').then(r => r.ok ? r.json() : null).catch(() => null),
+          loadOne('lootPools', 'config/loot/loot-pools.json'),
+          loadOne('shopStock', 'config/shops/shop-stock.json'),
         ]).then(([lootData, shopData]) => {
           _lootPools = lootData?.pools || {};
           if (shopData?.shops) { _shopStock = shopData.shops; _applyLoadedShopStock(); }

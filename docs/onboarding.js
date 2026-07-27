@@ -909,6 +909,36 @@
     </div>`;
   }
 
+  // ── Database Source (window.LocalDBOverrides) ──────────────────────────
+  // Lets a locally-edited database (attack-values.json / loot-pools.json /
+  // shop-stock.json, saved from their respective docs/tools/ editors — see
+  // docs/js/local-db-overrides.js) be tested in-game before it's ever
+  // committed to the repo. "Repo" is the default and only real behavior
+  // change; "Local overrides" only actually swaps in a database that has a
+  // saved override, so leaving it on Local with nothing saved yet behaves
+  // identically to Repo.
+  function _dbSourceSectionHtml() {
+    const ldb = window.LocalDBOverrides;
+    if (!ldb) return '';
+    const mode = ldb.getSourceMode();
+    const rows = ldb.listStatuses().map(s => {
+      const statusTxt = s.hasOverride
+        ? `override saved ${esc(new Date(s.savedAt).toLocaleString())}`
+        : 'no local override';
+      const clearBtn = s.hasOverride
+        ? `<button type="button" class="sl-local-save-btn" data-dbsrc-clear="${esc(s.id)}">Clear</button>` : '';
+      return `<div class="sl-dbsrc-row"><span class="sl-dbsrc-name">${esc(s.label)}</span><span class="sl-local-save-status">${statusTxt}</span>${clearBtn}</div>`;
+    }).join('');
+    return `<div class="sl-section sl-local-save-section">
+      <div class="sl-section-label">Database Source <span class="sl-char-ref">— edited via docs/tools, test here before committing</span></div>
+      <div class="sl-local-save-row">
+        <label class="sl-dbsrc-toggle"><input type="radio" name="sl-dbsrc-mode" value="repo"${mode === 'repo' ? ' checked' : ''}> Repo (committed)</label>
+        <label class="sl-dbsrc-toggle"><input type="radio" name="sl-dbsrc-mode" value="local"${mode === 'local' ? ' checked' : ''}> Local overrides</label>
+      </div>
+      ${rows}
+    </div>`;
+  }
+
   function buildSaveSelectHTML() {
     const meta     = _saveMeta || makeSaveMeta();
     const chars    = meta.characters || [];
@@ -1008,6 +1038,7 @@
     return `<div class="ob-card sl-card">
       <div class="ob-title">🌿 Hobunji Hollow</div>
       ${_localSaveFolderSectionHtml()}
+      ${_dbSourceSectionHtml()}
       <div class="sl-section">
         <div class="sl-section-label">Choose Your Farmer</div>
         <div class="sl-char-grid">${charCardsHtml}${newCharHtml}</div>
@@ -1162,6 +1193,22 @@
         alert(result.message);
         if (result.ok) location.reload();
       });
+    }
+
+    // Database Source controls — see _dbSourceSectionHtml above and
+    // docs/js/local-db-overrides.js. Changing the mode takes effect on the
+    // NEXT load (game.js/combat-config-loader.js only read it at boot), so a
+    // reload is needed to actually see it in-game.
+    const ldb = window.LocalDBOverrides;
+    if (ldb) {
+      _el.querySelectorAll('input[name="sl-dbsrc-mode"]').forEach(radio => radio.addEventListener('change', () => {
+        ldb.setSourceMode(radio.value);
+        rerenderSaveSelect();
+      }));
+      _el.querySelectorAll('[data-dbsrc-clear]').forEach(btn => btn.addEventListener('click', () => {
+        ldb.clearOverride(btn.dataset.dbsrcClear);
+        rerenderSaveSelect();
+      }));
     }
   }
 

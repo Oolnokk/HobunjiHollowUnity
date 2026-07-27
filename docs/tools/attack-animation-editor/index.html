@@ -124,6 +124,11 @@ canvas{display:block;width:100%;height:100%}
       <button id="statsDownloadBtn" class="secondary">⭳ Download attack-values.json</button>
       <button id="statsCopyBtn" class="secondary">Copy JSON</button>
     </div>
+    <div class="row" style="margin-top:6px">
+      <button id="statsSaveOverrideBtn" class="secondary">💾 Save as Local Override</button>
+      <button id="statsClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
+    </div>
+    <div class="help" id="statsOverrideStatus"></div>
   </div>
 
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
@@ -241,6 +246,7 @@ canvas{display:block;width:100%;height:100%}
   <div id="debug"></div>
 </div>
 </div>
+<script src="../../js/local-db-overrides.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
@@ -964,6 +970,33 @@ $('statsCopyBtn').addEventListener('click', () => {
   navigator.clipboard.writeText(JSON.stringify(attackValuesConfig, null, 2));
   logDebug('Copied attack-values.json to clipboard.');
 });
+
+// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
+// overrides.js) — lets this in-memory (possibly edited) config be playtested
+// in the real game via the onboarding "Database Source" toggle, without
+// committing attack-values.json to the repo first.
+function refreshOverrideStatus() {
+  const el = $('statsOverrideStatus');
+  if (!el) return;
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'Local override system unavailable.'; return; }
+  const status = ldb.listStatuses().find(s => s.id === 'attackValues');
+  el.textContent = status?.hasOverride
+    ? `Local override saved ${new Date(status.savedAt).toLocaleString()} — set Database Source to "Local overrides" on the onboarding screen to test it in-game.`
+    : 'No local override saved yet.';
+}
+$('statsSaveOverrideBtn').addEventListener('click', () => {
+  if (!window.LocalDBOverrides) { logDebug('Local override system unavailable.'); return; }
+  window.LocalDBOverrides.setOverride('attackValues', attackValuesConfig);
+  logDebug('Saved attack-values.json as a local override.');
+  refreshOverrideStatus();
+});
+$('statsClearOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride('attackValues');
+  logDebug('Cleared the local attack-values.json override.');
+  refreshOverrideStatus();
+});
+refreshOverrideStatus();
 
 loadAttackValues().then(renderStatFields);
 

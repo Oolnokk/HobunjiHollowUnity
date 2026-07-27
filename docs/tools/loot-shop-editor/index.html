@@ -90,6 +90,9 @@ h2.secTitle:first-child{margin-top:0}
     <button class="secondary small" id="loadBtn">Reload from server</button>
     <button class="secondary small" id="copyBtn">Copy JSON</button>
     <button class="good small" id="downloadBtn">Download JSON</button>
+    <button class="secondary small" id="saveOverrideBtn">💾 Save as Local Override</button>
+    <button class="secondary small" id="clearOverrideBtn">🗑 Clear Local Override</button>
+    <span id="overrideStatus" style="font-size:11px;color:var(--muted);margin-left:6px"></span>
   </div>
   <div id="tabbar">
     <button class="tab active" data-tab="loot">Loot Pools</button>
@@ -119,6 +122,7 @@ h2.secTitle:first-child{margin-top:0}
 
 <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
      see docs/js/condition-registry.js. -->
+<script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/condition-registry.js"></script>
 <script>
 'use strict';
@@ -169,6 +173,23 @@ function renderTabs() {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.activeTab));
   $('paneLoot').classList.toggle('active', state.activeTab === 'loot');
   $('paneShop').classList.toggle('active', state.activeTab === 'shop');
+  refreshOverrideStatus();
+}
+
+// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
+// overrides.js) — lets the current tab's in-memory (possibly edited) data be
+// playtested in the real game via the onboarding "Database Source" toggle,
+// without committing loot-pools.json/shop-stock.json to the repo first.
+function activeDbId() { return state.activeTab === 'loot' ? 'lootPools' : 'shopStock'; }
+function refreshOverrideStatus() {
+  const el = $('overrideStatus');
+  if (!el) return;
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'Local override system unavailable.'; return; }
+  const status = ldb.listStatuses().find(s => s.id === activeDbId());
+  el.textContent = status?.hasOverride
+    ? `Override saved ${new Date(status.savedAt).toLocaleString()}`
+    : 'No local override saved.';
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { state.activeTab = b.dataset.tab; renderTabs(); }));
 
@@ -499,6 +520,18 @@ $('downloadBtn').addEventListener('click', () => {
   a.href = URL.createObjectURL(blob); a.download = filename; a.click();
   URL.revokeObjectURL(a.href);
   log('Downloaded ' + filename + ' — drop it into docs/config/' + (state.activeTab === 'loot' ? 'loot/' : 'shops/') + ' to apply.');
+});
+$('saveOverrideBtn').addEventListener('click', () => {
+  if (!window.LocalDBOverrides) { log('Local override system unavailable.'); return; }
+  const payload = state.activeTab === 'loot' ? lootData : shopData;
+  window.LocalDBOverrides.setOverride(activeDbId(), payload);
+  log('Saved ' + state.activeTab + ' data as a local override.');
+  refreshOverrideStatus();
+});
+$('clearOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride(activeDbId());
+  log('Cleared the local ' + state.activeTab + ' override.');
+  refreshOverrideStatus();
 });
 
 loadAll();

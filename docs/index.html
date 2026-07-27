@@ -41,6 +41,12 @@
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
   <script src="js/temporary-locales.js?v=20260725a"></script>
+  <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
+       editors save an edited attack-values.json/loot-pools.json/shop-stock.json
+       to localStorage and have the game load that instead of the repo file,
+       toggled from the onboarding save-select screen. Loaded before anything
+       that calls loadDatabase() (combat-config-loader.js, game.js, onboarding.js). -->
+  <script src="js/local-db-overrides.js?v=20260727a"></script>
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
