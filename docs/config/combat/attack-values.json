@@ -85,8 +85,12 @@
     "dabinggi-hound":            { "attackDamage": 10, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 45, "attackStaminaCost": 14, "attackCooldownS": 1.1, "attackTag": "poison", "attacks": ["pounce"] },
     "uumkaoii":                  { "attackDamage": 6,  "attackRangeTiles": 0.8,  "attackHalfConeDeg": 45, "attackStaminaCost": 12, "attackCooldownS": 1.3, "attackTag": "blunt",  "attacks": ["pounce"] },
     "gar-wolf":                  { "attackDamage": 12, "attackRangeTiles": 0.85, "attackHalfConeDeg": 42, "attackStaminaCost": 12, "attackCooldownS": 1.0, "attackTag": "sharp",  "attacks": ["pounce"] },
+    "grehlr":                    { "attackDamage": 14, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 44, "attackStaminaCost": 13, "attackCooldownS": 1.05, "attackTag": "sharp", "attacks": ["pounce"] },
+    "drenkirra":                 { "attackDamage": 13, "attackRangeTiles": 0.85, "attackHalfConeDeg": 43, "attackStaminaCost": 12, "attackCooldownS": 0.95, "attackTag": "sharp", "attacks": ["pounce"] },
     "gar-wolf-alpha":            { "attackDamage": 18, "attackRangeTiles": 0.95, "attackHalfConeDeg": 46, "attackStaminaCost": 16, "attackCooldownS": 1.0, "attackTag": "sharp",  "attacks": ["pounce"] },
     "gar-wolf-den-mother":       { "attackDamage": 24, "attackRangeTiles": 1.0,  "attackHalfConeDeg": 46, "attackStaminaCost": 16, "attackCooldownS": 1.0, "attackTag": "sharp",  "attacks": ["pounce"] },
-    "uumkaoii-wild-den-mother":  { "attackDamage": 17, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 45, "attackStaminaCost": 14, "attackCooldownS": 1.1, "attackTag": "blunt",  "attacks": ["pounce"] }
+    "uumkaoii-wild-den-mother":  { "attackDamage": 17, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 45, "attackStaminaCost": 14, "attackCooldownS": 1.1, "attackTag": "blunt",  "attacks": ["pounce"] },
+    "grehlr-den-mother":           { "attackDamage": 26, "attackRangeTiles": 1.0,  "attackHalfConeDeg": 46, "attackStaminaCost": 17, "attackCooldownS": 1.05, "attackTag": "sharp", "attacks": ["pounce"] },
+    "drenkirra-den-mother":        { "attackDamage": 22, "attackRangeTiles": 0.95, "attackHalfConeDeg": 45, "attackStaminaCost": 15, "attackCooldownS": 1.1, "attackTag": "blunt",  "attacks": ["pounce"] }
   }
 }

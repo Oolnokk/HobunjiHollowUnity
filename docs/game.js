@@ -1637,7 +1637,8 @@
       // their own url+species entry without touching this function.
       function playCreatureBark(c) {
         const cfg = combatSfxConfig().creatureBark;
-        playCreatureSfxAt(c, cfg, Number(cfg?.species?.[c.creatureKey]?.pitch) || 1);
+        const speciesCfg = cfg?.species?.[c.creatureKey];
+        playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
       }
 
       function playCreatureClawHit(c) {
@@ -1812,7 +1813,10 @@
       const CLIMB_SPEED_MUL = 0.5;
 
       // Global creature database — companions (whistle-bound) and hostiles
-      // (ambient-spawned) are both built from this table.
+      // (ambient-spawned) are both built from this table. Species sizes that
+      // need live tuning are sourced from scratchbones-config.js rather than
+      // being duplicated as literals in this database.
+      const WILDLIFE_CREATURE_MODEL_WIDTHS = window.SCRATCHBONES_CONFIG?.game?.wildlife?.creatureModelWidths || {};
       // canClimb: default false — a creature without the tag can still enter
       // an incline (cliff wall) tile (no longer a hard block), just at
       // CLIMB_SPEED_MUL speed, same as a non-swimmer crossing water. canSwim:
@@ -1908,6 +1912,28 @@
           },
           lootPool: 'creature_gar-wolf',
         },
+        grehlr: {
+          label: 'Grehlr', hostile: true, liveBirth: true,
+          maxHealth: 52, maxStamina: 38, moveSpeed: 135, chaseSpeed: 205,
+          attackDamage: 14, attackRangePx: TILE * 0.9, attackHalfConeRad: 44 * Math.PI / 180,
+          attackStaminaCost: 13, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6.5, leashRangePx: TILE * 9,
+          canClimb: true, canSwim: false, modelWidth: 2.2, spriteAspect: 2250 / 3000, tint: 0xffffff,
+          sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
+          lootPool: 'creature_grehlr',
+        },
+        drenkirra: {
+          label: 'Drenkirra', hostile: false, diet: 'herbivore', liveBirth: false,
+          maxHealth: 44, maxStamina: 36, moveSpeed: 145, chaseSpeed: 210,
+          attackDamage: 13, attackRangePx: TILE * 0.85, attackHalfConeRad: 43 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 0.95,
+          attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
+          sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
+          lootPool: 'creature_drenkirra',
+        },
         'gar-wolf-alpha': {
           label: 'Gar-wolf Alpha', hostile: true, liveBirth: true,
           maxHealth: 78, maxStamina: 46,
@@ -1990,6 +2016,28 @@
           },
           lootPool: 'creature_uumkaoii-wild-den-mother',
         },
+        'grehlr-den-mother': {
+          label: 'Grehlr Den-Mother', hostile: true, liveBirth: true,
+          maxHealth: 260, maxStamina: 95, moveSpeed: 120, chaseSpeed: 180,
+          attackDamage: 26, attackRangePx: TILE, attackHalfConeRad: 46 * Math.PI / 180,
+          attackStaminaCost: 17, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 6, leashRangePx: TILE * 4.5,
+          canClimb: true, canSwim: false, modelWidth: 3.1, spriteAspect: 2250 / 3000, tint: 0x806b74,
+          sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
+          lootPool: 'creature_grehlr-den-mother',
+        },
+        'drenkirra-den-mother': {
+          label: 'Drenkirra Den-Mother', hostile: true, diet: 'herbivore', liveBirth: false,
+          maxHealth: 220, maxStamina: 85, moveSpeed: 125, chaseSpeed: 185,
+          attackDamage: 22, attackRangePx: TILE * 0.95, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 15, attackCooldownS: 1.1,
+          attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
+          aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], spriteAspect: 523 / 831, tint: 0x789078,
+          sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
+          lootPool: 'creature_drenkirra-den-mother',
+        },
       };
 
       // Overrides CREATURE_DB's per-species attack* fields and the bandit
@@ -2037,7 +2085,7 @@
           // spawnPackAtDen) — no longer a single fixed hostileKey, since a
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
-          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
+          packSpecies: ['grehlr'],
           // Species pool a den's next HERD is randomly drawn from, when a den
           // rolls a herbivore population instead of a predator pack this
           // cycle (see spawnPackAtDen) — kept as a sibling pool to packSpecies
@@ -2052,8 +2100,7 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
-          packSpecies: ['gar-wolf', 'gar-wolf-alpha'],
-          herbivoreSpecies: ['uumkaoii-wild'],
+          herbivoreSpecies: ['drenkirra'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
           townReturnCol: 30, townReturnRow: 48,
@@ -3915,10 +3962,8 @@
       // permanent anatomical region (Uumkao'ii: fur + plates, both always
       // visible — unlike other species' future optional pattern layers).
       // Breeding blends parent colors per region with a small mutation
-      // chance; sell value rewards fur/plate color contrast. This pass is
-      // data-only: the math and Farm tab UI are fully real, but the in-game
-      // sprite doesn't yet apply per-region recoloring (no masked-texture
-      // pipeline exists for it — a follow-up once mask assets are authored).
+      // chance; sell value rewards fur/plate color contrast. The same genotype feeds Farm-tab valuation, breeding, and the masked
+      // texture compositor, keeping the displayed coat and stored genes in sync.
       // `weight` skews which colors actually turn up on an animal — real
       // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
       // orange an occasional accent and true red rare, so a flat uniform
@@ -3929,24 +3974,11 @@
       // at 2, red at 1, which nets out to roughly gray/brown/tan ~87%,
       // orange ~9%, red ~4% of picks given how many entries land in each
       // bucket (see _pickWeightedFurEntry below).
-      const LIVESTOCK_FUR_PALETTE = [
-        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:4},{id:'charcoal',name:'Charcoal',hex:'#55585c',weight:4},
-        {id:'blue-grey',name:'Blue Grey',hex:'#596879',weight:4},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
-        {id:'dove',name:'Dove Grey',hex:'#756f78',weight:4},{id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},
-        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:4},
-        {id:'cream',name:'Cream',hex:'#c7aa77',weight:4},{id:'champagne',name:'Champagne',hex:'#b99a72',weight:4},
-        {id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
-        {id:'buff',name:'Buff',hex:'#b77c49',weight:2},{id:'honey',name:'Honey',hex:'#b97832',weight:2},
-        {id:'golden',name:'Golden',hex:'#ae8430',weight:2},{id:'fawn',name:'Fawn',hex:'#a47650',weight:4},
-        {id:'taupe',name:'Taupe',hex:'#806a5b',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
-        {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c',weight:4},
-        {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:4},{id:'liver',name:'Liver',hex:'#65403d',weight:4},
-        {id:'chestnut',name:'Chestnut',hex:'#894e31',weight:1},{id:'mahogany',name:'Mahogany',hex:'#784337',weight:4},
-        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
-        {id:'auburn',name:'Auburn',hex:'#874438',weight:1},{id:'copper',name:'Copper',hex:'#a85e3a',weight:2},
-        {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
-        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
-      ];
+      const LIVESTOCK_FUR_PALETTES = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.palettes || {};
+      const LIVESTOCK_FUR_PALETTE = LIVESTOCK_FUR_PALETTES.default || [];
+      function _livestockPalette(kind) {
+        return LIVESTOCK_FUR_PALETTES[kind] || LIVESTOCK_FUR_PALETTE;
+      }
       // Cumulative-weight draw over LIVESTOCK_FUR_PALETTE (or a filtered
       // subset, e.g. mutateFurColor excluding the current color) — every
       // random fur-color pick in the game goes through this instead of a
@@ -3981,13 +4013,14 @@
         return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
       }
       function _furNormalizeHex(s) { const m = String(s).trim().match(/^#?([0-9a-f]{6})$/i); return m ? '#' + m[1].toLowerCase() : null; }
-      function _furPaletteEntry(color) {
-        const normalized = _furNormalizeHex(color) || LIVESTOCK_FUR_PALETTE[0].hex;
-        const exact = LIVESTOCK_FUR_PALETTE.find(x => x.hex === normalized);
+      function _furPaletteEntry(color, kind) {
+        const palette = _livestockPalette(kind);
+        const normalized = _furNormalizeHex(color) || palette[0].hex;
+        const exact = Object.values(LIVESTOCK_FUR_PALETTES).flat().find(x => x.hex.toLowerCase() === normalized);
         if (exact) return exact;
         const [h, s] = _furRgbToHsv(..._furHexToRgb(normalized));
-        let best = LIVESTOCK_FUR_PALETTE[0], score = Infinity;
-        for (const entry of LIVESTOCK_FUR_PALETTE) {
+        let best = palette[0], score = Infinity;
+        for (const entry of palette) {
           const [eh, es] = _furRgbToHsv(..._furHexToRgb(entry.hex));
           let dh = Math.abs(h - eh); dh = Math.min(dh, 1 - dh);
           const d = dh * dh * 2.5 + (s - es) * (s - es);
@@ -3995,19 +4028,20 @@
         }
         return best;
       }
-      function _furPaletteColor(color) { return _furPaletteEntry(color).hex; }
+      function _furPaletteColor(color, kind) { return _furPaletteEntry(color, kind).hex; }
       function _furPaletteName(color) { return _furPaletteEntry(color).name; }
-      function randomFurColor() { return _pickWeightedFurEntry().hex; }
+      function randomFurColor(kind) { return _pickWeightedFurEntry(_livestockPalette(kind)).hex; }
 
-      function blendFurHex(colorA, colorB) {
-        const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB)));
+      function blendFurHex(colorA, colorB, kind) {
+        const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA, kind))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB, kind)));
         let dh = hb[0] - ha[0]; if (dh > 0.5) dh -= 1; if (dh < -0.5) dh += 1;
         const h = (ha[0] + dh * 0.5 + 1) % 1, s = (ha[1] + hb[1]) / 2, v = 0.72;
         const [r, g, b] = _furHsvToRgb(h, s, v);
-        return _furPaletteColor('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''));
+        return _furPaletteColor('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''), kind);
       }
-      function mutateFurColor(hex) {
-        const current = _furPaletteEntry(hex), choices = LIVESTOCK_FUR_PALETTE.filter(x => x.id !== current.id);
+      function mutateFurColor(hex, kind) {
+        const palette = _livestockPalette(kind);
+        const current = _furPaletteEntry(hex, kind), choices = palette.filter(x => x.id !== current.id);
         return _pickWeightedFurEntry(choices).hex;
       }
 
@@ -4057,6 +4091,8 @@
       const LIVESTOCK_PATTERN_DEFS = {
         'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
         'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
+        grehlr: ['mitts', 'spectacles'],
+        drenkirra: ['bodystripes', 'spectacles'],
       };
       // CREATURE_DB variants that reuse a pattern-species' sprite/pattern
       // assets under a different creatureKey (different stats/label, same
@@ -4069,18 +4105,21 @@
         'gar-wolf-den-mother': 'gar-wolf',
         'uumkaoii-wild': 'uumkaoii',
         'uumkaoii-wild-den-mother': 'uumkaoii',
+        'grehlr-den-mother': 'grehlr',
+        'drenkirra-den-mother': 'drenkirra',
       };
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
-      function pickTwoLivestockFurColors() {
-        let a = _pickWeightedFurEntry(), b = a;
+      function pickTwoLivestockFurColors(kind) {
+        const palette = _livestockPalette(kind);
+        let a = _pickWeightedFurEntry(palette), b = a;
         for (let i = 0; i < 40; i++) {
-          b = _pickWeightedFurEntry();
+          b = _pickWeightedFurEntry(palette);
           const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
           let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
           if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
         }
-        if (a.id === b.id) b = LIVESTOCK_FUR_PALETTE[(LIVESTOCK_FUR_PALETTE.indexOf(a) + 7) % LIVESTOCK_FUR_PALETTE.length];
+        if (a.id === b.id) b = palette[(palette.indexOf(a) + Math.max(1, Math.floor(palette.length / 2))) % palette.length];
         return [a, b];
       }
 
@@ -4100,24 +4139,33 @@
       // randomly-chosen optional pattern layers (copies:1, dominant) — the
       // exact same odds used for wild-den pack genotypes (see
       // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
-      // pack member are statistically the same roll.
+      // pack member are statistically the same roll. Palette selection is
+      // species-aware: Drenkirra use the tropical palette configured in
+      // scratchbones-config.js through creation, breeding, and rendering.
       function makeDefaultGenotype(kind) {
         if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           return {
-            fur:    { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
-            plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
+            fur:    { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
+            plates: { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
           };
         }
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
         if (patterns) {
-          const [first, second] = pickTwoLivestockFurColors();
-          // Each pattern layer gets an independent 1/3 chance of showing up
+          const [first, second] = pickTwoLivestockFurColors(kind);
+          // Each pattern layer gets an independently configured chance of showing up
           // (rather than rolling "how many, then which") — with 3 patterns
           // that's ~70% odds of at least one being visible per specimen,
           // instead of leaving a pack looking plain too often.
           const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
+          const geneticsCfg = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics || {};
           for (const id of patterns) {
-            const enabled = Math.random() < (1 / 3);
+            const configuredChance = geneticsCfg.patternChances?.[kind]?.[id];
+            const chance = Number.isFinite(Number(configuredChance))
+              ? Number(configuredChance)
+              : Number.isFinite(Number(geneticsCfg.defaultPatternChance))
+                ? Number(geneticsCfg.defaultPatternChance)
+                : (1 / 3);
+            const enabled = Math.random() < chance;
             genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
           const enabledIds = patterns.filter(id => genotype[id].enabled);
@@ -4190,10 +4238,10 @@
         if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           const child = {};
           for (const layerId of ['fur', 'plates']) {
-            const la = genotypeA?.[layerId] || { color: randomFurColor() };
-            const lb = genotypeB?.[layerId] || { color: randomFurColor() };
-            let color = blendFurHex(la.color, lb.color);
-            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
+            const la = genotypeA?.[layerId] || { color: randomFurColor(kind) };
+            const lb = genotypeB?.[layerId] || { color: randomFurColor(kind) };
+            let color = blendFurHex(la.color, lb.color, kind);
+            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
             child[layerId] = { color, copies: 2, inheritance: 'dominant' };
           }
           return child;
@@ -4201,20 +4249,20 @@
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
         if (!patterns) return makeDefaultGenotype(kind);
         const child = {};
-        const baseA = genotypeA?.base || { color: randomFurColor() }, baseB = genotypeB?.base || { color: randomFurColor() };
-        let baseColor = blendFurHex(baseA.color, baseB.color);
-        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor);
+        const baseA = genotypeA?.base || { color: randomFurColor(kind) }, baseB = genotypeB?.base || { color: randomFurColor(kind) };
+        let baseColor = blendFurHex(baseA.color, baseB.color, kind);
+        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor, kind);
         child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
         for (const id of patterns) {
-          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
-          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
+          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
+          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
           const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
           let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
           if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
           const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
           const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
-          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color) : (alleleA?.color || alleleB?.color || randomFurColor());
-          if (mutated) color = mutateFurColor(color);
+          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomFurColor(kind));
+          if (mutated) color = mutateFurColor(color, kind);
           child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
         }
         const childEnabledIds = patterns.filter(id => child[id].enabled);
@@ -4429,7 +4477,7 @@
       // directly. A kind missing here falls back to dabinggi-hound's 1.7
       // rather than silently mis-sizing — add an entry for any new
       // pattern-layer species instead of expanding a size ternary.
-      const LIVESTOCK_ANIMAL_WIDTH = { 'gar-wolf': 1.9, 'dabinggi-hound': 1.7 };
+      const LIVESTOCK_ANIMAL_WIDTH = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
 
       // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
       // livestock — same tile-hopping wander/no-combat shape as
@@ -4439,7 +4487,7 @@
       // below, until that async compose resolves).
       function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
         const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
-        const ANIMAL_H = ANIMAL_W * (600 / 1375); // sprite is 1375x600px, same convention as CREATURE_DB
+        const ANIMAL_H = ANIMAL_W * (CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
         const halfH = ANIMAL_H / 2;
         const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
 
@@ -4539,11 +4587,17 @@
       function makeDabinggiHoundAnimal(col, row, livestockId, genotype) {
         return makePatternLivestockAnimal('dabinggi-hound', 'Dabinggi-hound', '🐕', col, row, livestockId, genotype);
       }
+      function makeGrehlrAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('grehlr', 'Grehlr', '🐾', col, row, livestockId, genotype);
+      }
+      function makeDrenkirraAnimal(col, row, livestockId, genotype) {
+        return makePatternLivestockAnimal('drenkirra', 'Drenkirra', '🪿', col, row, livestockId, genotype);
+      }
 
       // Livestock kind → factory, so restoring saved livestock on world load
       // can dispatch by kind without hardcoding uumkao'ii — the array this
       // reads is meant to grow into other livestock types later.
-      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal };
+      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal };
 
       // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
       // Grows alongside LIVESTOCK_FACTORIES as more species ship. Both new
@@ -4558,7 +4612,7 @@
       // hound isn't a hostile wild-pack species, so it has no "-den-mother"
       // CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below) — its only
       // source is Jubmir's daily trader stock (see _loadJubmirStock).
-      const LIVESTOCK_ITEM_KINDS = { uumkaoiiCrate: 'uumkaoii', uumkaoiiEgg: 'uumkaoii', garWolfBaby: 'gar-wolf', dabinggiHoundEgg: 'dabinggi-hound' };
+      const LIVESTOCK_ITEM_KINDS = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {};
 
       // Den-Mother CREATURE_DB key -> which item her nest hands out — read
       // directly off her species (see loadBuildingScene's 'map_i_den_'
@@ -4567,7 +4621,8 @@
       // uumkaoii-wild-den-mother: false), which is exactly the kind of
       // coincidence that silently breaks the moment a third Den-Mother
       // species ships sharing a liveBirth value with one of these two.
-      const DEN_MOTHER_ITEM_KEYS = { 'gar-wolf-den-mother': 'garWolfBaby', 'uumkaoii-wild-den-mother': 'uumkaoiiEgg' };
+      const DEN_MOTHER_DEFS = window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers || {};
+      const DEN_MOTHER_ITEM_KEYS = Object.fromEntries(Object.values(DEN_MOTHER_DEFS).map(def => [def.creatureKey, def.nestItemKey]));
 
       // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
       // that item — populated when a Den-Mother's nest grants an egg/baby
@@ -5032,7 +5087,10 @@
         const gridCols = optCols || getActiveCols();
         const gridRows = optRows || getActiveRows();
         const modelWidth = def.modelWidth;
-        const modelHeight = modelWidth * (600 / 1375); // all creature sprites are 1375×600px
+        // New creature art is not required to use the legacy 1375×600 canvas.
+        // Definitions with a different source canvas provide its width/height
+        // ratio so the avatar plane preserves the uploaded sprite's aspect.
+        const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
         const halfH = modelHeight / 2;
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
@@ -6114,7 +6172,7 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
+          if (def.hostile !== false && c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 
@@ -15465,17 +15523,21 @@
       // The seed is the mapId itself (already unique per zone+den, see
       // performTothalShift's denTransitions), so re-entering the same den
       // always reaches the same cavern.
-      // Deterministic per den (same mapId -> same pick every time, independent
-      // of the wilderness zone's own ever-re-rolled exterior pack/herd
-      // species) — which Den-Mother variant guards this den's nest. Picks
-      // uniformly from DEN_MOTHER_ITEM_KEYS' own keys (the same registry
-      // that already maps a Den-Mother species to her nest's item) instead
-      // of a hardcoded 2-way coin flip, so a third Den-Mother species is a
-      // single new entry there rather than also needing this rewritten from
-      // a `< 0.5` ternary into a 3-way split.
+      // Deterministic per den (same mapId -> same pick every time): choose a
+      // Den-Mother only from the predator/herbivore species native to this
+      // cavern's exterior zone. DEN_MOTHER_DEFS maps each base species to its
+      // mother variant and nest reward, keeping Grehlr in the north and
+      // Drenkirra in the southern cloud forest all the way through the den.
       function pickDenMotherKind(mapId) {
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
-        const kinds = Object.keys(DEN_MOTHER_ITEM_KEYS);
+        const zoneId = _denCavernZoneOf.get(mapId);
+        const zoneDef = EXTERIOR_ZONES[zoneId];
+        const nativeSpecies = [...(zoneDef?.packSpecies || []), ...(zoneDef?.herbivoreSpecies || [])];
+        const kinds = nativeSpecies.map(kind => DEN_MOTHER_DEFS[kind]?.creatureKey).filter(Boolean);
+        if (!kinds.length) {
+          window.__farmLog?.(`[wildlife] ${mapId}: no native Den-Mother configured for zone "${zoneId || 'unknown'}".`, 'warn');
+          return null;
+        }
         return kinds[Math.floor(rng() * kinds.length)];
       }
 
@@ -15684,7 +15746,7 @@
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
           if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
             const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
-            const motherKey = mapData.denMotherKind || 'gar-wolf-den-mother';
+            const motherKey = mapData.denMotherKind;
             const motherDef = CREATURE_DB[motherKey];
             // Same shared per-family genotype as this den's exterior pack
             // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
@@ -15707,21 +15769,20 @@
             }
             const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
               ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
-            const remaining = 1 + Math.floor(nestRng() * 3); // 1-3
+            const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
+            const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
+            const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
+            const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
             const liveBirth = !!motherDef?.liveBirth;
-            let itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
-            if (!itemKey) {
-              // No mapped item for this Den-Mother species — fall back to
-              // the old liveBirth guess so the nest still hands out SOMETHING
-              // rather than breaking, but flag it since it means
-              // DEN_MOTHER_ITEM_KEYS is missing an entry for a real species.
-              itemKey = liveBirth ? 'garWolfBaby' : 'uumkaoiiEgg';
-              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey}" has no DEN_MOTHER_ITEM_KEYS entry — guessing "${itemKey}" from liveBirth=${liveBirth}, may be wrong.`, 'warn');
+            const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+            if (itemKey) {
+              _denNests.set(mapId, {
+                col: nestCol, row: nestRow, w: 2, h: 2,
+                itemKey, liveBirth, remaining, genotype: denGenotype,
+              });
+            } else {
+              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
             }
-            _denNests.set(mapId, {
-              col: nestCol, row: nestRow, w: 2, h: 2,
-              itemKey, liveBirth, remaining, genotype: denGenotype,
-            });
             // Simple nest marker so the 2x2 chamber reads as an objective.
             const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
             const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
@@ -17486,11 +17547,7 @@
       // Per-species farm-resource output: item produced + how many in-game
       // days the cooldown takes. A kind with no entry here can be housed but
       // won't produce anything yet.
-      const LIVESTOCK_RESOURCE_DEFS = {
-        uumkaoii: { itemKey: 'uumkaoiiEgg', cooldownDays: 2 },
-        'gar-wolf': { itemKey: 'garWolfMilk', cooldownDays: 1 },
-        'dabinggi-hound': { itemKey: 'dabinggiHoundVenom', cooldownDays: 1 },
-      };
+      const LIVESTOCK_RESOURCE_DEFS = window.SCRATCHBONES_CONFIG?.game?.livestock?.resources || {};
 
       // Which action verb the in-world "Collect" button shows, per kind —
       // gar-wolf/dabinggi-hound's resource is milked out of them rather than
@@ -17498,7 +17555,7 @@
       // resourceReady/collectLivestockResource machinery (see
       // _farmAnimalGetButtons) — this only changes the button's label/action
       // string, not the mechanic.
-      const LIVESTOCK_RESOURCE_VERB = { 'gar-wolf': 'Milk', 'dabinggi-hound': 'Milk' };
+      const LIVESTOCK_RESOURCE_VERB = Object.fromEntries(Object.entries(LIVESTOCK_RESOURCE_DEFS).filter(([, def]) => def.verb).map(([kind, def]) => [kind, def.verb]));
 
       // A housed uumkao'ii's dew cooldown is tracked separately from its
       // LIVESTOCK_RESOURCE_DEFS egg cooldown (see dewDaysUntil/dewReady on
@@ -18709,6 +18766,9 @@
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
         { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
+        { key: 'grehlrBaby',          icon: '🐾', label: 'GREHLR BABY', max: 9  },
+        { key: 'fertileDrenkirraEgg', icon: '🥚', label: 'FERTILE DRENKIRRA EGG', max: 9  },
+        { key: 'drenkirraEgg',        icon: '🥚', label: 'DRENKIRRA EGG', max: 99 },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
         { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
@@ -18751,11 +18811,18 @@
         alphaGarWolfHide: { icon: '🟫', label: 'Alpha Gar-wolf Hide', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide'], desc: 'A thick, battle-scarred hide stripped from a slain alpha gar-wolf.' },
         dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
         dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
+        grehlrMeat: { icon: '🥩', label: 'Grehlr Meat', cat: 'material', sellPrice: 11, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a northern-cliff grehlr.' },
+        grehlrHide: { icon: '🟫', label: 'Grehlr Hide', cat: 'material', sellPrice: 17, tags: ['Material', 'Hide'], desc: 'A dense hide stripped from a fallen grehlr.' },
+        drenkirraMeat: { icon: '🥩', label: 'Drenkirra Meat', cat: 'material', sellPrice: 10, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a cloud-forest drenkirra.' },
+        drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
+        grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
+        fertileDrenkirraEgg: { icon: '🥚', label: 'Fertile Drenkirra Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a southern-cloud-forest den. Add it to a farm or stable to hatch the drenkirra inside.' },
+        drenkirraEgg: { icon: '🥚', label: 'Drenkirra Egg', cat: 'material', sellPrice: 8, tags: ['Ingredient', 'Egg', 'Food'], desc: 'A regular unfertilized egg laid by a farmed drenkirra, suitable for eating or cooking.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
