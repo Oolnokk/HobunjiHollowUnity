@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_bandit_gang_config.v1",
-  "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, mastery/difficulty scaling, and corpse loot are all data so gangs can be rebalanced without touching game.js.",
+  "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, and mastery/difficulty scaling are all data so gangs can be rebalanced without touching game.js. Corpse loot per rank now lives in docs/config/loot/loot-pools.json (pools bandit_grunt/bandit_lieutenant/bandit_captain), alongside every other drop table.",
 
   "speciesWeights": {
     "mao-ao": 40,
@@ -75,23 +75,5 @@
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
     "maxCampsPerZone": 2,
     "tentsCountTowardClear": true
-  },
-
-  "corpseLoot": {
-    "_comment": "Rolled the same way as any other creature death loot (game.js rollLootFromTable -- every entry always contributes its own min..max roll). Guaranteed worn-clothing drop is handled separately in code (100% of equippedCosmetics), not listed here.",
-    "grunt": [
-      { "key": "gold", "min": 2, "max": 8 },
-      { "key": "banditScrapMetal", "min": 0, "max": 2 }
-    ],
-    "lieutenant": [
-      { "key": "gold", "min": 6, "max": 16 },
-      { "key": "banditScrapMetal", "min": 1, "max": 3 },
-      { "key": "banditTreasureToken", "min": 0, "max": 1 }
-    ],
-    "captain": [
-      { "key": "gold", "min": 15, "max": 35 },
-      { "key": "banditScrapMetal", "min": 2, "max": 5 },
-      { "key": "banditTreasureToken", "min": 1, "max": 2 }
-    ]
   }
 }

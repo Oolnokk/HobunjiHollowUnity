@@ -1,0 +1,54 @@
+{
+  "schema": "hobunji_shop_stock.v1",
+  "note": "Single source of truth for every shop's stock — replaces the old hand-wired GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/BARN_TIERS/Jubmir constants and generalizes WARES_POOLS. Authored via docs/tools/loot-shop-editor/. Read by docs/game.js's loadLootShopConfig(). Conditions use the shared docs/js/condition-registry.js schema (weekdays/seasons/weather/timesOfDay/maps/playerSpecies only — shop stock has no NPC-relationship/dialogue-encounter/station concept).",
+  "shops": {
+    "generalStoreWares": {
+      "label": "Funji & Son's General Store",
+      "menuId": "generalStore",
+      "goods": [
+        { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} },
+        { "key": "bucket",       "icon": "🪣", "name": "Tin Bucket",      "desc": "A utilitarian tin bucket for hauling water.",  "price": 8,  "gives": { "bucketFurniture": 1 }, "category": "goods", "conditions": {} },
+        { "key": "copperBarrel", "icon": "🛢️", "name": "Copper Barrel",   "desc": "A sturdy copper-hooped storage barrel.",       "price": 20, "gives": { "copperBarrelFurniture": 1 }, "category": "goods", "conditions": {} },
+        { "key": "crateStack",   "icon": "📦", "name": "Crate Stack",     "desc": "Stacked wooden crates for storing loose goods.","price": 14, "gives": { "crateStackFurniture": 1 }, "category": "goods", "conditions": {} },
+        { "key": "stool",        "icon": "🪑", "name": "Round Stool",     "desc": "A simple round stool — good for any space.",   "price": 10, "gives": { "stoolFurniture": 1 }, "category": "goods", "conditions": {} },
+        { "key": "candleTable",  "icon": "🕯️", "name": "Candle Table",    "desc": "Small table with a candle for warm light.",    "price": 15, "gives": { "candleTableFurniture": 1 }, "category": "goods", "conditions": {} },
+        { "key": "washTub",      "icon": "🛁", "name": "Copper Wash Tub", "desc": "A copper tub for bathing or laundry.",         "price": 25, "gives": { "washTubFurniture": 1 }, "category": "goods", "conditions": {} },
+        { "key": "counter",      "icon": "🏪", "name": "Shop Counter",    "desc": "A sturdy counter for conducting business.",    "price": 40, "gives": { "counterFurniture": 1 }, "category": "goods", "conditions": {} }
+      ],
+      "clothingRotation": {
+        "slots": 4,
+        "pieces": [
+          { "id": "rugged_poncho", "label": "Rugged Poncho",        "category": "overwear", "usesB": true,  "price": 70, "conditions": {} },
+          { "id": "fine_poncho",   "label": "Fine Poncho",          "category": "overwear", "usesB": true,  "price": 80, "conditions": {} },
+          { "id": "fine_hood",     "label": "Fine Hood",            "category": "hood",     "usesB": true,  "price": 60, "conditions": {} },
+          { "id": "tankan_tunic",  "label": "Tankan Tunic",         "category": "torso",    "usesB": false, "price": 50, "conditions": {} },
+          { "id": "bandolier1",    "label": "Bandolier",            "category": "torso",    "usesB": false, "price": 40, "conditions": {} },
+          { "id": "appearance::hat::basic_headband",      "label": "Basic Headband",        "category": "hat", "usesB": false, "price": 35, "conditions": {} },
+          { "id": "appearance::hat::leather_headband",    "label": "Leather Headband",      "category": "hat", "usesB": false, "price": 40, "conditions": {} },
+          { "id": "appearance::hat::riverlandskasa_wide", "label": "Riverland Kasa (Wide)", "category": "hat", "usesB": false, "price": 45, "conditions": {} }
+        ]
+      }
+    },
+    "carpenterBarnPlans": {
+      "label": "Dzibim Khibu's Carpentry",
+      "menuId": "carpenterShop",
+      "tiers": {
+        "small":  { "label": "Little Barn", "slots": 4,  "price": 500,  "planItem": "barnPlanSmall",  "conditions": {} },
+        "medium": { "label": "Medium Barn",  "slots": 8,  "price": 1000, "planItem": "barnPlanMedium", "conditions": {} },
+        "large":  { "label": "Large Barn",   "slots": 12, "price": 1500, "planItem": "barnPlanLarge",  "conditions": {} }
+      }
+    },
+    "jubmirWares": {
+      "label": "Jubmir's Wares",
+      "menuId": "jubmirShop",
+      "goods": [
+        {
+          "key": "dabinggiHoundEgg", "icon": "🥚", "name": "Dabinggi-hound Egg",
+          "desc": "A rare, non-native find. One only, restocked daily.",
+          "price": 200, "givesGenotype": "dabinggi-hound",
+          "restockDays": 1, "maxPerRestock": 1, "conditions": {}
+        }
+      ]
+    }
+  }
+}

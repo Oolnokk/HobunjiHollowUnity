@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hobunji Loot &amp; Shop Editor</title>
+<style>
+:root{
+  --bg:#07101a;--panel:#111b28;--panel2:#0c141e;--text:#edf4ff;--muted:#9fb2cc;
+  --line:#26384f;--acc:#6aa7ff;--good:#34d399;--warn:#fbbf24;--bad:#fb7185;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden}
+button,input,select,textarea{font:inherit}
+button{border:1px solid rgba(106,167,255,.38);background:rgba(106,167,255,.16);color:var(--text);
+  border-radius:11px;padding:7px 11px;font-weight:750;cursor:pointer}
+button.secondary{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+button.good{border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.14)}
+button.danger{border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.14);color:var(--bad)}
+button:disabled{opacity:.35;cursor:not-allowed}
+button.small{padding:4px 8px;font-size:11px;border-radius:8px}
+input,select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+  border-radius:9px;color:var(--text);padding:6px 9px;outline:none}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;
+  text-transform:uppercase;letter-spacing:.3px}
+
+#app{height:100%;display:flex;flex-direction:column}
+#topbar{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-shrink:0;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel),var(--panel2))}
+#topbar h1{margin:0;font-size:14px;color:var(--acc);letter-spacing:.5px;white-space:nowrap}
+.spacer{flex:1}
+.tab{border:1px solid var(--line);background:transparent;border-radius:9px 9px 0 0;
+  padding:8px 16px;color:var(--muted);font-weight:700}
+.tab.active{background:var(--panel2);color:var(--text);border-bottom-color:var(--panel2)}
+#tabbar{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);flex-shrink:0}
+#workspace{flex:1;min-height:0;display:flex}
+.pane{display:none;flex:1;min-height:0}
+.pane.active{display:flex}
+
+#sidebar{width:230px;min-width:190px;display:flex;flex-direction:column;flex-shrink:0;
+  border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));overflow-y:auto}
+.paneHead{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
+  font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px}
+.idRow{display:flex;align-items:center;gap:4px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+.idRow:hover{background:rgba(255,255,255,.04)}
+.idRow.active{background:rgba(106,167,255,.14)}
+.idRow .idLabel{flex:1;font-size:12.5px}
+.idRow .idKey{font-size:10px;color:var(--muted);display:block}
+
+.detail{flex:1;min-height:0;overflow-y:auto;padding:14px 18px}
+.entryCard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;
+  background:rgba(255,255,255,.02)}
+.entryRow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px}
+.field{display:flex;flex-direction:column;gap:2px}
+.field input,.field select{width:110px}
+.field.wide input{width:220px}
+.field.narrow input{width:64px}
+.entryTopline{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.entryTitle{font-weight:750;font-size:12.5px}
+h2.secTitle{font-size:13px;color:var(--acc);margin:18px 0 8px;letter-spacing:.3px}
+h2.secTitle:first-child{margin-top:0}
+
+.condChipList{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:4px}
+.condChip{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 5px 3px 8px;
+  border-radius:999px;border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.14);
+  color:var(--text);white-space:nowrap}
+.condChipX{width:14px;height:14px;padding:0;border:none;background:transparent;color:var(--muted);
+  font-size:11px;line-height:1;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.condChipX:hover{background:rgba(255,255,255,.12);color:var(--text)}
+.condAddBtn{font-size:10px;padding:3px 8px}
+.condPopover{margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel2);display:flex;flex-direction:column;gap:6px;max-width:280px}
+.condPopover.hidden{display:none}
+.condPopValList{display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto}
+.condCheckRow{display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;color:var(--text)}
+.condCheckRow input{width:auto}
+.iMuted{color:var(--muted);font-size:11px}
+
+#log{flex-shrink:0;border-top:1px solid var(--line);background:#000;color:#7fd88a;
+  font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;padding:4px 10px;max-height:70px;overflow-y:auto;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1>⚗️ Loot &amp; Shop Editor</h1>
+    <div class="spacer"></div>
+    <button class="secondary small" id="loadBtn">Reload from server</button>
+    <button class="secondary small" id="copyBtn">Copy JSON</button>
+    <button class="good small" id="downloadBtn">Download JSON</button>
+  </div>
+  <div id="tabbar">
+    <button class="tab active" data-tab="loot">Loot Pools</button>
+    <button class="tab" data-tab="shop">Shop Stock</button>
+  </div>
+  <div id="workspace">
+    <div class="pane active" id="paneLoot">
+      <div id="sidebar">
+        <div class="paneHead">Pools</div>
+        <div id="poolList"></div>
+        <div style="padding:8px"><button class="secondary small" id="addPoolBtn" style="width:100%">+ New Pool</button></div>
+      </div>
+      <div id="poolDetail" class="detail"></div>
+    </div>
+    <div class="pane" id="paneShop">
+      <div id="sidebarShop" style="width:230px;min-width:190px;display:flex;flex-direction:column;flex-shrink:0;
+        border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));overflow-y:auto">
+        <div class="paneHead">Shops</div>
+        <div id="shopList"></div>
+        <div style="padding:8px"><button class="secondary small" id="addShopBtn" style="width:100%">+ New Shop</button></div>
+      </div>
+      <div id="shopDetail" class="detail"></div>
+    </div>
+  </div>
+  <pre id="log">loading…</pre>
+</div>
+
+<!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
+     see docs/js/condition-registry.js. -->
+<script src="../../js/condition-registry.js"></script>
+<script>
+'use strict';
+
+function log(msg){ const el = document.getElementById('log'); el.textContent = (el.textContent === 'loading…' ? '' : el.textContent + '\n') + msg; el.scrollTop = el.scrollHeight; }
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function $(id){ return document.getElementById(id); }
+function newId(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+// Only the axes that make sense for loot/shop gating outside a dialogue
+// conversation — no relationship/encounter/station concept here (see the
+// note at the top of both docs/config/loot/loot-pools.json and
+// docs/config/shops/shop-stock.json).
+const CONDITION_CATEGORIES = [
+  { key: 'weekdays',      label: 'Weekday',       values: () => ConditionRegistry.WEEKDAYS },
+  { key: 'seasons',       label: 'Season',        values: () => ConditionRegistry.SEASONS },
+  { key: 'weather',       label: 'Weather',       values: () => ConditionRegistry.WEATHERS },
+  { key: 'timesOfDay',    label: 'Time of day',   values: () => ConditionRegistry.TIMES_OF_DAY },
+  { key: 'playerSpecies', label: 'Player species',values: () => ConditionRegistry.PLAYER_SPECIES },
+];
+const emptyConditions = ConditionRegistry.emptyConditions;
+
+let lootData = { schema: 'hobunji_loot_pools.v1', note: '', pools: {} };
+let shopData = { schema: 'hobunji_shop_stock.v1', note: '', shops: {} };
+let state = { activeTab: 'loot', selectedPoolId: null, selectedShopId: null, condPopovers: {} };
+
+async function loadAll() {
+  try {
+    const [lr, sr] = await Promise.all([
+      fetch('../../config/loot/loot-pools.json'),
+      fetch('../../config/shops/shop-stock.json'),
+    ]);
+    lootData = await lr.json();
+    shopData = await sr.json();
+    state.selectedPoolId = Object.keys(lootData.pools || {})[0] || null;
+    state.selectedShopId = Object.keys(shopData.shops || {})[0] || null;
+    log('Loaded loot-pools.json (' + Object.keys(lootData.pools||{}).length + ' pools) and shop-stock.json (' + Object.keys(shopData.shops||{}).length + ' shops).');
+  } catch (e) {
+    log('Load failed: ' + e.message + ' — starting blank.');
+  }
+  renderAll();
+}
+
+function renderAll() { renderTabs(); renderPoolList(); renderPoolDetail(); renderShopList(); renderShopDetail(); }
+
+// ─── Tabs ───────────────────────────────────────────────────────────────────
+function renderTabs() {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === state.activeTab));
+  $('paneLoot').classList.toggle('active', state.activeTab === 'loot');
+  $('paneShop').classList.toggle('active', state.activeTab === 'shop');
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { state.activeTab = b.dataset.tab; renderTabs(); }));
+
+// ─── Condition picker (adapted from docs/tools/dialogue-editor/) ──────────
+function conditionChipLabel(catKey, value) {
+  const cat = CONDITION_CATEGORIES.find(c => c.key === catKey);
+  return (cat?.label || catKey) + ': ' + value;
+}
+function renderConditionPicker(containerEl, bag, onChange, popKey) {
+  const popState = state.condPopovers[popKey] || { open: false, cat: CONDITION_CATEGORIES[0].key };
+  const curCat = popState.cat;
+  const curCatDef = CONDITION_CATEGORIES.find(c => c.key === curCat);
+  const chips = [];
+  for (const cat of CONDITION_CATEGORIES) (bag[cat.key] || []).forEach(v => chips.push({ key: cat.key, value: v }));
+
+  containerEl.innerHTML = `
+    <div class="condChipList">
+      ${chips.map((c,i) => `<span class="condChip" data-i="${i}">${esc(conditionChipLabel(c.key,c.value))}<button class="condChipX" data-i="${i}" type="button">×</button></span>`).join('')}
+      <button class="condAddBtn secondary small" type="button">+ Condition</button>
+    </div>
+    <div class="condPopover${popState.open?'':' hidden'}">
+      <select class="condPopCat">${CONDITION_CATEGORIES.map(c => `<option value="${c.key}"${c.key===curCat?' selected':''}>${esc(c.label)}</option>`).join('')}</select>
+      <div class="condPopValList"></div>
+      <button class="secondary small condPopClose" type="button">Done</button>
+    </div>`;
+
+  const rerender = next => { state.condPopovers[popKey] = next; renderConditionPicker(containerEl, bag, onChange, popKey); };
+
+  containerEl.querySelectorAll('.condChipX').forEach(btn => btn.addEventListener('click', () => {
+    const c = chips[+btn.dataset.i];
+    const arr = bag[c.key]; const idx = arr.indexOf(c.value); if (idx !== -1) arr.splice(idx, 1);
+    onChange(); rerender(popState);
+  }));
+  containerEl.querySelector('.condAddBtn').addEventListener('click', () => rerender({ open: !popState.open, cat: curCat }));
+  containerEl.querySelector('.condPopClose').addEventListener('click', () => rerender({ open: false, cat: curCat }));
+  containerEl.querySelector('.condPopCat').addEventListener('change', e => rerender({ open: true, cat: e.target.value }));
+
+  const valList = containerEl.querySelector('.condPopValList');
+  const values = curCatDef.values();
+  const active = bag[curCatDef.key] || [];
+  valList.innerHTML = values.length
+    ? values.map(v => `<label class="condCheckRow"><input type="checkbox" data-v="${esc(v)}"${active.includes(v)?' checked':''}><span>${esc(v)}</span></label>`).join('')
+    : `<div class="iMuted">No options.</div>`;
+  valList.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+    const arr = bag[curCatDef.key]; const v = cb.dataset.v; const idx = arr.indexOf(v);
+    if (cb.checked && idx === -1) arr.push(v); else if (!cb.checked && idx !== -1) arr.splice(idx, 1);
+    onChange(); rerender({ open: true, cat: curCat });
+  }));
+}
+
+// ─── Loot Pools tab ─────────────────────────────────────────────────────────
+function renderPoolList() {
+  const el = $('poolList');
+  el.innerHTML = Object.entries(lootData.pools || {}).map(([id, pool]) => `
+    <div class="idRow${id===state.selectedPoolId?' active':''}" data-id="${esc(id)}">
+      <span class="idLabel">${esc(pool.label || id)}<span class="idKey">${esc(id)}</span></span>
+    </div>`).join('') || `<div class="iMuted" style="padding:8px">No pools yet.</div>`;
+  el.querySelectorAll('.idRow').forEach(row => row.addEventListener('click', () => { state.selectedPoolId = row.dataset.id; renderPoolList(); renderPoolDetail(); }));
+}
+
+$('addPoolBtn').addEventListener('click', () => {
+  const id = prompt('New pool id (e.g. creature_my-species):');
+  if (!id || lootData.pools[id]) return;
+  lootData.pools[id] = { label: id, entries: [] };
+  state.selectedPoolId = id;
+  renderPoolList(); renderPoolDetail();
+});
+
+function renderPoolDetail() {
+  const el = $('poolDetail');
+  const pool = lootData.pools[state.selectedPoolId];
+  if (!pool) { el.innerHTML = '<div class="iMuted">Select or create a pool.</div>'; return; }
+  el.innerHTML = `
+    <h2 class="secTitle">Pool</h2>
+    <div class="entryRow">
+      <div class="field wide"><label>Label</label><input id="poolLabelInput" value="${esc(pool.label||'')}"></div>
+      <button class="danger small" id="deletePoolBtn">Delete Pool</button>
+    </div>
+    <h2 class="secTitle">Entries</h2>
+    <div id="poolEntries"></div>
+    <button class="secondary small" id="addEntryBtn">+ Add Entry</button>
+  `;
+  $('poolLabelInput').addEventListener('input', e => { pool.label = e.target.value; renderPoolList(); });
+  $('deletePoolBtn').addEventListener('click', () => {
+    if (!confirm('Delete pool "' + state.selectedPoolId + '"?')) return;
+    delete lootData.pools[state.selectedPoolId];
+    state.selectedPoolId = Object.keys(lootData.pools)[0] || null;
+    renderPoolList(); renderPoolDetail();
+  });
+  $('addEntryBtn').addEventListener('click', () => {
+    pool.entries = pool.entries || [];
+    pool.entries.push({ id: newId('e_'), itemKey: '', min: 1, max: 1, chance: 1, conditions: emptyConditions() });
+    renderPoolDetail();
+  });
+
+  const entriesEl = $('poolEntries');
+  entriesEl.innerHTML = '';
+  (pool.entries || []).forEach((entry, idx) => {
+    entry.conditions = entry.conditions || emptyConditions();
+    const card = document.createElement('div');
+    card.className = 'entryCard';
+    const isGenerator = !!entry.generatorKey;
+    card.innerHTML = `
+      <div class="entryTopline">
+        <span class="entryTitle">${esc(entry.id || ('#' + idx))}${isGenerator ? ' <span class="iMuted">(generator — chance/conditions editable, item logic lives in code)</span>' : ''}</span>
+        <button class="danger small delEntryBtn" type="button">Remove</button>
+      </div>
+      <div class="entryRow">
+        <div class="field"><label>Id</label><input class="fId" value="${esc(entry.id||'')}"></div>
+        ${isGenerator
+          ? `<div class="field wide"><label>Generator key</label><input class="fGenKey" value="${esc(entry.generatorKey||'')}"></div>`
+          : `<div class="field wide"><label>Item key</label><input class="fItemKey" value="${esc(entry.itemKey||'')}"></div>
+             <div class="field narrow"><label>Min</label><input class="fMin" type="number" value="${entry.min ?? 0}"></div>
+             <div class="field narrow"><label>Max</label><input class="fMax" type="number" value="${entry.max ?? 0}"></div>
+             <div class="field narrow"><label>Step</label><input class="fStep" type="number" value="${entry.step ?? ''}" placeholder="—"></div>`}
+        <div class="field narrow"><label>Chance</label><input class="fChance" type="number" min="0" max="1" step="0.05" value="${entry.chance ?? 1}"></div>
+      </div>
+      <label>Conditions</label>
+      <div class="condPickerHost"></div>
+    `;
+    entriesEl.appendChild(card);
+    renderConditionPicker(card.querySelector('.condPickerHost'), entry.conditions, () => {}, 'loot_' + state.selectedPoolId + '_' + idx);
+
+    card.querySelector('.delEntryBtn').addEventListener('click', () => { pool.entries.splice(idx, 1); renderPoolDetail(); });
+    card.querySelector('.fId').addEventListener('input', e => entry.id = e.target.value);
+    card.querySelector('.fChance').addEventListener('input', e => entry.chance = e.target.value === '' ? 1 : parseFloat(e.target.value));
+    if (isGenerator) {
+      card.querySelector('.fGenKey').addEventListener('input', e => entry.generatorKey = e.target.value);
+    } else {
+      card.querySelector('.fItemKey').addEventListener('input', e => entry.itemKey = e.target.value);
+      card.querySelector('.fMin').addEventListener('input', e => entry.min = parseInt(e.target.value)||0);
+      card.querySelector('.fMax').addEventListener('input', e => entry.max = parseInt(e.target.value)||0);
+      card.querySelector('.fStep').addEventListener('input', e => { const v = e.target.value; entry.step = v === '' ? undefined : parseInt(v)||undefined; });
+    }
+  });
+}
+
+// ─── Shop Stock tab ─────────────────────────────────────────────────────────
+function renderShopList() {
+  const el = $('shopList');
+  el.innerHTML = Object.entries(shopData.shops || {}).map(([id, shop]) => `
+    <div class="idRow${id===state.selectedShopId?' active':''}" data-id="${esc(id)}">
+      <span class="idLabel">${esc(shop.label || id)}<span class="idKey">${esc(id)}</span></span>
+    </div>`).join('') || `<div class="iMuted" style="padding:8px">No shops yet.</div>`;
+  el.querySelectorAll('.idRow').forEach(row => row.addEventListener('click', () => { state.selectedShopId = row.dataset.id; renderShopList(); renderShopDetail(); }));
+}
+
+$('addShopBtn').addEventListener('click', () => {
+  const id = prompt('New shop id (e.g. myShopWares):');
+  if (!id || shopData.shops[id]) return;
+  shopData.shops[id] = { label: id, menuId: '', goods: [] };
+  state.selectedShopId = id;
+  renderShopList(); renderShopDetail();
+});
+
+function goodsEntryCard(list, idx, entry, keyPrefix, extraFields) {
+  entry.conditions = entry.conditions || emptyConditions();
+  const card = document.createElement('div');
+  card.className = 'entryCard';
+  card.innerHTML = `
+    <div class="entryTopline">
+      <span class="entryTitle">${esc(entry.name || entry.label || entry.key || entry.id || ('#' + idx))}</span>
+      <button class="danger small delBtn" type="button">Remove</button>
+    </div>
+    <div class="entryRow">
+      <div class="field"><label>Key</label><input class="fKey" value="${esc(entry.key ?? entry.id ?? '')}"></div>
+      <div class="field wide"><label>Name/Label</label><input class="fName" value="${esc(entry.name ?? entry.label ?? '')}"></div>
+      <div class="field narrow"><label>Price</label><input class="fPrice" type="number" value="${entry.price ?? 0}"></div>
+      ${extraFields || ''}
+    </div>
+    <div class="entryRow">
+      <div class="field wide"><label>Desc</label><input class="fDesc" value="${esc(entry.desc ?? '')}"></div>
+      <div class="field"><label>Gives (JSON)</label><input class="fGives" value='${esc(entry.gives ? JSON.stringify(entry.gives) : "")}' placeholder="{&quot;itemKey&quot;:1}"></div>
+    </div>
+    <label>Conditions</label>
+    <div class="condPickerHost"></div>
+  `;
+  renderConditionPicker(card.querySelector('.condPickerHost'), entry.conditions, () => {}, keyPrefix + idx);
+  card.querySelector('.delBtn').addEventListener('click', () => { list.splice(idx, 1); renderShopDetail(); });
+  card.querySelector('.fKey').addEventListener('input', e => { if ('key' in entry) entry.key = e.target.value; else entry.id = e.target.value; });
+  card.querySelector('.fName').addEventListener('input', e => { if ('name' in entry) entry.name = e.target.value; else entry.label = e.target.value; });
+  card.querySelector('.fPrice').addEventListener('input', e => entry.price = parseInt(e.target.value)||0);
+  card.querySelector('.fDesc').addEventListener('input', e => entry.desc = e.target.value);
+  card.querySelector('.fGives').addEventListener('input', e => {
+    try { entry.gives = e.target.value.trim() ? JSON.parse(e.target.value) : undefined; }
+    catch { /* leave as typed until valid JSON */ }
+  });
+  return card;
+}
+
+function renderShopDetail() {
+  const el = $('shopDetail');
+  const shop = shopData.shops[state.selectedShopId];
+  if (!shop) { el.innerHTML = '<div class="iMuted">Select or create a shop.</div>'; return; }
+  el.innerHTML = `
+    <h2 class="secTitle">Shop</h2>
+    <div class="entryRow">
+      <div class="field wide"><label>Label</label><input id="shopLabelInput" value="${esc(shop.label||'')}"></div>
+      <div class="field"><label>Menu id</label><input id="shopMenuIdInput" value="${esc(shop.menuId||'')}"></div>
+      <button class="danger small" id="deleteShopBtn">Delete Shop</button>
+    </div>
+  `;
+  $('shopLabelInput').addEventListener('input', e => { shop.label = e.target.value; renderShopList(); });
+  $('shopMenuIdInput').addEventListener('input', e => shop.menuId = e.target.value);
+  $('deleteShopBtn').addEventListener('click', () => {
+    if (!confirm('Delete shop "' + state.selectedShopId + '"?')) return;
+    delete shopData.shops[state.selectedShopId];
+    state.selectedShopId = Object.keys(shopData.shops)[0] || null;
+    renderShopList(); renderShopDetail();
+  });
+
+  // Goods list (present on most shops)
+  if (shop.goods) {
+    const sec = document.createElement('div');
+    sec.innerHTML = `<h2 class="secTitle">Goods</h2><div id="goodsEntries"></div>
+      <button class="secondary small" id="addGoodBtn">+ Add Good</button>`;
+    el.appendChild(sec);
+    const goodsEntries = sec.querySelector('#goodsEntries');
+    shop.goods.forEach((entry, idx) => goodsEntries.appendChild(goodsEntryCard(shop.goods, idx, entry, 'shopgoods_' + state.selectedShopId + '_',
+      `<div class="field wide"><label>Genotype (Jubmir-style, optional)</label><input class="fGenotype" value="${esc(entry.givesGenotype||'')}"></div>`)));
+    sec.querySelectorAll('.fGenotype').forEach((inp, i) => inp.addEventListener('input', e => { shop.goods[i].givesGenotype = e.target.value || undefined; }));
+    sec.querySelector('#addGoodBtn').addEventListener('click', () => {
+      shop.goods.push({ key: newId('good_'), icon: '📦', name: 'New Item', desc: '', price: 10, gives: {}, conditions: emptyConditions() });
+      renderShopDetail();
+    });
+  }
+
+  // Clothing rotation (General Store)
+  if (shop.clothingRotation) {
+    const cr = shop.clothingRotation;
+    const sec = document.createElement('div');
+    sec.innerHTML = `<h2 class="secTitle">Clothing Rotation</h2>
+      <div class="entryRow"><div class="field narrow"><label>Slots/day</label><input id="crSlots" type="number" value="${cr.slots ?? 4}"></div></div>
+      <div id="clothingEntries"></div>
+      <button class="secondary small" id="addClothingBtn">+ Add Piece</button>`;
+    el.appendChild(sec);
+    sec.querySelector('#crSlots').addEventListener('input', e => cr.slots = parseInt(e.target.value)||4);
+    const clothingEntries = sec.querySelector('#clothingEntries');
+    (cr.pieces || []).forEach((piece, idx) => {
+      piece.conditions = piece.conditions || emptyConditions();
+      const card = document.createElement('div');
+      card.className = 'entryCard';
+      card.innerHTML = `
+        <div class="entryTopline"><span class="entryTitle">${esc(piece.label||piece.id)}</span>
+          <button class="danger small delBtn" type="button">Remove</button></div>
+        <div class="entryRow">
+          <div class="field wide"><label>Cosmetic id</label><input class="fId" value="${esc(piece.id||'')}"></div>
+          <div class="field wide"><label>Label</label><input class="fLabel" value="${esc(piece.label||'')}"></div>
+          <div class="field"><label>Category</label><input class="fCategory" value="${esc(piece.category||'')}"></div>
+          <div class="field narrow"><label>Price</label><input class="fPrice" type="number" value="${piece.price??0}"></div>
+          <div class="field"><label>Uses 2nd dye</label><select class="fUsesB"><option value="false"${!piece.usesB?' selected':''}>No</option><option value="true"${piece.usesB?' selected':''}>Yes</option></select></div>
+        </div>
+        <label>Conditions</label>
+        <div class="condPickerHost"></div>
+      `;
+      renderConditionPicker(card.querySelector('.condPickerHost'), piece.conditions, () => {}, 'shopcloth_' + state.selectedShopId + '_' + idx);
+      card.querySelector('.delBtn').addEventListener('click', () => { cr.pieces.splice(idx,1); renderShopDetail(); });
+      card.querySelector('.fId').addEventListener('input', e => piece.id = e.target.value);
+      card.querySelector('.fLabel').addEventListener('input', e => piece.label = e.target.value);
+      card.querySelector('.fCategory').addEventListener('input', e => piece.category = e.target.value);
+      card.querySelector('.fPrice').addEventListener('input', e => piece.price = parseInt(e.target.value)||0);
+      card.querySelector('.fUsesB').addEventListener('change', e => piece.usesB = e.target.value === 'true');
+      clothingEntries.appendChild(card);
+    });
+    sec.querySelector('#addClothingBtn').addEventListener('click', () => {
+      cr.pieces = cr.pieces || [];
+      cr.pieces.push({ id: newId('piece_'), label: 'New Piece', category: 'torso', usesB: false, price: 20, conditions: emptyConditions() });
+      renderShopDetail();
+    });
+  }
+
+  // Tiers (Carpenter barn plans)
+  if (shop.tiers) {
+    const sec = document.createElement('div');
+    sec.innerHTML = `<h2 class="secTitle">Tiers</h2><div id="tierEntries"></div>
+      <button class="secondary small" id="addTierBtn">+ Add Tier</button>`;
+    el.appendChild(sec);
+    const tierEntries = sec.querySelector('#tierEntries');
+    Object.entries(shop.tiers).forEach(([tierKey, def]) => {
+      def.conditions = def.conditions || emptyConditions();
+      const card = document.createElement('div');
+      card.className = 'entryCard';
+      card.innerHTML = `
+        <div class="entryTopline"><span class="entryTitle">${esc(def.label||tierKey)}</span>
+          <button class="danger small delBtn" type="button">Remove</button></div>
+        <div class="entryRow">
+          <div class="field"><label>Tier key</label><input class="fTierKey" value="${esc(tierKey)}"></div>
+          <div class="field wide"><label>Label</label><input class="fLabel" value="${esc(def.label||'')}"></div>
+          <div class="field narrow"><label>Slots</label><input class="fSlots" type="number" value="${def.slots??0}"></div>
+          <div class="field narrow"><label>Price</label><input class="fPrice" type="number" value="${def.price??0}"></div>
+          <div class="field wide"><label>Plan item key</label><input class="fPlanItem" value="${esc(def.planItem||'')}"></div>
+        </div>
+        <label>Conditions</label>
+        <div class="condPickerHost"></div>
+      `;
+      renderConditionPicker(card.querySelector('.condPickerHost'), def.conditions, () => {}, 'shoptier_' + state.selectedShopId + '_' + tierKey);
+      card.querySelector('.delBtn').addEventListener('click', () => { delete shop.tiers[tierKey]; renderShopDetail(); });
+      card.querySelector('.fTierKey').addEventListener('change', e => {
+        const newKey = e.target.value.trim();
+        if (!newKey || newKey === tierKey || shop.tiers[newKey]) { e.target.value = tierKey; return; }
+        shop.tiers[newKey] = shop.tiers[tierKey]; delete shop.tiers[tierKey]; renderShopDetail();
+      });
+      card.querySelector('.fLabel').addEventListener('input', e => def.label = e.target.value);
+      card.querySelector('.fSlots').addEventListener('input', e => def.slots = parseInt(e.target.value)||0);
+      card.querySelector('.fPrice').addEventListener('input', e => def.price = parseInt(e.target.value)||0);
+      card.querySelector('.fPlanItem').addEventListener('input', e => def.planItem = e.target.value);
+      tierEntries.appendChild(card);
+    });
+    sec.querySelector('#addTierBtn').addEventListener('click', () => {
+      let n = 1; while (shop.tiers['tier' + n]) n++;
+      shop.tiers['tier' + n] = { label: 'New Tier', slots: 4, price: 100, planItem: 'planItem' + n, conditions: emptyConditions() };
+      renderShopDetail();
+    });
+  }
+}
+
+// ─── Top bar actions ────────────────────────────────────────────────────────
+$('loadBtn').addEventListener('click', loadAll);
+$('copyBtn').addEventListener('click', () => {
+  const payload = state.activeTab === 'loot' ? lootData : shopData;
+  navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(() => log('Copied ' + state.activeTab + ' JSON to clipboard.'));
+});
+$('downloadBtn').addEventListener('click', () => {
+  const payload = state.activeTab === 'loot' ? lootData : shopData;
+  const filename = state.activeTab === 'loot' ? 'loot-pools.json' : 'shop-stock.json';
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  URL.revokeObjectURL(a.href);
+  log('Downloaded ' + filename + ' — drop it into docs/config/' + (state.activeTab === 'loot' ? 'loot/' : 'shops/') + ' to apply.');
+});
+
+loadAll();
+</script>
+</body>
+</html>

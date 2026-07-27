@@ -477,29 +477,17 @@
       // authored in the dialogue editor (docs/tools/dialogue-editor/) as
       // { weekdays, seasons, weather, timesOfDay, encounter, maps, stations,
       // playerSpecies, relationship:{min,max} } — empty arrays/null bounds
-      // mean "unrestricted" on that axis. _dlgAxisMatch checks a single
-      // axis's current value against one of those bags. "maps" matches
-      // currentArea directly (editor's map ids — 'farm', 'town',
-      // 'map_i_general_store', etc — are the same strings the world engine
-      // already uses). "stations" matches the walker's current
-      // schedule-target label, normalized the same way the existing General
-      // Store/Carpenter on-duty checks do (see normalizeStationLabel).
-      const DLG_CONDITION_AXES = ['weekdays', 'seasons', 'weather', 'timesOfDay', 'encounter', 'maps', 'stations', 'playerSpecies'];
-
-      // Station labels are authored with their nice display casing in the
-      // editor (e.g. "Carpentry Work") — normalize both sides the same way
-      // the existing on-duty station checks do, so whitespace/case drift
-      // between the two can't silently break a condition.
-      function _dlgAxisValueMatches(vals, axis, value) {
-        if (!vals || !vals.length) return false;
-        if (axis === 'stations') return vals.some(v => normalizeStationLabel(v) === value);
-        return vals.includes(value);
-      }
-
-      function _dlgAxisMatch(bag, axis, value) {
-        const vals = bag?.[axis];
-        return !vals || !vals.length || _dlgAxisValueMatches(vals, axis, value);
-      }
+      // mean "unrestricted" on that axis. "maps" matches currentArea
+      // directly (editor's map ids — 'farm', 'town', 'map_i_general_store',
+      // etc — are the same strings the world engine already uses).
+      // "stations" matches the walker's current schedule-target label,
+      // normalized the same way the existing General Store/Carpenter
+      // on-duty checks do (see normalizeStationLabel). The axis list,
+      // eligibility/specificity evaluation, and "most-specific-unheard-wins"
+      // selection all live in the shared docs/js/condition-registry.js
+      // module (window.ConditionRegistry) — also consumed by the Loot &
+      // Shop system and its dev tool, so this is a thin wrapper that just
+      // supplies dialogue's own world-state shape.
 
       // World state is shared by both tree selection and phrase-pool entry
       // resolution — "encounter" (first vs returning) is keyed off whichever
@@ -522,38 +510,11 @@
       }
 
       function _dlgEntryEligible(entry, world) {
-        const c = entry.conditions || {};
-        for (const axis of DLG_CONDITION_AXES) {
-          if (!_dlgAxisMatch(c, axis, world[axis])) return false;
-        }
-        const rel = c.relationship;
-        if (rel && (rel.min != null || rel.max != null)) {
-          if (rel.min != null && world.relationship < rel.min) return false;
-          if (rel.max != null && world.relationship > rel.max) return false;
-        }
-        // No-fly conditions: the entry is skipped if ANY set exclude axis
-        // matches the current world state, regardless of the require side.
-        const x = entry.excludeConditions || {};
-        for (const axis of DLG_CONDITION_AXES) {
-          if (_dlgAxisValueMatches(x[axis], axis, world[axis])) return false;
-        }
-        const xrel = x.relationship;
-        if (xrel && (xrel.min != null || xrel.max != null)) {
-          const inExcludedBand =
-            (xrel.min == null || world.relationship >= xrel.min) &&
-            (xrel.max == null || world.relationship <= xrel.max);
-          if (inExcludedBand) return false;
-        }
-        return true;
+        return window.ConditionRegistry.entryEligible(entry, world);
       }
 
       function _dlgEntrySpecificity(entry) {
-        const c = entry.conditions || {};
-        let n = 0;
-        for (const axis of DLG_CONDITION_AXES) if (c[axis] && c[axis].length) n++;
-        const rel = c.relationship;
-        if (rel && (rel.min != null || rel.max != null)) n++;
-        return n;
+        return window.ConditionRegistry.entrySpecificity(entry);
       }
 
       // Shared by dialogue-tree selection and phrase-pool entry resolution:
@@ -567,16 +528,7 @@
       // of { id, conditions, excludeConditions, priority? }; `heard` is the
       // array of already-heard ids to check/rank against.
       function _pickBestEntry(entries, world, heard) {
-        const eligible = (entries || []).filter(e => _dlgEntryEligible(e, world));
-        if (!eligible.length) return null;
-        const unheard = eligible.filter(e => !heard.includes(e.id));
-        if (unheard.length) {
-          return unheard.slice().sort((a, b) =>
-            _dlgEntrySpecificity(b) - _dlgEntrySpecificity(a) ||
-            (b.priority || 0) - (a.priority || 0) ||
-            String(a.id).localeCompare(String(b.id)))[0];
-        }
-        return eligible[Math.floor(Math.random() * eligible.length)];
+        return window.ConditionRegistry.pickBestEntry(entries, world, heard);
       }
 
       function _pickDialogueTree(rec) {
@@ -1895,10 +1847,7 @@
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
           },
-          loot: [
-            { key: 'dabinggiHoundMeat', min: 1, max: 3 },
-            { key: 'dabinggiHoundHide', min: 1, max: 1 },
-          ],
+          lootPool: 'creature_dabinggi-hound',
         },
         // Uumkao'ii as an active companion — a separate, continuous-movement
         // CREATURE_DB entry (not the tile-hopping farm-livestock system in
@@ -1926,7 +1875,7 @@
             idle: "assets/creaturesprites/uumkao'ii.png",
             run: ["assets/creaturesprites/uumkao'ii.png"],
           },
-          loot: [],
+          lootPool: 'creature_uumkaoii',
         },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true, liveBirth: true,
@@ -1953,10 +1902,7 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
-          loot: [
-            { key: 'garWolfMeat', min: 2, max: 4 },
-            { key: 'garWolfHide', min: 1, max: 1 },
-          ],
+          lootPool: 'creature_gar-wolf',
         },
         'gar-wolf-alpha': {
           label: 'Gar-wolf Alpha', hostile: true, liveBirth: true,
@@ -1974,10 +1920,7 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
-          loot: [
-            { key: 'alphaGarWolfMeat', min: 4, max: 7 },
-            { key: 'alphaGarWolfHide', min: 1, max: 2 },
-          ],
+          lootPool: 'creature_gar-wolf-alpha',
         },
         // A wild, huntable/fleeable herbivore for the den+foliage-patch
         // wildlife schedule AI (see EXTERIOR_ZONES.herbivoreSpecies/
@@ -1998,9 +1941,7 @@
             idle: "assets/creaturesprites/uumkao'ii.png",
             run: ["assets/creaturesprites/uumkao'ii.png"],
           },
-          loot: [
-            { key: 'uumkaoiiMeat', min: 1, max: 2 },
-          ],
+          lootPool: 'creature_uumkaoii-wild',
         },
         // Den-Mother mini-bosses: one spawns per den cavern (see
         // pickDenMotherKind/loadBuildingScene's 'map_i_den_' handling),
@@ -2026,10 +1967,7 @@
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
           },
-          loot: [
-            { key: 'garWolfMeat', min: 3, max: 6 },
-            { key: 'garWolfHide', min: 1, max: 2 },
-          ],
+          lootPool: 'creature_gar-wolf-den-mother',
         },
         'uumkaoii-wild-den-mother': {
           label: 'Den-Mother', hostile: true, liveBirth: false,
@@ -2046,9 +1984,7 @@
             idle: "assets/creaturesprites/uumkao'ii.png",
             run: ["assets/creaturesprites/uumkao'ii.png"],
           },
-          loot: [
-            { key: 'uumkaoiiMeat', min: 2, max: 4 },
-          ],
+          lootPool: 'creature_uumkaoii-wild-den-mother',
         },
       };
 
@@ -3090,24 +3026,26 @@
       // ── Named wares pools ───────────────────────────────────────────
       // A dialogue tree's "openShop" action names a pool instead of a menu
       // id directly — the indirection Creation Kit's Leveled Lists use for
-      // exactly this reason: a hand-authored (or future-tool-authored)
-      // dialogue node just says "open pool X", and X's actual UI can be
-      // whatever menu currently implements it, without the tree needing to
-      // know menu ids. Every pool listed here already has its own dedicated
-      // menu pane + render function (see openMenu/switchMenuPanel); this
-      // registry only decides which pane a pool opens. Not yet generalized
-      // into full weighted/leveled entries (price rolls, level gating,
-      // nested pools) since there's no second consumer (e.g. treasure-chest
-      // loot tables) to design that against yet — do that when one exists,
-      // rather than guessing the shape now.
-      const WARES_POOLS = {
+      // exactly this reason: a hand-authored (or tool-authored) dialogue
+      // node just says "open pool X", and X's actual UI can be whatever
+      // menu currently implements it, without the tree needing to know menu
+      // ids. Every pool listed here already has its own dedicated menu pane
+      // + render function (see openMenu/switchMenuPanel); this registry
+      // only decides which pane a pool opens. The values below are just the
+      // synchronous startup default — docs/config/shops/shop-stock.json
+      // (authored via docs/tools/loot-shop-editor/) is the real source of
+      // truth and overwrites this wholesale once loadLootShopConfig()
+      // resolves (see _applyLoadedShopStock).
+      let WARES_POOLS = {
         generalStoreWares:  { label: "Funji & Son's General Store",  menuId: 'generalStore'  },
         carpenterBarnPlans: { label: "Dzibim Khibu's Carpentry",     menuId: 'carpenterShop' },
         jubmirWares:        { label: "Jubmir's Wares",               menuId: 'jubmirShop'    },
       };
 
       // ── General Store catalog (Funji & Son's) ─────────────────────
-      const GENERAL_STORE_CATALOG = [
+      // Synchronous startup default, same as WARES_POOLS above — overwritten
+      // from docs/config/shops/shop-stock.json once it loads.
+      let GENERAL_STORE_CATALOG = [
         { key: 'mulchBag',      icon: '🍂', name: 'Mulch Bag',      desc: 'Boosts soil recovery and clears weeds.',        price: 3,  gives: { mulch: 5 } },
         { key: 'bucket',        icon: '🪣', name: 'Tin Bucket',     desc: 'A utilitarian tin bucket for hauling water.',   price: 8,  gives: { bucketFurniture: 1 }, category: 'goods' },
         { key: 'copperBarrel',  icon: '🛢️', name: 'Copper Barrel',  desc: 'A sturdy copper-hooped storage barrel.',       price: 20, gives: { copperBarrelFurniture: 1 }, category: 'goods' },
@@ -3166,7 +3104,9 @@
         return [...groups.values()];
       }
 
-      const STORE_CLOTHING_PIECES = [
+      // Synchronous startup default — overwritten from docs/config/shops/
+      // shop-stock.json's generalStoreWares.clothingRotation once it loads.
+      let STORE_CLOTHING_PIECES = [
         { id: 'rugged_poncho', label: 'Rugged Poncho',        category: 'overwear', usesB: true,  price: 70 },
         { id: 'fine_poncho',   label: 'Fine Poncho',          category: 'overwear', usesB: true,  price: 80 },
         { id: 'fine_hood',     label: 'Fine Hood',            category: 'hood',     usesB: true,  price: 60 },
@@ -3176,12 +3116,19 @@
         { id: 'appearance::hat::leather_headband',    label: 'Leather Headband',      category: 'hat', usesB: false, price: 40 },
         { id: 'appearance::hat::riverlandskasa_wide', label: 'Riverland Kasa (Wide)', category: 'hat', usesB: false, price: 45 },
       ];
+      let GENERAL_STORE_CLOTHING_SLOTS = 4;
 
       function generateDailyClothingStock(day) {
         const stock = [];
         const catalog = getDyeCatalog();
-        for (let i = 0; i < 4; i++) {
-          const piece   = STORE_CLOTHING_PIECES[Math.floor(seededRandom(day * 97 + i * 31) * STORE_CLOTHING_PIECES.length)];
+        // Condition-eligible candidates only (e.g. a season-gated piece) —
+        // falls back to the full list if conditions would otherwise empty
+        // it out entirely, so a misconfigured pool never bricks the shop.
+        const world = _lootShopWorldState();
+        const eligible = STORE_CLOTHING_PIECES.filter(p => window.ConditionRegistry.entryEligible(p, world));
+        const pieces = eligible.length ? eligible : STORE_CLOTHING_PIECES;
+        for (let i = 0; i < GENERAL_STORE_CLOTHING_SLOTS; i++) {
+          const piece   = pieces[Math.floor(seededRandom(day * 97 + i * 31) * pieces.length)];
           const dyeA    = catalog[Math.floor(seededRandom(day * 53 + i * 71 + 13) * catalog.length)];
           const dyeB    = piece.usesB ? catalog[Math.floor(seededRandom(day * 113 + i * 43 + 7) * catalog.length)] : null;
           const dyeLbl  = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
@@ -5331,11 +5278,69 @@
         }
       }
 
-      function rollLootFromTable(lootTable) {
+      // ── Loot & Shop config (docs/config/loot/loot-pools.json,
+      // docs/config/shops/shop-stock.json) ────────────────────────────
+      // Single source of truth for every drop table and shop's stock,
+      // authored via docs/tools/loot-shop-editor/. Fetched once at startup
+      // alongside every other config load; every consumer below only runs
+      // in response to a later gameplay event (a creature dying, a chest
+      // spawning, a shop menu opening), so by the time any of them actually
+      // read _lootPools/_shopStock the fetch has long since resolved — same
+      // assumption docs/game.js's other cached config loaders make (see
+      // loadBanditGangConfig).
+      let _lootPools = {};
+      let _shopStock = {};
+      let _lootShopConfigPromise = null;
+      function loadLootShopConfig() {
+        if (_lootShopConfigPromise) return _lootShopConfigPromise;
+        _lootShopConfigPromise = Promise.all([
+          fetch('config/loot/loot-pools.json').then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch('config/shops/shop-stock.json').then(r => r.ok ? r.json() : null).catch(() => null),
+        ]).then(([lootData, shopData]) => {
+          _lootPools = lootData?.pools || {};
+          if (shopData?.shops) { _shopStock = shopData.shops; _applyLoadedShopStock(); }
+        });
+        return _lootShopConfigPromise;
+      }
+      loadLootShopConfig();
+
+      // The subset of the dialogue system's shared condition axes (see
+      // docs/js/condition-registry.js) that make sense for loot/shop gating
+      // outside of an NPC conversation — no relationship/encounter/station
+      // concept here, so those axes are simply never supplied/checked.
+      function _lootShopWorldState() {
+        return {
+          weekdays: currentWeekdayName(),
+          seasons: currentSeason().name,
+          weather: calendar.weather,
+          timesOfDay: fishingTimeOfDay(),
+          maps: currentArea,
+          playerSpecies: _playerData?.appearance?.speciesId || '',
+        };
+      }
+
+      // Rolls a docs/config/loot/loot-pools.json pool by id: every entry is
+      // independently checked against its conditions and its own `chance`
+      // (default 1 = always, matching every migrated creature/bandit table),
+      // then contributes a `min..max` quantity (or a `min..max` in steps of
+      // `step`, for discrete-increment rolls like the treasure chest's gold).
+      function rollLootPool(poolId) {
+        const pool = _lootPools[poolId];
+        if (!pool) return {};
+        const world = _lootShopWorldState();
+        const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
         const gained = {};
-        for (const entry of lootTable || []) {
-          const qty = entry.min + Math.floor(rnd() * (entry.max - entry.min + 1));
-          if (qty > 0) gained[entry.key] = (gained[entry.key] || 0) + qty;
+        for (const entry of eligible) {
+          if (!entry.itemKey) continue; // generator-only entries (see treasureChest) are rolled by name, not through this generic path
+          const min = entry.min || 0, max = entry.max != null ? entry.max : min;
+          let qty;
+          if (entry.step) {
+            const steps = Math.floor((max - min) / entry.step) + 1;
+            qty = min + Math.floor(rnd() * steps) * entry.step;
+          } else {
+            qty = min + Math.floor(rnd() * (max - min + 1));
+          }
+          if (qty > 0) gained[entry.itemKey] = (gained[entry.itemKey] || 0) + qty;
         }
         return gained;
       }
@@ -5376,7 +5381,7 @@
           },
           onAction(action) {
             if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-            const gained = rollLootFromTable(c.def.loot);
+            const gained = rollLootPool(c.def.lootPool);
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
               inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
@@ -6816,30 +6821,44 @@
         } catch {}
       }
 
+      // Jubmir sells exactly one goods entry today (a dabinggi-hound egg),
+      // sourced from docs/config/shops/shop-stock.json's jubmirWares.goods —
+      // the hardcoded fallback matches that file's default entry in case the
+      // config hasn't loaded yet. restockDays/maxPerRestock are only
+      // implemented for the "1 per day" case today (see getJubmirStock's
+      // day-reset check) — a future entry wanting a longer cycle or more
+      // than one unit per restock would need that check generalized.
+      function _jubmirEggEntry() {
+        return (_shopStock.jubmirWares?.goods || []).find(e => e.key === 'dabinggiHoundEgg') || {
+          key: 'dabinggiHoundEgg', icon: '🥚', name: 'Dabinggi-hound Egg',
+          desc: 'A rare, non-native find. One only, restocked daily.',
+          price: 200, givesGenotype: 'dabinggi-hound', restockDays: 1, maxPerRestock: 1,
+        };
+      }
+
       // Returns today's stock, rolling a fresh dabinggi-hound egg genotype
       // the first time it's checked on a new day.
       function getJubmirStock() {
         let stock = _loadJubmirStock();
         if (!stock || stock.day !== calendar.day) {
-          stock = { day: calendar.day, genotype: makeDefaultGenotype('dabinggi-hound'), purchased: false };
+          stock = { day: calendar.day, genotype: makeDefaultGenotype(_jubmirEggEntry().givesGenotype), purchased: false };
           _saveJubmirStock(stock);
         }
         return stock;
       }
 
-      const JUBMIR_EGG_PRICE = 200;
-
       function buyJubmirEgg() {
         const stock = getJubmirStock();
+        const entry = _jubmirEggEntry();
         if (stock.purchased) { showToast("Jubmir's sold out for today — check back tomorrow.", false); return; }
         const gold = inventory.gold || 0;
-        if (gold < JUBMIR_EGG_PRICE) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - JUBMIR_EGG_PRICE;
+        if (gold < entry.price) { showToast('Not enough gold.', false); return; }
+        inventory.gold = gold - entry.price;
         inventory.dabinggiHoundEgg = Math.min(9, (inventory.dabinggiHoundEgg || 0) + 1);
         _queueLivestockItemGenotype('dabinggiHoundEgg', stock.genotype);
         stock.purchased = true;
         _saveJubmirStock(stock);
-        showToast("Bought a dabinggi-hound egg from Jubmir!", true);
+        showToast(`Bought a ${entry.name} from Jubmir!`, true);
         renderJubmirShopPage();
         buildInventoryGrid();
         saveMemberWorldData();
@@ -6851,15 +6870,17 @@
         const list = document.getElementById('jubmirShopList');
         if (!list) return;
         list.innerHTML = '';
+        const entry = _jubmirEggEntry();
+        if (!window.ConditionRegistry.entryEligible(entry, _lootShopWorldState())) return;
         const stock = getJubmirStock();
         const row = document.createElement('div');
         row.className = 'shop-row';
         row.innerHTML = `
-          <div class="sh-icon">🥚</div>
+          <div class="sh-icon">${entry.icon}</div>
           <div class="sh-info">
-            <div class="sh-name">Dabinggi-hound Egg</div>
-            <div class="sh-desc">${stock.purchased ? "Sold out — Jubmir will have another tomorrow." : "A rare, non-native find. One only, restocked daily."}</div>
-            <div class="sh-price">${JUBMIR_EGG_PRICE}g</div>
+            <div class="sh-name">${esc(entry.name)}</div>
+            <div class="sh-desc">${stock.purchased ? "Sold out — Jubmir will have another tomorrow." : entry.desc}</div>
+            <div class="sh-price">${entry.price}g</div>
           </div>
           <button class="shop-buy-btn" ${stock.purchased ? 'disabled' : ''}>${stock.purchased ? 'Sold Out' : 'Buy'}</button>
         `;
@@ -7145,7 +7166,7 @@
       ];
       function taskItemPoolFor(domain) {
         if (domain === 'fishing') return Object.values(FISH_DEFS).flat().map(f => f.key);
-        if (domain === 'combat') return [...new Set(Object.values(CREATURE_DB).flatMap(c => (c.loot || []).map(l => l.key)))];
+        if (domain === 'combat') return [...new Set(Object.values(CREATURE_DB).flatMap(c => (_lootPools[c.lootPool]?.entries || []).map(e => e.itemKey).filter(Boolean)))];
         if (domain === 'alchemy') return Object.keys(ALCHEMY_REAGENT_DEFS);
         return TASK_FARMING_ITEM_POOL;
       }
@@ -8848,7 +8869,7 @@
           // Quarter-turn correction for the portrait plane convention -- see
           // buildBanditAvatar's long comment.
           aimAngleOffset: Math.PI / 2,
-          loot: (cfg?.corpseLoot?.[rank] || []).map(e => ({ ...e })),
+          lootPool: 'bandit_' + rank,
         };
       }
 
@@ -10763,10 +10784,6 @@
       // requires burning every tent out rather than just rifling through them.
       const BANDIT_TENT_HOLD_S = 4;
       const BANDIT_TENT_NEAR_PX = TILE * 1.7;
-      const BANDIT_TENT_LOOT_TABLE = [
-        { key: 'gold', min: 4, max: 14 },
-        { key: 'banditScrapMetal', min: 0, max: 2 },
-      ];
       let _banditTentHoldT = 0;
       let _banditTentHoldId = null;
       const _tentActionHudEl = document.getElementById('tentActionHud');
@@ -10785,7 +10802,7 @@
       }
 
       function lootBanditTent(zoneId, obj) {
-        const gained = rollLootFromTable(BANDIT_TENT_LOOT_TABLE);
+        const gained = rollLootPool('banditTent');
         const parts = grantBanditLoot(gained);
         if (obj.interactable) obj.interactable.lootable = false;
         refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
@@ -10920,7 +10937,7 @@
           },
           onAction(action) {
             if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-            const parts = grantBanditLoot(rollLootFromTable(c.def.loot));
+            const parts = grantBanditLoot(rollLootPool(c.def.lootPool));
             // 100% of what they were wearing, on top of the rolled table.
             for (const item of banditWornClothingItems(c.rosterRecord)) {
               packClothing.push(item);
@@ -16655,10 +16672,38 @@
       // clothing piece — the same clothing-piece/dye generators the General
       // Store's daily stock rolls from (see generateDailyClothingStock), just
       // freely randomized instead of seeded by day.
+      // Looks up one named entry from the treasureChest loot pool (docs/
+      // config/loot/loot-pools.json) by id — used instead of rollLootPool's
+      // generic itemKey-roll path since a chest's bundle isn't a flat
+      // {itemKey:qty} map (see the bundle shape below), just its per-roll
+      // chance/range/conditions.
+      function _treasureChestEntry(id) {
+        return (_lootPools.treasureChest?.entries || []).find(e => e.id === id) || null;
+      }
+      // True if `id`'s entry (a) has no conditions or matches the current
+      // ambient world state, and (b) passes its own chance roll (falling
+      // back to `fallbackChance` if the entry is missing/chance is unset —
+      // this is what keeps the "always" rolls (metal bars, mystery dye)
+      // always-on by default while still letting the Loot & Shop Editor
+      // dial them down).
+      function _rollTreasureChance(id, fallbackChance) {
+        const entry = _treasureChestEntry(id);
+        if (entry && !window.ConditionRegistry.entryEligible(entry, _lootShopWorldState())) return false;
+        const chance = entry?.chance != null ? entry.chance : fallbackChance;
+        return rnd() < chance;
+      }
+
       function rollTreasureLootBundle() {
-        const bundle = { metalKeys: rollTreasureMetalKeys(), dyeItemKeys: rollTreasureDyeItemKeys(), gold: 0, potionKey: null, clothing: null };
-        if (rnd() < 0.7) bundle.gold = 10 + Math.floor(rnd() * 5) * 8; // 10-42g
-        if (rnd() < 0.35) {
+        const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, clothing: null };
+        if (_rollTreasureChance('metalBars', 1)) bundle.metalKeys = rollTreasureMetalKeys();
+        if (_rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = rollTreasureDyeItemKeys();
+        if (_rollTreasureChance('gold', 0.7)) {
+          const entry = _treasureChestEntry('gold');
+          const min = entry?.min ?? 10, max = entry?.max ?? 42, step = entry?.step ?? 8;
+          const steps = Math.floor((max - min) / step) + 1;
+          bundle.gold = min + Math.floor(rnd() * steps) * step;
+        }
+        if (_rollTreasureChance('potion', 0.35)) {
           const effectKeys = Object.keys(ALCHEMY_EFFECT_DEFS);
           const boonKeys = effectKeys.filter(k => ALCHEMY_EFFECT_DEFS[k].kind === 'boon');
           const pickEffect = () => {
@@ -16673,7 +16718,7 @@
           const reagentKeys = Object.keys(ALCHEMY_REAGENT_DEFS).sort(() => rnd() - 0.5).slice(0, 2);
           bundle.potionKey = ensurePotionItemDef(effects, reagentKeys);
         }
-        if (rnd() < 0.25) {
+        if (_rollTreasureChance('clothing', 0.25)) {
           const catalog = getDyeCatalog();
           const piece = STORE_CLOTHING_PIECES[Math.floor(rnd() * STORE_CLOTHING_PIECES.length)];
           const dyeA  = catalog[Math.floor(rnd() * catalog.length)];
@@ -17318,11 +17363,28 @@
       // house is tracked separately (houseCol/houseRow above) since its GLB
       // rendering pipeline predates this system — farmBuildings only ever
       // holds barns. Both share the same move/placement validation below.
-      const BARN_TIERS = {
+      // Synchronous startup default — overwritten from docs/config/shops/
+      // shop-stock.json's carpenterBarnPlans.tiers once it loads.
+      let BARN_TIERS = {
         small:  { label: 'Little Barn', slots: 4,  price: 500,  planItem: 'barnPlanSmall'  },
         medium: { label: 'Medium Barn', slots: 8,  price: 1000, planItem: 'barnPlanMedium' },
         large:  { label: 'Large Barn',  slots: 12, price: 1500, planItem: 'barnPlanLarge'  },
       };
+      // Loaded config (docs/config/shops/shop-stock.json) replaces
+      // WARES_POOLS/GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
+      // GENERAL_STORE_CLOTHING_SLOTS/BARN_TIERS wholesale once it resolves —
+      // called from loadLootShopConfig() above. Jubmir's stock isn't a
+      // simple catalog swap (it also drives genotype generation/one-shot
+      // purchase state), so getJubmirStock/buyJubmirEgg/renderJubmirShopPage
+      // read _shopStock.jubmirWares directly instead of a mirrored variable.
+      function _applyLoadedShopStock() {
+        WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
+          [id, { label: shop.label, menuId: shop.menuId }]));
+        if (_shopStock.generalStoreWares?.goods) GENERAL_STORE_CATALOG = _shopStock.generalStoreWares.goods;
+        if (_shopStock.generalStoreWares?.clothingRotation?.pieces) STORE_CLOTHING_PIECES = _shopStock.generalStoreWares.clothingRotation.pieces;
+        if (_shopStock.generalStoreWares?.clothingRotation?.slots) GENERAL_STORE_CLOTHING_SLOTS = _shopStock.generalStoreWares.clothingRotation.slots;
+        if (_shopStock.carpenterBarnPlans?.tiers) { BARN_TIERS = _shopStock.carpenterBarnPlans.tiers; _registerBarnPlanItemDefs(); }
+      }
       // Every tier builds the same highland structure (config/pieces/stable.json)
       // once complete — there's no wood/stone system yet to justify authoring
       // three differently-sized piece files, so tiers differ only in slot
@@ -18233,7 +18295,8 @@
       }
 
       function renderGeneralStoreGoods(list) {
-        GENERAL_STORE_CATALOG.forEach(item => {
+        const world = _lootShopWorldState();
+        GENERAL_STORE_CATALOG.filter(item => window.ConditionRegistry.entryEligible(item, world)).forEach(item => {
           const row = document.createElement('div');
           row.className = 'shop-row';
           row.innerHTML = `
@@ -18314,7 +18377,8 @@
         const list = document.getElementById('carpenterShopList');
         if (!list) return;
         list.innerHTML = '';
-        Object.entries(BARN_TIERS).forEach(([tier, def]) => {
+        const world = _lootShopWorldState();
+        Object.entries(BARN_TIERS).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world)).forEach(([tier, def]) => {
           const owned = inventory[def.planItem] || 0;
           const row = document.createElement('div');
           row.className = 'shop-row';
@@ -18752,18 +18816,26 @@
 
       // Barn plans — bought from the Carpenter, placed as a foundation from
       // the Farm tab. Same auto-registration pattern as furniture above.
-      Object.entries(BARN_TIERS).forEach(([tier, def]) => {
-        if (!inventoryItems.some(item => item.key === def.planItem)) {
-          inventoryItems.push({ key: def.planItem, icon: '📜', label: (def.label + ' Plan').toUpperCase(), max: 9 });
-        }
-        if (!ITEM_DEFS[def.planItem]) {
-          ITEM_DEFS[def.planItem] = {
-            icon: '📜', label: def.label + ' Plan', cat: 'buildingPlan', sellPrice: 0,
-            tags: ['Plan', 'Placeable', 'Barn'],
-            desc: `Place from the Farm tab to start a ${def.label.toLowerCase()} foundation (${def.slots} livestock slots). Interact with it on the farm to complete construction.`,
-          };
-        }
-      });
+      // Factored into a function (rather than inline like the others) so it
+      // can also be re-run from _applyLoadedShopStock once
+      // docs/config/shops/shop-stock.json loads — a tier added there that
+      // isn't in BARN_TIERS's synchronous startup default still needs its
+      // planItem registered.
+      function _registerBarnPlanItemDefs() {
+        Object.entries(BARN_TIERS).forEach(([tier, def]) => {
+          if (!inventoryItems.some(item => item.key === def.planItem)) {
+            inventoryItems.push({ key: def.planItem, icon: '📜', label: (def.label + ' Plan').toUpperCase(), max: 9 });
+          }
+          if (!ITEM_DEFS[def.planItem]) {
+            ITEM_DEFS[def.planItem] = {
+              icon: '📜', label: def.label + ' Plan', cat: 'buildingPlan', sellPrice: 0,
+              tags: ['Plan', 'Placeable', 'Barn'],
+              desc: `Place from the Farm tab to start a ${def.label.toLowerCase()} foundation (${def.slots} livestock slots). Interact with it on the farm to complete construction.`,
+            };
+          }
+        });
+      }
+      _registerBarnPlanItemDefs();
 
       // ── Fish catalog ────────────────────────────────────────────
       // Keyed by zone category. "town" is the only zone with real river/stream
