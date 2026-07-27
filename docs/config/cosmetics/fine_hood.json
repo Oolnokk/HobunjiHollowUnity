@@ -19,7 +19,7 @@
     "layers": {
       "base": "A",
       "trim": "B",
-      "exposed": "SKIN",
+      "exposed": "NONE",
       "exposedSkin": "BODY"
     }
   },

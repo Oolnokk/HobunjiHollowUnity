@@ -16,7 +16,7 @@
     },
     "layers": {
       "base": "A",
-      "exposed": "SKIN"
+      "exposed": "NONE"
     }
   },
   "speciesVariants": {

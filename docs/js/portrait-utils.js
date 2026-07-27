@@ -485,11 +485,22 @@ function shadeFillTintForBodyColor(color, referenceHex) {
   return { mode: 'shadeFill', rgb, options: getPortraitTintingConfig() };
 }
 
+// shadeFill is the default tint algorithm everywhere now (body colors AND
+// clothing dyes) -- the hue/sat value-replace crushes dark, cel-shaded art
+// toward one muddy tone regardless of whether that art is skin, fur, or
+// cloth, which is exactly why animals never used it. A species (bodyTintMode)
+// or the whole game (tinting.clothingTintMode) can still opt back into the
+// old hueSatFill behavior explicitly if some particular art needs it.
 function bodyTintModeForSpecies(speciesId) {
   const key = _normalizeSpeciesKey(speciesId);
   const speciesCfg = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
   const entry = speciesCfg[key] || speciesCfg[String(speciesId || '')];
-  return entry?.bodyTintMode === 'shadeFill' ? 'shadeFill' : 'hueSatFill';
+  return entry?.bodyTintMode === 'hueSatFill' ? 'hueSatFill' : 'shadeFill';
+}
+
+function clothingTintMode() {
+  const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+  return cfg.clothingTintMode === 'hueSatFill' ? 'hueSatFill' : 'shadeFill';
 }
 
 // Body/fur tint slots are the bare letters A/B/C (see BODYCOLOR_LIMITS);
@@ -959,13 +970,21 @@ function _cloneBehindLayer(layer, group, gender) {
 }
 
 // A layer's paletteColorKey normally selects a sub-slot of its OWN group's
-// dye (e.g. a hood's "trim" role -> `${group.tintSlot}_B`). The reserved key
-// "BODY" is different: it opts a layer entirely out of its group's dye and
-// into the character's own literal body/skin tint slot 'A' instead -- used
-// by exposed-skin overlays (a hood's cutout showing bare ear/trunk) that must
-// always match the wearer's skin regardless of what the hood itself is dyed.
+// dye (e.g. a hood's "trim" role -> `${group.tintSlot}_B`). Two reserved keys
+// opt out of that entirely instead of naming a sub-slot:
+//  - "BODY" routes to the character's own literal body/skin tint slot 'A' --
+//    used by exposed-skin overlays (a hood's cutout showing bare ear/trunk)
+//    that must always match the wearer's skin regardless of the hood's dye.
+//  - "NONE" routes to no tint slot at all (always mode:'none', raw art) --
+//    used by overlays that must NEVER be recolored (a tusk poking through a
+//    hood's cutout keeps its own painted color). This has to be a real
+//    bypass rather than just "leave paletteColorKey unset": randomProfileSeeded's
+//    usedPaletteKeys() (further down this file) generates a random color for
+//    every distinct non-'A' paletteColorKey it finds across a hood's layers,
+//    so an ordinary/undeclared key would still pick up a random dye.
 function resolveLayerTintSlot(key, baseTintSlot) {
   if (key === 'BODY') return 'A';
+  if (key === 'NONE') return null;
   return (!key || key === 'A') ? baseTintSlot : (baseTintSlot ? `${baseTintSlot}_${key}` : null);
 }
 
@@ -1008,11 +1027,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
   const _bodyTintMode = bodyTintModeForSpecies(_tintSpeciesId);
+  const _clothingTintMode = clothingTintMode();
   const tintFor = (slot) => {
     if (!slot) return { mode: 'none' };
     const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
     const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
-    return (isBodySlot && _bodyTintMode === 'shadeFill')
+    const mode = isBodySlot ? _bodyTintMode : _clothingTintMode;
+    return mode === 'shadeFill'
       ? shadeFillTintForBodyColor(bodyColors[slot], referenceHex)
       : tintForBodyColor(bodyColors[slot], referenceHex);
   };
@@ -2287,9 +2308,14 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
   const hatMaterialRange = materialColorRangeFor(hat);
   const hatSourceRange = hatMaterialRange
     || (hatUsesClothMaterial ? (ruleRange || hat?.colorRange || null) : (hat?.colorRange || null));
+  // 'BODY' and 'NONE' are resolveLayerTintSlot's reserved bypass keys (see
+  // that function) -- neither is ever actually read as a `${group.tintSlot}_*`
+  // color, so generating a random one for them here would be pure clutter
+  // (and, before this exclusion existed, was exactly why an "always
+  // untinted" overlay like a tusk still ended up with a random dye color).
   const usedPaletteKeys = (layers) => new Set((layers || [])
     .map(layer => layer?.paletteColorKey)
-    .filter(key => typeof key === 'string' && key && key !== 'A'));
+    .filter(key => typeof key === 'string' && key && key !== 'A' && key !== 'BODY' && key !== 'NONE'));
 
   if ((hasClothPiece || (useSharedClothingRuleRange && hasHoodPiece)) && clothSourceRange) {
     bodyColors.CLOTH = randomColorFromRangeSeeded(clothingRangeForPalette('A') || clothSourceRange, rng);
