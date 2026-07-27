@@ -1813,7 +1813,10 @@
       const CLIMB_SPEED_MUL = 0.5;
 
       // Global creature database — companions (whistle-bound) and hostiles
-      // (ambient-spawned) are both built from this table.
+      // (ambient-spawned) are both built from this table. Species sizes that
+      // need live tuning are sourced from scratchbones-config.js rather than
+      // being duplicated as literals in this database.
+      const WILDLIFE_CREATURE_MODEL_WIDTHS = window.SCRATCHBONES_CONFIG?.game?.wildlife?.creatureModelWidths || {};
       // canClimb: default false — a creature without the tag can still enter
       // an incline (cliff wall) tile (no longer a hard block), just at
       // CLIMB_SPEED_MUL speed, same as a non-swimmer crossing water. canSwim:
@@ -1927,7 +1930,7 @@
           attackStaminaCost: 12, attackCooldownS: 0.95,
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
-          canClimb: false, canSwim: false, modelWidth: 0.5125, spriteAspect: 523 / 831, tint: 0xffffff,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra',
         },
@@ -2031,7 +2034,7 @@
           attackStaminaCost: 15, attackCooldownS: 1.1,
           attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
-          canClimb: false, canSwim: false, modelWidth: 0.725, spriteAspect: 523 / 831, tint: 0x789078,
+          canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS['drenkirra-den-mother'], spriteAspect: 523 / 831, tint: 0x789078,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra-den-mother',
         },

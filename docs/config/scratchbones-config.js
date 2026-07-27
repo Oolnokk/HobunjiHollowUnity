@@ -50,6 +50,9 @@ window.SCRATCHBONES_CONFIG = {
     // Wildlife reproduction and farm-livestock data. Den mothers are
     // selected only from species actually native to the den's exterior zone.
     "wildlife": {
+      // World-space widths consumed by CREATURE_DB; kept separate from farm
+      // display widths so either context can be tuned without code changes.
+      "creatureModelWidths": { "drenkirra": 0.82, "drenkirra-den-mother": 1.16 },
       "denMothers": {
         "gar-wolf": { "creatureKey": "gar-wolf-den-mother", "nestItemKey": "garWolfBaby" },
         "uumkaoii-wild": { "creatureKey": "uumkaoii-wild-den-mother", "nestItemKey": "uumkaoiiEgg" },
@@ -64,7 +67,7 @@ window.SCRATCHBONES_CONFIG = {
         "garWolfBaby": "gar-wolf", "dabinggiHoundEgg": "dabinggi-hound",
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
       },
-      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.5125 },
+      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
         "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk" },

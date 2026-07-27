@@ -44,7 +44,7 @@
       "attackRangeTiles": 0.85,
       "attacks": ["pounce"],
       "attackTag": "sharp",
-      "modelWidth": 0.5125,
+      "modelWidth": 0.82,
       "spriteAspect": 0.62936,
       "tint": "#ffffff",
       "sprites": {
@@ -79,7 +79,7 @@
       "attackRangeTiles": 0.95,
       "attacks": ["pounce"],
       "attackTag": "blunt",
-      "modelWidth": 0.725,
+      "modelWidth": 1.16,
       "spriteAspect": 0.62936,
       "tint": "#789078",
       "sprites": {
