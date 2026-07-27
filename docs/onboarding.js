@@ -1038,11 +1038,11 @@
     return `<div class="ob-card sl-card">
       <div class="ob-title">🌿 Hobunji Hollow</div>
       ${_localSaveFolderSectionHtml()}
-      ${_dbSourceSectionHtml()}
       <div class="sl-section">
         <div class="sl-section-label">Choose Your Farmer</div>
         <div class="sl-char-grid">${charCardsHtml}${newCharHtml}</div>
       </div>
+      ${_dbSourceSectionHtml()}
       ${worldSectionHtml}
       <div class="sl-footer">
         ${selChar ? `<button class="sl-delete-btn" id="slDeleteChar" type="button">🗑 Delete Character</button>` : '<span></span>'}
