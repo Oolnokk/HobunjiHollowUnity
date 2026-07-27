@@ -393,6 +393,14 @@ function getPortraitTintingConfig() {
     preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
     outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
     cacheEnabled: cfg.cacheEnabled !== false,
+    // shadeFill-only knobs -- same config surface (and same defaults) as
+    // creature-genetics-render.js's shadeFillConfig(), so a mashtzarr set to
+    // bodyTintMode: "shadeFill" paints with literally the same math as
+    // animal fur/pattern layers, not just a visually-similar approximation.
+    shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
+    highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
+    neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
+    gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
   };
 }
 
@@ -432,6 +440,56 @@ function tintForBodyColor(color, referenceHex) {
   const targetHS = _resolveTargetHueSat(color, referenceHex);
   if (!targetHS) return { mode: 'none' };
   return { mode: 'hueSatFill', hue: targetHS.h, sat: targetHS.s, options: getPortraitTintingConfig() };
+}
+
+// Same reference-swatch CSS-filter simulation as _resolveTargetHueSat above,
+// but returns the raw absolute RGB instead of converting it to hue/sat --
+// shadeFill scales that absolute color by each pixel's own luminance rather
+// than replacing hue/sat while keeping the pixel's own value, so it needs the
+// literal target color, not a hue/sat pair. Kept as its own cache/function
+// (rather than reusing _TARGET_HUESAT_CACHE) to avoid touching the existing
+// hueSatFill path at all.
+const _TARGET_RGB_CACHE = new Map();
+function _resolveTargetRgbColor(color, referenceHex) {
+  if (!color) return null;
+  if (color.hex) {
+    const parsed = parseHexColor(color.hex);
+    if (parsed) return [parsed.r, parsed.g, parsed.b];
+  }
+  if (color.h == null && color.s == null && color.v == null) return null;
+  const ref = parseHexColor(referenceHex) || { r: 125, g: 200, b: 154 };
+  const filter = makeCSSFilter(color);
+  const cacheKey = ref.hex + '|' + filter;
+  if (_TARGET_RGB_CACHE.has(cacheKey)) return _TARGET_RGB_CACHE.get(cacheKey);
+  if (!_filterSimCanvas) _filterSimCanvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
+  const ctx = _filterSimCanvas.getContext('2d');
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.filter = filter;
+  ctx.fillStyle = `rgb(${ref.r},${ref.g},${ref.b})`;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  const result = [r, g, b];
+  _TARGET_RGB_CACHE.set(cacheKey, result);
+  return result;
+}
+
+// Multiplicative luminance-based tint -- literally the same algorithm as
+// creature-genetics-render.js's recolorPixels (see that file's comment for
+// why: it reads correctly on dark, cel-shaded art where a hue/sat value-
+// replace crushes everything toward one muddy tone). Used for species whose
+// body art needs to look like animal fur/pattern layers rather than the
+// standard NPC hueSatFill skin.
+function shadeFillTintForBodyColor(color, referenceHex) {
+  const rgb = _resolveTargetRgbColor(color, referenceHex);
+  if (!rgb) return { mode: 'none' };
+  return { mode: 'shadeFill', rgb, options: getPortraitTintingConfig() };
+}
+
+function bodyTintModeForSpecies(speciesId) {
+  const key = _normalizeSpeciesKey(speciesId);
+  const speciesCfg = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {};
+  const entry = speciesCfg[key] || speciesCfg[String(speciesId || '')];
+  return entry?.bodyTintMode === 'shadeFill' ? 'shadeFill' : 'hueSatFill';
 }
 
 // Body/fur tint slots are the bare letters A/B/C (see BODYCOLOR_LIMITS);
@@ -484,8 +542,47 @@ function getHueSatFillCanvas(img, sourceKey, tint) {
   return canvas;
 }
 
+const _SHADE_FILL_CACHE = new Map();
+function getShadeFillCanvas(img, sourceKey, tint) {
+  if (!img || tint?.mode !== 'shadeFill') return img;
+  const options = tint.options || getPortraitTintingConfig();
+  const [tr, tg, tb] = tint.rgb;
+  const cacheKey = [
+    sourceKey || img.currentSrc || img.src || 'inline', tr, tg, tb,
+    options.shadowFloor, options.highlightBoost, options.neutralLuminance, options.gamma,
+    options.preserveNearBlackOutlines, options.outlineThreshold,
+  ].join('|');
+  if (options.cacheEnabled && _SHADE_FILL_CACHE.has(cacheKey)) return _SHADE_FILL_CACHE.get(cacheKey);
+
+  const canvas = Object.assign(document.createElement('canvas'), {
+    width: img.naturalWidth || img.width,
+    height: img.naturalHeight || img.height,
+  });
+  const offCtx = canvas.getContext('2d');
+  offCtx.drawImage(img, 0, 0);
+  const imageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const neutral = Math.max(0.0001, options.neutralLuminance);
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const lum = relativeLuminance(r, g, b);
+    if (options.preserveNearBlackOutlines && lum <= options.outlineThreshold) continue;
+    const normalized = Math.pow(Math.max(0, lum) / neutral, options.gamma);
+    const shade = Math.max(options.shadowFloor, Math.min(options.highlightBoost, normalized));
+    data[i] = clampByte(tr * shade);
+    data[i + 1] = clampByte(tg * shade);
+    data[i + 2] = clampByte(tb * shade);
+  }
+  offCtx.putImageData(imageData, 0, 0);
+  if (options.cacheEnabled) _SHADE_FILL_CACHE.set(cacheKey, canvas);
+  return canvas;
+}
+
 function _imageForTint(img, sourceKey, tint) {
-  return tint?.mode === 'hueSatFill' ? getHueSatFillCanvas(img, sourceKey, tint) : img;
+  if (tint?.mode === 'hueSatFill') return getHueSatFillCanvas(img, sourceKey, tint);
+  if (tint?.mode === 'shadeFill') return getShadeFillCanvas(img, sourceKey, tint);
+  return img;
 }
 
 // ── Canvas helpers ─────────────────────────────────────────
@@ -861,6 +958,17 @@ function _cloneBehindLayer(layer, group, gender) {
   return { ...layer, url: _getBehindLayerUrl(layer, group, gender) };
 }
 
+// A layer's paletteColorKey normally selects a sub-slot of its OWN group's
+// dye (e.g. a hood's "trim" role -> `${group.tintSlot}_B`). The reserved key
+// "BODY" is different: it opts a layer entirely out of its group's dye and
+// into the character's own literal body/skin tint slot 'A' instead -- used
+// by exposed-skin overlays (a hood's cutout showing bare ear/trunk) that must
+// always match the wearer's skin regardless of what the hood itself is dyed.
+function resolveLayerTintSlot(key, baseTintSlot) {
+  if (key === 'BODY') return 'A';
+  return (!key || key === 'A') ? baseTintSlot : (baseTintSlot ? `${baseTintSlot}_${key}` : null);
+}
+
 // ── Rendering ──────────────────────────────────────────────
 
 async function renderProfile(canvas, profile, renderOptions = {}) {
@@ -899,8 +1007,16 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
-  const tintFor = (slot) => slot ? tintForBodyColor(bodyColors[slot], _dyeReferenceHexForSlot(slot, _tintSpeciesId)) : { mode: 'none' };
-  const tintA = tintForBodyColor(bodyColors.A, _dyeReferenceHexForSlot('A', _tintSpeciesId));
+  const _bodyTintMode = bodyTintModeForSpecies(_tintSpeciesId);
+  const tintFor = (slot) => {
+    if (!slot) return { mode: 'none' };
+    const referenceHex = _dyeReferenceHexForSlot(slot, _tintSpeciesId);
+    const isBodySlot = slot === 'A' || slot === 'B' || slot === 'C';
+    return (isBodySlot && _bodyTintMode === 'shadeFill')
+      ? shadeFillTintForBodyColor(bodyColors[slot], referenceHex)
+      : tintForBodyColor(bodyColors[slot], referenceHex);
+  };
+  const tintA = tintFor('A');
 
   const baseLeftArmLayers = [];
   const baseTorsoLayers = [];
@@ -922,8 +1038,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     for (const layer of groupLayers) {
       const target = group?.slot === 'torso' ? torsoClothingLayers : overwearLayers;
       const key = layer.paletteColorKey;
-      const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-        : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+      const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
       target.push({ layer, tint: tintFor(layerTintSlot || 'A') });
     }
   }
@@ -956,8 +1071,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (!groupLayers.length) return;
     for (const layer of groupLayers) {
       const key = layer.paletteColorKey;
-      const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-        : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+      const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
       target.push({ layer, tint: tintFor(layerTintSlot), group });
     }
   };
@@ -970,8 +1084,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const layer of groupLayers) {
         if (layer.pos === 'back') {
           const key = layer.paletteColorKey;
-          const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-            : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+          const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
           preBackLayers.push({ layer, tint: tintFor(layerTintSlot), group });
         }
       }
@@ -987,8 +1100,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       for (const layer of groupLayers) {
         if (layer.pos !== 'back') {
           const key = layer.paletteColorKey;
-          const layerTintSlot = (!key || key === 'A') ? hat.tintSlot
-            : (hat.tintSlot ? `${hat.tintSlot}_${key}` : null);
+          const layerTintSlot = resolveLayerTintSlot(key, hat.tintSlot);
           (hatIsUnderHood ? hatUnderLayers : hatOverLayers).push({ layer, tint: tintFor(layerTintSlot), group: hat });
         }
       }
@@ -1004,8 +1116,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       if (!groupLayers.length) continue;
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
-        const layerTintSlot = (!key || key === 'A') ? group.tintSlot
-          : (group.tintSlot ? `${group.tintSlot}_${key}` : null);
+        const layerTintSlot = resolveLayerTintSlot(key, group.tintSlot);
         (layer.pos === 'back' ? preBackLayers : frontHairLayers).push({ layer, tint: tintFor(layerTintSlot), group });
       }
     }

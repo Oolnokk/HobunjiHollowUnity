@@ -19,7 +19,8 @@
     "layers": {
       "base": "A",
       "trim": "B",
-      "exposed": "SKIN"
+      "exposed": "SKIN",
+      "exposedSkin": "BODY"
     }
   },
   "speciesVariants": {
@@ -518,7 +519,7 @@
               }
             },
             "front_exposed_ear": {
-              "layerRole": "exposed",
+              "layerRole": "exposedSkin",
               "image": {
                 "exposedPart": "ear",
                 "url": "./assets/fightersprites/mashtzarr-m/exposed_ear.png"
@@ -580,7 +581,7 @@
               }
             },
             "front_exposed_trunk": {
-              "layerRole": "exposed",
+              "layerRole": "exposedSkin",
               "image": {
                 "exposedPart": "trunk",
                 "url": "./assets/fightersprites/mashtzarr-m/exposed_trunk.png"
@@ -630,7 +631,7 @@
               }
             },
             "front_exposed_ear": {
-              "layerRole": "exposed",
+              "layerRole": "exposedSkin",
               "image": {
                 "exposedPart": "ear",
                 "url": "./assets/fightersprites/mashtzarr-f/exposed_ear.png"
@@ -692,7 +693,7 @@
               }
             },
             "front_exposed_trunk": {
-              "layerRole": "exposed",
+              "layerRole": "exposedSkin",
               "image": {
                 "exposedPart": "trunk",
                 "url": "./assets/fightersprites/mashtzarr-f/exposed_trunk.png"
