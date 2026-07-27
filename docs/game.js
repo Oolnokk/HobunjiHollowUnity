@@ -1927,7 +1927,7 @@
           attackStaminaCost: 12, attackCooldownS: 0.95,
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
-          canClimb: false, canSwim: false, modelWidth: 2.05, spriteAspect: 523 / 831, tint: 0xffffff,
+          canClimb: false, canSwim: false, modelWidth: 0.5125, spriteAspect: 523 / 831, tint: 0xffffff,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra',
         },
@@ -2031,7 +2031,7 @@
           attackStaminaCost: 15, attackCooldownS: 1.1,
           attacks: ['pounce'], attackTag: 'blunt', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
-          canClimb: false, canSwim: false, modelWidth: 2.9, spriteAspect: 523 / 831, tint: 0x789078,
+          canClimb: false, canSwim: false, modelWidth: 0.725, spriteAspect: 523 / 831, tint: 0x789078,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra-den-mother',
         },
@@ -3959,10 +3959,8 @@
       // permanent anatomical region (Uumkao'ii: fur + plates, both always
       // visible — unlike other species' future optional pattern layers).
       // Breeding blends parent colors per region with a small mutation
-      // chance; sell value rewards fur/plate color contrast. This pass is
-      // data-only: the math and Farm tab UI are fully real, but the in-game
-      // sprite doesn't yet apply per-region recoloring (no masked-texture
-      // pipeline exists for it — a follow-up once mask assets are authored).
+      // chance; sell value rewards fur/plate color contrast. The same genotype feeds Farm-tab valuation, breeding, and the masked
+      // texture compositor, keeping the displayed coat and stored genes in sync.
       // `weight` skews which colors actually turn up on an animal — real
       // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
       // orange an occasional accent and true red rare, so a flat uniform
@@ -3973,24 +3971,11 @@
       // at 2, red at 1, which nets out to roughly gray/brown/tan ~87%,
       // orange ~9%, red ~4% of picks given how many entries land in each
       // bucket (see _pickWeightedFurEntry below).
-      const LIVESTOCK_FUR_PALETTE = [
-        {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:4},{id:'charcoal',name:'Charcoal',hex:'#55585c',weight:4},
-        {id:'blue-grey',name:'Blue Grey',hex:'#596879',weight:4},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
-        {id:'dove',name:'Dove Grey',hex:'#756f78',weight:4},{id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},
-        {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:4},
-        {id:'cream',name:'Cream',hex:'#c7aa77',weight:4},{id:'champagne',name:'Champagne',hex:'#b99a72',weight:4},
-        {id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
-        {id:'buff',name:'Buff',hex:'#b77c49',weight:2},{id:'honey',name:'Honey',hex:'#b97832',weight:2},
-        {id:'golden',name:'Golden',hex:'#ae8430',weight:2},{id:'fawn',name:'Fawn',hex:'#a47650',weight:4},
-        {id:'taupe',name:'Taupe',hex:'#806a5b',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
-        {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c',weight:4},
-        {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:4},{id:'liver',name:'Liver',hex:'#65403d',weight:4},
-        {id:'chestnut',name:'Chestnut',hex:'#894e31',weight:1},{id:'mahogany',name:'Mahogany',hex:'#784337',weight:4},
-        {id:'cinnamon',name:'Cinnamon',hex:'#a45b37',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
-        {id:'auburn',name:'Auburn',hex:'#874438',weight:1},{id:'copper',name:'Copper',hex:'#a85e3a',weight:2},
-        {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
-        {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
-      ];
+      const LIVESTOCK_FUR_PALETTES = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.palettes || {};
+      const LIVESTOCK_FUR_PALETTE = LIVESTOCK_FUR_PALETTES.default || [];
+      function _livestockPalette(kind) {
+        return LIVESTOCK_FUR_PALETTES[kind] || LIVESTOCK_FUR_PALETTE;
+      }
       // Cumulative-weight draw over LIVESTOCK_FUR_PALETTE (or a filtered
       // subset, e.g. mutateFurColor excluding the current color) — every
       // random fur-color pick in the game goes through this instead of a
@@ -4025,13 +4010,14 @@
         return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
       }
       function _furNormalizeHex(s) { const m = String(s).trim().match(/^#?([0-9a-f]{6})$/i); return m ? '#' + m[1].toLowerCase() : null; }
-      function _furPaletteEntry(color) {
-        const normalized = _furNormalizeHex(color) || LIVESTOCK_FUR_PALETTE[0].hex;
-        const exact = LIVESTOCK_FUR_PALETTE.find(x => x.hex === normalized);
+      function _furPaletteEntry(color, kind) {
+        const palette = _livestockPalette(kind);
+        const normalized = _furNormalizeHex(color) || palette[0].hex;
+        const exact = Object.values(LIVESTOCK_FUR_PALETTES).flat().find(x => x.hex.toLowerCase() === normalized);
         if (exact) return exact;
         const [h, s] = _furRgbToHsv(..._furHexToRgb(normalized));
-        let best = LIVESTOCK_FUR_PALETTE[0], score = Infinity;
-        for (const entry of LIVESTOCK_FUR_PALETTE) {
+        let best = palette[0], score = Infinity;
+        for (const entry of palette) {
           const [eh, es] = _furRgbToHsv(..._furHexToRgb(entry.hex));
           let dh = Math.abs(h - eh); dh = Math.min(dh, 1 - dh);
           const d = dh * dh * 2.5 + (s - es) * (s - es);
@@ -4039,19 +4025,20 @@
         }
         return best;
       }
-      function _furPaletteColor(color) { return _furPaletteEntry(color).hex; }
+      function _furPaletteColor(color, kind) { return _furPaletteEntry(color, kind).hex; }
       function _furPaletteName(color) { return _furPaletteEntry(color).name; }
-      function randomFurColor() { return _pickWeightedFurEntry().hex; }
+      function randomFurColor(kind) { return _pickWeightedFurEntry(_livestockPalette(kind)).hex; }
 
-      function blendFurHex(colorA, colorB) {
-        const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB)));
+      function blendFurHex(colorA, colorB, kind) {
+        const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA, kind))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB, kind)));
         let dh = hb[0] - ha[0]; if (dh > 0.5) dh -= 1; if (dh < -0.5) dh += 1;
         const h = (ha[0] + dh * 0.5 + 1) % 1, s = (ha[1] + hb[1]) / 2, v = 0.72;
         const [r, g, b] = _furHsvToRgb(h, s, v);
-        return _furPaletteColor('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''));
+        return _furPaletteColor('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''), kind);
       }
-      function mutateFurColor(hex) {
-        const current = _furPaletteEntry(hex), choices = LIVESTOCK_FUR_PALETTE.filter(x => x.id !== current.id);
+      function mutateFurColor(hex, kind) {
+        const palette = _livestockPalette(kind);
+        const current = _furPaletteEntry(hex, kind), choices = palette.filter(x => x.id !== current.id);
         return _pickWeightedFurEntry(choices).hex;
       }
 
@@ -4120,15 +4107,16 @@
       };
       // Picks two fur colors that read as visually distinct — same rejection-
       // sample loop as the HTML lab's pickTwoFurColors().
-      function pickTwoLivestockFurColors() {
-        let a = _pickWeightedFurEntry(), b = a;
+      function pickTwoLivestockFurColors(kind) {
+        const palette = _livestockPalette(kind);
+        let a = _pickWeightedFurEntry(palette), b = a;
         for (let i = 0; i < 40; i++) {
-          b = _pickWeightedFurEntry();
+          b = _pickWeightedFurEntry(palette);
           const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
           let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
           if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
         }
-        if (a.id === b.id) b = LIVESTOCK_FUR_PALETTE[(LIVESTOCK_FUR_PALETTE.indexOf(a) + 7) % LIVESTOCK_FUR_PALETTE.length];
+        if (a.id === b.id) b = palette[(palette.indexOf(a) + Math.max(1, Math.floor(palette.length / 2))) % palette.length];
         return [a, b];
       }
 
@@ -4148,17 +4136,19 @@
       // randomly-chosen optional pattern layers (copies:1, dominant) — the
       // exact same odds used for wild-den pack genotypes (see
       // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
-      // pack member are statistically the same roll.
+      // pack member are statistically the same roll. Palette selection is
+      // species-aware: Drenkirra use the tropical palette configured in
+      // scratchbones-config.js through creation, breeding, and rendering.
       function makeDefaultGenotype(kind) {
         if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           return {
-            fur:    { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
-            plates: { color: randomFurColor(), copies: 2, inheritance: 'dominant' },
+            fur:    { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
+            plates: { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
           };
         }
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
         if (patterns) {
-          const [first, second] = pickTwoLivestockFurColors();
+          const [first, second] = pickTwoLivestockFurColors(kind);
           // Each pattern layer gets an independently configured chance of showing up
           // (rather than rolling "how many, then which") — with 3 patterns
           // that's ~70% odds of at least one being visible per specimen,
@@ -4169,7 +4159,9 @@
             const configuredChance = geneticsCfg.patternChances?.[kind]?.[id];
             const chance = Number.isFinite(Number(configuredChance))
               ? Number(configuredChance)
-              : Number(geneticsCfg.defaultPatternChance) || (1 / 3);
+              : Number.isFinite(Number(geneticsCfg.defaultPatternChance))
+                ? Number(geneticsCfg.defaultPatternChance)
+                : (1 / 3);
             const enabled = Math.random() < chance;
             genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
@@ -4243,10 +4235,10 @@
         if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           const child = {};
           for (const layerId of ['fur', 'plates']) {
-            const la = genotypeA?.[layerId] || { color: randomFurColor() };
-            const lb = genotypeB?.[layerId] || { color: randomFurColor() };
-            let color = blendFurHex(la.color, lb.color);
-            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color);
+            const la = genotypeA?.[layerId] || { color: randomFurColor(kind) };
+            const lb = genotypeB?.[layerId] || { color: randomFurColor(kind) };
+            let color = blendFurHex(la.color, lb.color, kind);
+            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
             child[layerId] = { color, copies: 2, inheritance: 'dominant' };
           }
           return child;
@@ -4254,20 +4246,20 @@
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
         if (!patterns) return makeDefaultGenotype(kind);
         const child = {};
-        const baseA = genotypeA?.base || { color: randomFurColor() }, baseB = genotypeB?.base || { color: randomFurColor() };
-        let baseColor = blendFurHex(baseA.color, baseB.color);
-        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor);
+        const baseA = genotypeA?.base || { color: randomFurColor(kind) }, baseB = genotypeB?.base || { color: randomFurColor(kind) };
+        let baseColor = blendFurHex(baseA.color, baseB.color, kind);
+        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor, kind);
         child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
         for (const id of patterns) {
-          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
-          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(), inheritance: 'dominant' };
+          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
+          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
           const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
           let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
           if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
           const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
           const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
-          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color) : (alleleA?.color || alleleB?.color || randomFurColor());
-          if (mutated) color = mutateFurColor(color);
+          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomFurColor(kind));
+          if (mutated) color = mutateFurColor(color, kind);
           child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
         }
         const childEnabledIds = patterns.filter(id => child[id].enabled);
@@ -6177,7 +6169,7 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
+          if (def.hostile !== false && c.state !== 'chase' && c.state !== 'fleeing-low-health' && !onFleeCooldown && distToPlayer <= def.aggroRangePx && distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) { c.state = 'chase'; c.targetPlayer = targetPlayer; }
           if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) c.state = 'return';
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
 

@@ -14,7 +14,38 @@ window.SCRATCHBONES_CONFIG = {
   game: {
     "creatureGenetics": {
       "defaultPatternChance": 0.3333333333333333,
-      "patternChances": { "grehlr": { "mitts": 0.08 } }
+      "patternChances": { "grehlr": { "mitts": 0.08 } },
+      // Base/pattern colors flow from makeDefaultGenotype through breeding and
+      // CreatureGeneticsRender. Drenkirra deliberately use an equally weighted
+      // bright, full-hue parrot palette rather than the default earthy coats.
+      "palettes": {
+        "default": [
+          {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:4},{id:'charcoal',name:'Charcoal',hex:'#55585c',weight:4},
+          {id:'blue-grey',name:'Blue Grey',hex:'#596879',weight:4},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
+          {id:'dove',name:'Dove Grey',hex:'#756f78',weight:4},{id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},
+          {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:4},
+          {id:'cream',name:'Cream',hex:'#c7aa77',weight:4},{id:'champagne',name:'Champagne',hex:'#b99a72',weight:4},
+          {id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
+          {id:'buff',name:'Buff',hex:'#b77c49',weight:2},{id:'honey',name:'Honey',hex:'#b97832',weight:2},
+          {id:'golden',name:'Golden',hex:'#ae8430',weight:2},{id:'fawn',name:'Fawn',hex:'#a47650',weight:4},
+          {id:'taupe',name:'Taupe',hex:'#806a5b',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
+          {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c',weight:4},
+          {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:4},{id:'liver',name:'Liver',hex:'#65403d',weight:4},
+          {id:'chestnut',name:'Chestnut',hex:'#894e31',weight:1},{id:'mahogany',name:'Mahogany',hex:'#784337',weight:4},
+          {id:'cinnamon',name:'Cinnamon',hex:'#a45b37',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
+          {id:'auburn',name:'Auburn',hex:'#874438',weight:1},{id:'copper',name:'Copper',hex:'#a85e3a',weight:2},
+          {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
+          {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
+        ],
+        "drenkirra": [
+          {id:'scarlet',name:'Scarlet',hex:'#ef3340',weight:1},{id:'tangerine',name:'Tangerine',hex:'#ff7a18',weight:1},
+          {id:'sun-yellow',name:'Sun Yellow',hex:'#ffd629',weight:1},{id:'lime',name:'Lime',hex:'#8bdc24',weight:1},
+          {id:'parrot-green',name:'Parrot Green',hex:'#20c65a',weight:1},{id:'turquoise',name:'Turquoise',hex:'#19c7c1',weight:1},
+          {id:'sky-blue',name:'Sky Blue',hex:'#2e9cff',weight:1},{id:'cobalt',name:'Cobalt',hex:'#3558e8',weight:1},
+          {id:'violet',name:'Violet',hex:'#873de0',weight:1},{id:'magenta',name:'Magenta',hex:'#e638a7',weight:1},
+          {id:'coral',name:'Coral',hex:'#ff6675',weight:1},{id:'orchid',name:'Orchid',hex:'#c965e8',weight:1},
+        ]
+      }
     },
     // Wildlife reproduction and farm-livestock data. Den mothers are
     // selected only from species actually native to the den's exterior zone.
@@ -33,7 +64,7 @@ window.SCRATCHBONES_CONFIG = {
         "garWolfBaby": "gar-wolf", "dabinggiHoundEgg": "dabinggi-hound",
         "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
       },
-      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 2.05 },
+      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.5125 },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
         "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk" },
