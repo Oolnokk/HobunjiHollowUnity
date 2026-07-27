@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_loot_pools.v1",
-  "note": "Single source of truth for every drop table in the game — creature kills, bandit tents, and treasure chests. Authored via docs/tools/loot-shop-editor/. Read by docs/game.js's loadLootShopConfig()/rollLootPool(). Conditions use the shared docs/js/condition-registry.js schema; only weekdays/seasons/weather/timesOfDay/maps/playerSpecies are meaningful here (loot has no NPC-relationship or dialogue-encounter/station concept, so those axes/entries are simply never checked).",
+  "note": "Single source of truth for every drop table in the game — creature kills, bandit tents, bandit corpses, and treasure chests. Authored via docs/tools/loot-shop-editor/. Read by docs/game.js's loadLootShopConfig()/rollLootPool(). Conditions use the shared docs/js/condition-registry.js schema; only weekdays/seasons/weather/timesOfDay/maps/playerSpecies are meaningful here (loot has no NPC-relationship or dialogue-encounter/station concept, so those axes/entries are simply never checked).",
   "pools": {
     "creature_dabinggi-hound": {
       "label": "Dabinggi-hound",

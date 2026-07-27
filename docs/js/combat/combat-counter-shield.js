@@ -9,15 +9,15 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-counter-shield.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  const DRAIN_PER_S = 20;
-  const MIN_STAMINA_TO_RAISE = 6;
-  const COUNTER_COOLDOWN_S = 0.62;
-  const COUNTER_DAMAGE_MUL = 4.4; // ~62 vs the demo's 14-damage baseline
-  const COUNTER_RANGE_MUL = 1.7;
-  const COUNTER_HALF_CONE_DEG = 8;
+  let DRAIN_PER_S = 20;
+  let MIN_STAMINA_TO_RAISE = 6;
+  let COUNTER_COOLDOWN_S = 0.62;
+  let COUNTER_DAMAGE_MUL = 4.4; // ~62 vs the demo's 14-damage baseline
+  let COUNTER_RANGE_MUL = 1.7;
+  let COUNTER_HALF_CONE_DEG = 8;
   // x1.5 on top of the global knockback-base doubling — the riposte is one
   // of the four attacks called out for an extra "even more" bump.
-  const COUNTER_KNOCKBACK_MUL = 2.25;
+  let COUNTER_KNOCKBACK_MUL = 2.25;
 
   // Held guard stance — a forward-braced thrust-style hold (z pushes the
   // weapon out front, like readying a jab) but played with anim:'sweep' so
@@ -30,7 +30,8 @@
     windup:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20 },
     strike:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20 },
   };
-  const BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
+  let BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
+  let COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
 
   function now() { return performance.now() / 1000; }
 
@@ -79,7 +80,6 @@
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
       const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
       const knockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
-      const COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
       // Riposte is a snap stab — mirror the shovel's straight thrust. This
       // replaces the held block pose for the riposte's own cosmetic
       // duration; see reassertBlockAt below for bringing the guard back up.
@@ -176,5 +176,26 @@
   // own damage/range/cone numbers are needed here, not the hold mechanics.
   window.Combat.counterShieldData = {
     COUNTER_DAMAGE_MUL, COUNTER_RANGE_MUL, COUNTER_HALF_CONE_DEG, COUNTER_KNOCKBACK_MUL,
+  };
+
+  // Applies docs/config/combat/attack-values.json's `counterShield` section —
+  // see combat-combo.js's applyComboConfig for the general pattern.
+  window.Combat.applyCounterShieldConfig = function (cfg) {
+    if (!cfg) return;
+    if (cfg.DRAIN_PER_S != null) DRAIN_PER_S = cfg.DRAIN_PER_S;
+    if (cfg.MIN_STAMINA_TO_RAISE != null) MIN_STAMINA_TO_RAISE = cfg.MIN_STAMINA_TO_RAISE;
+    if (cfg.COUNTER_COOLDOWN_S != null) COUNTER_COOLDOWN_S = cfg.COUNTER_COOLDOWN_S;
+    if (cfg.COUNTER_DAMAGE_MUL != null) COUNTER_DAMAGE_MUL = cfg.COUNTER_DAMAGE_MUL;
+    if (cfg.COUNTER_RANGE_MUL != null) COUNTER_RANGE_MUL = cfg.COUNTER_RANGE_MUL;
+    if (cfg.COUNTER_HALF_CONE_DEG != null) COUNTER_HALF_CONE_DEG = cfg.COUNTER_HALF_CONE_DEG;
+    if (cfg.COUNTER_KNOCKBACK_MUL != null) COUNTER_KNOCKBACK_MUL = cfg.COUNTER_KNOCKBACK_MUL;
+    if (cfg.BLOCK_WINDUP_S != null) BLOCK_WINDUP_S = cfg.BLOCK_WINDUP_S;
+    if (cfg.BLOCK_STRIKE_S != null) BLOCK_STRIKE_S = cfg.BLOCK_STRIKE_S;
+    if (cfg.COUNTER_WINDUP_S != null) COUNTER_WINDUP_S = cfg.COUNTER_WINDUP_S;
+    if (cfg.COUNTER_STRIKE_S != null) COUNTER_STRIKE_S = cfg.COUNTER_STRIKE_S;
+    if (cfg.COUNTER_HOLD_S != null) COUNTER_HOLD_S = cfg.COUNTER_HOLD_S;
+    Object.assign(window.Combat.counterShieldData, {
+      COUNTER_DAMAGE_MUL, COUNTER_RANGE_MUL, COUNTER_HALF_CONE_DEG, COUNTER_KNOCKBACK_MUL,
+    });
   };
 })();

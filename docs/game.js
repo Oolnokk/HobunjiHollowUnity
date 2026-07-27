@@ -1747,7 +1747,11 @@
         return window.SCRATCHBONES_CONFIG?.game?.combat || {};
       }
       function weaponAbility(action) {
-        const cfg = combatConfig().weaponAbilities?.[action];
+        // docs/config/combat/attack-values.json (authored via the Attack
+        // Editor) is the real source of truth once it's loaded — falls back
+        // to scratchbones-config.js's copy (the original, still-synchronous
+        // definition) if the fetch hasn't resolved yet or failed.
+        const cfg = window.__attackValuesConfig?.weaponAbilities?.[action] || combatConfig().weaponAbilities?.[action];
         if (!cfg) return null;
         // A smith-crafted verdigris weapon's damage scales with its
         // effective metal tier (see toolMetalMultiplier) — reinforcement-
@@ -8777,7 +8781,18 @@
       // gar-wolf's worth of health that hits noticeably softer -- a lightly
       // armed thug, not a predator.
       const BANDIT_BASE_MAX_HEALTH = 70;
-      const BANDIT_BASE_ATTACK_DAMAGE = 17;
+      // These 5 (plus CREATURE_DB's own per-species attack* fields) are
+      // overridden from docs/config/combat/attack-values.json's `bandit`
+      // section once it loads (see the window.__attackValuesConfigPromise
+      // chain below) — kept as `let` with their original values as the
+      // synchronous fallback default, same pattern as every combat-*.js
+      // module's applyXConfig.
+      let BANDIT_BASE_ATTACK_DAMAGE = 17;
+      let BANDIT_ATTACK_RANGE_TILES = 0.9;
+      let BANDIT_ATTACK_HALF_CONE_DEG = 44;
+      let BANDIT_ATTACK_STAMINA_COST = 12;
+      let BANDIT_ATTACK_COOLDOWN_S_CAPTAIN = 0.95;
+      let BANDIT_ATTACK_COOLDOWN_S_OTHER = 1.15;
       const BANDIT_BASE_MAX_STAMINA = 46;
       // Rolled mastery is plain data on the combatant (bandits have no
       // gearInventory and never touch the player's tool-mastery XP system) --
@@ -8854,10 +8869,10 @@
           moveSpeed: 118 + tier * 4,
           chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * 5,
           attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
-          attackRangePx: TILE * 0.9,
-          attackHalfConeRad: 44 * Math.PI / 180,
-          attackStaminaCost: 12,
-          attackCooldownS: rank === 'captain' ? 0.95 : 1.15,
+          attackRangePx: TILE * BANDIT_ATTACK_RANGE_TILES,
+          attackHalfConeRad: BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180,
+          attackStaminaCost: BANDIT_ATTACK_STAMINA_COST,
+          attackCooldownS: rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER,
           attackTag: weapon.dmgType,
           weaponKey: weapon.weaponKey,
           banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
@@ -9198,7 +9213,7 @@
         const techDef = qa?.TECHNIQUES?.[loadout.tap2];
         if (!techDef) return false;
         const cond = banditQuickAttackConditions(c, targetPlayer);
-        const tech = techDef.build(null, targetPlayer, cond);
+        const tech = window.Combat.buildQuickAttack(techDef, cond);
         const base = banditAttackBaseline(def);
         const damage = Math.max(1, Math.round(base.damage * tech.damageMul));
         // combat-quickattacks.js's own RANGE_SCALE (0.6) shrinks the raw
@@ -9415,7 +9430,7 @@
         const techDef = qa?.TECHNIQUES?.[loadout.tap2];
         if (techDef && targetPlayer) {
           const cond = banditQuickAttackConditions(c, targetPlayer);
-          const tech = techDef.build(null, targetPlayer, cond);
+          const tech = window.Combat.buildQuickAttack(techDef, cond);
           const qaRangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
           const qaLungePx = TILE * (qa.LUNGE_TILE_MUL || 5.5);
           reach = Math.min(reach, banditAbilitySafeReachPx(qaRangePx, qaLungePx, qa.WINDUP_S, qa.STRIKE_S));
