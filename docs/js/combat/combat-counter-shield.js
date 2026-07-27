@@ -110,7 +110,11 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: effects.afflictions });
+            // Sharp/blunt comes from whichever tool occupies the weapon
+            // slot (see combat-combo.js's matching comment) -- this used to
+            // hardcode 'sharp' regardless of the equipped weapon.
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;
           }
@@ -165,4 +169,12 @@
   }
 
   register();
+
+  // Read-only data export for game.js's bandit AI — see combat-combo.js's
+  // matching comment. A bandit's own guard window is a timed toggle (see
+  // updateBanditCombatAI) rather than a held button, so only the riposte's
+  // own damage/range/cone numbers are needed here, not the hold mechanics.
+  window.Combat.counterShieldData = {
+    COUNTER_DAMAGE_MUL, COUNTER_RANGE_MUL, COUNTER_HALF_CONE_DEG, COUNTER_KNOCKBACK_MUL,
+  };
 })();

@@ -112,6 +112,9 @@
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
+      // Sharp/blunt comes from whichever tool occupies the weapon slot (see
+      // combat-combo.js's matching comment) -- every technique here used to
+      // hardcode 'sharp' regardless of the equipped weapon's own dmgType.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
@@ -150,7 +153,8 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'sharp', afflictionBonuses: effects.afflictions });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;
           }
@@ -171,4 +175,14 @@
   }
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);
+
+  // Read-only data export for game.js's bandit AI — see combat-combo.js's
+  // matching comment. exhaustCutter/backstabFlick/mercySpike's build(deps,
+  // target, cond) never actually reads `deps` (only `cond`), so a bandit can
+  // call build(null, player, banditCond) directly with its own condition
+  // check (player exhausted/behind/low-health from the bandit's point of
+  // view) and get the exact same damage/range/knockback numbers a player
+  // jab would. opportunistJab is excluded from the bandit pool — its bonus
+  // depends on telegraphState, which only creatures have, not the player.
+  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S };
 })();

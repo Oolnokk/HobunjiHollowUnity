@@ -117,12 +117,29 @@
   }
 
   // Called from game.js's damagePlayer() so every attack that lands on the
-  // player staggers them — interrupts whatever combo/quick-attack/charged-
-  // breaker strike was mid-windup, the same way a landed player hit cancels
-  // a creature's own telegraphed attack (see combat-enemy-telegraph.js's
-  // cancel(), called alongside this from damageCreature()).
+  // player staggers THEM — interrupts whatever combo/quick-attack/charged-
+  // breaker strike the PLAYER was mid-windup on, the same way a landed
+  // player hit cancels a creature's own telegraphed attack (see combat-
+  // enemy-telegraph.js's cancel(), called alongside this from
+  // damageCreature()). Skips any action tagged data.isBandit -- game.js's
+  // parallel bandit AI (updateBanditCombatAI) reuses this SAME shared
+  // beginStagedAction pipeline for its own combo/quick-attack/charged-
+  // breaker/riposte swings (see the long comment above it for why), so
+  // without this filter, every bandit attack that actually LANDS a hit
+  // cancels itself: damagePlayer runs synchronously from inside that same
+  // action's own onStrike callback, and at that point the action is still
+  // in this registry (it hasn't reached onComplete yet) -- self-cancelling
+  // mid-strike, every time, on every bandit that connects, and (in a
+  // multi-bandit fight) every OTHER bandit's in-flight swing too. A
+  // cancelled action's onCancel path never runs the bookkeeping onComplete
+  // does (attackCooldownT, and on a combo's final step, retreatT/resetting
+  // its combo index) -- landing bandits were skipping their own attack
+  // cooldown entirely and never retreating after their 3-hit combo.
   function cancelAllStaged() {
-    for (const action of Array.from(activeStaged)) action.cancel();
+    for (const action of Array.from(activeStaged)) {
+      if (action.data?.isBandit) continue;
+      action.cancel();
+    }
   }
 
   function init(injectedDeps) {

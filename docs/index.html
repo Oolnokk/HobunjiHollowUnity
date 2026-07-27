@@ -37,6 +37,10 @@
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
   <script src="js/wilderness-map-generator.js?v=20260712d"></script>
+  <!-- Generic post-generation locale placement (window.TemporaryLocales) —
+       scans an already-generated wilderness zone for a site instead of
+       reserving one before generation; used by bandit camps. -->
+  <script src="js/temporary-locales.js?v=20260725a"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -190,8 +194,12 @@
     </div>
     <div class="fed-scroll">
       <div class="fed-section">
-        <div class="fed-label">Species (rolls fresh cosmetic genes per spawn)</div>
+        <div class="fed-label">Species (rolls fresh cosmetic genes per spawn) — Bandit entries roll a fresh gang member (species/clothing/loadout) per spawn</div>
         <div class="fed-grid" id="devSpawnSpeciesGrid"></div>
+      </div>
+      <div class="fed-section" id="devSpawnBanditTierSection">
+        <div class="fed-label">Bandit difficulty tier (distance-from-town stand-in, 0-3)</div>
+        <div class="fed-grid" id="devSpawnBanditTierGrid"></div>
       </div>
       <div class="fed-section fed-actions">
         <button class="fed-action-btn" id="devSpawnBtnAction">➕ Spawn Selected</button>
@@ -199,6 +207,13 @@
       </div>
       <div class="fed-section">
         <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devCombatLogBtn">📋 Copy Combat Log (last 7s, for AI review)</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Base movement speed (player &amp; every creature/bandit) — <span id="devSpeedMulLabel">75%</span></div>
+        <input type="range" id="devSpeedMulSlider" min="25" max="300" step="5" value="75" style="width:100%">
       </div>
     </div>
   </div>
@@ -644,6 +659,13 @@
           <div class="menu-section-title">Bulletin Board</div>
           <div id="tasksBoardPosting" class="supply-list"></div>
         </div>
+        <!-- Wanted poster for a bandit captain -- separate slot from the
+             board notice above, own refresh rule (maybeRefreshBountyPosting
+             in game.js): stays up until claimed, not replaced daily. -->
+        <div class="menu-section">
+          <div class="menu-section-title">Wanted</div>
+          <div id="tasksBountyPosting" class="supply-list"></div>
+        </div>
         <div class="menu-section">
           <div class="menu-section-title">Quest Log</div>
           <div id="tasksList" class="supply-list"></div>
@@ -871,6 +893,12 @@
 
   <!-- Toast -->
   <div id="toast" role="status" aria-live="polite"></div>
+  <!-- Location title card -- fades in near the top of the screen when
+       entering a named area's radius (e.g. a bandit camp), same genre
+       convention as an "Entering X" banner. Separate from #toast (a small
+       corner pill meant for quick status pings), since this needs to read
+       as a deliberate, cinematic reveal. -->
+  <div id="zoneBanner" role="status" aria-live="polite"></div>
 
   <!-- Contextual action prompt (bottom-center) — device-aware "press X to
        do Y" prompt shared across the game; see showActionPrompt/
@@ -881,6 +909,13 @@
   <div id="nestTakeHud" aria-hidden="true">
     <div class="nest-take-label" id="nestTakeLabel"></div>
     <div class="nest-take-track"><div class="nest-take-fill" id="nestTakeFill"></div></div>
+  </div>
+
+  <!-- Bandit tent hold-to-loot/burn progress bar — same markup and CSS rules
+       as #nestTakeHud above (see updateBanditTentInteraction in game.js). -->
+  <div id="tentActionHud" aria-hidden="true">
+    <div class="nest-take-label" id="tentActionLabel"></div>
+    <div class="nest-take-track"><div class="nest-take-fill" id="tentActionFill"></div></div>
   </div>
 
   <!-- Combo streak readout (see js/combat/combat-combo-streak.js) -->

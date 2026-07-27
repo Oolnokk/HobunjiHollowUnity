@@ -56,11 +56,17 @@
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
-  // dmgTag/heavy feed the resource-afflictions system (docs/js/combat/
-  // resource-system.js): sweeping steps tag as Blunt (bruise + winded
-  // stamina), thrusting steps as Sharp (bleed + wounded stamina); each
-  // combo's 3rd/finisher step also consumes the target's Bruised Health
-  // for bonus damage, same as the demo's Heavy Attack rule.
+  // heavy feeds the resource-afflictions system (docs/js/combat/resource-
+  // system.js) — each combo's 3rd/finisher step consumes the target's
+  // Bruised Health for bonus damage, same as the demo's Heavy Attack rule.
+  // dmgTag below is now UNUSED by onTap (kept only as reference data on
+  // each step) — sharp/blunt used to be tagged per combo family (sweeping
+  // Blunt, thrusting Sharp) regardless of the actual equipped weapon, which
+  // silently mistagged the two real weapons where animation style and
+  // material disagree (hatchet: sweep-animated but a sharp weapon;
+  // pick-shovel: thrust-animated but blunt). onTap now reads
+  // deps.currentWeaponDamageType() instead, matching what the weapon's own
+  // loadout/mastery screen already shows for its affliction options.
   // Forehand/Backhand knockbackMul is deliberately low — a combo's own early
   // hits used to shove a target most of the way out of the next step's
   // range/cone before it could land, which is what actually made 2nd/3rd
@@ -122,6 +128,15 @@
       // progression.js) — a fresh, unleveled combo deals plain damage with
       // no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
+      // Sharp/blunt is determined by whichever tool occupies the weapon
+      // slot (see TOOL_ITEM_DEFS' own dmgType, and weaponDamageTypeForTool)
+      // -- not by step.dmgTag, a per-combo-family value (swingCombo always
+      // 'blunt', pokeCombo always 'sharp') that mismatches two of the four
+      // real weapons (hatchet is sweep-animated but sharp; pick-shovel is
+      // thrust-animated but blunt). The loadout/mastery screen already
+      // shows each weapon's real afflictions this way; combat itself needs
+      // to match it, for both the affliction dealt and the impact sound.
+      const dmgType = deps.currentWeaponDamageType();
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted (see resource-system.js's spendStamina) instead of
@@ -181,7 +196,8 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: step.dmgTag, heavy: step.heavy, afflictionBonuses: effects.afflictions });
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, heavy: step.heavy, afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;
           }
@@ -210,4 +226,12 @@
   // sweeping attack uses this same authored pose rather than each falling
   // back to updateToolMesh's older hardcoded default sweep arc.
   window.Combat.poses = { SWEEP_POSE };
+  // Read-only data export — lets a non-player attacker (game.js's bandit AI)
+  // deal damage using these exact same step numbers without this module
+  // needing to know anything about who's swinging. onTap above stays the
+  // only thing that actually executes a PLAYER swing; this is just the data.
+  // Keyed by the same ability ids ('swingCombo'/'pokeCombo') a loadout slot
+  // stores, not the raw step-array constant names, so a lookup by loadout
+  // value works directly.
+  window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
 })();

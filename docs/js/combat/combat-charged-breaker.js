@@ -145,7 +145,11 @@
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: 'blunt', heavy: true, afflictionBonuses: effects.afflictions });
+            // Sharp/blunt comes from whichever tool occupies the weapon
+            // slot (see combat-combo.js's matching comment) -- this used to
+            // hardcode 'blunt' regardless of the equipped weapon.
+            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: deps.currentWeaponDamageType(), heavy: true, afflictionBonuses: effects.afflictions });
+            deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId);
             hits++;
             lastName = c.def.label;
           }
@@ -178,4 +182,15 @@
   }
 
   register();
+
+  // Read-only data export for game.js's bandit AI — see combat-combo.js's
+  // matching comment. A bandit's own charged breaker fires at a fixed
+  // charge fraction (game.js picks one) rather than modeling a real
+  // press-and-hold, so only the multiplier curves/cone/timing are needed
+  // here, not the charge-loop mechanics themselves.
+  window.Combat.chargedBreakerData = {
+    DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX,
+    RANGE_MUL_MIN, RANGE_MUL_MAX, HALF_CONE_DEG, WINDUP_S, STRIKE_S,
+    LUNGE_TILE_MUL, LUNGE_HOP_UNITS, POWER,
+  };
 })();

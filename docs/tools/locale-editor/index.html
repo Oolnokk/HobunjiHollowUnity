@@ -113,6 +113,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
                 <option value="dwelling">dwelling</option>
                 <option value="great_fey_shrine">great_fey_shrine</option>
                 <option value="story_poi">story_poi</option>
+                <option value="bandit_camp">bandit_camp</option>
                 <option value="misc">misc</option>
               </select>
             </div>
@@ -148,6 +149,15 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <label>Allowed wilderness zones (none checked = any)</label>
           <div id="zoneChecks"></div>
           <div class="g2" style="margin-top:6px">
+            <div><label>Placement mode</label>
+              <select id="locMode">
+                <option value="fixed">Fixed (reserved before terrain generates)</option>
+                <option value="temporary">Temporary (scans already-generated terrain, clears &amp; releasable)</option>
+              </select>
+            </div>
+            <div><label>Max instances per zone (temporary only)</label><input id="locMaxInstances" type="number" min="1" max="20" value="1"></div>
+          </div>
+          <div class="g2" style="margin-top:6px">
             <div><label>Clearance tiles (buffer kept clear around footprint)</label><input id="locClearance" type="number" min="0" max="20" value="2"></div>
             <div><label>Min distance from zone entry</label><input id="locMinDist" type="number" min="0" max="200" value="0"></div>
           </div>
@@ -157,7 +167,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <label class="chk"><input type="checkbox" id="locGroundOnly"> Always flat ground level (ignore any plateau it lands on/against)</label>
           <div style="margin-top:6px"><label>Placement notes</label><textarea id="locPlacementNotes" rows="2"></textarea></div>
           <button class="sec" id="applyPlacementBtn" style="width:100%;margin-top:6px">Apply</button>
-          <p class="muted" style="margin-top:6px">The generator looks for a flat, fully open rectangle (footprint + clearance on every side) by random search — keep the footprint small and clearance low (1–2) for a locale to reliably find room in busy wilderness terrain. A locale that fails to place in one zone is retried in its other allowed zones. By default, a locale placed on/against a plateau is folded into that plateau's own flat top instead of sinking to ground level — check "Always flat ground level" above to opt a locale out of that and force it to ground level regardless of what it lands on.</p>
+          <p class="muted" style="margin-top:6px">Fixed locales reserve a flat, fully open rectangle (footprint + clearance) before the wilderness generator places flora/dens/structures, by random search — keep the footprint small and clearance low (1–2) for one to reliably find room. Temporary locales (see docs/js/temporary-locales.js) instead scan the <em>already-generated</em> zone for a same-elevation, unoccupied, river/path-free rectangle, clear whatever flora/rocks are there, and stamp in — used for things like bandit camps that can be destroyed and re-rolled elsewhere without a full Tothal Shift. By default, a locale placed on/against a plateau is folded into that plateau's own flat top instead of sinking to ground level — check "Always flat ground level" above to opt out and force ground level regardless of what it lands on.</p>
         </div>
 
         <!-- VALIDATION -->
@@ -218,6 +228,7 @@ const TILE_ORDER = ['grass','weeds','shrub','path','rock','tilled','raised','tre
 
 const OBJECT_PALETTE = [
   { kind:'structure', key:'structure', label:'Structure (house/tent/shrine)', icon:'🏠', w:3, h:3 },
+  { kind:'tent',      key:'tent',      label:'Tent (lootable/burnable)', icon:'⛺', w:2, h:2 },
   { kind:'decor',     key:'bench',        label:'Bench',          icon:'🪑', w:1, h:1 },
   { kind:'decor',     key:'chest',        label:'Storage Chest',  icon:'📦', w:1, h:1 },
   { kind:'decor',     key:'hearth',       label:'Hearth/Firepit', icon:'🔥', w:1, h:1 },
@@ -263,7 +274,7 @@ function makeLocale(id, name, category) {
     objects: [],       // { id, kind, key, label, col, row, w, h, rot }
     npcAnchors: [],    // { id, npcId, name, col, row, facing }
     connectors: [],    // { id, col, row, side, label }
-    placement: { allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
+    placement: { mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' },
     meta: { createdAt: nowIso(), updatedAt: nowIso() }
   };
 }
@@ -281,7 +292,7 @@ function sanitizeLoaded(raw) {
     cols: clamp(Math.round(Number(raw.cols) || 16), 4, 120),
     rows: clamp(Math.round(Number(raw.rows) || 16), 4, 120),
     tiles: {}, objects: [], npcAnchors: [], connectors: [],
-    placement: Object.assign({ allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
+    placement: Object.assign({ mode: 'fixed', maxInstances: 1, allowedZones: [], clearanceTiles: 2, requiresFlatGround: true, minDistanceFromEntry: 0, sameSectorAsEntry: false, alwaysVisibleOnMap: false, groundOnly: false, notes: '' }, raw.placement || {}),
     meta: Object.assign({ createdAt: nowIso(), updatedAt: nowIso() }, raw.meta || {})
   });
   for (const [k, v] of Object.entries(raw.tiles || {})) {
@@ -289,7 +300,19 @@ function sanitizeLoaded(raw) {
     m.tiles[k] = { type };
   }
   for (const o of (raw.objects || [])) {
-    m.objects.push({ id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 });
+    const obj = { id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 };
+    // Tents (and any future lootable/burnable prop) carry a held-action
+    // spec the wilderness runtime reads directly -- see docs/js/temporary-locales.js.
+    if (o.interactable && typeof o.interactable === 'object') {
+      obj.interactable = {
+        lootable: !!o.interactable.lootable,
+        burnable: !!o.interactable.burnable,
+        holdSeconds: Math.max(0.5, Number(o.interactable.holdSeconds) || 4)
+      };
+    } else if (o.kind === 'tent' || (p => p && p.kind === 'tent')(OBJECT_PALETTE.find(x => x.key === o.key))) {
+      obj.interactable = { lootable: true, burnable: true, holdSeconds: 4 };
+    }
+    m.objects.push(obj);
   }
   for (const n of (raw.npcAnchors || [])) {
     m.npcAnchors.push({ id: n.id || uid('npc'), npcId: n.npcId || '', name: n.name || 'NPC', col: n.col|0, row: n.row|0, facing: n.facing || 'south' });
@@ -513,6 +536,7 @@ function placeOrSelectObject(c, r) {
   if (hit) { selected = { type:'object', id: hit.id }; renderInspector(); draw(); return; }
   const p = paletteObject;
   const obj = { id: uid('obj'), kind: p.kind, key: p.key, label: p.label, col: c, row: r, w: p.w, h: p.h, rot: 0 };
+  if (p.kind === 'tent') obj.interactable = { lootable: true, burnable: true, holdSeconds: 4 };
   m.objects.push(obj);
   selected = { type:'object', id: obj.id };
   finishEdit();
@@ -650,6 +674,8 @@ function renderInspector() {
     const o = m.objects.find(x => x.id === selected.id);
     if (!o) { selected = null; return renderInspector(); }
     $('inspectorTag').textContent = 'object';
+    const isTent = o.kind === 'tent';
+    const ia = o.interactable || { lootable: true, burnable: true, holdSeconds: 4 };
     box.innerHTML = `
       <div class="g2"><div><label>Label</label><input id="insLabel" value="${escapeAttr(o.label)}"></div>
       <div><label>Kind</label><input id="insKind" value="${escapeAttr(o.kind)}" readonly></div></div>
@@ -657,6 +683,13 @@ function renderInspector() {
       <div><label>Row</label><input id="insRow" type="number" value="${o.row}"></div></div>
       <div class="g2" style="margin-top:6px"><div><label>Width</label><input id="insW" type="number" min="1" value="${o.w}"></div>
       <div><label>Height</label><input id="insH" type="number" min="1" value="${o.h}"></div></div>
+      ${isTent ? `
+      <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
+        <label class="chk"><input type="checkbox" id="insLootable" ${ia.lootable ? 'checked' : ''}> Lootable (held action grants loot)</label>
+        <label class="chk"><input type="checkbox" id="insBurnable" ${ia.burnable ? 'checked' : ''}> Burnable (held action destroys it)</label>
+        <div style="margin-top:4px"><label>Hold seconds</label><input id="insHoldSeconds" type="number" min="0.5" step="0.5" value="${ia.holdSeconds}"></div>
+        <p class="muted" style="margin-top:4px">A camp is cleared once every lootable/burnable tent in it is gone — see placement.mode below.</p>
+      </div>` : ''}
       <div class="row" style="margin-top:8px"><button class="ok" id="insSave">Save</button><button class="bad" id="insDelete">Delete</button></div>`;
     $('insSave').addEventListener('click', () => {
       o.label = $('insLabel').value.trim();
@@ -664,6 +697,13 @@ function renderInspector() {
       o.row = Math.round(Number($('insRow').value)) || 0;
       o.w = Math.max(1, Math.round(Number($('insW').value)) || 1);
       o.h = Math.max(1, Math.round(Number($('insH').value)) || 1);
+      if (isTent) {
+        o.interactable = {
+          lootable: $('insLootable').checked,
+          burnable: $('insBurnable').checked,
+          holdSeconds: Math.max(0.5, Number($('insHoldSeconds').value) || 4)
+        };
+      }
       finishEdit();
     });
     $('insDelete').addEventListener('click', () => { m.objects = m.objects.filter(x => x.id !== o.id); selected = null; finishEdit(); });
@@ -744,6 +784,8 @@ function renderSettings() {
   $('locTags').value = m.tags.join(', ');
   $('locCols').value = m.cols;
   $('locRows').value = m.rows;
+  $('locMode').value = m.placement.mode === 'temporary' ? 'temporary' : 'fixed';
+  $('locMaxInstances').value = m.placement.maxInstances || 1;
   $('locClearance').value = m.placement.clearanceTiles;
   $('locMinDist').value = m.placement.minDistanceFromEntry;
   $('locFlatGround').checked = m.placement.requiresFlatGround;
@@ -795,6 +837,8 @@ $('applySettingsBtn').addEventListener('click', () => {
 $('applyPlacementBtn').addEventListener('click', () => {
   const m = activeLocale();
   if (!m) return;
+  m.placement.mode = $('locMode').value === 'temporary' ? 'temporary' : 'fixed';
+  m.placement.maxInstances = clamp(Math.round(Number($('locMaxInstances').value)) || 1, 1, 20);
   m.placement.clearanceTiles = clamp(Math.round(Number($('locClearance').value)) || 0, 0, 20);
   m.placement.minDistanceFromEntry = clamp(Math.round(Number($('locMinDist').value)) || 0, 0, 500);
   m.placement.requiresFlatGround = $('locFlatGround').checked;

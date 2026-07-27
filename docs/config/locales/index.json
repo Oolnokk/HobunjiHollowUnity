@@ -42,6 +42,13 @@
       "name": "Old Man Nohuknuk's Shrine",
       "category": "great_fey_shrine",
       "singleton": true
+    },
+    {
+      "id": "locale_bandit_camp_small",
+      "file": "config/locales/locale_bandit_camp_small.json",
+      "name": "Bandit Camp (Small)",
+      "category": "bandit_camp",
+      "singleton": false
     }
   ]
 }

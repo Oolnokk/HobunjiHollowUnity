@@ -3477,6 +3477,8 @@ window.SCRATCHBONES_CONFIG = {
           "enabled": true,
           "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },
           "creatureClawHit": { "url": "assets/audio/sfx/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
+          "weaponHitSharp": { "url": "assets/audio/sfx/sfx_weaponhit-sharp.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
+          "weaponHitBlunt": { "url": "assets/audio/sfx/sfx_weaponhit-blunt.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "creatureBark": {
             "url": "assets/audio/sfx/sfx_gar-wolf_bark.wav",
             "volume": 0.85,

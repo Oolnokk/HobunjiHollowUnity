@@ -423,9 +423,29 @@
 
   // Change-detection key so the (fairly expensive, geometry-rebuilding)
   // ring only regenerates when Health/Stamina/afflictions/exhaustion
-  // actually changed, not every single frame.
+  // actually changed, not every single frame. Quantized to whole-point
+  // steps rather than keyed on the raw floats -- Health/Stamina drift
+  // continuously every single frame from ordinary passive regen (see
+  // resource-system.js) even with nothing happening in combat, so keying on
+  // the exact float defeated this guard's entire purpose: the ring rebuilt
+  // its geometry from scratch on virtually every frame for any creature not
+  // sitting at a perfectly stable value, which is effectively ALWAYS. That
+  // was cheap enough to go unnoticed for one lone creature, but turned into
+  // a severe, proximity-scaling slowdown once bandit gangs put several
+  // simultaneously-regenerating fighters on screen at once -- confirmed via
+  // a live headless profile (a full 9-bandit gang up close was creating
+  // hundreds of fresh BufferGeometry objects per second from regen noise
+  // alone). A whole-point step is still comfortably under one rendered arc
+  // segment's own resolution (36 segments spanning ~100+ degrees, against a
+  // typical 16-46 point stamina pool) so it reads as smooth in practice,
+  // while cutting passive-regen-driven rebuilds several-fold versus a finer
+  // quarter-point step, which still fired almost every frame at typical
+  // regen rates. buildGroundResourceArc itself still reads the live,
+  // un-rounded values whenever a rebuild actually happens -- only the
+  // "should I rebuild at all" decision is quantized.
   function makeHudKey(entity) {
-    return `${entity.health}|${entity.maxHealth}|${entity.stamina}|${entity.maxStamina}|${entity.exhaustion.active}|${entity.exhaustion.blackStamina}|${Object.values(entity.afflictions).join(",")}`;
+    const q = v => Math.round(v);
+    return `${q(entity.health)}|${entity.maxHealth}|${q(entity.stamina)}|${entity.maxStamina}|${entity.exhaustion.active}|${entity.exhaustion.blackStamina}|${Object.values(entity.afflictions).map(q).join(",")}`;
   }
 
   const HOMEOSTASIS_KEY = "homeostasis";
