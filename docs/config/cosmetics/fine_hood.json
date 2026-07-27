@@ -499,7 +499,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-base.png",
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-base_m.png",
                 "colors": [
                   "A"
                 ]
@@ -541,7 +541,7 @@
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-trim.png",
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-trim_m.png",
                 "colors": [
                   "B"
                 ]
@@ -611,7 +611,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-base.png",
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-base_f.png",
                 "colors": [
                   "A"
                 ]
@@ -653,7 +653,7 @@
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-trim.png",
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-trim_f.png",
                 "colors": [
                   "B"
                 ]

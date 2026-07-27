@@ -3824,8 +3824,12 @@ window.SCRATCHBONES_CONFIG = {
               "url": "cosmetics/clothes/hood/engh_finehood-back_f.png"
             },
             {
-              "urlIncludes": ["cosmetics/clothes/hood/mashtz_finehood-base.png"],
-              "url": "cosmetics/clothes/hood/mashtz_finehood-back.png"
+              "urlIncludes": ["cosmetics/clothes/hood/mashtz_finehood-base_m.png"],
+              "url": "cosmetics/clothes/hood/mashtz_finehood-back_m.png"
+            },
+            {
+              "urlIncludes": ["cosmetics/clothes/hood/mashtz_finehood-base_f.png"],
+              "url": "cosmetics/clothes/hood/mashtz_finehood-back_f.png"
             }
           ]
         },
