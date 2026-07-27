@@ -5,7 +5,10 @@
     "headSprite": "fightersprites/mashtzarr-m/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/mashtzarr-m/untinted_regions/ur-head.png",
+        "url": "fightersprites/mashtzarr-m/untinted_regions/ur-head.png"
+      },
+      {
+        "url": "fightersprites/mashtzarr-m/untinted_regions/ur-head_tusks.png",
         "renderOrder": "topLayer"
       }
     ],
@@ -178,7 +181,10 @@
     "headSprite": "fightersprites/mashtzarr-f/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/mashtzarr-f/untinted_regions/ur-head.png",
+        "url": "fightersprites/mashtzarr-f/untinted_regions/ur-head.png"
+      },
+      {
+        "url": "fightersprites/mashtzarr-f/untinted_regions/ur-head_tusks.png",
         "renderOrder": "topLayer"
       }
     ],

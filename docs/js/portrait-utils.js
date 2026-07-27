@@ -1339,14 +1339,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
   drawEmoteLayers(frontHairLayers);
   drawEmoteLayers(eyesLayers);
+  // Most ur-head overlays sit at their usual spot (before the hood, so a hood
+  // can cover them normally). A layer tagged renderOrder: 'topLayer' (e.g.
+  // mashtzarr's separated-out ur-head_tusks.png) instead draws after the
+  // hood/pauldron/hat-over stack below, so tusks poke out past a hood rather
+  // than being hidden underneath it.
+  const topUrLayers = urLayerSource.filter(l => l?.renderOrder === 'topLayer');
+  const normalUrLayers = urLayerSource.filter(l => l?.renderOrder !== 'topLayer');
   // Kenkari mask species: draw ur-head layers onto an offscreen canvas then punch out the
   // mouth shape (destination-out) before compositing the result onto the main canvas.
   // All other species draw ur-head directly.
-  if (_isMaskSpecies && urLayerSource.length) {
+  if (_isMaskSpecies && normalUrLayers.length) {
     const { canvas: urOff, ctx: urCtx } = _getUrMaskCanvas(PORTRAIT_CW, PORTRAIT_CH);
     urCtx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
     const urXform = getPortraitXformPreset('B');
-    for (const mid of urLayerSource) {
+    for (const mid of normalUrLayers) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
       const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
       if (!img) continue;
@@ -1379,7 +1386,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ctx.drawImage(urOff, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
     ctx.restore();
   } else {
-    for (const mid of urLayerSource) {
+    for (const mid of normalUrLayers) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
       const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
       if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
@@ -1393,6 +1400,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawBreathingLayers(hoodLayers);
   drawEmoteLayers(pauldronLayers);
   drawEmoteLayers(hatOverLayers);
+  for (const mid of topUrLayers) {
+    const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
+    const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
+    if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
+  }
   if (opacityMaskLayer?.url) {
     const maskImg = imgMap.get(opacityMaskLayer.url);
     if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
