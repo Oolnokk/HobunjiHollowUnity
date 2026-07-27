@@ -12,42 +12,42 @@
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-charged-breaker.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
-  const MIN_READY_S = 0.62;
-  const MAX_CHARGE_S = 1.75;
+  let MIN_READY_S = 0.62;
+  let MAX_CHARGE_S = 1.75;
   // Drained continuously every frame the button is held, on top of the
   // release cost below — running dry mid-charge forces an early release at
   // whatever charge level had been reached so far (see onHoldUpdate/
   // releaseNow), so how much stamina the player actually has to spend
   // directly caps how strong a held breaker can get, not just how long
   // they're willing to hold the button.
-  const CHARGE_DRAIN_PER_S = 18;
-  const COST_MIN = 16, COST_MAX = 28;
+  let CHARGE_DRAIN_PER_S = 18;
+  let COST_MIN = 16, COST_MAX = 28;
   // Barely stronger than a combo hit on its own (1.05-1.3x, roughly
   // Forehand Swing to Cleave's own base) — same "heavy attacks are tuned
   // down, the combo streak is the real payoff" rule as Cleave/Long Lunge
   // (see combat-combo.js). Scaled further by comboStreak.multiplier() at
   // release time, below.
-  const DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.3;
+  let DAMAGE_MUL_MIN = 1.05, DAMAGE_MUL_MAX = 1.3;
   // x1.5 on top of the global knockback-base doubling — charged breaker is
   // one of the four attacks called out for an extra "even more" bump.
-  const KNOCKBACK_MUL_MIN = 1.275, KNOCKBACK_MUL_MAX = 2.4;
-  const RANGE_MUL_MIN = 1.4, RANGE_MUL_MAX = 1.9;
-  const HALF_CONE_DEG = 55; // wide burst, doesn't scale with charge
+  let KNOCKBACK_MUL_MIN = 1.275, KNOCKBACK_MUL_MAX = 2.4;
+  let RANGE_MUL_MIN = 1.4, RANGE_MUL_MAX = 1.9;
+  let HALF_CONE_DEG = 55; // wide burst, doesn't scale with charge
   // Sweep-style heavy finisher — a farther-back windup than any combo step
   // and a strike with noticeably more follow-through (power above Cleave's
   // 1.3), so the breaker reads as the biggest swing in the kit rather than
   // a generic overhead chop.
-  const WINDUP_S = 0.52, STRIKE_S = 0.30;
-  const POWER = 1.7;
-  const HOLD_S = 1; // post-strike pause before easing back to neutral
+  let WINDUP_S = 0.52, STRIKE_S = 0.30;
+  let POWER = 1.7;
+  let HOLD_S = 1; // post-strike pause before easing back to neutral
   // Forward leap on release — see game.js's beginCombatLunge. Matched to the
   // combo's own longest step lunge (Forehand Swing/Short Thrust's 2.0 tiles)
   // rather than a bespoke bigger number, per the same "barely stronger than
   // a combo attack" baseline as the damage multipliers above; scaled further
   // by comboStreak.multiplier() at release time, below. LUNGE_HOP_UNITS is a
   // cosmetic vertical arc peak in world-Y units (not pixels).
-  const LUNGE_TILE_MUL = 2.0;
-  const LUNGE_HOP_UNITS = 0.45;
+  let LUNGE_TILE_MUL = 2.0;
+  let LUNGE_HOP_UNITS = 0.45;
 
   function now() { return performance.now() / 1000; }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -192,5 +192,34 @@
     DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX,
     RANGE_MUL_MIN, RANGE_MUL_MAX, HALF_CONE_DEG, WINDUP_S, STRIKE_S,
     LUNGE_TILE_MUL, LUNGE_HOP_UNITS, POWER,
+  };
+
+  // Applies docs/config/combat/attack-values.json's `chargedBreaker` section
+  // — see combat-combo.js's applyComboConfig for the general pattern.
+  window.Combat.applyChargedBreakerConfig = function (cfg) {
+    if (!cfg) return;
+    if (cfg.MIN_READY_S != null) MIN_READY_S = cfg.MIN_READY_S;
+    if (cfg.MAX_CHARGE_S != null) MAX_CHARGE_S = cfg.MAX_CHARGE_S;
+    if (cfg.CHARGE_DRAIN_PER_S != null) CHARGE_DRAIN_PER_S = cfg.CHARGE_DRAIN_PER_S;
+    if (cfg.COST_MIN != null) COST_MIN = cfg.COST_MIN;
+    if (cfg.COST_MAX != null) COST_MAX = cfg.COST_MAX;
+    if (cfg.DAMAGE_MUL_MIN != null) DAMAGE_MUL_MIN = cfg.DAMAGE_MUL_MIN;
+    if (cfg.DAMAGE_MUL_MAX != null) DAMAGE_MUL_MAX = cfg.DAMAGE_MUL_MAX;
+    if (cfg.KNOCKBACK_MUL_MIN != null) KNOCKBACK_MUL_MIN = cfg.KNOCKBACK_MUL_MIN;
+    if (cfg.KNOCKBACK_MUL_MAX != null) KNOCKBACK_MUL_MAX = cfg.KNOCKBACK_MUL_MAX;
+    if (cfg.RANGE_MUL_MIN != null) RANGE_MUL_MIN = cfg.RANGE_MUL_MIN;
+    if (cfg.RANGE_MUL_MAX != null) RANGE_MUL_MAX = cfg.RANGE_MUL_MAX;
+    if (cfg.HALF_CONE_DEG != null) HALF_CONE_DEG = cfg.HALF_CONE_DEG;
+    if (cfg.WINDUP_S != null) WINDUP_S = cfg.WINDUP_S;
+    if (cfg.STRIKE_S != null) STRIKE_S = cfg.STRIKE_S;
+    if (cfg.POWER != null) POWER = cfg.POWER;
+    if (cfg.HOLD_S != null) HOLD_S = cfg.HOLD_S;
+    if (cfg.LUNGE_TILE_MUL != null) LUNGE_TILE_MUL = cfg.LUNGE_TILE_MUL;
+    if (cfg.LUNGE_HOP_UNITS != null) LUNGE_HOP_UNITS = cfg.LUNGE_HOP_UNITS;
+    Object.assign(window.Combat.chargedBreakerData, {
+      DAMAGE_MUL_MIN, DAMAGE_MUL_MAX, KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX,
+      RANGE_MUL_MIN, RANGE_MUL_MAX, HALF_CONE_DEG, WINDUP_S, STRIKE_S,
+      LUNGE_TILE_MUL, LUNGE_HOP_UNITS, POWER,
+    });
   };
 })();

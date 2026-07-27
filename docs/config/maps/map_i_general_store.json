@@ -210,6 +210,19 @@
       "postSX": 7.503,
       "postSY": 1,
       "postSZ": 1
+    },
+    {
+      "id": "fmqz1bulbrd0",
+      "itemKey": "bulletinBoardFurniture",
+      "col": 9,
+      "row": 9,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
     }
   ],
   "id": "map_i_general_store",
@@ -290,7 +303,8 @@
     [14, 2],
     [16, 2], [16, 5], [16, 6], [16, 7],
     [15, 7], [15, 6],
-    [13, 2], [13, 7]
+    [13, 2], [13, 7],
+    [9, 9]
   ],
   "vendorZones": [
     {

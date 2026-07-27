@@ -67,11 +67,11 @@
   // knockback and ends the leap on the spot. If nothing's caught, the leap
   // keeps going — well past the original target's distance — until it
   // collides with solid terrain or the map edge.
-  const POUNCE_WINDUP_S = 0.5;
-  const POUNCE_UNCROUCH_S = 0.1;
-  const POUNCE_CROUCH_SCALE_Y = 0.55;
-  const POUNCE_LEAP_SPEED_PX_S = 480;
-  const POUNCE_KNOCKBACK_PX_S = 640;
+  let POUNCE_WINDUP_S = 0.5;
+  let POUNCE_UNCROUCH_S = 0.1;
+  let POUNCE_CROUCH_SCALE_Y = 0.55;
+  let POUNCE_LEAP_SPEED_PX_S = 480;
+  let POUNCE_KNOCKBACK_PX_S = 640;
 
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 
@@ -212,10 +212,10 @@
   // companion's own master" so the shove also tends to put daylight
   // between the companion and the player it's guarding, rather than
   // charging in along the same line the player might be standing on.
-  const GUARD_CHARGE_DURATION_S = 0.12;
-  const GUARD_CHARGE_KNOCKBACK_PX_S = 900;
-  const GUARD_CHARGE_TARGET_ANGLE_WEIGHT = 0.55;
-  const GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT = 0.45;
+  let GUARD_CHARGE_DURATION_S = 0.12;
+  let GUARD_CHARGE_KNOCKBACK_PX_S = 900;
+  let GUARD_CHARGE_TARGET_ANGLE_WEIGHT = 0.55;
+  let GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT = 0.45;
 
   function guardChargeStart(c, state, ctx, deps) {
     state.t = 0;
@@ -279,4 +279,27 @@
   }
 
   register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });
+
+  // Applies docs/config/combat/attack-values.json's `creatureAttacks` section
+  // — see combat-combo.js's applyComboConfig for the general pattern. The
+  // windup/uncrouch/leap state machine itself stays code (not data); only
+  // its timing/speed/scale constants are overridable.
+  window.Combat.animalAttacks.applyConfig = function (cfg) {
+    if (!cfg) return;
+    const p = cfg.pounce;
+    if (p) {
+      if (p.WINDUP_S != null) POUNCE_WINDUP_S = p.WINDUP_S;
+      if (p.UNCROUCH_S != null) POUNCE_UNCROUCH_S = p.UNCROUCH_S;
+      if (p.CROUCH_SCALE_Y != null) POUNCE_CROUCH_SCALE_Y = p.CROUCH_SCALE_Y;
+      if (p.LEAP_SPEED_PX_S != null) POUNCE_LEAP_SPEED_PX_S = p.LEAP_SPEED_PX_S;
+      if (p.KNOCKBACK_PX_S != null) POUNCE_KNOCKBACK_PX_S = p.KNOCKBACK_PX_S;
+    }
+    const g = cfg.guardCharge;
+    if (g) {
+      if (g.DURATION_S != null) GUARD_CHARGE_DURATION_S = g.DURATION_S;
+      if (g.KNOCKBACK_PX_S != null) GUARD_CHARGE_KNOCKBACK_PX_S = g.KNOCKBACK_PX_S;
+      if (g.TARGET_ANGLE_WEIGHT != null) GUARD_CHARGE_TARGET_ANGLE_WEIGHT = g.TARGET_ANGLE_WEIGHT;
+      if (g.AWAY_FROM_MASTER_WEIGHT != null) GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT = g.AWAY_FROM_MASTER_WEIGHT;
+    }
+  };
 })();

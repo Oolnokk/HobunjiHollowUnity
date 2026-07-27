@@ -15,7 +15,7 @@
 
   // Mirrors the sandbox's 0.92s window: tap again within this long and the
   // combo advances to its next step; wait longer and it resets to step 1.
-  const COMBO_RESET_S = 0.9;
+  let COMBO_RESET_S = 0.9;
 
   // The combo's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) read as oversized in practice; shrink it here
@@ -24,8 +24,8 @@
   // reported as too big. Lunge distance is compensated the other way
   // (bigger, not smaller) so closing the gap still feels aggressive even
   // with the tighter hit cone.
-  const RANGE_SCALE = 0.6;
-  const LUNGE_SCALE = 1.5;
+  let RANGE_SCALE = 0.6;
+  let LUNGE_SCALE = 1.5;
 
   // Short forward step layered under each combo swing's windup/strike — see
   // game.js's beginCombatLunge. Expressed as a TILE multiple (per-step
@@ -234,4 +234,25 @@
   // stores, not the raw step-array constant names, so a lookup by loadout
   // value works directly.
   window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
+
+  // Applies docs/config/combat/attack-values.json's `combo` section (called
+  // by combat-config-loader.js once it's fetched, after this module has
+  // already finished registering). Mutates SWING_STEPS/POKE_STEPS' CONTENTS
+  // in place (not reassigning the const bindings) since onTap's `steps`
+  // parameter and window.Combat.comboData both hold live references to
+  // these exact arrays, not a snapshot — splicing keeps every existing
+  // reference pointing at the same (now-updated) array. Each step's `pose`
+  // isn't part of the JSON schema (pose/timing stays the attack-animation
+  // editor's separate concern) so it's re-attached here rather than lost.
+  window.Combat.applyComboConfig = function (cfg) {
+    if (!cfg) return;
+    if (Array.isArray(cfg.swingCombo)) SWING_STEPS.splice(0, SWING_STEPS.length, ...cfg.swingCombo.map(s => ({ ...s, pose: SWEEP_POSE })));
+    if (Array.isArray(cfg.pokeCombo)) POKE_STEPS.splice(0, POKE_STEPS.length, ...cfg.pokeCombo.map(s => ({ ...s })));
+    if (cfg.RANGE_SCALE != null) RANGE_SCALE = cfg.RANGE_SCALE;
+    if (cfg.LUNGE_SCALE != null) LUNGE_SCALE = cfg.LUNGE_SCALE;
+    if (cfg.COMBO_RESET_S != null) COMBO_RESET_S = cfg.COMBO_RESET_S;
+    window.Combat.comboData.RANGE_SCALE = RANGE_SCALE;
+    window.Combat.comboData.LUNGE_SCALE = LUNGE_SCALE;
+    window.Combat.comboData.COMBO_RESET_S = COMBO_RESET_S;
+  };
 })();

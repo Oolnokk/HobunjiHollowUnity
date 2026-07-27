@@ -112,6 +112,25 @@ canvas{display:block;width:100%;height:100%}
     <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height, so weapon poses can be checked against different builds.</div>
   </div>
 
+  <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
+    <div class="sectionTitle"><b>Combat stats</b><span class="sectionTag">damage / range / hitbox</span></div>
+    <div class="field"><label>Attack</label><select id="statSlotSelect"></select></div>
+    <div id="statFields"></div>
+    <div class="field" style="margin-top:4px">
+      <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHitbox" checked style="width:auto;margin-right:6px">Show hitbox wedge in viewport</label>
+    </div>
+    <div class="help">Loaded live from docs/config/combat/attack-values.json (falls back to a bundled default if the fetch fails, e.g. opened as a local file). The wedge shown in the viewport is the exact same 2D angle+range cone docs/game.js's inCone() tests hits against — height-agnostic, drawn flat at the rig's feet along its facing (+Z). Range is shown in tiles; entries that only have a rangeMul (no direct rangeTiles) approximate it against the base weapon's 'cut' range (2 tiles) purely for this preview.</div>
+    <div class="row" style="margin-top:8px">
+      <button id="statsDownloadBtn" class="secondary">⭳ Download attack-values.json</button>
+      <button id="statsCopyBtn" class="secondary">Copy JSON</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="statsSaveOverrideBtn" class="secondary">💾 Save as Local Override</button>
+      <button id="statsClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
+    </div>
+    <div class="help" id="statsOverrideStatus"></div>
+  </div>
+
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
     <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → hold → return</span></div>
     <div class="field">
@@ -227,6 +246,7 @@ canvas{display:block;width:100%;height:100%}
   <div id="debug"></div>
 </div>
 </div>
+<script src="../../js/local-db-overrides.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
@@ -796,6 +816,189 @@ function applyPoseToRig(pose) {
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
 }
+
+// ── Combat stats (docs/config/combat/attack-values.json) + hitbox preview ──
+// Every named attack slot this tool can load/edit stats for, and exactly
+// where each one lives in attack-values.json — see docs/js/combat/*.js for
+// what actually reads these at runtime (combat-combo.js/combat-
+// quickattacks.js/combat-charged-breaker.js/combat-flurry.js/combat-
+// counter-shield.js, plus game.js's weaponAbility()).
+const ATTACK_SLOTS = [
+  { path: ['weaponAbilities', 'cut'], label: 'Weapon: Cut' },
+  { path: ['weaponAbilities', 'slash'], label: 'Weapon: Slash' },
+  { path: ['combo', 'swingCombo', 0], label: 'Combo: Forehand Swing' },
+  { path: ['combo', 'swingCombo', 1], label: 'Combo: Backhand Swing' },
+  { path: ['combo', 'swingCombo', 2], label: 'Combo: Cleave' },
+  { path: ['combo', 'pokeCombo', 0], label: 'Combo: Short Thrust' },
+  { path: ['combo', 'pokeCombo', 1], label: 'Combo: Step Thrust' },
+  { path: ['combo', 'pokeCombo', 2], label: 'Combo: Long Lunge' },
+  { path: ['quickAttacks', 'techniques', 'opportunistJab'], label: 'Quick Attack: Opportunist Jab' },
+  { path: ['quickAttacks', 'techniques', 'exhaustCutter'], label: 'Quick Attack: Exhaust Cutter' },
+  { path: ['quickAttacks', 'techniques', 'backstabFlick'], label: 'Quick Attack: Backstab Flick' },
+  { path: ['quickAttacks', 'techniques', 'mercySpike'], label: 'Quick Attack: Mercy Spike' },
+  { path: ['chargedBreaker'], label: 'Charged Breaker' },
+  { path: ['flurry'], label: 'Accelerating Flurry' },
+  { path: ['counterShield'], label: 'Counter Shield' },
+];
+
+let attackValuesConfig = null;
+let statSlotIdx = 0;
+
+function getAtPath(obj, path) {
+  let cur = obj;
+  for (const k of path) { if (cur == null) return null; cur = cur[k]; }
+  return cur;
+}
+
+async function loadAttackValues() {
+  try {
+    const res = await fetch('../../config/combat/attack-values.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    attackValuesConfig = await res.json();
+    logDebug('Loaded attack-values.json');
+  } catch (e) {
+    logDebug(`attack-values.json fetch failed (${e.message}) — using a minimal bundled default.`);
+    attackValuesConfig = {
+      weaponAbilities: { cut: { damage: 6, halfConeDeg: 18, rangeTiles: 2.0, staminaCost: 12, knockbackPxS: 720 }, slash: { damage: 10, halfConeDeg: 62, rangeTiles: 2.4, staminaCost: 20, knockbackPxS: 1040 } },
+      combo: { swingCombo: [], pokeCombo: [] },
+      quickAttacks: { techniques: {} },
+      chargedBreaker: {}, flurry: {}, counterShield: {},
+    };
+  }
+}
+
+$('statSlotSelect').innerHTML = ATTACK_SLOTS.map((s, i) => `<option value="${i}">${s.label}</option>`).join('');
+
+// Numeric fields worth exposing as editable — everything else on an entry
+// (name, anim, dirSign, pose, dmgTag, heavy, label, condKey, bonusText) is
+// either cosmetic/structural or owned by a different part of this tool
+// (the pose editor above already covers anim/pose).
+const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
+
+function numericLeafFields(entry) {
+  const out = [];
+  for (const [k, v] of Object.entries(entry || {})) {
+    if (typeof v === 'number' && STAT_FIELD_ALLOW.test(k)) out.push({ path: [k], label: k });
+    else if (v && typeof v === 'object' && (k === 'base' || k === 'bonus')) {
+      for (const [k2, v2] of Object.entries(v)) {
+        if (typeof v2 === 'number') out.push({ path: [k, k2], label: k + '.' + k2 });
+      }
+    }
+  }
+  return out;
+}
+
+function renderStatFields() {
+  const slot = ATTACK_SLOTS[statSlotIdx];
+  const entry = getAtPath(attackValuesConfig, slot.path);
+  const container = $('statFields');
+  if (!entry) { container.innerHTML = '<div class="help">No data for this attack in the loaded config.</div>'; updateHitboxWedge(); return; }
+  const fields = numericLeafFields(entry);
+  container.innerHTML = fields.map(f => `
+    <div class="field"><label>${f.label}</label>
+      <div class="fieldRow">
+        <input type="number" step="any" class="statInput" data-path="${f.path.join('.')}" value="${getAtPath(entry, f.path)}">
+      </div>
+    </div>`).join('') || '<div class="help">No numeric fields found for this attack.</div>';
+  container.querySelectorAll('.statInput').forEach(inp => inp.addEventListener('input', () => {
+    const path = inp.dataset.path.split('.');
+    let cur = entry;
+    for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]];
+    cur[path[path.length - 1]] = Number(inp.value) || 0;
+    updateHitboxWedge();
+  }));
+  updateHitboxWedge();
+}
+
+$('statSlotSelect').addEventListener('change', () => { statSlotIdx = Number($('statSlotSelect').value); renderStatFields(); });
+
+// The hitbox wedge is the exact 2D angle+range cone docs/game.js's inCone()
+// tests hits against (origin, facing, rangePx, halfConeRad) — drawn flat on
+// the ground since the real hit-test is height-agnostic, fixed pointing
+// scene +Z (the same forward direction the ArrowHelper above shows) rather
+// than parented to `rig`, since rig.rotation.y is the swing's own cosmetic
+// body-turn — the hitbox represents the player's fixed aim direction the
+// swing fires along, not the animation.
+let hitboxMesh = null;
+const CUT_BASE_RANGE_TILES = 2.0; // weaponAbilities.cut's rangeTiles — the reference a rangeMul-only entry is scaled against, for this preview only
+function effectiveRangeTiles(entry) {
+  if (entry.rangeTiles != null) return entry.rangeTiles;
+  if (entry.rangeMul != null) return entry.rangeMul * CUT_BASE_RANGE_TILES;
+  if (entry.RANGE_MUL_MAX != null) return entry.RANGE_MUL_MAX * CUT_BASE_RANGE_TILES;
+  if (entry.COUNTER_RANGE_MUL != null) return entry.COUNTER_RANGE_MUL * CUT_BASE_RANGE_TILES;
+  return CUT_BASE_RANGE_TILES;
+}
+function effectiveHalfConeDeg(entry) {
+  return entry.halfConeDeg ?? entry.HALF_CONE_DEG ?? entry.HALF_CONE_DEG_BASE ?? entry.COUNTER_HALF_CONE_DEG ?? 20;
+}
+function updateHitboxWedge() {
+  if (hitboxMesh) { scene.remove(hitboxMesh); hitboxMesh.geometry.dispose(); hitboxMesh.material.dispose(); hitboxMesh = null; }
+  if (!$('showHitbox').checked) return;
+  const slot = ATTACK_SLOTS[statSlotIdx];
+  const entry = getAtPath(attackValuesConfig, slot.path);
+  if (!entry) return;
+  const rangeTiles = effectiveRangeTiles(entry);
+  const halfConeRad = THREE.MathUtils.degToRad(effectiveHalfConeDeg(entry));
+  // MODEL_W (an avatar's own worldModelWidth) is this preview's "1 tile" —
+  // matches how the rig/avatar itself is already scaled.
+  const radius = rangeTiles * MODEL_W;
+  const segments = 20;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  for (let i = 0; i <= segments; i++) {
+    const a = -halfConeRad + (2 * halfConeRad) * (i / segments);
+    shape.lineTo(Math.sin(a) * radius, Math.cos(a) * radius);
+  }
+  shape.lineTo(0, 0);
+  const geo = new THREE.ShapeGeometry(shape);
+  geo.rotateX(Math.PI / 2); // shape's local (x,y) -> world (x,0,z), y maps straight to +Z (forward)
+  const mat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false });
+  hitboxMesh = new THREE.Mesh(geo, mat);
+  hitboxMesh.position.y = 0.015;
+  scene.add(hitboxMesh);
+}
+$('showHitbox').addEventListener('change', updateHitboxWedge);
+
+$('statsDownloadBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(attackValuesConfig, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'attack-values.json'; a.click();
+  URL.revokeObjectURL(a.href);
+  logDebug('Downloaded attack-values.json — drop it into docs/config/combat/ to apply.');
+});
+$('statsCopyBtn').addEventListener('click', () => {
+  navigator.clipboard.writeText(JSON.stringify(attackValuesConfig, null, 2));
+  logDebug('Copied attack-values.json to clipboard.');
+});
+
+// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
+// overrides.js) — lets this in-memory (possibly edited) config be playtested
+// in the real game via the onboarding "Database Source" toggle, without
+// committing attack-values.json to the repo first.
+function refreshOverrideStatus() {
+  const el = $('statsOverrideStatus');
+  if (!el) return;
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'Local override system unavailable.'; return; }
+  const status = ldb.listStatuses().find(s => s.id === 'attackValues');
+  el.textContent = status?.hasOverride
+    ? `Local override saved ${new Date(status.savedAt).toLocaleString()} — set Database Source to "Local overrides" on the onboarding screen to test it in-game.`
+    : 'No local override saved yet.';
+}
+$('statsSaveOverrideBtn').addEventListener('click', () => {
+  if (!window.LocalDBOverrides) { logDebug('Local override system unavailable.'); return; }
+  window.LocalDBOverrides.setOverride('attackValues', attackValuesConfig);
+  logDebug('Saved attack-values.json as a local override.');
+  refreshOverrideStatus();
+});
+$('statsClearOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride('attackValues');
+  logDebug('Cleared the local attack-values.json override.');
+  refreshOverrideStatus();
+});
+refreshOverrideStatus();
+
+loadAttackValues().then(renderStatFields);
 
 // ── Timeline visualization (windup/strike/hold/return phase structure) ───
 function updateTimelineSegments() {

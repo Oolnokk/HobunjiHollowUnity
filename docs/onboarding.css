@@ -561,6 +561,26 @@
   border-color: rgba(140, 190, 160, 0.55);
 }
 
+/* Database Source toggle — see window.LocalDBOverrides (docs/js/local-db-overrides.js) */
+.sl-dbsrc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(230, 235, 230, 0.75);
+  cursor: pointer;
+}
+.sl-dbsrc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: rgba(230, 235, 230, 0.6);
+  margin-top: 4px;
+}
+.sl-dbsrc-name { color: rgba(230, 235, 230, 0.85); font-weight: 600; min-width: 90px; }
+
 /* Back tab button in char-create when returning from save select */
 .ob-back-tab {
   flex: 0 !important;

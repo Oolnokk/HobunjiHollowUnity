@@ -339,6 +339,9 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
     <button class="good" id="exportBtn" disabled>Export DB</button>
     <button class="secondary" id="poolModalBtn" disabled title="Select an NPC first">Phrase Pools</button>
     <button class="secondary" id="randomPromptBtn" disabled title="Load a database first">🎲 Random Prompt</button>
+    <button class="secondary" id="saveDbOverrideBtn">💾 Save as Local Override</button>
+    <button class="secondary" id="clearDbOverrideBtn">🗑 Clear Local Override</button>
+    <span class="pill" id="dbOverrideStatus"></span>
     <div class="spacer"></div>
     <span class="pill" id="statusPill">No database loaded</span>
   </div>
@@ -444,6 +447,11 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
   </div>
 </div>
 
+<!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
+     see docs/js/condition-registry.js; single source of truth also used by
+     the game's dialogue system and the Loot & Shop Editor. -->
+<script src="../../js/local-db-overrides.js"></script>
+<script src="../../js/condition-registry.js"></script>
 <script>
 'use strict';
 let db        = null;
@@ -477,11 +485,31 @@ const setDirty = ()  => { $('exportBtn').disabled = false; };
 const EXPRESSIONS   = ['neutral','smile','frown','laugh','yap'];
 const REVEAL_SPEEDS = ['normal','slow','fast','instant'];
 
-const WEEKDAYS     = ['Anan','Hronu','Kruru','Muunu','Naru','Tothu','Uung'];
-const SEASONS      = ['Stormtide','Deadgrass','Longpour','Coldmuck'];
-const WEATHERS     = ['clear','rain','storm'];
-const TIMES_OF_DAY = ['dawn','day','dusk','night'];
-const ENCOUNTERS   = ['first','returning'];
+// Every choice-action type _showDlgChoices (docs/game.js) actually
+// interprets at runtime — previously only setLocalNickname was authorable
+// here, the rest had to be hand-typed into the NPC database JSON. `field`
+// names which property on the action object the value editor writes to
+// (game.js reads act.value for setLocalNickname, act.pool for openShop,
+// act.taskId for the favor/task actions); `kind:'shopSelect'` swaps the
+// generic text input for a dropdown sourced from shopRegistry instead.
+const CHOICE_ACTION_TYPES = [
+  { type: 'setLocalNickname', label: 'Set nickname',    field: 'value',  fieldLabel: 'Nickname (supports {{tokens}})' },
+  { type: 'openShop',         label: 'Open shop',       field: 'pool',   fieldLabel: 'Shop', kind: 'shopSelect' },
+  { type: 'openCraftMenu',    label: 'Open craft menu', field: null },
+  { type: 'startChat',        label: 'Start chat',      field: null },
+  { type: 'acceptFavor',      label: 'Accept favor',    field: 'taskId', fieldLabel: 'Task ID' },
+  { type: 'declineFavor',     label: 'Decline favor',   field: 'taskId', fieldLabel: 'Task ID' },
+  { type: 'turnInTask',       label: 'Turn in task',    field: 'taskId', fieldLabel: 'Task ID' },
+];
+
+// Fixed axis value lists live in the shared window.ConditionRegistry module
+// (docs/js/condition-registry.js) now — these just alias it locally so the
+// rest of this file doesn't need to change.
+const WEEKDAYS     = ConditionRegistry.WEEKDAYS;
+const SEASONS      = ConditionRegistry.SEASONS;
+const WEATHERS     = ConditionRegistry.WEATHERS;
+const TIMES_OF_DAY = ConditionRegistry.TIMES_OF_DAY;
+const ENCOUNTERS   = ConditionRegistry.ENCOUNTERS;
 
 // Map/station registry — fetched from config/town-workspace-v1.json
 // (loadMapRegistry, called at startup) so "which map"/"which station"
@@ -511,11 +539,24 @@ async function loadMapRegistry() {
   } catch (e) { /* keep the built-in fallback list */ }
 }
 
-// Mirrors game.js's NPC_SPECIES_IDS — the game treats player and NPC
-// species as the same taxonomy (both read/write appearance.speciesId).
-const PLAYER_SPECIES = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
+// Shop registry — fetched from docs/config/shops/shop-stock.json (the same
+// file docs/tools/loot-shop-editor/ authors) so the "openShop" choice
+// action's shop picker always reflects real shops instead of a hand-typed
+// pool id that might not exist.
+let shopRegistry = []; // [{id, label}]
+function shopLabel(id) { return shopRegistry.find(s => s.id === id)?.label || id; }
+async function loadShopRegistry() {
+  try {
+    const res = await fetch('../../config/shops/shop-stock.json');
+    if (!res.ok) return;
+    const data = await res.json();
+    shopRegistry = Object.entries(data.shops || {}).map(([id, shop]) => ({ id, label: shop.label || id }));
+  } catch (e) { /* keep empty — the picker just shows no options */ }
+}
 
-const CONDITION_AXES = ['weekdays','seasons','weather','timesOfDay','encounter','maps','stations','playerSpecies'];
+const PLAYER_SPECIES = ConditionRegistry.PLAYER_SPECIES;
+
+const CONDITION_AXES = ConditionRegistry.AXES;
 const CONDITION_CATEGORIES = [
   { key: 'weekdays',     label: 'Weekday',      values: () => WEEKDAYS },
   { key: 'seasons',      label: 'Season',       values: () => SEASONS },
@@ -527,25 +568,8 @@ const CONDITION_CATEGORIES = [
   { key: 'playerSpecies',label: 'Player species', values: () => PLAYER_SPECIES },
   { key: 'relationship', label: 'Relationship', values: null },
 ];
-const emptyConditions = () => ({
-  weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
-  maps: [], stations: [], playerSpecies: [],
-  relationship: { min: null, max: null }
-});
-const normalizeConditions = (c) => ({
-  weekdays:      Array.isArray(c.weekdays)      ? c.weekdays      : [],
-  seasons:       Array.isArray(c.seasons)       ? c.seasons       : [],
-  weather:       Array.isArray(c.weather)       ? c.weather       : [],
-  timesOfDay:    Array.isArray(c.timesOfDay)    ? c.timesOfDay    : [],
-  encounter:     Array.isArray(c.encounter)     ? c.encounter     : [],
-  maps:          Array.isArray(c.maps)          ? c.maps          : [],
-  stations:      Array.isArray(c.stations)      ? c.stations      : [],
-  playerSpecies: Array.isArray(c.playerSpecies) ? c.playerSpecies : [],
-  relationship: {
-    min: c.relationship?.min ?? null,
-    max: c.relationship?.max ?? null
-  }
-});
+const emptyConditions = ConditionRegistry.emptyConditions;
+const normalizeConditions = ConditionRegistry.normalizeConditions;
 
 // A phrase pool is a named, reusable list of conditioned text snippets,
 // referenced from any dialogue line as {{pool:<id>}}. Entries share the
@@ -608,6 +632,28 @@ function exportDatabase() {
   Object.assign(document.createElement('a'), { href: url, download: 'hobunji-starter-npc-database.json' }).click();
   URL.revokeObjectURL(url);
 }
+
+// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
+// overrides.js) — shared with character-studio/schedule-editor since all
+// three edit the same hobunji-starter-npc-database.json.
+function refreshDbOverrideStatus() {
+  const el = document.getElementById('dbOverrideStatus');
+  if (!el) return;
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'override system unavailable'; return; }
+  const status = ldb.listStatuses().find(s => s.id === 'npcDatabase');
+  el.textContent = status?.hasOverride ? `override saved ${new Date(status.savedAt).toLocaleTimeString()}` : 'no local override';
+}
+document.getElementById('saveDbOverrideBtn').addEventListener('click', () => {
+  if (!window.LocalDBOverrides) { alert('Local override system unavailable.'); return; }
+  window.LocalDBOverrides.setOverride('npcDatabase', deepCopy(db));
+  refreshDbOverrideStatus();
+});
+document.getElementById('clearDbOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride('npcDatabase');
+  refreshDbOverrideStatus();
+});
+refreshDbOverrideStatus();
 
 /* ── Selection ───────────────────────────────────────────── */
 function selectNpc(id) {
@@ -1707,13 +1753,25 @@ function renderInspector() {
       ${buildTagsHtml(nd, tree)}`;
   } else if (nd.type === 'choice') {
     const ceRows = (nd.choices||[]).map((c,i) => {
-      const acts = (c.actions||[]).map((a,ai) => `
+      const acts = (c.actions||[]).map((a,ai) => {
+        const def = CHOICE_ACTION_TYPES.find(d => d.type === a.type);
+        let valueField = '';
+        if (def?.kind === 'shopSelect') {
+          valueField = `<select class="actShopSel" data-ci="${i}" data-ai="${ai}" style="font-size:11px;flex:1;min-width:0">
+            <option value="">— default (General Store) —</option>
+            ${shopRegistry.map(s => `<option value="${esc(s.id)}"${s.id===a.pool?' selected':''}>${esc(s.label)}</option>`).join('')}
+          </select>`;
+        } else if (def?.field) {
+          valueField = `<input class="actVal" data-ci="${i}" data-ai="${ai}" data-field="${def.field}" value="${esc(a[def.field]||'')}"
+            placeholder="${esc(def.fieldLabel||'')}" style="font-size:11px;flex:1;min-width:0">`;
+        }
+        return `
         <div class="actChip">
-          <span class="actLabel">${esc(a.type)}</span>
-          <input class="actVal" data-ci="${i}" data-ai="${ai}" value="${esc(a.value||'')}"
-            placeholder="{{playerName}}" style="font-size:11px;flex:1;min-width:0">
+          <span class="actLabel">${esc(def?.label || a.type)}</span>
+          ${valueField}
           <button class="actDelBtn" data-ci="${i}" data-ai="${ai}">×</button>
-        </div>`).join('');
+        </div>`;
+      }).join('');
       return `
       <div class="ceItem" data-ci="${i}">
         <div style="display:flex;align-items:center;gap:5px">
@@ -1728,9 +1786,14 @@ function renderInspector() {
         <div class="ceRow" style="align-items:flex-start;margin-top:3px">
           <span class="ceRowLabel" style="padding-top:2px">acts</span>
           <div style="flex:1">${acts}
-            <button class="addAct" data-ci="${i}" style="font-size:10px;padding:2px 6px;
-              border-radius:5px;border:1px solid rgba(45,212,191,.3);background:rgba(45,212,191,.08);
-              color:var(--seq);margin-top:${acts?'3':'0'}px">+ setNickname</button>
+            <div style="display:flex;gap:4px;margin-top:${acts?'3':'0'}px">
+              <select class="addActType" data-ci="${i}" style="font-size:10px;padding:2px 4px;flex:1">
+                ${CHOICE_ACTION_TYPES.map(d => `<option value="${d.type}">${esc(d.label)}</option>`).join('')}
+              </select>
+              <button class="addAct" data-ci="${i}" style="font-size:10px;padding:2px 8px;
+                border-radius:5px;border:1px solid rgba(45,212,191,.3);background:rgba(45,212,191,.08);
+                color:var(--seq)">+ Add</button>
+            </div>
           </div>
         </div>
       </div>`;
@@ -1831,13 +1894,24 @@ function renderInspector() {
   }));
   document.querySelectorAll('.addAct').forEach(el => el.addEventListener('click', e => {
     const ci = +e.target.dataset.ci;
+    const typeSel = document.querySelector(`.addActType[data-ci="${ci}"]`);
+    const type = typeSel?.value || 'setLocalNickname';
     if (!nd.choices[ci].actions) nd.choices[ci].actions = [];
-    nd.choices[ci].actions.push({ type: 'setLocalNickname', value: '' });
+    const def = CHOICE_ACTION_TYPES.find(d => d.type === type);
+    const newAct = { type };
+    if (def?.field) newAct[def.field] = '';
+    nd.choices[ci].actions.push(newAct);
     setDirty(); renderInspector();
   }));
   document.querySelectorAll('.actVal').forEach(el => el.addEventListener('input', e => {
+    const ci = +e.target.dataset.ci, ai = +e.target.dataset.ai, field = e.target.dataset.field;
+    nd.choices[ci].actions[ai][field] = e.target.value; setDirty();
+  }));
+  document.querySelectorAll('.actShopSel').forEach(el => el.addEventListener('change', e => {
     const ci = +e.target.dataset.ci, ai = +e.target.dataset.ai;
-    nd.choices[ci].actions[ai].value = e.target.value; setDirty();
+    if (e.target.value) nd.choices[ci].actions[ai].pool = e.target.value;
+    else delete nd.choices[ci].actions[ai].pool;
+    setDirty();
   }));
   document.querySelectorAll('.actDelBtn').forEach(el => el.addEventListener('click', e => {
     const ci = +e.target.dataset.ci, ai = +e.target.dataset.ai;
@@ -2145,11 +2219,20 @@ document.addEventListener('DOMContentLoaded', () => {
   outer.addEventListener('touchmove',  onTouchMove,  { passive: false });
   outer.addEventListener('touchend',   onTouchEnd,   { passive: true });
   outer.addEventListener('touchcancel',onTouchEnd,   { passive: true });
-  fetch('../../config/npcs/hobunji-starter-npc-database.json')
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(data => loadDatabase(data))
-    .catch(() => {});
+  // Boot only: prefers an existing local override over the real repo file,
+  // so this tool picks up where character-studio/schedule-editor last saved
+  // (all three share this one npc-database.json — see docs/js/local-db-
+  // overrides.js) instead of silently clobbering their edits on next Save.
+  (async () => {
+    const override = window.LocalDBOverrides?.getOverride('npcDatabase');
+    if (override) { loadDatabase(override); return; }
+    try {
+      const r = await fetch('../../config/npcs/hobunji-starter-npc-database.json');
+      if (r.ok) loadDatabase(await r.json());
+    } catch (_) {}
+  })();
   loadMapRegistry().then(() => { renderCondFilters(); renderInspector(); });
+  loadShopRegistry().then(() => renderInspector());
   renderAll();
 });
 </script>

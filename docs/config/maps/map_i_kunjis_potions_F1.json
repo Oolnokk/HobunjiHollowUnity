@@ -72,6 +72,19 @@
       "postSX": 3.9,
       "postSY": 1,
       "postSZ": 1.728
+    },
+    {
+      "id": "fmqz1alchtbl0",
+      "itemKey": "alchemyTableFurniture",
+      "col": 5,
+      "row": 1,
+      "rotY": 0,
+      "postX": 0,
+      "postY": 0,
+      "postZ": 0,
+      "postSX": 1,
+      "postSY": 1,
+      "postSZ": 1
     }
   ],
   "id": "map_i_kunjis_potions_F1",
@@ -463,6 +476,10 @@
     ],
     [
       9,
+      1
+    ],
+    [
+      5,
       1
     ]
   ],
