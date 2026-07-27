@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Hobunji Hollow — Locale Editor</title>
+<script src="../../js/local-db-overrides.js"></script>
 <style>
 :root{--bg:#07101a;--panel:#111b28;--panel2:#0c141e;--border:rgba(255,255,255,.12);--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--text:#edf5ff;--muted:#9fb4cf}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -68,6 +69,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
       <button class="sec" id="copyIndexEntryBtn">📋 Copy index entry</button>
       <button class="sec" id="importBtn">Import</button>
       <input id="importFile" type="file" hidden accept=".json,application/json">
+      <button class="sec" id="saveLocalesOverrideBtn">💾 Save ALL as Local Override</button>
+      <button class="sec" id="clearLocalesOverrideBtn">🗑 Clear Local Override</button>
+      <span class="pill" id="localesOverrideStatus"></span>
     </div>
   </div>
 
@@ -955,6 +959,33 @@ function renderJson() {
   const m = activeLocale();
   $('jsonPreview').value = m ? JSON.stringify(buildExport(m), null, 2) : '';
 }
+
+// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
+// overrides.js) — game.js's loadStampableLocaleDefs()/loadBanditCampLocaleDefs()
+// read the override as a flat list of full locale documents (not an index +
+// per-file fetches), so this saves EVERY locale currently in the workspace at
+// once, not just the active one — a locale you haven't opened into this
+// session's workspace won't be included, same as it wouldn't be editable here.
+function refreshLocalesOverrideStatus() {
+  const el = $('localesOverrideStatus');
+  if (!el) return;
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'override system unavailable'; return; }
+  const status = ldb.listStatuses().find(s => s.id === 'locales');
+  el.textContent = status?.hasOverride ? `override saved ${new Date(status.savedAt).toLocaleTimeString()}` : 'no local override';
+}
+$('saveLocalesOverrideBtn').addEventListener('click', () => {
+  if (!window.LocalDBOverrides) { setStatus('Local override system unavailable.'); return; }
+  window.LocalDBOverrides.setOverride('locales', { locales: ws.locales.map(buildExport) });
+  setStatus(`Saved ${ws.locales.length} locale(s) as a local override.`);
+  refreshLocalesOverrideStatus();
+});
+$('clearLocalesOverrideBtn').addEventListener('click', () => {
+  window.LocalDBOverrides?.clearOverride('locales');
+  setStatus('Cleared the local locales override.');
+  refreshLocalesOverrideStatus();
+});
+refreshLocalesOverrideStatus();
 $('copyJsonBtn').addEventListener('click', () => {
   const m = activeLocale(); if (!m) return;
   navigator.clipboard?.writeText(JSON.stringify(buildExport(m), null, 2))

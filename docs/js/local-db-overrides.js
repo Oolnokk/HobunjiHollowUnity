@@ -20,10 +20,33 @@
   // The set of repo-tracked JSON databases this system knows how to
   // override. `repoPath` is relative to docs/ (same base every other fetch
   // in game.js/game tools already uses).
+  //
+  // Most of these are simple single-file databases: loadDatabase(id) below
+  // returns either the whole saved override or the whole fetched repoPath
+  // file, no further processing needed. Two are special-cased by their own
+  // caller instead of going through loadDatabase (repoPath is still listed
+  // here for documentation/UI purposes):
+  //   - 'townWorkspace': game.js's _loadTownFromWorkspace() still does its
+  //     own file-index-takes-priority merge afterward either way (same as
+  //     it always has for the "Open Game" one-shot handoff), so the override
+  //     just replaces the initial fetch of the workspace, same as any other
+  //     single-file database — no special case actually needed there.
+  //   - 'locales': the game reads config/locales/index.json then fetches
+  //     each entry's own file separately, filtered by category, across TWO
+  //     independent call sites (loadStampableLocaleDefs/
+  //     loadBanditCampLocaleDefs in game.js) -- an override instead stores
+  //     the full list of locale documents themselves (locale-editor's
+  //     in-memory workspace, already-fetched content, not index stubs), so
+  //     those two call sites read window.LocalDBOverrides.getOverride('locales')
+  //     directly and filter/skip the index+per-file fetch themselves rather
+  //     than calling loadDatabase().
   const DATABASES = [
-    { id: 'attackValues', label: 'Attack Values', repoPath: 'config/combat/attack-values.json' },
-    { id: 'lootPools',    label: 'Loot Pools',     repoPath: 'config/loot/loot-pools.json' },
-    { id: 'shopStock',    label: 'Shop Stock',     repoPath: 'config/shops/shop-stock.json' },
+    { id: 'attackValues',  label: 'Attack Values',      repoPath: 'config/combat/attack-values.json' },
+    { id: 'lootPools',     label: 'Loot Pools',          repoPath: 'config/loot/loot-pools.json' },
+    { id: 'shopStock',     label: 'Shop Stock',          repoPath: 'config/shops/shop-stock.json' },
+    { id: 'npcDatabase',   label: 'NPC Database',        repoPath: 'config/npcs/hobunji-starter-npc-database.json' },
+    { id: 'townWorkspace', label: 'Town / Map Data',     repoPath: 'config/town-workspace-v1.json' },
+    { id: 'locales',       label: 'Locales',             repoPath: 'config/locales/index.json' },
   ];
 
   function dbById(id) { return DATABASES.find(d => d.id === id) || null; }

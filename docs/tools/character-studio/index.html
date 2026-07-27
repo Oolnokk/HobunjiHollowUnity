@@ -238,6 +238,11 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
             <input id="avatarFile" type="file" hidden accept=".json,application/json">
           </div>
           <div class="row" style="margin-top:8px">
+            <button id="saveDbOverrideBtn" class="secondary">💾 Save as Local Override</button>
+            <button id="clearDbOverrideBtn" class="secondary">🗑 Clear Local Override</button>
+            <span id="dbOverrideStatus" style="font-size:11px;color:var(--muted,#9ca3af);align-self:center"></span>
+          </div>
+          <div class="row" style="margin-top:8px">
             <button id="resetStarterBtn" class="warn">Reload starter DB</button>
             <span class="pill" id="countPill">0 NPCs</span>
           </div>
@@ -363,6 +368,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
   <div id="logBody"></div>
 </div>
 
+<script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../js/portrait-utils.js"></script>
@@ -1923,6 +1929,22 @@ function applyWorkToNpc() {
   setStatus(`Applied appearance to NPC "${n.name}" ✓`);
 }
 
+// Boot only: prefers an existing local override over the real repo file, so
+// this tool picks up where dialogue-editor/schedule-editor last saved (all
+// three share this one npc-database.json — see docs/js/local-db-overrides.js)
+// instead of silently clobbering their edits on next "Save as Local Override".
+// The manual "Reload the starter DB from the repo" action further down
+// bypasses this and always goes to the real file, as before.
+async function loadStarterDbPreferOverride() {
+  const override = window.LocalDBOverrides?.getOverride('npcDatabase');
+  if (override) {
+    importDb(override);
+    setStatus(`Loaded NPC database from local override (${db.npcs.length} NPCs)`);
+    return;
+  }
+  await loadStarterDb();
+}
+
 async function loadStarterDb() {
   try {
     const r = await fetch(STARTER_DB_URL);
@@ -1996,6 +2018,30 @@ $('dupNpcBtn').onclick = dupNpc;
 $('deleteNpcBtn').onclick = delNpc;
 $('downloadBtn').onclick = () => { downloadJson('hobunji_starter_npc_database.json', exp()); setStatus('Download started'); };
 $('copyBtn').onclick = () => copyText(JSON.stringify(exp(), null, 2), 'database');
+
+// Local Database Override (window.LocalDBOverrides, see docs/js/local-db-
+// overrides.js) — shared with dialogue-editor/schedule-editor since all
+// three edit the same hobunji-starter-npc-database.json.
+function refreshDbOverrideStatus() {
+  const el = $('dbOverrideStatus');
+  if (!el) return;
+  const ldb = window.LocalDBOverrides;
+  if (!ldb) { el.textContent = 'override system unavailable'; return; }
+  const status = ldb.listStatuses().find(s => s.id === 'npcDatabase');
+  el.textContent = status?.hasOverride ? `override saved ${new Date(status.savedAt).toLocaleTimeString()}` : 'no local override';
+}
+$('saveDbOverrideBtn').onclick = () => {
+  if (!window.LocalDBOverrides) { setStatus('Local override system unavailable.'); return; }
+  window.LocalDBOverrides.setOverride('npcDatabase', exp());
+  setStatus('Saved NPC database as a local override.');
+  refreshDbOverrideStatus();
+};
+$('clearDbOverrideBtn').onclick = () => {
+  window.LocalDBOverrides?.clearOverride('npcDatabase');
+  setStatus('Cleared the local NPC database override.');
+  refreshDbOverrideStatus();
+};
+refreshDbOverrideStatus();
 $('resetStarterBtn').onclick = () => {
   if (confirm('Reload the starter DB from the repo and lose current edits?')) loadStarterDb();
 };
@@ -2094,7 +2140,7 @@ async function init() {
     });
 
   initOffsetSliders();
-  await loadStarterDb();
+  await loadStarterDbPreferOverride();
   // loadStarterDb -> fill() retargets the appearance pane at NPC #1;
   // boot should start on the player instead.
   loadPlayerIntoEditor();

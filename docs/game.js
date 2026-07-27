@@ -6668,6 +6668,17 @@
       function loadStampableLocaleDefs() {
         if (_localeDefsPromise) return _localeDefsPromise;
         _localeDefsPromise = (async () => {
+          // Local override (see docs/js/local-db-overrides.js): unlike the
+          // single-file databases above, locale-editor's workspace holds the
+          // FULL content of every locale it has loaded (not just an index),
+          // so an active 'locales' override supplies already-fetched docs
+          // directly and skips the index+per-file fetch below entirely.
+          if (window.LocalDBOverrides?.getSourceMode() === 'local') {
+            const override = window.LocalDBOverrides.getOverride('locales');
+            if (override?.locales) {
+              return override.locales.filter(e => e.category === 'great_fey_shrine' || e.category === 'story_poi');
+            }
+          }
           try {
             const idxRes = await fetch('config/locales/index.json');
             if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
@@ -8576,6 +8587,14 @@
       function loadBanditCampLocaleDefs() {
         if (_banditLocaleDefsPromise) return _banditLocaleDefsPromise;
         _banditLocaleDefsPromise = (async () => {
+          // Local override — see the matching comment in
+          // loadStampableLocaleDefs above.
+          if (window.LocalDBOverrides?.getSourceMode() === 'local') {
+            const override = window.LocalDBOverrides.getOverride('locales');
+            if (override?.locales) {
+              return override.locales.filter(e => e.category === 'bandit_camp');
+            }
+          }
           try {
             const idxRes = await fetch('config/locales/index.json');
             if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
@@ -14345,8 +14364,14 @@
         let dbNpcs = extraRecords || [];
         if (!dbNpcs.length) {
           try {
-            const res = await fetch('config/npcs/hobunji-starter-npc-database.json');
-            const json = await res.json();
+            // Routed through window.LocalDBOverrides (see docs/js/local-db-
+            // overrides.js) so the onboarding "Database Source" toggle can
+            // swap in a locally-saved character-studio/dialogue-editor/
+            // schedule-editor edit of this file without touching the repo
+            // copy — falls back to a direct fetch if that module isn't loaded.
+            const json = window.LocalDBOverrides
+              ? await window.LocalDBOverrides.loadDatabase('npcDatabase')
+              : await fetch('config/npcs/hobunji-starter-npc-database.json').then(r => r.json());
             dbNpcs = json.npcs || [];
             npcSharedSchedules = json.sharedSchedules || [];
           } catch {}
@@ -14751,9 +14776,20 @@
             } catch (_) { ws = null; }
           }
           if (!ws) {
-            const resp = await fetch('config/town-workspace-v1.json');
-            if (!resp.ok) return;
-            ws = await resp.json();
+            // Routed through window.LocalDBOverrides (see docs/js/local-db-
+            // overrides.js) so the onboarding "Database Source" toggle can
+            // swap in a locally-saved map-editor snapshot of the whole town
+            // workspace without touching the repo copy — same one-shot-vs-
+            // persistent relationship as the GAME_WS_OVERRIDE_KEY check
+            // above, just for a saved/toggled override instead of a single
+            // "Open Game" handoff. Falls back to a direct fetch if that
+            // module isn't loaded.
+            try {
+              ws = window.LocalDBOverrides
+                ? await window.LocalDBOverrides.loadDatabase('townWorkspace')
+                : await fetch('config/town-workspace-v1.json').then(r => r.ok ? r.json() : null);
+            } catch (_) { ws = null; }
+            if (!ws) return;
           }
           // Load map index so individual map files take priority over workspace inline data
           let mapFileIndex = {};
