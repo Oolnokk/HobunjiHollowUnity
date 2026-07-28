@@ -12466,7 +12466,7 @@
 
         for (const [matKey, entries] of _floorBuckets) {
           const merged = _mergeTileGeos(entries);
-          const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
+          const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
           zScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
@@ -12843,12 +12843,19 @@
         }
 
         const pos = new Float32Array(GW * GH * 3);
+        // World-space (X,Z) UV — same raw-world-units convention as
+        // _mergeTileGeos, so resolveTileMat's textured materials (scaled via
+        // texture.repeat) tile seamlessly across the mesa lid and line up
+        // with the ordinary ground tiles surrounding it.
+        const uv = new Float32Array(GW * GH * 2);
         for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
             const k = gj*GW+gi;
-            pos[k*3]   = bb.minC + gi * 0.5;
+            const wx = bb.minC + gi * 0.5, wz = bb.minR + gj * 0.5;
+            pos[k*3]   = wx;
             pos[k*3+1] = Y[k];
-            pos[k*3+2] = bb.minR + gj * 0.5;
+            pos[k*3+2] = wz;
+            uv[k*2] = wx; uv[k*2+1] = wz;
           }
 
         // Quads fully inside a ramp tile are left as holes — buildZoneRampMeshes
@@ -12899,11 +12906,12 @@
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         if (grassIdx.length) geo.addGroup(0, grassIdx.length, 0);
         if (stoneIdx.length) geo.addGroup(grassIdx.length, stoneIdx.length, 1);
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, [tileMats.grass, tileMats.rock]);
+        const mesh = new THREE.Mesh(geo, [resolveTileMat(mapId, TileType.GRASS), resolveTileMat(mapId, TileType.ROCK)]);
         mesh.receiveShadow = true;
         zScene.add(mesh);
         // A plateau's own lid+skin is the primary way the fixed follow camera
@@ -12938,7 +12946,7 @@
           return n ? sum / n : null;
         };
 
-        const pos = [], idx = [];
+        const pos = [], uv = [], idx = [];
         let vi = 0;
         for (const [c, r] of rampCells) {
           const fallback = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
@@ -12947,14 +12955,16 @@
           const y01 = cornerY(c, r+1)   ?? fallback;
           const y11 = cornerY(c+1, r+1) ?? fallback;
           pos.push(c,y00,r,  c+1,y10,r,  c,y01,r+1,  c+1,y11,r+1);
+          uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
           idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
         }
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.path || tileMats.grass);
+        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.PATH));
         mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.PATH));
@@ -12986,7 +12996,7 @@
           return n ? sum / n : fallback;
         };
 
-        const pos = [], idx = [];
+        const pos = [], uv = [], idx = [];
         let vi = 0;
         for (const [c, r] of cells) {
           const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
@@ -12995,14 +13005,16 @@
           const y01 = cornerY(c, r + 1, ground);
           const y11 = cornerY(c + 1, r + 1, ground);
           pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
+          uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
           idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
         }
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.GRASS));
         mesh.receiveShadow = true;
         zScene.add(mesh);
         _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
@@ -13695,12 +13707,15 @@
         }
 
         const pos = new Float32Array(GW * GH * 3);
+        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
         for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
             const k = gj*GW+gi;
-            pos[k*3]   = (gi-BV)*0.5;
+            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
+            pos[k*3]   = wx;
             pos[k*3+1] = Y[k];
-            pos[k*3+2] = (gj-BV)*0.5;
+            pos[k*3+2] = wz;
+            uv[k*2] = wx; uv[k*2+1] = wz;
           }
 
         const idx = [];
@@ -13714,22 +13729,20 @@
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.GRASS));
         mesh.receiveShadow = true;
         zScene.add(mesh);
 
         // Stone cliff skin: same normal-based overlay rule as the farm/town border
         // terrain — faces steeper than ~41° from horizontal get a stone skin instead
         // of grass (cnx²+cnz² > 0.194 for a 0.5×0.5 cell, see buildBorderTerrain).
-        const cliffMat = new THREE.MeshLambertMaterial({
-          color: 0x6a6460, side: THREE.DoubleSide,
-          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-        });
+        const cliffMat = resolveCliffMat(mapId);
 
         function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const skinPos = [], idxArr = [];
+          const skinPos = [], skinUv = [], idxArr = [];
           let vi = 0;
           for (let gj = gjMin; gj < gjMax; gj++) {
             for (let gi = giMin; gi < giMax; gi++) {
@@ -13741,12 +13754,14 @@
               const x0=(gi-BV)*0.5, x1=x0+0.5;
               const z0=(gj-BV)*0.5, z1=z0+0.5;
               skinPos.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
               idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
             }
           }
           if (!skinPos.length) return;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
+          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
           g.setIndex(new THREE.BufferAttribute(idxArr.length > 65535 ? new Uint32Array(idxArr) : new Uint16Array(idxArr), 1));
           g.computeVertexNormals();
           zScene.add(new THREE.Mesh(g, cliffMat));
@@ -16125,6 +16140,25 @@
         return buildings;
       }
 
+      // Loads a docs/assets/textures/*.png as a shared, tiling MeshLambertMaterial
+      // for HousePieceGen.buildGroupFromPiece's tagged faces (BOARD_TAGS/STONE_TAGS/
+      // 'canvas' — see HousePieceGen.js). Starts as a flat fallback color so meshes
+      // render immediately; once the texture loads it replaces the color in place
+      // on the same material object, so every mesh already built with it updates
+      // automatically. tileSize is world units per texture repeat — HousePieceGen.js
+      // reads it back off mat.userData.uvTileSize to scale each face's UVs so the
+      // texture stretches proportionally to real face size instead of smearing a
+      // whole image across every face regardless of size.
+      function loadHousePieceFaceTexture(path, fallbackColor, tileSize) {
+        const mat = new THREE.MeshLambertMaterial({ color: fallbackColor, side: THREE.DoubleSide });
+        mat.userData.uvTileSize = tileSize;
+        new THREE.TextureLoader().load(path, (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+        }, undefined, () => {});
+        return mat;
+      }
+
       // Spawns Highland house pieces for all placed town buildings.
       // Fetches each building's piece JSON then calls HousePieceGen.buildGroupFromPiece(),
       // which reads piece.base.faces directly (same geometry as the house editor preview)
@@ -16149,12 +16183,12 @@
                               preScale: [1, 1, 0.6],
                               brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 
-        // Preload boards.png for porch/stair/railing faces (shared across all buildings)
-        const _boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
-        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          _boardsMat.map = tex; _boardsMat.color.set(0xffffff); _boardsMat.needsUpdate = true;
-        }, undefined, () => {});
+        // Preload tagged-face textures (shared across all buildings) — boards.png
+        // for porch/stair/railing faces, carved_smooth.png for stone-tagged
+        // (chimney) faces, canvas.png for canvas-tagged (tent) faces.
+        const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
+        const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
+        const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
 
         // Async-load all piece files in parallel, then build scene
         Promise.all(_townBuildingDefs.map(bldg => {
@@ -16177,7 +16211,7 @@
             if (piece) {
               g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
                 wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
-                wbOpts, wbGableOpts, matBoards: _boardsMat,
+                wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
                 rotationDeg: bldg.rotationDeg || 0,
               });
             }
@@ -16247,7 +16281,7 @@
                 if (!piece) continue;
                 const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
                   wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
-                  wbOpts, wbGableOpts, matBoards: _boardsMat,
+                  wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
                   rotationDeg: bldg.rotationDeg || 0,
                 });
                 townScene.add(g);
@@ -16281,11 +16315,9 @@
         const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
                               preScale: [1, 1, 0.6],
                               brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-        const _boardsMat = new THREE.MeshLambertMaterial({ color: 0x8b6914, side: THREE.DoubleSide });
-        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          _boardsMat.map = tex; _boardsMat.color.set(0xffffff); _boardsMat.needsUpdate = true;
-        }, undefined, () => {});
+        const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
+        const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
+        const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
 
         Promise.all(buildingDefs.map(bldg => {
           if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
@@ -16306,7 +16338,7 @@
             if (piece) {
               g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
                 wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
-                wbOpts, wbGableOpts, matBoards: _boardsMat,
+                wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
                 rotationDeg: bldg.rotationDeg || 0, elevationY,
               });
             }
@@ -16335,7 +16367,7 @@
                 const elevationY = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
                 const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
                   wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
-                  wbOpts, wbGableOpts, matBoards: _boardsMat,
+                  wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
                   rotationDeg: bldg.rotationDeg || 0, elevationY,
                 });
                 scene2.add(g);
@@ -17376,7 +17408,7 @@
 
         for (const [matKey, entries] of _floorBuckets) {
           const merged = _mergeTileGeos(entries);
-          const mesh = new THREE.Mesh(merged, tileMats[matKey] || tileMats.grass);
+          const mesh = new THREE.Mesh(merged, resolveTileMat('map_hobunji_town', matKey));
           mesh.receiveShadow = true;
           townScene.add(mesh);
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
@@ -17744,6 +17776,15 @@
 
       const _barnWbDefaults = { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6],
                                  brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+      let _barnBoardsMat = null, _barnStoneMat = null, _barnCanvasMat = null;
+      function _barnFaceMats() {
+        if (!_barnBoardsMat) {
+          _barnBoardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
+          _barnStoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
+          _barnCanvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
+        }
+        return { matBoards: _barnBoardsMat, matStone: _barnStoneMat, matCanvas: _barnCanvasMat };
+      }
 
       function buildBarnFoundationMesh(col, row, w, h) {
         const mat  = new THREE.MeshLambertMaterial({ color: 0x8a7a63 });
@@ -17773,6 +17814,7 @@
           disposeBarnMesh(entry._mesh);
           entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, entry.col, entry.row, {
             wallBuilder: houseWallBuilder, wbUsePlaceholder: true, wbOpts: _barnWbDefaults,
+            ..._barnFaceMats(),
           });
           scene.add(entry._mesh);
         });
@@ -25929,6 +25971,111 @@
         if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
       }
 
+      // ── Per-map terrain material overrides ────────────────────────────
+      // Config: docs/config/maps/terrain-materials.json, authored via the
+      // Map Editor's Materials tab — { byMap: { <mapId>: { <tileMats key,
+      // or 'cliff'>: { texture: '<file under assets/textures/>', tileSize:
+      // <world units per texture repeat> } } } }. Only tile types actually
+      // listed here diverge from the single shared default tileMats/cliffMat
+      // instance every map used before this existed — anything unlisted (the
+      // common case) keeps using the exact same global material as always,
+      // so this is purely additive and costs nothing until a map opts in.
+      // Loaded once at startup; resolveTileMat/resolveCliffMat build (and
+      // cache) one real material per mapId+tileType override the first time
+      // it's actually needed.
+      let _terrainMaterialConfig = { byMap: {} };
+      function loadTerrainMaterialConfig() {
+        fetch('config/maps/terrain-materials.json')
+          .then(r => r.ok ? r.json() : null)
+          .then(cfg => {
+            if (!cfg?.byMap) return;
+            _terrainMaterialConfig = cfg;
+            // This fetch is kicked off at module-init time, well before the
+            // player can reach any terrain — but buildTileMeshes() (the
+            // farm's very first ground build) fires synchronously during
+            // that same initial script run, with no fetch round-trip to
+            // wait on, and this environment's heavy synchronous THREE.js
+            // setup can genuinely delay a fetch's .then() by several
+            // seconds. If that race loses, the farm/any already-built zone
+            // would otherwise be stuck on the plain default materials for
+            // the rest of the session (nothing else ever revisits already-
+            // built terrain) — so re-touch whatever's live right now the
+            // moment real override data actually lands. Cheap: only zones
+            // with a scene already built and the farm's own live grid do
+            // any work at all.
+            if (Object.keys(cfg.byMap).length) refreshTerrainForLateMaterialConfig();
+          })
+          .catch(() => {});
+      }
+      loadTerrainMaterialConfig();
+      function refreshTerrainForLateMaterialConfig() {
+        if (typeof buildTileMeshes === 'function' && typeof grid !== 'undefined' && grid) buildTileMeshes();
+        if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) refreshZoneGroundVisuals(mapId);
+      }
+
+      // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
+      // ground/cliff meshes — same emissive-floor treatment as floorMat (see
+      // TILE_EMISSIVE_FLOOR above) so a textured tile doesn't read as a solid
+      // black blob at night/in storms the way an untreated MeshLambertMaterial
+      // would. Unlike loadHousePieceFaceTexture (which bakes its tile size
+      // into each face's own UV, since a furniture part's geometry is built
+      // once for one fixed material), ground meshes get their UV for free
+      // from _mergeTileGeos/the world-space UV added to each standalone
+      // heightfield builder below — plain world-unit (X,Z) coordinates — so
+      // tileSize here just scales texture.repeat instead; that also means
+      // the exact same merged geometry keeps working if the override's
+      // tileSize is ever changed, no geometry rebuild required.
+      function loadTerrainTileTexture(path, fallbackColor, tileSize) {
+        const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
+        const mat = new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
+        new THREE.TextureLoader().load(path, (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          const ts = Math.max(0.05, tileSize || 1);
+          tex.repeat.set(1 / ts, 1 / ts);
+          mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+        }, undefined, () => {});
+        return mat;
+      }
+
+      const _mapTileMatCache = new Map(); // "mapId,tileMatsKey" -> THREE.Material
+      function resolveTileMat(mapId, matKey) {
+        const base = tileMats[matKey] || tileMats.grass;
+        const override = _terrainMaterialConfig.byMap?.[mapId]?.[matKey];
+        if (!override?.texture) return base;
+        const cacheKey = mapId + ',' + matKey;
+        let mat = _mapTileMatCache.get(cacheKey);
+        if (!mat) {
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize);
+          _mapTileMatCache.set(cacheKey, mat);
+        }
+        return mat;
+      }
+
+      // Steep-cliff "stone skin" overlay material — same role as tileMats.rock
+      // but for the standalone heightfield cliff-face meshes (plateau mesas,
+      // farm/town border terrain — see buildZoneBorderTerrain/buildBorderTerrain/
+      // buildTownBorderTerrain), which never went through tileMats at all
+      // before this. Overridden via the 'cliff' key in terrain-materials.json,
+      // independent of 'rock' so a map can texture ore-bearing rock tiles
+      // differently from its distant cliff faces.
+      const _defaultCliffMat = new THREE.MeshLambertMaterial({
+        color: 0x6a6460, side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+      });
+      const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
+      function resolveCliffMat(mapId) {
+        const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff;
+        if (!override?.texture) return _defaultCliffMat;
+        let mat = _mapCliffMatCache.get(mapId);
+        if (!mat) {
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize);
+          mat.side = THREE.DoubleSide;
+          mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+          _mapCliffMatCache.set(mapId, mat);
+        }
+        return mat;
+      }
+
       // Fixed per-terrain-type ID colours feeding the same material-ID-seam
       // outline used for furniture (see _markFurnitureEdgeId), generalized to
       // ground tiles: unlike furniture (every part gets its own unique
@@ -26128,6 +26275,7 @@
       function makeFloorGeo(col, row) {
         const geo = new THREE.BoxGeometry(1.0, SLAB_H, 1.0, 2, 1, 2);
         const pa  = geo.attributes.position;
+        const ua  = geo.attributes.uv;
         const topY = SLAB_H / 2;
         for (let vi = 0; vi < pa.count; vi++) {
           if (Math.abs(pa.getY(vi) - topY) < 1e-4) {
@@ -26137,8 +26285,15 @@
             h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
             pa.setY(vi, topY + (h / 4294967296 - 0.5) * 0.026);
           }
+          // World-space (X,Z) UV, same convention as _mergeTileGeos — this
+          // geometry is used directly (unmerged) for the farm's individual
+          // tile meshes, so it needs its own real UV rather than BoxGeometry's
+          // default per-face 0..1 square (mesh.position offsets are applied
+          // after this, so bake col/row in here explicitly).
+          ua.setXY(vi, col + 0.5 + pa.getX(vi), row + 0.5 + pa.getZ(vi));
         }
         pa.needsUpdate = true;
+        ua.needsUpdate = true;
         geo.computeVertexNormals();
         return geo;
       }
@@ -26166,18 +26321,29 @@
         }
         const positions = new Float32Array(vertCount * 3);
         const normals = new Float32Array(vertCount * 3);
+        // World-space (X,Z) UV, in raw world units (1 UV unit = 1 game tile) —
+        // resolveTileMat's textures scale via texture.repeat (see
+        // loadTerrainTileTexture) rather than a baked-in UV scale, so the
+        // same merged geometry works no matter what tile size a per-map
+        // override picks, and adjacent tiles' textures line up seamlessly
+        // across the whole merged mesh instead of each tile restarting its
+        // own 0..1 UV square (which is what "doesn't stretch evenly" meant
+        // here — there was no uv attribute at all before this).
+        const uvs = new Float32Array(vertCount * 2);
         const indices = vertCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
-        let vOff = 0, iOff = 0, vBase = 0;
+        let vOff = 0, uOff = 0, iOff = 0, vBase = 0;
         for (const e of entries) {
           const pa = e.geo.attributes.position;
           const na = e.geo.attributes.normal;
           for (let i = 0; i < pa.count; i++) {
-            positions[vOff]   = pa.getX(i) + e.x;
+            const wx = pa.getX(i) + e.x, wz = pa.getZ(i) + e.z;
+            positions[vOff]   = wx;
             positions[vOff+1] = pa.getY(i) + e.y;
-            positions[vOff+2] = pa.getZ(i) + e.z;
+            positions[vOff+2] = wz;
             normals[vOff]   = na.getX(i);
             normals[vOff+1] = na.getY(i);
             normals[vOff+2] = na.getZ(i);
+            uvs[uOff] = wx; uvs[uOff+1] = wz; uOff += 2;
             vOff += 3;
           }
           const idx = e.geo.index;
@@ -26191,6 +26357,7 @@
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
         g.setIndex(new THREE.BufferAttribute(indices, 1));
         return g;
       }
@@ -26313,12 +26480,17 @@
             (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
           }
 
-        const positions = [];
+        const positions = [], uvs = [];
         for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++)
+          for (let vi = 0; vi < VERTS; vi++) {
             positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+            // World-space (X,Z) UV, same convention as _mergeTileGeos — used
+            // directly (unmerged) for the farm's per-tile path mesh.
+            uvs.push(col + vi * STEP, row + vj * STEP);
+          }
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
 
         // pathGeo and grassGeo share the position buffer along the wobbling
         // path/grass boundary — compute one normal set over both face lists
@@ -26331,6 +26503,7 @@
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', posAttr);
+          g.setAttribute('uv', uvAttr);
           g.setAttribute('normal', normAttr);
           g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
           return g;
@@ -26596,10 +26769,15 @@
           if (h > Y[vi]) Y[vi] = h;
         }
 
-        const positions = [];
+        const positions = [], uvs = [];
         for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++)
+          for (let vi = 0; vi < VERTS; vi++) {
             positions.push(vi*STEP - 0.5, Y[vj*VERTS+vi], vj*STEP - 0.5);
+            // World-space (X,Z) UV, same convention as _mergeTileGeos — this
+            // geometry is used directly (unmerged) for the farm's per-tile
+            // rock mound mesh, so it needs real UV of its own.
+            uvs.push(col + vi*STEP, row + vj*STEP);
+          }
 
         // Split cells: stone if any corner is elevated (plateau or cliff face),
         // grass if all corners are at ground level. Threshold 0.05u sits above
@@ -26615,10 +26793,12 @@
           }
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
         const makeGeo = (idx) => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', posAttr);
+          g.setAttribute('uv', uvAttr);
           g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
           g.computeVertexNormals();
           return g;
@@ -26702,10 +26882,14 @@
           }
         }
 
-        const positions = [];
+        const positions = [], uvs = [];
         for (let vj = 0; vj < VERTS; vj++)
-          for (let vi = 0; vi < VERTS; vi++)
+          for (let vi = 0; vi < VERTS; vi++) {
             positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+            // World-space (X,Z) UV, same convention as _mergeTileGeos — used
+            // directly (unmerged) for the farm's per-tile trench/raised mesh.
+            uvs.push(col + vi * STEP, row + vj * STEP);
+          }
 
         // Split cells: dirt where significantly depressed (trench) or elevated (raised);
         // grass on flat edge cells that blend back to ground level.
@@ -26723,10 +26907,12 @@
           }
 
         const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
         const makeGeo = idx => {
           if (!idx.length) return null;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', posAttr);
+          g.setAttribute('uv', uvAttr);
           g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
           g.computeVertexNormals();
           return g;
@@ -26872,12 +27058,15 @@
 
         // ── Build geometry (border ring only — playable interior skipped) ───────
         const pos = new Float32Array(GW * GH * 3);
+        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
         for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
             const k = gj*GW+gi;
-            pos[k*3]   = (gi-BV)*0.5;
+            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
+            pos[k*3]   = wx;
             pos[k*3+1] = Y[k];
-            pos[k*3+2] = (gj-BV)*0.5;
+            pos[k*3+2] = wz;
+            uv[k*2] = wx; uv[k*2+1] = wz;
           }
 
         const indices = [];
@@ -26890,10 +27079,11 @@
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
         geo.computeVertexNormals();
 
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        const mesh = new THREE.Mesh(geo, resolveTileMat('farm', TileType.GRASS));
         mesh.receiveShadow = true;
         scene.add(mesh);
 
@@ -26902,13 +27092,10 @@
         // (steeper than ~41° from horizontal) are stone; shallower faces are grass.
         // For a 0.5×0.5 cell the diagonal cross product has cny=0.5 always, so the
         // threshold reduces to cnx²+cnz² > 0.194 — no sqrt required.
-        const cliffMat = new THREE.MeshLambertMaterial({
-          color: 0x6a6460, side: THREE.DoubleSide,
-          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-        });
+        const cliffMat = resolveCliffMat('farm');
 
         function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const positions = [], idxArr = [];
+          const positions = [], skinUv = [], idxArr = [];
           let vi = 0;
           for (let gj = gjMin; gj < gjMax; gj++) {
             for (let gi = giMin; gi < giMax; gi++) {
@@ -26921,12 +27108,14 @@
               const x0=(gi-BV)*0.5, x1=x0+0.5;
               const z0=(gj-BV)*0.5, z1=z0+0.5;
               positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
               idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
             }
           }
           if (!positions.length) return;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
           g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
           g.computeVertexNormals();
           scene.add(new THREE.Mesh(g, cliffMat));
@@ -27166,12 +27355,15 @@
 
         // ── Build geometry (border ring only — playable interior skipped) ──
         const pos = new Float32Array(GW * GH * 3);
+        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
         for (let gj = 0; gj < GH; gj++)
           for (let gi = 0; gi < GW; gi++) {
             const k = gj*GW+gi;
-            pos[k*3]   = (gi-BV)*0.5;
+            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
+            pos[k*3]   = wx;
             pos[k*3+1] = Y[k];
-            pos[k*3+2] = (gj-BV)*0.5;
+            pos[k*3+2] = wz;
+            uv[k*2] = wx; uv[k*2+1] = wz;
           }
 
         const indices = [];
@@ -27184,23 +27376,21 @@
 
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(
           (pos.length/3 > 65535) ? new Uint32Array(indices) : new Uint16Array(indices), 1));
         geo.computeVertexNormals();
 
-        const mesh = new THREE.Mesh(geo, tileMats.grass);
+        const mesh = new THREE.Mesh(geo, resolveTileMat('map_hobunji_town', TileType.GRASS));
         mesh.receiveShadow = true;
         townScene.add(mesh);
 
         // ── Stone cliff skin — north/west/east strips, plus the SW/SE corner
         // blocks where the west/east walls continue down to the south edge.
-        const cliffMat = new THREE.MeshLambertMaterial({
-          color: 0x6a6460, side: THREE.DoubleSide,
-          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
-        });
+        const cliffMat = resolveCliffMat('map_hobunji_town');
 
         function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const positions = [], idxArr = [];
+          const positions = [], skinUv = [], idxArr = [];
           let vi = 0;
           for (let gj = gjMin; gj < gjMax; gj++) {
             for (let gi = giMin; gi < giMax; gi++) {
@@ -27212,12 +27402,14 @@
               const x0=(gi-BV)*0.5, x1=x0+0.5;
               const z0=(gj-BV)*0.5, z1=z0+0.5;
               positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
+              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
               idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
             }
           }
           if (!positions.length) return;
           const g = new THREE.BufferGeometry();
           g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
           g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
           g.computeVertexNormals();
           townScene.add(new THREE.Mesh(g, cliffMat));
@@ -28832,11 +29024,11 @@
       function _buildOneTileMesh(col, row) {
         const i    = row * COLS + col;
         const tile = grid[row][col];
-        const mat  = tileMats[tile.type] || tileMats.grass;
+        const mat  = resolveTileMat('farm', tile.type);
 
         if (tile.type === TileType.ROCK) {
           // Floor slab — grass so it blends with surrounding tiles
-          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), tileMats.grass);
+          const floorMesh = new THREE.Mesh(makeFloorGeo(col, row), resolveTileMat('farm', TileType.GRASS));
           floorMesh.castShadow = floorMesh.receiveShadow = true;
           floorMesh.position.set(col + 0.5, NORMAL_TOP - SLAB_H / 2, row + 0.5);
           scene.add(floorMesh);
@@ -28846,7 +29038,7 @@
           const { stoneGeo, grassGeo } = buildRockTileGeo(col, row);
           let moundRoot = null;
           if (stoneGeo) {
-            const m = new THREE.Mesh(stoneGeo, tileMats.rock);
+            const m = new THREE.Mesh(stoneGeo, resolveTileMat('farm', TileType.ROCK));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
@@ -28854,7 +29046,7 @@
             moundRoot = m;
           }
           if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
@@ -28923,7 +29115,7 @@
           let primary = null;
           if (dirtGeo) {
             // Both types use trench brown — raised earth is the same dug-soil colour
-            const m = new THREE.Mesh(dirtGeo, tileMats.trench);
+            const m = new THREE.Mesh(dirtGeo, resolveTileMat('farm', TileType.TRENCH));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
@@ -28932,7 +29124,7 @@
             primary = m;
           }
           if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             m._windAmp = 0;
@@ -28950,7 +29142,7 @@
           const { pathGeo, grassGeo } = buildPathTileGeo(col, row);
           let primary = null;
           if (pathGeo) {
-            const m = new THREE.Mesh(pathGeo, tileMats.path);
+            const m = new THREE.Mesh(pathGeo, resolveTileMat('farm', TileType.PATH));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             _markTerrainEdgeId(m, TileType.PATH);
@@ -28958,7 +29150,7 @@
             primary = m;
           }
           if (grassGeo) {
-            const m = new THREE.Mesh(grassGeo, tileMats.grass);
+            const m = new THREE.Mesh(grassGeo, resolveTileMat('farm', TileType.GRASS));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
             scene.add(m);
@@ -31974,6 +32166,14 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
                 facingAngle = ang;
                 lastMoveAngle = ang;
                 player.angle = ang;
+                // Actually retarget the reticle (getReticleTile() reads
+                // targetAimAngle, not facingAngle/player.angle — see its
+                // declaration) so this drag genuinely aims farm-tool actions
+                // like axe chop / pick mine at a specific tile on mobile,
+                // instead of only rotating the player's visual facing while
+                // the reticle stays wherever the movement joystick last
+                // pointed it.
+                targetAimAngle = ang;
                 if (!_drag) {
                   _drag = true;
                   _stack.classList.add('drag-active');

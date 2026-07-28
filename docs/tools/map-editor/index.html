@@ -217,6 +217,25 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <p class="muted" style="margin-top:5px">The game farm is <b id="farmDimsNote">36×26</b>. Tiles outside that range are clipped when sending. Unpainted tiles keep the game's day-one terrain.</p>
         </div>
 
+        <!-- TERRAIN MATERIALS — per-map ground/cliff texture overrides.
+             Reads/writes docs/config/maps/terrain-materials.json (see
+             resolveTileMat/resolveCliffMat in docs/game.js). Independent of
+             the Maps list above: targets include the four wilderness zones,
+             which aren't editable maps here at all (they're generated at
+             runtime) but still render through the same tileMats/cliffMat
+             system every other map does. -->
+        <div class="section" id="materialsSection" style="--sec:#22d3ee;--secBg:rgba(34,211,238,.08)">
+          <div class="sect-head"><b>Materials</b><span class="sect-tag" id="materialsMapTag">—</span></div>
+          <div><label>Target map</label><select id="matTargetMap"></select></div>
+          <div id="matRows" style="margin-top:8px"></div>
+          <p class="muted" style="margin-top:5px">Leaving a row's texture as "— default —" keeps that tile type on the game's single shared material, exactly as it rendered before this file existed. Tile size is world units per texture repeat.</p>
+          <div class="row" style="margin-top:8px">
+            <button class="sec" id="matReloadBtn">⟲ Reload from repo</button>
+            <button class="ok" id="matDownloadBtn">⬇ Download terrain-materials.json</button>
+          </div>
+          <p class="muted" style="margin-top:5px">Downloads the whole file (every map's overrides, not just this one) — commit it to <code>docs/config/maps/terrain-materials.json</code> to apply in-game.</p>
+        </div>
+
         <!-- BUILDINGS (Building mode only, exterior maps) -->
         <div class="section" id="buildingsSection" style="--sec:#f59e0b;--secBg:rgba(245,158,11,.08);display:none">
           <div class="sect-head"><b>Buildings</b><span class="sect-tag" id="buildingCountTag">0</span></div>
@@ -1291,6 +1310,7 @@ const TOC_SECTIONS = [
   { id: 'mapSettingsSection', label: 'Map Settings' },
   { id: 'paletteSection', label: 'Palette' },
   { id: 'gameLinkSection', label: 'Game Link' },
+  { id: 'materialsSection', label: 'Materials' },
   { id: 'buildingsSection', label: 'Buildings' },
   { id: 'statusSection', label: 'Active Map JSON' },
 ];
@@ -3861,6 +3881,102 @@ async function loadAudioCueIndexes() {
   } catch(e) { setStatus('Could not load audio cue index list: ' + e.message); }
 }
 
+// ── Terrain Materials — per-map ground/cliff texture overrides ────────────────
+// Writes docs/config/maps/terrain-materials.json, read at runtime by
+// docs/game.js's resolveTileMat()/resolveCliffMat() (see loadTerrainMaterialConfig
+// there). Independent of this tool's own `ws` map list — a target here can be
+// a wilderness zone id, which has no editable map/tiles in this tool at all
+// (it's generated fresh each Tothal Shift) but still renders through the same
+// shared tileMats/cliffMat system as every hand-authored map, so it still
+// benefits from an override.
+//
+// Bundled texture list mirrors furniture-avatar-author's BUNDLED_TEXTURES —
+// kept in sync by hand (same convention: docs/assets/textures/ has no
+// directory-listing mechanism on a static-hosted site, so both tools just
+// hardcode the filenames they know about).
+const MAT_TEXTURES = ['boards.png', 'canvas.png', 'carved_smooth.png', 'log.png'];
+// Only these four tileMats keys are exposed here for now (see
+// resolveTileMat's comment in game.js — trench/raised/river/etc. are wired
+// but not yet editable in this UI). 'cliff' isn't a tileMats key at all —
+// it's the standalone stone-skin material used by the plateau/border-terrain
+// heightfield meshes (resolveCliffMat), kept separate so a map can texture
+// its ore rock tiles differently from its distant cliff faces.
+const MAT_KEYS = [
+  { key: 'grass', label: 'Grass' },
+  { key: 'path',  label: 'Path' },
+  { key: 'rock',  label: 'Rock' },
+  { key: 'cliff', label: 'Cliffs' },
+];
+// Every render target the live game actually builds terrain for — the one
+// authored town map, the farm (not a map-editor map at all), and the four
+// procedurally-generated wilderness zones (see EXTERIOR_ZONES/
+// WildernessMapGenerator.zoneMapIds() in game.js) plus the dev testing arena.
+const MAT_TARGET_MAPS = [
+  { id: 'map_hobunji_town', label: 'Hobunji Hollow — Town' },
+  { id: 'farm', label: 'Farm' },
+  { id: 'map_northern_cliffs', label: 'Northern Cliffs' },
+  { id: 'map_southern_cloud_forest', label: 'Southern Cloud Forest' },
+  { id: 'map_western_slope', label: 'Western Slope' },
+  { id: 'map_eastern_mire', label: 'Eastern Mire' },
+  { id: 'map_dev_arena', label: 'Dev Testing Arena' },
+];
+let matConfig = { schema: 'hobunji_terrain_materials.v1', byMap: {} };
+let matTargetMapId = MAT_TARGET_MAPS[0].id;
+
+async function loadTerrainMaterials() {
+  try {
+    const res = await fetch('../../config/maps/terrain-materials.json');
+    if (res.ok) {
+      const cfg = await res.json();
+      if (cfg && cfg.byMap) matConfig = cfg;
+    }
+  } catch (e) { /* fine — starts empty, same as the game's own fallback */ }
+  renderMaterialsSection();
+}
+
+function renderMaterialsSection() {
+  const sel = $('matTargetMap');
+  if (!sel.options.length) {
+    sel.innerHTML = MAT_TARGET_MAPS.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+    sel.value = matTargetMapId;
+  }
+  $('materialsMapTag').textContent = MAT_TARGET_MAPS.find(m => m.id === matTargetMapId)?.label || matTargetMapId;
+  const overrides = matConfig.byMap[matTargetMapId] || {};
+  $('matRows').innerHTML = MAT_KEYS.map(({ key, label }) => {
+    const cur = overrides[key] || {};
+    const texOptions = ['<option value="">— default —</option>']
+      .concat(MAT_TEXTURES.map(t => `<option value="${t}" ${cur.texture === t ? 'selected' : ''}>${t}</option>`))
+      .join('');
+    return `
+      <div class="g2" style="margin-top:4px;align-items:end">
+        <div><label>${label}</label><select data-mat-key="${key}" class="matTexSel">${texOptions}</select></div>
+        <div><label>Tile size</label><input type="number" min="0.05" step="0.05" value="${cur.tileSize || 1}" data-mat-key="${key}" class="matSizeInput"></div>
+      </div>`;
+  }).join('');
+  $('matRows').querySelectorAll('.matTexSel, .matSizeInput').forEach(el => {
+    el.addEventListener('change', () => applyMaterialRow(el.dataset.matKey));
+  });
+}
+
+function applyMaterialRow(key) {
+  const texSel  = $('matRows').querySelector(`.matTexSel[data-mat-key="${key}"]`);
+  const sizeInp = $('matRows').querySelector(`.matSizeInput[data-mat-key="${key}"]`);
+  const texture = texSel.value;
+  if (!matConfig.byMap[matTargetMapId]) matConfig.byMap[matTargetMapId] = {};
+  const byMapEntry = matConfig.byMap[matTargetMapId];
+  if (!texture) {
+    delete byMapEntry[key];
+    if (!Object.keys(byMapEntry).length) delete matConfig.byMap[matTargetMapId];
+  } else {
+    byMapEntry[key] = { texture, tileSize: Math.max(0.05, parseFloat(sizeInp.value) || 1) };
+  }
+  setStatus(`Materials: ${matTargetMapId}.${key} ${texture ? 'set to ' + texture : 'cleared'}.`);
+}
+
+$('matTargetMap').addEventListener('change', e => { matTargetMapId = e.target.value; renderMaterialsSection(); });
+$('matReloadBtn').addEventListener('click', () => loadTerrainMaterials());
+$('matDownloadBtn').addEventListener('click', () => download('terrain-materials.json', matConfig));
+
 // ── Building interior map mirror ──────────────────────────────────────────────
 async function loadBuildingInteriorMaps() {
   let index;
@@ -3891,6 +4007,7 @@ async function loadBuildingInteriorMaps() {
 resizeCanvas(); updateAll(); fitView();
 loadAudioCueIndexes();
 loadBuildingInteriorMaps();
+loadTerrainMaterials();
 })();
 </script>
 </body>

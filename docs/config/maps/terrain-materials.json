@@ -1,0 +1,5 @@
+{
+  "schema": "hobunji_terrain_materials.v1",
+  "note": "Per-map ground/cliff texture overrides — authored via the Map Editor's Materials tab. Read by docs/game.js's loadTerrainMaterialConfig()/resolveTileMat()/resolveCliffMat(). Empty (or a map/key simply missing) falls back to the game's single shared default material for that tile type, exactly as before this file existed. byMap.<mapId>.<key> where key is one of: grass, path, rock, cliff (more tileMats keys work too, but only these four are exposed in the Map Editor UI for now — trench/raised/river/stream/waterfall/weeds/tilled/paddy/shrub are wired in game.js's resolveTileMat but not yet editable here). Each entry: { texture: '<filename under docs/assets/textures/>', tileSize: <world units per texture repeat, default 1> }.",
+  "byMap": {}
+}

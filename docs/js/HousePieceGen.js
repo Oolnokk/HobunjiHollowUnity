@@ -736,8 +736,34 @@
         vOff[2][0], vOff[2][1], vOff[2][2],
         vOff[3][0], vOff[3][1], vOff[3][2],
       ];
+      // UVs: quad corners v0..v3 go around the perimeter (v0-v1 and v0-v3 are
+      // the two edges out of v0, v2 is diagonally opposite — see the
+      // triangulation just above, split 0-1-2 / 0-2-3), so a standard
+      // bilinear (0,0)/(1,0)/(1,1)/(0,1) parametrization maps cleanly onto
+      // it. Scaled by the material's own world-units-per-tile (see
+      // mat.userData.uvTileSize below) instead of a flat 0..1 range so a
+      // texture stretches proportional to the face's *actual* size and
+      // repeats every uvTileSize world units — a plain 0..1 UV would stretch
+      // a whole texture across every face regardless of size (a tiny
+      // railing baluster and a wide porch deck would look identical scale),
+      // which is what made every textured face look wrong before this.
+      var tileSize = (mat.userData && mat.userData.uvTileSize) || 1;
+      var v0 = new THREE.Vector3(vOff[0][0], vOff[0][1], vOff[0][2]);
+      var v1 = new THREE.Vector3(vOff[1][0], vOff[1][1], vOff[1][2]);
+      var v3 = new THREE.Vector3(vOff[3][0], vOff[3][1], vOff[3][2]);
+      var uLen = v1.distanceTo(v0) / tileSize;
+      var vLen = v3.distanceTo(v0) / tileSize;
+      var uvs = [
+        0, 0,
+        uLen, 0,
+        uLen, vLen,
+        0, 0,
+        uLen, vLen,
+        0, vLen,
+      ];
       var geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geom.computeVertexNormals();
       var mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = mesh.receiveShadow = true;

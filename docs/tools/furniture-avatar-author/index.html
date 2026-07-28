@@ -291,7 +291,11 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
           <div class="row">
             <label style="flex:1">Import piece PNG texture<input id="pieceTextureInput" type="file" accept="image/png,image/*"></label>
           </div>
-          <label class="row"><input id="textureTransparent" type="checkbox" checked> Texture uses transparency</label>
+          <div class="row" id="bundledTextureRow" style="flex-wrap:wrap;gap:4px"></div>
+          <div class="g2">
+            <label class="row"><input id="textureTransparent" type="checkbox" checked> Texture uses transparency</label>
+            <div><label>Texture tile size (world units/repeat)</label><input id="textureTileSize" type="number" min="0.05" step="0.05"></div>
+          </div>
         </div>
         <div id="planeOnlyFields" class="hidden">
           <h2>Placement plane</h2>
@@ -519,6 +523,7 @@ function defaultPart(kind){
     textureDataUrl: null,
     textureName: '',
     textureTransparent: true,
+    textureTileSize: 1,
   };
 }
 
@@ -539,6 +544,43 @@ function placementPlane(role){
     transform:{ x:p.x, y:p.y, z:p.z, rx:-90, ry:0, rz:0, sx:p.sx, sy:1, sz:p.sz },
     color:p.color,
   };
+}
+
+// ── UV helpers for the tapered-primitive geometry builders below ──────────
+// Both createTaperedBoxGeometry/createTaperedCylinderGeometry build custom
+// shapes with no way to know a face's "outward" winding by construction
+// (unlike THREE.BoxGeometry) — _pushOutwardQuad/_pushOutwardTri take any
+// vertex order and auto-flip winding so the face normal points away from
+// `center` (the part's local origin, which is the shape's centroid for
+// every primitive built here). UVs are computed from the quad/triangle's
+// own real edge lengths divided by tileSize (world units per texture
+// repeat) instead of a flat 0..1 range, so an applied texture stretches
+// proportional to each face's actual size and tiles at a consistent real-
+// world scale — this is what was missing before (no uv attribute at all),
+// which is why textures "didn't stretch evenly."
+function _faceNormalOf(a,b,c){
+  const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
+  const vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
+  return [uy*vz-uz*vy, uz*vx-ux*vz, ux*vy-uy*vx];
+}
+function _edgeLen(a,b,tileSize){ return Math.hypot(b[0]-a[0], b[1]-a[1], b[2]-a[2]) / Math.max(0.001, tileSize); }
+function _pushOutwardQuad(pos, uv, p0,p1,p2,p3, center, tileSize){
+  const cx=(p0[0]+p1[0]+p2[0]+p3[0])/4, cy=(p0[1]+p1[1]+p2[1]+p3[1])/4, cz=(p0[2]+p1[2]+p2[2]+p3[2])/4;
+  const n = _faceNormalOf(p0,p1,p2);
+  const toFace = [cx-center[0], cy-center[1], cz-center[2]];
+  const q = (n[0]*toFace[0]+n[1]*toFace[1]+n[2]*toFace[2] < 0) ? [p0,p3,p2,p1] : [p0,p1,p2,p3];
+  const uLen = _edgeLen(q[0], q[1], tileSize), vLen = _edgeLen(q[0], q[3], tileSize);
+  pos.push(...q[0],...q[1],...q[2], ...q[0],...q[2],...q[3]);
+  uv.push(0,0, uLen,0, uLen,vLen, 0,0, uLen,vLen, 0,vLen);
+}
+function _pushOutwardTri(pos, uv, p0,p1,p2, center, tileSize){
+  const cx=(p0[0]+p1[0]+p2[0])/3, cy=(p0[1]+p1[1]+p2[1])/3, cz=(p0[2]+p1[2]+p2[2])/3;
+  const n = _faceNormalOf(p0,p1,p2);
+  const toFace = [cx-center[0], cy-center[1], cz-center[2]];
+  const q = (n[0]*toFace[0]+n[1]*toFace[1]+n[2]*toFace[2] < 0) ? [p0,p2,p1] : [p0,p1,p2];
+  const uLen = _edgeLen(q[0], q[1], tileSize), vLen = _edgeLen(q[0], q[2], tileSize);
+  pos.push(...q[0],...q[1],...q[2]);
+  uv.push(0,0, uLen,0, 0,vLen);
 }
 
 function createTaperedBoxGeometry(part){
@@ -571,24 +613,26 @@ function createTaperedBoxGeometry(part){
     if(axis === 'z') p = [v[0]*sx, v[2]*sy, v[1]*sz];
     pos.push(...p);
   });
-  const idx = [
-    0,2,1, 0,3,2, // bottom
-    4,5,6, 4,6,7, // top
-    0,1,5, 0,5,4,
-    1,2,6, 1,6,5,
-    2,3,7, 2,7,6,
-    3,0,4, 3,4,7
-  ];
+  // Non-indexed: each of the 6 faces gets its own duplicated vertices and a
+  // UV unwrap sized to that face's real edge lengths (see _pushOutwardQuad)
+  // — a shared-vertex indexed box can't carry per-face UVs at all (each
+  // corner is shared by 3 differently-oriented faces), which combined with
+  // there being no UVs whatsoever before is why textures never stretched
+  // right. _pushOutwardQuad also auto-corrects winding, replacing the old
+  // manual index-swap trick.
+  const P = i => [pos[i*3], pos[i*3+1], pos[i*3+2]];
+  const tileSize = part.textureTileSize || 1;
+  const gpos = [], guv = [];
+  const center = [0,0,0]; // shape is built centered on its local origin
+  _pushOutwardQuad(gpos, guv, P(0),P(1),P(2),P(3), center, tileSize); // bottom
+  _pushOutwardQuad(gpos, guv, P(4),P(5),P(6),P(7), center, tileSize); // top
+  _pushOutwardQuad(gpos, guv, P(0),P(1),P(5),P(4), center, tileSize); // side
+  _pushOutwardQuad(gpos, guv, P(1),P(2),P(6),P(5), center, tileSize); // side
+  _pushOutwardQuad(gpos, guv, P(2),P(3),P(7),P(6), center, tileSize); // side
+  _pushOutwardQuad(gpos, guv, P(3),P(0),P(4),P(7), center, tileSize); // side
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  // Custom tapered primitive faces need outward winding. Earlier builds used the opposite winding,
-  // which made front-side materials vanish / shade inside-out.
-  for (let i = 0; i < idx.length; i += 3) {
-    const tmp = idx[i + 1];
-    idx[i + 1] = idx[i + 2];
-    idx[i + 2] = tmp;
-  }
-  geo.setIndex(idx);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(gpos,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(guv,2));
   geo.computeVertexNormals();
   return geo;
 }
@@ -602,38 +646,35 @@ function createTaperedCylinderGeometry(part){
   const botX = part.bottomScaleX ?? 1, botZ = part.bottomScaleZ ?? 1;
   const skewX = part.topSkewX ?? 0, skewZ = part.topSkewZ ?? 0;
   const axis = part.taperAxis || 'y';
-  const pos = [];
-  const idx = [];
-  const add = (x,y,z) => {
-    let p = [x*sx, y*sy, z*sz];
-    if(axis === 'x') p = [y*sx, x*sy, z*sz];
-    if(axis === 'z') p = [x*sx, z*sy, y*sz];
-    pos.push(...p);
-    return pos.length/3 - 1;
+  const at = (x,y,z) => {
+    if(axis === 'x') return [y*sx, x*sy, z*sz];
+    if(axis === 'z') return [x*sx, z*sy, y*sz];
+    return [x*sx, y*sy, z*sz];
   };
   const bot = [], top = [];
   for(let i=0;i<seg;i++){
     const a = i/seg * Math.PI*2;
-    bot.push(add(Math.cos(a)*0.5*botX, -0.5, Math.sin(a)*0.5*botZ));
-    top.push(add(Math.cos(a)*0.5*topX+skewX, 0.5, Math.sin(a)*0.5*topZ+skewZ));
+    bot.push(at(Math.cos(a)*0.5*botX, -0.5, Math.sin(a)*0.5*botZ));
+    top.push(at(Math.cos(a)*0.5*topX+skewX, 0.5, Math.sin(a)*0.5*topZ+skewZ));
   }
-  const cb = add(0,-0.5,0);
-  const ct = add(skewX,0.5,skewZ);
+  const cb = at(0,-0.5,0);
+  const ct = at(skewX,0.5,skewZ);
+  // Non-indexed, same rationale as createTaperedBoxGeometry above: each
+  // side quad and cap-fan triangle gets its own UV sized to its real edge
+  // lengths, and _pushOutwardQuad/_pushOutwardTri auto-correct winding
+  // instead of the old blind index-swap.
+  const tileSize = part.textureTileSize || 1;
+  const gpos = [], guv = [];
+  const center = [0,0,0];
   for(let i=0;i<seg;i++){
     const n=(i+1)%seg;
-    idx.push(bot[i], bot[n], top[n], bot[i], top[n], top[i]);
-    idx.push(cb, bot[i], bot[n]);
-    idx.push(ct, top[n], top[i]);
+    _pushOutwardQuad(gpos, guv, bot[i], bot[n], top[n], top[i], center, tileSize);
+    _pushOutwardTri(gpos, guv, cb, bot[i], bot[n], center, tileSize);
+    _pushOutwardTri(gpos, guv, ct, top[n], top[i], center, tileSize);
   }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  // Same outward-winding correction for circular prisms / tapered legs / discs.
-  for (let i = 0; i < idx.length; i += 3) {
-    const tmp = idx[i + 1];
-    idx[i + 1] = idx[i + 2];
-    idx[i + 2] = tmp;
-  }
-  geo.setIndex(idx);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(gpos,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(guv,2));
   geo.computeVertexNormals();
   return geo;
 }
@@ -1317,6 +1358,7 @@ function refreshSelectionUI(){
     $('selColor').value = colorToHex(rec.color);
     $('wonk').value = rec.wonkiness || 0;
     $('textureTransparent').checked = rec.textureTransparent !== false;
+    $('textureTileSize').value = rec.textureTileSize || 1;
   } else {
     $('planeRole').value = rec.role;
     $('planeColor').value = colorToHex(rec.color);
@@ -1348,6 +1390,7 @@ function applySelectionFields(){
     rec.color = $('selColor').value;
     rec.wonkiness = Math.max(0, num('wonk', rec.wonkiness));
     rec.textureTransparent = $('textureTransparent').checked;
+    rec.textureTileSize = Math.max(0.05, num('textureTileSize', rec.textureTileSize || 1));
     buildPartMesh(rec);
   } else {
     rec.role = $('planeRole').value || rec.role;
@@ -1612,7 +1655,7 @@ function setupEvents(){
     document.querySelectorAll('[data-transform-mode]').forEach(x=>x.classList.toggle('active', x===b));
     transform.setMode(b.dataset.transformMode);
   });
-  ['selName','selX','selY','selZ','selRX','selRY','selRZ','selSX','selSY','selSZ','topScaleX','topScaleZ','bottomScaleX','bottomScaleZ','topSkewX','topSkewZ','taperAxis','segments','selColor','wonk','textureTransparent','planeRole','planeColor'].forEach(id=>{
+  ['selName','selX','selY','selZ','selRX','selRY','selRZ','selSX','selSY','selSZ','topScaleX','topScaleZ','bottomScaleX','bottomScaleZ','topSkewX','topSkewZ','taperAxis','segments','selColor','wonk','textureTransparent','textureTileSize','planeRole','planeColor'].forEach(id=>{
     $(id).addEventListener('change', applySelectionFields);
     $(id).addEventListener('input', e => {
       if(['selColor','planeColor'].includes(id)) applySelectionFields();
@@ -1641,6 +1684,26 @@ function setupEvents(){
     reader.onload=ev=>{ rec.textureDataUrl=ev.target.result; rec.textureName=file.name; buildPartMesh(rec); selectObject('part',rec.id); log('Imported piece texture '+file.name); };
     reader.readAsDataURL(file); e.target.value='';
   };
+  // Quick-pick buttons for the textures already bundled under
+  // docs/assets/textures/ — makeCanvasTexture just does `img.src = dataUrl`,
+  // so a plain relative URL works exactly like an uploaded data URL, no
+  // fetch/base64 conversion needed.
+  const BUNDLED_TEXTURES = ['boards.png','canvas.png','carved_smooth.png','log.png'];
+  const bundledRow = $('bundledTextureRow');
+  BUNDLED_TEXTURES.forEach(name=>{
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = name;
+    btn.onclick = ()=>{
+      const rec = selectedRecord();
+      if(!rec || state.selectedType!=='part') return;
+      rec.textureDataUrl = '../../assets/textures/'+name;
+      rec.textureName = name;
+      buildPartMesh(rec); selectObject('part',rec.id);
+      log('Applied bundled texture '+name);
+    };
+    bundledRow.appendChild(btn);
+  });
   $('avatarPngInput').onchange=e=>{
     const file=e.target.files?.[0]; if(!file) return;
     const reader=new FileReader();
