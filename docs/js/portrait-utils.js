@@ -1724,6 +1724,27 @@ async function loadPortraitCosmetics(configBase) {
   const forcedCosmeticsByFighter = {};
   const conditionalCosmeticsByFighter = {};
   const randomizationRulesByFighter = {};
+  const authoredBodyRange = (speciesId, genderKey, fallback) => {
+    const palette = window.HOBUNJI_COLOR_CONFIG?.bodyPalettes?.[speciesId]?.[genderKey];
+    if (!Array.isArray(palette) || !palette.length) return fallback;
+    const choices = palette.map(color => {
+      const h = Number(color.h);
+      const s = Number(color.s);
+      const v = Number(color.v);
+      return {
+        weight: 1,
+        range: {
+          minH: h,
+          maxH: h,
+          stops: [
+            { h, sMin: s, sMax: s, vMin: v, vMax: v },
+            { h, sMin: s, sMax: s, vMin: v, vMax: v },
+          ],
+        },
+      };
+    });
+    return { A: { choices }, B: { choices }, deriveCFromA: true };
+  };
   try {
     const speciesIdxUrl = new URL(configBase + 'species/index.json', window.location.href).toString();
     const speciesIdxResp = await fetch(speciesIdxUrl);
@@ -1753,7 +1774,11 @@ async function loadPortraitCosmetics(configBase) {
             FIGHTERS.push(fighter);
           }
           if (fighter) {
-            bodyColorRangesByGender[fighter.id] = genderData.bodyColorRanges;
+            bodyColorRangesByGender[fighter.id] = authoredBodyRange(
+              sData.speciesId,
+              genderKey,
+              genderData.bodyColorRanges
+            );
             fighterPortraitOverrides[fighter.id] = {
               ...(fighterPortraitOverrides[fighter.id] || {}),
               gender: genderKey,

@@ -1,78 +1,78 @@
-// Authoritative, tool-editable body palettes and exact clothing dye HSL values.
-// Edit with docs/tools/color-editor/; runtime derives dye hex values from these HSLs.
+// Authoritative, tool-editable body color choices and exact clothing dye HSL values.
+// Body choices are shared by player creation and NPC generation. Edit with docs/tools/color-editor/.
 (function () {
   'use strict';
   const bodyPalettes = {
   "mao-ao": {
     "male": [
       {
-        "label": "Earth",
+        "label": "Color 1",
         "h": -70,
         "s": -0.8,
         "v": -0.55
       },
       {
-        "label": "Olive",
+        "label": "Color 2",
         "h": -40,
         "s": -0.7,
         "v": -0.45
       },
       {
-        "label": "Sage",
+        "label": "Color 3",
         "h": 0,
         "s": -0.7,
         "v": -0.3
       },
       {
-        "label": "Seafoam",
+        "label": "Color 4",
         "h": 30,
         "s": -0.6,
         "v": -0.15
       },
       {
-        "label": "Ash",
+        "label": "Color 5",
         "h": 10,
         "s": -0.9,
         "v": 0.25
       },
       {
-        "label": "Onyx",
+        "label": "Color 6",
         "h": 0,
         "s": -0.9,
         "v": -0.85
       },
       {
-        "label": "Brown",
+        "label": "Color 7",
         "h": -113,
         "s": -0.45,
         "v": -0.45
       },
       {
-        "label": "Rust",
+        "label": "Color 8",
         "h": -143,
         "s": -0.4,
         "v": -0.4
       },
       {
-        "label": "Amber",
+        "label": "Color 9",
         "h": -113,
         "s": -0.35,
         "v": -0.25
       },
       {
-        "label": "Ochre",
+        "label": "Color 10",
         "h": -83,
         "s": -0.45,
         "v": -0.2
       },
       {
-        "label": "Lichen",
+        "label": "Color 11",
         "h": -23,
         "s": -0.55,
         "v": -0.25
       },
       {
-        "label": "Slate",
+        "label": "Color 12",
         "h": 77,
         "s": -0.75,
         "v": -0.2
@@ -80,73 +80,73 @@
     ],
     "female": [
       {
-        "label": "Earth",
+        "label": "Color 1",
         "h": -70,
         "s": -0.8,
         "v": -0.55
       },
       {
-        "label": "Olive",
+        "label": "Color 2",
         "h": -40,
         "s": -0.7,
         "v": -0.45
       },
       {
-        "label": "Sage",
+        "label": "Color 3",
         "h": 0,
         "s": -0.7,
         "v": -0.3
       },
       {
-        "label": "Seafoam",
+        "label": "Color 4",
         "h": 30,
         "s": -0.6,
         "v": -0.15
       },
       {
-        "label": "Ash",
+        "label": "Color 5",
         "h": 10,
         "s": -0.9,
         "v": 0.25
       },
       {
-        "label": "Onyx",
+        "label": "Color 6",
         "h": 0,
         "s": -0.9,
         "v": -0.85
       },
       {
-        "label": "Brown",
+        "label": "Color 7",
         "h": -113,
         "s": -0.45,
         "v": -0.45
       },
       {
-        "label": "Rust",
+        "label": "Color 8",
         "h": -143,
         "s": -0.4,
         "v": -0.4
       },
       {
-        "label": "Amber",
+        "label": "Color 9",
         "h": -113,
         "s": -0.35,
         "v": -0.25
       },
       {
-        "label": "Ochre",
+        "label": "Color 10",
         "h": -83,
         "s": -0.45,
         "v": -0.2
       },
       {
-        "label": "Lichen",
+        "label": "Color 11",
         "h": -23,
         "s": -0.55,
         "v": -0.25
       },
       {
-        "label": "Slate",
+        "label": "Color 12",
         "h": 77,
         "s": -0.75,
         "v": -0.2
@@ -156,299 +156,523 @@
   "tletingan": {
     "male": [
       {
-        "label": "Umber",
+        "label": "Color 1",
+        "h": -105,
+        "s": -0.47,
+        "v": -0.35
+      },
+      {
+        "label": "Color 2",
+        "h": -95,
+        "s": -0.4586,
+        "v": -0.3443
+      },
+      {
+        "label": "Color 3",
         "h": -85,
-        "s": -0.3,
-        "v": -0.4
+        "s": -0.4471,
+        "v": -0.3386
       },
       {
-        "label": "Khaki",
-        "h": -60,
-        "s": -0.2,
+        "label": "Color 4",
+        "h": -75,
+        "s": -0.4357,
+        "v": -0.3329
+      },
+      {
+        "label": "Color 5",
+        "h": -65,
+        "s": -0.44,
+        "v": -0.33
+      },
+      {
+        "label": "Color 6",
+        "h": -55,
+        "s": -0.46,
+        "v": -0.33
+      },
+      {
+        "label": "Color 7",
+        "h": -45,
+        "s": -0.48,
+        "v": -0.33
+      },
+      {
+        "label": "Color 8",
+        "h": -35,
+        "s": -0.5,
+        "v": -0.33
+      },
+      {
+        "label": "Color 9",
+        "h": -25,
+        "s": -0.52,
+        "v": -0.3362
+      },
+      {
+        "label": "Color 10",
+        "h": -15,
+        "s": -0.54,
+        "v": -0.3425
+      },
+      {
+        "label": "Color 11",
+        "h": -5,
+        "s": -0.56,
+        "v": -0.3488
+      },
+      {
+        "label": "Color 12",
+        "h": 5,
+        "s": -0.58,
+        "v": -0.355
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -105,
+        "s": -0.47,
         "v": -0.35
       },
       {
-        "label": "Olive",
-        "h": -40,
-        "s": -0.1,
-        "v": -0.3
+        "label": "Color 2",
+        "h": -95,
+        "s": -0.4586,
+        "v": -0.3443
       },
       {
-        "label": "Forest",
-        "h": -20,
-        "s": 0,
-        "v": -0.2
+        "label": "Color 3",
+        "h": -85,
+        "s": -0.4471,
+        "v": -0.3386
       },
       {
-        "label": "Fern",
-        "h": 0,
-        "s": 0.1,
-        "v": -0.15
+        "label": "Color 4",
+        "h": -75,
+        "s": -0.4357,
+        "v": -0.3329
       },
       {
-        "label": "Ash",
-        "h": -80,
-        "s": -0.4,
-        "v": -0.45
+        "label": "Color 5",
+        "h": -65,
+        "s": -0.44,
+        "v": -0.33
       },
       {
-        "label": "Brown",
-        "h": -113,
-        "s": -0.3,
-        "v": -0.42
+        "label": "Color 6",
+        "h": -55,
+        "s": -0.46,
+        "v": -0.33
       },
       {
-        "label": "Rust",
-        "h": -143,
-        "s": -0.2,
-        "v": -0.35
+        "label": "Color 7",
+        "h": -45,
+        "s": -0.48,
+        "v": -0.33
       },
       {
-        "label": "Amber",
-        "h": -113,
-        "s": -0.2,
-        "v": -0.28
+        "label": "Color 8",
+        "h": -35,
+        "s": -0.5,
+        "v": -0.33
       },
       {
-        "label": "Ochre",
-        "h": -83,
-        "s": -0.35,
-        "v": -0.2
+        "label": "Color 9",
+        "h": -25,
+        "s": -0.52,
+        "v": -0.3362
       },
       {
-        "label": "Lichen",
-        "h": -23,
-        "s": -0.45,
-        "v": -0.25
+        "label": "Color 10",
+        "h": -15,
+        "s": -0.54,
+        "v": -0.3425
       },
       {
-        "label": "Slate",
-        "h": 77,
-        "s": -0.6,
-        "v": -0.22
+        "label": "Color 11",
+        "h": -5,
+        "s": -0.56,
+        "v": -0.3488
+      },
+      {
+        "label": "Color 12",
+        "h": 5,
+        "s": -0.58,
+        "v": -0.355
       }
     ]
   },
   "kenkari": {
     "male": [
       {
-        "label": "Jade",
-        "h": -20,
-        "s": 0.8,
-        "v": 0
+        "label": "Color 1",
+        "h": -180,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Lime",
-        "h": -80,
-        "s": 0.9,
-        "v": 0
+        "label": "Color 2",
+        "h": -147.2727,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Teal",
-        "h": 40,
-        "s": 1,
-        "v": 0.1
+        "label": "Color 3",
+        "h": -114.5455,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Amethyst",
-        "h": 120,
-        "s": 0.9,
-        "v": 0
+        "label": "Color 4",
+        "h": -81.8182,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Fuchsia",
-        "h": 160,
-        "s": 0.8,
-        "v": -0.1
+        "label": "Color 5",
+        "h": -49.0909,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Ember",
-        "h": -120,
-        "s": 0.8,
-        "v": -0.1
+        "label": "Color 6",
+        "h": -16.3636,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Chartreuse",
-        "h": -40,
-        "s": 0.7,
-        "v": 0.1
+        "label": "Color 7",
+        "h": 16.3636,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Azure",
-        "h": 60,
-        "s": 0.9,
-        "v": 0.1
+        "label": "Color 8",
+        "h": 49.0909,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Red",
-        "h": -143,
-        "s": 1,
-        "v": 0
+        "label": "Color 9",
+        "h": 81.8182,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Orange",
-        "h": -113,
-        "s": 1,
-        "v": 0.1
+        "label": "Color 10",
+        "h": 114.5455,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Yellow",
-        "h": -83,
-        "s": 1.2,
-        "v": 0.25
+        "label": "Color 11",
+        "h": 147.2727,
+        "s": 0.925,
+        "v": -0.02
       },
       {
-        "label": "Green",
-        "h": -23,
-        "s": 1,
-        "v": 0.05
+        "label": "Color 12",
+        "h": 180,
+        "s": 0.925,
+        "v": -0.02
       }
     ],
     "female": [
       {
-        "label": "Ember",
-        "h": -115,
-        "s": 0.2,
-        "v": 0.05
+        "label": "Color 1",
+        "h": -118,
+        "s": -0.375,
+        "v": -0.285
       },
       {
-        "label": "Copper",
-        "h": -105,
-        "s": 0.25,
-        "v": 0.1
+        "label": "Color 2",
+        "h": -109.8182,
+        "s": -0.3494,
+        "v": -0.2756
       },
       {
-        "label": "Gold",
-        "h": -92,
-        "s": 0.4,
-        "v": 0.15
+        "label": "Color 3",
+        "h": -101.6364,
+        "s": -0.3239,
+        "v": -0.2662
       },
       {
-        "label": "Honey",
-        "h": -80,
-        "s": 0.45,
-        "v": 0.2
+        "label": "Color 4",
+        "h": -93.4545,
+        "s": -0.2983,
+        "v": -0.2569
       },
       {
-        "label": "Yellow",
-        "h": -75,
-        "s": 0.5,
-        "v": 0.2
+        "label": "Color 5",
+        "h": -85.2727,
+        "s": -0.2727,
+        "v": -0.2475
       },
       {
-        "label": "Saffron",
-        "h": -65,
-        "s": 0.52,
-        "v": 0.15
+        "label": "Color 6",
+        "h": -77.0909,
+        "s": -0.2472,
+        "v": -0.2381
       },
       {
-        "label": "Chartreuse",
-        "h": -53,
-        "s": 0.58,
-        "v": 0.05
+        "label": "Color 7",
+        "h": -68.9091,
+        "s": -0.2218,
+        "v": -0.2282
       },
       {
-        "label": "Lime",
-        "h": -42,
-        "s": 0.62,
-        "v": 0
+        "label": "Color 8",
+        "h": -60.7273,
+        "s": -0.1974,
+        "v": -0.2145
       },
       {
-        "label": "Spring",
-        "h": -32,
-        "s": 0.68,
-        "v": 0.05
+        "label": "Color 9",
+        "h": -52.5455,
+        "s": -0.1731,
+        "v": -0.2009
       },
       {
-        "label": "Umber",
-        "h": -100,
-        "s": -0.3,
-        "v": -0.4
+        "label": "Color 10",
+        "h": -44.3636,
+        "s": -0.1487,
+        "v": -0.1873
       },
       {
-        "label": "Ochre",
-        "h": -80,
-        "s": -0.2,
-        "v": -0.25
+        "label": "Color 11",
+        "h": -36.1818,
+        "s": -0.1244,
+        "v": -0.1736
       },
       {
-        "label": "Straw",
-        "h": -65,
+        "label": "Color 12",
+        "h": -28,
         "s": -0.1,
-        "v": -0.15
+        "v": -0.16
+      }
+    ]
+  },
+  "rakakoan": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -180,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 2",
+        "h": -147.2727,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 3",
+        "h": -114.5455,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 4",
+        "h": -81.8182,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 5",
+        "h": -49.0909,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 6",
+        "h": -16.3636,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 7",
+        "h": 16.3636,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 8",
+        "h": 49.0909,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 9",
+        "h": 81.8182,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 10",
+        "h": 114.5455,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 11",
+        "h": 147.2727,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 12",
+        "h": 180,
+        "s": 0.925,
+        "v": -0.02
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -118,
+        "s": -0.375,
+        "v": -0.285
+      },
+      {
+        "label": "Color 2",
+        "h": -109.8182,
+        "s": -0.3494,
+        "v": -0.2756
+      },
+      {
+        "label": "Color 3",
+        "h": -101.6364,
+        "s": -0.3239,
+        "v": -0.2662
+      },
+      {
+        "label": "Color 4",
+        "h": -93.4545,
+        "s": -0.2983,
+        "v": -0.2569
+      },
+      {
+        "label": "Color 5",
+        "h": -85.2727,
+        "s": -0.2727,
+        "v": -0.2475
+      },
+      {
+        "label": "Color 6",
+        "h": -77.0909,
+        "s": -0.2472,
+        "v": -0.2381
+      },
+      {
+        "label": "Color 7",
+        "h": -68.9091,
+        "s": -0.2218,
+        "v": -0.2282
+      },
+      {
+        "label": "Color 8",
+        "h": -60.7273,
+        "s": -0.1974,
+        "v": -0.2145
+      },
+      {
+        "label": "Color 9",
+        "h": -52.5455,
+        "s": -0.1731,
+        "v": -0.2009
+      },
+      {
+        "label": "Color 10",
+        "h": -44.3636,
+        "s": -0.1487,
+        "v": -0.1873
+      },
+      {
+        "label": "Color 11",
+        "h": -36.1818,
+        "s": -0.1244,
+        "v": -0.1736
+      },
+      {
+        "label": "Color 12",
+        "h": -28,
+        "s": -0.1,
+        "v": -0.16
       }
     ]
   },
   "engh-sho": {
     "male": [
       {
-        "label": "Earth",
+        "label": "Color 1",
         "h": -70,
         "s": -0.8,
         "v": -0.55
       },
       {
-        "label": "Olive",
+        "label": "Color 2",
         "h": -40,
         "s": -0.7,
         "v": -0.45
       },
       {
-        "label": "Sage",
+        "label": "Color 3",
         "h": 0,
         "s": -0.7,
         "v": -0.3
       },
       {
-        "label": "Seafoam",
+        "label": "Color 4",
         "h": 30,
         "s": -0.6,
         "v": -0.15
       },
       {
-        "label": "Ash",
+        "label": "Color 5",
         "h": 10,
         "s": -0.9,
         "v": 0.25
       },
       {
-        "label": "Onyx",
+        "label": "Color 6",
         "h": 0,
         "s": -0.9,
         "v": -0.85
       },
       {
-        "label": "Brown",
+        "label": "Color 7",
         "h": -113,
         "s": -0.45,
         "v": -0.45
       },
       {
-        "label": "Rust",
+        "label": "Color 8",
         "h": -143,
         "s": -0.4,
         "v": -0.4
       },
       {
-        "label": "Amber",
+        "label": "Color 9",
         "h": -113,
         "s": -0.35,
         "v": -0.25
       },
       {
-        "label": "Ochre",
+        "label": "Color 10",
         "h": -83,
         "s": -0.45,
         "v": -0.2
       },
       {
-        "label": "Lichen",
+        "label": "Color 11",
         "h": -23,
         "s": -0.55,
         "v": -0.25
       },
       {
-        "label": "Slate",
+        "label": "Color 12",
         "h": 77,
         "s": -0.75,
         "v": -0.2
@@ -456,73 +680,73 @@
     ],
     "female": [
       {
-        "label": "Earth",
+        "label": "Color 1",
         "h": -70,
         "s": -0.8,
         "v": -0.55
       },
       {
-        "label": "Olive",
+        "label": "Color 2",
         "h": -40,
         "s": -0.7,
         "v": -0.45
       },
       {
-        "label": "Sage",
+        "label": "Color 3",
         "h": 0,
         "s": -0.7,
         "v": -0.3
       },
       {
-        "label": "Seafoam",
+        "label": "Color 4",
         "h": 30,
         "s": -0.6,
         "v": -0.15
       },
       {
-        "label": "Ash",
+        "label": "Color 5",
         "h": 10,
         "s": -0.9,
         "v": 0.25
       },
       {
-        "label": "Onyx",
+        "label": "Color 6",
         "h": 0,
         "s": -0.9,
         "v": -0.85
       },
       {
-        "label": "Brown",
+        "label": "Color 7",
         "h": -113,
         "s": -0.45,
         "v": -0.45
       },
       {
-        "label": "Rust",
+        "label": "Color 8",
         "h": -143,
         "s": -0.4,
         "v": -0.4
       },
       {
-        "label": "Amber",
+        "label": "Color 9",
         "h": -113,
         "s": -0.35,
         "v": -0.25
       },
       {
-        "label": "Ochre",
+        "label": "Color 10",
         "h": -83,
         "s": -0.45,
         "v": -0.2
       },
       {
-        "label": "Lichen",
+        "label": "Color 11",
         "h": -23,
         "s": -0.55,
         "v": -0.25
       },
       {
-        "label": "Slate",
+        "label": "Color 12",
         "h": 77,
         "s": -0.75,
         "v": -0.2
@@ -532,73 +756,147 @@
   "mashtzarr": {
     "male": [
       {
-        "label": "Earth",
+        "label": "Color 1",
         "h": -70,
         "s": -0.8,
         "v": -0.55
       },
       {
-        "label": "Olive",
+        "label": "Color 2",
         "h": -40,
         "s": -0.7,
         "v": -0.45
       },
       {
-        "label": "Sage",
+        "label": "Color 3",
         "h": 0,
         "s": -0.7,
         "v": -0.3
       },
       {
-        "label": "Seafoam",
+        "label": "Color 4",
         "h": 30,
         "s": -0.6,
         "v": -0.15
       },
       {
-        "label": "Ash",
+        "label": "Color 5",
         "h": 10,
         "s": -0.9,
         "v": 0.25
       },
       {
-        "label": "Onyx",
+        "label": "Color 6",
         "h": 0,
         "s": -0.9,
         "v": -0.85
       },
       {
-        "label": "Brown",
+        "label": "Color 7",
         "h": -113,
         "s": -0.45,
         "v": -0.45
       },
       {
-        "label": "Rust",
+        "label": "Color 8",
         "h": -143,
         "s": -0.4,
         "v": -0.4
       },
       {
-        "label": "Amber",
+        "label": "Color 9",
         "h": -113,
         "s": -0.35,
         "v": -0.25
       },
       {
-        "label": "Ochre",
+        "label": "Color 10",
         "h": -83,
         "s": -0.45,
         "v": -0.2
       },
       {
-        "label": "Lichen",
+        "label": "Color 11",
         "h": -23,
         "s": -0.55,
         "v": -0.25
       },
       {
-        "label": "Slate",
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
         "h": 77,
         "s": -0.75,
         "v": -0.2
