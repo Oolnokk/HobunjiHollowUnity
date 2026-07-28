@@ -10,7 +10,7 @@
   // ── Species / cosmetic slot definitions ──────────────────────────────────
   // Adapted from ScratchbonesGame BASE_SPECIES_DATA.
   function bodyPalette(speciesId, gender) {
-    return window.HOBUNJI_COLOR_CONFIG?.bodyPalettes?.[speciesId]?.[gender] || [];
+    return window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.bodyPalettes?.[speciesId]?.[gender] || [];
   }
 
   const SPECIES_DATA = {

@@ -2426,7 +2426,3 @@ window.randomPortraitProfileSeeded = randomProfileSeeded;
 window.randomColorFromRangeSeeded = randomColorFromRangeSeeded;
 window.ensurePortraitClothingPaletteColors = ensurePortraitClothingPaletteColors;
 window.drawPortraitLayerWarped = drawPortraitLayerWarped;
-window.resolvePortraitTintTargetHex = (color, referenceHex) => {
-  const rgb = _resolveTargetRgbColor(color, referenceHex);
-  return rgb ? `#${rgb.map(clampByte).map(channel => channel.toString(16).padStart(2, '0')).join('').toUpperCase()}` : null;
-};
