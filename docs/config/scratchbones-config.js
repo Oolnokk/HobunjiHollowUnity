@@ -359,6 +359,9 @@ window.SCRATCHBONES_CONFIG = {
     },
 
     "appearanceEditor": {
+      "shopCatalog": [
+        { "id": "facewrap", "label": "Facewrap", "price": 60, "category": "hood", "description": "A close-wrapped hood that conceals the lower face.", "material": "cloth" }
+      ],
       "availability": {
         "tletingan": {
           "genders": ["male", "female"],
@@ -822,8 +825,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "tankan_bodywrap",  "label": "Tankan Body Wrap",  "price": 60, "category": "overwear", "description": "A wrapped ceremonial bodywrap." },
         { "id": "rugged_poncho", "label": "Rugged Poncho", "price": 70, "category": "overwear", "description": "A reinforced poncho layered with a rugged body wrap.", "material": "cloth" },
         { "id": "fine_poncho", "label": "Fine Poncho", "price": 80, "category": "overwear", "description": "A finely trimmed cloth poncho.", "material": "cloth" },
-        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." },
-        { "id": "facewrap",         "label": "Facewrap",          "price": 60, "category": "hood",     "description": "A close-wrapped hood that conceals the lower face.", "material": "cloth" }
+        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." }
       ]
     },
     "dyes": {

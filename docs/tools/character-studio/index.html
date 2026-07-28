@@ -776,7 +776,10 @@ function workRenderAppearance() {
 
 // ── Account mock (from npc-portrait-editor, wired to the working record) ────
 const StudioAccount = {
-  getShopCatalog:  () => window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [],
+  getShopCatalog:  () => [
+    ...(window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []),
+    ...(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.shopCatalog || []),
+  ],
   getDyeCatalog:   () => window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [],
   getDyeCategories:() => window.SCRATCHBONES_CONFIG?.game?.dyes?.categories || [],
   getAppliedDyes:  () => work.appliedDyes || {},
