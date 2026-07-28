@@ -5,8 +5,7 @@
     "headSprite": "fightersprites/kenkari-m/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/kenkari-m/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/kenkari-m/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {
@@ -282,8 +281,7 @@
     "headSprite": "fightersprites/kenkari-f/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/kenkari-f/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/kenkari-f/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {

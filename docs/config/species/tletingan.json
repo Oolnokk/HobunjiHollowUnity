@@ -5,8 +5,7 @@
     "headSprite": "fightersprites/tletingan/head_mint.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/tletingan/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/tletingan/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {
@@ -292,8 +291,7 @@
     "headSprite": "fightersprites/tletingan_f/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/tletingan_f/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/tletingan_f/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {

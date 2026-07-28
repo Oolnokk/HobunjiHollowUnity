@@ -1329,10 +1329,11 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "portrait": {
-      // Tintable portrait PNG convention: alpha controls shape/opacity, and
-      // each opaque pixel's own VALUE (brightness) is kept exactly as
-      // painted while its HUE and SATURATION are replaced by the selected
-      // dye's — see portrait-utils.js's getHueSatFillCanvas/_resolveTargetHueSat.
+      // Tintable portrait PNG convention: alpha controls shape/opacity. The
+      // default shade-fill transform scales the selected target color by each
+      // source pixel's luminance, preserving shading and patterns for bodies,
+      // wild-animal markings, and clothing. See getShadeFillCanvas in
+      // portrait-utils.js. Explicit hueSatFill overrides remain supported.
       "tinting": {
         "preserveNearBlackOutlines": true,
         "outlineThreshold": 0.08,
@@ -1365,7 +1366,11 @@ window.SCRATCHBONES_CONFIG = {
       "layering": {
         "hatUnderHoodTag": "hood-layer:under",
         "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat",
-        "hoodHidesFacialHairTag": "hides-facial-hair"
+        "hoodHidesFacialHairTag": "hides-facial-hair",
+        "hoodShowsFrontHairTag": "shows-front-hair"
+      },
+      "dyeableTintTags": {
+        "TORSO": "dyeable:torso"
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,
@@ -4164,6 +4169,964 @@ window.SCRATCHBONES_CONFIG.game.layout.fitter = window.SCRATCHBONES_CONFIG.game.
     }
   ];
 })();
+// Discrete body choices shared by character creation and the NPC Appearance editor.
+(() => {
+  const appearanceEditor = window.SCRATCHBONES_CONFIG.game.appearanceEditor;
+  const bodyPalettes = appearanceEditor.bodyPalettes = {
+  "mao-ao": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ]
+  },
+  "tletingan": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -105,
+        "s": -0.47,
+        "v": -0.35
+      },
+      {
+        "label": "Color 2",
+        "h": -95,
+        "s": -0.4586,
+        "v": -0.3443
+      },
+      {
+        "label": "Color 3",
+        "h": -85,
+        "s": -0.4471,
+        "v": -0.3386
+      },
+      {
+        "label": "Color 4",
+        "h": -75,
+        "s": -0.4357,
+        "v": -0.3329
+      },
+      {
+        "label": "Color 5",
+        "h": -65,
+        "s": -0.44,
+        "v": -0.33
+      },
+      {
+        "label": "Color 6",
+        "h": -55,
+        "s": -0.46,
+        "v": -0.33
+      },
+      {
+        "label": "Color 7",
+        "h": -45,
+        "s": -0.48,
+        "v": -0.33
+      },
+      {
+        "label": "Color 8",
+        "h": -35,
+        "s": -0.5,
+        "v": -0.33
+      },
+      {
+        "label": "Color 9",
+        "h": -25,
+        "s": -0.52,
+        "v": -0.3362
+      },
+      {
+        "label": "Color 10",
+        "h": -15,
+        "s": -0.54,
+        "v": -0.3425
+      },
+      {
+        "label": "Color 11",
+        "h": -5,
+        "s": -0.56,
+        "v": -0.3488
+      },
+      {
+        "label": "Color 12",
+        "h": 5,
+        "s": -0.58,
+        "v": -0.355
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -105,
+        "s": -0.47,
+        "v": -0.35
+      },
+      {
+        "label": "Color 2",
+        "h": -95,
+        "s": -0.4586,
+        "v": -0.3443
+      },
+      {
+        "label": "Color 3",
+        "h": -85,
+        "s": -0.4471,
+        "v": -0.3386
+      },
+      {
+        "label": "Color 4",
+        "h": -75,
+        "s": -0.4357,
+        "v": -0.3329
+      },
+      {
+        "label": "Color 5",
+        "h": -65,
+        "s": -0.44,
+        "v": -0.33
+      },
+      {
+        "label": "Color 6",
+        "h": -55,
+        "s": -0.46,
+        "v": -0.33
+      },
+      {
+        "label": "Color 7",
+        "h": -45,
+        "s": -0.48,
+        "v": -0.33
+      },
+      {
+        "label": "Color 8",
+        "h": -35,
+        "s": -0.5,
+        "v": -0.33
+      },
+      {
+        "label": "Color 9",
+        "h": -25,
+        "s": -0.52,
+        "v": -0.3362
+      },
+      {
+        "label": "Color 10",
+        "h": -15,
+        "s": -0.54,
+        "v": -0.3425
+      },
+      {
+        "label": "Color 11",
+        "h": -5,
+        "s": -0.56,
+        "v": -0.3488
+      },
+      {
+        "label": "Color 12",
+        "h": 5,
+        "s": -0.58,
+        "v": -0.355
+      }
+    ]
+  },
+  "kenkari": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -180,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 2",
+        "h": -147.2727,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 3",
+        "h": -114.5455,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 4",
+        "h": -81.8182,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 5",
+        "h": -49.0909,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 6",
+        "h": -16.3636,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 7",
+        "h": 16.3636,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 8",
+        "h": 49.0909,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 9",
+        "h": 81.8182,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 10",
+        "h": 114.5455,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 11",
+        "h": 147.2727,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 12",
+        "h": 180,
+        "s": 0.925,
+        "v": -0.02
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -118,
+        "s": -0.375,
+        "v": -0.285
+      },
+      {
+        "label": "Color 2",
+        "h": -109.8182,
+        "s": -0.3494,
+        "v": -0.2756
+      },
+      {
+        "label": "Color 3",
+        "h": -101.6364,
+        "s": -0.3239,
+        "v": -0.2662
+      },
+      {
+        "label": "Color 4",
+        "h": -93.4545,
+        "s": -0.2983,
+        "v": -0.2569
+      },
+      {
+        "label": "Color 5",
+        "h": -85.2727,
+        "s": -0.2727,
+        "v": -0.2475
+      },
+      {
+        "label": "Color 6",
+        "h": -77.0909,
+        "s": -0.2472,
+        "v": -0.2381
+      },
+      {
+        "label": "Color 7",
+        "h": -68.9091,
+        "s": -0.2218,
+        "v": -0.2282
+      },
+      {
+        "label": "Color 8",
+        "h": -60.7273,
+        "s": -0.1974,
+        "v": -0.2145
+      },
+      {
+        "label": "Color 9",
+        "h": -52.5455,
+        "s": -0.1731,
+        "v": -0.2009
+      },
+      {
+        "label": "Color 10",
+        "h": -44.3636,
+        "s": -0.1487,
+        "v": -0.1873
+      },
+      {
+        "label": "Color 11",
+        "h": -36.1818,
+        "s": -0.1244,
+        "v": -0.1736
+      },
+      {
+        "label": "Color 12",
+        "h": -28,
+        "s": -0.1,
+        "v": -0.16
+      }
+    ]
+  },
+  "rakakoan": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -180,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 2",
+        "h": -147.2727,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 3",
+        "h": -114.5455,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 4",
+        "h": -81.8182,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 5",
+        "h": -49.0909,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 6",
+        "h": -16.3636,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 7",
+        "h": 16.3636,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 8",
+        "h": 49.0909,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 9",
+        "h": 81.8182,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 10",
+        "h": 114.5455,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 11",
+        "h": 147.2727,
+        "s": 0.925,
+        "v": -0.02
+      },
+      {
+        "label": "Color 12",
+        "h": 180,
+        "s": 0.925,
+        "v": -0.02
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -118,
+        "s": -0.375,
+        "v": -0.285
+      },
+      {
+        "label": "Color 2",
+        "h": -109.8182,
+        "s": -0.3494,
+        "v": -0.2756
+      },
+      {
+        "label": "Color 3",
+        "h": -101.6364,
+        "s": -0.3239,
+        "v": -0.2662
+      },
+      {
+        "label": "Color 4",
+        "h": -93.4545,
+        "s": -0.2983,
+        "v": -0.2569
+      },
+      {
+        "label": "Color 5",
+        "h": -85.2727,
+        "s": -0.2727,
+        "v": -0.2475
+      },
+      {
+        "label": "Color 6",
+        "h": -77.0909,
+        "s": -0.2472,
+        "v": -0.2381
+      },
+      {
+        "label": "Color 7",
+        "h": -68.9091,
+        "s": -0.2218,
+        "v": -0.2282
+      },
+      {
+        "label": "Color 8",
+        "h": -60.7273,
+        "s": -0.1974,
+        "v": -0.2145
+      },
+      {
+        "label": "Color 9",
+        "h": -52.5455,
+        "s": -0.1731,
+        "v": -0.2009
+      },
+      {
+        "label": "Color 10",
+        "h": -44.3636,
+        "s": -0.1487,
+        "v": -0.1873
+      },
+      {
+        "label": "Color 11",
+        "h": -36.1818,
+        "s": -0.1244,
+        "v": -0.1736
+      },
+      {
+        "label": "Color 12",
+        "h": -28,
+        "s": -0.1,
+        "v": -0.16
+      }
+    ]
+  },
+  "engh-sho": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ]
+  },
+  "mashtzarr": {
+    "male": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ],
+    "female": [
+      {
+        "label": "Color 1",
+        "h": -70,
+        "s": -0.8,
+        "v": -0.55
+      },
+      {
+        "label": "Color 2",
+        "h": -40,
+        "s": -0.7,
+        "v": -0.45
+      },
+      {
+        "label": "Color 3",
+        "h": 0,
+        "s": -0.7,
+        "v": -0.3
+      },
+      {
+        "label": "Color 4",
+        "h": 30,
+        "s": -0.6,
+        "v": -0.15
+      },
+      {
+        "label": "Color 5",
+        "h": 10,
+        "s": -0.9,
+        "v": 0.25
+      },
+      {
+        "label": "Color 6",
+        "h": 0,
+        "s": -0.9,
+        "v": -0.85
+      },
+      {
+        "label": "Color 7",
+        "h": -113,
+        "s": -0.45,
+        "v": -0.45
+      },
+      {
+        "label": "Color 8",
+        "h": -143,
+        "s": -0.4,
+        "v": -0.4
+      },
+      {
+        "label": "Color 9",
+        "h": -113,
+        "s": -0.35,
+        "v": -0.25
+      },
+      {
+        "label": "Color 10",
+        "h": -83,
+        "s": -0.45,
+        "v": -0.2
+      },
+      {
+        "label": "Color 11",
+        "h": -23,
+        "s": -0.55,
+        "v": -0.25
+      },
+      {
+        "label": "Color 12",
+        "h": 77,
+        "s": -0.75,
+        "v": -0.2
+      }
+    ]
+  }
+};
+  const speciesMetadata = {
+    'mao-ao': { label: 'Mao-ao', swatchBase: '#7dc89a' },
+    tletingan: { label: 'Tletingan', swatchBase: '#7dc89a' },
+    kenkari: { label: 'Kenkari', swatchBase: '#7dc89a' },
+    'engh-sho': { label: 'Engh-sho', swatchBase: '#c7d2d5' },
+    mashtzarr: { label: 'Mashtzarr', swatchBase: '#7dc89a' },
+    rakakoan: { label: "Rakako'an", swatchBase: '#7dc89a', parentSpecies: 'kenkari' }
+  };
+  for (const [speciesId, genders] of Object.entries(bodyPalettes)) {
+    const metadata = speciesMetadata[speciesId] || { label: speciesId, swatchBase: '#7dc89a' };
+    const species = appearanceEditor.species[speciesId] ||= { ...metadata };
+    species.genders = Object.keys(genders);
+    for (const [gender, options] of Object.entries(genders)) {
+      const genderConfig = species[gender] ||= {};
+      genderConfig.colorOptions = options;
+    }
+  }
+  window.applyHobunjiColorConfig = (colorConfig) => {
+    const palettes = colorConfig?.bodyPalettes;
+    if (palettes && typeof palettes === 'object') {
+      appearanceEditor.bodyPalettes = palettes;
+      for (const [speciesId, genders] of Object.entries(palettes)) {
+        const species = appearanceEditor.species[speciesId];
+        if (!species) continue;
+        for (const [gender, options] of Object.entries(genders || {})) {
+          if (species[gender] && Array.isArray(options)) species[gender].colorOptions = options;
+        }
+      }
+    }
+    const catalog = window.SCRATCHBONES_CONFIG.game.dyes?.catalog;
+    if (!Array.isArray(colorConfig?.dyeHsl) || !Array.isArray(catalog)) return;
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
+    const hslToHex = ({ h, s, l }) => {
+      const hue = ((Number(h) % 360) + 360) % 360;
+      const sat = clamp(s, 0, 100) / 100;
+      const light = clamp(l, 0, 100) / 100;
+      const c = (1 - Math.abs(2 * light - 1)) * sat;
+      const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
+      const m = light - c / 2;
+      const rgb = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x]
+        : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+      return '#' + rgb.map(channel => Math.round((channel + m) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+    };
+    const byId = new Map(colorConfig.dyeHsl.map(entry => [entry.id, entry]));
+    for (const dye of catalog) {
+      const override = byId.get(dye.id);
+      if (!override?.hsl) continue;
+      dye.hsl = { ...override.hsl };
+      dye.hex = hslToHex(override.hsl);
+    }
+  };
+})();
+
 (function applyScratchbonesCssConfig(root) {
   const clampToCss = (clamp) => {
     const minPx = Number(clamp?.minPx);

@@ -371,6 +371,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/colors/config.js"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
@@ -1272,7 +1273,7 @@ function _colorMatch(a, b) {
 }
 function _normalizeSpecies(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 
-function _renderPicker(ranges) {
+function _renderPicker(ranges, playerColors) {
   const bodyColors = work.appearance.bodyColors || clone(DEFAULT_BODY_COLORS);
   const slots = [['A', 'Body A · primary'], ['B', 'Body B · secondary'], ['C', 'Body C · accent']];
   const pickerConfig = window.SCRATCHBONES_CONFIG?.game?.avatarEditor || {};
@@ -1311,13 +1312,38 @@ function _renderPicker(ranges) {
       sec.appendChild(row);
       continue;
     }
-    const swatches = _swatchesForRange(spec, swatchColumns, swatchRows);
     const grid = document.createElement('div'); grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
-    for (const sw of swatches) {
+    if (Array.isArray(playerColors) && playerColors.length) {
+      const heading = document.createElement('div');
+      heading.textContent = 'Player colors';
+      heading.style.cssText = 'flex:0 0 100%;color:var(--acc);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin:1px 0 2px';
+      grid.appendChild(heading);
+      playerColors.forEach((sw, index) => {
+        const el = document.createElement('div');
+        el.className = 'colorSwatch' + (_colorMatch(current, sw) ? ' swatchActive' : '');
+        el.style.cssText = `${bodySwatchStyle(sw.h, sw.s, sw.v)};display:grid;place-items:center;color:white;font-weight:800;text-shadow:0 1px 2px #000;border:2px solid var(--acc);border-radius:50%`;
+        el.textContent = String(index + 1);
+        el.title = `${index + 1}. ${sw.label} · player color · h:${sw.h} s:${sw.s} v:${sw.v}`;
+        el.setAttribute('aria-label', el.title);
+        el.addEventListener('click', () => {
+          if (!work.appearance.bodyColors) work.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
+          work.appearance.bodyColors[slot] = { h: sw.h, s: sw.s, v: sw.v };
+          invalidatePreview();
+          refreshColorPicker();
+        });
+        grid.appendChild(el);
+      });
+      const npcHeading = document.createElement('div');
+      npcHeading.textContent = 'NPC colors';
+      npcHeading.style.cssText = 'flex:0 0 100%;color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;margin:6px 0 2px';
+      grid.appendChild(npcHeading);
+    }
+    _swatchesForRange(spec, swatchColumns, swatchRows).forEach(sw => {
       const el = document.createElement('div');
       el.className = 'colorSwatch' + (_colorMatch(current, sw) ? ' swatchActive' : '');
       el.style.cssText = bodySwatchStyle(sw.h, sw.s, sw.v);
-      el.title = `h:${sw.h} s:${sw.s} v:${sw.v}`;
+      el.title = `NPC color · h:${sw.h} s:${sw.s} v:${sw.v}`;
+      el.setAttribute('aria-label', el.title);
       el.addEventListener('click', () => {
         if (!work.appearance.bodyColors) work.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
         work.appearance.bodyColors[slot] = { h: sw.h, s: sw.s, v: sw.v };
@@ -1325,7 +1351,7 @@ function _renderPicker(ranges) {
         refreshColorPicker();
       });
       grid.appendChild(el);
-    }
+    });
     row.appendChild(grid);
     if (current) {
       const currentStyle = bodySwatchStyle(current.h || 0, current.s || 0, current.v || 0);
@@ -1344,7 +1370,8 @@ async function refreshColorPicker() {
     const match = fighters.find(f => f.speciesId && f.gender && _normalizeSpecies(f.speciesId) === _normalizeSpecies(speciesId) && String(f.gender).toLowerCase() === String(gender).toLowerCase());
     const fid = match?.id || `${speciesId}_${gender}`;
     lbl.textContent = `${speciesId} · ${gender}`;
-    _renderPicker(ranges[fid] || null);
+    const playerColors = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.bodyPalettes?.[speciesId]?.[gender] || [];
+    _renderPicker(ranges[fid] || null, playerColors);
   } catch (e) { log('Color picker: ' + e.message, 'error'); }
 }
 

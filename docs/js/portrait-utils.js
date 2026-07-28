@@ -746,6 +746,7 @@ function getPortraitLayeringConfig() {
     hatUnderHoodTag: layering.hatUnderHoodTag || null,
     eyeAccessoryAboveUnderHoodHatTag: layering.eyeAccessoryAboveUnderHoodHatTag || null,
     hoodHidesFacialHairTag: layering.hoodHidesFacialHairTag || null,
+    hoodShowsFrontHairTag: layering.hoodShowsFrontHairTag || null,
   };
 }
 
@@ -1068,8 +1069,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatIsUnderHood = hatLayersUnderHood(hat);
   const eyesLayerAboveUnderHoodHat = eyeAccessoryLayersAboveUnderHoodHat(eyes, hat);
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
+  const { hoodShowsFrontHairTag } = getPortraitLayeringConfig();
+  const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const hiddenCosmeticGroups = new Set([
-    ...(hoodHideFrontAndSideHair ? [hairFront, hairSide, hairSideL] : []),
+    ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
     ...(hoodHidesFacialHair(hood) ? [facialHair] : []),
   ].filter(Boolean));
 
@@ -1360,13 +1363,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
   drawEmoteLayers(frontHairLayers);
   drawEmoteLayers(eyesLayers);
-  // Most ur-head overlays sit at their usual spot (before the hood, so a hood
-  // can cover them normally). A layer tagged renderOrder: 'topLayer' (e.g.
-  // mashtzarr's separated-out ur-head_tusks.png) instead draws after the
-  // hood/pauldron/hat-over stack below, so tusks poke out past a hood rather
-  // than being hidden underneath it.
-  const topUrLayers = urLayerSource.filter(l => l?.renderOrder === 'topLayer');
-  const normalUrLayers = urLayerSource.filter(l => l?.renderOrder !== 'topLayer');
+  // Species anatomy is universally below hoods. Mashtzarr tusks are the sole
+  // authored exception: above a hood, but still below an over-hood hat.
+  const aboveHoodBelowHatUrLayers = urLayerSource.filter(l => l?.renderOrder === 'aboveHoodBelowHat');
+  const normalUrLayers = urLayerSource.filter(l => l?.renderOrder !== 'aboveHoodBelowHat');
   // Kenkari mask species: draw ur-head layers onto an offscreen canvas then punch out the
   // mouth shape (destination-out) before compositing the result onto the main canvas.
   // All other species draw ur-head directly.
@@ -1420,12 +1420,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(elevatedEyeAccessoryLayers);
   drawBreathingLayers(hoodLayers);
   drawEmoteLayers(pauldronLayers);
-  drawEmoteLayers(hatOverLayers);
-  for (const mid of topUrLayers) {
+  for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
     const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
     if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
   }
+  drawEmoteLayers(hatOverLayers);
   if (opacityMaskLayer?.url) {
     const maskImg = imgMap.get(opacityMaskLayer.url);
     if (maskImg) applyPortraitOpacityMask(ctx, maskImg, resolveXform(opacityMaskLayer));
@@ -1588,6 +1588,9 @@ function portraitOptionFromJson(entry, json) {
 
   const colorRange = json.colorRange || null;
   const tags = Array.isArray(json.tags) ? json.tags : [];
+  const dyeableTintTags = window.SCRATCHBONES_CONFIG?.game?.portrait?.dyeableTintTags || {};
+  const taggedTintSlot = Object.entries(dyeableTintTags)
+    .find(([, tag]) => typeof tag === 'string' && tags.includes(tag))?.[0] || null;
   const materialTag = (typeof json.material === 'string' && json.material.trim())
     ? json.material.trim().toLowerCase()
     : (tags.find(tag => typeof tag === 'string' && tag.toLowerCase().startsWith('material:')) || '')
@@ -1595,14 +1598,15 @@ function portraitOptionFromJson(entry, json) {
       ?.trim()
       ?.toLowerCase()
       || null;
-  const resolvedTintSlot = json.slot === 'hat' && colorRange ? 'HAT'
+  const resolvedTintSlot = taggedTintSlot || (
+                           json.slot === 'hat' && colorRange ? 'HAT'
                          : json.slot === 'hood' && colorRange ? 'HOOD'
                          : json.slot === 'torso' && colorRange ? 'TORSO'
                          : !json.appearance && colorRange ? 'CLOTH'
                          : json.slot === 'hood' && !json.appearance ? (json.tintSlot ?? 'HOOD')
                          : !json.appearance && json.tintSlot != null ? json.tintSlot
                          : json.slot === 'torso' && !json.appearance ? 'TORSO'
-                         : tintSlot;
+                         : tintSlot);
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
@@ -1750,6 +1754,9 @@ async function loadPortraitCosmetics(configBase) {
             FIGHTERS.push(fighter);
           }
           if (fighter) {
+            // Keep full NPC ranges so wild-animal body and pattern layers
+            // retain their intended natural variation. Player palettes are
+            // representative choices derived from these authored ranges.
             bodyColorRangesByGender[fighter.id] = genderData.bodyColorRanges;
             fighterPortraitOverrides[fighter.id] = {
               ...(fighterPortraitOverrides[fighter.id] || {}),
