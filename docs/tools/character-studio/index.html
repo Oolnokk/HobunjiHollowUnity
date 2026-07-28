@@ -1085,6 +1085,7 @@ async function toggle3d() {
 
 // ── Appearance controls UI ───────────────────────────────────────────────────
 let _activeDyeSlot = null;
+const _dyeScrollPositions = new Map();
 
 function updateTargetPill() {
   const pill = $('targetPill');
@@ -1274,10 +1275,16 @@ function _normalizeSpecies(s) { return String(s || '').toLowerCase().replace(/[^
 function _renderPicker(ranges) {
   const bodyColors = work.appearance.bodyColors || clone(DEFAULT_BODY_COLORS);
   const slots = [['A', 'Body A · primary'], ['B', 'Body B · secondary'], ['C', 'Body C · accent']];
+  const pickerConfig = window.SCRATCHBONES_CONFIG?.game?.avatarEditor || {};
+  const swatchColumns = pickerConfig.bodyColorSwatchColumns;
+  const swatchRows = pickerConfig.bodyColorSwatchRows;
   const sec = $('colorPickerSection'); if (!sec) return;
   sec.innerHTML = '';
   for (const [slot, label] of slots) {
-    const spec = ranges?.[slot]; const current = bodyColors[slot];
+    // Some older species only define their primary range. Keep every body
+    // channel visually editable by using that valid primary palette rather
+    // than falling back to raw H/S/V number fields for B and C.
+    const spec = ranges?.[slot] || ranges?.A; const current = bodyColors[slot];
     const row = document.createElement('div'); row.style.cssText = 'margin-bottom:12px';
     row.innerHTML = `<label style="display:block;color:var(--muted);font-size:11px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">${label}</label>`;
     if (!spec) {
@@ -1304,7 +1311,7 @@ function _renderPicker(ranges) {
       sec.appendChild(row);
       continue;
     }
-    const swatches = _swatchesForRange(spec, 7, 4);
+    const swatches = _swatchesForRange(spec, swatchColumns, swatchRows);
     const grid = document.createElement('div'); grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
     for (const sw of swatches) {
       const el = document.createElement('div');
@@ -1400,7 +1407,7 @@ function renderCollections() {
         `<button class="secondary applyBtn" data-clear-channel="${esc(k)}">Clear ${['A','B','C'][i] || i + 1}</button>`
       ).join('');
       slotsHtml += `
-        <div class="dyePanel">
+        <div class="dyePanel" data-dye-panel="${esc(slot.key)}">
           ${dyeRows}
           ${clearBtns ? `<div class="dyeClears">${clearBtns}</div>` : ''}
         </div>`;
@@ -1474,7 +1481,7 @@ function renderCollections() {
         `<button class="secondary applyBtn" data-clear-channel="${k}">Clear ${['A','B','C'][i]}</button>`
       ).join('');
       slotsHtml += `
-        <div class="dyePanel">
+        <div class="dyePanel" data-dye-panel="${esc(slot.key)}">
           <div class="help" style="margin-bottom:5px">A: primary · B/C: sub-channels</div>
           ${dyeRows}
           ${clearBtns ? `<div class="dyeClears">${clearBtns}</div>` : ''}
@@ -1484,6 +1491,15 @@ function renderCollections() {
 
   const el = $('collectionsControls');
   el.innerHTML = slotsHtml || '<div class="help">No clothing items configured.</div>';
+
+  // Applying a dye rebuilds this panel so its buttons can reflect the new
+  // channel state. Restore the nested list's own scroll offset after that
+  // rebuild instead of sending the user back to the beginning of the catalog.
+  el.querySelectorAll('[data-dye-panel]').forEach(panel => {
+    const key = panel.dataset.dyePanel;
+    panel.scrollTop = _dyeScrollPositions.get(key) || 0;
+    panel.addEventListener('scroll', () => _dyeScrollPositions.set(key, panel.scrollTop), { passive: true });
+  });
 
   el.querySelectorAll('[data-appearance-slot]').forEach(sel => {
     sel.addEventListener('change', () => {
