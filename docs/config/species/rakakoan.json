@@ -1,6 +1,18 @@
 {
   "speciesId": "rakakoan",
   "label": "Rakako'an",
+  "parentSpecies": "kenkari",
+  "subspeciesDelta": {
+    "comment": "Rakako'ans are kenkari with one exclusive difference: the upperFace slot is mandatory and accepts only rakakoan eyepatch cosmetics. All other head/body assets are inherited from kenkari.",
+    "mandatorySlots": ["upperFace"],
+    "exclusiveSlotCosmetics": {
+      "upperFace": [
+        "appearance::Rakakoan_M::rakakoan_woven_eyepatch",
+        "appearance::Rakakoan_M::rakakoan_ragged_eyepatch",
+        "appearance::Rakakoan_M::rakakoan_wrapped_eyepatch"
+      ]
+    }
+  },
   "male": {
     "headSprite": "fightersprites/kenkari-m/head.png",
     "headUrLayers": [
