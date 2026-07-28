@@ -1272,7 +1272,7 @@ function _colorMatch(a, b) {
 }
 function _normalizeSpecies(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 
-function _renderPicker(ranges) {
+function _renderPicker(ranges, colorOptions) {
   const bodyColors = work.appearance.bodyColors || clone(DEFAULT_BODY_COLORS);
   const slots = [['A', 'Body A · primary'], ['B', 'Body B · secondary'], ['C', 'Body C · accent']];
   const pickerConfig = window.SCRATCHBONES_CONFIG?.game?.avatarEditor || {};
@@ -1311,13 +1311,16 @@ function _renderPicker(ranges) {
       sec.appendChild(row);
       continue;
     }
-    const swatches = _swatchesForRange(spec, swatchColumns, swatchRows);
+    const usesSharedOptions = Array.isArray(colorOptions) && colorOptions.length > 0;
+    const swatches = usesSharedOptions ? colorOptions : _swatchesForRange(spec, swatchColumns, swatchRows);
     const grid = document.createElement('div'); grid.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
-    for (const sw of swatches) {
+    swatches.forEach((sw, index) => {
       const el = document.createElement('div');
       el.className = 'colorSwatch' + (_colorMatch(current, sw) ? ' swatchActive' : '');
-      el.style.cssText = bodySwatchStyle(sw.h, sw.s, sw.v);
-      el.title = `h:${sw.h} s:${sw.s} v:${sw.v}`;
+      el.style.cssText = `${bodySwatchStyle(sw.h, sw.s, sw.v)};display:grid;place-items:center;color:white;font-weight:700;text-shadow:0 1px 2px #000`;
+      if (usesSharedOptions) el.textContent = String(index + 1);
+      el.title = usesSharedOptions ? `${index + 1}. ${sw.label} · h:${sw.h} s:${sw.s} v:${sw.v}` : `h:${sw.h} s:${sw.s} v:${sw.v}`;
+      el.setAttribute('aria-label', el.title);
       el.addEventListener('click', () => {
         if (!work.appearance.bodyColors) work.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
         work.appearance.bodyColors[slot] = { h: sw.h, s: sw.s, v: sw.v };
@@ -1325,7 +1328,7 @@ function _renderPicker(ranges) {
         refreshColorPicker();
       });
       grid.appendChild(el);
-    }
+    });
     row.appendChild(grid);
     if (current) {
       const currentStyle = bodySwatchStyle(current.h || 0, current.s || 0, current.v || 0);
@@ -1344,7 +1347,8 @@ async function refreshColorPicker() {
     const match = fighters.find(f => f.speciesId && f.gender && _normalizeSpecies(f.speciesId) === _normalizeSpecies(speciesId) && String(f.gender).toLowerCase() === String(gender).toLowerCase());
     const fid = match?.id || `${speciesId}_${gender}`;
     lbl.textContent = `${speciesId} · ${gender}`;
-    _renderPicker(ranges[fid] || null);
+    const sharedOptions = SPECIES_DATA[speciesId]?.[gender]?.colorOptions || [];
+    _renderPicker(ranges[fid] || null, sharedOptions);
   } catch (e) { log('Color picker: ' + e.message, 'error'); }
 }
 
