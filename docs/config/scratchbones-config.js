@@ -12,6 +12,12 @@ window.SCRATCHBONES_CONFIG = {
   clothingLightOffset: 0,
 
   game: {
+    // Shared presentation settings for the Character Studio avatar editor.
+    // Body-color ranges themselves remain species data under config/species.
+    "avatarEditor": {
+      "bodyColorSwatchColumns": 7,
+      "bodyColorSwatchRows": 4
+    },
     "creatureGenetics": {
       "defaultPatternChance": 0.3333333333333333,
       "patternChances": { "grehlr": { "mitts": 0.08 } },
