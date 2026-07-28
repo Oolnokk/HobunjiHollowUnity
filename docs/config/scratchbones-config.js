@@ -1365,7 +1365,8 @@ window.SCRATCHBONES_CONFIG = {
       "layering": {
         "hatUnderHoodTag": "hood-layer:under",
         "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat",
-        "hoodHidesFacialHairTag": "hides-facial-hair"
+        "hoodHidesFacialHairTag": "hides-facial-hair",
+        "hoodShowsFrontHairTag": "shows-front-hair"
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,
@@ -4184,3 +4185,31 @@ window.SCRATCHBONES_CONFIG.game.layout.fitter = window.SCRATCHBONES_CONFIG.game.
     if (cssVar && radiusCss) rootStyle.setProperty(cssVar, radiusCss);
   }
 })(window);
+
+
+// Apply author-edited exact HSL dye values after the legacy catalog metadata is built.
+// The portrait pipeline prioritizes each derived exact hex over legacy filter deltas.
+(() => {
+  const authored = window.HOBUNJI_COLOR_CONFIG?.dyeHsl;
+  const catalog = window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog;
+  if (!Array.isArray(authored) || !Array.isArray(catalog)) return;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
+  const hslToHex = ({ h, s, l }) => {
+    const hue = ((Number(h) % 360) + 360) % 360;
+    const sat = clamp(s, 0, 100) / 100;
+    const light = clamp(l, 0, 100) / 100;
+    const c = (1 - Math.abs(2 * light - 1)) * sat;
+    const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
+    const m = light - c / 2;
+    let rgb = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x]
+      : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+    return '#' + rgb.map(channel => Math.round((channel + m) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+  };
+  const byId = new Map(authored.map(entry => [entry.id, entry]));
+  for (const dye of catalog) {
+    const override = byId.get(dye.id);
+    if (!override?.hsl) continue;
+    dye.hsl = { ...override.hsl };
+    dye.hex = hslToHex(override.hsl);
+  }
+})();

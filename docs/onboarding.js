@@ -9,6 +9,10 @@
 
   // ── Species / cosmetic slot definitions ──────────────────────────────────
   // Adapted from ScratchbonesGame BASE_SPECIES_DATA.
+  function bodyPalette(speciesId, gender) {
+    return window.HOBUNJI_COLOR_CONFIG?.bodyPalettes?.[speciesId]?.[gender] || [];
+  }
+
   const SPECIES_DATA = {
     'mao-ao': {
       label: 'Mao-ao', genders: ['male', 'female'],
@@ -46,20 +50,7 @@
             { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
-          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
-          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
-          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
-          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
-          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
-          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
-          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
-          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
-          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
-          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
-          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
-        ],
+        colorOptions: bodyPalette('mao-ao', 'male'),
       },
       female: {
         slots: [
@@ -92,20 +83,7 @@
             { id: 'appearance::Mao-ao_F::mao-ao_circled_eye_L',  label: 'Circled Eye (L)' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
-          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
-          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
-          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
-          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
-          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
-          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
-          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
-          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
-          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
-          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
-          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
-        ],
+        colorOptions: bodyPalette('mao-ao', 'female'),
       },
     },
     'tletingan': {
@@ -136,20 +114,7 @@
             { id: 'appearance::Tletingan_M::tl_wildbeard', label: 'Wild Beard' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Umber',  h:  -85, s: -0.30, v: -0.40 },
-          { label: 'Khaki',  h:  -60, s: -0.20, v: -0.35 },
-          { label: 'Olive',  h:  -40, s: -0.10, v: -0.30 },
-          { label: 'Forest', h:  -20, s:  0.00, v: -0.20 },
-          { label: 'Fern',   h:    0, s:  0.10, v: -0.15 },
-          { label: 'Ash',    h:  -80, s: -0.40, v: -0.45 },
-          { label: 'Brown',  h: -113, s: -0.30, v: -0.42 },
-          { label: 'Rust',   h: -143, s: -0.20, v: -0.35 },
-          { label: 'Amber',  h: -113, s: -0.20, v: -0.28 },
-          { label: 'Ochre',  h:  -83, s: -0.35, v: -0.20 },
-          { label: 'Lichen', h:  -23, s: -0.45, v: -0.25 },
-          { label: 'Slate',  h:   77, s: -0.60, v: -0.22 },
-        ],
+        colorOptions: bodyPalette('tletingan', 'male'),
       },
     },
     'kenkari': {
@@ -181,20 +146,7 @@
             { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Jade',       h:  -20, s:  0.80, v:  0.00 },
-          { label: 'Lime',       h:  -80, s:  0.90, v:  0.00 },
-          { label: 'Teal',       h:   40, s:  1.00, v:  0.10 },
-          { label: 'Amethyst',   h:  120, s:  0.90, v:  0.00 },
-          { label: 'Fuchsia',    h:  160, s:  0.80, v: -0.10 },
-          { label: 'Ember',      h: -120, s:  0.80, v: -0.10 },
-          { label: 'Chartreuse', h:  -40, s:  0.70, v:  0.10 },
-          { label: 'Azure',      h:   60, s:  0.90, v:  0.10 },
-          { label: 'Red',        h: -143, s:  1.00, v:  0.00 },
-          { label: 'Orange',     h: -113, s:  1.00, v:  0.10 },
-          { label: 'Yellow',     h:  -83, s:  1.20, v:  0.25 },
-          { label: 'Green',      h:  -23, s:  1.00, v:  0.05 },
-        ],
+        colorOptions: bodyPalette('kenkari', 'male'),
       },
       female: {
         forcedCosmetics: { eyes: 'none' },
@@ -215,20 +167,7 @@
             { id: 'appearance::Kenkari_F::kenk_braid-L_f', label: 'Braid (Left)' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Ember',      h: -115, s:  0.20, v:  0.05 },
-          { label: 'Copper',     h: -105, s:  0.25, v:  0.10 },
-          { label: 'Gold',       h:  -92, s:  0.40, v:  0.15 },
-          { label: 'Honey',      h:  -80, s:  0.45, v:  0.20 },
-          { label: 'Yellow',     h:  -75, s:  0.50, v:  0.20 },
-          { label: 'Saffron',    h:  -65, s:  0.52, v:  0.15 },
-          { label: 'Chartreuse', h:  -53, s:  0.58, v:  0.05 },
-          { label: 'Lime',       h:  -42, s:  0.62, v:  0.00 },
-          { label: 'Spring',     h:  -32, s:  0.68, v:  0.05 },
-          { label: 'Umber',      h: -100, s: -0.30, v: -0.40 },
-          { label: 'Ochre',      h:  -80, s: -0.20, v: -0.25 },
-          { label: 'Straw',      h:  -65, s: -0.10, v: -0.15 },
-        ],
+        colorOptions: bodyPalette('kenkari', 'female'),
       },
     },
     'engh-sho': {
@@ -262,20 +201,7 @@
             { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
-          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
-          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
-          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
-          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
-          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
-          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
-          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
-          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
-          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
-          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
-          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
-        ],
+        colorOptions: bodyPalette('engh-sho', 'male'),
       },
       female: {
         forcedCosmetics: { eyes: 'appearance::Engh-sho_F::engh_snowgoggles' },
@@ -302,20 +228,7 @@
             { id: 'appearance::Mao-ao_F::mao-ao_braid-L', label: 'Braid (Left)' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
-          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
-          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
-          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
-          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
-          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
-          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
-          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
-          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
-          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
-          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
-          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
-        ],
+        colorOptions: bodyPalette('engh-sho', 'female'),
       },
     },
     'mashtzarr': {
@@ -348,20 +261,7 @@
             { id: 'appearance::Mashtzarr_M::mashtz_wildbeard', label: 'Wild Beard' },
           ]},
         ],
-        colorOptions: [
-          { label: 'Earth',   h: -70,  s: -0.80, v: -0.55 },
-          { label: 'Olive',   h: -40,  s: -0.70, v: -0.45 },
-          { label: 'Sage',    h:   0,  s: -0.70, v: -0.30 },
-          { label: 'Seafoam', h:  30,  s: -0.60, v: -0.15 },
-          { label: 'Ash',     h:  10,  s: -0.90, v:  0.25 },
-          { label: 'Onyx',    h:   0,  s: -0.90, v: -0.85 },
-          { label: 'Brown',   h: -113, s: -0.45, v: -0.45 },
-          { label: 'Rust',    h: -143, s: -0.40, v: -0.40 },
-          { label: 'Amber',   h: -113, s: -0.35, v: -0.25 },
-          { label: 'Ochre',   h:  -83, s: -0.45, v: -0.20 },
-          { label: 'Lichen',  h:  -23, s: -0.55, v: -0.25 },
-          { label: 'Slate',   h:   77, s: -0.75, v: -0.20 },
-        ],
+        colorOptions: bodyPalette('mashtzarr', 'male'),
       },
     },
   };
@@ -1327,7 +1227,8 @@
 
     const swatchRow = (opts, selIdx, attr) => opts.map((o, i) =>
       `<button class="ob-swatch${i === selIdx ? ' ob-active' : ''}" ${attr}="${i}"
-               style="${swatchStyle(o.h, o.s, o.v, ap.speciesId)}" title="${esc(o.label)}"></button>`
+               style="${swatchStyle(o.h, o.s, o.v, ap.speciesId)}" title="${esc(`${i + 1}. ${o.label}`)}"
+               aria-label="${esc(`${i + 1}. ${o.label}`)}"><span>${i + 1}</span></button>`
     ).join('');
 
     return `

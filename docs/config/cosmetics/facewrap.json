@@ -4,7 +4,8 @@
     "name": "Facewrap"
   },
   "tags": [
-    "hides-facial-hair"
+    "hides-facial-hair",
+    "shows-front-hair"
   ],
   "palette": {
     "colors": {

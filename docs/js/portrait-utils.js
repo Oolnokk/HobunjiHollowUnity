@@ -746,6 +746,7 @@ function getPortraitLayeringConfig() {
     hatUnderHoodTag: layering.hatUnderHoodTag || null,
     eyeAccessoryAboveUnderHoodHatTag: layering.eyeAccessoryAboveUnderHoodHatTag || null,
     hoodHidesFacialHairTag: layering.hoodHidesFacialHairTag || null,
+    hoodShowsFrontHairTag: layering.hoodShowsFrontHairTag || null,
   };
 }
 
@@ -1068,8 +1069,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatIsUnderHood = hatLayersUnderHood(hat);
   const eyesLayerAboveUnderHoodHat = eyeAccessoryLayersAboveUnderHoodHat(eyes, hat);
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
+  const { hoodShowsFrontHairTag } = getPortraitLayeringConfig();
+  const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const hiddenCosmeticGroups = new Set([
-    ...(hoodHideFrontAndSideHair ? [hairFront, hairSide, hairSideL] : []),
+    ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
     ...(hoodHidesFacialHair(hood) ? [facialHair] : []),
   ].filter(Boolean));
 
