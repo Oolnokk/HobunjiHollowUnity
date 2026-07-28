@@ -151,6 +151,15 @@
         // mesh (tree/bush/stump) instead of treating every shrub tile in a
         // tree zone as a full tree. See game.js's _buildZoneFloorMeshes.
         floraKind: type === 'shrub' ? (t.generatedObjectType || null) : undefined,
+        // Which generator object ('diggableRockOre'/'undiggableBoulder') this
+        // 'rock' tile came from — lets the live game tell a mineable ore rock
+        // apart from an undiggable boulder or a plain plateau cliff face
+        // (which carries no generatedObjectType at all). Named rockKind (not
+        // oreKind) to avoid colliding with the generator's own per-object
+        // oreKind (stone/copper/tin/iron/silver/gold/crystal material pick,
+        // see wilderness-map-generator.js line ~306) which isn't threaded
+        // through to the tile record. See game.js's isMineableRockTile.
+        rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
       });
     }
 

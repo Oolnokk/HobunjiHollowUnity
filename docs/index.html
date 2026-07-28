@@ -245,6 +245,7 @@
     <div class="mp-header">
       <div class="mp-tabs" role="tablist">
         <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
+        <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
         <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
         <!-- Shipping and Supplies are meant to open as their own windows when
@@ -353,6 +354,25 @@
         </div>
 
       </div><!-- /mpInventory -->
+
+      <!-- ── Crafting pane ─────────────────────────────────────
+           Turn an owned furniture blueprint (bought from the carpenter's
+           shop — see FURNITURE_BLUEPRINT_CATALOG/renderCarpenterShopPage)
+           into the finished furniture piece using wood + stone gathered
+           with the axe and pick. See renderCraftingPanel() in game.js. -->
+      <div class="mp-pane" id="mpCrafting">
+        <div class="supply-top-row">
+          <div class="supply-tabs" role="tablist" aria-label="Crafting category filters">
+            <button class="supply-tab crafting-cat-tab active" data-crafting-cat="all" type="button">All</button>
+            <button class="supply-tab crafting-cat-tab" data-crafting-cat="processing" type="button">Processing Stations</button>
+            <button class="supply-tab crafting-cat-tab" data-crafting-cat="decorative" type="button">Decorative</button>
+          </div>
+        </div>
+        <div class="menu-section supply-shop-section">
+          <div class="menu-section-title">Craft Furniture from Blueprints</div>
+          <div id="craftingList" class="supply-list"></div>
+        </div>
+      </div><!-- /mpCrafting -->
 
       <!-- ── Calendar pane ─────────────────────────────────── -->
       <div class="mp-pane" id="mpCalendar">
@@ -553,14 +573,14 @@
 
       <!-- ── Carpenter's Shop pane (no tab button — opened only via Dzibim
            Khibu's carpenter counter, same pattern as the General Store
-           above). Sells barn plans; see renderCarpenterShopPage() in
-           game.js. ──────────────────────────────────────────────────── -->
+           above). Sells barn plans and furniture blueprints; see
+           renderCarpenterShopPage() in game.js. ───────────────────────── -->
       <div class="mp-pane" id="mpCarpenterShop">
         <div class="supply-top-row">
           <div class="wallet-display"><div class="wallet-icon">💰</div><div class="wallet-label">Current gold</div><div class="wallet-amount" id="cpGoldDisplay">0<span class="wallet-unit">g</span></div></div>
         </div>
         <div class="menu-section supply-shop-section">
-          <div class="menu-section-title">Dzibim Khibu's Carpentry — Barn Plans</div>
+          <div class="menu-section-title">Dzibim Khibu's Carpentry — Plans &amp; Blueprints</div>
           <div id="carpenterShopList" class="supply-list"></div>
         </div>
       </div><!-- /mpCarpenterShop -->

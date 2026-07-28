@@ -142,6 +142,7 @@
         switchMenuPanel(targetPanel);
         buildInventoryGrid();
         buildEquipmentSlots();
+        if (targetPanel === 'crafting') renderCraftingPanel();
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
         if (targetPanel === 'generalStore') renderGeneralStorePage();
@@ -178,6 +179,7 @@
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
+        if (id === 'crafting') renderCraftingPanel();
         if (id === 'calendar') renderCalendarPanel();
         if (id === 'map') renderWildernessMapPanel();
         if (id === 'farm') renderFarmPanel();
@@ -1237,7 +1239,7 @@
         hoe:     ['till', 'smooth'],
         machete: ['cut', 'slash'],
         axe:     ['chop', 'hack'],
-        pick:    ['dig', 'raise', 'fill'],
+        pick:    ['dig', 'raise', 'fill', 'mine'],
         harpoon: ['fish'],
         weapon:  ['cut', 'slash'],
       };
@@ -1253,6 +1255,7 @@
         slash:      ['💥', 'Slash'],
         chop:       ['🪓', 'Chop'],
         hack:       ['💢', 'Hack'],
+        mine:       ['⛏️', 'Mine'],
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
       };
@@ -2837,6 +2840,37 @@
           price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
         }));
 
+      // ── Furniture blueprints ────────────────────────────────────────
+      // Every processing station (PROCESSING_FURNITURE_CATALOG) and
+      // decorative piece (DECORATIVE_FURNITURE_CATALOG) is built from a
+      // blueprint — bought from the carpenter's shop instead of the
+      // finished piece itself — plus wood and stone gathered with the axe
+      // and pick. See renderCarpenterShopPage (sells the blueprint) and
+      // renderCraftingPanel/craftFurnitureFromBlueprint (builds the
+      // finished item from an owned blueprint + materials, in the
+      // Inventory's Crafting tab).
+      function blueprintItemKey(furnitureItemKey) {
+        return furnitureItemKey + 'Blueprint';
+      }
+      // A rough-and-ready cost curve derived from the old outright price —
+      // about a sixth of it in wood, a tenth in stone, at least 1 of each.
+      function furnitureCraftCost(price) {
+        return { wood: Math.max(1, Math.round(price / 6)), stone: Math.max(1, Math.round(price / 10)) };
+      }
+      const FURNITURE_BLUEPRINT_CATALOG = [
+        ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
+        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: 'decorative' })),
+      ].map(({ item, category }) => ({
+        key: blueprintItemKey(item.key),
+        furnitureKey: item.key,
+        icon: item.icon,
+        name: item.name,
+        desc: item.desc,
+        price: Math.max(5, Math.round(item.price * 0.5)),
+        craftCost: furnitureCraftCost(item.price),
+        category,
+      }));
+
       // ── Alchemy: effects, reagents & active buffs ───────────────────
       // Standard Elder-Scrolls-style setup: every reagent carries up to 3
       // named boon/bane effects, but only effects[0] is known to the player
@@ -3101,8 +3135,10 @@
         { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 6, gives: { blackMustardSeed: 2 } },
         { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 6, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
-        ...PROCESSING_FURNITURE_CATALOG,
-        ...DECORATIVE_FURNITURE_CATALOG,
+        // Furniture (processing stations and decorative pieces) is no longer
+        // mail-order-able — see FURNITURE_BLUEPRINT_CATALOG. Blueprints are
+        // bought from the carpenter's shop instead, then built yourself from
+        // the Inventory's Crafting tab using wood, stone, and the blueprint.
         ...LIVESTOCK_CATALOG
       ];
 
@@ -3130,13 +3166,11 @@
       // from docs/config/shops/shop-stock.json once it loads.
       let GENERAL_STORE_CATALOG = [
         { key: 'mulchBag',      icon: '🍂', name: 'Mulch Bag',      desc: 'Boosts soil recovery and clears weeds.',        price: 3,  gives: { mulch: 5 } },
-        { key: 'bucket',        icon: '🪣', name: 'Tin Bucket',     desc: 'A utilitarian tin bucket for hauling water.',   price: 8,  gives: { bucketFurniture: 1 }, category: 'goods' },
-        { key: 'copperBarrel',  icon: '🛢️', name: 'Copper Barrel',  desc: 'A sturdy copper-hooped storage barrel.',       price: 20, gives: { copperBarrelFurniture: 1 }, category: 'goods' },
-        { key: 'crateStack',    icon: '📦', name: 'Crate Stack',    desc: 'Stacked wooden crates for storing loose goods.',price: 14, gives: { crateStackFurniture: 1 }, category: 'goods' },
-        { key: 'stool',         icon: '🪑', name: 'Round Stool',    desc: 'A simple round stool — good for any space.',    price: 10, gives: { stoolFurniture: 1 }, category: 'goods' },
-        { key: 'candleTable',   icon: '🕯️', name: 'Candle Table',   desc: 'Small table with a candle for warm light.',    price: 15, gives: { candleTableFurniture: 1 }, category: 'goods' },
-        { key: 'washTub',       icon: '🛁', name: 'Copper Wash Tub',desc: 'A copper tub for bathing or laundry.',         price: 25, gives: { washTubFurniture: 1 }, category: 'goods' },
-        { key: 'counter',       icon: '🏪', name: 'Shop Counter',   desc: 'A sturdy counter for conducting business.',    price: 40, gives: { counterFurniture: 1 }, category: 'goods' },
+        // Furniture used to be sold outright here (bucket/copperBarrel/
+        // crateStack/stool/candleTable/washTub/counter) — see
+        // FURNITURE_BLUEPRINT_CATALOG. Buy the blueprint from the carpenter's
+        // shop instead, then build it yourself from the Inventory's Crafting
+        // tab using wood, stone, and the blueprint.
       ];
 
       // ── Dye catalog (see docs/config/scratchbones-config.js game.dyes) ──
@@ -7151,6 +7185,7 @@
           member.wildBerryState = serializeZoneBerryState();
           member.zoneTreasureState = serializeZoneTreasureState();
           member.felledTreeState = serializeZoneFelledTreeState();
+          member.minedRockState = serializeZoneMinedRockState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
         } catch {}
       }
@@ -11493,6 +11528,13 @@
       // (a felled tile is either still felled or it isn't).
       const _zoneFelledTreePersist = new Map();
       const TREE_REGROWTH_DAYS = 7;
+      // mapId → [{col, row, minedDay}, ...] — ore rocks mined with the pick
+      // (see isMineableRockTile/applyAction's pick branch), same shape/role
+      // as _zoneFelledTreePersist. tickMinedRockRegrowth grows one back
+      // (tile.type -> ROCK; rockKind is never cleared by mining) once
+      // ROCK_REGROWTH_DAYS pass.
+      const _zoneMinedRockPersist = new Map();
+      const ROCK_REGROWTH_DAYS = 7;
       // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
       // performTothalShift) while the player was standing inside that same
       // zone — rebuilding the live THREE.Scene out from under them mid-visit
@@ -12462,7 +12504,7 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
@@ -12476,6 +12518,7 @@
           // merge doesn't track this through) falls back to treating any
           // SHRUB tile in a tree zone as a real tree — the prior behavior.
           if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
+          if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
         }
         // Re-apply any trees felled with the axe that haven't regrown yet
         // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
@@ -12494,6 +12537,20 @@
             });
             if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
             else _zoneFelledTreePersist.delete(mapId);
+          }
+        }
+        // Re-apply any ore rocks mined with the pick that haven't regrown yet
+        // — same rationale as the felled-tree block above, mirrored for ROCK.
+        {
+          const minedEntries = _zoneMinedRockPersist.get(mapId);
+          if (minedEntries?.length) {
+            const stillMined = minedEntries.filter(entry => {
+              const due = calendar.day - entry.minedDay >= ROCK_REGROWTH_DAYS;
+              if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
+              return !due;
+            });
+            if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
+            else _zoneMinedRockPersist.delete(mapId);
           }
         }
         // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
@@ -15077,6 +15134,11 @@
               outTiles.set(key, {
                 c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
+                // Which generator object ('diggableRockOre'/'undiggableBoulder')
+                // this 'rock' tile came from — see terrain-preview.js's mirrored
+                // field (named rockKind to avoid colliding with the generator's
+                // own per-object oreKind material pick) and isMineableRockTile below.
+                rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
               });
             }
 
@@ -16568,6 +16630,20 @@
         });
       }
 
+      // Save/restore _zoneMinedRockPersist — mirrors serializeZoneFelledTreeState/
+      // restoreZoneFelledTreeState above.
+      function serializeZoneMinedRockState() {
+        const out = {};
+        _zoneMinedRockPersist.forEach((entries, mapId) => { out[mapId] = entries; });
+        return out;
+      }
+      function restoreZoneMinedRockState(saved) {
+        _zoneMinedRockPersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, entries]) => {
+          if (Array.isArray(entries)) _zoneMinedRockPersist.set(mapId, entries);
+        });
+      }
+
       // Tears down a previously built zone scene so buildZoneScene(mapId)'s
       // cache check falls through and rebuilds it from whatever's now in
       // _zoneLayouts — used by a Tothal Shift to apply newly generated
@@ -16603,6 +16679,8 @@
         // The whole tile layout just changed underneath any felled-tree
         // timers too — a shift's fresh terrain has its own new trees.
         _zoneFelledTreePersist.delete(mapId);
+        // Same reasoning again, for mined-out ore rocks.
+        _zoneMinedRockPersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
@@ -17141,6 +17219,26 @@
           }
           if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
           else _zoneFelledTreePersist.delete(mapId);
+          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
+        }
+      }
+
+      // Regrows ore rocks broken with the pick once ROCK_REGROWTH_DAYS have
+      // passed — mirrors tickFelledTreeRegrowth above for ROCK/rockKind.
+      function tickMinedRockRegrowth() {
+        for (const [mapId, entries] of _zoneMinedRockPersist) {
+          if (!entries.length) { _zoneMinedRockPersist.delete(mapId); continue; }
+          const zi = _zoneScenes.get(mapId);
+          if (!zi) continue;
+          const stillMined = [];
+          let regrewAny = false;
+          for (const entry of entries) {
+            if (calendar.day - entry.minedDay < ROCK_REGROWTH_DAYS) { stillMined.push(entry); continue; }
+            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.ROCK;
+            regrewAny = true;
+          }
+          if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
+          else _zoneMinedRockPersist.delete(mapId);
           if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
         }
       }
@@ -18527,6 +18625,24 @@
         saveMemberWorldData();
       }
 
+      // Furniture blueprints — see FURNITURE_BLUEPRINT_CATALOG. Bought here
+      // instead of the finished piece (no more direct General Store/mail-
+      // order furniture purchase); build the actual furniture from an owned
+      // blueprint plus wood/stone at the Inventory's Crafting tab (see
+      // renderCraftingPanel/craftFurnitureFromBlueprint).
+      function buyFurnitureBlueprint(blueprintKey) {
+        const bp = FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
+        if (!bp) return;
+        const gold = inventory.gold || 0;
+        if (gold < bp.price) { showToast('Not enough gold.', false); return; }
+        inventory.gold = gold - bp.price;
+        inventory[bp.key] = Math.min(9, (inventory[bp.key] || 0) + 1);
+        showToast(`Bought a ${bp.name} blueprint!`, true);
+        renderCarpenterShopPage();
+        buildInventoryGrid();
+        saveMemberWorldData();
+      }
+
       function renderCarpenterShopPage() {
         const goldEl = document.getElementById('cpGoldDisplay');
         if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
@@ -18534,6 +18650,12 @@
         if (!list) return;
         list.innerHTML = '';
         const world = _lootShopWorldState();
+
+        const planHdr = document.createElement('div');
+        planHdr.className = 'shop-section-label';
+        planHdr.textContent = '🏚 Barn Plans';
+        list.appendChild(planHdr);
+
         Object.entries(BARN_TIERS).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world)).forEach(([tier, def]) => {
           const owned = inventory[def.planItem] || 0;
           const row = document.createElement('div');
@@ -18548,6 +18670,113 @@
             <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
           `;
           row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
+          list.appendChild(row);
+        });
+
+        const bpHdr = document.createElement('div');
+        bpHdr.className = 'shop-section-label';
+        bpHdr.textContent = '📜 Furniture Blueprints';
+        list.appendChild(bpHdr);
+
+        FURNITURE_BLUEPRINT_CATALOG.filter(bp => window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
+          const owned = inventory[bp.key] || 0;
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">${bp.icon}</div>
+            <div class="sh-info">
+              <div class="sh-name">${esc(bp.name)} Blueprint</div>
+              <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab. Owned: ${owned}</div>
+              <div class="sh-price">${bp.price}g each</div>
+            </div>
+            <button class="shop-buy-btn" data-bp="${bp.key}">Buy</button>
+          `;
+          row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
+          list.appendChild(row);
+        });
+      }
+
+      // ── Crafting panel (Inventory's Crafting tab) ─────────────────────
+      // Turns an owned furniture blueprint into the finished furniture item
+      // using wood (any log — pine or shadewood) and stone gathered with
+      // the axe and pick — see FURNITURE_BLUEPRINT_CATALOG/
+      // buyFurnitureBlueprint. Reachable from anywhere, not gated to
+      // standing at the carpenter's shop, same as any other Inventory tab.
+      let craftingActiveCategory = 'all';
+
+      function ownedWoodCount() {
+        return (inventory.pineLog || 0) + (inventory.shadewoodLog || 0);
+      }
+      function consumeWood(amount) {
+        let remaining = amount;
+        for (const key of ['pineLog', 'shadewoodLog']) {
+          if (remaining <= 0) break;
+          const have = inventory[key] || 0;
+          const take = Math.min(have, remaining);
+          inventory[key] = have - take;
+          clampInventoryStack(key);
+          remaining -= take;
+        }
+      }
+
+      function bindCraftingTabs() {
+        document.querySelectorAll('.crafting-cat-tab').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.craftingCat === craftingActiveCategory);
+          btn.onclick = () => {
+            craftingActiveCategory = btn.dataset.craftingCat || 'all';
+            renderCraftingPanel();
+          };
+        });
+      }
+
+      function craftFurnitureFromBlueprint(blueprintKey) {
+        const bp = FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
+        if (!bp) return;
+        if ((inventory[bp.key] || 0) < 1) { showToast('No blueprint to build from.', false); return; }
+        if (ownedWoodCount() < bp.craftCost.wood) { showToast(`Not enough wood — need ${bp.craftCost.wood} (Pine/Shadewood Log).`, false); return; }
+        if ((inventory.stone || 0) < bp.craftCost.stone) { showToast(`Not enough stone — need ${bp.craftCost.stone}.`, false); return; }
+        inventory[bp.key] -= 1;
+        clampInventoryStack(bp.key);
+        consumeWood(bp.craftCost.wood);
+        inventory.stone -= bp.craftCost.stone;
+        clampInventoryStack('stone');
+        inventory[bp.furnitureKey] = Math.min(99, (inventory[bp.furnitureKey] || 0) + 1);
+        showToast(`Built a ${bp.name}!`, true);
+        renderCraftingPanel();
+        buildInventoryGrid();
+        saveMemberWorldData();
+      }
+
+      function renderCraftingPanel() {
+        bindCraftingTabs();
+        const list = document.getElementById('craftingList');
+        if (!list) return;
+        list.innerHTML = '';
+        const visible = FURNITURE_BLUEPRINT_CATALOG.filter(bp => craftingActiveCategory === 'all' || bp.category === craftingActiveCategory);
+        const owned = visible.filter(bp => (inventory[bp.key] || 0) > 0);
+        if (!owned.length) {
+          const empty = document.createElement('div');
+          empty.className = 'ii-empty';
+          empty.textContent = "No blueprints yet — buy one from the carpenter's shop.";
+          list.appendChild(empty);
+          return;
+        }
+        const haveWood = ownedWoodCount();
+        const haveStone = inventory.stone || 0;
+        owned.forEach(bp => {
+          const ownedCount = inventory[bp.key] || 0;
+          const canBuild = haveWood >= bp.craftCost.wood && haveStone >= bp.craftCost.stone;
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">${bp.icon}</div>
+            <div class="sh-info">
+              <div class="sh-name">${esc(bp.name)}</div>
+              <div class="sh-desc">Needs ${bp.craftCost.wood} Wood (have ${haveWood}) + ${bp.craftCost.stone} Stone (have ${haveStone}) — Blueprints owned: ${ownedCount}</div>
+            </div>
+            <button class="shop-buy-btn" data-bp="${bp.key}" ${canBuild ? '' : 'disabled'}>Build</button>
+          `;
+          row.querySelector('[data-bp]')?.addEventListener('click', () => craftFurnitureFromBlueprint(bp.key));
           list.appendChild(row);
         });
       }
@@ -18813,6 +19042,8 @@
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
         pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
         shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
+        stone:  { icon: '🪨', label: 'Stone',  cat: 'material', sellPrice: 5, tags: ['Material', 'Stone'], desc: 'Rough building stone broken from an ore rock with a pick. A carpenter can build with it.' },
+        pebble: { icon: '🔘', label: 'Pebble', cat: 'material', sellPrice: 2, tags: ['Material', 'Stone'], desc: 'A small smooth stone that chipped off while breaking rock. Sells for a little.' },
         garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
         garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
         banditScrapMetal: { icon: '🔩', label: 'Bandit Scrap Metal', cat: 'material', sellPrice: 6, tags: ['Material', 'Metal'], desc: 'Bent buckles, cut rivets and broken blade stock stripped off a fallen bandit. Sells on, or feeds the forge.' },
@@ -18963,6 +19194,21 @@
           ITEM_DEFS[def.itemKey] = {
             icon: def.icon, label: def.name, cat: 'furniture', sellPrice: 0,
             tags: ['Furniture', 'Decorative', def.area || 'interior'], desc: def.desc
+          };
+        }
+      });
+
+      // Furniture blueprints — see FURNITURE_BLUEPRINT_CATALOG above. Same
+      // auto-registration pattern as the furniture items themselves.
+      FURNITURE_BLUEPRINT_CATALOG.forEach(bp => {
+        if (!inventoryItems.some(item => item.key === bp.key)) {
+          inventoryItems.push({ key: bp.key, icon: '📜', label: (bp.name + ' Blueprint').toUpperCase(), max: 9 });
+        }
+        if (!ITEM_DEFS[bp.key]) {
+          ITEM_DEFS[bp.key] = {
+            icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
+            tags: ['Blueprint', 'Craftable'],
+            desc: `Craft into a ${bp.name} from the Inventory's Crafting tab using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
           };
         }
       });
@@ -21681,6 +21927,20 @@
         return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
       }
 
+      // A generator-placed ore rock (see rockKind/mergeZoneTiles) is
+      // mineable with a pick; an undiggableBoulder or a plain plateau cliff
+      // face (rockKind null — decorative/structural rock, see mergeZoneTiles'
+      // generatedObjectType exemption) is not. Hand-authored ROCK tiles
+      // (rockKind undefined, no generator behind them at all) default to
+      // "not mineable" — the opposite fallback from isChoppableTreeTile,
+      // since most ROCK tiles in the game are solid cliff/decoration, not
+      // wilderness resource nodes.
+      function isMineableRockTile(col, row) {
+        const tile = getActiveGrid()[row]?.[col];
+        if (!tile || tile.type !== TileType.ROCK) return false;
+        return tile.rockKind === 'diggableRockOre';
+      }
+
       function isDigRemovableVegetation(tile, col, row) {
         // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
         // Real trees (see isChoppableTreeTile) are excluded — they require a proper axe chop, not a free dig-through.
@@ -21697,7 +21957,10 @@
 
       function canUseAction(tool, action, col, row) {
         const tile = getActiveGrid()[row][col];
-        if (tile.type === TileType.ROCK) return false;
+        // A mineable ore rock is the one ROCK-tile exception to the blanket
+        // solid-rock block below — everything else (cliff faces, boulders)
+        // stays impassable/inert to every tool, mining included.
+        if (tile.type === TileType.ROCK) return tool === 'pick' && action === 'mine' && isMineableRockTile(col, row);
         if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
         // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are
         // farm-only mechanics, and pick duplicates the shovel's terrain actions.
@@ -21840,9 +22103,19 @@
         if (action === 'raise') return { emoji: '▲', color: '#f0d040', count: 12, spread: 0.45, lift: -0.75, ring: '#f0d040' };
         if (action === 'paddy') return { emoji: '〜', color: '#6ec6f0', count: 14, spread: 0.50, lift: -0.65, ring: '#6ec6f0' };
         if (action === 'till' || action === 'smooth') return { emoji: '·', color: '#d2a66a', count: 12, spread: 0.42, lift: -0.65, ring: '#d2a66a' };
-        if (action === 'cut' || action === 'slash' || action === 'chop' || action === 'hack') {
-          const isWide = action === 'slash' || action === 'hack';
+        if (action === 'cut' || action === 'slash') {
+          const isWide = action === 'slash';
           return { emoji: '✦', color: '#7fe89a', count: isWide ? 20 : 12, spread: isWide ? 0.78 : 0.48, lift: -0.8, ring: '#7fe89a' };
+        }
+        if (action === 'chop' || action === 'hack') {
+          // Wood chips flying off an axe strike — tree fells (chop) and
+          // wide brush-clearing swings (hack) alike.
+          const isWide = action === 'hack';
+          return { emoji: '◺', color: '#c8925a', count: isWide ? 20 : 14, spread: isWide ? 0.78 : 0.5, lift: -0.8, ring: '#c8925a' };
+        }
+        if (action === 'mine') {
+          // Pebbles bursting off a pick strike on an ore rock.
+          return { emoji: '●', color: '#9a9a9a', count: 16, spread: 0.5, lift: -0.85, ring: '#c9c9c9' };
         }
         if (action === 'harvest') return { emoji: '✧', color: '#f9e28a', count: 16, spread: 0.50, lift: -0.9, ring: '#f9e28a' };
         if (action.startsWith('plant')) return { emoji: '•', color: '#9ff08a', count: 11, spread: 0.36, lift: -0.55, ring: '#9ff08a' };
@@ -22492,6 +22765,27 @@
           return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
         }
 
+        if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {
+          // Breaking an ore rock — reachable via a completed hold (see
+          // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
+          // above. Drops stone (plus a rare pebble) instead of logs/mulch.
+          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 stone
+          tile.type = TileType.GRASS;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          // tile.rockKind is deliberately left alone — tickMinedRockRegrowth
+          // just flips tile.type back to ROCK once ROCK_REGROWTH_DAYS pass.
+          const _minedEntries = _zoneMinedRockPersist.get(currentArea) || [];
+          _minedEntries.push({ col, row, minedDay: calendar.day });
+          _zoneMinedRockPersist.set(currentArea, _minedEntries);
+          inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
+          const gotPebble = Math.random() < 0.35;
+          if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
+          // No markTileDirty here — same rationale as the axe branch above:
+          // this only ever happens in a wilderness zone.
+          awardToolUseMasteryXp('pick');
+          return { ok: true, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
+        }
+
         if (tool === 'machete' || tool === 'axe') {
           const result = clearVegetationAt(col, row, action);
           const isWide = action === 'slash' || action === 'hack';
@@ -22619,6 +22913,10 @@
           }
           if (activeTool === 'axe') {
             startChargeAction(getReticleTile(), CHOP_TREE_STAGES);
+            return;
+          }
+          if (activeTool === 'pick' && activeAction === 'mine') {
+            startChargeAction(getReticleTile(), MINE_ROCK_STAGES);
             return;
           }
           {
@@ -27103,6 +27401,10 @@
       // on the trunk rather than the generic single-axis sweep fallback.
       const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
 
+      // Breaking an ore rock (see isMineableRockTile) — same shape as
+      // CHOP_TREE_STAGES, just for the pick.
+      const MINE_ROCK_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
       let chargeAnimOverride = null;
@@ -27194,6 +27496,10 @@
         if (tool === 'axe' && action === 'chop') {
           const reticle = getReticleTile();
           return isChoppableTreeTile(reticle.col, reticle.row);
+        }
+        if (tool === 'pick' && action === 'mine') {
+          const reticle = getReticleTile();
+          return isMineableRockTile(reticle.col, reticle.row);
         }
         if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return false;
         const reticle = getReticleTile();
@@ -30636,6 +30942,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         respawnAllZoneBerries();
         respawnAllZoneTreasure();
         tickFelledTreeRegrowth();
+        tickMinedRockRegrowth();
         _saveWorldCalendar();
       }
 
@@ -30658,6 +30965,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         respawnAllZoneReagents();
         respawnAllZoneTreasure();
         tickFelledTreeRegrowth();
+        tickMinedRockRegrowth();
         player.health  = player.maxHealth;
         player.stamina = player.maxStamina;
         const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
@@ -31792,6 +32100,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (action === 'slash') return 'Slash 3×';
         if (action === 'chop')  return 'Chop';
         if (action === 'hack')  return 'Hack 3×';
+        if (action === 'mine')  return 'Mine';
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
         if (action === 'fish') return 'Fish';
         if (action.startsWith('place_')) return 'Place';
@@ -33080,6 +33389,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         restoreZoneBerryState(playerData.wildBerryState);
         restoreZoneTreasureState(playerData.zoneTreasureState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
+        restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
         // session, unlike the static reagent/furniture/fish tables) — rebuild
