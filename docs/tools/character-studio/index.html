@@ -668,7 +668,21 @@ function withConfiguredSpeciesAvailability(speciesData) {
   }
   return result;
 }
-const SPECIES_DATA = withConfiguredSpeciesAvailability({ ...BASE_SPECIES_DATA, ...CONFIG_SPECIES_DATA });
+function mergeConfiguredSpeciesData(baseData, configuredData) {
+  const result = { ...baseData };
+  for (const [speciesId, configuredSpecies] of Object.entries(configuredData)) {
+    const key = normalizeSpeciesKey(speciesId);
+    const baseSpecies = result[key] || result[speciesId] || {};
+    result[key] = {
+      ...baseSpecies,
+      ...configuredSpecies,
+      male: configuredSpecies?.male ? { ...(baseSpecies.male || {}), ...configuredSpecies.male } : baseSpecies.male,
+      female: configuredSpecies?.female ? { ...(baseSpecies.female || {}), ...configuredSpecies.female } : baseSpecies.female,
+    };
+  }
+  return result;
+}
+const SPECIES_DATA = withConfiguredSpeciesAvailability(mergeConfiguredSpeciesData(BASE_SPECIES_DATA, CONFIG_SPECIES_DATA));
 
 const DEFAULT_BODY_COLORS = { A: { h: 0, s: -0.70, v: -0.30 }, B: { h: 0, s: -0.70, v: -0.50 }, C: { h: 0, s: -0.65, v: -0.12 } };
 
@@ -1408,7 +1422,7 @@ function renderCollections() {
     }
     const ownedItems = [...ownedMap.values()];
     const equippedItem = fullCatalog.find(c => c.id === equippedId);
-    const equippedMaterial = equippedItem?.material || 'cloth';
+    const equippedDyeGroup = equippedItem?.dyeGroup || equippedItem?.material || 'cloth';
     const opts = [
       `<option value="">None</option>`,
       ...ownedItems.map(item =>
@@ -1425,7 +1439,7 @@ function renderCollections() {
       </div>`;
     if (isDyeOpen) {
       const [keyA, keyB, keyC] = slot.tintKeys;
-      const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === equippedMaterial);
+      const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === equippedDyeGroup);
       const dyeRowHtml = (d) => {
         const color = d.color || { h: 0, s: 0, v: 0 };
         const style = d.hex ? `background:${d.hex}` : swatchStyle(window.SCRATCHBONES_CONFIG?.game?.dyes?.swatchBase, color.h, color.s, color.v);
@@ -1441,7 +1455,7 @@ function renderCollections() {
       let dyeRows = '';
       const categoriesById = new Map(dyeCategories.map(c => [c.id, c]));
       const sortDyes = list => [...list].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-      if (equippedMaterial === 'cloth' && dyeCategories.length) {
+      if (equippedDyeGroup === 'cloth' && dyeCategories.length) {
         dyeRows = dyeCategories.map(category => {
           const categoryDyes = sortDyes(dyesForSlot.filter(d => d.dyeCategory === category.id));
           if (!categoryDyes.length) return '';

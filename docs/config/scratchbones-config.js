@@ -366,6 +366,32 @@ window.SCRATCHBONES_CONFIG = {
         }
       },
       "species": {
+        "tletingan": {
+          "female": {
+            "slots": [
+              { "slot": "hairFront", "label": "Front Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Tletingan_F::tl_forwardtuft_short", "label": "Forward Tuft (Short)" },
+                { "id": "appearance::Tletingan_F::tl_forwardtuft_long", "label": "Forward Tuft (Long)" }
+              ]},
+              { "slot": "hairBack", "label": "Back Hair", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Tletingan_F::tl_longponytail", "label": "Long Ponytail" },
+                { "id": "appearance::Tletingan_F::tl_splayedknot", "label": "Splayed Knot" }
+              ]},
+              { "slot": "hairSide", "label": "Side Hair (R)", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Tletingan_F::tl_shoulder_drape", "label": "Shoulder Drape" },
+                { "id": "appearance::Tletingan_F::tl_braid-R", "label": "Braid (Right)" },
+                { "id": "appearance::Tletingan_F::tl_braidcluster-R", "label": "Braid Cluster (Right)" }
+              ]},
+              { "slot": "hairSideL", "label": "Side Hair (L)", "options": [
+                { "id": null, "label": "None" },
+                { "id": "appearance::Tletingan_F::tl_braid-L", "label": "Braid (Left)" }
+              ]}
+            ]
+          }
+        },
         "engh-sho": {
           "label": "Engh-sho",
           "genders": ["male", "female"],
@@ -782,13 +808,13 @@ window.SCRATCHBONES_CONFIG = {
       "shopCatalog": [
         { "id": "appearance::hat::basic_headband",       "label": "Basic Headband",        "price": 35, "category": "hat",      "description": "A simple cloth headband." },
         { "id": "appearance::hat::leather_headband",     "label": "Leather Headband",      "price": 40, "category": "hat",      "description": "A sturdy leather headband.", "material": "leather" },
-        { "id": "appearance::hat::riverlandskasa_low",   "label": "Riverland Kasa (Low)",  "price": 45, "category": "hat",      "description": "Traditional riverland hat, worn low.", "material": "rigid_fiber" },
-        { "id": "appearance::hat::riverlandskasa_tight", "label": "Riverland Kasa (Tight)", "price": 45, "category": "hat",      "description": "Traditional riverland hat, tight fit.", "material": "rigid_fiber" },
-        { "id": "appearance::hat::riverlandskasa_wide",  "label": "Riverland Kasa (Wide)", "price": 45, "category": "hat",      "description": "Traditional riverland hat, wide brim.", "material": "rigid_fiber" },
-        { "id": "appearance::Kenkari_M::kenk_riverlandskasa_low",  "label": "Kenkari Kasa (Low)",  "price": 45, "category": "hat", "species": "kenkari", "gender": "male",   "description": "Kenkari riverland hat, worn low.", "material": "rigid_fiber" },
-        { "id": "appearance::Kenkari_F::kenk_riverlandskasa_low",  "label": "Kenkari Kasa (Low)",  "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, worn low.", "material": "rigid_fiber" },
-        { "id": "appearance::Kenkari_M::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "male",   "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber" },
-        { "id": "appearance::Kenkari_F::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber" },
+        { "id": "appearance::hat::riverlandskasa_low",   "label": "Riverland Kasa (Low)",  "price": 45, "category": "hat",      "description": "Traditional riverland hat, worn low.", "material": "rigid_fiber", "dyeGroup": "cloth" },
+        { "id": "appearance::hat::riverlandskasa_tight", "label": "Riverland Kasa (Tight)", "price": 45, "category": "hat",      "description": "Traditional riverland hat, tight fit.", "material": "rigid_fiber", "dyeGroup": "cloth" },
+        { "id": "appearance::hat::riverlandskasa_wide",  "label": "Riverland Kasa (Wide)", "price": 45, "category": "hat",      "description": "Traditional riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
+        { "id": "appearance::Kenkari_M::kenk_riverlandskasa_low",  "label": "Kenkari Kasa (Low)",  "price": 45, "category": "hat", "species": "kenkari", "gender": "male",   "description": "Kenkari riverland hat, worn low.", "material": "rigid_fiber", "dyeGroup": "cloth" },
+        { "id": "appearance::Kenkari_F::kenk_riverlandskasa_low",  "label": "Kenkari Kasa (Low)",  "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, worn low.", "material": "rigid_fiber", "dyeGroup": "cloth" },
+        { "id": "appearance::Kenkari_M::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "male",   "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
+        { "id": "appearance::Kenkari_F::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
         { "id": "appearance::Kenkari_M::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "kenkari", "gender": "male", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
         { "id": "appearance::Kenkari_F::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "kenkari", "gender": "female", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
         { "id": "tankan_tunic",     "label": "Tankan Tunic",      "price": 50, "category": "torso",    "description": "A fitted tankan-style tunic." },
@@ -796,7 +822,8 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "tankan_bodywrap",  "label": "Tankan Body Wrap",  "price": 60, "category": "overwear", "description": "A wrapped ceremonial bodywrap." },
         { "id": "rugged_poncho", "label": "Rugged Poncho", "price": 70, "category": "overwear", "description": "A reinforced poncho layered with a rugged body wrap.", "material": "cloth" },
         { "id": "fine_poncho", "label": "Fine Poncho", "price": 80, "category": "overwear", "description": "A finely trimmed cloth poncho.", "material": "cloth" },
-        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." }
+        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." },
+        { "id": "facewrap",         "label": "Facewrap",          "price": 60, "category": "hood",     "description": "A close-wrapped hood that conceals the lower face.", "material": "cloth" }
       ]
     },
     "dyes": {

@@ -118,8 +118,8 @@
       "id": "garanki_gabu",
       "name": "Garanki Gabu",
       "homeId": "researchers_tent",
-      "species": "<unknown species>",
-      "gender": "<unknown gender>",
+      "species": "Mao-ao",
+      "gender": "male",
       "ageBand": "<carter’s age>",
       "role": "researcher",
       "tags": [
@@ -135,17 +135,24 @@
       "appearance": {
         "speciesId": "mao-ao",
         "gender": "male",
-        "cosmetics": {},
+        "cosmetics": {
+          "hairFront": "appearance::Mao-ao_M::mao-ao_tuft",
+          "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+          "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes",
+          "hairSideL": null,
+          "hairSide": "appearance::Mao-ao_M::mao-ao_braid-R",
+          "hairBack": null
+        },
         "bodyColors": {
           "A": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": 7,
+            "s": -0.9,
+            "v": -0.77
           },
           "B": {
-            "h": -70,
-            "s": -0.8,
-            "v": -0.55
+            "h": -100,
+            "s": -0.4,
+            "v": -0.3
           },
           "C": {
             "h": -70,
@@ -159,27 +166,39 @@
           "l": 68
         }
       },
-      "equippedCosmetics": [],
+      "equippedCosmetics": [
+        "fine_hood",
+        "tankan_tunic",
+        "tankan_bodywrap"
+      ],
       "appliedDyes": {},
       "avatarEditor": {
         "sourceFormat": "npc_avatar_editor_export",
         "rawExport": {
           "schema": "npc_avatar_editor_export.v1",
-          "source": "character-studio default",
+          "source": "character-studio",
+          "name": "Garanki Gabu",
           "appearance": {
             "speciesId": "mao-ao",
             "gender": "male",
-            "cosmetics": {},
+            "cosmetics": {
+              "hairFront": "appearance::Mao-ao_M::mao-ao_tuft",
+              "facialHair": "appearance::Mao-ao_M::mao-ao_wildbeard",
+              "eyes": "appearance::Mao-ao_M::mao-ao_circled_eyes",
+              "hairSideL": null,
+              "hairSide": "appearance::Mao-ao_M::mao-ao_braid-R",
+              "hairBack": null
+            },
             "bodyColors": {
               "A": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": 7,
+                "s": -0.9,
+                "v": -0.77
               },
               "B": {
-                "h": -70,
-                "s": -0.8,
-                "v": -0.55
+                "h": -100,
+                "s": -0.4,
+                "v": -0.3
               },
               "C": {
                 "h": -70,
@@ -193,7 +212,11 @@
               "l": 68
             }
           },
-          "equippedCosmetics": [],
+          "equippedCosmetics": [
+            "fine_hood",
+            "tankan_tunic",
+            "tankan_bodywrap"
+          ],
           "appliedDyes": {}
         }
       },
