@@ -5,7 +5,8 @@
     "name": "Bandolier"
   },
   "tags": [
-    "material:leather"
+    "material:leather",
+    "dyeable:torso"
   ],
   "speciesVariants": {
     "mao-ao_male": {

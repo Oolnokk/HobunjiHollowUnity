@@ -1,5 +1,5 @@
-// Authoritative, tool-editable body color choices and exact clothing dye HSL values.
-// Body choices are shared by player creation and NPC generation. Edit with docs/tools/color-editor/.
+// Authoritative player body choices derived from NPC ranges, and exact clothing dye HSL values.
+// Runtime recolors body, pattern, and clothing sprites with one shade-preserving transform. Edit with docs/tools/color-editor/.
 (function () {
   'use strict';
   const bodyPalettes = {

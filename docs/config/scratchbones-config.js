@@ -1329,10 +1329,11 @@ window.SCRATCHBONES_CONFIG = {
       }
     },
     "portrait": {
-      // Tintable portrait PNG convention: alpha controls shape/opacity, and
-      // each opaque pixel's own VALUE (brightness) is kept exactly as
-      // painted while its HUE and SATURATION are replaced by the selected
-      // dye's — see portrait-utils.js's getHueSatFillCanvas/_resolveTargetHueSat.
+      // Tintable portrait PNG convention: alpha controls shape/opacity. The
+      // default shade-fill transform scales the selected target color by each
+      // source pixel's luminance, preserving shading and patterns for bodies,
+      // wild-animal markings, and clothing. See getShadeFillCanvas in
+      // portrait-utils.js. Explicit hueSatFill overrides remain supported.
       "tinting": {
         "preserveNearBlackOutlines": true,
         "outlineThreshold": 0.08,
@@ -1367,6 +1368,9 @@ window.SCRATCHBONES_CONFIG = {
         "eyeAccessoryAboveUnderHoodHatTag": "layer:eye-accessory-above-under-hood-hat",
         "hoodHidesFacialHairTag": "hides-facial-hair",
         "hoodShowsFrontHairTag": "shows-front-hair"
+      },
+      "dyeableTintTags": {
+        "TORSO": "dyeable:torso"
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,

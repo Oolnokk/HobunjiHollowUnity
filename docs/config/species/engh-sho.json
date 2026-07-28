@@ -5,8 +5,7 @@
     "headSprite": "fightersprites/engh-sho-m/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/engh-sho-m/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/engh-sho-m/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {
@@ -502,8 +501,7 @@
     "headSprite": "fightersprites/engh-sho-f/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/engh-sho-f/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/engh-sho-f/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {

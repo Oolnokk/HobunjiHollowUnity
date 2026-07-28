@@ -5,8 +5,7 @@
     "headSprite": "fightersprites/mao-ao-m/head_mint.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/mao-ao-m/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/mao-ao-m/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {
@@ -476,8 +475,7 @@
     "headSprite": "fightersprites/mao-ao-f/head.png",
     "headUrLayers": [
       {
-        "url": "fightersprites/mao-ao-f/untinted_regions/ur-head.png",
-        "renderOrder": "topLayer"
+        "url": "fightersprites/mao-ao-f/untinted_regions/ur-head.png"
       }
     ],
     "headXform": {
