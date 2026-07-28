@@ -826,6 +826,8 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "appearance::Kenkari_F::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
         { "id": "appearance::Kenkari_M::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "kenkari", "gender": "male", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
         { "id": "appearance::Kenkari_F::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "kenkari", "gender": "female", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
+        { "id": "appearance::Kenkari_M::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "rakakoan", "gender": "male", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
+        { "id": "appearance::Kenkari_F::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "rakakoan", "gender": "female", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
         { "id": "tankan_tunic",     "label": "Tankan Tunic",      "price": 50, "category": "torso",    "description": "A fitted tankan-style tunic." },
         { "id": "bandolier1",       "label": "Bandolier",         "price": 40, "category": "torso",    "description": "A rugged leather bandolier.", "material": "leather" },
         { "id": "tankan_bodywrap",  "label": "Tankan Body Wrap",  "price": 60, "category": "overwear", "description": "A wrapped ceremonial bodywrap." },
@@ -3762,6 +3764,7 @@ window.SCRATCHBONES_CONFIG = {
           "mao-ao": 1,
           "engh-sho": 0.95,
           "kenkari": 0.75,
+          "rakakoan": 0.75,
           "tletingan": 0.85,
           "mashtzarr": 1
         },
@@ -3783,6 +3786,7 @@ window.SCRATCHBONES_CONFIG = {
         "portraitVerticalPlacement": {
           "default": 0.5,
           "kenkari": { "female": 0.562, "male": 0.618 },
+          "rakakoan": { "female": 0.562, "male": 0.618 },
           "tletingan": { "male": 0.629 },
           "engh-sho": { "female": 0.674, "male": 0.719 },
           "mao-ao": { "female": 0.831, "male": 0.865 },
@@ -3799,7 +3803,8 @@ window.SCRATCHBONES_CONFIG = {
               "female": "fightersprites/special_cases/head-behind_engh_f.png"
             },
             "mashtzarr": {
-              "male": "fightersprites/special_cases/head-behind_mashtz_m.png"
+              "male": "fightersprites/special_cases/head-behind_mashtz_m.png",
+              "female": "fightersprites/special_cases/head-behind_mashtz_f.png"
             }
           },
           "layerReplacements": [
