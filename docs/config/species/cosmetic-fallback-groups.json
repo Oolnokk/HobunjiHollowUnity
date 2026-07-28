@@ -1,0 +1,67 @@
+{
+  "comment": "Cosmetic fallback groups define which species can share head and body cosmetic assets. Within each group, fallback priority is determined by closeness of float position values. Head groups are not gender-separated: within a species, the other gender is preferred before falling back to a different species by position. Body groups are gender-separated: fallback is purely by position closeness.",
+  "headGroups": [
+    {
+      "id": "fat-head",
+      "label": "Fat Head",
+      "members": [
+        { "species": "kenkari",  "position": 1.0 },
+        { "species": "rakakoan", "position": 1.5 },
+        { "species": "mashtzarr","position": 2.0 }
+      ]
+    },
+    {
+      "id": "slim-head",
+      "label": "Slim Head",
+      "members": [
+        { "species": "mao-ao",   "position": 1.0 },
+        { "species": "engh-sho", "position": 2.0 },
+        { "species": "tletingan","position": 3.0 }
+      ]
+    }
+  ],
+  "bodyGroups": [
+    {
+      "id": "slim-hourglass",
+      "label": "Slim Hourglass",
+      "members": [
+        { "species": "mao-ao", "gender": "female", "position": 1.0 }
+      ]
+    },
+    {
+      "id": "robust-hourglass",
+      "label": "Robust Hourglass",
+      "members": [
+        { "species": "engh-sho",  "gender": "female", "position": 1.0 },
+        { "species": "tletingan", "gender": "female", "position": 2.0 },
+        { "species": "mashtzarr", "gender": "female", "position": 3.0 }
+      ]
+    },
+    {
+      "id": "slim-flat",
+      "label": "Slim Flat",
+      "members": [
+        { "species": "mao-ao", "gender": "male", "position": 1.0 }
+      ]
+    },
+    {
+      "id": "robust-flat",
+      "label": "Robust Flat",
+      "members": [
+        { "species": "engh-sho",  "gender": "male",   "position": 1.0 },
+        { "species": "tletingan", "gender": "male",   "position": 2.0 },
+        { "species": "kenkari",   "gender": "female", "position": 3.0 },
+        { "species": "rakakoan",  "gender": "female", "position": 3.5 }
+      ]
+    },
+    {
+      "id": "rotund",
+      "label": "Rotund",
+      "members": [
+        { "species": "mashtzarr", "gender": "male", "position": 1.0 },
+        { "species": "kenkari",   "gender": "male", "position": 2.0 },
+        { "species": "rakakoan",  "gender": "male", "position": 2.5 }
+      ]
+    }
+  ]
+}
