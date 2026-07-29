@@ -154,6 +154,9 @@ class BreathingComposer {
     // Mouth facial expression state per seat
     this._expressions = new Map(); // seatId → { expression, expiresAtMs }
 
+    // Momentary lip-sync flashes are independent of authored line expressions.
+    this._yapExpressions = new Map(); // seatId → { expiresAtMs }
+
     // Persistent default/resting expression per seat (returned when timed expression expires)
     this._defaultExpressions = new Map(); // seatId → expression string
   }
@@ -261,13 +264,25 @@ class BreathingComposer {
     const ms = Number(durationMs) ||
       Number(window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.durationMs) ||
       10000;
-    if (!expression || expression === 'neutral') {
+    if (!expression) {
       this._expressions.delete(String(seatId ?? ''));
       return;
     }
     this._expressions.set(String(seatId ?? ''), {
       expression: String(expression),
       expiresAtMs: Date.now() + ms,
+    });
+  }
+
+  /** Stop the timed expression for a seat so its resting expression is visible. */
+  clearExpression(seatId) {
+    this._expressions.delete(String(seatId ?? ''));
+  }
+
+  /** Briefly override the mouth for lip sync without replacing the line expression. */
+  _setYapExpression(seatId, durationMs) {
+    this._yapExpressions.set(String(seatId ?? ''), {
+      expiresAtMs: Date.now() + durationMs,
     });
   }
 
@@ -278,7 +293,7 @@ class BreathingComposer {
    */
   setDefaultExpression(seatId, expression) {
     const key = String(seatId ?? '');
-    if (!expression || expression === 'neutral') {
+    if (!expression) {
       this._defaultExpressions.delete(key);
     } else {
       this._defaultExpressions.set(key, String(expression));
@@ -291,10 +306,16 @@ class BreathingComposer {
    */
   getExpression(seatId, nowMs) {
     const key = String(seatId ?? '');
+    const currentMs = nowMs ?? Date.now();
+    const yapState = this._yapExpressions.get(key);
+    if (yapState) {
+      if (currentMs < yapState.expiresAtMs) return 'yap';
+      this._yapExpressions.delete(key);
+    }
     const defaultExpr = this._defaultExpressions.get(key) || 'neutral';
     const state = this._expressions.get(key);
     if (!state) return defaultExpr;
-    if ((nowMs ?? Date.now()) >= state.expiresAtMs) {
+    if (currentMs >= state.expiresAtMs) {
       this._expressions.delete(key);
       return defaultExpr;
     }
@@ -387,12 +408,12 @@ class BreathingComposer {
         const two = lower.slice(i, i + 2);
         if (DIPHTHONGS.has(two)) {
           const schedT = t;
-          setTimeout(() => this.setExpression(seatIdStr, 'yap', flashMs), schedT);
+          setTimeout(() => this._setYapExpression(seatIdStr, flashMs), schedT);
           t += flashMs;
           i += 2;
         } else if (VOWELS.has(ch)) {
           const schedT = t;
-          setTimeout(() => this.setExpression(seatIdStr, 'yap', flashMs), schedT);
+          setTimeout(() => this._setYapExpression(seatIdStr, flashMs), schedT);
           t += flashMs;
           i++;
         } else {

@@ -1362,6 +1362,8 @@ window.SCRATCHBONES_CONFIG = {
         }
       },
       "expressions": {
+        "available": ["neutral", "smile", "frown", "laugh"],
+        "defaultResting": "neutral",
         "durationMs": 10000,
         "restingChipNeutralBandRatio": 0.15
       },
