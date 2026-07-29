@@ -60,7 +60,7 @@ async function main() {
   }
 
   const none = { id: 'none', label: 'None', tintSlot: null, layers: [] };
-  const eyepatch = { id: exclusive[0], label: 'Patch', tintSlot: null, layers: [] };
+  const exclusiveUpperFace = { id: exclusive[0], label: 'Patch', tintSlot: null, layers: [] };
   const torsoCandidate = {
     id: 'test_parent_fallback_torso',
     label: 'Test Parent Fallback Torso',
@@ -76,9 +76,9 @@ async function main() {
     () => 0.999,
     [fighter],
     [none], [none], [none], [none],
-    [none], [none, eyepatch], [none],
+    [none], [none, exclusiveUpperFace], [none],
     { [fighter.id]: { A: { minH: 0, maxH: 0, stops: [{ h: 0, sMin: 0, sMax: 0, vMin: 0, vMax: 0 }, { h: 0, sMin: 0, sMax: 0, vMin: 0, vMax: 0 }] }, B: { minH: 0, maxH: 0, stops: [{ h: 0, sMin: 0, sMax: 0, vMin: 0, vMax: 0 }, { h: 0, sMin: 0, sMax: 0, vMin: 0, vMax: 0 }] }, C: { minH: 0, maxH: 0, stops: [{ h: 0, sMin: 0, sMax: 0, vMin: 0, vMax: 0 }, { h: 0, sMin: 0, sMax: 0, vMin: 0, vMax: 0 }] } } },
-    { [fighter.id]: { set: new Set([torsoCandidate.id, eyepatch.id]), disallowedCombos: [] } },
+    { [fighter.id]: { set: new Set([torsoCandidate.id, exclusiveUpperFace.id]), disallowedCombos: [] } },
     [none], [none],
     {},
     [none, torsoCandidate], [none],

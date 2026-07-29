@@ -1882,8 +1882,14 @@ async function loadPortraitCosmetics(configBase) {
           forcedCosmetics: { ...(parentData?.forcedCosmetics || {}), ...(ownGenderData?.forcedCosmetics || {}) },
           conditionalCosmetics: [...(parentData?.conditionalCosmetics || []), ...(ownGenderData?.conditionalCosmetics || [])],
           randomizationRules: { ...(parentData?.randomizationRules || {}), ...(ownGenderData?.randomizationRules || {}) },
-          mandatorySlots: mergeUnique(parentData?.mandatorySlots, speciesData?.subspeciesDelta?.mandatorySlots),
-          exclusiveSlotCosmetics: mergeExclusiveMap(parentData?.exclusiveSlotCosmetics, speciesData?.subspeciesDelta?.exclusiveSlotCosmetics),
+          mandatorySlots: mergeUnique(
+            mergeUnique(parentData?.mandatorySlots, ownGenderData?.mandatorySlots),
+            speciesData?.subspeciesDelta?.mandatorySlots
+          ),
+          exclusiveSlotCosmetics: mergeExclusiveMap(
+            mergeExclusiveMap(parentData?.exclusiveSlotCosmetics, ownGenderData?.exclusiveSlotCosmetics),
+            speciesData?.subspeciesDelta?.exclusiveSlotCosmetics
+          ),
         };
         return mergedGenderData;
       };
