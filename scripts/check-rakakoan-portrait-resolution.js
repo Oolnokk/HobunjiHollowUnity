@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { fileURLToPath, pathToFileURL } = require('url');
 
 const repoRoot = path.join(__dirname, '..');
 const configRoot = path.join(repoRoot, 'docs', 'config');
-const configBaseUrl = `file://${configRoot}/`;
-
-function fileUrlToPath(url) {
-  const u = new URL(url);
-  return decodeURIComponent(u.pathname);
-}
+const configBaseUrl = `${pathToFileURL(configRoot).href.replace(/\/$/, '')}/`;
 
 global.window = {
   location: { href: 'http://localhost/docs/tools/character-studio/index.html' },
@@ -30,7 +26,7 @@ global.fetch = async (input) => {
   try {
     const url = typeof input === 'string' ? input : input?.url;
     if (!url) return { ok: false, status: 400, json: async () => ({}) };
-    const targetPath = fileUrlToPath(url);
+    const targetPath = fileURLToPath(url);
     const body = await fs.promises.readFile(targetPath, 'utf8');
     return {
       ok: true,

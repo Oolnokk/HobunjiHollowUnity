@@ -149,6 +149,9 @@ function _getUrMaskCanvas(w, h) {
 function _normalizeSpeciesKey(speciesId) {
   return String(speciesId || '').trim().toLowerCase().replace(/_/g, '-');
 }
+// Legacy Mao-ao cosmetics were authored with a `mao-ao_` short-id prefix; strip
+// it so species-neutral ids line up with optionCache/allowedCosmetics ids.
+const MAO_AO_SHORT_ID_PREFIX_RE = /^mao-ao_/i;
 
 function _configuredRandomizableGenders(speciesId) {
   const availability = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.availability || {};
@@ -1656,9 +1659,9 @@ function resolveOptionLayers(option, fighter) {
 }
 
 function portraitOptionFromJson(entry, json) {
-  const label    = (json.meta && json.meta.name) || entry.id.split('::').pop().replace(/^mao-ao_/i, '').replace(/_/g, ' ');
+  const label    = (json.meta && json.meta.name) || entry.id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, '').replace(/_/g, ' ');
   const tintSlot = (json.appearance && json.appearance.bodyColors && json.appearance.bodyColors[0]) || null;
-  const shortId  = entry.id.split('::').pop().replace(/^mao-ao_/i, '');
+  const shortId  = entry.id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, '');
 
   const paletteLayerMap = (json.palette && json.palette.layers) ? json.palette.layers : null;
 
@@ -1879,8 +1882,8 @@ async function loadPortraitCosmetics(configBase) {
           forcedCosmetics: { ...(parentData?.forcedCosmetics || {}), ...(ownGenderData?.forcedCosmetics || {}) },
           conditionalCosmetics: [...(parentData?.conditionalCosmetics || []), ...(ownGenderData?.conditionalCosmetics || [])],
           randomizationRules: { ...(parentData?.randomizationRules || {}), ...(ownGenderData?.randomizationRules || {}) },
-          _mandatorySlots: mergeUnique(parentData?._mandatorySlots, speciesData?.subspeciesDelta?.mandatorySlots),
-          _exclusiveSlotCosmetics: mergeExclusiveMap(parentData?._exclusiveSlotCosmetics, speciesData?.subspeciesDelta?.exclusiveSlotCosmetics),
+          mandatorySlots: mergeUnique(parentData?.mandatorySlots, speciesData?.subspeciesDelta?.mandatorySlots),
+          exclusiveSlotCosmetics: mergeExclusiveMap(parentData?.exclusiveSlotCosmetics, speciesData?.subspeciesDelta?.exclusiveSlotCosmetics),
         };
         return mergedGenderData;
       };
@@ -1933,7 +1936,7 @@ async function loadPortraitCosmetics(configBase) {
             if (genderData.allowedCosmetics) {
               allowedCosmeticsByFighter[fighter.id] = {
                 set: new Set(
-                  genderData.allowedCosmetics.map(id => id.split('::').pop().replace(/^mao-ao_/i, ''))
+                  genderData.allowedCosmetics.map(id => id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, ''))
                 ),
                 disallowedCombos: (genderData.disallowedCosmeticCombos || []).map(rule => ({
                   conditions: rule.conditions || {},
@@ -1953,15 +1956,15 @@ async function loadPortraitCosmetics(configBase) {
             if (genderData.randomizationRules && typeof genderData.randomizationRules === 'object') {
               randomizationRulesByFighter[fighter.id] = genderData.randomizationRules;
             }
-            if (Array.isArray(genderData._mandatorySlots) && genderData._mandatorySlots.length) {
-              mandatoryCosmeticSlotsByFighter[fighter.id] = [...new Set(genderData._mandatorySlots)];
+            if (Array.isArray(genderData.mandatorySlots) && genderData.mandatorySlots.length) {
+              mandatoryCosmeticSlotsByFighter[fighter.id] = [...new Set(genderData.mandatorySlots)];
             }
-            if (genderData._exclusiveSlotCosmetics && typeof genderData._exclusiveSlotCosmetics === 'object') {
+            if (genderData.exclusiveSlotCosmetics && typeof genderData.exclusiveSlotCosmetics === 'object') {
               const exclusiveBySlot = {};
-              for (const [slot, ids] of Object.entries(genderData._exclusiveSlotCosmetics)) {
+              for (const [slot, ids] of Object.entries(genderData.exclusiveSlotCosmetics)) {
                 // Cosmetic ids are normalized to the same short-id shape used by
                 // optionCache and allowedCosmetics filtering.
-                const normalizedIds = mergeUnique([], ids).map(id => String(id).split('::').pop().replace(/^mao-ao_/i, ''));
+                const normalizedIds = mergeUnique([], ids).map(id => String(id).split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, ''));
                 if (normalizedIds.length) exclusiveBySlot[slot] = normalizedIds;
               }
               if (Object.keys(exclusiveBySlot).length) exclusiveCosmeticsByFighter[fighter.id] = exclusiveBySlot;
