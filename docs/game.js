@@ -667,6 +667,14 @@
         return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
       }
 
+      function _npcRestingExpression(rec = _dlgNpcRec || _dialogueWalker?.rec) {
+        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {};
+        const fallback = String(cfg.defaultResting || 'neutral').toLowerCase();
+        const available = Array.isArray(cfg.available) ? cfg.available.map(value => String(value).toLowerCase()) : [];
+        const authored = String(rec?.restingExpression || fallback).toLowerCase();
+        return !available.length || available.includes(authored) ? authored : fallback;
+      }
+
       function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || _dialogueWalker?.rec) {
         const cfg = npcDialogueLetterSfxConfig(rec);
         if (cfg.enabled === false || !char || /\s/.test(char)) return;
@@ -730,10 +738,12 @@
       function _applyNpcDialogueLinePresentation(text, node = null) {
         if (!window.portraitBreathingComposer) return;
         const seatId = _dialogueSeatId();
-        const expression = String(node?.expression || 'neutral').toLowerCase();
-        window.portraitBreathingComposer.setDefaultExpression(seatId, expression);
-        if (expression && expression !== 'neutral') {
+        window.portraitBreathingComposer.setDefaultExpression(seatId, _npcRestingExpression());
+        if (node && Object.hasOwn(node, 'expression') && node.expression) {
+          const expression = String(node.expression).toLowerCase();
           window.portraitBreathingComposer.setExpression(seatId, expression, _dialogueExpressionDurationMs(node));
+        } else {
+          window.portraitBreathingComposer.clearExpression(seatId);
         }
         window.portraitBreathingComposer.scheduleYapSequence(seatId, text || '', npcDialoguePortraitConfig().yap || {});
       }
@@ -1002,8 +1012,8 @@
         _stopNpcDialogueTypewriter(false);
         _hideChoiceButtons();
         npcDialogueStaging = null;
-        window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
-        window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), 'neutral');
+        window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
+        window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
         if (_dialogueWalker) {
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
@@ -33859,8 +33869,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           dialogueOpen = false;
           cutscenePreviewAdvance = null;
           _hideChoiceButtons();
-          window.portraitBreathingComposer?.setExpression(_dialogueSeatId(), 'neutral');
-          window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), 'neutral');
+          window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
+          window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
           _dialogueWalker = null;
           cutscenePreviewDialogueSpeaker = null;
           _npcDialogueEl.classList.remove('open');

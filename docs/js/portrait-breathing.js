@@ -261,7 +261,7 @@ class BreathingComposer {
     const ms = Number(durationMs) ||
       Number(window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.durationMs) ||
       10000;
-    if (!expression || expression === 'neutral') {
+    if (!expression) {
       this._expressions.delete(String(seatId ?? ''));
       return;
     }
@@ -271,6 +271,11 @@ class BreathingComposer {
     });
   }
 
+  /** Stop the timed expression for a seat so its resting expression is visible. */
+  clearExpression(seatId) {
+    this._expressions.delete(String(seatId ?? ''));
+  }
+
   /**
    * Set the persistent default/resting expression for a seat.
    * This is returned when no timed expression is active or after one expires.
@@ -278,7 +283,7 @@ class BreathingComposer {
    */
   setDefaultExpression(seatId, expression) {
     const key = String(seatId ?? '');
-    if (!expression || expression === 'neutral') {
+    if (!expression) {
       this._defaultExpressions.delete(key);
     } else {
       this._defaultExpressions.set(key, String(expression));
