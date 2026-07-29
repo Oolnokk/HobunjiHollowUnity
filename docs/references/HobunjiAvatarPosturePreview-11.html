@@ -1,0 +1,3059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Hobunji Avatar Posture Preview v7</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #07101a;
+  --panel: #101b28;
+  --panel-2: #0b141f;
+  --panel-3: #152335;
+  --line: #2a3d56;
+  --text: #edf5ff;
+  --muted: #9eb2cb;
+  --accent: #6ba9ff;
+  --good: #45d6a0;
+  --warn: #ffc857;
+  --bad: #ff7c90;
+  --shadow: 0 18px 48px rgba(0, 0, 0, .35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { min-height: 100dvh; overflow: hidden; }
+button, input, select, summary { font: inherit; }
+button, .fileButton {
+  border: 1px solid rgba(107,169,255,.42);
+  border-radius: 11px;
+  background: rgba(107,169,255,.15);
+  color: var(--text);
+  padding: 9px 11px;
+  font-weight: 750;
+  cursor: pointer;
+  min-height: 42px;
+}
+button:hover, .fileButton:hover { background: rgba(107,169,255,.25); }
+button:disabled { opacity: .42; cursor: not-allowed; }
+button.secondary, .fileButton.secondary { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.055); }
+button.good { border-color: rgba(69,214,160,.42); background: rgba(69,214,160,.13); }
+button.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+input, select {
+  width: 100%; min-height: 42px; border: 1px solid rgba(255,255,255,.15); border-radius: 10px;
+  background: rgba(255,255,255,.055); color: var(--text); padding: 9px 10px; outline: none;
+}
+input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(107,169,255,.15); }
+label { display: block; color: var(--muted); font-size: 12px; margin: 0 0 4px; }
+code { color: #c9dcff; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 9px;
+  border: 1px solid rgba(255,255,255,.14); border-radius: 999px; color: var(--muted); font-size: 12px;
+  background: rgba(255,255,255,.045); max-width: min(72vw, 700px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pill.good { border-color: rgba(69,214,160,.42); color: var(--good); }
+.pill.warn { border-color: rgba(255,200,87,.45); color: var(--warn); }
+.pill.bad { border-color: rgba(255,124,144,.46); color: var(--bad); }
+#app { height: 100dvh; display: grid; grid-template-rows: auto minmax(0,1fr); }
+header {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 10px 12px;
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--panel), var(--panel-2)); z-index: 5;
+}
+header h1 { margin: 0; font-size: 16px; letter-spacing: .25px; color: var(--accent); }
+#layout { min-height: 0; overflow: auto; display: flex; flex-direction: column; overscroll-behavior: contain; }
+.panel { min-width: 0; min-height: 0; background: linear-gradient(180deg, var(--panel), var(--panel-2)); }
+.collapsiblePanel { flex: 0 0 auto; border-top: 1px solid var(--line); background: linear-gradient(180deg, var(--panel), var(--panel-2)); }
+.collapsiblePanel > summary {
+  list-style: none; display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 8px 12px;
+  cursor: pointer; font-size: 12px; font-weight: 850; letter-spacing: .42px; text-transform: uppercase;
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.018)); user-select: none;
+}
+.collapsiblePanel > summary::-webkit-details-marker { display: none; }
+.collapsiblePanel > summary::before { content: "▸"; color: var(--accent); font-size: 15px; transition: transform .14s ease; }
+.collapsiblePanel[open] > summary::before { transform: rotate(90deg); }
+.collapsiblePanel > summary > :last-child { margin-left: auto; }
+.collapsibleBody { border-top: 1px solid rgba(255,255,255,.08); }
+#leftPanel { display: block; }
+#leftPanel .selectorBody { max-height: min(68vh, 720px); display: grid; grid-template-rows: auto auto minmax(180px,1fr); overflow: hidden; }
+#rightPanel { display: block; overflow: visible; padding-bottom: 0; }
+#rightPanel .detailsBody { max-height: min(72vh, 760px); overflow: auto; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
+.panelSection { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.panelTitle { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.panelTitle b { font-size: 12px; letter-spacing: .45px; text-transform: uppercase; }
+details.repoSettings { border: 1px solid rgba(255,255,255,.11); border-radius: 12px; background: rgba(255,255,255,.035); overflow: hidden; }
+details.repoSettings summary { padding: 9px 10px; cursor: pointer; font-weight: 750; color: var(--text); }
+.repoFields { padding: 0 10px 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.repoFields .full { grid-column: 1 / -1; }
+#npcList { min-height: 0; overflow: auto; padding: 8px; -webkit-overflow-scrolling: touch; }
+.npcCard {
+  width: 100%; text-align: left; display: grid; grid-template-columns: 56px minmax(0,1fr); gap: 9px; align-items: center;
+  border: 1px solid rgba(255,255,255,.11); background: rgba(255,255,255,.035); border-radius: 13px; padding: 8px; margin-bottom: 7px;
+  color: var(--text); min-height: 70px;
+}
+.npcCard:hover { background: rgba(107,169,255,.11); }
+.npcCard.selected { border-color: var(--accent); outline: 2px solid rgba(107,169,255,.32); }
+.thumbWrap {
+  width: 54px; height: 54px; border-radius: 12px; overflow: hidden; display: grid; place-items: center;
+  border: 1px solid rgba(255,255,255,.13); background: radial-gradient(circle at 50% 28%, rgba(255,255,255,.13), rgba(255,255,255,.025));
+}
+.thumbWrap canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.npcName { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.npcMeta { color: var(--muted); font-size: 11px; line-height: 1.3; margin-top: 3px; overflow-wrap: anywhere; }
+#stagePanel { min-width: 0; min-height: 460px; flex: 1 0 calc(100dvh - 154px); display: grid; grid-template-rows: minmax(310px,1fr) auto; background: #060c14; }
+#threeWrap { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#view3d { width: 100%; height: 100%; display: block; touch-action: none; }
+#stageOverlay {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 22px; text-align: center;
+  pointer-events: none; background: radial-gradient(circle at center, rgba(10,20,32,.15), rgba(5,10,17,.65));
+}
+.overlayCard { max-width: 520px; border: 1px solid rgba(255,255,255,.14); border-radius: 15px; padding: 15px; background: rgba(7,16,26,.9); box-shadow: var(--shadow); }
+.spinner { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 3px solid rgba(107,169,255,.24); border-top-color: var(--accent); animation: spin .65s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#stageToolbar {
+  position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+  background: rgba(7,16,26,.83); border: 1px solid rgba(255,255,255,.12); padding: 7px; border-radius: 13px; backdrop-filter: blur(8px);
+}
+#stageToolbar button { min-height: 38px; padding: 7px 10px; font-size: 12px; }
+#portraitPanel { border-top-color: var(--line); }
+#portraitStrip {
+  display: grid; grid-template-columns: 1fr 1fr minmax(210px, 1.2fr); gap: 9px; padding: 10px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+}
+.portraitBox { min-width: 0; border: 1px solid rgba(255,255,255,.11); border-radius: 13px; padding: 8px; background: rgba(255,255,255,.035); }
+.portraitBox b { display: block; font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+.portraitCanvasWrap { width: 100%; aspect-ratio: 1; max-height: 170px; display: grid; place-items: center; overflow: hidden; border-radius: 9px; background: radial-gradient(circle at 50% 28%,rgba(255,255,255,.12),rgba(255,255,255,.02)); }
+.portraitCanvasWrap canvas { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+#selectedSummary { min-width: 0; display: flex; flex-direction: column; gap: 7px; justify-content: center; }
+#selectedName { margin: 0; font-size: 18px; }
+#selectedMeta { color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.card { margin: 10px; border: 1px solid rgba(255,255,255,.11); border-radius: 13px; background: rgba(255,255,255,.035); padding: 10px; }
+.card h2, .card h3 { margin: 0 0 8px; }
+.card h2 { font-size: 16px; }
+.card h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.kv { display: grid; grid-template-columns: minmax(86px, auto) 1fr; gap: 5px 9px; font-size: 12px; line-height: 1.35; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+pre {
+  margin: 0; max-height: 45vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.08); border-radius: 9px; padding: 9px;
+  color: #c9dcff; font: 11px/1.42 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+#debugPanel {
+  position: fixed; z-index: 20; right: 10px; bottom: 10px; width: min(560px, calc(100vw - 20px)); max-height: 52vh;
+  display: none; overflow: hidden; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(7,16,26,.98); box-shadow: var(--shadow);
+}
+#debugPanel.visible { display: grid; grid-template-rows: auto minmax(0,1fr); }
+#debugHead { padding: 8px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid rgba(255,255,255,.1); }
+#debugLog { overflow: auto; padding: 9px; white-space: pre-wrap; color: #c9dcff; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.fileButton { display: inline-flex; align-items: center; justify-content: center; }
+
+.authoringBody { max-height: min(78vh, 880px); overflow: auto; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
+.authorGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.transformEditor { display: grid; gap: 10px; }
+.transformSection { border: 1px solid rgba(255,255,255,.1); border-radius: 11px; padding: 9px; background: rgba(0,0,0,.12); }
+.transformSection > b { display: block; margin-bottom: 7px; color: var(--muted); font-size: 11px; letter-spacing: .38px; text-transform: uppercase; }
+.axisGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.axisField { min-width: 0; }
+.axisField label { text-transform: uppercase; letter-spacing: .35px; }
+.axisField input { min-width: 0; font-variant-numeric: tabular-nums; }
+.authorHelp { color: var(--muted); font-size: 11px; line-height: 1.42; margin-top: 7px; }
+.toolSource { display: grid; grid-template-columns: minmax(90px, auto) 1fr; gap: 5px 9px; font-size: 12px; line-height: 1.35; }
+.toolSource dt { color: var(--muted); }
+.toolSource dd { margin: 0; overflow-wrap: anywhere; }
+.segmented { display: flex; gap: 6px; flex-wrap: wrap; }
+.segmented button { flex: 1 1 92px; }
+#kurrayaJson { max-height: 34vh; }
+#kurrayaPanel .card { margin-bottom: 0; }
+
+.creatureGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.creatureColorRow {
+  display: grid; grid-template-columns: minmax(0,1fr) 54px minmax(92px, 118px); gap: 7px; align-items: end;
+  padding: 8px; margin-top: 7px; border: 1px solid rgba(255,255,255,.1); border-radius: 11px; background: rgba(0,0,0,.12);
+}
+.creatureColorRow .creatureLayerLabel { min-width: 0; align-self: center; }
+.creatureColorRow .creatureLayerLabel b { display: block; font-size: 12px; color: var(--text); }
+.creatureColorRow .creatureLayerLabel span { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); }
+.creatureColorRow input[type="color"] { min-height: 42px; padding: 3px; cursor: pointer; }
+.creatureColorRow input[type="checkbox"] { width: 18px; min-height: 18px; margin: 0 6px 0 0; accent-color: var(--accent); }
+.creatureLayerToggle { display: flex; align-items: center; min-width: 0; }
+#creatureGenotypeJson { max-height: 24vh; margin-top: 8px; }
+#creatureEditor .row > button { flex: 1 1 112px; }
+#creaturePreviewCanvas { width: 100%; max-height: 180px; margin-top: 8px; display: block; object-fit: contain; image-rendering: pixelated; border: 1px solid rgba(255,255,255,.1); border-radius: 11px; background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.11), rgba(255,255,255,.02)); }
+
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  #app { height: auto; min-height: 100dvh; display: block; }
+  header { position: sticky; top: 0; }
+  header h1 { width: 100%; }
+  #layout { min-height: 0; overflow: visible; }
+  #stagePanel { min-height: 72vh; flex-basis: 72vh; grid-template-rows: minmax(420px, 1fr) auto; }
+  #leftPanel .selectorBody, #rightPanel .detailsBody { max-height: none; }
+  #npcList { max-height: 48vh; }
+  #portraitStrip { grid-template-columns: 1fr 1fr; }
+  #selectedSummary { grid-column: 1 / -1; }
+  .repoFields { grid-template-columns: 1fr; }
+  .repoFields .full { grid-column: auto; }
+  .authorGrid { grid-template-columns: 1fr; }
+  #stageToolbar { align-items: stretch; }
+  #stageToolbar button { flex: 1 1 auto; }
+}
+@media (max-width: 430px) {
+  header button { flex: 1; }
+  .pill { max-width: 100%; width: 100%; }
+  #portraitStrip { grid-template-columns: 1fr; }
+  #selectedSummary { grid-column: auto; }
+  .portraitCanvasWrap { max-height: 220px; }
+  .axisGrid { grid-template-columns: 1fr; }
+}
+</style>
+
+
+<style id="gameplayPreviewViewportSizing">
+/* Directly bind the viewer to the browser's visible viewport rectangle. */
+:root {
+  --viewport-left: 0px;
+  --viewport-top: 0px;
+  --viewport-width: 100vw;
+  --viewport-height: 100dvh;
+  --hobunji-col: calc(var(--viewport-width) / 32);
+  --hobunji-row: calc(var(--viewport-height) / 18);
+}
+html, body {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  background: #02060b;
+}
+body {
+  position: fixed !important;
+  inset: 0 !important;
+  display: block !important;
+  background: #02060b !important;
+}
+#app {
+  position: fixed !important;
+  left: var(--viewport-left) !important;
+  top: var(--viewport-top) !important;
+  width: var(--viewport-width) !important;
+  height: var(--viewport-height) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  transform: none !important;
+  transform-origin: 0 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  contain: layout paint style;
+}
+#layout {
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+#stagePanel {
+  min-width: 0 !important;
+  min-height: 100% !important;
+  flex: 0 0 100% !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+}
+#threeWrap,
+#view3d {
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+#debugPanel {
+  width: min(560px, calc(var(--viewport-width) - 20px)) !important;
+  max-height: min(65dvh, calc(var(--viewport-height) - 20px)) !important;
+}
+
+/* Neutralize the old phone reflow while retaining the existing collapsible panels. */
+@media (max-width: 760px), (max-width: 430px), (orientation: portrait) {
+  body {
+    overflow: hidden !important;
+  }
+  #app {
+    height: var(--viewport-height) !important;
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+  }
+  #layout {
+    min-height: 0 !important;
+    overflow: auto !important;
+  }
+  #stagePanel {
+    min-height: 100% !important;
+    flex-basis: 100% !important;
+    grid-template-rows: minmax(0, 1fr) auto !important;
+  }
+}
+</style>
+
+
+<style id="gameplayBackdropHostStyle">
+/* Dedicated composition host: the repository scene fills the visible browser viewport. */
+html, body, #app, #layout, #stagePanel, #threeWrap {
+  width: var(--viewport-width, 100vw) !important;
+  height: var(--viewport-height, 100dvh) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+body { overflow: hidden !important; background: #02060b !important; }
+#app {
+  position: fixed !important;
+  left: var(--viewport-left, 0px) !important;
+  top: var(--viewport-top, 0px) !important;
+  display: block !important;
+  overflow: hidden !important;
+}
+header,
+#portraitPanel,
+#kurrayaPanel,
+#rightPanel { display: none !important; }
+#layout {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  overflow: hidden !important;
+}
+#stagePanel {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  overflow: hidden !important;
+  background: #060c14;
+}
+#threeWrap, #view3d { position: absolute !important; inset: 0 !important; }
+#view3d { display: block; touch-action: none; }
+#stageOverlay { z-index: 35; }
+
+/* Empty overlay layers do not block orbiting. UI inserted as direct children is interactive. */
+.hobunjiUiOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  container-type: size;
+  --hobunji-safe-top: env(safe-area-inset-top, 0px);
+  --hobunji-safe-right: env(safe-area-inset-right, 0px);
+  --hobunji-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --hobunji-safe-left: env(safe-area-inset-left, 0px);
+}
+.hobunjiUiOverlay > * { pointer-events: auto; }
+.hobunjiUiModalOverlay { z-index: 20; }
+.hobunjiUiSafeFrame {
+  position: absolute;
+  inset: var(--hobunji-safe-top) var(--hobunji-safe-right) var(--hobunji-safe-bottom) var(--hobunji-safe-left);
+  pointer-events: none;
+}
+.hobunjiUiSafeFrame > * { pointer-events: auto; }
+
+/* The only built-in interface is this closed setup drawer. */
+#leftPanel {
+  display: block !important;
+  position: fixed !important;
+  z-index: 70;
+  top: max(8px, env(safe-area-inset-top)) !important;
+  right: max(8px, env(safe-area-inset-right)) !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  max-height: calc(var(--viewport-height, 100dvh) - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom))) !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+  filter: drop-shadow(0 16px 38px rgba(0,0,0,.42));
+}
+#leftPanel[open] {
+  width: min(430px, calc(var(--viewport-width, 100vw) - 16px)) !important;
+  border: 1px solid rgba(255,255,255,.15) !important;
+  border-radius: 14px !important;
+  background: rgba(7,16,26,.97) !important;
+  overflow: hidden !important;
+}
+#leftPanel > summary {
+  width: max-content;
+  min-height: 38px !important;
+  margin-left: auto;
+  padding: 6px 10px !important;
+  border: 1px solid rgba(107,169,255,.42);
+  border-radius: 11px;
+  background: rgba(7,16,26,.82) !important;
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  text-transform: none !important;
+  letter-spacing: .1px !important;
+}
+#leftPanel[open] > summary {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.04) !important;
+}
+#leftPanel .selectorBody {
+  max-height: calc(var(--viewport-height, 100dvh) - 56px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+#leftPanel #npcList { flex: 1 1 170px; min-height: 170px; }
+#leftPanel #creatureEditor { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+#leftPanel #npcList { max-height: none !important; }
+#backdropRuntimeRow {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto auto;
+  gap: 7px;
+  align-items: center;
+  padding: 9px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+#backdropRuntimeRow #statusPill { max-width: 100%; min-width: 0; }
+#backdropRuntimeRow button { min-height: 36px; padding: 6px 9px; font-size: 11px; }
+#stageToolbar {
+  position: static !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 6px !important;
+  margin: 0 !important;
+  padding: 9px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 0 !important;
+  background: rgba(255,255,255,.025) !important;
+  backdrop-filter: none !important;
+}
+#stageToolbar button { min-width: 0; min-height: 36px !important; padding: 5px !important; font-size: 10px !important; }
+#kurrayaToggleBtn { display: none !important; }
+#resetBtn, #rotateBtn { grid-column: span 2; }
+#backdropAbout {
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.42;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+#debugPanel { z-index: 90 !important; }
+
+@media (max-width: 540px) {
+  #leftPanel[open] { width: calc(var(--viewport-width, 100vw) - 12px) !important; right: 6px !important; }
+  #leftPanel > summary { min-height: 34px !important; padding: 4px 8px !important; font-size: 10px !important; }
+  #backdropRuntimeRow { grid-template-columns: minmax(0,1fr) auto; }
+  #backdropRuntimeRow #debugBtn { grid-column: 2; }
+  #stageToolbar { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  #resetBtn, #rotateBtn { grid-column: auto; }
+}
+</style>
+
+
+
+<style id="avatarPosturePreviewStyle">
+/* Dedicated posture authoring UI layered over the unchanged repository avatar scene. */
+.postureUnusedSection,
+#creatureEditor,
+#kurrayaToggleBtn { display: none !important; }
+
+#postureDock {
+  position: absolute;
+  z-index: 42;
+  left: max(10px, env(safe-area-inset-left));
+  top: max(10px, env(safe-area-inset-top));
+  width: min(410px, calc(var(--viewport-width, 100vw) - 20px));
+  max-height: calc(var(--viewport-height, 100dvh) - 20px);
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 15px;
+  background: rgba(7,16,26,.94);
+  box-shadow: 0 18px 48px rgba(0,0,0,.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text);
+  -webkit-overflow-scrolling: touch;
+}
+#postureDock.collapsed .postureDockBody { display: none; }
+.postureDockHead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+  background: rgba(10,22,35,.98);
+}
+.postureDockHead b { font-size: 13px; letter-spacing: .25px; }
+.postureDockHead button { min-height: 34px; padding: 5px 9px; font-size: 11px; }
+.postureDockBody { padding: 10px; }
+#postureNpcLabel { font-weight: 850; font-size: 16px; overflow-wrap: anywhere; }
+#postureNpcMeta { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.postureCompare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+.posturePortraitCard {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+.posturePortraitCard b {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .42px;
+}
+.posturePortraitCard canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 36%, rgba(255,255,255,.12), rgba(255,255,255,.018));
+  image-rendering: pixelated;
+}
+.postureControlCard {
+  margin-top: 9px;
+  padding: 9px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 12px;
+  background: rgba(0,0,0,.13);
+}
+.postureValueRow {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+#postureSlider {
+  min-height: 44px;
+  padding: 0;
+  accent-color: var(--accent);
+  touch-action: pan-x;
+}
+#postureValue {
+  min-width: 78px;
+  text-align: right;
+  color: var(--accent);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.posturePresetRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+.posturePresetRow button { min-width: 0; min-height: 38px; padding: 6px 4px; font-size: 10px; }
+.posturePresetRow button.active { outline: 2px solid var(--accent); outline-offset: 0; }
+.postureMetrics {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  gap: 4px 8px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.postureMetrics dt { color: var(--muted); }
+.postureMetrics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.postureActions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+.postureActions button { min-width: 0; font-size: 11px; }
+.postureHelp { margin-top: 8px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+#postureDebugSummary {
+  margin-top: 7px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(107,169,255,.2);
+  background: rgba(107,169,255,.065);
+  color: #c9dcff;
+  font: 10px/1.38 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  #postureDock {
+    left: 6px;
+    top: max(48px, calc(env(safe-area-inset-top) + 42px));
+    width: calc(var(--viewport-width, 100vw) - 12px);
+    max-height: min(62dvh, calc(var(--viewport-height, 100dvh) - 56px));
+  }
+  .postureCompare { grid-template-columns: 1fr 1fr; }
+  .posturePresetRow { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 370px) {
+  .postureCompare { grid-template-columns: 1fr; }
+  .postureActions { grid-template-columns: 1fr; }
+}
+</style>
+
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Hobunji Avatar Posture Preview</h1>
+    <span id="statusPill" class="pill warn">Not loaded</span>
+    <span class="grow"></span>
+    <button id="reloadBtn" class="good">Load repository</button>
+    <button id="debugBtn" class="secondary">Diagnostics</button>
+  </header>
+
+  <main id="layout">
+    <section id="stagePanel">
+      <div id="threeWrap">
+        <canvas id="view3d"></canvas>
+        <!--
+          UI COMBINATION CONTRACT
+          -----------------------
+          Keep #view3d and the repository/avatar runtime intact. Add ordinary HUD,
+          minigame, or menu markup inside #gameUiOverlayRoot. Add modal/full-screen
+          menu markup inside #gameModalOverlayRoot. Direct children receive pointer
+          events automatically; empty overlay space passes input through to the 3D view.
+        -->
+        <div id="gameUiOverlayRoot" class="hobunjiUiOverlay" data-hobunji-ui-root="hud" aria-label="Gameplay UI preview layer">
+        <div id="postureDock" aria-label="Avatar posture preview controls">
+          <div class="postureDockHead">
+            <b>Posture preview</b>
+            <span id="postureBandPill" class="pill">Upright</span>
+            <span class="grow"></span>
+            <button id="postureCollapseBtn" class="secondary" type="button">Hide</button>
+          </div>
+          <div class="postureDockBody">
+            <div id="postureNpcLabel">Waiting for NPC</div>
+            <div id="postureNpcMeta">Select an NPC from the repository drawer.</div>
+
+            <div class="postureCompare">
+              <div class="posturePortraitCard">
+                <b>Upright baseline</b>
+                <canvas id="postureBaseCanvas" width="200" height="200" aria-label="Upright avatar portrait"></canvas>
+              </div>
+              <div class="posturePortraitCard">
+                <b>Adjusted posture</b>
+                <canvas id="postureAdjustedCanvas" width="200" height="200" aria-label="Adjusted avatar portrait"></canvas>
+              </div>
+            </div>
+
+            <div class="postureControlCard">
+              <label for="postureSlider">Posture / head drop</label>
+              <div class="postureValueRow">
+                <input id="postureSlider" type="range" min="0" max="20" step="0.25" value="0" aria-describedby="postureHelpText">
+                <output id="postureValue" for="postureSlider">0.00 px</output>
+              </div>
+              <div class="posturePresetRow" aria-label="Posture presets">
+                <button type="button" class="secondary" data-posture-preset="0">Upright</button>
+                <button type="button" class="secondary" data-posture-preset="4">Old</button>
+                <button type="button" class="secondary" data-posture-preset="9">Very old</button>
+                <button type="button" class="secondary" data-posture-preset="14">Severe</button>
+              </div>
+
+              <dl class="postureMetrics">
+                <dt>Body layers</dt><dd id="postureBodyLiftMetric">+0.00 px</dd>
+                <dt>3D head drop</dt><dd id="posturePlacementDropMetric">+0.00 px</dd>
+                <dt>Body bake</dt><dd id="postureBaseRatioMetric">stationary</dd>
+                <dt>Head bake</dt><dd id="postureAdjustedRatioMetric">0.00 px</dd>
+              </dl>
+
+              <div class="postureActions">
+                <button id="copyPostureBtn" type="button" class="secondary" disabled>Copy posture JSON</button>
+                <button id="downloadPostureBtn" type="button" class="secondary" disabled>Download posture JSON</button>
+              </div>
+              <div id="postureHelpText" class="postureHelp">The renderer is now baked three ways: full portrait, body-only, and head-only. The rear body-only bake explicitly omits the renderer's special behind-head pass, preventing a stationary duplicate. In 3D, the front view keeps the head-only bake in front of the torso, while the rear view draws the single movable head-only bake behind the body.</div>
+              <div id="postureDebugSummary">No avatar rendered yet.</div>
+            </div>
+          </div>
+        </div>
+        </div>
+        <div id="gameModalOverlayRoot" class="hobunjiUiOverlay hobunjiUiModalOverlay" data-hobunji-ui-root="modal" aria-label="Menu and modal UI preview layer"></div>
+        <div id="stageOverlay">
+          <div class="overlayCard">
+            <div id="overlayTitle"><span class="spinner"></span>Waiting to load repository</div>
+            <div id="overlayDetail" class="small muted" style="margin-top:7px">The file will fetch the same portrait pipeline and NPC database used by <code>docs/tools/character-studio</code>.</div>
+          </div>
+        </div>
+        <div id="stageToolbar">
+          <button id="frontViewBtn" class="secondary">Front</button>
+          <button id="angleViewBtn" class="secondary active">Angle</button>
+          <button id="sideViewBtn" class="secondary">Side</button>
+          <button id="backViewBtn" class="secondary">Back</button>
+          <button id="rotateBtn" class="secondary">Auto-rotate: Off</button>
+          <button id="kurrayaToggleBtn" class="secondary" disabled>Kurraya: Loading</button>
+          <button id="resetBtn" class="secondary">Reset view</button>
+        </div>
+      </div>
+
+      <details id="portraitPanel" class="panel collapsiblePanel">
+        <summary><span>Portraits, downloads & selected NPC</span><span id="selectedSummaryLabel" class="pill">No NPC selected</span></summary>
+        <div id="portraitStrip">
+          <div class="portraitBox"><b>Front portrait PNG</b><div class="portraitCanvasWrap"><canvas id="frontCanvas" width="200" height="200"></canvas></div></div>
+          <div class="portraitBox"><b>Behind portrait PNG</b><div class="portraitCanvasWrap"><canvas id="backCanvas" width="200" height="200"></canvas></div></div>
+          <div id="selectedSummary" class="portraitBox">
+            <h2 id="selectedName">No NPC selected</h2>
+            <div id="selectedMeta">The selected database record will appear here.</div>
+            <div class="row">
+              <button id="downloadFrontBtn" class="secondary" disabled>Front PNG</button>
+              <button id="downloadBackBtn" class="secondary" disabled>Back PNG</button>
+              <button id="downloadNpcBtn" class="secondary" disabled>NPC JSON</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <details id="leftPanel" class="panel collapsiblePanel">
+      <summary><span>NPC & repository</span><span id="countPill" class="pill">0 NPCs</span></summary>
+      <div class="collapsibleBody selectorBody">
+        <div class="panelSection">
+          <details class="repoSettings" id="repoSettings">
+            <summary>Repository source</summary>
+            <div class="repoFields">
+              <div><label for="ownerInput">Owner</label><input id="ownerInput" value="Oolnokk" autocomplete="off" autocapitalize="off"></div>
+              <div><label for="repoInput">Repository</label><input id="repoInput" value="HobunjiHollowUnity" autocomplete="off" autocapitalize="off"></div>
+              <div><label for="refInput">Branch / ref</label><input id="refInput" value="main" autocomplete="off" autocapitalize="off"></div>
+              <div><label for="docsInput">Docs root</label><input id="docsInput" value="docs/" autocomplete="off" autocapitalize="off"></div>
+              <div class="full"><label for="dbPathInput">NPC database path</label><input id="dbPathInput" value="docs/config/npcs/hobunji-starter-npc-database.json" autocomplete="off" autocapitalize="off"></div>
+              <div class="full row">
+                <button id="applySourceBtn" class="good grow">Load this source</button>
+                <label class="fileButton secondary" for="dbFileInput">Upload DB JSON</label>
+                <input id="dbFileInput" class="hidden" type="file" accept=".json,application/json">
+              </div>
+              <div class="full small muted">Public GitHub repository access is required. The resolved commit is used for every script, config, asset, and database request.</div>
+            </div>
+          </details>
+        </div>
+        <div id="avatarModeSection" class="panelSection postureUnusedSection">
+          <div class="panelTitle"><b>Preview type</b><span id="previewModePill" class="pill">NPC</span></div>
+          <div class="segmented">
+            <button id="npcModeBtn" class="secondary active">NPC avatars</button>
+            <button id="creatureModeBtn" class="secondary" disabled>Creature avatars</button>
+          </div>
+        </div>
+        <div id="creatureEditor" class="panelSection hidden">
+          <div class="panelTitle"><b>Creature appearance</b><span id="creatureStatusPill" class="pill warn">Not rendered</span></div>
+          <div class="creatureGrid">
+            <div><label for="creatureSpeciesSelect">Species</label><select id="creatureSpeciesSelect"></select></div>
+            <div><label for="creatureFrameSelect">Animation frame</label><select id="creatureFrameSelect"></select></div>
+          </div>
+          <canvas id="creaturePreviewCanvas" width="512" height="256" aria-label="Creature sprite preview"></canvas>
+          <div id="creatureBaseControl"></div>
+          <div id="creaturePatternControls"></div>
+          <div class="row" style="margin-top:9px">
+            <button id="randomizeCreatureBtn" class="secondary">Randomize preview</button>
+            <button id="resetCreatureBtn" class="secondary">Reset species</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="downloadCreaturePngBtn" class="secondary" disabled>Download creature PNG</button>
+            <button id="downloadCreatureJsonBtn" class="secondary" disabled>Download genotype JSON</button>
+          </div>
+          <pre id="creatureGenotypeJson">{}</pre>
+          <div class="authorHelp">Colors and enabled pattern layers are written directly into the same genotype shape consumed by the repository renderer. Pattern order is fixed by the species definition, matching gameplay.</div>
+        </div>
+        <div id="npcSearchSection" class="panelSection">
+          <div class="panelTitle"><b>NPC database</b></div>
+          <input id="searchInput" type="search" placeholder="Search name, id, species, role…" autocomplete="off">
+        </div>
+        <div id="npcList" aria-live="polite"><div class="muted small">Load the repository to populate the database.</div></div>
+      </div>
+    </details>
+
+
+    <details id="kurrayaPanel" class="panel collapsiblePanel postureUnusedSection">
+      <summary><span>Kurraya plane assembly & avatar equipment authoring</span><span id="kurrayaSummaryLabel" class="pill">Not loaded</span></summary>
+      <div class="collapsibleBody authoringBody">
+        <div class="authorGrid">
+          <div class="card">
+            <h3>Kurraya source & equipment state</h3>
+            <dl class="toolSource">
+              <dt>Front plane</dt><dd id="kurrayaFrontPath">docs/assets/toolsprites/kurraya_front.png</dd>
+              <dt>Top plane</dt><dd id="kurrayaTopPath">docs/assets/toolsprites/kurraya_top.png</dd>
+              <dt>Avatar profile</dt><dd id="kurrayaProfileLabel">No NPC selected</dd>
+              <dt>Asset status</dt><dd id="kurrayaAssetStatus">Waiting for repository</dd>
+            </dl>
+            <div class="row" style="margin-top:10px">
+              <button id="equipKurrayaBtn" class="good grow" disabled>Equip Kurraya</button>
+              <button id="reloadKurrayaBtn" class="secondary" disabled>Reload planes</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button id="snapKurrayaHandBtn" class="secondary grow" disabled>Snap attachment to avatar hand</button>
+              <button id="resetKurrayaBtn" class="secondary" disabled>Reset this avatar</button>
+            </div>
+            <div class="authorHelp">The Kurraya is parented directly to the selected avatar model. Its attachment transform is therefore authored in avatar-local coordinates and moves with that avatar.</div>
+          </div>
+
+          <div class="card">
+            <h3>3D transform gizmo</h3>
+            <label for="kurrayaGizmoTarget">Editing target</label>
+            <select id="kurrayaGizmoTarget" disabled>
+              <option value="attachment">Whole equipped Kurraya</option>
+              <option value="front">Front plane within assembly</option>
+              <option value="top">Top plane within assembly</option>
+            </select>
+            <div class="segmented" style="margin-top:9px">
+              <button id="kurrayaMoveBtn" class="secondary active" disabled>Move</button>
+              <button id="kurrayaRotateBtn" class="secondary" disabled>Rotate</button>
+              <button id="kurrayaScaleBtn" class="secondary" disabled>Scale</button>
+              <button id="kurrayaGizmoOffBtn" class="secondary" disabled>Gizmo off</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button id="kurrayaSpaceBtn" class="secondary grow" disabled>Space: Local</button>
+              <button id="kurrayaAxesBtn" class="secondary" disabled>Axes: Off</button>
+            </div>
+            <div class="authorHelp">Drag the gizmo in the 3D view, or type exact values below. Orbiting is temporarily disabled while a gizmo handle is being dragged.</div>
+          </div>
+        </div>
+
+        <div class="authorGrid">
+          <div class="card">
+            <h3>Equipped position on avatar</h3>
+            <div id="attachmentTransformFields" class="transformEditor"></div>
+            <div class="authorHelp">This is the parent transform that places the completed two-plane tool relative to the avatar. X is side-to-side, Y is height, and Z is forward/back. “Snap to hand” uses the avatar plane renderer’s measured hand attachment metadata as a starting point.</div>
+          </div>
+          <div class="card">
+            <h3>Front PNG plane</h3>
+            <div id="frontTransformFields" class="transformEditor"></div>
+            <div class="authorHelp">The front sprite begins at 0° pitch. Its base geometry preserves the PNG’s native 320×663 aspect ratio.</div>
+          </div>
+          <div class="card">
+            <h3>Top PNG plane</h3>
+            <div id="topTransformFields" class="transformEditor"></div>
+            <div class="authorHelp">The top sprite begins at exactly 90° pitch relative to an ordinary PNG plane. Its base geometry preserves the PNG’s native 318×247 aspect ratio.</div>
+          </div>
+          <div class="card">
+            <h3>Authoring JSON</h3>
+            <div class="row" style="margin-bottom:8px">
+              <button id="downloadKurrayaBtn" class="secondary" disabled>Download attachment JSON</button>
+              <button id="copyKurrayaBtn" class="secondary" disabled>Copy JSON</button>
+              <label class="fileButton secondary" for="importKurrayaInput">Import JSON</label>
+              <input id="importKurrayaInput" class="hidden" type="file" accept=".json,application/json">
+            </div>
+            <div class="row" style="margin-bottom:8px">
+              <button id="downloadEquippedNpcBtn" class="secondary grow" disabled>Download selected NPC with authored Kurraya data</button>
+            </div>
+            <pre id="kurrayaJson">{}</pre>
+            <div class="authorHelp">The attachment profile is also saved locally per repository and NPC as you edit. Downloaded NPC JSON adds the non-destructive <code>avatarEquipmentAuthoring.kurraya</code> field.</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details id="rightPanel" class="panel collapsiblePanel">
+      <summary><span>Repository & avatar details</span><span class="pill">Metadata</span></summary>
+      <div class="collapsibleBody detailsBody">
+        <div class="card">
+          <h3>Loaded source</h3>
+          <dl class="kv">
+            <dt>Repository</dt><dd id="sourceRepo">—</dd>
+            <dt>Requested ref</dt><dd id="sourceRef">—</dd>
+            <dt>Resolved commit</dt><dd id="sourceSha">—</dd>
+            <dt>Database</dt><dd id="sourceDb">—</dd>
+            <dt>Schema</dt><dd id="sourceSchema">—</dd>
+          </dl>
+          <div class="row" style="margin-top:9px"><button id="downloadDbBtn" class="secondary" disabled>Download loaded DB</button></div>
+        </div>
+        <div class="card">
+          <h3>Selected NPC</h3>
+          <dl class="kv">
+            <dt>ID</dt><dd id="detailId">—</dd>
+            <dt>Home</dt><dd id="detailHome">—</dd>
+            <dt>Species</dt><dd id="detailSpecies">—</dd>
+            <dt>Gender</dt><dd id="detailGender">—</dd>
+            <dt>Age band</dt><dd id="detailAge">—</dd>
+            <dt>Role</dt><dd id="detailRole">—</dd>
+            <dt>Tags</dt><dd id="detailTags">—</dd>
+          </dl>
+        </div>
+        <div class="card">
+          <h3>Appearance data used by renderer</h3>
+          <pre id="appearanceJson">{}</pre>
+        </div>
+        <div class="card">
+          <h3>Plane metadata</h3>
+          <pre id="planeJson">{}</pre>
+        </div>
+      </div>
+    </details>
+  </main>
+</div>
+
+<div id="debugPanel">
+  <div id="debugHead">
+    <b>Diagnostics</b><span class="grow"></span>
+    <button id="copyDebugBtn" class="secondary">Copy</button>
+    <button id="clearDebugBtn" class="secondary">Clear</button>
+    <button id="closeDebugBtn" class="secondary">Close</button>
+  </div>
+  <div id="debugLog"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const $ = id => document.getElementById(id);
+const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
+const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
+const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
+const POSTURE_STORAGE_KEY = 'hobunjiAvatarPosturePreview.profiles.v1';
+const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
+// These repository paths are used to load the two authored Kurraya PNG planes.
+const KURRAYA_ASSETS = {
+  front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
+  top: { path: 'docs/assets/toolsprites/kurraya_top.png', width: 318, height: 247 },
+};
+const REQUIRED_SCRIPTS = [
+  'config/scratchbones-config.js',
+  'js/portrait-utils.js',
+  'js/portrait-breathing.js',
+  'js/npc-avatar-preview-utils.js',
+  'js/png-plane-avatar.js',
+  CREATURE_RENDER_SCRIPT,
+];
+
+const CREATURE_DEFAULTS = {
+  'gar-wolf': {
+    base: '#8b735f',
+    patterns: { colorpoint: '#3f302b', foxtail: '#c99c68', mitts: '#e9dfc9' },
+  },
+  'dabinggi-hound': {
+    base: '#987553',
+    patterns: { mitts: '#eee0c4', spectacles: '#4b342d', stripes: '#6b4937' },
+  },
+};
+
+const CREATURE_RANDOM_PALETTE = [
+  '#272321', '#3f302b', '#584238', '#6b4937', '#7b5a42', '#8b735f', '#987553', '#a88763',
+  '#b89670', '#c99c68', '#d7b98d', '#e1ccb0', '#e9dfc9', '#eee8dc', '#8e8b82', '#5d615f',
+  '#5f5548', '#7c6d59', '#473d46', '#6e5968', '#665d43', '#8c7d52', '#50615a', '#6f8175',
+];
+
+const state = {
+  settings: null,
+  runtimeKey: null,
+  resolvedSha: null,
+  rawBase: null,
+  cdnBase: null,
+  db: null,
+  npcs: [],
+  filteredNpcs: [],
+  selectedNpc: null,
+  previewMode: 'npc',
+  cosmetics: null,
+  // Per-NPC posture values let old and very-old characters retain distinct amounts.
+  posture: {
+    pixels: 0,
+    profiles: {},
+    activeNpcKey: null,
+    renderTimer: null,
+    basePlacementRatio: null,
+    adjustedPlacementRatio: null,
+    worldDrop: 0,
+  },
+  creature: {
+    kind: 'gar-wolf',
+    frame: 'idle',
+    genotype: null,
+    profiles: {},
+    bestiary: null,
+    renderGeneration: 0,
+    renderTimer: null,
+    renderedCanvas: null,
+  },
+  renderCache: new Map(),
+  renderGeneration: 0,
+  thumbnailObserver: null,
+  thumbnailQueue: [],
+  thumbnailWorkers: 0,
+  portraitRenderChain: Promise.resolve(),
+  three: {
+    ready: false,
+    THREE: null,
+    OrbitControls: null,
+    renderer: null,
+    scene: null,
+    camera: null,
+    controls: null,
+    model: null,
+    grid: null,
+    autoRotate: false,
+    lastTime: performance.now(),
+  },
+  // Kurraya authoring state is reused when switching NPCs and rebuilding the avatar scene.
+  kurraya: {
+    profiles: {},
+    currentProfileKey: null,
+    config: null,
+    root: null,
+    parts: { front: null, top: null },
+    textures: [],
+    axes: null,
+    assetsLoaded: false,
+    // Backdrop previews begin with optional authored equipment hidden.
+    visible: false,
+    gizmoTarget: 'attachment',
+    gizmoMode: 'translate',
+    gizmoSpace: 'local',
+    transformControls: null,
+    transformHelper: null,
+    saveTimer: null,
+  },
+  logs: [],
+};
+
+function log(message, level = 'info', extra = null) {
+  const stamp = new Date().toLocaleTimeString();
+  let line = `[${stamp}] ${level.toUpperCase()}: ${message}`;
+  if (extra !== null && extra !== undefined) {
+    try { line += `\n${typeof extra === 'string' ? extra : JSON.stringify(extra, null, 2)}`; }
+    catch (_) { line += `\n${String(extra)}`; }
+  }
+  state.logs.push(line);
+  if (state.logs.length > 400) state.logs.shift();
+  $('debugLog').textContent = state.logs.join('\n');
+  const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+  fn(line);
+}
+
+function setStatus(text, tone = '') {
+  const pill = $('statusPill');
+  pill.textContent = text;
+  pill.className = `pill ${tone}`.trim();
+  log(text, tone === 'bad' ? 'error' : tone === 'warn' ? 'warn' : 'info');
+}
+
+function showOverlay(title, detail = '', busy = true) {
+  $('stageOverlay').classList.remove('hidden');
+  $('overlayTitle').innerHTML = `${busy ? '<span class="spinner"></span>' : ''}${escapeHtml(title)}`;
+  $('overlayDetail').textContent = detail;
+}
+
+function hideOverlay() { $('stageOverlay').classList.add('hidden'); }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+function safeFilename(value, fallback = 'file') { return String(value || fallback).trim().replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || fallback; }
+function normalizePath(path) { return String(path || '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/'); }
+function ensureSlash(path) { const p = normalizePath(path); return p ? `${p.replace(/\/+$/, '')}/` : ''; }
+function encodePath(path) { return normalizePath(path).split('/').map(encodeURIComponent).join('/'); }
+function compactSha(sha) { return sha ? sha.slice(0, 12) : 'unresolved'; }
+
+function readSettings() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) {}
+  return {
+    owner: String(stored?.owner || $('ownerInput').value || 'Oolnokk').trim(),
+    repo: String(stored?.repo || $('repoInput').value || 'HobunjiHollowUnity').trim(),
+    ref: String(stored?.ref || $('refInput').value || 'main').trim(),
+    docsRoot: ensureSlash(stored?.docsRoot || $('docsInput').value || 'docs/'),
+    dbPath: normalizePath(stored?.dbPath || $('dbPathInput').value || 'docs/config/npcs/hobunji-starter-npc-database.json'),
+  };
+}
+
+function settingsFromInputs() {
+  return {
+    owner: $('ownerInput').value.trim(),
+    repo: $('repoInput').value.trim(),
+    ref: $('refInput').value.trim() || 'main',
+    docsRoot: ensureSlash($('docsInput').value || 'docs/'),
+    dbPath: normalizePath($('dbPathInput').value || 'docs/config/npcs/hobunji-starter-npc-database.json'),
+  };
+}
+
+function writeSettings(settings) {
+  $('ownerInput').value = settings.owner;
+  $('repoInput').value = settings.repo;
+  $('refInput').value = settings.ref;
+  $('docsInput').value = settings.docsRoot;
+  $('dbPathInput').value = settings.dbPath;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (_) {}
+}
+
+function validateSettings(settings) {
+  if (!/^[A-Za-z0-9_.-]+$/.test(settings.owner)) throw new Error('Repository owner contains unsupported characters.');
+  if (!/^[A-Za-z0-9_.-]+$/.test(settings.repo)) throw new Error('Repository name contains unsupported characters.');
+  if (!settings.ref) throw new Error('A branch or ref is required.');
+  if (!settings.docsRoot) throw new Error('The docs root is required.');
+  if (!settings.dbPath.toLowerCase().endsWith('.json')) throw new Error('The database path must point to a JSON file.');
+}
+
+function repoKey(settings) { return `${settings.owner}/${settings.repo}@${settings.ref}:${settings.docsRoot}`; }
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { cache: 'no-store', ...options, signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    return response;
+  } finally { clearTimeout(timeout); }
+}
+
+async function resolveCommit(settings) {
+  const api = `https://api.github.com/repos/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/commits/${encodeURIComponent(settings.ref)}`;
+  try {
+    const response = await fetchWithTimeout(api, { headers: { Accept: 'application/vnd.github+json' } }, 20000);
+    const data = await response.json();
+    if (!data?.sha) throw new Error('Commit response did not include a SHA.');
+    log(`Resolved ${settings.ref} to ${data.sha}`);
+    return data.sha;
+  } catch (error) {
+    log(`Could not resolve commit SHA; falling back to requested ref: ${error.message}`, 'warn');
+    return settings.ref;
+  }
+}
+
+function configureBases(settings, resolvedRef) {
+  const safeRef = encodePath(resolvedRef);
+  state.rawBase = `https://raw.githubusercontent.com/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}/${safeRef}/`;
+  state.cdnBase = `https://cdn.jsdelivr.net/gh/${encodeURIComponent(settings.owner)}/${encodeURIComponent(settings.repo)}@${encodeURIComponent(resolvedRef)}/`;
+}
+
+function rawUrl(path) { return state.rawBase + encodePath(path); }
+function cdnUrl(path) { return state.cdnBase + normalizePath(path); }
+
+async function fetchRepoText(path) {
+  const normalized = normalizePath(path);
+  const candidates = [rawUrl(normalized), cdnUrl(normalized)];
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      log(`Fetching ${normalized} from ${url.includes('raw.githubusercontent') ? 'GitHub raw' : 'jsDelivr fallback'}`);
+      return await (await fetchWithTimeout(url)).text();
+    } catch (error) {
+      lastError = error;
+      log(`Fetch failed for ${url}: ${error.message}`, 'warn');
+    }
+  }
+  throw new Error(`Could not fetch ${normalized}: ${lastError?.message || 'unknown error'}`);
+}
+
+async function fetchRepoJson(path) {
+  const text = await fetchRepoText(path);
+  try { return JSON.parse(text); }
+  catch (error) { throw new Error(`Invalid JSON in ${path}: ${error.message}`); }
+}
+
+function prepareRepositoryScript(code, relativePath, settings) {
+  if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
+  const docsBase = cdnUrl(settings.docsRoot);
+  let prepared = code
+    .replaceAll('assets/creaturesprites/', `${docsBase}assets/creaturesprites/`)
+    .replaceAll("fetch('config/creature-base-masks.json')", `fetch('${docsBase}config/creature-base-masks.json')`)
+    .replace('const img = new Image();', "const img = new Image(); img.crossOrigin = 'anonymous';");
+  prepared += `\n//# sourceURL=${rawUrl(settings.docsRoot + relativePath)}`;
+  return prepared;
+}
+
+async function executeClassicScript(code, sourceUrl) {
+  const blob = new Blob([`${code}\n//# sourceURL=${sourceUrl}`], { type: 'text/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  try {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = blobUrl;
+      script.async = false;
+      script.onload = () => { script.remove(); resolve(); };
+      script.onerror = () => { script.remove(); reject(new Error(`Execution failed: ${sourceUrl}`)); };
+      document.head.appendChild(script);
+    });
+  } finally { URL.revokeObjectURL(blobUrl); }
+}
+
+async function loadRepositoryRuntime(settings) {
+  const key = repoKey(settings);
+  if (state.runtimeKey === key && window.NpcAvatarPreview && window.PNGPlaneAvatar && window.CreatureGeneticsRender) return;
+  if (state.runtimeKey && state.runtimeKey !== key) {
+    writeSettings(settings);
+    setStatus('Source changed — reloading clean runtime', 'warn');
+    location.reload();
+    throw new Error('Reloading for a clean repository runtime.');
+  }
+
+  for (const relativePath of REQUIRED_SCRIPTS) {
+    const path = settings.docsRoot + relativePath;
+    const code = prepareRepositoryScript(await fetchRepoText(path), relativePath, settings);
+    await executeClassicScript(code, rawUrl(path));
+    log(`Loaded runtime script ${path}`);
+  }
+
+  if (!window.NpcAvatarPreview) throw new Error('npc-avatar-preview-utils.js did not expose window.NpcAvatarPreview.');
+  if (!window.PNGPlaneAvatar) throw new Error('png-plane-avatar.js did not expose window.PNGPlaneAvatar.');
+  if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
+  $('creatureModeBtn').disabled = false;
+  if (!window.renderProfile || !window.loadPortraitCosmetics) throw new Error('portrait-utils.js did not expose the expected renderer functions.');
+
+  const assetBase = cdnUrl(settings.docsRoot + 'assets/');
+  const configBase = cdnUrl(settings.docsRoot + 'config/');
+  state.cosmetics = await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase, configBase });
+  if (!state.cosmetics) throw new Error('Portrait cosmetics configuration did not load.');
+  try {
+    state.creature.bestiary = await fetchRepoJson(settings.docsRoot + 'config/creatures/hobunji-creature-bestiary.json');
+    log('Loaded creature bestiary sizing and labels.');
+  } catch (error) {
+    state.creature.bestiary = null;
+    log(`Creature bestiary config was unavailable; using sprite-derived sizing: ${error.message}`, 'warn');
+  }
+  state.runtimeKey = key;
+  if (!state.creature.genotype) loadCreatureProfile(state.creature.kind);
+  refreshCreatureEditor();
+  log('Portrait and creature runtimes loaded.');
+}
+
+function normalizeDatabase(input) {
+  if (Array.isArray(input)) return { schema: 'npc-array', npcs: input };
+  if (Array.isArray(input?.npcs)) return input;
+  if (Array.isArray(input?.npcDatabase)) return { ...input, npcs: input.npcDatabase };
+  if (input && typeof input === 'object') return { schema: input.schema || 'single-npc', npcs: [input] };
+  throw new Error('The selected JSON does not contain an NPC database.');
+}
+
+function normalizeGender(value) {
+  const gender = String(value || '').trim().toLowerCase();
+  return gender === 'female' || gender === 'f' ? 'female' : 'male';
+}
+
+function normalizeSpecies(value) {
+  const species = String(value || '').trim().toLowerCase().replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  return species && !species.includes('unknown') ? species : 'mao-ao';
+}
+
+function appearanceFallbackFor(npc) {
+  const raw = npc?.avatarEditor?.rawExport || {};
+  const profile = raw.profile || raw.avatarProfile || raw.npcProfile || raw;
+  const appearance = raw.appearance || profile.appearance || profile.visuals?.appearance || npc?.appearance || {};
+  return {
+    speciesId: normalizeSpecies(appearance.speciesId || appearance.species || npc?.species),
+    gender: normalizeGender(appearance.gender || npc?.gender),
+    cosmetics: { ...(appearance.cosmetics || {}) },
+    bodyColors: { ...(appearance.bodyColors || {}) },
+    ...(Array.isArray(appearance.bodyDeform) ? { bodyDeform: appearance.bodyDeform } : {}),
+  };
+}
+
+function asEquipArray(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (value && typeof value === 'object') return Object.values(value).filter(v => typeof v === 'string' && v);
+  return [];
+}
+
+function portraitExportFor(npc) {
+  npc = npc || {};
+  const raw = npc.avatarEditor?.rawExport || {};
+  const profile = raw.profile || raw.avatarProfile || raw.npcProfile || raw;
+  const fallback = appearanceFallbackFor(npc);
+  const appearance = {
+    ...fallback,
+    ...(profile.appearance || {}),
+    ...(profile.visuals?.appearance || {}),
+    ...(raw.appearance || {}),
+    ...(npc.appearance || {}),
+  };
+  appearance.speciesId = normalizeSpecies(appearance.speciesId || appearance.species || npc.species);
+  appearance.gender = normalizeGender(appearance.gender || npc.gender);
+  appearance.cosmetics = {
+    ...(fallback.cosmetics || {}),
+    ...(profile.appearance?.cosmetics || {}),
+    ...(profile.visuals?.appearance?.cosmetics || {}),
+    ...(raw.appearance?.cosmetics || {}),
+    ...(npc.appearance?.cosmetics || {}),
+  };
+  appearance.bodyColors = {
+    ...(fallback.bodyColors || {}),
+    ...(profile.appearance?.bodyColors || {}),
+    ...(profile.visuals?.appearance?.bodyColors || {}),
+    ...(raw.appearance?.bodyColors || {}),
+    ...(npc.appearance?.bodyColors || {}),
+  };
+  return {
+    name: npc.name || npc.id || 'NPC',
+    appearance,
+    equippedCosmetics: asEquipArray(raw.equippedCosmetics || profile.equippedCosmetics || profile.cosmetics || profile.equipment || npc.equippedCosmetics),
+    appliedDyes: raw.appliedDyes || profile.appliedDyes || profile.dyes || npc.appliedDyes || {},
+    portrait: npc.portrait || {},
+    rawExport: raw,
+  };
+}
+
+async function renderPortraitWithPosture(canvas, profile, options) {
+  return window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, options);
+}
+
+function renderPortraitSerial(canvas, profile, options) {
+  const job = state.portraitRenderChain.then(() => renderPortraitWithPosture(canvas, profile, options));
+  state.portraitRenderChain = job.catch(() => {});
+  return job;
+}
+
+function headContributionMask(fullCanvas, bodyOnlyCanvas) {
+  const width = fullCanvas.width;
+  const height = fullCanvas.height;
+  const mask = Object.assign(document.createElement('canvas'), { width, height });
+  const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+  const bodyCtx = bodyOnlyCanvas.getContext('2d', { willReadFrequently: true });
+  const maskCtx = mask.getContext('2d');
+  const full = fullCtx.getImageData(0, 0, width, height);
+  const body = bodyCtx.getImageData(0, 0, width, height);
+  const result = maskCtx.createImageData(width, height);
+  for (let i = 0; i < full.data.length; i += 4) {
+    const dr = Math.abs(full.data[i] - body.data[i]);
+    const dg = Math.abs(full.data[i + 1] - body.data[i + 1]);
+    const db = Math.abs(full.data[i + 2] - body.data[i + 2]);
+    const da = Math.abs(full.data[i + 3] - body.data[i + 3]);
+    const difference = Math.max(dr, dg, db, da);
+    // Gain preserves antialiased edges while turning clear full-vs-body differences
+    // into an opaque visible-head mask.
+    const alpha = Math.max(0, Math.min(255, difference * 5));
+    result.data[i] = 255;
+    result.data[i + 1] = 255;
+    result.data[i + 2] = 255;
+    result.data[i + 3] = alpha;
+  }
+  maskCtx.putImageData(result, 0, 0);
+  return mask;
+}
+
+function extractVisibleHead(fullCanvas, bodyOnlyCanvas) {
+  const width = fullCanvas.width;
+  const height = fullCanvas.height;
+  const head = Object.assign(document.createElement('canvas'), { width, height });
+  const ctx = head.getContext('2d');
+  ctx.drawImage(fullCanvas, 0, 0);
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(headContributionMask(fullCanvas, bodyOnlyCanvas), 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  return head;
+}
+
+const POSTURE_NONE_OPTION = { id: 'none', label: 'None', tintSlot: null, layers: [] }; // Used by posture-only head/body split renders.
+
+// portrait-utils restores the species-specific behind-head sprite even when
+// omitHeadSpriteAndCosmetics is true. Rear posture therefore uses explicit
+// behind-view layer subsets rather than the stock order.
+const POSTURE_BEHIND_BODY_LAYER_ORDER = [
+  'sideLeft', 'rightSideHair',
+  'baseLeftArm', 'baseTorso', 'baseRightArm',
+  'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
+  'snowgoggles',
+  'hairBack',
+];
+
+const POSTURE_BEHIND_BASE_UNDER_HEAD_LAYER_ORDER = [
+  'baseLeftArm', 'baseTorso', 'baseRightArm',
+  'torsoClothing',
+];
+
+const POSTURE_BEHIND_OVERWEAR_FRONT_LAYER_ORDER = [
+  'overwear',
+];
+
+function postureHeadOnlyUrl(url, variantTag = 'head-only') {
+  if (typeof url !== 'string' || !url) return url;
+  const joiner = url.includes('#') ? '&' : '#';
+  return `${url}${joiner}${variantTag}`;
+}
+
+function buildHeadOnlyProfile(profile, renderTag = 'front') {
+  const clone = structuredCloneSafe(profile) || {};
+  const fighter = clone.fighter || {};
+  clone.fighter = {
+    ...fighter,
+    id: `${fighter.id || 'fighter'}__posture_head_only__${renderTag}`,
+    headUrl: postureHeadOnlyUrl(fighter.headUrl, `posture-head-only-${renderTag}`),
+    bodyLayers: [],
+  };
+  clone.torsoCosmetic = POSTURE_NONE_OPTION;
+  clone.armCosmetic = POSTURE_NONE_OPTION;
+  clone.pauldron = POSTURE_NONE_OPTION;
+  clone.bodyDeform = null;
+  return clone;
+}
+
+async function renderHeadOnlyCanvas(canvas, profile, options = {}) {
+  const renderTag = options.portraitView === 'behind' ? 'behind' : 'front';
+  const headProfile = buildHeadOnlyProfile(profile, renderTag);
+  return renderPortraitSerial(canvas, headProfile, options);
+}
+
+function composePostureCanvas(bodyOnlyCanvas, visibleHeadCanvas, bodyOffsetY, headOffsetY, options = {}) {
+  const canvas = Object.assign(document.createElement('canvas'), {
+    width: bodyOnlyCanvas.width,
+    height: bodyOnlyCanvas.height,
+  });
+  const ctx = canvas.getContext('2d');
+  const headBehindBody = options.headBehindBody === true; // Used by behind-view posture composition.
+  const frontOverlayCanvas = options.frontOverlayCanvas || null; // Optional stationary layer rendered above the shifted head.
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (headBehindBody) {
+    ctx.drawImage(visibleHeadCanvas, 0, headOffsetY);
+    ctx.drawImage(bodyOnlyCanvas, 0, bodyOffsetY);
+  } else {
+    ctx.drawImage(bodyOnlyCanvas, 0, bodyOffsetY);
+    ctx.drawImage(visibleHeadCanvas, 0, headOffsetY);
+  }
+  if (frontOverlayCanvas) ctx.drawImage(frontOverlayCanvas, 0, 0);
+  return canvas;
+}
+
+async function buildAvatarRender(npc, options = {}) {
+  const posturePixels = clampPosturePixels(options.posturePixels ?? 0);
+  const includeBaseline = options.includeBaseline === true;
+  const cacheKey = `${state.resolvedSha}:${npc.id || npc.name}:${JSON.stringify(npc.appearance || {})}:${JSON.stringify(npc.equippedCosmetics || [])}:${JSON.stringify(npc.appliedDyes || {})}:posture=${posturePixels}:baseline=${includeBaseline}:split-head-body-v5`;
+  if (state.renderCache.has(cacheKey)) return state.renderCache.get(cacheKey);
+  const promise = (async () => {
+    const exportNpc = portraitExportFor(npc);
+    let baseProfile = window.NpcAvatarPreview.buildProfileFromNpcExport(exportNpc);
+    if (!baseProfile) {
+      baseProfile = window.NpcAvatarPreview.randomProfile(`fallback:${npc.id || npc.name}`, {
+        speciesId: exportNpc.appearance.speciesId,
+        gender: exportNpc.appearance.gender,
+      });
+    }
+    if (!baseProfile) throw new Error(`Could not build a portrait profile for ${npc.name || npc.id}.`);
+
+    const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
+    const makeCanvas = () => Object.assign(document.createElement('canvas'), { width: size, height: size });
+    const fullFront = makeCanvas();
+    const fullBack = makeCanvas();
+    const bodyFront = makeCanvas();
+    const bodyBack = makeCanvas();
+    const rearBaseUnderHead = makeCanvas();
+    const rearOverwearFront = makeCanvas();
+    const headFront = makeCanvas();
+    const headBack = makeCanvas();
+    const seatId = npc.id || npc.name || 'npc';
+
+    await renderPortraitSerial(fullFront, baseProfile, { seatId, forceEyesOpen: true });
+    await renderPortraitSerial(fullBack, baseProfile, { seatId, portraitView: 'behind', forceEyesOpen: true });
+    await renderPortraitSerial(bodyFront, baseProfile, { seatId, forceEyesOpen: true, omitHeadSpriteAndCosmetics: true });
+    await renderPortraitSerial(bodyBack, baseProfile, {
+      seatId,
+      portraitView: 'behind',
+      forceEyesOpen: true,
+      omitHeadSpriteAndCosmetics: true,
+      behindLayerOrder: POSTURE_BEHIND_BODY_LAYER_ORDER,
+    });
+    await renderPortraitSerial(rearBaseUnderHead, baseProfile, {
+      seatId,
+      portraitView: 'behind',
+      forceEyesOpen: true,
+      omitHeadSpriteAndCosmetics: true,
+      behindLayerOrder: POSTURE_BEHIND_BASE_UNDER_HEAD_LAYER_ORDER,
+    });
+    await renderPortraitSerial(rearOverwearFront, baseProfile, {
+      seatId,
+      portraitView: 'behind',
+      forceEyesOpen: true,
+      omitHeadSpriteAndCosmetics: true,
+      behindLayerOrder: POSTURE_BEHIND_OVERWEAR_FRONT_LAYER_ORDER,
+    });
+
+    try {
+      await renderHeadOnlyCanvas(headFront, baseProfile, { seatId, forceEyesOpen: true });
+      await renderHeadOnlyCanvas(headBack, baseProfile, { seatId, portraitView: 'behind', forceEyesOpen: true });
+    } catch (error) {
+      log(`Head-only posture bake fell back to extracted head: ${error.message}`, 'warn');
+      copyCanvas(extractVisibleHead(fullFront, bodyFront), headFront);
+      copyCanvas(extractVisibleHead(fullBack, bodyBack), headBack);
+    }
+
+    // Portrait authoring view: head stays fixed while the entire baked body rises.
+    const portraitAdjusted = posturePixels > 0
+      ? composePostureCanvas(bodyFront, headFront, -posturePixels, 0)
+      : fullFront;
+
+    // 3D world view: complete body remains pixel-for-pixel stationary; only the
+    // visible head assembly descends. No model-level placement compensation needed.
+    const front = posturePixels > 0
+      ? composePostureCanvas(bodyFront, headFront, 0, posturePixels)
+      : fullFront;
+    const back = posturePixels > 0
+      ? composePostureCanvas(rearBaseUnderHead, headBack, 0, posturePixels, { frontOverlayCanvas: rearOverwearFront })
+      : fullBack;
+
+    return {
+      exportNpc,
+      baseProfile,
+      profile: baseProfile,
+      front,
+      back,
+      baseFront: includeBaseline ? fullFront : null,
+      portraitAdjusted,
+      bodyFront,
+      bodyBack,
+      rearBaseUnderHead,
+      rearOverwearFront,
+      headFront,
+      headBack,
+      posturePixels,
+    };
+  })();
+  state.renderCache.set(cacheKey, promise);
+  try { return await promise; }
+  catch (error) { state.renderCache.delete(cacheKey); throw error; }
+}
+
+
+
+function clampPosturePixels(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(20, Math.round(numeric * 4) / 4));
+}
+
+function loadPostureProfiles() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(POSTURE_STORAGE_KEY) || '{}');
+    state.posture.profiles = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    state.posture.profiles = {};
+  }
+}
+
+function savePostureProfiles() {
+  try { localStorage.setItem(POSTURE_STORAGE_KEY, JSON.stringify(state.posture.profiles)); }
+  catch (error) { log(`Could not persist posture profiles: ${error.message}`, 'warn'); }
+}
+
+function postureProfileKey(npc) {
+  const sourceKey = state.runtimeKey || (state.settings ? repoKey(state.settings) : 'unloaded-repository');
+  return `${sourceKey}:${String(npc?.id || npc?.name || 'npc')}`;
+}
+
+function postureBandFor(pixels = state.posture.pixels) {
+  if (pixels < 1.5) return 'Upright';
+  if (pixels < 6.5) return 'Old';
+  if (pixels < 11.5) return 'Very old';
+  return 'Severe hunch';
+}
+
+
+function activatePostureForNpc(npc, keepCurrent = false) {
+  const key = postureProfileKey(npc);
+  if (!keepCurrent && state.posture.activeNpcKey !== key) {
+    state.posture.activeNpcKey = key;
+    state.posture.pixels = clampPosturePixels(state.posture.profiles[key] ?? 0);
+  } else if (!state.posture.activeNpcKey) {
+    state.posture.activeNpcKey = key;
+  }
+  syncPostureUi();
+}
+
+function postureExport() {
+  const npc = state.selectedNpc;
+  const canvasHeight = Number($('postureAdjustedCanvas')?.height) || 200;
+  return {
+    schema: 'hobunji_avatar_posture_preview.v1',
+    npcId: npc?.id || null,
+    npcName: npc?.name || null,
+    repository: state.settings ? `${state.settings.owner}/${state.settings.repo}` : null,
+    repositoryCommit: state.resolvedSha || null,
+    avatarPosture: {
+      bodyLiftPixels: state.posture.pixels,
+      verticalPlacementOffsetPixels: 0,
+      worldHeadDropPixels: state.posture.pixels,
+      portraitBodyLiftPixels: state.posture.pixels,
+      implementation: 'separate-body-and-visible-head-bakes',
+      portraitCanvasHeight: canvasHeight,
+      baseSpeciesGenderPlacementRatio: state.posture.basePlacementRatio,
+      adjustedPlacementRatio: state.posture.adjustedPlacementRatio,
+    },
+  };
+}
+
+function syncPostureUi() {
+  const pixels = clampPosturePixels(state.posture.pixels);
+  const slider = $('postureSlider');
+  if (slider) slider.value = String(pixels);
+  if ($('postureValue')) $('postureValue').textContent = `${pixels.toFixed(2)} px`;
+  if ($('postureBodyLiftMetric')) $('postureBodyLiftMetric').textContent = `+${pixels.toFixed(2)} px`;
+  if ($('posturePlacementDropMetric')) $('posturePlacementDropMetric').textContent = `+${pixels.toFixed(2)} px`;
+  if ($('postureBaseRatioMetric')) $('postureBaseRatioMetric').textContent = 'stationary';
+  if ($('postureAdjustedRatioMetric')) $('postureAdjustedRatioMetric').textContent = `${pixels.toFixed(2)} px down`;
+  if ($('postureBandPill')) $('postureBandPill').textContent = postureBandFor(pixels);
+  document.querySelectorAll('[data-posture-preset]').forEach(button => {
+    button.classList.toggle('active', Math.abs(Number(button.dataset.posturePreset) - pixels) < 0.001);
+  });
+  const npc = state.selectedNpc;
+  if ($('postureNpcLabel')) $('postureNpcLabel').textContent = npc?.name || npc?.id || 'Waiting for NPC';
+  if ($('postureNpcMeta')) {
+    const appearance = npc ? appearanceFallbackFor(npc) : null;
+    $('postureNpcMeta').textContent = npc
+      ? [npc.id, appearance?.speciesId, appearance?.gender, postureBandFor(pixels)].filter(Boolean).join(' · ')
+      : 'Select an NPC from the repository drawer.';
+  }
+  const canExport = !!npc;
+  if ($('copyPostureBtn')) $('copyPostureBtn').disabled = !canExport;
+  if ($('downloadPostureBtn')) $('downloadPostureBtn').disabled = !canExport;
+  if ($('postureDebugSummary')) {
+    $('postureDebugSummary').textContent = `three renderer bakes · rear body bake excludes built-in behind-head · one movable rear head behind torso · visible head +${pixels.toFixed(2)} px · portrait body −${pixels.toFixed(2)} px`;
+  }
+}
+
+function schedulePostureRender() {
+  clearTimeout(state.posture.renderTimer);
+  state.posture.renderTimer = setTimeout(() => {
+    if (state.selectedNpc) selectNpc(state.selectedNpc, { quiet: true, keepPosture: true });
+  }, 75);
+}
+
+function setPosturePixels(value, { rerender = true, persist = true } = {}) {
+  const next = clampPosturePixels(value);
+  if (next === state.posture.pixels && !rerender) return;
+  state.posture.pixels = next;
+  if (state.posture.activeNpcKey && persist) {
+    state.posture.profiles[state.posture.activeNpcKey] = next;
+    savePostureProfiles();
+  }
+  state.renderCache.clear();
+  syncPostureUi();
+  if (rerender) schedulePostureRender();
+}
+
+function applyPosturePlacementToModel(model, sourceCanvas, bodyLiftPixels) {
+  if (!model?.userData || !sourceCanvas) return;
+  const pixels = clampPosturePixels(bodyLiftPixels);
+  const baseRatio = Number(model.userData.portraitVerticalPlacementRatio);
+  state.posture.basePlacementRatio = Number.isFinite(baseRatio) ? baseRatio : null;
+  state.posture.adjustedPlacementRatio = Number.isFinite(baseRatio) ? baseRatio : null;
+  state.posture.worldDrop = 0;
+  model.userData.postureBodyLiftPixels = pixels;
+  model.userData.postureWorldHeadDropPixels = pixels;
+  model.userData.posturePlacementOffsetPixels = 0;
+  model.userData.postureCompositingMode = 'separate-body-and-visible-head-bakes';
+  syncPostureUi();
+}
+
+function normalizeHexColor(value, fallback = '#808080') {
+  const text = String(value || '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(text)) return (`#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`).toLowerCase();
+  return fallback;
+}
+
+function creatureSpeciesConfig(kind = state.creature.kind) {
+  return window.CreatureGeneticsRender?.SPECIES?.[kind] || null;
+}
+
+function creatureBestiaryRecord(kind = state.creature.kind) {
+  return state.creature.bestiary?.creatures?.find(record => record?.id === kind) || null;
+}
+
+function creatureDisplayLabel(kind = state.creature.kind) {
+  return creatureBestiaryRecord(kind)?.label || titleCasePattern(kind);
+}
+
+function defaultCreatureGenotype(kind) {
+  const spec = creatureSpeciesConfig(kind);
+  const defaults = CREATURE_DEFAULTS[kind] || { base: '#808080', patterns: {} };
+  const genotype = { base: { color: normalizeHexColor(defaults.base) } };
+  for (const patternId of spec?.patterns || []) {
+    genotype[patternId] = {
+      enabled: false,
+      copies: 1,
+      color: normalizeHexColor(defaults.patterns?.[patternId] || '#d8d0c2'),
+    };
+  }
+  return genotype;
+}
+
+function normalizeCreatureGenotype(kind, source) {
+  const fallback = defaultCreatureGenotype(kind);
+  const result = { base: { color: normalizeHexColor(source?.base?.color, fallback.base.color) } };
+  for (const patternId of creatureSpeciesConfig(kind)?.patterns || []) {
+    const incoming = source?.[patternId] || {};
+    result[patternId] = {
+      enabled: incoming.enabled === true,
+      copies: Number(incoming.copies) > 0 ? Math.max(1, Math.round(Number(incoming.copies))) : 1,
+      color: normalizeHexColor(incoming.color, fallback[patternId].color),
+    };
+  }
+  return result;
+}
+
+function loadCreatureProfiles() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CREATURE_STORAGE_KEY) || '{}');
+    state.creature.profiles = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    state.creature.profiles = {};
+    log(`Could not read saved creature profiles: ${error.message}`, 'warn');
+  }
+}
+
+function saveCreatureProfile() {
+  const kind = state.creature.kind;
+  if (!kind || !state.creature.genotype) return;
+  state.creature.profiles[kind] = { frame: state.creature.frame, genotype: clone(state.creature.genotype) };
+  try { localStorage.setItem(CREATURE_STORAGE_KEY, JSON.stringify(state.creature.profiles)); }
+  catch (error) { log(`Could not save creature profile: ${error.message}`, 'warn'); }
+}
+
+function loadCreatureProfile(kind) {
+  const saved = state.creature.profiles?.[kind];
+  state.creature.kind = kind;
+  state.creature.frame = creatureSpeciesConfig(kind)?.base?.[saved?.frame] ? saved.frame : 'idle';
+  state.creature.genotype = normalizeCreatureGenotype(kind, saved?.genotype);
+}
+
+function creatureLayerRow(layerId, label, color, enabled = true, description = '') {
+  return `<div class="creatureColorRow" data-creature-row="${escapeHtml(layerId)}">
+    <div class="creatureLayerLabel">
+      <div class="creatureLayerToggle">${layerId === 'base' ? '' : `<input type="checkbox" data-creature-enabled="${escapeHtml(layerId)}" ${enabled ? 'checked' : ''}>`}<b>${escapeHtml(label)}</b></div>
+      <span>${escapeHtml(description)}</span>
+    </div>
+    <input type="color" value="${escapeHtml(color)}" data-creature-color-picker="${escapeHtml(layerId)}" aria-label="${escapeHtml(label)} color">
+    <input type="text" value="${escapeHtml(color)}" maxlength="7" spellcheck="false" autocapitalize="off" data-creature-color-text="${escapeHtml(layerId)}" aria-label="${escapeHtml(label)} hex color">
+  </div>`;
+}
+
+function titleCasePattern(value) {
+  return String(value || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function refreshCreatureEditor() {
+  const render = window.CreatureGeneticsRender;
+  if (!render) return;
+  const speciesSelect = $('creatureSpeciesSelect');
+  speciesSelect.innerHTML = Object.keys(render.SPECIES).map(kind => `<option value="${escapeHtml(kind)}">${escapeHtml(creatureDisplayLabel(kind))}</option>`).join('');
+  speciesSelect.value = state.creature.kind;
+  const spec = creatureSpeciesConfig();
+  const frames = Object.keys(spec?.base || {});
+  $('creatureFrameSelect').innerHTML = frames.map(frame => `<option value="${escapeHtml(frame)}">${escapeHtml(titleCasePattern(frame))}</option>`).join('');
+  $('creatureFrameSelect').value = frames.includes(state.creature.frame) ? state.creature.frame : frames[0] || 'idle';
+  state.creature.frame = $('creatureFrameSelect').value;
+  state.creature.genotype = normalizeCreatureGenotype(state.creature.kind, state.creature.genotype);
+  $('creatureBaseControl').innerHTML = creatureLayerRow('base', 'Base fur', state.creature.genotype.base.color, true, 'Masked recolor of the base creature sprite');
+  $('creaturePatternControls').innerHTML = (spec?.patterns || []).map(patternId => {
+    const layer = state.creature.genotype[patternId];
+    return creatureLayerRow(patternId, titleCasePattern(patternId), layer.color, layer.enabled, 'Repository pattern overlay');
+  }).join('');
+  updateCreatureJson();
+}
+
+function currentCreatureExport() {
+  const spec = creatureSpeciesConfig();
+  return {
+    schema: 'hobunji_creature_avatar_genotype.v1',
+    repository: state.settings ? {
+      owner: state.settings.owner,
+      repo: state.settings.repo,
+      requestedRef: state.settings.ref,
+      resolvedCommit: state.resolvedSha,
+    } : null,
+    kind: state.creature.kind,
+    frame: state.creature.frame,
+    patternOrder: [...(spec?.patterns || [])],
+    genotype: clone(state.creature.genotype),
+  };
+}
+
+function updateCreatureJson() {
+  $('creatureGenotypeJson').textContent = JSON.stringify(currentCreatureExport(), null, 2);
+}
+
+function setCreatureLayerColor(layerId, value) {
+  const normalized = normalizeHexColor(value, '');
+  if (!normalized) return false;
+  if (layerId === 'base') state.creature.genotype.base.color = normalized;
+  else if (state.creature.genotype[layerId]) state.creature.genotype[layerId].color = normalized;
+  else return false;
+  document.querySelector(`[data-creature-color-picker="${CSS.escape(layerId)}"]`)?.setAttribute('value', normalized);
+  const picker = document.querySelector(`[data-creature-color-picker="${CSS.escape(layerId)}"]`);
+  const input = document.querySelector(`[data-creature-color-text="${CSS.escape(layerId)}"]`);
+  if (picker) picker.value = normalized;
+  if (input && input.value !== normalized) input.value = normalized;
+  saveCreatureProfile();
+  updateCreatureJson();
+  scheduleCreatureRender();
+  return true;
+}
+
+function randomCreatureColor(exclude = null) {
+  const candidates = exclude ? CREATURE_RANDOM_PALETTE.filter(color => color !== exclude) : CREATURE_RANDOM_PALETTE;
+  return candidates[Math.floor(Math.random() * candidates.length)] || '#808080';
+}
+
+function randomizeCreatureAppearance() {
+  const genotype = defaultCreatureGenotype(state.creature.kind);
+  genotype.base.color = randomCreatureColor();
+  let previous = genotype.base.color;
+  for (const patternId of creatureSpeciesConfig()?.patterns || []) {
+    genotype[patternId].enabled = Math.random() < 0.62;
+    genotype[patternId].color = randomCreatureColor(previous);
+    previous = genotype[patternId].color;
+  }
+  if ((creatureSpeciesConfig()?.patterns || []).length && !creatureSpeciesConfig().patterns.some(id => genotype[id].enabled)) {
+    genotype[creatureSpeciesConfig().patterns[Math.floor(Math.random() * creatureSpeciesConfig().patterns.length)]].enabled = true;
+  }
+  state.creature.genotype = genotype;
+  saveCreatureProfile();
+  refreshCreatureEditor();
+  renderCreatureAvatar({ busy: true });
+}
+
+function resetCreatureAppearance() {
+  state.creature.genotype = defaultCreatureGenotype(state.creature.kind);
+  state.creature.frame = 'idle';
+  saveCreatureProfile();
+  refreshCreatureEditor();
+  renderCreatureAvatar({ busy: true });
+}
+
+function scheduleCreatureRender() {
+  clearTimeout(state.creature.renderTimer);
+  state.creature.renderTimer = setTimeout(() => {
+    if (state.previewMode === 'creature') renderCreatureAvatar({ busy: false });
+  }, 90);
+}
+
+function copyCanvasMirrored(source, target) {
+  target.width = source.width;
+  target.height = source.height;
+  const ctx = target.getContext('2d');
+  ctx.clearRect(0, 0, target.width, target.height);
+  ctx.save();
+  ctx.translate(target.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(source, 0, 0);
+  ctx.restore();
+}
+
+function drawCreatureEditorPreview(source) {
+  const target = $('creaturePreviewCanvas');
+  const maxWidth = 700;
+  const scale = Math.min(1, maxWidth / Math.max(1, source.width));
+  target.width = Math.max(1, Math.round(source.width * scale));
+  target.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = target.getContext('2d');
+  ctx.clearRect(0, 0, target.width, target.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(source, 0, 0, target.width, target.height);
+}
+
+function disposeCurrentThreeModel() {
+  const t = state.three;
+  state.kurraya.transformControls?.detach();
+  if (t.model) {
+    t.scene?.remove(t.model);
+    window.PNGPlaneAvatar?.disposeAvatarModel?.(t.model);
+    t.model = null;
+  }
+  disposeKurrayaReferences(false);
+}
+
+async function placeThreeCreatureModel(canvas) {
+  await initThree();
+  const t = state.three;
+  disposeCurrentThreeModel();
+  const spriteUrl = canvas.toDataURL('image/png');
+  const bestiary = creatureBestiaryRecord();
+  const modelWidth = Number(bestiary?.modelWidth) > 0 ? Number(bestiary.modelWidth) : 2.1;
+  const spriteAspect = Number(bestiary?.spriteAspect) > 0 ? Number(bestiary.spriteAspect) : (canvas.height / Math.max(1, canvas.width));
+  const modelHeight = modelWidth * spriteAspect;
+  const animal = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(t.THREE, spriteUrl, {
+    modelWidth,
+    modelHeight,
+    name: `Creature_${safeFilename(state.creature.kind, 'creature')}`,
+  });
+  t.model = animal.group;
+  t.model.userData = {
+    source: 'repository-creature-genetics-render',
+    kind: state.creature.kind,
+    frame: state.creature.frame,
+    genotype: clone(state.creature.genotype),
+    repositoryCommit: state.resolvedSha,
+    sourceImagePixels: `${canvas.width}x${canvas.height}`,
+    pngPipelineMode: 'animal-two-plane',
+  };
+  t.scene.add(t.model);
+  state.kurraya.config = null;
+  state.kurraya.assetsLoaded = false;
+  setKurrayaUiEnabled(false);
+  updatePlaneMetadata();
+  setCameraView('front');
+}
+
+function updateCreatureDetails(canvas = null) {
+  const label = creatureDisplayLabel();
+  $('selectedName').textContent = label;
+  if ($('selectedSummaryLabel')) $('selectedSummaryLabel').textContent = `${label} · ${state.creature.frame}`;
+  $('selectedMeta').textContent = `${state.creature.kind} · ${state.creature.frame} · ${(creatureSpeciesConfig()?.patterns || []).filter(id => state.creature.genotype?.[id]?.enabled).join(', ') || 'no patterns'}`;
+  $('detailId').textContent = state.creature.kind;
+  $('detailHome').textContent = 'Creature avatar preview';
+  $('detailSpecies').textContent = label;
+  $('detailGender').textContent = 'Genotype-driven';
+  $('detailAge').textContent = '—';
+  $('detailRole').textContent = 'Creature';
+  $('detailTags').textContent = creatureSpeciesConfig()?.patterns?.join(', ') || '—';
+  $('appearanceJson').textContent = JSON.stringify(currentCreatureExport(), null, 2);
+  if (canvas) $('planeJson').textContent = JSON.stringify({ creature: currentCreatureExport(), canvas: { width: canvas.width, height: canvas.height } }, null, 2);
+}
+
+async function renderCreatureAvatar({ busy = false } = {}) {
+  if (!window.CreatureGeneticsRender || !state.creature.genotype) return;
+  state.renderGeneration++;
+  const generation = ++state.creature.renderGeneration;
+  if (busy) showOverlay(`Rendering ${creatureDisplayLabel()}`, 'Applying the repository base mask, tinting, and ordered pattern overlays.', true);
+  $('creatureStatusPill').textContent = 'Rendering…';
+  $('creatureStatusPill').className = 'pill warn';
+  try {
+    const canvas = await window.CreatureGeneticsRender.composeFrame(state.creature.kind, state.creature.frame, clone(state.creature.genotype));
+    if (generation !== state.creature.renderGeneration || state.previewMode !== 'creature') return;
+    if (!canvas) throw new Error(`No creature renderer is configured for ${state.creature.kind}.`);
+    state.creature.renderedCanvas = canvas;
+    copyCanvas(canvas, $('frontCanvas'));
+    copyCanvasMirrored(canvas, $('backCanvas'));
+    drawCreatureEditorPreview(canvas);
+    updateCreatureDetails(canvas);
+    await placeThreeCreatureModel(canvas);
+    if (generation !== state.creature.renderGeneration || state.previewMode !== 'creature') return;
+    $('downloadCreaturePngBtn').disabled = false;
+    $('downloadCreatureJsonBtn').disabled = false;
+    $('downloadFrontBtn').disabled = false;
+    $('downloadBackBtn').disabled = false;
+    $('downloadNpcBtn').disabled = true;
+    $('creatureStatusPill').textContent = 'Rendered';
+    $('creatureStatusPill').className = 'pill good';
+    hideOverlay();
+    setStatus(`Showing ${creatureDisplayLabel()} · ${state.creature.frame}`, 'good');
+    log(`Creature avatar rendered: ${state.creature.kind}/${state.creature.frame}`, 'info', currentCreatureExport());
+    window.dispatchEvent(new CustomEvent('hobunji-backdrop-creature-changed', { detail: { ...currentCreatureExport(), model: state.three.model } }));
+  } catch (error) {
+    if (generation !== state.creature.renderGeneration) return;
+    $('creatureStatusPill').textContent = 'Render failed';
+    $('creatureStatusPill').className = 'pill bad';
+    showOverlay('Creature render failed', error.message, false);
+    setStatus(`Creature render failed: ${error.message}`, 'bad');
+    log(error.stack || error.message, 'error');
+  }
+}
+
+function updateCameraButtonLabels() {
+  const creature = state.previewMode === 'creature';
+  $('frontViewBtn').textContent = creature ? 'Left sprite' : 'Front';
+  $('angleViewBtn').textContent = 'Angle';
+  $('sideViewBtn').textContent = creature ? 'Edge' : 'Side';
+  $('backViewBtn').textContent = creature ? 'Right sprite' : 'Back';
+}
+
+function syncPreviewModeUi() {
+  const creature = state.previewMode === 'creature';
+  $('npcModeBtn').classList.toggle('active', !creature);
+  $('creatureModeBtn').classList.toggle('active', creature);
+  $('previewModePill').textContent = creature ? 'Creature' : 'NPC';
+  $('npcSearchSection').classList.toggle('hidden', creature);
+  $('npcList').classList.toggle('hidden', creature);
+  $('creatureEditor').classList.toggle('hidden', !creature);
+  updateCameraButtonLabels();
+}
+
+async function setPreviewMode(mode, options = {}) {
+  const next = mode === 'creature' ? 'creature' : 'npc';
+  state.previewMode = next;
+  if (next === 'creature') state.renderGeneration++;
+  else state.creature.renderGeneration++;
+  syncPreviewModeUi();
+  if (next === 'creature') {
+    refreshCreatureEditor();
+    await renderCreatureAvatar({ busy: options.busy !== false });
+  } else {
+    const npc = state.selectedNpc || state.npcs[0];
+    if (npc) await selectNpc(npc);
+  }
+  requestAnimationFrame(resizeThree);
+}
+
+
+function vectorRecord(x = 0, y = 0, z = 0) { return { x, y, z }; }
+
+function defaultKurrayaConfig(npc, avatarModel, avatar) {
+  const frontScale = 0.46;
+  const frontHeight = (KURRAYA_ASSETS.front.height / KURRAYA_ASSETS.front.width) * frontScale;
+  const appearance = avatar?.exportNpc?.appearance || appearanceFallbackFor(npc);
+  return {
+    schema: 'hobunji_png_plane_equipment_attachment.v1',
+    equipmentId: 'kurraya',
+    avatarMatch: {
+      npcId: npc?.id || null,
+      npcName: npc?.name || null,
+      speciesId: appearance.speciesId,
+      gender: appearance.gender,
+    },
+    assets: clone(KURRAYA_ASSETS),
+    attachment: {
+      position: vectorRecord(Number(avatarModel?.userData?.handAttachX) || -0.35, Number(avatarModel?.userData?.handAttachY) || 0.15, 0.035),
+      rotationDeg: vectorRecord(0, 0, 0),
+      scale: vectorRecord(1, 1, 1),
+    },
+    parts: {
+      front: {
+        position: vectorRecord(0, 0, 0),
+        rotationDeg: vectorRecord(0, 0, 0),
+        scale: vectorRecord(frontScale, frontScale, frontScale),
+      },
+      top: {
+        position: vectorRecord(0, frontHeight / 2, -0.12),
+        rotationDeg: vectorRecord(90, 0, 0),
+        scale: vectorRecord(frontScale, frontScale, frontScale),
+      },
+    },
+  };
+}
+
+function normalizeTransformRecord(value, fallback) {
+  const base = clone(fallback);
+  for (const groupName of ['position', 'rotationDeg', 'scale']) {
+    const incoming = value?.[groupName];
+    if (!incoming || typeof incoming !== 'object') continue;
+    for (const axis of ['x', 'y', 'z']) {
+      const number = Number(incoming[axis]);
+      if (Number.isFinite(number)) base[groupName][axis] = number;
+    }
+  }
+  return base;
+}
+
+function normalizeKurrayaConfig(input, npc, avatarModel, avatar) {
+  const fallback = defaultKurrayaConfig(npc, avatarModel, avatar);
+  const source = input?.kurraya || input?.avatarEquipmentAuthoring?.kurraya || input;
+  if (!source || typeof source !== 'object') return fallback;
+  return {
+    ...fallback,
+    ...(source.schema ? { schema: source.schema } : {}),
+    avatarMatch: { ...fallback.avatarMatch, ...(source.avatarMatch || {}) },
+    assets: { ...fallback.assets, ...(source.assets || {}) },
+    attachment: normalizeTransformRecord(source.attachment, fallback.attachment),
+    parts: {
+      front: normalizeTransformRecord(source.parts?.front || source.front, fallback.parts.front),
+      top: normalizeTransformRecord(source.parts?.top || source.top, fallback.parts.top),
+    },
+  };
+}
+
+function loadKurrayaProfiles() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KURRAYA_STORAGE_KEY) || '{}');
+    state.kurraya.profiles = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    state.kurraya.profiles = {};
+    log(`Could not read saved Kurraya profiles: ${error.message}`, 'warn');
+  }
+}
+
+function kurrayaProfileKey(npc) {
+  const sourceKey = state.settings ? `${state.settings.owner}/${state.settings.repo}@${state.settings.ref}` : 'unknown-repo';
+  return `${sourceKey}:npc:${npc?.id || npc?.name || 'unknown'}`;
+}
+
+function scheduleKurrayaProfileSave() {
+  clearTimeout(state.kurraya.saveTimer);
+  state.kurraya.saveTimer = setTimeout(() => {
+    if (!state.kurraya.currentProfileKey || !state.kurraya.config) return;
+    state.kurraya.profiles[state.kurraya.currentProfileKey] = clone(state.kurraya.config);
+    try { localStorage.setItem(KURRAYA_STORAGE_KEY, JSON.stringify(state.kurraya.profiles)); }
+    catch (error) { log(`Could not save Kurraya profile: ${error.message}`, 'warn'); }
+  }, 120);
+}
+
+function degToRad(value) { return Number(value || 0) * Math.PI / 180; }
+function radToDeg(value) { return Number(value || 0) * 180 / Math.PI; }
+
+function applyTransformRecord(object, record) {
+  if (!object || !record) return;
+  object.position.set(record.position.x, record.position.y, record.position.z);
+  object.rotation.set(degToRad(record.rotationDeg.x), degToRad(record.rotationDeg.y), degToRad(record.rotationDeg.z));
+  object.scale.set(record.scale.x, record.scale.y, record.scale.z);
+}
+
+function recordFromObject(object) {
+  return {
+    position: vectorRecord(object.position.x, object.position.y, object.position.z),
+    rotationDeg: vectorRecord(radToDeg(object.rotation.x), radToDeg(object.rotation.y), radToDeg(object.rotation.z)),
+    scale: vectorRecord(object.scale.x, object.scale.y, object.scale.z),
+  };
+}
+
+function currentKurrayaExport() {
+  if (!state.kurraya.config) return {};
+  const npc = state.selectedNpc;
+  const appearance = npc ? appearanceFallbackFor(npc) : {};
+  return {
+    ...clone(state.kurraya.config),
+    schema: 'hobunji_png_plane_equipment_attachment.v1',
+    equipmentId: 'kurraya',
+    repository: state.settings ? {
+      owner: state.settings.owner,
+      repo: state.settings.repo,
+      requestedRef: state.settings.ref,
+      resolvedCommit: state.resolvedSha,
+    } : null,
+    avatarMatch: {
+      ...(state.kurraya.config.avatarMatch || {}),
+      npcId: npc?.id || null,
+      npcName: npc?.name || null,
+      speciesId: appearance.speciesId || state.kurraya.config.avatarMatch?.speciesId,
+      gender: appearance.gender || state.kurraya.config.avatarMatch?.gender,
+    },
+  };
+}
+
+function updateKurrayaJson() {
+  const exported = currentKurrayaExport();
+  $('kurrayaJson').textContent = JSON.stringify(exported, null, 2);
+  const equipped = !!state.kurraya.root && state.kurraya.visible;
+  $('kurrayaSummaryLabel').textContent = state.kurraya.assetsLoaded ? (equipped ? 'Equipped' : 'Hidden') : 'Not loaded';
+  $('kurrayaSummaryLabel').className = `pill ${state.kurraya.assetsLoaded ? (equipped ? 'good' : 'warn') : ''}`.trim();
+  $('kurrayaToggleBtn').textContent = state.kurraya.assetsLoaded ? `Kurraya: ${equipped ? 'Equipped' : 'Hidden'}` : 'Kurraya: Loading';
+  $('equipKurrayaBtn').textContent = equipped ? 'Hide Kurraya' : 'Equip Kurraya';
+  updatePlaneMetadata();
+}
+
+function updatePlaneMetadata() {
+  const avatarModel = state.three.model;
+  const metadata = avatarModel ? {
+    avatar: { name: avatarModel.name, ...avatarModel.userData },
+    equippedKurraya: state.kurraya.assetsLoaded ? currentKurrayaExport() : null,
+  } : {};
+  $('planeJson').textContent = JSON.stringify(metadata, null, 2);
+}
+
+function transformObjectForTarget(target) {
+  if (target === 'front') return state.kurraya.parts.front;
+  if (target === 'top') return state.kurraya.parts.top;
+  return state.kurraya.root;
+}
+
+function configRecordForTarget(target) {
+  if (!state.kurraya.config) return null;
+  if (target === 'front') return state.kurraya.config.parts.front;
+  if (target === 'top') return state.kurraya.config.parts.top;
+  return state.kurraya.config.attachment;
+}
+
+function syncKurrayaConfigFromScene() {
+  if (!state.kurraya.config || !state.kurraya.root) return;
+  state.kurraya.config.attachment = recordFromObject(state.kurraya.root);
+  if (state.kurraya.parts.front) state.kurraya.config.parts.front = recordFromObject(state.kurraya.parts.front);
+  if (state.kurraya.parts.top) state.kurraya.config.parts.top = recordFromObject(state.kurraya.parts.top);
+  refreshTransformEditors();
+  updateKurrayaJson();
+  scheduleKurrayaProfileSave();
+}
+
+function applyKurrayaConfigToScene() {
+  if (!state.kurraya.config || !state.kurraya.root) return;
+  applyTransformRecord(state.kurraya.root, state.kurraya.config.attachment);
+  applyTransformRecord(state.kurraya.parts.front, state.kurraya.config.parts.front);
+  applyTransformRecord(state.kurraya.parts.top, state.kurraya.config.parts.top);
+  updateKurrayaJson();
+  scheduleKurrayaProfileSave();
+}
+
+function formatAuthorNumber(value, kind) {
+  const decimals = kind === 'rotationDeg' ? 2 : 4;
+  return Number(value || 0).toFixed(decimals).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+
+function buildTransformEditor(containerId, target) {
+  const container = $(containerId);
+  container.innerHTML = '';
+  const sections = [
+    ['position', 'Position', 0.01],
+    ['rotationDeg', 'Rotation in degrees', 1],
+    ['scale', 'Scale', 0.01],
+  ];
+  for (const [kind, label, step] of sections) {
+    const section = document.createElement('div');
+    section.className = 'transformSection';
+    section.innerHTML = `<b>${label}</b><div class="axisGrid"></div>`;
+    const grid = section.querySelector('.axisGrid');
+    for (const axis of ['x', 'y', 'z']) {
+      const field = document.createElement('div');
+      field.className = 'axisField';
+      const axisLabel = kind === 'rotationDeg' ? ({ x: 'Pitch X', y: 'Yaw Y', z: 'Roll Z' }[axis]) : axis;
+      field.innerHTML = `<label>${axisLabel}</label><input type="number" inputmode="decimal" step="${step}" data-kurraya-target="${target}" data-kurraya-kind="${kind}" data-kurraya-axis="${axis}">`;
+      grid.appendChild(field);
+    }
+    container.appendChild(section);
+  }
+}
+
+function refreshTransformEditors() {
+  for (const input of document.querySelectorAll('[data-kurraya-target]')) {
+    const record = configRecordForTarget(input.dataset.kurrayaTarget);
+    if (!record) { input.value = ''; input.disabled = true; continue; }
+    input.disabled = false;
+    input.value = formatAuthorNumber(record[input.dataset.kurrayaKind][input.dataset.kurrayaAxis], input.dataset.kurrayaKind);
+  }
+}
+
+function onTransformFieldInput(event) {
+  const input = event.target;
+  const record = configRecordForTarget(input.dataset.kurrayaTarget);
+  if (!record) return;
+  const number = Number(input.value);
+  if (!Number.isFinite(number)) return;
+  record[input.dataset.kurrayaKind][input.dataset.kurrayaAxis] = number;
+  applyKurrayaConfigToScene();
+}
+
+function setKurrayaUiEnabled(enabled) {
+  for (const id of [
+    'equipKurrayaBtn','reloadKurrayaBtn','snapKurrayaHandBtn','resetKurrayaBtn','kurrayaAxesBtn',
+    'downloadKurrayaBtn','copyKurrayaBtn','downloadEquippedNpcBtn','kurrayaToggleBtn'
+  ]) $(id).disabled = !enabled;
+  const gizmoEnabled = enabled && !!state.kurraya.transformControls;
+  for (const id of ['kurrayaGizmoTarget','kurrayaMoveBtn','kurrayaRotateBtn','kurrayaScaleBtn','kurrayaGizmoOffBtn','kurrayaSpaceBtn']) {
+    $(id).disabled = !gizmoEnabled;
+  }
+}
+
+async function loadTextureFromRepository(path) {
+  const THREE = state.three.THREE;
+  const candidates = [cdnUrl(path), rawUrl(path)];
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      const texture = await new Promise((resolve, reject) => {
+        const loader = new THREE.TextureLoader();
+        loader.setCrossOrigin('anonymous');
+        loader.load(url, resolve, undefined, reject);
+      });
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.NearestFilter;
+      texture.needsUpdate = true;
+      log(`Loaded Kurraya plane asset ${path}`);
+      return texture;
+    } catch (error) {
+      lastError = error;
+      log(`Kurraya texture failed from ${url}: ${error?.message || error}`, 'warn');
+    }
+  }
+  throw new Error(`Could not load ${path}: ${lastError?.message || lastError || 'unknown error'}`);
+}
+
+function disposeKurrayaReferences(disposeResources = true) {
+  state.kurraya.transformControls?.detach();
+  const root = state.kurraya.root;
+  if (root) {
+    root.parent?.remove(root);
+    if (disposeResources) window.PNGPlaneAvatar?.disposeAvatarModel?.(root);
+  }
+  state.kurraya.root = null;
+  state.kurraya.parts.front = null;
+  state.kurraya.parts.top = null;
+  state.kurraya.textures = [];
+  state.kurraya.axes = null;
+  state.kurraya.assetsLoaded = false;
+}
+
+function makeKurrayaPlane(texture, asset, name) {
+  const THREE = state.three.THREE;
+  const aspectHeight = asset.height / asset.width;
+  const geometry = new THREE.PlaneGeometry(1, aspectHeight);
+  const material = new THREE.MeshBasicMaterial({
+    name: `${name}_material`, map: texture, transparent: true,
+    alphaTest: window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.alphaTest ?? 0.001,
+    side: THREE.DoubleSide, depthWrite: true,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.renderOrder = 4;
+  mesh.userData = { assetPath: asset.path, nativePixels: `${asset.width}x${asset.height}`, pngPlanePitchBaselineDeg: 0 };
+  return mesh;
+}
+
+async function buildKurrayaAssembly(npc, avatar) {
+  if (!state.three.model) return;
+  disposeKurrayaReferences();
+  $('kurrayaAssetStatus').textContent = 'Loading repository PNGs…';
+  $('kurrayaSummaryLabel').textContent = 'Loading';
+  setKurrayaUiEnabled(false);
+
+  const [frontTexture, topTexture] = await Promise.all([
+    loadTextureFromRepository(KURRAYA_ASSETS.front.path),
+    loadTextureFromRepository(KURRAYA_ASSETS.top.path),
+  ]);
+  const THREE = state.three.THREE;
+  const root = new THREE.Group();
+  root.name = 'Kurraya_Equipped_Attachment';
+  root.userData = { equipmentId: 'kurraya', attachmentSpace: 'avatar-local' };
+  const front = makeKurrayaPlane(frontTexture, KURRAYA_ASSETS.front, 'Kurraya_Front_Plane');
+  const top = makeKurrayaPlane(topTexture, KURRAYA_ASSETS.top, 'Kurraya_Top_Plane');
+  top.userData.requiredPitchDeg = 90;
+  root.add(front, top);
+
+  const axes = new THREE.AxesHelper(0.36);
+  axes.name = 'Kurraya_Attachment_Axes';
+  axes.visible = false;
+  root.add(axes);
+
+  state.three.model.add(root);
+  state.kurraya.root = root;
+  state.kurraya.parts.front = front;
+  state.kurraya.parts.top = top;
+  state.kurraya.textures = [frontTexture, topTexture];
+  state.kurraya.axes = axes;
+  state.kurraya.assetsLoaded = true;
+  // Preserve the current visibility preference; the backdrop defaults to hidden.
+  root.visible = state.kurraya.visible;
+  applyKurrayaConfigToScene();
+  setKurrayaUiEnabled(true);
+  setKurrayaGizmoTarget(state.kurraya.gizmoTarget);
+  $('kurrayaAssetStatus').textContent = `Loaded ${KURRAYA_ASSETS.front.width}×${KURRAYA_ASSETS.front.height} front + ${KURRAYA_ASSETS.top.width}×${KURRAYA_ASSETS.top.height} top`;
+  refreshTransformEditors();
+  updateKurrayaJson();
+}
+
+async function prepareKurrayaForAvatar(npc, avatar) {
+  state.kurraya.currentProfileKey = kurrayaProfileKey(npc);
+  const saved = state.kurraya.profiles[state.kurraya.currentProfileKey];
+  state.kurraya.config = normalizeKurrayaConfig(saved, npc, state.three.model, avatar);
+  $('kurrayaProfileLabel').textContent = `${npc?.name || npc?.id || 'NPC'} · local profile`;
+  await buildKurrayaAssembly(npc, avatar);
+}
+
+function setKurrayaVisible(visible) {
+  state.kurraya.visible = !!visible;
+  if (state.kurraya.root) state.kurraya.root.visible = state.kurraya.visible;
+  if (!state.kurraya.visible) state.kurraya.transformControls?.detach();
+  else setKurrayaGizmoTarget(state.kurraya.gizmoTarget);
+  updateKurrayaJson();
+}
+
+function snapKurrayaToAvatarHand() {
+  const model = state.three.model;
+  if (!model || !state.kurraya.config) return;
+  state.kurraya.config.attachment.position = vectorRecord(
+    Number(model.userData?.handAttachX) || -0.35,
+    Number(model.userData?.handAttachY) || 0.15,
+    0.035,
+  );
+  applyKurrayaConfigToScene();
+  refreshTransformEditors();
+  setStatus('Kurraya attachment snapped to avatar hand metadata', 'good');
+}
+
+function resetKurrayaProfile() {
+  if (!state.selectedNpc || !state.three.model) return;
+  state.kurraya.config = defaultKurrayaConfig(state.selectedNpc, state.three.model, null);
+  applyKurrayaConfigToScene();
+  refreshTransformEditors();
+  setStatus('Reset Kurraya assembly for this avatar', 'good');
+}
+
+async function loadTransformControls() {
+  if (state.kurraya.transformControls || !state.three.ready) return;
+  const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
+  const versionMatch = configuredThreeUrl.match(/three@([0-9.]+)/);
+  const version = versionMatch?.[1] || '0.165.0';
+  const url = `https://esm.sh/three@${version}/examples/jsm/controls/TransformControls.js?deps=three@${version}`;
+  try {
+    const module = await import(url);
+    const controls = new module.TransformControls(state.three.camera, $('view3d'));
+    const helper = typeof controls.getHelper === 'function' ? controls.getHelper() : controls;
+    helper.visible = true;
+    state.three.scene.add(helper);
+    controls.setMode(state.kurraya.gizmoMode);
+    controls.setSpace(state.kurraya.gizmoSpace);
+    controls.addEventListener('dragging-changed', event => {
+      if (state.three.controls) state.three.controls.enabled = !event.value;
+      if (event.value && state.three.autoRotate) {
+        state.three.autoRotate = false;
+        $('rotateBtn').textContent = 'Auto-rotate: Off';
+        $('rotateBtn').classList.remove('active');
+      }
+    });
+    controls.addEventListener('objectChange', syncKurrayaConfigFromScene);
+    state.kurraya.transformControls = controls;
+    state.kurraya.transformHelper = helper;
+    setKurrayaUiEnabled(state.kurraya.assetsLoaded);
+    setKurrayaGizmoTarget(state.kurraya.gizmoTarget);
+    log('Kurraya TransformControls gizmo loaded.');
+  } catch (error) {
+    log(`3D transform gizmo unavailable; numeric fields still work: ${error.message}`, 'warn');
+    $('kurrayaGizmoOffBtn').textContent = 'Gizmo unavailable';
+  }
+}
+
+function setKurrayaGizmoTarget(target) {
+  state.kurraya.gizmoTarget = target;
+  $('kurrayaGizmoTarget').value = target;
+  const controls = state.kurraya.transformControls;
+  const object = transformObjectForTarget(target);
+  if (controls && object && state.kurraya.visible) controls.attach(object);
+  for (const id of ['kurrayaMoveBtn','kurrayaRotateBtn','kurrayaScaleBtn']) $(id).classList.toggle('active', id === `kurraya${state.kurraya.gizmoMode === 'translate' ? 'Move' : state.kurraya.gizmoMode === 'rotate' ? 'Rotate' : 'Scale'}Btn`);
+}
+
+function setKurrayaGizmoMode(mode) {
+  state.kurraya.gizmoMode = mode;
+  state.kurraya.transformControls?.setMode(mode);
+  setKurrayaGizmoTarget(state.kurraya.gizmoTarget);
+}
+
+function setKurrayaGizmoEnabled(enabled) {
+  if (!state.kurraya.transformControls) return;
+  if (enabled) setKurrayaGizmoTarget(state.kurraya.gizmoTarget);
+  else state.kurraya.transformControls.detach();
+  $('kurrayaGizmoOffBtn').classList.toggle('active', !enabled);
+}
+
+function toggleKurrayaSpace() {
+  state.kurraya.gizmoSpace = state.kurraya.gizmoSpace === 'local' ? 'world' : 'local';
+  state.kurraya.transformControls?.setSpace(state.kurraya.gizmoSpace);
+  $('kurrayaSpaceBtn').textContent = `Space: ${state.kurraya.gizmoSpace === 'local' ? 'Local' : 'World'}`;
+}
+
+function toggleKurrayaAxes() {
+  if (!state.kurraya.axes) return;
+  state.kurraya.axes.visible = !state.kurraya.axes.visible;
+  $('kurrayaAxesBtn').textContent = `Axes: ${state.kurraya.axes.visible ? 'On' : 'Off'}`;
+  $('kurrayaAxesBtn').classList.toggle('active', state.kurraya.axes.visible);
+}
+
+function downloadKurrayaAuthoring() {
+  const name = safeFilename(state.selectedNpc?.name || state.selectedNpc?.id || 'avatar', 'avatar');
+  downloadJson(`${name}_kurraya_attachment.json`, currentKurrayaExport());
+}
+
+function downloadNpcWithKurraya() {
+  if (!state.selectedNpc) return;
+  const record = clone(state.selectedNpc);
+  record.avatarEquipmentAuthoring = { ...(record.avatarEquipmentAuthoring || {}), kurraya: currentKurrayaExport() };
+  downloadJson(`${safeFilename(record.name || record.id, 'npc')}_with_kurraya.json`, record);
+}
+
+async function importKurrayaAuthoring(file) {
+  if (!file || !state.selectedNpc || !state.three.model) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    state.kurraya.config = normalizeKurrayaConfig(parsed, state.selectedNpc, state.three.model, null);
+    applyKurrayaConfigToScene();
+    refreshTransformEditors();
+    setStatus(`Imported Kurraya attachment from ${file.name}`, 'good');
+  } catch (error) {
+    setStatus(`Kurraya import failed: ${error.message}`, 'bad');
+    log(error.stack || error.message, 'error');
+  } finally { $('importKurrayaInput').value = ''; }
+}
+
+function copyCanvas(source, target) {
+  const ctx = target.getContext('2d');
+  target.width = source.width;
+  target.height = source.height;
+  ctx.clearRect(0, 0, target.width, target.height);
+  ctx.drawImage(source, 0, 0);
+}
+
+async function initThree() {
+  if (state.three.ready) return;
+  showOverlay('Loading Three.js plane preview', 'Using the module URLs configured by the repository.', true);
+  const modules = await window.PNGPlaneAvatar.loadThreeModules();
+  const THREE = modules.THREE;
+  const canvas = $('view3d');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x060c14);
+  const cfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+  const camera = new THREE.PerspectiveCamera(cfg.previewCameraFovDeg || 45, 1, 0.01, 100);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x182435, 1.8));
+  const light = new THREE.DirectionalLight(0xffffff, 1.2);
+  light.position.set(2.5, 3.5, 4);
+  scene.add(light);
+  const grid = new THREE.GridHelper(cfg.previewGridSize || 5, cfg.previewGridDivisions || 10, 0x33538a, 0x1a2638);
+  grid.position.y = -0.55;
+  scene.add(grid);
+
+  let controls = null;
+  if (modules.OrbitControls) {
+    controls = new modules.OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0, 0);
+  }
+
+  Object.assign(state.three, { ready: true, THREE, OrbitControls: modules.OrbitControls, renderer, scene, camera, controls, grid });
+  setCameraView('angle');
+  resizeThree();
+  requestAnimationFrame(tickThree);
+  log('Three.js scene initialized.');
+  loadTransformControls();
+}
+
+
+function resizeThree() {
+  const t = state.three;
+  if (!t.ready) return;
+  const rect = $('view3d').getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width));
+  const height = Math.max(1, Math.floor(rect.height));
+  t.renderer.setSize(width, height, false);
+  t.camera.aspect = width / height;
+  t.camera.updateProjectionMatrix();
+}
+
+function setCameraView(view) {
+  const t = state.three;
+  if (!t.ready) return;
+  const distance = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance) || 3.2;
+  const positions = state.previewMode === 'creature' ? {
+    front: [distance, distance * .10, 0],
+    angle: [distance * .88, distance * .20, distance * .55],
+    side: [0, distance * .12, distance],
+    back: [-distance, distance * .10, 0],
+  } : {
+    front: [0, distance * .12, distance],
+    angle: [distance * .55, distance * .28, distance * .88],
+    side: [distance, distance * .15, 0],
+    back: [0, distance * .12, -distance],
+  };
+  const p = positions[view] || positions.angle;
+  t.camera.position.set(...p);
+  t.camera.lookAt(0, 0, 0);
+  t.controls?.target.set(0, 0, 0);
+  t.controls?.update();
+  for (const id of ['frontViewBtn','angleViewBtn','sideViewBtn','backViewBtn']) $(id).classList.remove('active');
+  $(`${view}ViewBtn`)?.classList.add('active');
+}
+
+function tickThree(now) {
+  const t = state.three;
+  if (!t.ready) return;
+  const dt = Math.min(.05, (now - t.lastTime) / 1000);
+  t.lastTime = now;
+  if (t.autoRotate && t.model) t.model.rotation.y += dt * .55;
+  t.controls?.update();
+  t.renderer.render(t.scene, t.camera);
+  requestAnimationFrame(tickThree);
+}
+
+async function placeThreeModel(npc, avatar) {
+  await initThree();
+  const t = state.three;
+  disposeCurrentThreeModel();
+  t.model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(t.THREE, avatar.front, {
+    backCanvas: avatar.back,
+    profile: avatar.profile,
+    appearance: avatar.exportNpc.appearance,
+    npcRecord: npc,
+    name: `NPC_${safeFilename(npc.id || npc.name, 'avatar')}`,
+    userData: { source: 'local-repo-viewer', npcId: npc.id || null, repositoryCommit: state.resolvedSha },
+  });
+  t.scene.add(t.model);
+  applyPosturePlacementToModel(t.model, avatar.front, avatar.posturePixels);
+  updatePlaneMetadata();
+  // This derivative focuses on avatar posture; tool-equipment authoring stays disabled.
+  state.kurraya.config = null;
+  state.kurraya.assetsLoaded = false;
+  setKurrayaUiEnabled(false);
+}
+
+function updateSelectedDetails(npc, avatar = null) {
+  const appearance = avatar?.exportNpc?.appearance || portraitExportFor(npc).appearance;
+  const selectedLabel = npc.name || npc.id || 'Unnamed NPC';
+  $('selectedName').textContent = selectedLabel;
+  if ($('selectedSummaryLabel')) $('selectedSummaryLabel').textContent = selectedLabel;
+  $('selectedMeta').textContent = [npc.id, appearance.speciesId, appearance.gender, npc.role, npc.homeId].filter(Boolean).join(' · ');
+  $('detailId').textContent = npc.id || '—';
+  $('detailHome').textContent = npc.homeId || npc.home || '—';
+  $('detailSpecies').textContent = `${npc.species || '—'} → ${appearance.speciesId}`;
+  $('detailGender').textContent = `${npc.gender || '—'} → ${appearance.gender}`;
+  $('detailAge').textContent = npc.ageBand || npc.age || '—';
+  $('detailRole').textContent = npc.role || '—';
+  $('detailTags').textContent = Array.isArray(npc.tags) ? npc.tags.join(', ') : '—';
+  $('appearanceJson').textContent = JSON.stringify({ appearance, equippedCosmetics: avatar?.exportNpc?.equippedCosmetics || npc.equippedCosmetics || [], appliedDyes: avatar?.exportNpc?.appliedDyes || npc.appliedDyes || {} }, null, 2);
+}
+
+async function selectNpc(npc, options = {}) {
+  if (!npc) return;
+  state.previewMode = 'npc';
+  state.creature.renderGeneration++;
+  syncPreviewModeUi();
+  const generation = ++state.renderGeneration;
+  state.selectedNpc = npc;
+  activatePostureForNpc(npc, options.keepPosture === true);
+  document.querySelectorAll('.npcCard').forEach(card => card.classList.toggle('selected', card.dataset.id === String(npc.id || npc.name)));
+  updateSelectedDetails(npc);
+  if (!options.quiet) showOverlay(`Rendering ${npc.name || npc.id}`, 'Baking separate body-only and head-only portrait layers.', true);
+  try {
+    const avatar = await buildAvatarRender(npc, { posturePixels: state.posture.pixels, includeBaseline: true });
+    if (generation !== state.renderGeneration) return;
+    copyCanvas(avatar.front, $('frontCanvas'));
+    copyCanvas(avatar.back, $('backCanvas'));
+    copyCanvas(avatar.baseFront || avatar.front, $('postureBaseCanvas'));
+    copyCanvas(avatar.portraitAdjusted || avatar.front, $('postureAdjustedCanvas'));
+    updateSelectedDetails(npc, avatar);
+    await placeThreeModel(npc, avatar);
+    if (generation !== state.renderGeneration) return;
+    $('downloadFrontBtn').disabled = false;
+    $('downloadBackBtn').disabled = false;
+    $('downloadNpcBtn').disabled = false;
+    hideOverlay();
+    setStatus(`${npc.name || npc.id} · posture ${state.posture.pixels.toFixed(2)} px`, 'good');
+    log(`Applied posture to ${npc.name || npc.id}: rear body bake excludes built-in behind-head; one movable rear head stack sits behind body and drops ${state.posture.pixels.toFixed(2)} px.`);
+    window.dispatchEvent(new CustomEvent('hobunji-posture-avatar-changed', { detail: { npc, profile: avatar.profile, model: state.three.model, posture: postureExport() } }));
+  } catch (error) {
+    if (generation !== state.renderGeneration) return;
+    showOverlay('Avatar render failed', error.message, false);
+    setStatus(`Render failed: ${error.message}`, 'bad');
+    log(error.stack || error.message, 'error');
+  }
+}
+
+function matchesNpc(npc, query) {
+  if (!query) return true;
+  const haystack = [npc.name, npc.id, npc.species, npc.gender, npc.role, npc.homeId, npc.home, ...(Array.isArray(npc.tags) ? npc.tags : [])].join(' ').toLowerCase();
+  return haystack.includes(query.toLowerCase());
+}
+
+function setupThumbnailObserver() {
+  state.thumbnailObserver?.disconnect();
+  state.thumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      state.thumbnailObserver.unobserve(entry.target);
+      const id = entry.target.dataset.thumbId;
+      const npc = state.filteredNpcs.find(item => String(item.id || item.name) === id);
+      if (npc) enqueueThumbnail(entry.target, npc);
+    }
+  }, { root: $('npcList'), rootMargin: '160px' });
+}
+
+function enqueueThumbnail(canvas, npc) {
+  state.thumbnailQueue.push({ canvas, npc });
+  runThumbnailQueue();
+}
+
+function runThumbnailQueue() {
+  while (state.thumbnailWorkers < 1 && state.thumbnailQueue.length) {
+    const job = state.thumbnailQueue.shift();
+    state.thumbnailWorkers++;
+    buildAvatarRender(job.npc, { posturePixels: state.posture.profiles[postureProfileKey(job.npc)] ?? 0 })
+      .then(avatar => { if (job.canvas.isConnected) copyCanvas(avatar.front, job.canvas); })
+      .catch(error => log(`Thumbnail failed for ${job.npc.id || job.npc.name}: ${error.message}`, 'warn'))
+      .finally(() => { state.thumbnailWorkers--; runThumbnailQueue(); });
+  }
+}
+
+function renderNpcList() {
+  const query = $('searchInput').value.trim();
+  state.filteredNpcs = state.npcs.filter(npc => matchesNpc(npc, query));
+  const list = $('npcList');
+  if (!state.filteredNpcs.length) {
+    list.innerHTML = '<div class="muted small">No NPCs match this search.</div>';
+    return;
+  }
+  list.innerHTML = state.filteredNpcs.map(npc => {
+    const key = String(npc.id || npc.name);
+    const appearance = appearanceFallbackFor(npc);
+    return `<button class="npcCard${state.selectedNpc === npc ? ' selected' : ''}" data-id="${escapeHtml(key)}">
+      <span class="thumbWrap"><canvas width="200" height="200" data-thumb-id="${escapeHtml(key)}"></canvas></span>
+      <span><span class="npcName">${escapeHtml(npc.name || npc.id || 'Unnamed NPC')}</span>
+      <span class="npcMeta">${escapeHtml([npc.id, appearance.speciesId, appearance.gender, npc.role].filter(Boolean).join(' · '))}</span></span>
+    </button>`;
+  }).join('');
+  list.querySelectorAll('.npcCard').forEach(card => card.addEventListener('click', () => {
+    const npc = state.filteredNpcs.find(item => String(item.id || item.name) === card.dataset.id);
+    selectNpc(npc);
+  }));
+  setupThumbnailObserver();
+  list.querySelectorAll('canvas[data-thumb-id]').forEach(canvas => state.thumbnailObserver.observe(canvas));
+}
+
+function updateSourceDetails(settings) {
+  $('sourceRepo').textContent = `${settings.owner}/${settings.repo}`;
+  $('sourceRef').textContent = settings.ref;
+  $('sourceSha').textContent = state.resolvedSha || '—';
+  $('sourceDb').textContent = settings.dbPath;
+  $('sourceSchema').textContent = state.db?.schema || '—';
+  $('countPill').textContent = `${state.npcs.length} NPC${state.npcs.length === 1 ? '' : 's'}`;
+  $('downloadDbBtn').disabled = !state.db;
+}
+
+async function loadSource(settings = settingsFromInputs()) {
+  try {
+    validateSettings(settings);
+    writeSettings(settings);
+    state.settings = settings;
+    setStatus('Resolving repository revision…', 'warn');
+    showOverlay('Resolving repository revision', `${settings.owner}/${settings.repo} @ ${settings.ref}`, true);
+    state.resolvedSha = await resolveCommit(settings);
+    configureBases(settings, state.resolvedSha);
+    updateSourceDetails(settings);
+
+    setStatus('Loading portrait runtime…', 'warn');
+    showOverlay('Loading portrait runtime', 'Fetching the same shared scripts used by the Character Studio.', true);
+    await loadRepositoryRuntime(settings);
+
+    setStatus('Loading NPC database…', 'warn');
+    showOverlay('Loading NPC database', settings.dbPath, true);
+    const rawDb = await fetchRepoJson(settings.dbPath);
+    state.db = normalizeDatabase(rawDb);
+    state.npcs = state.db.npcs.filter(npc => npc && typeof npc === 'object');
+    if (!state.npcs.length) throw new Error('The NPC database contains no NPC records.');
+    state.renderCache.clear();
+    state.selectedNpc = null;
+    updateSourceDetails(settings);
+    renderNpcList();
+    await selectNpc(state.npcs[0]);
+    $('repoSettings').open = false;
+    setStatus(`Loaded ${state.npcs.length} NPCs · ${compactSha(state.resolvedSha)}`, 'good');
+  } catch (error) {
+    if (String(error.message).includes('Reloading for a clean')) return;
+    showOverlay('Repository load failed', error.message, false);
+    setStatus(`Load failed: ${error.message}`, 'bad');
+    log(error.stack || error.message, 'error');
+    $('leftPanel').open = true;
+    $('repoSettings').open = true;
+  }
+}
+
+async function loadUploadedDatabase(file) {
+  if (!file) return;
+  try {
+    if (!state.runtimeKey) {
+      setStatus('Loading repository runtime before uploaded DB…', 'warn');
+      await loadSource(settingsFromInputs());
+    }
+    const parsed = JSON.parse(await file.text());
+    state.db = normalizeDatabase(parsed);
+    state.npcs = state.db.npcs.filter(npc => npc && typeof npc === 'object');
+    if (!state.npcs.length) throw new Error('Uploaded database contains no NPCs.');
+    state.renderCache.clear();
+    state.selectedNpc = null;
+    updateSourceDetails(state.settings || settingsFromInputs());
+    $('sourceDb').textContent = `Uploaded: ${file.name}`;
+    renderNpcList();
+    await selectNpc(state.npcs[0]);
+    setStatus(`Loaded uploaded DB · ${state.npcs.length} NPCs`, 'good');
+  } catch (error) {
+    setStatus(`Upload failed: ${error.message}`, 'bad');
+    log(error.stack || error.message, 'error');
+  } finally { $('dbFileInput').value = ''; }
+}
+
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function downloadCanvas(canvas, filename) {
+  canvas.toBlob(blob => {
+    if (!blob) return setStatus('PNG export failed', 'bad');
+    downloadBlob(filename, blob);
+  }, 'image/png');
+}
+
+function downloadJson(filename, value) {
+  downloadBlob(filename, new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+}
+
+function currentNpcFilename(suffix) {
+  const base = state.previewMode === 'creature'
+    ? `${safeFilename(state.creature.kind, 'creature')}_${safeFilename(state.creature.frame, 'idle')}`
+    : safeFilename(state.selectedNpc?.name || state.selectedNpc?.id || 'npc', 'npc');
+  return `${base}_${suffix}`;
+}
+
+$('reloadBtn').addEventListener('click', () => loadSource(settingsFromInputs()));
+$('applySourceBtn').addEventListener('click', () => loadSource(settingsFromInputs()));
+$('npcModeBtn').addEventListener('click', () => setPreviewMode('npc'));
+$('creatureModeBtn').addEventListener('click', () => setPreviewMode('creature'));
+$('creatureSpeciesSelect').addEventListener('change', event => {
+  loadCreatureProfile(event.target.value);
+  saveCreatureProfile();
+  refreshCreatureEditor();
+  renderCreatureAvatar({ busy: true });
+});
+$('creatureFrameSelect').addEventListener('change', event => {
+  state.creature.frame = event.target.value;
+  saveCreatureProfile();
+  updateCreatureJson();
+  renderCreatureAvatar({ busy: false });
+});
+$('creatureEditor').addEventListener('input', event => {
+  const enabledId = event.target.dataset.creatureEnabled;
+  if (enabledId && state.creature.genotype?.[enabledId]) {
+    state.creature.genotype[enabledId].enabled = event.target.checked;
+    saveCreatureProfile(); updateCreatureJson(); scheduleCreatureRender();
+    return;
+  }
+  const pickerId = event.target.dataset.creatureColorPicker;
+  if (pickerId) setCreatureLayerColor(pickerId, event.target.value);
+  const textId = event.target.dataset.creatureColorText;
+  if (textId && /^#[0-9a-f]{6}$/i.test(event.target.value.trim())) setCreatureLayerColor(textId, event.target.value);
+});
+$('creatureEditor').addEventListener('change', event => {
+  const textId = event.target.dataset.creatureColorText;
+  if (!textId) return;
+  const fallback = textId === 'base' ? state.creature.genotype.base.color : state.creature.genotype[textId]?.color;
+  event.target.value = normalizeHexColor(event.target.value, fallback);
+  setCreatureLayerColor(textId, event.target.value);
+});
+$('randomizeCreatureBtn').addEventListener('click', randomizeCreatureAppearance);
+$('resetCreatureBtn').addEventListener('click', resetCreatureAppearance);
+$('downloadCreaturePngBtn').addEventListener('click', () => state.creature.renderedCanvas && downloadCanvas(state.creature.renderedCanvas, `${safeFilename(state.creature.kind)}_${safeFilename(state.creature.frame)}.png`));
+$('downloadCreatureJsonBtn').addEventListener('click', () => downloadJson(`${safeFilename(state.creature.kind)}_genotype.json`, currentCreatureExport()));
+$('dbFileInput').addEventListener('change', event => loadUploadedDatabase(event.target.files?.[0]));
+$('searchInput').addEventListener('input', renderNpcList);
+$('frontViewBtn').addEventListener('click', () => setCameraView('front'));
+$('angleViewBtn').addEventListener('click', () => setCameraView('angle'));
+$('sideViewBtn').addEventListener('click', () => setCameraView('side'));
+$('backViewBtn').addEventListener('click', () => setCameraView('back'));
+$('resetBtn').addEventListener('click', () => { if (state.three.model) state.three.model.rotation.set(0,0,0); setCameraView('angle'); });
+$('rotateBtn').addEventListener('click', () => {
+  state.three.autoRotate = !state.three.autoRotate;
+  $('rotateBtn').textContent = `Auto-rotate: ${state.three.autoRotate ? 'On' : 'Off'}`;
+  $('rotateBtn').classList.toggle('active', state.three.autoRotate);
+});
+$('downloadFrontBtn').addEventListener('click', () => downloadCanvas($('frontCanvas'), currentNpcFilename('front.png')));
+$('downloadBackBtn').addEventListener('click', () => downloadCanvas($('backCanvas'), currentNpcFilename('behind.png')));
+$('downloadNpcBtn').addEventListener('click', () => state.selectedNpc && downloadJson(currentNpcFilename('record.json'), state.selectedNpc));
+$('downloadDbBtn').addEventListener('click', () => state.db && downloadJson('hobunji-loaded-npc-database.json', state.db));
+
+$('kurrayaToggleBtn').addEventListener('click', () => setKurrayaVisible(!state.kurraya.visible));
+$('equipKurrayaBtn').addEventListener('click', () => setKurrayaVisible(!state.kurraya.visible));
+$('reloadKurrayaBtn').addEventListener('click', async () => {
+  if (!state.selectedNpc || !state.three.model) return;
+  try { await buildKurrayaAssembly(state.selectedNpc, null); setStatus('Reloaded Kurraya PNG planes', 'good'); }
+  catch (error) { setStatus(`Kurraya reload failed: ${error.message}`, 'bad'); }
+});
+$('snapKurrayaHandBtn').addEventListener('click', snapKurrayaToAvatarHand);
+$('resetKurrayaBtn').addEventListener('click', resetKurrayaProfile);
+$('kurrayaGizmoTarget').addEventListener('change', event => setKurrayaGizmoTarget(event.target.value));
+$('kurrayaMoveBtn').addEventListener('click', () => { setKurrayaGizmoMode('translate'); setKurrayaGizmoEnabled(true); });
+$('kurrayaRotateBtn').addEventListener('click', () => { setKurrayaGizmoMode('rotate'); setKurrayaGizmoEnabled(true); });
+$('kurrayaScaleBtn').addEventListener('click', () => { setKurrayaGizmoMode('scale'); setKurrayaGizmoEnabled(true); });
+$('kurrayaGizmoOffBtn').addEventListener('click', () => setKurrayaGizmoEnabled(false));
+$('kurrayaSpaceBtn').addEventListener('click', toggleKurrayaSpace);
+$('kurrayaAxesBtn').addEventListener('click', toggleKurrayaAxes);
+$('downloadKurrayaBtn').addEventListener('click', downloadKurrayaAuthoring);
+$('downloadEquippedNpcBtn').addEventListener('click', downloadNpcWithKurraya);
+$('copyKurrayaBtn').addEventListener('click', async () => {
+  const text = JSON.stringify(currentKurrayaExport(), null, 2);
+  try { await navigator.clipboard.writeText(text); setStatus('Kurraya authoring JSON copied', 'good'); }
+  catch (_) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text; textarea.style.position = 'fixed'; textarea.style.left = '-9999px';
+    document.body.appendChild(textarea); textarea.select(); document.execCommand('copy'); textarea.remove();
+    setStatus('Kurraya authoring JSON copied', 'good');
+  }
+});
+$('importKurrayaInput').addEventListener('change', event => importKurrayaAuthoring(event.target.files?.[0]));
+
+$('postureSlider').addEventListener('input', event => setPosturePixels(event.target.value));
+document.querySelectorAll('[data-posture-preset]').forEach(button => button.addEventListener('click', () => setPosturePixels(button.dataset.posturePreset)));
+$('postureCollapseBtn').addEventListener('click', () => {
+  const dock = $('postureDock');
+  dock.classList.toggle('collapsed');
+  $('postureCollapseBtn').textContent = dock.classList.contains('collapsed') ? 'Show' : 'Hide';
+});
+$('copyPostureBtn').addEventListener('click', async () => {
+  const text = JSON.stringify(postureExport(), null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus('Posture JSON copied', 'good');
+  } catch (_) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    setStatus('Posture JSON copied', 'good');
+  }
+});
+$('downloadPostureBtn').addEventListener('click', () => {
+  if (!state.selectedNpc) return;
+  const name = safeFilename(state.selectedNpc.name || state.selectedNpc.id || 'npc', 'npc');
+  downloadJson(`${name}_posture.json`, postureExport());
+});
+
+$('debugBtn').addEventListener('click', () => $('debugPanel').classList.toggle('visible'));
+$('closeDebugBtn').addEventListener('click', () => $('debugPanel').classList.remove('visible'));
+$('clearDebugBtn').addEventListener('click', () => { state.logs.length = 0; $('debugLog').textContent = ''; });
+$('copyDebugBtn').addEventListener('click', async () => {
+  const text = state.logs.join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus('Diagnostics copied', 'good');
+  } catch (_) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text; textarea.style.position = 'fixed'; textarea.style.left = '-9999px';
+    document.body.appendChild(textarea); textarea.select(); document.execCommand('copy'); textarea.remove();
+    setStatus('Diagnostics copied', 'good');
+  }
+});
+
+
+
+let lastViewportReport = ''; // Avoids repeating identical visible-viewport diagnostics.
+
+function fitGameplayPreviewViewport() {
+  const viewport = window.visualViewport; // Browser chrome can resize this without changing screen dimensions.
+  const width = Math.max(1, Math.round(viewport?.width || window.innerWidth || document.documentElement.clientWidth));
+  const height = Math.max(1, Math.round(viewport?.height || window.innerHeight || document.documentElement.clientHeight));
+  const left = Math.round(viewport?.offsetLeft || 0);
+  const top = Math.round(viewport?.offsetTop || 0);
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty('--viewport-left', `${left}px`);
+  rootStyle.setProperty('--viewport-top', `${top}px`);
+  rootStyle.setProperty('--viewport-width', `${width}px`);
+  rootStyle.setProperty('--viewport-height', `${height}px`);
+  const report = `${width}×${height} at ${left},${top} · direct viewport · no scale transform`;
+  if (report !== lastViewportReport) {
+    lastViewportReport = report;
+    log(`Gameplay-preview viewport: ${report}`);
+  }
+  requestAnimationFrame(resizeThree);
+}
+
+for (const id of ['leftPanel', 'rightPanel', 'portraitPanel', 'kurrayaPanel']) {
+  $(id)?.addEventListener('toggle', () => setTimeout(resizeThree, 0));
+}
+
+window.addEventListener('resize', fitGameplayPreviewViewport, { passive: true });
+window.visualViewport?.addEventListener('resize', fitGameplayPreviewViewport, { passive: true });
+window.visualViewport?.addEventListener('scroll', fitGameplayPreviewViewport, { passive: true });
+window.addEventListener('error', event => log(`${event.message} @ ${event.filename || 'inline'}:${event.lineno || 0}:${event.colno || 0}`, 'error'));
+window.addEventListener('unhandledrejection', event => log(event.reason?.stack || String(event.reason), 'error'));
+
+
+function prepareGameplayBackdropHost() {
+  document.documentElement.dataset.hobunjiBackdrop = 'true';
+  const setup = $('leftPanel');
+  const setupBody = setup?.querySelector('.selectorBody');
+  const toolbar = $('stageToolbar');
+  const header = document.querySelector('header');
+  if (!setup || !setupBody || !toolbar || !header) return;
+
+  const about = document.createElement('div');
+  about.id = 'backdropAbout';
+  about.innerHTML = "<b>Avatar posture preview</b><br>The portrait keeps a separate head-only bake fixed while raising the complete torso/arm/clothing body bake. The rear body-only bake excludes the renderer's built-in behind-head sprite, leaving one movable rear head stack that renders behind the torso. Values are stored separately for each NPC.";
+
+  const runtime = document.createElement('div');
+  runtime.id = 'backdropRuntimeRow';
+  runtime.append($('statusPill'), $('reloadBtn'), $('debugBtn'));
+
+  setupBody.prepend(about);
+  setupBody.prepend(toolbar);
+  setupBody.prepend(runtime);
+  header.remove();
+
+  const api = {
+    version: 1,
+    uiRoot: $('gameUiOverlayRoot'),
+    modalRoot: $('gameModalOverlayRoot'),
+    openSetup() { setup.open = true; },
+    closeSetup() { setup.open = false; },
+    toggleSetup(force) { setup.open = typeof force === 'boolean' ? force : !setup.open; },
+    getSelectedNpc() { return state.previewMode === 'npc' && state.selectedNpc ? structuredCloneSafe(state.selectedNpc) : null; },
+    getSelectedCreature() { return state.previewMode === 'creature' ? structuredCloneSafe(currentCreatureExport()) : null; },
+    getPreviewMode() { return state.previewMode; },
+    getScene() { return state.three.scene; },
+    getCamera() { return state.three.camera; },
+    getRenderer() { return state.three.renderer; },
+    getAvatarModel() { return state.three.model; },
+    getPosture() { return structuredCloneSafe(postureExport()); },
+    setPosturePixels(value) { setPosturePixels(value); return clampPosturePixels(value); },
+    setCameraView(view) { setCameraView(view); },
+    setAutoRotate(enabled) {
+      state.three.autoRotate = Boolean(enabled);
+      $('rotateBtn').textContent = `Auto-rotate: ${state.three.autoRotate ? 'On' : 'Off'}`;
+      $('rotateBtn').classList.toggle('active', state.three.autoRotate);
+    },
+    selectNpcById(id) {
+      const npc = state.npcs.find(item => String(item.id || item.name) === String(id));
+      if (!npc) return false;
+      setPreviewMode('npc', { busy: false }).then(() => selectNpc(npc));
+      return true;
+    },
+    selectCreature(kind, frame = 'idle') {
+      if (!window.CreatureGeneticsRender?.SPECIES?.[kind]) return false;
+      loadCreatureProfile(kind);
+      if (creatureSpeciesConfig(kind)?.base?.[frame]) state.creature.frame = frame;
+      refreshCreatureEditor();
+      setPreviewMode('creature');
+      return true;
+    },
+    setCreatureGenotype(genotype) {
+      state.creature.genotype = normalizeCreatureGenotype(state.creature.kind, genotype);
+      saveCreatureProfile();
+      refreshCreatureEditor();
+      if (state.previewMode === 'creature') renderCreatureAvatar({ busy: false });
+      return structuredCloneSafe(currentCreatureExport());
+    },
+    listCreatureSpecies() {
+      return Object.entries(window.CreatureGeneticsRender?.SPECIES || {}).map(([kind, spec]) => ({ kind, frames: Object.keys(spec.base || {}), patterns: [...(spec.patterns || [])] }));
+    },
+    listNpcs() {
+      return state.npcs.map(npc => ({ id: npc.id, name: npc.name, species: npc.species, gender: npc.gender, role: npc.role }));
+    },
+    clearPreviewUi() {
+      $('gameUiOverlayRoot').replaceChildren();
+      $('gameModalOverlayRoot').replaceChildren();
+    },
+  };
+  window.HobunjiGameplayBackdrop = api;
+  window.HobunjiAvatarPosturePreview = api;
+  window.dispatchEvent(new CustomEvent('hobunji-posture-api-ready', { detail: api }));
+}
+
+function structuredCloneSafe(value) {
+  try { return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)); }
+  catch (_) { return value; }
+}
+
+prepareGameplayBackdropHost();
+buildTransformEditor('attachmentTransformFields', 'attachment');
+buildTransformEditor('frontTransformFields', 'front');
+buildTransformEditor('topTransformFields', 'top');
+document.addEventListener('input', event => { if (event.target.matches('[data-kurraya-target]')) onTransformFieldInput(event); });
+loadKurrayaProfiles();
+loadCreatureProfiles();
+loadPostureProfiles();
+syncPostureUi();
+fitGameplayPreviewViewport();
+const initialSettings = readSettings();
+writeSettings(initialSettings);
+showOverlay('Loading HobunjiHollowUnity', 'Fetching the NPC database and the repository portrait/plane runtime used by the posture preview.', true);
+log('Avatar posture preview initialized. The rear body bake excludes the built-in behind-head pass, leaving one movable rear head behind the torso.');
+setTimeout(() => loadSource(initialSettings), 0);
+})();
+</script>
+</body>
+</html>
