@@ -154,6 +154,9 @@ class BreathingComposer {
     // Mouth facial expression state per seat
     this._expressions = new Map(); // seatId → { expression, expiresAtMs }
 
+    // Momentary lip-sync flashes are independent of authored line expressions.
+    this._yapExpressions = new Map(); // seatId → { expiresAtMs }
+
     // Persistent default/resting expression per seat (returned when timed expression expires)
     this._defaultExpressions = new Map(); // seatId → expression string
   }
@@ -276,6 +279,13 @@ class BreathingComposer {
     this._expressions.delete(String(seatId ?? ''));
   }
 
+  /** Briefly override the mouth for lip sync without replacing the line expression. */
+  _setYapExpression(seatId, durationMs) {
+    this._yapExpressions.set(String(seatId ?? ''), {
+      expiresAtMs: Date.now() + durationMs,
+    });
+  }
+
   /**
    * Set the persistent default/resting expression for a seat.
    * This is returned when no timed expression is active or after one expires.
@@ -296,10 +306,16 @@ class BreathingComposer {
    */
   getExpression(seatId, nowMs) {
     const key = String(seatId ?? '');
+    const currentMs = nowMs ?? Date.now();
+    const yapState = this._yapExpressions.get(key);
+    if (yapState) {
+      if (currentMs < yapState.expiresAtMs) return 'yap';
+      this._yapExpressions.delete(key);
+    }
     const defaultExpr = this._defaultExpressions.get(key) || 'neutral';
     const state = this._expressions.get(key);
     if (!state) return defaultExpr;
-    if ((nowMs ?? Date.now()) >= state.expiresAtMs) {
+    if (currentMs >= state.expiresAtMs) {
       this._expressions.delete(key);
       return defaultExpr;
     }
@@ -392,12 +408,12 @@ class BreathingComposer {
         const two = lower.slice(i, i + 2);
         if (DIPHTHONGS.has(two)) {
           const schedT = t;
-          setTimeout(() => this.setExpression(seatIdStr, 'yap', flashMs), schedT);
+          setTimeout(() => this._setYapExpression(seatIdStr, flashMs), schedT);
           t += flashMs;
           i += 2;
         } else if (VOWELS.has(ch)) {
           const schedT = t;
-          setTimeout(() => this.setExpression(seatIdStr, 'yap', flashMs), schedT);
+          setTimeout(() => this._setYapExpression(seatIdStr, flashMs), schedT);
           t += flashMs;
           i++;
         } else {
