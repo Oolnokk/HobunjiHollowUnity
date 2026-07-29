@@ -323,6 +323,9 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
         <section id="dialogue" class="tabPanel">
           <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
             <div class="sectionTitle"><b>Dialogue trees</b><span class="sectionTag">full tree JSON</span></div>
+            <div class="grid2" style="margin-bottom:8px">
+              <div><label>Resting expression</label><select id="npcRestingExpression"></select></div>
+            </div>
             <div class="help">No one-way conversations: every entry should include choices. Tokens: {{npcName}}, {{playerName}}, {{npcSpecies}}, {{playerSpecies}}, {{giftName}}, {{role}}, and any character variable.</div>
             <textarea id="dialogueJson" class="jsonBox"></textarea>
           </div>
@@ -408,6 +411,28 @@ function num(id, d = 0) { const v = Number($(id).value); return Number.isFinite(
 function parse(id, fb) { try { return JSON.parse($(id).value || 'null') ?? fb; } catch (e) { log(`Bad JSON in ${id}: ${e.message}`, 'error'); return fb; } }
 function setJ(id, v) { $(id).value = JSON.stringify(v ?? {}, null, 2); }
 function setStatus(m) { $('statusPill').textContent = m; log(m); }
+function availableRestingExpressions() {
+  return Array.from(new Set(
+    (window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.available || [])
+      .map(v => String(v || '').trim().toLowerCase())
+      .filter(Boolean)
+  ));
+}
+function normalizeRestingExpression(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  return availableRestingExpressions().includes(raw) ? raw : null;
+}
+function fillRestingExpressionOptions(selectedValue = null) {
+  const el = $('npcRestingExpression');
+  if (!el) return;
+  const selected = normalizeRestingExpression(selectedValue) || '';
+  el.innerHTML = [
+    '<option value="">Default</option>',
+    ...availableRestingExpressions().map(value => `<option value="${esc(value)}">${esc(cap(value))}</option>`)
+  ].join('');
+  el.value = selected;
+}
 async function copyText(v, l) {
   try {
     if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(v); setStatus(`Copied ${l}`); return; }
@@ -1735,6 +1760,7 @@ function makeNpcRecord(o = {}) {
     },
     gifts: { loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] },
     dialogueTrees: o.dialogue || [],
+    restingExpression: normalizeRestingExpression(o.restingExpression),
     events: o.events || [],
     scheduleHooks: { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: o.home || o.homeId || '', shopHours: '', rules: [] },
   };
@@ -1762,6 +1788,7 @@ function ensureNpcDefaults(n) {
   if (!hadRelationship && romance) { n.relationship.canDate = true; n.relationship.canMarry = true; }
   n.gifts = Object.assign({ loved: [], liked: [], neutral: [], disliked: [], hated: [], categoryNotes: [] }, n.gifts || {});
   if (!Array.isArray(n.dialogueTrees)) n.dialogueTrees = n.dialogueTrees ? [n.dialogueTrees] : [];
+  n.restingExpression = normalizeRestingExpression(n.restingExpression);
   if (!Array.isArray(n.events)) n.events = n.events ? [n.events] : [];
   n.scheduleHooks = n.scheduleHooks || { defaultMapId: 'hobunji_main_town', defaultPathId: '', workBuildingId: n.homeId || '', shopHours: '', rules: [] };
   return n;
@@ -1844,6 +1871,7 @@ function fillFields(n) {
   $('dislikedGifts').value = (n.gifts?.disliked || []).join('\n');
   $('hatedGifts').value = (n.gifts?.hated || []).join('\n');
   setJ('giftCategoriesJson', n.gifts?.categoryNotes || []);
+  fillRestingExpressionOptions(n.restingExpression);
   setJ('dialogueJson', n.dialogueTrees || []);
   setJ('worldJson', db.worldContext);
 }
@@ -1899,6 +1927,7 @@ function read() {
     neutral: split($('neutralGifts').value), disliked: split($('dislikedGifts').value),
     hated: split($('hatedGifts').value), categoryNotes: parse('giftCategoriesJson', []),
   };
+  n.restingExpression = normalizeRestingExpression($('npcRestingExpression').value);
   n.dialogueTrees = parse('dialogueJson', []);
   db.worldContext = parse('worldJson', db.worldContext);
   renderDb(false);
@@ -2082,7 +2111,7 @@ document.querySelectorAll('.tabBtn').forEach(b => b.onclick = () => {
 ['npcId','npcName','homeId','npcSpecies','npcGender','npcAge','npcRole','romanceable','canBefriend','canMarry',
  'npcTags','npcBio','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
  'appearanceJson','cosmeticsJson','dyesJson','avatarRawJson','lovedGifts','likedGifts','neutralGifts',
- 'dislikedGifts','hatedGifts','giftCategoriesJson','dialogueJson','worldJson'
+ 'dislikedGifts','hatedGifts','giftCategoriesJson','npcRestingExpression','dialogueJson','worldJson'
 ].forEach(id => { const el = $(id); if (el) el.addEventListener('input', read); });
 
 $('addNpcBtn').onclick = addNpc;
@@ -2188,6 +2217,7 @@ function initOffsetSliders() {
 // ── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   setStatus('Loading…');
+  fillRestingExpressionOptions();
   // The auto-installed breathing composer guesses a config base that is wrong
   // from inside docs/tools/* — load the breathing animation explicitly.
   try { window.portraitBreathingComposer?.load('../../config/'); } catch (e) {}
