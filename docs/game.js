@@ -374,7 +374,7 @@
       }
 
       function _getNpcDlgState(npcId) {
-        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: 0, memory: [], heardTrees: [], heardPoolEntries: [] });
+        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: _npcBaseDispositions[npcId] ?? 0, memory: [], heardTrees: [], heardPoolEntries: [] });
         return _npcDlgState.get(npcId);
       }
 
@@ -390,7 +390,7 @@
           _npcDlgState.set(npcId, {
             visitedSeqSlots: { ...(rel.visitedSeqSlots || {}) },
             localNickname:   rel.localNickname || null,
-            favor:           rel.favor || 0,
+            favor:           rel.favor ?? (_npcBaseDispositions[npcId] ?? 0),
             memory:          [...(rel.memory || [])],
             heardTrees:      [...(rel.heardTrees || [])],
             heardPoolEntries:[...(rel.heardPoolEntries || [])],
@@ -505,7 +505,7 @@
           maps:       currentArea,
           stations:   target ? normalizeStationLabel(target.label) : '',
           playerSpecies: _playerData?.appearance?.speciesId || '',
-          relationship: rec?.relationship ?? 0,
+          relationship: st.favor,
         };
       }
 
@@ -1033,8 +1033,8 @@
       }
 
       function renderRelationshipHearts(rec) {
-        const score = rec?.relationship ?? null;
-        if (score === null) return '';
+        if (!rec?.relationship) return '';
+        const score = friendshipFavor(rec.id);
         const clamped = Math.max(-5, Math.min(10, score));
         const hearts = [];
         for (let i = -5; i <= 10; i++) {
@@ -11286,6 +11286,7 @@
       let _dlgNpcRec    = null;  // current NPC record
       let _dlgSeqStack  = [];    // [{seqNodeId, depthRemaining}]
       const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
+      const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
@@ -14452,6 +14453,10 @@
               : await fetch('config/npcs/hobunji-starter-npc-database.json').then(r => r.json());
             dbNpcs = json.npcs || [];
             npcSharedSchedules = json.sharedSchedules || [];
+            for (const npc of dbNpcs) {
+              const bd = npc.relationship?.baseDisposition;
+              if (typeof bd === 'number') _npcBaseDispositions[npc.id] = bd;
+            }
           } catch {}
         }
         await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
