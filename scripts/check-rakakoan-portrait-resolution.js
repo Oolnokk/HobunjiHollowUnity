@@ -48,6 +48,8 @@ require(path.join(repoRoot, 'docs', 'js', 'portrait-utils.js'));
 async function main() {
   const cosmetics = await window.loadPortraitCosmetics(configBaseUrl);
   const fighters = window.getPortraitFighters();
+  // Rakakoan male is the canonical regression target: it is the documented
+  // subspecies using parentSpecies=kenkari plus mandatory/exclusive upperFace.
   const fighter = fighters.find((f) => String(f.speciesId).replace(/_/g, '-') === 'rakakoan' && f.gender === 'male');
   if (!fighter) throw new Error('Could not find rakakoan male fighter');
 

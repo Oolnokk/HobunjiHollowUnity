@@ -1607,7 +1607,7 @@ function _fallbackNeighborSpecies(speciesId, gender, kind) {
 }
 
 function portraitVariantKeysForFighter(fighter, option) {
-  const speciesId = String(fighter?.speciesId || '').trim();
+  const speciesId = _normalizeSpeciesKey(fighter?.speciesId);
   const gender = String(fighter?.gender || '').trim().toLowerCase();
   if (!speciesId || !gender) return [];
   const otherGender = gender === 'male' ? 'female' : 'male';
@@ -1959,6 +1959,8 @@ async function loadPortraitCosmetics(configBase) {
             if (genderData._exclusiveSlotCosmetics && typeof genderData._exclusiveSlotCosmetics === 'object') {
               const exclusiveBySlot = {};
               for (const [slot, ids] of Object.entries(genderData._exclusiveSlotCosmetics)) {
+                // Cosmetic ids are normalized to the same short-id shape used by
+                // optionCache and allowedCosmetics filtering.
                 const normalizedIds = mergeUnique([], ids).map(id => String(id).split('::').pop().replace(/^mao-ao_/i, ''));
                 if (normalizedIds.length) exclusiveBySlot[slot] = normalizedIds;
               }
