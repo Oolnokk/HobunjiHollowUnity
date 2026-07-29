@@ -1557,7 +1557,7 @@
     "id": "dye:CLOTH:pure_blue",
     "label": "Pure Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 100,
       "l": 50
     }
@@ -1566,7 +1566,7 @@
     "id": "dye:CLOTH:bright_blue",
     "label": "Bright Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 100,
       "l": 70
     }
@@ -1575,7 +1575,7 @@
     "id": "dye:CLOTH:pale_blue",
     "label": "Pale Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 100,
       "l": 85.1
     }
@@ -1584,7 +1584,7 @@
     "id": "dye:CLOTH:deep_blue",
     "label": "Deep Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 100,
       "l": 27.45
     }
@@ -1593,7 +1593,7 @@
     "id": "dye:CLOTH:muted_blue",
     "label": "Muted Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 42.86,
       "l": 38.43
     }
@@ -1602,7 +1602,7 @@
     "id": "dye:CLOTH:dusty_blue",
     "label": "Dusty Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 17.65,
       "l": 46.67
     }
@@ -1611,7 +1611,7 @@
     "id": "dye:CLOTH:shadow_blue",
     "label": "Shadow Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 100,
       "l": 17.45
     }
@@ -1620,7 +1620,7 @@
     "id": "dye:CLOTH:dark_muted_blue",
     "label": "Dark Muted Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 42.4,
       "l": 24.51
     }
@@ -1629,7 +1629,7 @@
     "id": "dye:CLOTH:smoky_blue",
     "label": "Smoky Blue",
     "hsl": {
-      "h": 240,
+      "h": 200,
       "s": 17.88,
       "l": 29.61
     }
