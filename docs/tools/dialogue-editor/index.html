@@ -511,31 +511,48 @@ const WEATHERS     = ConditionRegistry.WEATHERS;
 const TIMES_OF_DAY = ConditionRegistry.TIMES_OF_DAY;
 const ENCOUNTERS   = ConditionRegistry.ENCOUNTERS;
 
-// Map/station registry — fetched from config/town-workspace-v1.json
-// (loadMapRegistry, called at startup) so "which map"/"which station"
-// options always reflect the actual town layout instead of a hand-copied
-// list going stale. Seeded with built-ins that aren't in that file (the
-// farm and the player's generic house interior) plus the two wilderness
-// zones as a fallback in case the fetch hasn't resolved yet/fails.
+// Map/station registry — single source of truth is config/maps/index.json
+// (the authoritative map list) plus each map's own JSON file (the
+// authoritative source for npcStations). town-workspace-v1.json is consulted
+// as a supplement for workspace-only entries (wilderness/exterior zones) that
+// are valid maps but not tracked in the index. Seeded with built-ins for the
+// farm and the player's generic house interior which appear in neither source.
 let mapRegistry = [
   { id: 'farm', name: 'Farm', stations: [] },
   { id: 'interior', name: 'Player House', stations: [] },
-  { id: 'map_northern_cliffs', name: 'Northern Cliffs', stations: [] },
-  { id: 'map_southern_cloud_forest', name: 'Southern Cloud Forest', stations: [] },
 ];
 function mapLabel(id) { return mapRegistry.find(m => m.id === id)?.name || id; }
 function stationsForMap(mapId) { return mapRegistry.find(m => m.id === mapId)?.stations || []; }
 async function loadMapRegistry() {
   try {
-    const res = await fetch('../../config/town-workspace-v1.json');
-    if (!res.ok) return;
-    const data = await res.json();
-    const fromFile = (data.maps || []).map(m => ({
-      id: m.id, name: m.name || m.label || m.id,
-      stations: (m.npcStations || []).map(s => s.label).filter(Boolean),
+    const [idxRes, wsRes] = await Promise.all([
+      fetch('../../config/maps/index.json'),
+      fetch('../../config/town-workspace-v1.json'),
+    ]);
+    const idx = idxRes.ok ? (await idxRes.json()).maps || [] : [];
+    const ws  = wsRes.ok  ? (await wsRes.json()).maps  || [] : [];
+
+    // Fetch every indexed map in parallel for its authoritative npcStations.
+    const indexedMaps = await Promise.all(idx.map(async m => {
+      try {
+        const r = await fetch('../../' + m.file);
+        const data = r.ok ? await r.json() : {};
+        return {
+          id: m.id, name: m.name || m.id,
+          stations: (data.npcStations || []).map(s => s.label).filter(Boolean),
+        };
+      } catch (_) { return { id: m.id, name: m.name || m.id, stations: [] }; }
     }));
-    const builtins = mapRegistry.filter(m => !fromFile.some(f => f.id === m.id));
-    mapRegistry = [...builtins, ...fromFile];
+
+    // Workspace-only maps (wilderness zones etc.) carry no stations; include
+    // them so the "map" condition axis can still filter by them.
+    const wsOnly = ws
+      .filter(m => !idx.some(i => i.id === m.id))
+      .map(m => ({ id: m.id, name: m.name || m.label || m.id, stations: [] }));
+
+    const allFromSources = [...indexedMaps, ...wsOnly];
+    const builtins = mapRegistry.filter(m => !allFromSources.some(f => f.id === m.id));
+    mapRegistry = [...builtins, ...allFromSources];
   } catch (e) { /* keep the built-in fallback list */ }
 }
 
@@ -1019,10 +1036,10 @@ function conditionChipLabel(key, value) {
 }
 
 // Values for a category's checkbox list. "stations" is scoped by whichever
-// map is picked in the popover (its label list comes straight out of that
-// map's npcStations in the fetched town-workspace registry — see
-// stationsForMap) since a station label only means anything in context of
-// one map; every other category's list is fixed/global.
+// map is picked in the popover (its label list comes from stationsForMap,
+// which reads live npcStation labels fetched from the individual map files
+// via loadMapRegistry) since a station label only means anything in context
+// of one map; every other category's list is fixed/global.
 function categoryValues(cat, scopeMapId) {
   if (cat.key === 'stations') return scopeMapId ? stationsForMap(scopeMapId) : [];
   return typeof cat.values === 'function' ? cat.values() : (cat.values || []);
