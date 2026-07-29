@@ -626,6 +626,7 @@
       torsoPortraitOptions, armPortraitOptions, bodyColorRangesByGender,
       allowedCosmeticsByFighter, cosmeticWeightsByFighter,
       forcedCosmeticsByFighter, conditionalCosmeticsByFighter,
+      mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter,
     } = cosm;
 
     const fighters = window.getPortraitFighters();
@@ -650,19 +651,28 @@
       hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions,
       eyesOptions, upperFaceOptions, facialHairOptions, bodyColorRangesByGender,
       allowedCosmeticsByFighter, hatOptions, hoodOptions, cosmeticWeightsByFighter,
-      torsoPortraitOptions, armPortraitOptions, forcedCosmeticsByFighter, conditionalCosmeticsByFighter
+      torsoPortraitOptions, armPortraitOptions, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, undefined,
+      mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter
     );
     if (!profile) return null;
 
     // Apply saved cosmetic selections
     const forced      = forcedCosmeticsByFighter?.[fighter.id] ?? {};
     const forcedSlots = new Set(Object.keys(forced));
+    const mandatorySlots = new Set(mandatoryCosmeticSlotsByFighter?.[fighter.id] || []);
+    const exclusiveBySlot = exclusiveCosmeticsByFighter?.[fighter.id] || {};
+    const isAllowedSavedCosmetic = (slot, id) => {
+      const exclusive = exclusiveBySlot?.[slot];
+      return !Array.isArray(exclusive) || !exclusive.length || exclusive.includes(id);
+    };
     const lookup      = id => id ? (optionCache?.get(id) ?? null) : null;
     for (const [slot, key] of Object.entries({
       hairFront: 'hairFront', hairBack: 'hairBack', hairSide: 'hairSide', hairSideL: 'hairSideL',
       eyes: 'eyes', upperFace: 'upperFace', facialHair: 'facialHair',
     })) {
-      if (saved[slot] !== undefined && !forcedSlots.has(slot)) profile[key] = lookup(saved[slot]);
+      if (saved[slot] === undefined || forcedSlots.has(slot) || !isAllowedSavedCosmetic(slot, saved[slot])) continue;
+      if (slot === 'upperFace' && mandatorySlots.has(slot) && (!saved[slot] || saved[slot] === 'none')) continue;
+      profile[key] = lookup(saved[slot]);
     }
     if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
 
