@@ -3128,9 +3128,10 @@
         "avatarKey": ""
       },
       "appearance": {
-        "speciesId": "kenkari",
+        "speciesId": "rakakoan",
         "gender": "male",
         "cosmetics": {
+          "upperFace": "appearance::Rakakoan_M::rakakoan_woven_eyepatch",
           "hairBack": "appearance::Kenkari_M::kenk_splayedknot_high_m",
           "hairSideL": "appearance::Kenkari_M::kenk_braid-L_m",
           "hairFront": "appearance::Kenkari_M::kenk_fowardtuft",
@@ -3179,9 +3180,10 @@
           "schema": "npc_avatar_editor_export.v1",
           "source": "character-studio",
           "appearance": {
-            "speciesId": "kenkari",
+            "speciesId": "rakakoan",
             "gender": "male",
             "cosmetics": {
+              "upperFace": "appearance::Rakakoan_M::rakakoan_woven_eyepatch",
               "hairBack": "appearance::Kenkari_M::kenk_splayedknot_high_m",
               "hairSideL": "appearance::Kenkari_M::kenk_braid-L_m",
               "hairFront": "appearance::Kenkari_M::kenk_fowardtuft",
@@ -19433,7 +19435,7 @@
       ]
     }
   ],
-  "exportedAt": "2026-07-29T01:36:49.454Z",
+  "exportedAt": "2026-07-29T01:44:10.223Z",
   "summary": {
     "npcCount": 39,
     "romanceableCount": 8,
