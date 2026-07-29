@@ -84,12 +84,14 @@
       upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,
       bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter,
       forcedCosmeticsByFighter, conditionalCosmeticsByFighter,
+      mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter,
     } = cosmetics;
     return window.randomPortraitProfileSeeded(seededRng(seedText), [fighter], hairFrontOptions, hairBackOptions,
       hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions,
       bodyColorRangesByGender, allowedCosmeticsByFighter, hatOptions, hoodOptions,
       cosmeticWeightsByFighter, torsoPortraitOptions, armPortraitOptions,
-      forcedCosmeticsByFighter, conditionalCosmeticsByFighter);
+      forcedCosmeticsByFighter, conditionalCosmeticsByFighter, undefined,
+      mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter);
   }
 
   function buildProfileFromNpcExport(npc) {
@@ -108,12 +110,20 @@
     const savedCosmetics = appearance.cosmetics || {};
     const forced = cosmetics.forcedCosmeticsByFighter?.[profile.fighter?.id] ?? {};
     const forcedSlots = new Set(Object.keys(forced));
+    const mandatorySlots = new Set(cosmetics.mandatoryCosmeticSlotsByFighter?.[profile.fighter?.id] || []);
+    const exclusiveBySlot = cosmetics.exclusiveCosmeticsByFighter?.[profile.fighter?.id] || {};
+    const isAllowedSavedCosmetic = (slot, id) => {
+      const exclusive = exclusiveBySlot?.[slot];
+      return !Array.isArray(exclusive) || !exclusive.length || exclusive.includes(id);
+    };
     const lookup = id => id ? (optionCache?.get(id) ?? null) : null;
     for (const [slot, profileKey] of Object.entries({
       hairFront: 'hairFront', hairBack: 'hairBack', hairSide: 'hairSide', hairSideL: 'hairSideL',
       eyes: 'eyes', upperFace: 'upperFace', facialHair: 'facialHair',
     })) {
-      if (savedCosmetics[slot] !== undefined && !forcedSlots.has(slot)) profile[profileKey] = lookup(savedCosmetics[slot]);
+      if (savedCosmetics[slot] === undefined || forcedSlots.has(slot) || !isAllowedSavedCosmetic(slot, savedCosmetics[slot])) continue;
+      if (slot === 'upperFace' && mandatorySlots.has(slot) && (!savedCosmetics[slot] || savedCosmetics[slot] === 'none')) continue;
+      profile[profileKey] = lookup(savedCosmetics[slot]);
     }
     if (appearance.bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...appearance.bodyColors };
     if (Array.isArray(appearance.bodyDeform)) profile.bodyDeform = appearance.bodyDeform;

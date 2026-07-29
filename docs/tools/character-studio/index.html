@@ -842,7 +842,8 @@ function buildPreviewProfile(appearance) {
   const { optionCache, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions,
           upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,
           bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter,
-          forcedCosmeticsByFighter, conditionalCosmeticsByFighter } = cosmetics;
+          forcedCosmeticsByFighter, conditionalCosmeticsByFighter,
+          mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter } = cosmetics;
   const fighters = window.getPortraitFighters();
   if (!fighters || !fighters.length) return null;
 
@@ -857,23 +858,34 @@ function buildPreviewProfile(appearance) {
   const rng = _previewRng();
   const forced = forcedCosmeticsByFighter?.[fighter.id] ?? {};
   const forcedSlots = new Set(Object.keys(forced));
+  const mandatorySlots = new Set(mandatoryCosmeticSlotsByFighter?.[fighter.id] || []);
+  const exclusiveBySlot = exclusiveCosmeticsByFighter?.[fighter.id] || {};
+  const isAllowedSavedCosmetic = (slot, id) => {
+    const exclusive = exclusiveBySlot?.[slot];
+    return !Array.isArray(exclusive) || !exclusive.length || exclusive.includes(id);
+  };
 
   const profile = window.randomProfileSeeded(rng, [fighter], hairFrontOptions, hairBackOptions,
     hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions,
     bodyColorRangesByGender, allowedCosmeticsByFighter, hatOptions, hoodOptions,
     cosmeticWeightsByFighter, torsoPortraitOptions, armPortraitOptions,
-    forcedCosmeticsByFighter, conditionalCosmeticsByFighter);
+    forcedCosmeticsByFighter, conditionalCosmeticsByFighter, undefined,
+    mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter);
   if (!profile) return null;
 
   const lookup = id => id ? (optionCache?.get(id) ?? null) : null;
   if (savedCosmetics) {
-    if (savedCosmetics.hairFront  !== undefined && !forcedSlots.has('hairFront'))  profile.hairFront  = lookup(savedCosmetics.hairFront);
-    if (savedCosmetics.hairBack   !== undefined && !forcedSlots.has('hairBack'))   profile.hairBack   = lookup(savedCosmetics.hairBack);
-    if (savedCosmetics.hairSide   !== undefined && !forcedSlots.has('hairSide'))   profile.hairSide   = lookup(savedCosmetics.hairSide);
-    if (savedCosmetics.hairSideL  !== undefined && !forcedSlots.has('hairSideL'))  profile.hairSideL  = lookup(savedCosmetics.hairSideL);
-    if (savedCosmetics.eyes       !== undefined && !forcedSlots.has('eyes'))       profile.eyes       = lookup(savedCosmetics.eyes);
-    if (savedCosmetics.upperFace  !== undefined && !forcedSlots.has('upperFace'))  profile.upperFace  = lookup(savedCosmetics.upperFace);
-    if (savedCosmetics.facialHair !== undefined && !forcedSlots.has('facialHair')) profile.facialHair = lookup(savedCosmetics.facialHair);
+    if (savedCosmetics.hairFront  !== undefined && !forcedSlots.has('hairFront') && isAllowedSavedCosmetic('hairFront', savedCosmetics.hairFront))  profile.hairFront  = lookup(savedCosmetics.hairFront);
+    if (savedCosmetics.hairBack   !== undefined && !forcedSlots.has('hairBack') && isAllowedSavedCosmetic('hairBack', savedCosmetics.hairBack))   profile.hairBack   = lookup(savedCosmetics.hairBack);
+    if (savedCosmetics.hairSide   !== undefined && !forcedSlots.has('hairSide') && isAllowedSavedCosmetic('hairSide', savedCosmetics.hairSide))   profile.hairSide   = lookup(savedCosmetics.hairSide);
+    if (savedCosmetics.hairSideL  !== undefined && !forcedSlots.has('hairSideL') && isAllowedSavedCosmetic('hairSideL', savedCosmetics.hairSideL))  profile.hairSideL  = lookup(savedCosmetics.hairSideL);
+    if (savedCosmetics.eyes       !== undefined && !forcedSlots.has('eyes') && isAllowedSavedCosmetic('eyes', savedCosmetics.eyes))       profile.eyes       = lookup(savedCosmetics.eyes);
+    if (savedCosmetics.upperFace  !== undefined && !forcedSlots.has('upperFace')
+      && isAllowedSavedCosmetic('upperFace', savedCosmetics.upperFace)
+      && (!mandatorySlots.has('upperFace') || (savedCosmetics.upperFace && savedCosmetics.upperFace !== 'none'))) {
+      profile.upperFace  = lookup(savedCosmetics.upperFace);
+    }
+    if (savedCosmetics.facialHair !== undefined && !forcedSlots.has('facialHair') && isAllowedSavedCosmetic('facialHair', savedCosmetics.facialHair)) profile.facialHair = lookup(savedCosmetics.facialHair);
   }
   if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
   if (Array.isArray(appearance.bodyDeform) && appearance.bodyDeform.length > 0) {

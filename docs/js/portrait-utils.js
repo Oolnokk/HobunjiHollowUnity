@@ -131,6 +131,8 @@ let HEAD_XFORM = _portraitConfig.headXform || _PORTRAIT_DEFAULTS.headXform;
 let FIGHTERS = (_portraitConfig.fighters || _PORTRAIT_DEFAULTS.fighters).map(normalizedFighterPortrait);
 let BODYCOLOR_LIMITS = _portraitConfig.bodyColorLimits || _PORTRAIT_DEFAULTS.bodyColorLimits;
 let LAST_RANDOMIZATION_RULES_BY_FIGHTER = {};
+let LAST_SPECIES_DATA_BY_ID = {};
+let LAST_COSMETIC_FALLBACK_GROUPS = null;
 
 // Persistent offscreen canvas reused for ur-head masking — avoids allocating a
 // new canvas element on every renderProfile call (was creating ~240/second).
@@ -147,6 +149,9 @@ function _getUrMaskCanvas(w, h) {
 function _normalizeSpeciesKey(speciesId) {
   return String(speciesId || '').trim().toLowerCase().replace(/_/g, '-');
 }
+// Legacy Mao-ao cosmetics were authored with a `mao-ao_` short-id prefix; strip
+// it so species-neutral ids line up with optionCache/allowedCosmetics ids.
+const MAO_AO_SHORT_ID_PREFIX_RE = /^mao-ao_/i;
 
 function _configuredRandomizableGenders(speciesId) {
   const availability = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.availability || {};
@@ -1534,22 +1539,109 @@ function _extractLayersFromParts(partsJson, paletteLayerMap) {
  * Return the correct layer list for an option given the current fighter.
  * Falls back to option.layers when no matching variant exists.
  */
-function portraitVariantKeysForFighter(fighter) {
-  const speciesId = String(fighter?.speciesId || '').trim();
-  const gender = String(fighter?.gender || '').trim();
-  if (!speciesId || !gender) return [];
-  const keys = [
-    `${speciesId}_${gender}`,
-    `${speciesId.replace(/_/g, '-')}_${gender}`,
-    `${speciesId.replace(/-/g, '_')}_${gender}`,
-  ];
-  const parentSpeciesId = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[speciesId]?.parentSpecies;
-  if (parentSpeciesId) {
-    keys.push(
-      `${parentSpeciesId}_${gender}`,
-      `${parentSpeciesId.replace(/_/g, '-')}_${gender}`,
-      `${parentSpeciesId.replace(/-/g, '_')}_${gender}`,
+function _speciesIdForms(speciesId) {
+  const raw = String(speciesId || '').trim();
+  if (!raw) return [];
+  const hyphen = raw.replace(/_/g, '-');
+  const under = hyphen.replace(/-/g, '_');
+  return [...new Set([raw, hyphen, under])];
+}
+
+function _speciesParentChain(speciesId) {
+  const out = [];
+  const seen = new Set();
+  let cur = String(speciesId || '').trim();
+  while (cur) {
+    const key = _normalizeSpeciesKey(cur);
+    if (seen.has(key)) break;
+    seen.add(key);
+    const parent = LAST_SPECIES_DATA_BY_ID[key]?.parentSpecies || LAST_SPECIES_DATA_BY_ID[cur]?.parentSpecies;
+    if (!parent) break;
+    out.push(parent);
+    cur = parent;
+  }
+  return out;
+}
+
+function _fallbackNeighborSpecies(speciesId, gender, kind) {
+  const groups = LAST_COSMETIC_FALLBACK_GROUPS;
+  if (!groups || typeof groups !== 'object') return [];
+  const normalizedSpecies = _normalizeSpeciesKey(speciesId);
+  const normalizedGender = String(gender || '').toLowerCase();
+  if (kind === 'body') {
+    for (const group of (groups.bodyGroups || [])) {
+      const members = Array.isArray(group?.members) ? group.members : [];
+      const self = members.find(member =>
+        _normalizeSpeciesKey(member?.species) === normalizedSpecies &&
+        String(member?.gender || '').toLowerCase() === normalizedGender &&
+        Number.isFinite(Number(member?.position))
+      );
+      if (!self) continue;
+      const selfPos = Number(self.position);
+      return members
+        .filter(member => Number.isFinite(Number(member?.position)))
+        .sort((a, b) => Math.abs(Number(a.position) - selfPos) - Math.abs(Number(b.position) - selfPos))
+        .filter(member => !(
+          _normalizeSpeciesKey(member?.species) === normalizedSpecies &&
+          String(member?.gender || '').toLowerCase() === normalizedGender
+        ))
+        .map(member => ({ speciesId: member.species, gender: member.gender }))
+        .filter(member => member.speciesId && member.gender);
+    }
+    return [];
+  }
+
+  for (const group of (groups.headGroups || [])) {
+    const members = Array.isArray(group?.members) ? group.members : [];
+    const self = members.find(member =>
+      _normalizeSpeciesKey(member?.species) === normalizedSpecies &&
+      Number.isFinite(Number(member?.position))
     );
+    if (!self) continue;
+    const selfPos = Number(self.position);
+    return members
+      .filter(member => Number.isFinite(Number(member?.position)))
+      .sort((a, b) => Math.abs(Number(a.position) - selfPos) - Math.abs(Number(b.position) - selfPos))
+      .filter(member => _normalizeSpeciesKey(member?.species) !== normalizedSpecies)
+      .map(member => ({ speciesId: member.species, gender: normalizedGender }))
+      .filter(member => member.speciesId && member.gender);
+  }
+  return [];
+}
+
+function portraitVariantKeysForFighter(fighter, option) {
+  const speciesId = _normalizeSpeciesKey(fighter?.speciesId);
+  const gender = String(fighter?.gender || '').trim().toLowerCase();
+  if (!speciesId || !gender) return [];
+  const otherGender = gender === 'male' ? 'female' : 'male';
+  const kind = (option?.slot === 'torso' || option?.slot === 'overwear') ? 'body' : 'head';
+  const candidates = [];
+  const seenSpeciesGender = new Set();
+  const pushCandidate = (candidateSpecies, candidateGender) => {
+    const speciesForms = _speciesIdForms(candidateSpecies);
+    if (!speciesForms.length || !candidateGender) return;
+    const speciesKey = _normalizeSpeciesKey(speciesForms[0]);
+    const genderKey = String(candidateGender || '').toLowerCase();
+    const dedupeKey = `${speciesKey}::${genderKey}`;
+    if (seenSpeciesGender.has(dedupeKey)) return;
+    seenSpeciesGender.add(dedupeKey);
+    candidates.push({ speciesForms, gender: genderKey });
+  };
+
+  pushCandidate(speciesId, gender);
+  if (kind === 'head') pushCandidate(speciesId, otherGender);
+  for (const parentSpeciesId of _speciesParentChain(speciesId)) {
+    pushCandidate(parentSpeciesId, gender);
+    if (kind === 'head') pushCandidate(parentSpeciesId, otherGender);
+  }
+  for (const neighbor of _fallbackNeighborSpecies(speciesId, gender, kind)) {
+    pushCandidate(neighbor.speciesId, neighbor.gender);
+    if (kind === 'head') pushCandidate(neighbor.speciesId, otherGender);
+  }
+
+  const keys = [];
+  for (const candidate of candidates) {
+    for (const speciesForm of candidate.speciesForms) keys.push(`${speciesForm}_${candidate.gender}`);
   }
   return [...new Set(keys)];
 }
@@ -1558,7 +1650,7 @@ function resolveOptionLayers(option, fighter) {
   if (!option) return [];
   const vl = option.variantLayers;
   if (vl && fighter) {
-    for (const key of portraitVariantKeysForFighter(fighter)) {
+    for (const key of portraitVariantKeysForFighter(fighter, option)) {
       const resolved = vl[key];
       if (resolved && resolved.length) return resolved;
     }
@@ -1567,9 +1659,9 @@ function resolveOptionLayers(option, fighter) {
 }
 
 function portraitOptionFromJson(entry, json) {
-  const label    = (json.meta && json.meta.name) || entry.id.split('::').pop().replace(/^mao-ao_/i, '').replace(/_/g, ' ');
+  const label    = (json.meta && json.meta.name) || entry.id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, '').replace(/_/g, ' ');
   const tintSlot = (json.appearance && json.appearance.bodyColors && json.appearance.bodyColors[0]) || null;
-  const shortId  = entry.id.split('::').pop().replace(/^mao-ao_/i, '');
+  const shortId  = entry.id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, '');
 
   const paletteLayerMap = (json.palette && json.palette.layers) ? json.palette.layers : null;
 
@@ -1725,26 +1817,103 @@ async function loadPortraitCosmetics(configBase) {
   const forcedCosmeticsByFighter = {};
   const conditionalCosmeticsByFighter = {};
   const randomizationRulesByFighter = {};
+  const mandatoryCosmeticSlotsByFighter = {};
+  const exclusiveCosmeticsByFighter = {};
   try {
     const speciesIdxUrl = new URL(configBase + 'species/index.json', window.location.href).toString();
     const speciesIdxResp = await fetch(speciesIdxUrl);
     if (speciesIdxResp.ok) {
       const speciesIdx = await speciesIdxResp.json();
-      await Promise.all((speciesIdx.entries || []).map(async entry => {
+      const speciesEntries = speciesIdx.entries || [];
+      const speciesDataById = {};
+      await Promise.all(speciesEntries.map(async entry => {
         const sUrl = new URL(entry.path, speciesIdxUrl).toString();
         const sResp = await fetch(sUrl);
         if (!sResp.ok) return;
         const sData = await sResp.json();
-        for (const [genderKey, genderData] of Object.entries(sData)) {
+        if (sData?.speciesId) speciesDataById[_normalizeSpeciesKey(sData.speciesId)] = sData;
+      }));
+      LAST_SPECIES_DATA_BY_ID = speciesDataById;
+      try {
+        const fallbackRes = await fetch(new URL('./cosmetic-fallback-groups.json', speciesIdxUrl).toString());
+        LAST_COSMETIC_FALLBACK_GROUPS = fallbackRes.ok ? await fallbackRes.json() : null;
+      } catch (e) {
+        LAST_COSMETIC_FALLBACK_GROUPS = null;
+      }
+
+      const mergeUnique = (baseArr, extraArr) => {
+        const out = [];
+        for (const value of [...(baseArr || []), ...(extraArr || [])]) {
+          if (value == null) continue;
+          if (!out.includes(value)) out.push(value);
+        }
+        return out;
+      };
+      const mergeWeightMap = (baseMap, extraMap) => {
+        const out = { ...(baseMap || {}) };
+        for (const [slot, slotMap] of Object.entries(extraMap || {})) {
+          out[slot] = { ...(out[slot] || {}), ...(slotMap || {}) };
+        }
+        return out;
+      };
+      const mergeExclusiveMap = (baseMap, extraMap) => {
+        const out = { ...(baseMap || {}) };
+        for (const [slot, ids] of Object.entries(extraMap || {})) {
+          out[slot] = mergeUnique(out[slot], ids);
+        }
+        return out;
+      };
+      const resolveSpeciesGenderData = (speciesId, genderKey, stack = new Set()) => {
+        const normalizedSpeciesId = _normalizeSpeciesKey(speciesId);
+        const speciesData = speciesDataById[normalizedSpeciesId];
+        if (!speciesData) return null;
+        const cycleKey = `${normalizedSpeciesId}:${genderKey}`;
+        if (stack.has(cycleKey)) return null;
+        stack.add(cycleKey);
+        const parentSpeciesId = speciesData.parentSpecies || null;
+        const parentData = parentSpeciesId ? resolveSpeciesGenderData(parentSpeciesId, genderKey, stack) : null;
+        const ownGenderData = speciesData?.[genderKey];
+        const mergedGenderData = {
+          ...(parentData || {}),
+          ...(ownGenderData || {}),
+          allowedCosmetics: mergeUnique(parentData?.allowedCosmetics, ownGenderData?.allowedCosmetics),
+          disallowedCosmeticCombos: [...(parentData?.disallowedCosmeticCombos || []), ...(ownGenderData?.disallowedCosmeticCombos || [])],
+          cosmeticWeights: mergeWeightMap(parentData?.cosmeticWeights, ownGenderData?.cosmeticWeights),
+          forcedCosmetics: { ...(parentData?.forcedCosmetics || {}), ...(ownGenderData?.forcedCosmetics || {}) },
+          conditionalCosmetics: [...(parentData?.conditionalCosmetics || []), ...(ownGenderData?.conditionalCosmetics || [])],
+          randomizationRules: { ...(parentData?.randomizationRules || {}), ...(ownGenderData?.randomizationRules || {}) },
+          mandatorySlots: mergeUnique(
+            mergeUnique(parentData?.mandatorySlots, ownGenderData?.mandatorySlots),
+            speciesData?.subspeciesDelta?.mandatorySlots
+          ),
+          exclusiveSlotCosmetics: mergeExclusiveMap(
+            mergeExclusiveMap(parentData?.exclusiveSlotCosmetics, ownGenderData?.exclusiveSlotCosmetics),
+            speciesData?.subspeciesDelta?.exclusiveSlotCosmetics
+          ),
+        };
+        return mergedGenderData;
+      };
+
+      for (const entry of speciesEntries) {
+        const speciesId = entry?.speciesId;
+        if (!speciesId) continue;
+        const sourceData = speciesDataById[_normalizeSpeciesKey(speciesId)];
+        if (!sourceData) continue;
+        const configuredGenders = Array.isArray(sourceData?.genders)
+          ? sourceData.genders
+          : ['male', 'female'];
+        for (const genderKeyRaw of configuredGenders) {
+          const genderKey = String(genderKeyRaw || '').toLowerCase();
+          const genderData = resolveSpeciesGenderData(speciesId, genderKey);
           if (!genderData || typeof genderData !== 'object' || !genderData.bodyColorRanges) continue;
-          if (!_isRandomizableSpeciesGender(sData.speciesId, genderKey)) continue;
-          let fighter = FIGHTERS.find(f => genderData.headSprite && f.headUrl === genderData.headSprite && _normalizeSpeciesKey(f.speciesId) === _normalizeSpeciesKey(sData.speciesId));
+          if (!_isRandomizableSpeciesGender(speciesId, genderKey)) continue;
+          let fighter = FIGHTERS.find(f => genderData.headSprite && f.headUrl === genderData.headSprite && _normalizeSpeciesKey(f.speciesId) === _normalizeSpeciesKey(speciesId));
           if (!fighter && genderData.headSprite && Array.isArray(genderData.portraitBodyLayers)) {
             fighter = normalizedFighterPortrait({
-              id: `${sData.speciesId}_${genderKey}`,
-              speciesId: sData.speciesId,
+              id: `${speciesId}_${genderKey}`,
+              speciesId,
               gender: genderKey,
-              label: `${sData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
+              label: `${sourceData.label || entry.label} (${genderKey === 'male' ? 'M' : 'F'})`,
               headUrl: genderData.headSprite,
               bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' })),
               urLayers: (genderData.headUrLayers || []).map(l => ({ url: l.url, renderOrder: l.renderOrder })),
@@ -1761,7 +1930,7 @@ async function loadPortraitCosmetics(configBase) {
             fighterPortraitOverrides[fighter.id] = {
               ...(fighterPortraitOverrides[fighter.id] || {}),
               gender: genderKey,
-              speciesId: sData.speciesId,
+              speciesId,
               ...(genderData.headXform ? { headXform: genderData.headXform } : {}),
               ...(Array.isArray(genderData.portraitBodyLayers) ? {
                 bodyLayers: genderData.portraitBodyLayers.map(l => ({ ...normalizePortraitLayerXform(l), xformPreset: 'B' }))
@@ -1773,7 +1942,7 @@ async function loadPortraitCosmetics(configBase) {
             if (genderData.allowedCosmetics) {
               allowedCosmeticsByFighter[fighter.id] = {
                 set: new Set(
-                  genderData.allowedCosmetics.map(id => id.split('::').pop().replace(/^mao-ao_/i, ''))
+                  genderData.allowedCosmetics.map(id => id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, ''))
                 ),
                 disallowedCombos: (genderData.disallowedCosmeticCombos || []).map(rule => ({
                   conditions: rule.conditions || {},
@@ -1793,12 +1962,27 @@ async function loadPortraitCosmetics(configBase) {
             if (genderData.randomizationRules && typeof genderData.randomizationRules === 'object') {
               randomizationRulesByFighter[fighter.id] = genderData.randomizationRules;
             }
+            if (Array.isArray(genderData.mandatorySlots) && genderData.mandatorySlots.length) {
+              mandatoryCosmeticSlotsByFighter[fighter.id] = [...new Set(genderData.mandatorySlots)];
+            }
+            if (genderData.exclusiveSlotCosmetics && typeof genderData.exclusiveSlotCosmetics === 'object') {
+              const exclusiveBySlot = {};
+              for (const [slot, ids] of Object.entries(genderData.exclusiveSlotCosmetics)) {
+                // Cosmetic ids are normalized to the same short-id shape used by
+                // optionCache and allowedCosmetics filtering.
+                const normalizedIds = mergeUnique([], ids).map(id => String(id).split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, ''));
+                if (normalizedIds.length) exclusiveBySlot[slot] = normalizedIds;
+              }
+              if (Object.keys(exclusiveBySlot).length) exclusiveCosmeticsByFighter[fighter.id] = exclusiveBySlot;
+            }
           }
         }
-      }));
+      }
     }
   } catch (e) {
     console.warn('[portrait] Could not load species data', e);
+    LAST_SPECIES_DATA_BY_ID = {};
+    LAST_COSMETIC_FALLBACK_GROUPS = null;
   }
 
   if (Object.keys(fighterPortraitOverrides).length) {
@@ -1818,7 +2002,7 @@ async function loadPortraitCosmetics(configBase) {
 
   LAST_RANDOMIZATION_RULES_BY_FIGHTER = randomizationRulesByFighter;
 
-  return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter };
+  return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };
 }
 
 // ── Seeded randomisation ───────────────────────────────────
@@ -2102,7 +2286,7 @@ function hatHideRuleFor(hatId, randomizationRules) {
  *   per-category weights map (see weightedPickRng docs above). When omitted the selection
  *   falls back to the original uniform-random behaviour.
  */
-function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, bodyColorRangesByGender, allowedCosmeticsByFighter, hatOptions, hoodOptions, cosmeticWeightsByFighter, torsoPortraitOptions, armPortraitOptions, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter) {
+function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, bodyColorRangesByGender, allowedCosmeticsByFighter, hatOptions, hoodOptions, cosmeticWeightsByFighter, torsoPortraitOptions, armPortraitOptions, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter) {
   const pickRng   = (arr) => arr[Math.floor(rng() * arr.length)];
   const fighterInput = pickRng(fighters);
   const fighter = resolvePortraitFighter(fighterInput);
@@ -2144,16 +2328,30 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
   };
   const filterArr = (arr) => arr && allowed ? arr.filter(o => o.id === 'none' || isAllowedId(o.id)) : arr;
   const weights   = cosmeticWeightsByFighter?.[fighter.id] ?? cosmeticWeightsByFighter?.[fighterInput?.id] ?? null;
+  const mandatorySlots = new Set(
+    (mandatoryCosmeticSlotsByFighter?.[fighter.id] ?? mandatoryCosmeticSlotsByFighter?.[fighterInput?.id] ?? [])
+      .map(slot => String(slot || ''))
+      .filter(Boolean)
+  );
+  const exclusiveBySlot = exclusiveCosmeticsByFighter?.[fighter.id] ?? exclusiveCosmeticsByFighter?.[fighterInput?.id] ?? {};
+  const applySlotRules = (arr, slot) => {
+    if (!Array.isArray(arr)) return arr;
+    let out = arr;
+    const exclusiveIds = new Set((exclusiveBySlot?.[slot] || []).map(id => String(id || '')));
+    if (exclusiveIds.size) out = out.filter(option => option.id === 'none' || exclusiveIds.has(option.id));
+    if (mandatorySlots.has(slot)) out = out.filter(option => option.id !== 'none');
+    return out;
+  };
 
-  const filteredHairFront  = filterArr(hairFrontOptions)  ?? [];
-  const filteredHairBack   = filterArr(hairBackOptions)   ?? [];
-  const filteredHairSide   = filterArr(hairSideOptions)   ?? [];
-  const filteredHairSideL  = filterArr(hairSideLOptions)  ?? [];
-  const filteredEyes       = filterArr(eyesOptions)       ?? [];
-  const filteredUpperFace  = filterArr(upperFaceOptions)  ?? [];
-  const filteredFacialHair = filterArr(facialHairOptions) ?? [];
-  const filteredHat        = filterArr(hatOptions) ?? [{ id: 'none', label: 'No Hat', tintSlot: null, layers: [] }];
-  const filteredHood       = filterArr(hoodOptions) ?? [{ id: 'none', label: 'No Hood', tintSlot: null, layers: [] }];
+  const filteredHairFront  = applySlotRules(filterArr(hairFrontOptions), 'hairFront')  ?? [];
+  const filteredHairBack   = applySlotRules(filterArr(hairBackOptions), 'hairBack')   ?? [];
+  const filteredHairSide   = applySlotRules(filterArr(hairSideOptions), 'hairSide')   ?? [];
+  const filteredHairSideL  = applySlotRules(filterArr(hairSideLOptions), 'hairSideL')  ?? [];
+  const filteredEyes       = applySlotRules(filterArr(eyesOptions), 'eyes')       ?? [];
+  const filteredUpperFace  = applySlotRules(filterArr(upperFaceOptions), 'upperFace')  ?? [];
+  const filteredFacialHair = applySlotRules(filterArr(facialHairOptions), 'facialHair') ?? [];
+  const filteredHat        = applySlotRules(filterArr(hatOptions), 'hat') ?? [{ id: 'none', label: 'No Hat', tintSlot: null, layers: [] }];
+  const filteredHood       = applySlotRules(filterArr(hoodOptions), 'hood') ?? [{ id: 'none', label: 'No Hood', tintSlot: null, layers: [] }];
 
   let hairFront  = weightedPickRng(filteredHairFront.length  ? filteredHairFront  : [{ id: 'none', label: 'No Front Hair', tintSlot: null, layers: [] }], weights?.hairFront,  rng);
   let hairBack   = weightedPickRng(filteredHairBack.length   ? filteredHairBack   : [{ id: 'none', label: 'No Back Hair',  tintSlot: null, layers: [] }], weights?.hairBack,   rng);
