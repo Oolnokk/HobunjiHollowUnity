@@ -1875,6 +1875,11 @@
           // hereditary mutation can still shift an individual specimen's
           // genotype.sizeClass away from this species default on breeding.
           defaultSizeClass: 'medium',
+          // How fast riding this species as a mount lets the player move
+          // (px/s, same units as MOVE_SPEED — see activeMountSpeedMul).
+          // Independent per species; every stable-able species currently
+          // shares this same value, deliberately well above MOVE_SPEED (238).
+          mountSpeed: 340,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
@@ -1906,6 +1911,7 @@
           // See dabinggi-hound's matching comment — Uumkao'ii default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
+          mountSpeed: 340,
           sprites: {
             idle: "assets/creaturesprites/uumkao'ii.png",
             run: ["assets/creaturesprites/uumkao'ii.png"],
@@ -1935,6 +1941,7 @@
           modelWidth: 2.1, tint: 0xffffff,
           // See dabinggi-hound's matching comment.
           defaultSizeClass: 'medium',
+          mountSpeed: 340,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
@@ -1952,6 +1959,7 @@
           // See dabinggi-hound's matching comment — Grehlr default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
+          mountSpeed: 340,
           sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
           lootPool: 'creature_grehlr',
         },
@@ -1965,6 +1973,7 @@
           canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
           // See dabinggi-hound's matching comment.
           defaultSizeClass: 'small',
+          mountSpeed: 340,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra',
         },
@@ -3104,6 +3113,21 @@
       function getAlchemySpeedMul() {
         const speedEff = activeAlchemyEffects.find(e => e.key === 'speed');
         return speedEff ? (ALCHEMY_EFFECT_DEFS.speed.speedMul || 1) : 1;
+      }
+
+      // A mount is only worth riding if it actually makes the player faster
+      // — folded into updateMovement()'s targetSpeed the same way
+      // getAlchemySpeedMul() is. Only applies while the mount is actually
+      // spawned and following (see updateCompanions' mount branch), not
+      // merely equipped in the stable, so there's no phantom speed boost
+      // with no visible mount on screen (e.g. the area hasn't finished
+      // loading yet). CREATURE_DB[kind].mountSpeed is per-species (all
+      // species share the same value today, see CREATURE_DB) so a future
+      // species can be tuned faster/slower without touching this function.
+      function activeMountSpeedMul() {
+        const mount = [...companionObjects].find(c => c.master === player && c.stableRole === 'mount');
+        if (!mount) return 1;
+        return Math.max(1, (mount.def?.mountSpeed || MOVE_SPEED) / MOVE_SPEED);
       }
 
       // expiresAt is measured against performance.now(), which resets to 0
@@ -6579,6 +6603,10 @@
       const FOLLOW_FAR_PX  = TILE * 2.2;
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
+      // Roughly the player avatar's own shoulder height above the ground, in
+      // the same tile-normalized world units updateCreatureMesh positions
+      // avatars in — a first-pass approximation, easy to retune later.
+      const SHOULDER_PET_HEIGHT_TILES = 1.05;
       // How far a companion can "smell" a still-buried treasure chest — see
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
@@ -6612,6 +6640,31 @@
             // (Only the real player has a climb-blended playerMesh height;
             // a non-player master would need its own mesh reference here.)
             c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
+            continue;
+          }
+
+          // Mounts and shoulder pets don't fight or wander off — they stay
+          // glued to their master's side using the exact same teleport-and-
+          // stick technique as the climbing branch above, just permanently
+          // instead of only mid-climb. A mount rides at heel, right behind
+          // the master (see activeMountSpeedMul() for the matching player
+          // speed boost that sells the "riding" feel); a shoulder pet is
+          // lifted to roughly shoulder height, normalized against its own
+          // halfHeight so a big-bodied mutant shoulder pet doesn't perch
+          // noticeably higher than a small one.
+          if (c.stableRole === 'mount' || c.stableRole === 'shoulderPet') {
+            const clingAngle = master.angle + Math.PI;
+            const clingDistTiles = c.stableRole === 'mount' ? 0.45 : 0.3;
+            c.x = master.x + Math.cos(clingAngle) * TILE * clingDistTiles;
+            c.y = master.y + Math.sin(clingAngle) * TILE * clingDistTiles;
+            c.facing = master.angle;
+            c.vx = 0; c.vy = 0;
+            const masterMoving = Math.hypot(master.vx || 0, master.vy || 0) > 5;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, masterMoving);
+            if (c.stableRole === 'shoulderPet') {
+              c.avatarRef.group.position.y += SHOULDER_PET_HEIGHT_TILES - c.halfHeight;
+            }
             continue;
           }
 
@@ -21055,7 +21108,7 @@
         // Lets a held movement ability (Blink Dodge) slow normal walking
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul * activeMountSpeedMul();
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
