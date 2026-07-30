@@ -6,14 +6,7 @@
       "label": "Funji & Son's General Store",
       "menuId": "generalStore",
       "goods": [
-        { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} },
-        { "key": "bucket",       "icon": "🪣", "name": "Tin Bucket",      "desc": "A utilitarian tin bucket for hauling water.",  "price": 8,  "gives": { "bucketFurniture": 1 }, "category": "goods", "conditions": {} },
-        { "key": "copperBarrel", "icon": "🛢️", "name": "Copper Barrel",   "desc": "A sturdy copper-hooped storage barrel.",       "price": 20, "gives": { "copperBarrelFurniture": 1 }, "category": "goods", "conditions": {} },
-        { "key": "crateStack",   "icon": "📦", "name": "Crate Stack",     "desc": "Stacked wooden crates for storing loose goods.","price": 14, "gives": { "crateStackFurniture": 1 }, "category": "goods", "conditions": {} },
-        { "key": "stool",        "icon": "🪑", "name": "Round Stool",     "desc": "A simple round stool — good for any space.",   "price": 10, "gives": { "stoolFurniture": 1 }, "category": "goods", "conditions": {} },
-        { "key": "candleTable",  "icon": "🕯️", "name": "Candle Table",    "desc": "Small table with a candle for warm light.",    "price": 15, "gives": { "candleTableFurniture": 1 }, "category": "goods", "conditions": {} },
-        { "key": "washTub",      "icon": "🛁", "name": "Copper Wash Tub", "desc": "A copper tub for bathing or laundry.",         "price": 25, "gives": { "washTubFurniture": 1 }, "category": "goods", "conditions": {} },
-        { "key": "counter",      "icon": "🏪", "name": "Shop Counter",    "desc": "A sturdy counter for conducting business.",    "price": 40, "gives": { "counterFurniture": 1 }, "category": "goods", "conditions": {} }
+        { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} }
       ],
       "clothingRotation": {
         "slots": 4,
