@@ -1242,11 +1242,9 @@
         hoe:     ['till', 'smooth'],
         machete: ['cut', 'slash'],
         axe:     ['chop', 'hack'],
-        // Pick leads with mine (its primary/big button) instead of sharing
-        // shovel's dig-first layout — raise is dropped since it's a garden-
-        // bed action, not a rock/dirt-breaking one; dig/fill stay for tile
-        // work the pick can still do.
-        pick:    ['mine', 'dig', 'fill'],
+        // Pick is mine-only — dig/raise/fill are the shovel's job; equip
+        // the shovel slot for terrain work instead.
+        pick:    ['mine'],
         harpoon: ['fish'],
         weapon:  ['cut', 'slash'],
       };
@@ -22011,9 +22009,8 @@
         // stays impassable/inert to every tool, mining included.
         if (tile.type === TileType.ROCK) return tool === 'pick' && action === 'mine' && isMineableRockTile(col, row);
         if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
-        // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are
-        // farm-only mechanics, and pick duplicates the shovel's terrain actions.
-        if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe' || tool === 'pick')) return false;
+        // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are farm-only mechanics.
+        if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe')) return false;
         if (tool === 'shovel') {
           // A dew pile must be dug up (shovel only, half a trench-dig's
           // duration — see DIG_DEW_PILE_STAGES) before anything else can be
@@ -22044,17 +22041,6 @@
             const targetTile = tgrid[t.row]?.[t.col];
             return targetTile && !targetTile.crop && (targetTile.type === TileType.WEEDS || targetTile.type === TileType.SHRUB);
           });
-        }
-        if (tool === 'pick') {
-          if (tile.dewPile) return false; // only a shovel can dig up a dew pile
-          if (action === 'dig') {
-            if (blocksDiggingUnder(tile)) return false;
-            // An already-dug trench can be redug (single tap) once rain has silted it shallower.
-            if (tile.type === TileType.TRENCH) return (tile.depth ?? 1) < 1;
-            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile, col, row);
-          }
-          if (action === 'fill') return tile.type === TileType.TRENCH;
-          if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
         }
         if (tool === 'seeds') {
           if (action === 'harvest') return Boolean(tile.crop && tile.cropReady);
@@ -22863,24 +22849,6 @@
           return { ok: false, message: action === 'slash' ? 'The big sweep connects with nothing.' : 'The strike connects with nothing.' };
         }
 
-        if (tool === 'pick') {
-          if (action === 'dig' && tile.type === TileType.TRENCH) {
-            tile.depth = 1;
-            awardToolUseMasteryXp('pick');
-            playObjectSfx(objectSfxConfig().dig);
-            return { ok: true, message: 'Redug the trench back to full depth.' };
-          }
-          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
-          if (action === 'dig')   { tile.type = TileType.TRENCH; tile.depth = 1; }
-          if (action === 'fill')  tile.type = TileType.GRASS;
-          if (action === 'raise') tile.type = TileType.RAISED;
-          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          const digMsg = dugVegetation ? 'Loosened the earth and cleared the vegetation.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
-          awardToolUseMasteryXp('pick');
-          if (action === 'dig') playObjectSfx(objectSfxConfig().dig);
-          return { ok: true, message: digMsg };
-        }
-
         if (tool === 'seeds') {
           if (action === 'harvest') return harvestCrop(tile);
           const crop = action.startsWith('plant_') ? action.slice(6) : null;
@@ -22906,7 +22874,7 @@
           if (climb) startClimb(climb); else showToast('Nothing to climb here.', false);
           return;
         }
-        if (activeTool === 'shovel' || activeTool === 'pick') {
+        if (activeTool === 'shovel') {
           activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
         }
         if (activeAction === carpenterAction()) {
@@ -22979,9 +22947,9 @@
 
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
-        // Dig speed only scales shovel/pick dig & fill swings (e.g. the single-tap
+        // Dig speed only scales shovel dig & fill swings (e.g. the single-tap
         // trench redig below) — everything else swings at its normal pace.
-        if ((activeTool === 'shovel' || activeTool === 'pick') && (activeAction === 'dig' || activeAction === 'fill')) {
+        if (activeTool === 'shovel' && (activeAction === 'dig' || activeAction === 'fill')) {
           toolSwingDur /= getDigSpeedMultiplier();
         }
         toolSwingT = toolSwingDur;
@@ -27674,26 +27642,15 @@
         return Math.max(0.01, player.digSpeed || 1);
       }
 
-      // Collapses the separate Dig/Fill action slots into one contextual input:
-      // whichever of the two the player has selected, resolve to whichever is
-      // actually valid for the targeted tile. Dig (including redigging a shallow
-      // trench) takes priority; fall back to fill only when dig isn't valid,
-      // i.e. an already-full trench — so the same input digs or fills depending
-      // on what's targeted, on desktop and mobile alike.
+      // Collapses the shovel's separate Dig/Fill action slots into one
+      // contextual input: whichever of the two the player has selected,
+      // resolve to whichever is actually valid for the targeted tile. Dig
+      // (including redigging a shallow trench) takes priority; fall back to
+      // fill only when dig isn't valid, i.e. an already-full trench — so the
+      // same input digs or fills depending on what's targeted, on desktop
+      // and mobile alike.
       function resolveDigFillAction(tool, action, reticle) {
-        // Pick's 'mine' isn't part of the dig/fill toggle below — dig/fill/
-        // raise are all unconditionally invalid on a ROCK tile (see
-        // canUseAction's ROCK short-circuit), so without this check,
-        // pressing whichever pick action happens to be active/primary
-        // (usually 'dig') while aimed at a minable ore rock just fails
-        // outright instead of ever trying to mine it — reading exactly like
-        // a shovel that can't do anything to a rock, not a pick that can.
-        // Checked first and unconditionally for any pick action (not just
-        // dig/fill) since mining is always the right call whenever the
-        // reticle is actually on a minable rock, regardless of which
-        // specific pick action the player had selected.
-        if (tool === 'pick' && canUseAction('pick', 'mine', reticle.col, reticle.row)) return 'mine';
-        if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return action;
+        if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return action;
         if (canUseAction(tool, 'dig', reticle.col, reticle.row)) return 'dig';
         if (canUseAction(tool, 'fill', reticle.col, reticle.row)) return 'fill';
         return action;
@@ -27712,7 +27669,7 @@
           const reticle = getReticleTile();
           return isMineableRockTile(reticle.col, reticle.row);
         }
-        if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return false;
+        if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return false;
         const reticle = getReticleTile();
         const resolved = resolveDigFillAction(tool, action, reticle);
         if (!canUseAction(tool, resolved, reticle.col, reticle.row)) return false;
