@@ -27954,7 +27954,13 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        plane.rotation.x = -Math.PI / 2;  // lie flat in XZ for all tools
+        // Lying flat in XZ, -90° puts the sprite's top (the business end for
+        // every normal tool) forward and its bottom (the grip end) back.
+        // opts.flip reverses that front/back split — end for end, not a
+        // left-right mirror — so the pick-shovel's spike (authored at the
+        // bottom of the handle, meant to be thrust rather than swung like
+        // the blade) faces forward instead when built for the pick slot.
+        plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
         g.add(plane);
         if (opts.ghost) addOccludedGhostSiblings(g);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
@@ -27972,7 +27978,11 @@
         Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
         for (const slot of Object.keys(toolActions)) {
           const itemKey = equipmentSlots[slot] ?? null;
-          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { ghost: true }) : null;
+          // The pick slot always holds its sprite flipped (spike forward)
+          // regardless of swing phase — a static idle-pose difference so a
+          // pick-shovel equipped in both the shovel and pick slots at once
+          // still reads as two distinct tools at rest, not just mid-swing.
+          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { ghost: true, flip: slot === 'pick' }) : null;
         }
         // machete alias → weapon mesh for legacy code paths
         if (!toolMeshMap.machete) toolMeshMap.machete = toolMeshMap.weapon;
