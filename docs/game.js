@@ -1949,9 +1949,9 @@
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.5, leashRangePx: TILE * 9,
           canClimb: true, canSwim: false, modelWidth: 2.2, spriteAspect: 2250 / 3000, tint: 0xffffff,
-          // See dabinggi-hound's matching comment — Grehlr default small
-          // (shoulder-pet eligible in the stable).
-          defaultSizeClass: 'small',
+          // See dabinggi-hound's matching comment — Grehlr default large
+          // (mount-eligible in the stable).
+          defaultSizeClass: 'large',
           sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
           lootPool: 'creature_grehlr',
         },
