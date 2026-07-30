@@ -1234,12 +1234,19 @@
         greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mustard', tags: ['Mustard', 'Fresh'] },
       };
 
+      // Each tool gets at most 3 actions — the action bar only has 3 tool-
+      // action button slots (btnAction1-3, see refreshActionBar/applyAbt),
+      // so a 4th entry here would silently never get a button at all.
       const toolActions = {
         shovel:  ['dig', 'raise', 'fill'],
         hoe:     ['till', 'smooth'],
         machete: ['cut', 'slash'],
         axe:     ['chop', 'hack'],
-        pick:    ['dig', 'raise', 'fill', 'mine'],
+        // Pick leads with mine (its primary/big button) instead of sharing
+        // shovel's dig-first layout — raise is dropped since it's a garden-
+        // bed action, not a rock/dirt-breaking one; dig/fill stay for tile
+        // work the pick can still do.
+        pick:    ['mine', 'dig', 'fill'],
         harpoon: ['fish'],
         weapon:  ['cut', 'slash'],
       };
