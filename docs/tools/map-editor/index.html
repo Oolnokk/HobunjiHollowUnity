@@ -2992,13 +2992,20 @@ function init3D() {
     return false;
   }
   const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
-  renderer.setClearColor(0x07101a, 1);
+  // Matches the live game's own zone lighting/fog setup (see buildZoneScene
+  // in docs/game.js) instead of a generic neutral-white editor rig, so
+  // material colors/textures preview under roughly the same light they'll
+  // actually render under in-game.
+  const GAME_FOG_COLOR = 0x33404a;
+  renderer.setClearColor(GAME_FOG_COLOR, 1);
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(GAME_FOG_COLOR);
+  scene.fog = new THREE.FogExp2(GAME_FOG_COLOR, 0.018);
   const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   camera.position.set(20, 25, 20);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.85);
-  sun.position.set(40, 60, 20);
+  scene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
+  const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+  sun.position.set(4, 8, 2);
   scene.add(sun);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -3031,10 +3038,72 @@ function resize3D() {
 function _terrainGeometryFromArrays(pos, idx) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  // World-space (X,Z) UV, in raw world units — same convention game.js's
+  // _mergeTileGeos uses (see resolvePreviewMat's texture.repeat below),
+  // so a texture tiles at a consistent real-world scale and lines up across
+  // every mesh built from this helper (mesa/ramp/curtain/carved-bed/rock).
+  const uv = new Float32Array((pos.length / 3) * 2);
+  for (let i = 0, vi = 0; i < pos.length; i += 3, vi += 2) { uv[vi] = pos[i]; uv[vi + 1] = pos[i + 2]; }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
 }
+
+// ── Terrain material resolution — mirrors docs/game.js's resolveTileMat/
+// loadTerrainTileTexture (see terrain-materials.json/resolveTileMat there)
+// so the 3D preview shows the exact same default colors and the same
+// per-map texture overrides the live game would render, instead of the
+// preview's own separate approximate palette. Cached per mapId+key;
+// cleared by clearPreviewMatCache() whenever the Materials section's own
+// state changes (target map switch doesn't need it — different mapId is a
+// different cache key already — but editing/reloading the config does).
+const TERRAIN_DEFAULT_COLORS = {
+  grass: new THREE.Color().setHSL(108 / 360, 0.58, 0.28).getHex(),
+  weeds: 0x247c3c,
+  tilled: 0x8a5b34,
+  trench: 0x3a2510,
+  raised: 0xc39a55,
+  paddy: 0x6aa263,
+  rock: 0x79807c,
+  shrub: 0x356e36,
+  path: 0xb8956a,
+  river: 0x3a4a3f,
+  stream: 0x6b5a3a,
+  waterfall: 0x3a4a3f,
+  cliff: 0x6a6460,
+};
+const _previewMatCache = new Map(); // "mapId,key" -> THREE.Material
+function resolvePreviewMat(mapId, key) {
+  const cacheKey = mapId + ',' + key;
+  let mat = _previewMatCache.get(cacheKey);
+  if (mat) return mat;
+  const color = TERRAIN_DEFAULT_COLORS[key] ?? 0x888888;
+  mat = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
+  const override = matConfig.byMap?.[mapId]?.[key];
+  if (override?.texture) {
+    new THREE.TextureLoader().load('../../assets/textures/' + override.texture, tex => {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      const ts = Math.max(0.05, override.tileSize || 1);
+      tex.repeat.set(1 / ts, 1 / ts);
+      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+    }, undefined, () => {});
+  }
+  _previewMatCache.set(cacheKey, mat);
+  return mat;
+}
+function clearPreviewMatCache() {
+  for (const mat of _previewMatCache.values()) { mat.map?.dispose(); mat.dispose(); }
+  _previewMatCache.clear();
+}
+// Non-terrain preview overlays (waterfall sheets, building footprint boxes) —
+// created once and reused across rebuilds, same reasoning as the cached
+// terrain materials above: rebuild3D's cleanup loop only disposes geometry
+// (always rebuilt fresh) now, not material, since terrain materials need to
+// survive a rebuild to keep their loaded texture/async state.
+const _previewWaterfallMat = new THREE.MeshBasicMaterial({ color: 0x2f8fc2, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+const _previewBldgMat = new THREE.MeshLambertMaterial({ color: 0xe85d4a, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+const _previewBldgEdgeMat = new THREE.LineBasicMaterial({ color: 0xffffff });
 
 function safeRebuild3D() {
   try { rebuild3D(); }
@@ -3050,10 +3119,17 @@ function rebuild3D() {
   const { group } = three3d;
   while (group.children.length) {
     const o = group.children.pop();
-    o.geometry?.dispose(); o.material?.dispose();
+    // Terrain materials are cached/reused across rebuilds now (see
+    // resolvePreviewMat) so their loaded texture/async state survives an
+    // edit-triggered rebuild — only geometry is unique per rebuild and
+    // needs disposing. The three non-terrain overlay materials
+    // (_previewWaterfallMat/_previewBldgMat/_previewBldgEdgeMat) are also
+    // persistent singletons for the same reason.
+    o.geometry?.dispose();
   }
 
   const root = viewRoot || activeMap();
+  const mapId = root.id;
   let merged;
   try { merged = TerrainPreview.buildMergedZoneGrid(ws, root.id); }
   catch (e) { setStatus('3D preview failed: ' + e.message); return; }
@@ -3062,43 +3138,39 @@ function rebuild3D() {
   TerrainPreview.applyRampCurtainFlags(zGrid, merged.cols, merged.rows);
 
   // Flat floor quads for every tile not covered by a mesa/ramp/curtain mesh,
-  // colored by tile type and lifted to its own tier's elevation. Carved-bed
-  // types (river/stream/waterfall/trench/raised) are rendered separately
-  // below via TerrainPreview.buildTerrainTileGeo instead of a flat quad.
-  const CARVED_TYPES = { river: 0x2f6fa8, stream: 0x2f6fa8, waterfall: 0x2f6fa8, trench: 0x6b5638, raised: 0x6b5638 };
-  const floorMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  const fPos = [], fCol = [], fIdx = [];
-  const colorOf = hex => { const n = parseInt(hex.slice(1), 16); return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255]; };
+  // bucketed by tile type (one merged mesh per type, like the live game's
+  // own _mergeTileGeos/_floorBuckets — see docs/game.js) so each type can
+  // carry its own resolvePreviewMat texture instead of one vertex-colored
+  // mesh that couldn't be textured per-type at all. Carved-bed types
+  // (river/stream/waterfall/trench/raised) are rendered separately below
+  // via TerrainPreview.buildTerrainTileGeo instead of a flat quad.
+  const CARVED_TYPES = new Set(['river', 'stream', 'waterfall', 'trench', 'raised']);
+  const floorBuckets = new Map(); // tileType -> {pos:[], idx:[]}
   for (let r = 0; r < merged.rows; r++) {
     for (let c = 0; c < merged.cols; c++) {
       const t = zGrid[r][c];
       if (!t || t.skipFloor) continue;
       const tile = merged.tiles.get(`${c},${r}`);
-      if (!tile || tile.type === 'ramp' || CARVED_TYPES[tile.type] !== undefined) continue;
+      if (!tile || tile.type === 'ramp' || CARVED_TYPES.has(tile.type)) continue;
       const y = TerrainPreview.NORMAL_TOP + (t.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
-      const col = colorOf((TILE_INFO[tile.type] || { color: '#888' }).color);
-      const base = fPos.length / 3;
-      fPos.push(c,y,r,  c+1,y,r,  c+1,y,r+1,  c,y,r+1);
-      for (let k = 0; k < 4; k++) fCol.push(...col);
-      fIdx.push(base,base+1,base+2, base,base+2,base+3);
+      let b = floorBuckets.get(tile.type);
+      if (!b) { b = { pos: [], idx: [] }; floorBuckets.set(tile.type, b); }
+      const base = b.pos.length / 3;
+      b.pos.push(c, y, r,  c + 1, y, r,  c + 1, y, r + 1,  c, y, r + 1);
+      b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
-  if (fIdx.length) {
-    const fGeo = new THREE.BufferGeometry();
-    fGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fPos), 3));
-    fGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(fCol), 3));
-    fGeo.setIndex(fIdx);
-    fGeo.computeVertexNormals();
-    group.add(new THREE.Mesh(fGeo, floorMat));
+  for (const [type, b] of floorBuckets) {
+    if (!b.idx.length) continue;
+    group.add(new THREE.Mesh(_terrainGeometryFromArrays(b.pos, b.idx), resolvePreviewMat(mapId, type)));
   }
 
   // Carved beds for river/stream/waterfall/trench/raised tiles — the same
   // per-tile heightfield docs/game.js's buildTerrainTileGeo already carves in
   // the live game, mirrored here (TerrainPreview.buildTerrainTileGeo) so the
   // preview shows a sunken/raised channel instead of a flat colored quad.
-  const carvedGrassMat = new THREE.MeshLambertMaterial({ color: 0x4f9a4f, side: THREE.DoubleSide });
-  for (const [type, bedColor] of Object.entries(CARVED_TYPES)) {
-    const bedMat = new THREE.MeshLambertMaterial({ color: bedColor, side: THREE.DoubleSide });
+  for (const type of CARVED_TYPES) {
+    const bedMat = resolvePreviewMat(mapId, type);
     const cPos = [], dIdx = [], gIdx = [];
     for (let r = 0; r < merged.rows; r++) {
       for (let c = 0; c < merged.cols; c++) {
@@ -3120,16 +3192,17 @@ function rebuild3D() {
       }
     }
     if (dIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, dIdx), bedMat));
-    if (gIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, gIdx), carvedGrassMat));
+    if (gIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(cPos, gIdx), resolvePreviewMat(mapId, 'grass')));
   }
 
   // Plateau mesa heightfields (top sheet + cliff skin) per tier transition.
   // buildPlateauMesaGeometry's idx is [...grass quads, ...stone quads] on one
   // shared position buffer (steep cliff-face quads get the stone material
   // directly instead of a separate overlay skin) — same split-by-material
-  // pattern as the carved-tile dirt/grass meshes just above.
-  const mesaMat = new THREE.MeshLambertMaterial({ color: 0xa8835a, side: THREE.DoubleSide });
-  const skinMat = new THREE.MeshLambertMaterial({ color: 0x6b5638, side: THREE.DoubleSide });
+  // pattern as the carved-tile dirt/grass meshes just above. Matches the
+  // live game's own buildPlateauMesa, which uses exactly these two
+  // materials (grass/rock) for the same two index groups — see
+  // docs/game.js.
   for (const mesa of merged.mesas) {
     const elevOffset = (mesa.toTier - mesa.fromTier) * TerrainPreview.PLATEAU_UNIT;
     if (elevOffset <= 0) continue;
@@ -3138,36 +3211,39 @@ function rebuild3D() {
     catch (e) { continue; }
     const grassIdx = geo.idx.slice(0, geo.grassCount);
     const stoneIdx = geo.idx.slice(geo.grassCount);
-    if (grassIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, grassIdx), mesaMat));
-    if (stoneIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, stoneIdx), skinMat));
+    if (grassIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, grassIdx), resolvePreviewMat(mapId, 'grass')));
+    if (stoneIdx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(geo.pos, stoneIdx), resolvePreviewMat(mapId, 'rock')));
   }
 
-  // Ramp surfaces + their skirt curtains.
-  const rampMat = new THREE.MeshLambertMaterial({ color: 0xc2b280, side: THREE.DoubleSide });
-  const curtainMat = new THREE.MeshLambertMaterial({ color: 0x8a7550, side: THREE.DoubleSide });
+  // Ramp surfaces (reuse the 'path' material, matching buildZoneRampMeshes
+  // in the live game) + their skirt curtains (reuse 'grass', matching
+  // buildRampCurtainMeshes).
   try {
     const rampGeo = TerrainPreview.buildRampMeshGeometry(zGrid, merged.cols, merged.rows);
-    if (rampGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rampGeo.pos, rampGeo.idx), rampMat));
+    if (rampGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rampGeo.pos, rampGeo.idx), resolvePreviewMat(mapId, 'path')));
     const curtainGeo = TerrainPreview.buildRampCurtainGeometry(zGrid, merged.cols, merged.rows);
-    if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), curtainMat));
+    if (curtainGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(curtainGeo.pos, curtainGeo.idx), resolvePreviewMat(mapId, 'grass')));
   } catch (e) { /* ramp geometry is best-effort for the preview */ }
 
   // Unified solved non-walkable rock layer: plateau cliff faces, ramp side
   // curtains, and ramp/plateau seams are unioned before rendering so overlaps
   // become one chunky watertight-looking formation instead of separate skins.
+  // Uses the 'cliff' material (matching resolveCliffMat's steep-face stone
+  // skin in the live game) rather than 'rock', since this represents the
+  // same distant/structural cliff-face concept, not an ore-bearing rock tile.
   try {
     const rockGeo = TerrainPreview.buildRockFormationGeometry(merged, zGrid, merged.cols, merged.rows);
-    if (rockGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rockGeo.pos, rockGeo.idx), skinMat));
+    if (rockGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(rockGeo.pos, rockGeo.idx), resolvePreviewMat(mapId, 'cliff')));
   } catch (e) { /* rock formation is best-effort for the preview */ }
 
   // Waterwall curtains: vertical translucent water sheets where a river
   // crosses a plateau edge (TileType.WATERFALL — see
   // TerrainPreview.buildWaterfallWallGeometry / docs/game.js's
-  // buildWaterfallCurtainMeshes, which this preview mirrors).
-  const waterfallMat = new THREE.MeshBasicMaterial({ color: 0x2f8fc2, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+  // buildWaterfallCurtainMeshes, which this preview mirrors). Not a terrain
+  // material — same translucent water-shader-standin color always.
   try {
     const wfGeo = TerrainPreview.buildWaterfallWallGeometry(zGrid, merged.cols, merged.rows);
-    if (wfGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(wfGeo.pos, wfGeo.idx), waterfallMat));
+    if (wfGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(wfGeo.pos, wfGeo.idx), _previewWaterfallMat));
   } catch (e) { /* waterfall geometry is best-effort for the preview */ }
 
   // Building footprint boxes, lifted to their anchor tile's resolved plateau
@@ -3175,8 +3251,6 @@ function rebuild3D() {
   // so it's visually obvious whether a placed building sits on its plateau or
   // floats above/sinks into it. Just a footprint placeholder, not the real
   // piece geometry — the live game renders the actual model at the same Y.
-  const bldgMat = new THREE.MeshLambertMaterial({ color: 0xe85d4a, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
-  const bldgEdgeMat = new THREE.LineBasicMaterial({ color: 0xffffff });
   for (const b of (merged.buildings || [])) {
     const rot = ((Math.round((b.rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
     const swap = rot === 90 || rot === 270;
@@ -3185,10 +3259,10 @@ function rebuild3D() {
     const h = TerrainPreview.PLATEAU_UNIT;
     const y0 = TerrainPreview.NORMAL_TOP + (b.elevTier || 0) * TerrainPreview.PLATEAU_UNIT;
     const boxGeo = new THREE.BoxGeometry(w, h, d);
-    const mesh = new THREE.Mesh(boxGeo, bldgMat);
+    const mesh = new THREE.Mesh(boxGeo, _previewBldgMat);
     mesh.position.set(b.gridX + w / 2, y0 + h / 2, b.gridZ + d / 2);
     group.add(mesh);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), bldgEdgeMat);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), _previewBldgEdgeMat);
     edges.position.copy(mesh.position);
     group.add(edges);
   }
@@ -3932,6 +4006,8 @@ async function loadTerrainMaterials() {
     }
   } catch (e) { /* fine — starts empty, same as the game's own fallback */ }
   renderMaterialsSection();
+  clearPreviewMatCache();
+  schedule3DRebuild();
 }
 
 function renderMaterialsSection() {
@@ -3971,6 +4047,8 @@ function applyMaterialRow(key) {
     byMapEntry[key] = { texture, tileSize: Math.max(0.05, parseFloat(sizeInp.value) || 1) };
   }
   setStatus(`Materials: ${matTargetMapId}.${key} ${texture ? 'set to ' + texture : 'cleared'}.`);
+  clearPreviewMatCache();
+  schedule3DRebuild();
 }
 
 $('matTargetMap').addEventListener('change', e => { matTargetMapId = e.target.value; renderMaterialsSection(); });

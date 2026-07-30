@@ -27674,6 +27674,18 @@
       // i.e. an already-full trench — so the same input digs or fills depending
       // on what's targeted, on desktop and mobile alike.
       function resolveDigFillAction(tool, action, reticle) {
+        // Pick's 'mine' isn't part of the dig/fill toggle below — dig/fill/
+        // raise are all unconditionally invalid on a ROCK tile (see
+        // canUseAction's ROCK short-circuit), so without this check,
+        // pressing whichever pick action happens to be active/primary
+        // (usually 'dig') while aimed at a minable ore rock just fails
+        // outright instead of ever trying to mine it — reading exactly like
+        // a shovel that can't do anything to a rock, not a pick that can.
+        // Checked first and unconditionally for any pick action (not just
+        // dig/fill) since mining is always the right call whenever the
+        // reticle is actually on a minable rock, regardless of which
+        // specific pick action the player had selected.
+        if (tool === 'pick' && canUseAction('pick', 'mine', reticle.col, reticle.row)) return 'mine';
         if (!((tool === 'shovel' || tool === 'pick') && (action === 'dig' || action === 'fill'))) return action;
         if (canUseAction(tool, 'dig', reticle.col, reticle.row)) return 'dig';
         if (canUseAction(tool, 'fill', reticle.col, reticle.row)) return 'fill';
