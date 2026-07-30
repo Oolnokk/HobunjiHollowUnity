@@ -231,6 +231,162 @@
     return scanOpaqueVerticalBounds(makeVariantCanvas(image), alphaThreshold);
   }
 
+  // Finds the neck pivot pixel for a head-turn bone: the horizontal centroid
+  // (alpha-weighted, so a slightly off-center head silhouette still gets an
+  // accurate hinge point) of the lowest coherent run of opaque pixels — i.e.
+  // where the head art visually meets the body/collar below it. Mirrors
+  // docs/tools/animation-author/index.html's detectNeckAndEyePixels, trimmed
+  // to just the pivot (no eye-target point — gameplay head-turns don't need
+  // one). Returns null if the canvas has no readable opaque pixels.
+  function detectNeckPivotPx(canvas, alphaThreshold) {
+    const w = canvas?.width, h = canvas?.height;
+    if (!canvas || !w || !h) return null;
+    const threshold = alphaThreshold ?? 12;
+    let data;
+    try { data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data; }
+    catch (e) { return null; }
+    const rowCounts = new Uint32Array(h);
+    let top = h, bottom = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] <= threshold) continue;
+        rowCounts[y]++;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+      }
+    }
+    if (bottom < 0) return null;
+    const minimumRowPixels = Math.max(2, Math.round(w * .012));
+    while (bottom > top && rowCounts[bottom] < minimumRowPixels) bottom--;
+    const bandTop = Math.max(top, bottom - Math.max(2, Math.round(h * .015)));
+    let weightedX = 0, totalWeight = 0;
+    for (let y = bandTop; y <= bottom; y++) {
+      for (let x = 0; x < w; x++) {
+        const alpha = data[(y * w + x) * 4 + 3];
+        if (alpha <= threshold) continue;
+        weightedX += x * alpha;
+        totalWeight += alpha;
+      }
+    }
+    return { x: totalWeight ? weightedX / totalWeight : w / 2, y: bottom + .5 };
+  }
+
+  function smoothstep01(value) {
+    const t = Math.max(0, Math.min(1, Number(value) || 0));
+    return t * t * (3 - 2 * t);
+  }
+
+  // Builds a two-sided front+back plane as one THREE.SkinnedMesh instead of
+  // two rigid Mesh objects, with per-vertex skin weights blended (via a
+  // smoothstep band, no visible hinge) between a root bone and a neck bone
+  // seated at `neckLocal`. Ported from docs/tools/animation-author/index.html's
+  // buildTwoSidedSkinnedPlaneGeometry — same geometry/weighting approach, so a
+  // rig built here plays back neckRotationDeg keyframes authored by that tool.
+  function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
+    const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
+    const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
+    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .065);
+    const source = new THREE.PlaneGeometry(modelWidth, modelHeight, segmentsX, segmentsY).toNonIndexed();
+    const sourcePosition = source.getAttribute('position');
+    const sourceUv = source.getAttribute('uv');
+    const verticesPerFace = sourcePosition.count;
+    const totalVertices = verticesPerFace * 2;
+    const positions = new Float32Array(totalVertices * 3);
+    const normals = new Float32Array(totalVertices * 3);
+    const uvs = new Float32Array(totalVertices * 2);
+    const skinIndices = new Uint16Array(totalVertices * 4);
+    const skinWeights = new Float32Array(totalVertices * 4);
+    let cursor = 0;
+
+    const appendVertex = (sourceIndex, normalZ) => {
+      const x = sourcePosition.getX(sourceIndex);
+      const y = sourcePosition.getY(sourceIndex);
+      const z = sourcePosition.getZ(sourceIndex);
+      positions[cursor * 3] = x;
+      positions[cursor * 3 + 1] = y;
+      positions[cursor * 3 + 2] = z;
+      normals[cursor * 3] = 0;
+      normals[cursor * 3 + 1] = 0;
+      normals[cursor * 3 + 2] = normalZ;
+      uvs[cursor * 2] = sourceUv.getX(sourceIndex);
+      uvs[cursor * 2 + 1] = sourceUv.getY(sourceIndex);
+      const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
+      skinIndices[cursor * 4] = 0;
+      skinIndices[cursor * 4 + 1] = 1;
+      skinWeights[cursor * 4] = 1 - headWeight;
+      skinWeights[cursor * 4 + 1] = headWeight;
+      cursor++;
+    };
+
+    for (let index = 0; index < verticesPerFace; index += 3) {
+      appendVertex(index, 1);
+      appendVertex(index + 1, 1);
+      appendVertex(index + 2, 1);
+    }
+    const frontVertexCount = cursor;
+    for (let index = 0; index < verticesPerFace; index += 3) {
+      appendVertex(index + 2, -1);
+      appendVertex(index + 1, -1);
+      appendVertex(index, -1);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.name = 'npc_avatar_skinned_plane_geometry';
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+    geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+    geometry.addGroup(0, frontVertexCount, 0);
+    geometry.addGroup(frontVertexCount, cursor - frontVertexCount, 1);
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    source.dispose();
+    return geometry;
+  }
+
+  // Builds the neck-rigged variant of the single-plane assembly: a
+  // THREE.SkinnedMesh (root bone + neck bone) instead of the two rigid front/
+  // back Mesh objects createSinglePlaneAssembly makes, so `neckJoint.rotation`
+  // can bend just the head region of the plane. Returns null if no neck pivot
+  // could be detected (e.g. an unreadable/tainted canvas) — callers should
+  // fall back to the plain rigid assembly in that case.
+  function buildSkinnedSinglePlaneAssembly(THREE, config) {
+    const pivotPx = detectNeckPivotPx(config.sourceCanvas, config.alphaThreshold);
+    if (!pivotPx) return null;
+    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY } = config;
+    const pxW = config.sourceCanvas.width, pxH = config.sourceCanvas.height;
+    const neckLocal = {
+      x: -modelWidth / 2 + (pivotPx.x / pxW) * modelWidth,
+      y: (modelHeight / 2 - (pivotPx.y / pxH) * modelHeight) - assemblyY,
+      z: 0,
+    };
+    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal);
+    const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
+    const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
+
+    const torsoBone = new THREE.Bone();
+    torsoBone.name = `${config.name}_torso_bone`;
+    const neckJoint = new THREE.Bone();
+    neckJoint.name = `${config.name}_neck_bone`;
+    neckJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
+    torsoBone.add(neckJoint);
+
+    const skinnedPlane = new THREE.SkinnedMesh(geometry, [frontMaterial, backMaterial]);
+    skinnedPlane.name = config.name || 'npc_avatar_skinned_plane_assembly';
+    skinnedPlane.position.z = anchorZ;
+    skinnedPlane.renderOrder = 2;
+    skinnedPlane.frustumCulled = false;
+    skinnedPlane.add(torsoBone);
+    const skeleton = new THREE.Skeleton([torsoBone, neckJoint]);
+    skinnedPlane.bind(skeleton);
+
+    const group = new THREE.Group();
+    group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
+    group.add(skinnedPlane);
+    return { group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx };
+  }
+
   function createSinglePlaneAssembly(THREE, config) {
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_single_plane_assembly';
@@ -336,14 +492,31 @@
         : 'disabled for runtime NPC preview; only the single front plane plus rear silhouette are created',
     };
     const placementRatio = avatarPlacementRatioFor({ ...options, profile: options.profile });
-    const assembly = createSinglePlaneAssembly(THREE, {
+    const assemblyY = (placementRatio - 0.5) * modelHeight;
+    // Neck rig is opt-in (options.neckRig === true) — most callers (world
+    // livestock, bandits, one-off portrait previews) have no use for a
+    // head-turn bone and building one costs an extra alpha scan + a heavier
+    // SkinnedMesh over the plain two-Mesh assembly. Falls back to the plain
+    // rigid assembly if no neck pivot could be detected (e.g. a fully
+    // transparent or tainted source canvas).
+    const skinnedRig = options.neckRig === true
+      ? buildSkinnedSinglePlaneAssembly(THREE, {
+          planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY,
+          sourceCanvas, alphaThreshold: options.neckAlphaThreshold,
+          name: `${root.name}_skinned_plane_assembly`,
+        })
+      : null;
+    const assembly = skinnedRig ? skinnedRig.group : createSinglePlaneAssembly(THREE, {
       planeWidth: modelWidth,
       planeHeight: modelHeight,
       anchorZ,
       textures,
       name: `${root.name}_single_plane_assembly`,
     });
-    assembly.position.y = (placementRatio - 0.5) * modelHeight;
+    assembly.position.y = assemblyY;
+    root.userData.neckRig = skinnedRig
+      ? { available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal, pivotPx: skinnedRig.pivotPx }
+      : { available: false };
     root.userData.portraitVerticalPlacementRatio = placementRatio;
     root.userData.portraitScaleMultiplier = scaleMultiplier;
     root.userData.portraitModelWidth = modelWidth;

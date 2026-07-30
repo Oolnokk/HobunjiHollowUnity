@@ -1017,6 +1017,7 @@
         window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
         if (_dialogueWalker) {
+          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
@@ -1869,6 +1870,11 @@
           perceptionTiles: 10,
           canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
+          // Default Size for the personal stable's mount/companion/shoulder-
+          // pet gating (see CREATURE_SIZE_CLASSES/stableEntryRole) — a rare
+          // hereditary mutation can still shift an individual specimen's
+          // genotype.sizeClass away from this species default on breeding.
+          defaultSizeClass: 'medium',
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
@@ -1897,6 +1903,9 @@
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
           modelWidth: 1.6, tint: 0xffffff,
+          // See dabinggi-hound's matching comment — Uumkao'ii default large
+          // (mount-eligible in the stable).
+          defaultSizeClass: 'large',
           sprites: {
             idle: "assets/creaturesprites/uumkao'ii.png",
             run: ["assets/creaturesprites/uumkao'ii.png"],
@@ -1924,6 +1933,8 @@
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
           canClimb: false, canSwim: false,
           modelWidth: 2.1, tint: 0xffffff,
+          // See dabinggi-hound's matching comment.
+          defaultSizeClass: 'medium',
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
@@ -1938,6 +1949,9 @@
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.5, leashRangePx: TILE * 9,
           canClimb: true, canSwim: false, modelWidth: 2.2, spriteAspect: 2250 / 3000, tint: 0xffffff,
+          // See dabinggi-hound's matching comment — Grehlr default small
+          // (shoulder-pet eligible in the stable).
+          defaultSizeClass: 'small',
           sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
           lootPool: 'creature_grehlr',
         },
@@ -1949,6 +1963,8 @@
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
           canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
+          // See dabinggi-hound's matching comment.
+          defaultSizeClass: 'small',
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra',
         },
@@ -2225,7 +2241,9 @@
       // eventually levelable), can't produce goods, and can't be placed on
       // any farm. [{ id, kind, name, genotype, aiType, level, stabledAt }]
       let stable = [];
-      let activeCompanionId = null; // which stable entry (if any) is the active companion
+      let activeCompanionId = null; // which stable entry (if any) is the active (medium-Size) companion
+      let activeMountId = null;       // which stable entry (if any) is the active (large-Size) mount
+      let activeShoulderPetId = null; // which stable entry (if any) is the active (small-Size) shoulder pet
 
       // Companion AI-type registry — a small database of follow/fight
       // behaviors a stabled species' active-companion form can use, keyed by
@@ -2244,6 +2262,16 @@
       };
       function companionAiTypeForKind(kind) {
         return COMPANION_AI_TYPE_BY_KIND[kind] || 'vigilantProtector';
+      }
+
+      // Auto-equips a freshly-stabled entry into its Size-appropriate slot if
+      // that slot is currently empty (mirrors the old "first companion is
+      // automatically active" convenience, generalized to 3 slots).
+      function _autoAssignStableRole(entry) {
+        const role = stableEntryRole(entry);
+        if (role === 'mount' && !activeMountId) activeMountId = entry.id;
+        else if (role === 'shoulderPet' && !activeShoulderPetId) activeShoulderPetId = entry.id;
+        else if (role === 'companion' && !activeCompanionId) activeCompanionId = entry.id;
       }
 
       // Tool item definitions: sprite path, compatible slots, animation style
@@ -2705,6 +2733,8 @@
           if (ch) {
             ch.stable = stable;
             ch.activeCompanionId = activeCompanionId;
+            ch.activeMountId = activeMountId;
+            ch.activeShoulderPetId = activeShoulderPetId;
             localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           }
         } catch {}
@@ -4181,6 +4211,41 @@
       // is a one-line addition instead of a hunt through 3 functions.
       const DUAL_REGION_GENOTYPE_KINDS = new Set(['uumkaoii']);
 
+      // A creature's Size (small/medium/large, carried on genotype.sizeClass)
+      // gates which one of the personal stable's three equip slots it's
+      // eligible for — see renderStablePanel/syncCompanionFromWhistle. Each
+      // stable-able species has a default Size (CREATURE_DB[kind].defaultSizeClass);
+      // breeding can rarely mutate an individual's Size a step away from
+      // whichever parent it inherited from (see crossOffspring), which is how
+      // any species can eventually turn up as any role given enough luck.
+      const CREATURE_SIZE_CLASSES = ['small', 'medium', 'large'];
+      const CREATURE_SIZE_ROLE = { small: 'shoulderPet', medium: 'companion', large: 'mount' };
+      function normalizeCreatureSizeClass(value) {
+        return CREATURE_SIZE_CLASSES.includes(value) ? value : 'medium';
+      }
+      function stableEntryRole(entry) {
+        return CREATURE_SIZE_ROLE[normalizeCreatureSizeClass(entry?.genotype?.sizeClass)];
+      }
+      // Steps a Size one notch up or down (clamped at the ends, no wraparound)
+      // — the shape a rare breeding mutation takes, mirroring mutateFurColor's
+      // role for coat genes.
+      function mutateSizeClassStep(sizeClass) {
+        const idx = CREATURE_SIZE_CLASSES.indexOf(normalizeCreatureSizeClass(sizeClass));
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        return CREATURE_SIZE_CLASSES[clamp(idx + dir, 0, CREATURE_SIZE_CLASSES.length - 1)];
+      }
+      // Offspring Size: inherited from a randomly-chosen parent (falling back
+      // to the species default for a parent with no sizeClass on record, e.g.
+      // a pre-Size save), with the same flat LIVESTOCK_MUTATION_CHANCE roll
+      // crossOffspring's coat genes use to instead step it by one.
+      function inheritedSizeClass(genotypeA, genotypeB, kind) {
+        const fallback = CREATURE_DB[kind]?.defaultSizeClass || 'medium';
+        const parentSize = Math.random() < 0.5
+          ? normalizeCreatureSizeClass(genotypeA?.sizeClass || fallback)
+          : normalizeCreatureSizeClass(genotypeB?.sizeClass || fallback);
+        return Math.random() < LIVESTOCK_MUTATION_CHANCE ? mutateSizeClassStep(parentSize) : parentSize;
+      }
+
       // Fresh (non-bred) livestock gets two independently random fur colors —
       // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
       // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
@@ -4192,10 +4257,14 @@
       // species-aware: Drenkirra use the tropical palette configured in
       // scratchbones-config.js through creation, breeding, and rendering.
       function makeDefaultGenotype(kind) {
+        // Fresh/wild specimens always roll their species' default Size — the
+        // rare mutation only ever applies on breeding (see crossOffspring).
+        const sizeClass = CREATURE_DB[kind]?.defaultSizeClass || 'medium';
         if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           return {
             fur:    { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
             plates: { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
+            sizeClass,
           };
         }
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
@@ -4217,6 +4286,7 @@
             const enabled = Math.random() < chance;
             genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
+          genotype.sizeClass = sizeClass;
           const enabledIds = patterns.filter(id => genotype[id].enabled);
           window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
           return genotype;
@@ -4293,6 +4363,7 @@
             if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
             child[layerId] = { color, copies: 2, inheritance: 'dominant' };
           }
+          child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
           return child;
         }
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
@@ -4314,6 +4385,7 @@
           if (mutated) color = mutateFurColor(color, kind);
           child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
         }
+        child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
         const childEnabledIds = patterns.filter(id => child[id].enabled);
         window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
         return child;
@@ -4837,7 +4909,7 @@
           aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
         };
         stable.push(entry);
-        if (!activeCompanionId) activeCompanionId = entry.id;
+        _autoAssignStableRole(entry);
         saveStable();
         return { ok: true, message: `${entry.name} added to your stable!`, entry };
       }
@@ -6663,24 +6735,31 @@
       // master's own companion, leaving any other master's companion alone —
       // needed so two masters (e.g. two whistle-bearing entities) syncing
       // independently don't clobber each other's pet.
-      function despawnCompanions(master) {
+      function despawnCompanions(master, role = null) {
         for (const c of [...companionObjects]) {
           if (master && c.master !== master) continue;
+          if (role && c.stableRole !== role) continue;
           despawnCreature(c);
           companionObjects.delete(c);
         }
       }
 
-      // Spawns/despawns the given master's active companion to match either
-      // the stable's designated active companion or (falling back, for any
-      // legacy whistle not represented in the stable) its equipped whistle.
-      // Called every farm/zone-area frame for the real player (master
-      // defaults to `player`); cheap no-op once in sync. Also re-spawns into
-      // the new area's scene whenever the master travels. Takes an explicit
-      // `master` (rather than always reading the real player) so this same
-      // function can eventually drive a second companion-bearing player's
-      // companion, or an NPC's, without change — see the `master` field on
-      // the companion entity itself.
+      // Spawns/despawns the given master's active mount/companion/shoulder-
+      // pet (one per Size-gated stable role — see STABLE_ROLE_META) to match
+      // the stable's designated active entry for each slot, or (companion
+      // slot only, falling back for any legacy whistle not represented in the
+      // stable) its equipped whistle. Called every farm/zone-area frame for
+      // the real player (master defaults to `player`); cheap no-op once in
+      // sync. Also re-spawns into the new area's scene whenever the master
+      // travels. Takes an explicit `master` (rather than always reading the
+      // real player) so this same function can eventually drive a second
+      // companion-bearing player's companion, or an NPC's, without change —
+      // see the `master` field on the companion entity itself.
+      //
+      // Mount/shoulder-pet have no bespoke ride/carry behavior yet — all 3
+      // roles currently spawn using the same follow/fight AI (updateCompanions)
+      // as the original single-companion system, just as up to 3 simultaneous
+      // entities instead of 1; differentiating their behavior is future work.
       function syncCompanionFromWhistle(master = player) {
         // A cutscene preview's combat card manages companionObjects directly
         // (see runCutscenePreview/runCombat) — this sync would otherwise
@@ -6689,37 +6768,43 @@
         // handoff in docs/index.html).
         if (cutscenePreviewActive) return;
 
-        // The stable is the primary source of truth for "what's my active
-        // companion" — only species with a matching CREATURE_DB entry (and
-        // therefore a companion AI type) can actually be summoned; a stabled
-        // animal of a not-yet-companion-capable kind just means no companion
-        // is spawned, rather than falling through to the legacy whistle.
-        const activeStabled = activeCompanionId ? stable.find(s => s.id === activeCompanionId) : null;
-        const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-          ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
-          : null;
-        const whistle = (!activeStabled && equipmentSlots.whistle)
-          ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
-          : null;
-        const desired = stableCompanion || whistle;
+        for (const role of ['mount', 'companion', 'shoulderPet']) {
+          const activeId = activeStableIdForRole(role);
+          // The stable is the primary source of truth for "what's my active
+          // X" — only species with a matching CREATURE_DB entry (and
+          // therefore a companion AI type) can actually be summoned; a
+          // stabled animal of a not-yet-companion-capable kind just means
+          // nothing is spawned for that slot, rather than falling through to
+          // the legacy whistle.
+          const activeStabled = activeId ? stable.find(s => s.id === activeId) : null;
+          const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
+            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
+            : null;
+          // Only the companion slot honors the legacy whistle fallback —
+          // mount/shoulder-pet have no equivalent item-based summon path.
+          const whistle = (role === 'companion' && !activeStabled && equipmentSlots.whistle)
+            ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
+            : null;
+          const desired = stableCompanion || whistle;
 
-        const existing = [...companionObjects].find(c => c.master === master);
-        if (!desired) {
-          if (existing) despawnCompanions(master);
-          return;
+          const existing = [...companionObjects].find(c => c.master === master && c.stableRole === role);
+          if (!desired) {
+            if (existing) despawnCompanions(master, role);
+            continue;
+          }
+          // Swapping between two stabled specimens of the same species (e.g.
+          // two differently-bred gar-wolves) still needs a respawn so the new
+          // one's genotype actually renders.
+          if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
+            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) continue;
+          despawnCompanions(master, role);
+          const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
+          const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
+          const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
+            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
+          });
+          if (companion) companionObjects.add(companion);
         }
-        // Swapping between two stabled specimens of the same species (e.g.
-        // two differently-bred gar-wolves) still needs a respawn so the new
-        // one's genotype actually renders.
-        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
-          && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) return;
-        despawnCompanions(master);
-        const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
-        const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
-        const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype,
-        });
-        if (companion) companionObjects.add(companion);
       }
 
       function clearHostileObjects() {
@@ -14092,6 +14177,16 @@
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFacePlayerLerp ?? 0.28);
         walker.root.rotation.y = walker.rot;
+        // Head rotation: the body above only catches up to npcTargetRot
+        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
+        // neck bone at however much of that gap remains right now (clamped to
+        // a natural-looking max) — the NPC glances at the player immediately
+        // and the head straightens on its own as the body finishes turning.
+        if (walker.neckJoint) {
+          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
+          const residual = angleDiff(npcTargetRot, walker.rot);
+          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+        }
       }
 
       function updateNpcDialogueStaging(dt) {
@@ -14616,7 +14711,7 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
+          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
@@ -14646,6 +14741,11 @@
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
+          // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
+          // option (null if no neck pivot could be detected for this NPC's
+          // portrait) — see faceNpcDialogueParticipants for the one place
+          // this is driven today.
+          neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
@@ -21657,7 +21757,7 @@
       }
       function _addToOwnStable(stabledEntry) {
         stable.push(stabledEntry);
-        if (!activeCompanionId) activeCompanionId = stabledEntry.id;
+        _autoAssignStableRole(stabledEntry);
         saveStable();
       }
 
@@ -21861,7 +21961,23 @@
         }
       }
 
-      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆' };
+      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿' };
+
+      // Which of the stable's 3 equip slots a given stable-entry role occupies,
+      // and the icon/label its row button shows — see stableEntryRole.
+      const STABLE_ROLE_META = {
+        mount: { icon: '🐴', label: 'Mount' },
+        companion: { icon: '🐕', label: 'Companion' },
+        shoulderPet: { icon: '🐿️', label: 'Shoulder pet' },
+      };
+      function activeStableIdForRole(role) {
+        return role === 'mount' ? activeMountId : role === 'shoulderPet' ? activeShoulderPetId : activeCompanionId;
+      }
+      function setActiveStableIdForRole(role, id) {
+        if (role === 'mount') activeMountId = id;
+        else if (role === 'shoulderPet') activeShoulderPetId = id;
+        else activeCompanionId = id;
+      }
 
       // Small color-swatch HTML shared by every livestock/stable row —
       // Uumkao'ii shows its two permanent regions; pattern-layer species
@@ -21883,25 +21999,29 @@
       }
 
       // Your personal companion collection — character-scoped, untradeable,
-      // never tied to any farm. Rename, set the one active companion (spawned
-      // via syncCompanionFromWhistle/updateCompanions like the starter
-      // dabinggi-hound always has been), and see the level stub for later.
+      // never tied to any farm. Rename, set the active occupant of whichever
+      // of the 3 equip slots (mount/companion/shoulder pet) its Size makes it
+      // eligible for (spawned via syncCompanionFromWhistle/updateCompanions
+      // like the starter dabinggi-hound always has been), and see the level
+      // stub for later.
       function renderStablePanel() {
         const list = document.getElementById('stableList');
         if (!list) return;
         list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
         stable.forEach(entry => {
-          const isActive = entry.id === activeCompanionId;
+          const role = stableEntryRole(entry);
+          const roleMeta = STABLE_ROLE_META[role];
+          const isActive = entry.id === activeStableIdForRole(role);
           const row = document.createElement('div');
           row.className = 'farm-row';
           row.innerHTML =
-            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? 'Active companion' : 'Set as active companion'}">${isActive ? '★' : '☆'}</button>` +
+            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${roleMeta.label.toLowerCase()}` : `Set as ${roleMeta.label.toLowerCase()}`}">${roleMeta.icon}</button>` +
             `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
             `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" maxlength="30">` +
             _livestockSwatchesHtml(entry.genotype, entry.kind) +
-            `<span class="farm-row-value">Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
+            `<span class="farm-row-value">${esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
           row.querySelector('.farm-companion-btn').addEventListener('click', () => {
-            activeCompanionId = isActive ? null : entry.id;
+            setActiveStableIdForRole(role, isActive ? null : entry.id);
             saveStable();
             renderStablePanel();
           });
@@ -33642,6 +33762,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // hound you start with is stored in the stable" holds for old saves too.
         stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
         activeCompanionId = playerData.activeCompanionId ?? null;
+        activeMountId = playerData.activeMountId ?? null;
+        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
         if (!stable.length) {
           const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
           stable.push(starter);
@@ -33650,10 +33772,15 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
         // Backfill genotype-less stable entries from older saves (e.g. a
         // starter Bingo saved before pattern genes existed) so they render
-        // real genes instead of the plain uncolored sprite forever.
+        // real genes instead of the plain uncolored sprite forever. Also
+        // backfills a missing Size (genotype.sizeClass) on entries saved
+        // before the stable's mount/companion/shoulder-pet system existed.
         for (const entry of stable) {
           if (!entry.genotype && (LIVESTOCK_PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
             entry.genotype = makeDefaultGenotype(entry.kind);
+          }
+          if (entry.genotype && !entry.genotype.sizeClass) {
+            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
           }
         }
         saveStable();
