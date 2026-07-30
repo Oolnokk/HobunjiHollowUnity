@@ -21981,10 +21981,15 @@
       // (rockKind undefined, no generator behind them at all) default to
       // "not mineable" — the opposite fallback from isChoppableTreeTile,
       // since most ROCK tiles in the game are solid cliff/decoration, not
-      // wilderness resource nodes.
+      // wilderness resource nodes. The farm is the one exception: every
+      // ROCK tile there is one of createInitialGrid's scattered day-one
+      // obstacle rocks (no generator, no cliffs/boulders on the farm at
+      // all), so unlike a hand-authored wilderness rock, it's always fair
+      // game to clear.
       function isMineableRockTile(col, row) {
         const tile = getActiveGrid()[row]?.[col];
         if (!tile || tile.type !== TileType.ROCK) return false;
+        if (currentArea === 'farm') return true;
         return tile.rockKind === 'diggableRockOre';
       }
 
@@ -22801,7 +22806,7 @@
         }
 
         if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {
-          // Breaking an ore rock — reachable via a completed hold (see
+          // Breaking a rock — reachable via a completed hold (see
           // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
           // above. Drops stone (plus a rare pebble) instead of logs/mulch.
           const amount = 2 + Math.floor(Math.random() * 2); // 2-3 stone
@@ -22809,14 +22814,22 @@
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           // tile.rockKind is deliberately left alone — tickMinedRockRegrowth
           // just flips tile.type back to ROCK once ROCK_REGROWTH_DAYS pass.
-          const _minedEntries = _zoneMinedRockPersist.get(currentArea) || [];
-          _minedEntries.push({ col, row, minedDay: calendar.day });
-          _zoneMinedRockPersist.set(currentArea, _minedEntries);
+          // Farm rocks are day-one land-clearing obstacles, not a wilderness
+          // resource node — they should stay cleared, so skip the regrow
+          // entry entirely (tickMinedRockRegrowth only ever resolves entries
+          // against _zoneScenes-backed wilderness maps; a 'farm' entry would
+          // just sit there forever, bloating the save for nothing).
+          if (currentArea !== 'farm') {
+            const _minedEntries = _zoneMinedRockPersist.get(currentArea) || [];
+            _minedEntries.push({ col, row, minedDay: calendar.day });
+            _zoneMinedRockPersist.set(currentArea, _minedEntries);
+          }
           inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
           const gotPebble = Math.random() < 0.35;
           if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
-          // No markTileDirty here — same rationale as the axe branch above:
-          // this only ever happens in a wilderness zone.
+          // No markTileDirty here for the wilderness-zone case — see the axe
+          // branch above; completeChargeAction's own currentArea==='farm'
+          // branch already calls markTileDirty/recomputeWater for the farm.
           awardToolUseMasteryXp('pick');
           return { ok: true, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
         }
@@ -27566,11 +27579,16 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, fixedPace: true, dirSign, dur: 0.55 }));
 
-      // Breaking an ore rock (see isMineableRockTile) — same shape as
-      // CHOP_TREE_STAGES, just for the pick.
-      const MINE_ROCK_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
+      // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
+      // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
+      // flipped spike-forward in this slot (see makeToolPlaneMesh's flip
+      // option) specifically so mining reads as stabbing that spike in, not
+      // swinging an axe-style pose that was authored for a bladed edge.
+      // fixedPace (like chop) keeps this flurry at a constant pace regardless
+      // of digSpeed, which only scales the shovel's own dig/fill swings.
+      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', fixedPace: true, dur: 0.55 }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -27692,9 +27710,12 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        // digSpeed only scales shovel/pick dig-and-fill stages — an axe chop's
-        // pose-driven stages (see CHOP_TREE_STAGES) swing at a fixed pace.
-        const dur = stageDef.pose ? stageDef.dur : stageDef.dur / getDigSpeedMultiplier();
+        // digSpeed only scales shovel dig-and-fill stages — the axe chop and
+        // pick mine flurries (see CHOP_TREE_STAGES/MINE_ROCK_STAGES) swing at
+        // a fixed pace regardless, marked via fixedPace rather than reusing
+        // `pose` now that mine's flurry plays a plain thrust anim instead of
+        // a pose-driven sweep.
+        const dur = stageDef.fixedPace ? stageDef.dur : stageDef.dur / getDigSpeedMultiplier();
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
