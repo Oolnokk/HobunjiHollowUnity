@@ -6842,6 +6842,18 @@
       const TREASURE_HINT_RANGE_PX = TILE * 9;
 
       function updateCompanions(dt) {
+        // Hat-xray toggle (see buildPlayerHatXrayOverlay/setPlayerHatXray):
+        // on for exactly as long as the player has an actively-attached
+        // shoulder pet, off otherwise, regardless of which companion (if
+        // any) is in that role this frame.
+        let hasActiveShoulderPetForPlayer = false;
+        for (const c of companionObjects) {
+          if (c.stableRole === 'shoulderPet' && c.health > 0 && c.areaId === currentArea && (c.master || player) === player) {
+            hasActiveShoulderPetForPlayer = true;
+            break;
+          }
+        }
+        setPlayerHatXray(hasActiveShoulderPetForPlayer);
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -12000,6 +12012,11 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // Shoulder-pet hat xray (ported from the animation-author tool's
+      // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
+      // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
+      let _playerHatXrayOverlay = null; // { materials, meshes } once built for the current hat, else null.
+      let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
@@ -20602,9 +20619,145 @@
           });
       }
 
+      // Pixel-diffs a "with hat" portrait render against a "hatless" render of
+      // the same profile and returns a canvas containing ONLY the pixels that
+      // differ (i.e. just the hat) — ported from the animation-author tool's
+      // canvasDifferenceOverlayV1521. Returns null if nothing differs (no hat
+      // actually present, or the diff came up empty).
+      function _hatXrayDiffCanvas(fullCanvas, hatlessCanvas) {
+        const w = fullCanvas?.width || 0, h = fullCanvas?.height || 0;
+        if (!w || !h || hatlessCanvas?.width !== w || hatlessCanvas?.height !== h) return null;
+        const out = document.createElement('canvas');
+        out.width = w; out.height = h;
+        const outCtx = out.getContext('2d');
+        const full = fullCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h);
+        const plain = hatlessCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h);
+        const result = outCtx.createImageData(w, h);
+        let kept = 0;
+        for (let i = 0; i < full.data.length; i += 4) {
+          const diff = Math.abs(full.data[i] - plain.data[i]) + Math.abs(full.data[i + 1] - plain.data[i + 1])
+                     + Math.abs(full.data[i + 2] - plain.data[i + 2]) + Math.abs(full.data[i + 3] - plain.data[i + 3]);
+          if (diff < 6 || full.data[i + 3] <= 1) continue;
+          result.data[i] = full.data[i]; result.data[i + 1] = full.data[i + 1];
+          result.data[i + 2] = full.data[i + 2]; result.data[i + 3] = full.data[i + 3];
+          kept++;
+        }
+        if (!kept) return null;
+        outCtx.putImageData(result, 0, 0);
+        return out;
+      }
+
+      // Toggles whether the hat-xray overlay's depthWrite is on (normal — the
+      // hat occludes like anything else) or off (a shoulder pet's real solid
+      // sprite wins the depth test against the hat specifically, so the pet
+      // stays visible instead of vanishing behind a tall hat).
+      function setPlayerHatXray(enabled) {
+        enabled = !!enabled;
+        if (enabled === _playerHatXrayEnabled) return;
+        _playerHatXrayEnabled = enabled;
+        for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
+      }
+
+      // Ported from the animation-author tool's shoulder-pet hat-xray feature
+      // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
+      // docs/tools/animation-author/index.html): a shoulder pet perched near
+      // the head would otherwise just vanish behind a tall hat like any other
+      // opaque foreground pixel, since the hat is baked into the same
+      // portrait texture as the rest of the body. Splitting the hat's own
+      // pixels into a separate overlay plane -- and disabling ONLY that
+      // overlay's depthWrite while a shoulder pet is attached (see
+      // updateCompanions) -- lets the pet win the depth test against the hat
+      // specifically, without touching how the hat occludes anything else,
+      // and without ever affecting the body layer's own normal occlusion (so
+      // this never makes the player see-through, only the hat).
+      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+        try {
+          const hat = profile?.hat;
+          const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
+          if (!hasHat || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+          const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
+          const hatlessFrontCanvas = document.createElement('canvas');
+          hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, { forceEyesOpen: true });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          const hatlessBackCanvas = document.createElement('canvas');
+          hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { portraitView: 'behind', forceEyesOpen: true });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+
+          // Diff through the SAME per-face variant transform (front: as-is;
+          // back: flipX) the base texture pipeline itself applies (see
+          // buildTextureSet in png-plane-avatar.js), so the overlay's pixels
+          // land in exactly the same orientation as the plane they sit on.
+          const fullFrontVariant    = window.PNGPlaneAvatar.makeVariantCanvas(frontCanvas);
+          const hatlessFrontVariant = window.PNGPlaneAvatar.makeVariantCanvas(hatlessFrontCanvas);
+          const fullBackVariant     = window.PNGPlaneAvatar.makeVariantCanvas(backCanvas, { flipX: true });
+          const hatlessBackVariant  = window.PNGPlaneAvatar.makeVariantCanvas(hatlessBackCanvas, { flipX: true });
+          const hatFrontOverlay = _hatXrayDiffCanvas(fullFrontVariant, hatlessFrontVariant);
+          const hatBackOverlay  = _hatXrayDiffCanvas(fullBackVariant, hatlessBackVariant);
+          if (!hatFrontOverlay && !hatBackOverlay) return;
+
+          // Strip the hat out of the ordinary body texture now that a
+          // separate overlay carries it -- otherwise disabling the overlay's
+          // depthWrite would do nothing, since the hat pixels baked into the
+          // body plane would still occlude normally regardless.
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(avatarGroup, hatlessFrontCanvas, { backCanvas: hatlessBackCanvas });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+
+          const assembly = avatarGroup.children[0];
+          if (!assembly) return;
+          const backOffsetZ = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.backPlaneOffsetZ ?? 0.001;
+          const materials = [], meshes = [];
+          const addPlane = (canvas, facingBack) => {
+            if (!canvas) return;
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+            const material = new THREE.MeshBasicMaterial({
+              map: texture, transparent: true, alphaTest: alphaTest ?? 0.01,
+              side: THREE.FrontSide, depthWrite: true, depthTest: true,
+              name: `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_material`,
+            });
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+            mesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_plane`;
+            // Nudged a hair closer to camera than its sibling body plane (in
+            // the SAME outward direction that plane already leans relative to
+            // anchorZ) so the hat consistently draws on top instead of
+            // z-fighting with the now-hatless body layer underneath it.
+            mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
+            if (facingBack) mesh.rotation.y = Math.PI;
+            mesh.renderOrder = 2;
+            assembly.add(mesh);
+            materials.push(material);
+            meshes.push(mesh);
+          };
+          addPlane(hatFrontOverlay, false);
+          addPlane(hatBackOverlay, true);
+          if (!meshes.length) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) {
+            for (const m of meshes) m.parent?.remove(m);
+            for (const m of materials) { m.map?.dispose(); m.dispose(); }
+            return;
+          }
+          // The base body already got its own reveal-through-trees ghost
+          // sibling above (addOccludedGhostSiblings(avatarGroup)), but that
+          // ran before these hat planes existed and the hat's own pixels are
+          // no longer part of the base texture (see refreshSinglePlaneAvatarModel
+          // above) -- without its own ghost here, the hat would just vanish
+          // behind a tree instead of fading like the rest of the player.
+          for (const m of meshes) addOccludedGhostSiblings(m);
+          _playerHatXrayOverlay = { materials, meshes };
+          _playerHatXrayEnabled = false; // fresh overlay always starts normal (hat occludes as usual)
+        } catch (err) {
+          window.__farmLog?.(`[avatar] hat-xray overlay build failed: ${err.message}`, 'warn');
+        }
+      }
+
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
+        _playerHatXrayOverlay = null;
+        _playerHatXrayEnabled = false;
         removePlayerAvatarChildren();
         const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(applyGearClothingToPlayerData(_playerData));
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
@@ -20657,6 +20810,7 @@
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
         addOccludedGhostSiblings(avatarGroup);
+        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
