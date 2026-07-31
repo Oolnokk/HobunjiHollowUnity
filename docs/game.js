@@ -6733,7 +6733,12 @@
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
             if (perch && grip) {
-              c.avatarRef.group.position.y = playerMesh.position.y + (playerAvatarModelHeight || 0.9) / 2 + perch.y - grip.y;
+              // perch.y/posterior.y are floor-relative — the same total
+              // height-above-playerMesh convention game.js's own
+              // playerToolBaseY already uses (playerMesh.position.y +
+              // playerToolBaseY, no extra avatarHeight/2 term) — so no
+              // additional half-height lift belongs here either.
+              c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
             } else {
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
             }
@@ -29968,9 +29973,12 @@
         if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
           const saddleY = creatureAttachmentAnchorY(mountRideEntity.creatureKey, 'saddle');
           const posteriorY = playerAttachmentAnchorY('posterior');
+          // posteriorY is floor-relative (see the shoulder-pet lift comment
+          // in updateCompanions) — no separate avatarHeight/2 term belongs
+          // here, same as playerToolBaseY's own usage elsewhere.
           mountSeatLift = (saddleY != null && posteriorY != null)
-            ? (mountRideEntity.halfHeight + saddleY) - playerAvatarModelHeight / 2 - posteriorY
-            : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2) - playerAvatarModelHeight / 2;
+            ? (mountRideEntity.halfHeight + saddleY) - posteriorY
+            : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2);
         }
 
         // Smooth vertical position (bob over water, plus a combat lunge's
