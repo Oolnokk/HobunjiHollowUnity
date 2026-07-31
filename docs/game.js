@@ -213,9 +213,13 @@
         window.__farmDebugLog = [];
         if (window._renderDebugPanel) window._renderDebugPanel();
       });
-      // Debug log copy-to-clipboard button
+      // Debug log copy-to-clipboard button — copies whichever of the Log/
+      // Pixel Probe views is currently showing (see _setDebugView below).
       const _dbgCopy = document.getElementById('debugCopyBtn');
-      if (_dbgCopy) _dbgCopy.addEventListener('click', () => copyDebugLog());
+      if (_dbgCopy) _dbgCopy.addEventListener('click', () => {
+        if (document.getElementById('debugViewProbeBtn')?.classList.contains('active')) copyPixelProbeResult();
+        else copyDebugLog();
+      });
       // Debug log filter tabs — filtering itself lives in debug.js's
       // _renderDebugPanel (window.__debugLogFilter), since that's what
       // actually owns window.__farmDebugLog and re-renders on every new
@@ -233,6 +237,114 @@
           if (window._renderDebugPanel) window._renderDebugPanel();
         });
       });
+
+      // ── Pixel Probe (Debug tab) ─────────────────────────────────────
+      // Diagnostic tool: arms a one-shot click/tap on the game canvas; the
+      // next click reads the raw framebuffer color there AND raycasts
+      // EVERY mesh along that screen ray (not just whichever one currently
+      // wins the pixel), so overlay/ghost/hat-xray planes show up in the
+      // list even on a frame where something else happens to be drawn on
+      // top of them — the "what's actually stacked here" question a plain
+      // screenshot can't answer on its own.
+      let _pixelProbeArmed = false;
+      const _pixelProbeRaycaster = new THREE.Raycaster();
+      function _pixelProbeMatSummary(mat) {
+        if (!mat) return '(no material)';
+        return `name="${mat.name || '(unnamed)'}" type=${mat.type} transparent=${mat.transparent} opacity=${mat.opacity} `
+          + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
+          + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
+      }
+      function _setDebugView(view) {
+        const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
+        const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeResult');
+        const filterTabs = document.getElementById('debugFilterTabs');
+        if (!logBtn || !probeBtn || !logEl || !probeEl) return;
+        const isLog = view === 'log';
+        const style = (btn, active) => {
+          btn.classList.toggle('active', active);
+          btn.style.background = active ? 'rgba(106,167,255,.22)' : 'rgba(255,255,255,.08)';
+          btn.style.borderColor = active ? 'rgba(106,167,255,.5)' : 'rgba(255,255,255,.2)';
+          btn.style.color = active ? '#6aa7ff' : '#d1d5db';
+        };
+        style(logBtn, isLog); style(probeBtn, !isLog);
+        logEl.style.display = isLog ? '' : 'none';
+        probeEl.style.display = isLog ? 'none' : '';
+        if (filterTabs) filterTabs.style.display = isLog ? '' : 'none';
+      }
+      function disarmPixelProbe() {
+        _pixelProbeArmed = false;
+        const hint = document.getElementById('pixelProbeHint');
+        if (hint) hint.style.display = 'none';
+        renderer.domElement.removeEventListener('pointerdown', _pixelProbeHandler, { capture: true });
+      }
+      function armPixelProbe() {
+        if (_pixelProbeArmed) { disarmPixelProbe(); return; }
+        _pixelProbeArmed = true;
+        closeMenu();
+        const hint = document.getElementById('pixelProbeHint');
+        if (hint) hint.style.display = 'flex';
+        renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
+      }
+      function _pixelProbeHandler(ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        _pixelProbeArmed = false;
+        const hint = document.getElementById('pixelProbeHint');
+        if (hint) hint.style.display = 'none';
+
+        const canvas = renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = ev.clientX ?? ev.touches?.[0]?.clientX ?? rect.left;
+        const clientY = ev.clientY ?? ev.touches?.[0]?.clientY ?? rect.top;
+        const cssX = clientX - rect.left, cssY = clientY - rect.top;
+        const ndcX = (cssX / rect.width) * 2 - 1;
+        const ndcY = -(cssY / rect.height) * 2 + 1;
+
+        // Raw pixel color, read straight off the framebuffer at this exact
+        // spot — WebGL readPixels origin is bottom-left, unlike DOM CSS Y.
+        const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+        const fbX = Math.round(cssX * scaleX), fbY = Math.round(canvas.height - cssY * scaleY);
+        let pxBuf = null;
+        try {
+          const gl = renderer.getContext();
+          pxBuf = new Uint8Array(4);
+          gl.readPixels(fbX, fbY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pxBuf);
+        } catch (e) { /* readback can fail on some GPUs/contexts — still report the raycast hits below */ }
+
+        // Every mesh along this screen ray, nearest first — not just the winner.
+        _pixelProbeRaycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+        const activeScene = getActiveScene();
+        const hits = _pixelProbeRaycaster.intersectObjects(activeScene.children, true);
+
+        const lines = [];
+        lines.push('Pixel Probe report');
+        lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+        lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+        lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
+        hits.slice(0, 25).forEach((hit, i) => {
+          const o = hit.object;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`
+            + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`);
+          mats.forEach(m => { if (m) lines.push(`     material: ${_pixelProbeMatSummary(m)}`); });
+        });
+        if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
+
+        const resultEl = document.getElementById('debugProbeResult');
+        if (resultEl) resultEl.textContent = lines.join('\n');
+        openMenu('debug');
+        _setDebugView('probe');
+        showToast('🎯 Probe captured — see Debug tab', true);
+      }
+      async function copyPixelProbeResult() {
+        const text = document.getElementById('debugProbeResult')?.textContent || '';
+        try { await navigator.clipboard.writeText(text); showToast('Pixel probe report copied.', true); }
+        catch (e) { console.log(text); showToast('Clipboard blocked — report printed to console instead.', false); }
+      }
+      document.getElementById('debugProbeArmBtn')?.addEventListener('click', armPixelProbe);
+      document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', disarmPixelProbe);
+      document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
+      document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));
+
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {

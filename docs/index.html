@@ -883,9 +883,13 @@
       <!-- ── Debug log pane ────────────────────────────────── -->
       <div class="mp-pane" id="mpDebug">
         <div style="display:flex;flex-direction:column;position:absolute;inset:0">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0">
-            <span style="font-size:12px;color:#9ca3af">Game log — last 200 entries</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px">
             <div style="display:flex;gap:6px">
+              <button id="debugViewLogBtn"   class="debug-view-tab active" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.22);border:1px solid rgba(106,167,255,.5);border-radius:6px;color:#6aa7ff;cursor:pointer">Log</button>
+              <button id="debugViewProbeBtn" class="debug-view-tab"        style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">🎯 Pixel Probe</button>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button id="debugProbeArmBtn" style="font-size:11px;padding:3px 10px;background:rgba(163,230,53,.15);border:1px solid rgba(163,230,53,.4);border-radius:6px;color:#a3e635;cursor:pointer">🎯 Probe a pixel</button>
               <button id="debugCopyBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy</button>
               <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
             </div>
@@ -906,8 +910,15 @@
             <button class="debug-filter-tab"        data-filter="other"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Other</button>
           </div>
           <pre id="debugLog" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent"></pre>
+          <pre id="debugProbeResult" style="display:none;flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent">No probe yet — press "🎯 Probe a pixel", then click/tap anywhere on the game world.</pre>
         </div>
       </div><!-- /mpDebug -->
+
+      <!-- ── Pixel-probe armed hint (shown over the world while waiting for the next click/tap) ── -->
+      <div id="pixelProbeHint" style="display:none;position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;background:rgba(10,14,10,.92);border:1px solid rgba(163,230,53,.5);border-radius:10px;padding:8px 14px;font-size:12px;color:#a3e635;display:flex;align-items:center;gap:10px;pointer-events:none">
+        <span>🎯 Probe armed — click/tap anywhere on the game world</span>
+        <button id="pixelProbeCancelBtn" style="pointer-events:auto;font-size:11px;padding:2px 8px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);border-radius:6px;color:#f87171;cursor:pointer">Cancel</button>
+      </div>
 
       <!-- ── Wildlife/genotype debug pane ──────────────────────── -->
       <div class="mp-pane" id="mpWildlife">
