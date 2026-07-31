@@ -20,6 +20,8 @@
 //   genotypeSignature(kind, genotype) -> string,
 //   prewarm(kinds?) -> Promise<void>,
 //   SPECIES,
+//   recolorPixels(px, targetRgb, predicate?) -> void (in-place ImageData shade-fill tint),
+//   hexToRgb(hex) -> [r,g,b],
 // }
 (function () {
   'use strict';
@@ -303,5 +305,5 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, prewarm, SPECIES };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, prewarm, SPECIES, recolorPixels, hexToRgb };
 })();

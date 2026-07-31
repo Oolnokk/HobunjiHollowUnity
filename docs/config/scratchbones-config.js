@@ -76,8 +76,9 @@ window.SCRATCHBONES_CONFIG = {
       "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
-        "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk" },
-        "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk" },
+        "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true },
+        "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk", "interactive": true },
+        "grehlr": { "itemKey": "grehlrStinkOil", "cooldownDays": 1, "verb": "Extract", "interactive": true },
         "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 }
       }
     },

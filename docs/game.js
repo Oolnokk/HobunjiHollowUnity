@@ -4004,27 +4004,94 @@
         return true;
       }
 
+      // Tinted-and-faded cheese.png canvas for a given dew color, cached by
+      // color so multiple piles sharing a color (the common case — every
+      // uumkao'ii on a farm today drops the same UUMKAOII_DEFAULT_DEW_COLOR)
+      // only pay the load/recolor cost once. Recolored via
+      // CreatureGeneticsRender's own shade-fill tint (the same technique
+      // that colors gar-wolf/dabinggi-hound fur patterns), not
+      // SpriteRecolor's HSV replace, per spec — then every non-outline
+      // pixel is faded to 20% opacity (80% transparency) so it reads as a
+      // glassy dew droplet rather than a flat opaque sticker, while the
+      // outline ink itself (recolorPixels' own near-black protection
+      // threshold) stays fully opaque so the shape still reads clearly.
+      const _dewSpriteTintCache = new Map(); // colorHex(number) -> Promise<{canvas, bottomRatio}>
+      function _tintedDewSpriteCanvas(colorHex) {
+        if (_dewSpriteTintCache.has(colorHex)) return _dewSpriteTintCache.get(colorHex);
+        const promise = new Promise((resolve, reject) => {
+          if (!window.CreatureGeneticsRender) { reject(new Error('CreatureGeneticsRender unavailable')); return; }
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            const ctx = c.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0);
+            const imgData = ctx.getImageData(0, 0, c.width, c.height);
+            const px = imgData.data;
+            const rgb = window.CreatureGeneticsRender.hexToRgb('#' + colorHex.toString(16).padStart(6, '0'));
+            window.CreatureGeneticsRender.recolorPixels(px, rgb, null);
+            for (let i = 0; i < px.length; i += 4) {
+              if (px[i + 3] === 0) continue;
+              const lum = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
+              if (lum <= 0.08) continue; // outline ink stays fully opaque
+              px[i + 3] = Math.round(px[i + 3] * 0.2);
+            }
+            ctx.putImageData(imgData, 0, 0);
+            const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+            const bottomRatio = bounds ? (bounds.bottom + 1) / img.naturalHeight : 1;
+            resolve({ canvas: c, bottomRatio });
+          };
+          img.onerror = () => reject(new Error('Failed to load cheese.png'));
+          img.src = 'assets/objectsprites/cheese.png';
+        });
+        _dewSpriteTintCache.set(colorHex, promise);
+        return promise;
+      }
+
+      // Rendered as a single upright plane (front-facing convention, like a
+      // character/NPC — cheese.png is a single icon-style sprite, not a
+      // side-view creature profile) rather than the animal system's crossed
+      // front/back planes, camera-relative dead-zone rotated the same way
+      // (perpClamp/cameraRelativePerps) since it's static — never moving, so
+      // there's no "oscillate while moving" case to handle, just settle
+      // broadside and freeze like an idle character. Grounded so the
+      // sprite's own lowest opaque pixel (not the raw image rectangle's
+      // bottom edge) sits exactly on the tile surface, the same
+      // opaque-bounds-scan technique creature planes use.
       function spawnDewPileMesh(col, row, colorKey) {
         const key = col + ',' + row;
         removeDewPileMesh(col, row);
         const group = new THREE.Group();
         group.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        group.userData.perpState = {};
         scene.add(group);
         dewPileMeshes.set(key, group);
-        if (!window.SpriteRecolor) return;
         const colorHex = ITEM_DEFS[dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
-        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/pile_dew.png', colorHex, 'direct').then(canvas => {
+        _tintedDewSpriteCanvas(colorHex).then(({ canvas, bottomRatio }) => {
           if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
           const tex = new THREE.CanvasTexture(canvas);
           tex.colorSpace = THREE.SRGBColorSpace;
-          const targetH = 0.55;
+          const targetH = 0.7; // large enough to read clearly on a tile
           const targetW = targetH * (canvas.width / canvas.height);
           const geo = new THREE.PlaneGeometry(targetW, targetH);
-          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
+          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide, depthWrite: false });
           const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.y = targetH / 2;
+          mesh.position.y = targetH / 2 + creaturePlaneGroundOffset(targetH, bottomRatio);
           group.add(mesh);
         }).catch(() => {});
+      }
+
+      // Called every frame (farm only — dew piles only ever exist there) to
+      // keep every standing dew sprite broadside to the camera within its
+      // own dead-zone-freeze state, exactly like an idle character.
+      function updateDewPileMeshRotations(dt) {
+        for (const group of dewPileMeshes.values()) {
+          const lookTarget = nearestAngleAmong(group.rotation.y, cameraRelativePerps());
+          const { effectiveTarget, snapTo } = perpClamp(group.userData.perpState, lookTarget, cameraRelativePerps());
+          if (snapTo !== null) group.rotation.y = effectiveTarget;
+          else group.rotation.y += angleDiff(effectiveTarget, group.rotation.y) * 0.18;
+        }
       }
 
       function removeDewPileMesh(col, row) {
@@ -4484,6 +4551,16 @@
         animal._barnHome = false;
       }
 
+      // Calm wander pacing shared by every farm-livestock factory: rather
+      // than rolling for a hop every few frames (the previous
+      // tickCounter%3 + 45%-chance scheme, which let a hop's own glide
+      // barely start before the next one fired — visually a nervous,
+      // directionless shuffle rather than an animal actually walking
+      // somewhere and stopping), each animal rests at its current tile for
+      // a real few seconds before picking its next single-tile step.
+      const FARM_ANIMAL_WANDER_PAUSE_MIN_S = 2.5;
+      const FARM_ANIMAL_WANDER_PAUSE_RANGE_S = 3.5; // total pause: 2.5-6s
+
       function _farmAnimalGetButtons(animal, label, icon) {
         const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
         const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
@@ -4496,7 +4573,12 @@
       }
 
       function _farmAnimalOnAction(animal, action, fallbackMessage) {
-        if (action === 'obj_collect_' + animal.id) return collectLivestockResource(animal.livestockId);
+        if (action === 'obj_collect_' + animal.id) {
+          const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
+          const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
+          if (resDef?.interactive) { beginHarvestInteraction(animal); return { ok: true }; }
+          return collectLivestockResource(animal.livestockId);
+        }
         return { ok: false, message: fallbackMessage };
       }
 
@@ -4536,7 +4618,6 @@
           }).catch(() => {});
         }
 
-        let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
@@ -4546,6 +4627,7 @@
           halfHeight: halfH, avatarRef,
           groupRot: Math.PI / 2, targetRot: Math.PI / 2,
           perpState: {},
+          _wanderPauseT: FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S,
 
           getButtons() {
             return _farmAnimalGetButtons(this, "Uumkao’ii", '\u{1F986}');
@@ -4553,21 +4635,23 @@
           onAction(action) {
             return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
           },
-          tick() {
-            tickCounter++;
-            if (tickCounter % 3 !== 0) return;
+          tick(dt) {
+            if (this._harvestFrozen) return;
             if (_farmAnimalBarnTick(this)) return;
 
             // Once this uumkao'ii's dew cooldown resets, drop a persistent
             // dew pile on the next open tile it wanders onto — the tile it's
             // leaving this step, which is guaranteed open the instant it
-            // steps off (see dropDewPile). Bypasses the normal 0.55 wander
-            // chance below so a ready dew resolves within a few ticks
-            // instead of waiting on the coin flip too.
+            // steps off (see dropDewPile). Bypasses the calm wander pause
+            // below so a ready dew resolves within a few seconds instead of
+            // waiting out a full rest period too.
             const livestockList = _loadWorldLivestock();
             const rec = livestockList.find(l => l.id === this.livestockId);
             const wantsDewDrop = Boolean(rec?.dewReady);
-            if (!wantsDewDrop && rnd() > 0.55) return;
+            if (!wantsDewDrop) {
+              this._wanderPauseT -= dt;
+              if (this._wanderPauseT > 0) return;
+            }
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -4591,6 +4675,10 @@
               }
               break;
             }
+            // A fresh rest period whether or not a hop actually happened —
+            // boxed in on all sides should wait before trying again too,
+            // not spin every frame.
+            this._wanderPauseT = FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S;
           },
           update(dt) {
             const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
@@ -4666,7 +4754,6 @@
           }).catch(() => {});
         }
 
-        let tickCounter = 0;
         const animal = {
           id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
@@ -4676,6 +4763,7 @@
           halfHeight: halfH, avatarRef,
           groupRot: Math.PI / 2, targetRot: Math.PI / 2,
           perpState: {},
+          _wanderPauseT: FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S,
 
           getButtons() {
             return _farmAnimalGetButtons(this, label, icon);
@@ -4683,11 +4771,11 @@
           onAction(action) {
             return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
           },
-          tick() {
-            tickCounter++;
-            if (tickCounter % 3 !== 0) return;
+          tick(dt) {
+            if (this._harvestFrozen) return;
             if (_farmAnimalBarnTick(this)) return;
-            if (rnd() > 0.55) return;
+            this._wanderPauseT -= dt;
+            if (this._wanderPauseT > 0) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -4705,6 +4793,7 @@
               this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
               break;
             }
+            this._wanderPauseT = FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S;
           },
           update(dt) {
             const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
@@ -4921,6 +5010,89 @@
         if (changed) _saveWorldLivestock(list);
       }
 
+      // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
+      // Modeled on the NPC dialogue system's own player-staging
+      // (updateNpcDialogueStaging/faceNpcDialogueParticipants): while the
+      // interaction runs, updateMovement is fully replaced by
+      // updateHarvestInteraction (see the dialogueOpen-style gate there),
+      // which quick-lerps (not snaps — see HARVEST_TRANSITION_S) the player
+      // into the authored handler position relative to the animal, holds
+      // there for the interaction's duration, grants the resource, then
+      // lerps back to wherever the player started. The animal itself is
+      // frozen in place for the whole thing (`_harvestFrozen`, checked at
+      // the top of both farm-animal tick()s) so it can't wander out from
+      // under the player mid-interaction.
+      let harvestInteraction = null;
+      const HARVEST_TRANSITION_S = 0.35; // matches MOUNT_TRANSITION_S's quick-lerp feel
+      const HARVEST_ACTIVE_DURATION_S = 2; // matches the authored milking/stink-oil templates' own duration
+
+      // Player stand-spot offset (tile units, in the animal's own unrotated
+      // local frame — rotated by the animal's current groupRot into world
+      // space), extracted from the animation-author tool's authored
+      // two-actor templates: gar-wolf/dabinggi-hound from
+      // AUTHORED_MILKING_TEMPLATE's farmerBaseTransform+
+      // animalAnchorTransform (dabinggi-hound additionally offset by
+      // venomExtractionHandlerDelta, since venom reuses the milking track —
+      // see applyVenomExtractionPreset), grehlr from
+      // AUTHORED_STINK_OIL_GREHLR_TEMPLATE_V1524's handler.baseTransform.
+      // Only the ground-plane (x/z) position is representable here — the
+      // templates' full 3D handler rotation (a crouched/kneeling pose) has
+      // no equivalent on a flat 2.5D billboard character, so the player
+      // instead just faces the animal directly once in position.
+      const HARVEST_HANDLER_OFFSET = {
+        'gar-wolf': { x: -0.243, z: 0.249 },
+        'dabinggi-hound': { x: -0.493, z: 0.429 },
+        'grehlr': { x: 0.064, z: -0.86 },
+      };
+
+      function beginHarvestInteraction(animal) {
+        if (harvestInteraction || !animal) return;
+        const offset = HARVEST_HANDLER_OFFSET[animal.animalKey];
+        if (!offset) { collectLivestockResource(animal.livestockId); return; } // no authored spot — just collect instantly
+        const theta = animal.groupRot;
+        const dx = offset.x * Math.cos(theta) + offset.z * Math.sin(theta);
+        const dz = -offset.x * Math.sin(theta) + offset.z * Math.cos(theta);
+        const animalPxX = animal.wx * TILE, animalPxY = animal.wz * TILE;
+        const targetX = animalPxX + dx * TILE, targetY = animalPxY + dz * TILE;
+        const targetAngle = Math.atan2(animalPxY - targetY, animalPxX - targetX);
+        animal._harvestFrozen = true;
+        harvestInteraction = {
+          animal, livestockId: animal.livestockId,
+          phase: 'in', t: 0,
+          startX: player.x, startY: player.y, startAngle: facingAngle,
+          targetX, targetY, targetAngle,
+        };
+      }
+
+      function updateHarvestInteraction(dt) {
+        const h = harvestInteraction;
+        if (!h) return;
+        player.vx = 0; player.vy = 0;
+        if (h.phase === 'active') {
+          facingAngle = h.targetAngle; player.angle = facingAngle;
+          h.t += dt;
+          if (h.t >= HARVEST_ACTIVE_DURATION_S) {
+            const result = collectLivestockResource(h.livestockId);
+            if (result?.message) showToast(result.message, !!result.ok);
+            h.phase = 'out'; h.t = 0;
+          }
+          return;
+        }
+        h.t = Math.min(1, h.t + dt / HARVEST_TRANSITION_S);
+        const e = h.t;
+        const [fromX, fromY, fromAngle, toX, toY, toAngle] = h.phase === 'in'
+          ? [h.startX, h.startY, h.startAngle, h.targetX, h.targetY, h.targetAngle]
+          : [h.targetX, h.targetY, h.targetAngle, h.startX, h.startY, h.startAngle];
+        player.x = fromX + (toX - fromX) * e;
+        player.y = fromY + (toY - fromY) * e;
+        facingAngle = fromAngle + angleDiff(toAngle, fromAngle) * e;
+        player.angle = facingAngle;
+        if (e >= 1) {
+          if (h.phase === 'in') { h.phase = 'active'; h.t = 0; }
+          else { if (h.animal) h.animal._harvestFrozen = false; harvestInteraction = null; }
+        }
+      }
+
       // Adds a creature from an item straight into the character's personal
       // stable — no farm/ownership involved at all (any character, anywhere,
       // can do this with their own bag item), unlike addLivestockFromItem()
@@ -5049,7 +5221,7 @@
         // .tick() drives wander/barn-homing steps (throttled internally via
         // each animal's own tickCounter); .update(dt) is the continuous
         // position/rotation lerp toward wherever tick() last moved it.
-        for (const animal of animalObjects) { animal.tick && animal.tick(); animal.update(dt); }
+        for (const animal of animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
       }
 
       // ── Companion & hostile creatures (Whistle system + Combat system) ───────
@@ -5269,20 +5441,28 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
-        // Companion-only. The stencil ghost mechanism marks a tree as
-        // "blocking" per-PIXEL (isBetweenCameraAndPlayer2D, checked against
-        // camera-to-player/camera-to-companion lines only -- see
-        // updateZoneVegetationCulling) and reveals ANY ghost sibling behind
-        // that tree at that screen position, not just the specific
-        // creature the LOS check was computed for. Calling this for every
-        // wild animal too (as an earlier version of this fix did) meant an
-        // unrelated animal standing behind the SAME faded tree became
-        // visible right along with the player/companion -- x-ray vision
-        // into vegetation the player has no actual line of sight through,
-        // for a creature the check was never actually run against. Only
-        // the player's own avatar and their active companion are ever a
-        // revealTarget, so only they should ever get a ghost sibling.
-        if (opts.isCompanion) addOccludedGhostSiblings(avatarRef.group);
+        // Companion-only (and not a mount/shoulder-pet — see below). The
+        // stencil ghost mechanism marks a tree as "blocking" per-PIXEL
+        // (isBetweenCameraAndPlayer2D, checked against camera-to-player/
+        // camera-to-companion lines only -- see updateZoneVegetationCulling)
+        // and reveals ANY ghost sibling behind that tree at that screen
+        // position, not just the specific creature the LOS check was
+        // computed for. Calling this for every wild animal too (as an
+        // earlier version of this fix did) meant an unrelated animal
+        // standing behind the SAME faded tree became visible right along
+        // with the player/companion -- x-ray vision into vegetation the
+        // player has no actual line of sight through, for a creature the
+        // check was never actually run against. Only the player's own
+        // avatar and their active (independently-wandering) companion are
+        // ever a revealTarget, so only they should ever get a ghost sibling.
+        //
+        // A mount or shoulder pet is rigidly glued to the player's own
+        // position every frame (see updateMountedMovement/updateCompanions'
+        // shoulderPet branch) — it never has its own independent line of
+        // sight to reveal, so it gets its own ghost sibling stacked directly
+        // on/beside the player's, which reads as the mount/pet itself
+        // flickering semi-transparent whenever a tree fades nearby.
+        if (opts.isCompanion && opts.stableRole !== 'mount' && opts.stableRole !== 'shoulderPet') addOccludedGhostSiblings(avatarRef.group);
         targetScene.add(avatarRef.group);
 
         // Separate top-level object (not parented under avatarRef.group) so
@@ -19644,8 +19824,9 @@
 
         // ── Uumkao'ii Dew ────────────────────────────────────────────
         // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
-        // dropDewPile — the pile itself renders pile_dew.png, direct-recolored;
-        // see spawnDewPileMesh). What lands in the bag is the bottled dew, so
+        // dropDewPile — the pile itself renders cheese.png, shade-fill tinted
+        // and faded; see spawnDewPileMesh). What lands in the bag is the
+        // bottled dew, so
         // its item sprite is jar_liquid.png, keyed-recolored the same way as
         // any other bottled liquid. Only blueDew is actually reachable today
         // (the default/only color a farm uumkao'ii currently produces — see
@@ -19660,9 +19841,10 @@
         purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
         whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
 
-        // ── Milkable livestock resources (Gar-wolf, Dabinggi-hound) ─────
+        // ── Milkable/extractable livestock resources (Gar-wolf, Dabinggi-hound, Grehlr) ─
         garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
+        grehlrStinkOil: { icon: '🦨', label: 'Grehlr Stink Oil', cat: 'material', sellPrice: 18, tags: ['Material', 'Stink Oil', 'Grehlr'], desc: 'Denatured stink oil extracted from a housed grehlr. A murky yellow-green.', spriteIcon: 'jar_liquid.png', spriteColor: 0x8A9A3D, spriteMode: 'keyed' },
       };
 
       // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
@@ -21318,6 +21500,7 @@
 
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+        if (harvestInteraction) { updateHarvestInteraction(dt); return; }
         if (fishingMinigame?.active) return;
         if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
 
@@ -31182,6 +31365,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             updateRipples(dt);
             updateLightningFlash(dt);
           }
+          if (currentArea === 'farm') updateDewPileMeshRotations(dt);
           updateActionParticles(dt);
           updateTreasureSparkles(dt);
           updateFishingFxParticles(dt);
