@@ -1042,6 +1042,13 @@
       <button id="btnWeaponSwitch" class="abt" aria-label="Quick-switch to weapon">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
       </button>
+      <!-- Call/dismiss mount: same outer ring as tool/item dials and the
+           weapon switch, one more step out (135°) — evenly spaces all four
+           at 15° apart. Mirrors the V key / D-pad down 'toggleMount' action;
+           .active reflects mountRideState !== 'none' (see updateMountRide). -->
+      <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
+        <span class="abt-icon">🐴</span>
+      </button>
       <div id="toolPicker" role="menu" aria-label="Select tool">
         <div class="tool-pick-row">
           <span class="tool-pick-chip">Shovel</span>

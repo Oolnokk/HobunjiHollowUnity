@@ -20,6 +20,7 @@
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
+      const btnCallMount = document.getElementById('btnCallMount');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -6942,6 +6943,7 @@
       }
 
       function updateMountRide(dt) {
+        btnCallMount?.classList.toggle('active', mountRideState !== 'none');
         if (mountRideState === 'none') return;
         const m = mountRideEntity;
         if (!m || m.health <= 0 || m.areaId !== currentArea) {
@@ -33145,6 +33147,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       btnWeaponSwitch?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
         toggleQuickWeaponSwitch();
+      });
+
+      // Mobile mirror of the V key / D-pad down 'toggleMount' action —
+      // .active is kept in sync with mountRideState in updateMountRide.
+      btnCallMount?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        toggleMount();
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate

@@ -824,6 +824,26 @@
     #btnWeaponSwitch:active { transform: translate(50%,50%) scale(0.92); }
     #btnWeaponSwitch .abt-icon { font-size: 0.85em; }
     #btnWeaponSwitch.active { background: rgba(255,120,120,0.32); border-color: rgba(255,120,120,0.85); }
+    /* ── Call/dismiss mount: same outer ring, one step further out (135°) —
+       evenly spaces the whole ring (165/150/135/120) at 15° apart. ── */
+    #btnCallMount {
+      position: absolute;
+      right:  calc(-1*cos(135deg)*var(--ar2));
+      bottom: calc(   sin(135deg)*var(--ar2));
+      transform: translate(50%, 50%);
+      width: clamp(26px, calc(0.6 * var(--col)), 37px); height: clamp(26px, calc(0.6 * var(--col)), 37px);
+      border-radius: 50%;
+      background: rgba(125,211,255,0.09); border: 1.5px solid rgba(125,211,255,0.46);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-family: inherit; cursor: pointer;
+      transition: transform 0.08s; overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+    }
+    #btnCallMount:active { transform: translate(50%,50%) scale(0.92); }
+    #btnCallMount .abt-icon { font-size: 0.85em; }
+    #btnCallMount.active { background: rgba(125,211,255,0.32); border-color: rgba(125,211,255,0.85); }
     /* ── Arc dial overlay elements ───────────────────────── */
     .arc-backdrop {
       position: fixed; inset: 0;
