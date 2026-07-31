@@ -5281,7 +5281,15 @@
         // .tick() drives wander/barn-homing steps (throttled internally via
         // each animal's own tickCounter); .update(dt) is the continuous
         // position/rotation lerp toward wherever tick() last moved it.
+        // One _loadWorldLivestock() read for the whole frame (see
+        // _worldLivestockFrameCache) rather than one per animal per tick --
+        // in-place mutations (e.g. a dew drop resetting rec.dewReady) stay
+        // visible to every other animal in this same pass since it's the
+        // same array reference, and _saveWorldLivestock still persists it
+        // for real, so this is purely a read-dedup, not a staleness risk.
+        _worldLivestockFrameCache = _loadWorldLivestock();
         for (const animal of animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
+        _worldLivestockFrameCache = null;
       }
 
       // ── Companion & hostile creatures (Whistle system + Combat system) ───────
@@ -7637,7 +7645,17 @@
       // [{ id, kind, col, row, releasedAt }] — released animals stay on the
       // farm for whoever plays this world, unlike gear/inventory which is
       // scoped to whichever character released them.
+      // Set only while updateAnimalMeshes is iterating this frame's animals
+      // (see below) — every farm-animal tick() reads this at least once
+      // (_farmAnimalBarnTick, plus the uumkao'ii dew check), so without a
+      // cache a farm with a handful of animals was re-parsing the entire
+      // save blob from localStorage hundreds of times per second, which
+      // reads as the whole game freezing. Left null the rest of the time so
+      // every other (infrequent — UI clicks, day-tick) caller still always
+      // gets a fresh read.
+      let _worldLivestockFrameCache = null;
       function _loadWorldLivestock() {
+        if (_worldLivestockFrameCache) return _worldLivestockFrameCache;
         const worldId = _tothalWorldId();
         if (!worldId) return [];
         try {
