@@ -355,6 +355,17 @@
 
         const lines = [];
         lines.push('Pixel Probe report');
+        // GPU/context capabilities — a mobile WebGL context commonly only
+        // grants a 16-bit depth buffer where desktop gets 24, which is a
+        // classic source of z-fighting between close, overlapping geometry
+        // that never reproduces on a desktop/software-renderer test.
+        try {
+          const gl3 = renderer.getContext();
+          const dbg = gl3.getExtension('WEBGL_debug_renderer_info');
+          const gpu = dbg ? gl3.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '(unavailable — extension not exposed)';
+          lines.push(`GPU: ${gpu}`);
+          lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
+        } catch (e) { lines.push('GPU/context info: (read failed)'); }
         lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
         lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
         lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
