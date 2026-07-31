@@ -86,6 +86,8 @@
         colorOptions: bodyPalette('mao-ao', 'female'),
       },
     },
+    // Lore name "Slagothim" — same species, just referred to by that name
+    // in design discussion; the internal id/label stays 'tletingan'.
     'tletingan': {
       label: 'Tletingan', genders: ['male'],
       male: {

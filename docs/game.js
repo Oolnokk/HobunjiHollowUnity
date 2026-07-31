@@ -6623,18 +6623,20 @@
       // buildAnimalPlaneAvatarModel in png-plane-avatar.js, which both the
       // tool and the game build avatars with), so a character's and a
       // creature's anchor values are directly comparable/combinable.
-      function playerAttachmentAnchorY(anchorName) {
+      function playerAttachmentAnchor(anchorName) {
         const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
         if (!lib) return null;
         const speciesId = _playerData?.appearance?.speciesId, gender = _playerData?.appearance?.gender;
         const rec = lib[`${speciesId}::${gender}`] || lib[`<unknown species>::${gender}`];
-        const y = rec?.anchors?.[anchorName]?.position?.y;
-        return Number.isFinite(y) ? y : null;
+        const pos = rec?.anchors?.[anchorName]?.position;
+        return Number.isFinite(pos?.y) ? pos : null;
       }
-      function creatureAttachmentAnchorY(kind, anchorName) {
-        const y = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName]?.position?.y;
-        return Number.isFinite(y) ? y : null;
+      function creatureAttachmentAnchor(kind, anchorName) {
+        const pos = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName]?.position;
+        return Number.isFinite(pos?.y) ? pos : null;
       }
+      function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
+      function creatureAttachmentAnchorY(kind, anchorName) { return creatureAttachmentAnchor(kind, anchorName)?.y ?? null; }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
       // everything stableable today has authored data, so this is just a
@@ -6684,25 +6686,41 @@
           if (c.stableRole === 'mount') continue;
 
           // A shoulder pet doesn't fight or wander off — it stays glued to
-          // its master's side using the exact same teleport-and-stick
-          // technique as the climbing branch above, just permanently instead
-          // of only mid-climb, lifted so its shoulderGrip anchor coincides
-          // with the character's shoulderPerch anchor (see
-          // playerAttachmentAnchorY/creatureAttachmentAnchorY above). It's
-          // riding, not walking, so it always stays in its idle pose
-          // regardless of whether its master is currently moving.
+          // its master's side, positioned so its shoulderGrip anchor
+          // coincides with the character's shoulderPerch anchor exactly like
+          // the animation-author tool's own preview (see
+          // playerAttachmentAnchor/creatureAttachmentAnchor above). Unlike
+          // the mount seat (where posterior.x is always authored centered,
+          // so a same-position glue is enough), shoulderPerch is authored
+          // OFF-CENTER (it's a specific shoulder, not the spine), so the
+          // anchors' local x/z need rotating into world space by the
+          // character's actual current facing before they can be combined —
+          // using playerMesh.rotation.y (the real dead-zone-clamped sprite
+          // rotation), not the raw look/movement angle, so the pet lines up
+          // with how the sprite is actually oriented on screen. It's riding,
+          // not walking, so it always stays in its idle pose regardless of
+          // whether its master is currently moving.
           if (c.stableRole === 'shoulderPet') {
-            const clingAngle = master.angle + Math.PI;
-            c.x = master.x + Math.cos(clingAngle) * TILE * 0.3;
-            c.y = master.y + Math.sin(clingAngle) * TILE * 0.3;
             c.facing = master.angle;
             c.vx = 0; c.vy = 0;
+            const perch = playerAttachmentAnchor('shoulderPerch');
+            const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+            if (perch && grip) {
+              const theta = (master === player) ? playerMesh.rotation.y : master.angle;
+              const lx = perch.x - grip.x, lz = (perch.z || 0) - (grip.z || 0);
+              const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+              const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+              c.x = master.x + dx * TILE;
+              c.y = master.y + dz * TILE;
+            } else {
+              const clingAngle = master.angle + Math.PI;
+              c.x = master.x + Math.cos(clingAngle) * TILE * 0.3;
+              c.y = master.y + Math.sin(clingAngle) * TILE * 0.3;
+            }
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            const perchY = playerAttachmentAnchorY('shoulderPerch');
-            const gripY = creatureAttachmentAnchorY(c.creatureKey, 'shoulderGrip');
-            if (perchY != null && gripY != null) {
-              c.avatarRef.group.position.y = playerMesh.position.y + (playerAvatarModelHeight || 0.9) / 2 + perchY - gripY;
+            if (perch && grip) {
+              c.avatarRef.group.position.y = playerMesh.position.y + (playerAvatarModelHeight || 0.9) / 2 + perch.y - grip.y;
             } else {
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
             }
