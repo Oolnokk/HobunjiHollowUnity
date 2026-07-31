@@ -7118,7 +7118,7 @@
             break;
           }
         }
-        setPlayerHatXray(hasActiveShoulderPetForPlayer);
+        setPlayerHatXray(hasActiveShoulderPetForPlayer && !s_disableHatXray);
         if (!hasActiveShoulderPetForPlayer) setPlayerPetDepthPriority(null, null);
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
@@ -30890,6 +30890,13 @@
       const DEV_MODE_STORAGE_KEY = 'hobunjiDevMode';
       let s_devMode = false;
       try { s_devMode = localStorage.getItem(DEV_MODE_STORAGE_KEY) === '1'; } catch {}
+      // Debug toggle for the translucent-shoulder-pet investigation — forces
+      // setPlayerHatXray's own gate (see updateCompanions) to always report
+      // "off" regardless of whether a shoulder pet is active, so the hat
+      // plane keeps its normal depthWrite and occludes exactly like any
+      // other opaque sprite. Isolates whether that specific mechanism is
+      // contributing to the reported translucency.
+      let s_disableHatXray = false;
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
@@ -30901,6 +30908,9 @@
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
         s_outlines = e.target.checked;
+      });
+      document.getElementById('settingDisableHatXray')?.addEventListener('change', e => {
+        s_disableHatXray = e.target.checked;
       });
       document.getElementById('settingDepthOutlines').addEventListener('change', e => {
         s_depthOutlines = e.target.checked;
