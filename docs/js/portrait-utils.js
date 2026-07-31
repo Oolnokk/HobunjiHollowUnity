@@ -253,7 +253,6 @@ function loadImg(relPath) {
   const candidateUrls = [
     localBase + relPath,
     fallbackBase + relPath,
-    'https://raw.githubusercontent.com/Oolnokk/SoKEmpirePrologue/main/docs/assets/' + relPath,
   ];
 
   const seen = new Set();
@@ -271,22 +270,17 @@ function loadImg(relPath) {
     img.src = url;
   });
 
-  const promise = (async () => {
-    const attemptedUrls = [];
-    for (const url of uniqueCandidates) {
-      attemptedUrls.push(url);
-      try {
-        return await tryLoadUrl(url);
-      } catch (_) {
-        // Try next candidate URL.
-      }
-    }
+  // Race every candidate at once rather than awaiting them one at a time —
+  // for a genuinely missing asset (no art authored for this species/
+  // expression yet), sequential awaits cost the sum of every candidate's
+  // own failed-request round-trip; racing them costs only the slowest one.
+  const promise = Promise.any(uniqueCandidates.map(tryLoadUrl)).catch(() => {
     const error = new Error(`Failed to load portrait asset "${relPath}"`);
     error.name = 'PortraitImageLoadError';
     error.relPath = relPath;
-    error.attemptedUrls = attemptedUrls;
+    error.attemptedUrls = uniqueCandidates;
     throw error;
-  })();
+  });
 
   // Once the image resolves, upgrade the cache entry from Promise → Image so
   // subsequent calls get a synchronous hit and renderProfile can skip await.
@@ -1720,7 +1714,7 @@ async function loadPortraitCosmetics(configBase) {
     data = await resp.json();
   } catch (e) {
     console.warn('[portrait] Primary index fetch failed, falling back to raw GitHub URL', e);
-    const rawUrl = 'https://raw.githubusercontent.com/Oolnokk/SoKEmpirePrologue/main/docs/config/cosmetics/index.json';
+    const rawUrl = 'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/main/docs/config/cosmetics/index.json';
     const resp2 = await fetch(rawUrl);
     if (!resp2.ok) throw new Error('HTTP ' + resp2.status);
     data = await resp2.json();

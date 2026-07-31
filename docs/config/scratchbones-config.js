@@ -76,8 +76,9 @@ window.SCRATCHBONES_CONFIG = {
       "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
-        "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk" },
-        "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk" },
+        "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true },
+        "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk", "interactive": true },
+        "grehlr": { "itemKey": "grehlrStinkOil", "cooldownDays": 1, "verb": "Extract", "interactive": true },
         "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 }
       }
     },
@@ -108,7 +109,7 @@ window.SCRATCHBONES_CONFIG = {
     },
     "movement": {
       "perpRotDeadzoneDeg": 40,
-      "creaturePerpRotDeadzoneDeg": 30,
+      "creaturePerpRotDeadzoneDeg": 25,
       "npc": {
         "speedTilesPerSecond": 1.25,
         "endpointPauseSeconds": 1.6,
@@ -221,10 +222,11 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action3", "label": "Tool/Item Action 3", "desktop": "KeyR", "controller": "Button2" },
         { "id": "action4", "label": "Tool/Item Action 4", "desktop": "Enter", "controller": "Button3" },
         { "id": "action5", "label": "Tool/Item Action 5", "desktop": "Digit7", "controller": "Button12" },
-        { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button13" },
+        { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button9" },
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
-        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyV", "controller": "Button5" },
+        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
+        { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
         { "id": "weaponSwitch", "label": "Switch to Weapon", "desktop": "Digit3", "controller": "Button11" },
         { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
         { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },

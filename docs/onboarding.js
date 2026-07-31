@@ -86,6 +86,8 @@
         colorOptions: bodyPalette('mao-ao', 'female'),
       },
     },
+    // Lore name "Slagothim" — same species, just referred to by that name
+    // in design discussion; the internal id/label stays 'tletingan'.
     'tletingan': {
       label: 'Tletingan', genders: ['male'],
       male: {
@@ -1181,6 +1183,8 @@
       // dabinggi-hound lazily in game.js, same as gearInventory.whistles.
       stable:            (char.stable || []).map(s => ({ ...s })),
       activeCompanionId: char.activeCompanionId ?? null,
+      activeMountId:     char.activeMountId ?? null,
+      activeShoulderPetId: char.activeShoulderPetId ?? null,
       playerId:          char.playerId,
       characterId:       char.id,
       worldId:           world.id,
@@ -1504,6 +1508,8 @@
         stats:            makeDefaultStats(),
         stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
         activeCompanionId: null,
+        activeMountId:     null,
+        activeShoulderPetId: null,
         createdAt:        Date.now(),
         lastPlayed:       Date.now(),
       };
@@ -1524,6 +1530,8 @@
       playerData.stats          = newChar.stats;
       playerData.stable         = newChar.stable;
       playerData.activeCompanionId = newChar.activeCompanionId;
+      playerData.activeMountId = newChar.activeMountId;
+      playerData.activeShoulderPetId = newChar.activeShoulderPetId;
       playerData.nonGearInventory = { ...memberState.nonGearInventory };
       playerData.packClothing   = [...memberState.packClothing];
       playerData.npcRelationships = { ...memberState.npcRelationships };
@@ -1571,6 +1579,8 @@
       if (!c.stats)    c.stats    = makeDefaultStats();
       if (!c.stable)   c.stable   = []; // backfilled with the starter dabinggi-hound lazily in game.js
       if (c.activeCompanionId === undefined) c.activeCompanionId = null;
+      if (c.activeMountId === undefined) c.activeMountId = null;
+      if (c.activeShoulderPetId === undefined) c.activeShoulderPetId = null;
       delete c.npcFavor; // moved to world.members[charId].npcRelationships
     });
     (meta.worlds || []).forEach(w => {

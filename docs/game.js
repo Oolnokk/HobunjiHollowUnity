@@ -20,6 +20,7 @@
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
+      const btnCallMount = document.getElementById('btnCallMount');
 
       // Status pill
       const spTime    = document.getElementById('spTime');
@@ -1017,6 +1018,7 @@
         window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
         window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
         if (_dialogueWalker) {
+          if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
           _dialogueWalker.pause = 0;
           _dialogueWalker.catchup = 3.5;
           _dialogueWalker.catchupDur = 8;
@@ -1869,6 +1871,16 @@
           perceptionTiles: 10,
           canClimb: false, canSwim: false,
           modelWidth: 1.9, tint: 0xffffff,
+          // Default Size for the personal stable's mount/companion/shoulder-
+          // pet gating (see CREATURE_SIZE_CLASSES/stableEntryRole) — a rare
+          // hereditary mutation can still shift an individual specimen's
+          // genotype.sizeClass away from this species default on breeding.
+          defaultSizeClass: 'medium',
+          // How fast riding this species as a mount lets the player move
+          // (px/s, same units as MOVE_SPEED — see activeMountSpeedMul).
+          // Independent per species; every stable-able species currently
+          // shares this same value, deliberately well above MOVE_SPEED (238).
+          mountSpeed: 340,
           sprites: {
             idle: 'assets/creaturesprites/dabinggi-hound_idle.png',
             run: ['assets/creaturesprites/dabinggi-hound_run1.png', 'assets/creaturesprites/dabinggi-hound_run2.png'],
@@ -1897,6 +1909,10 @@
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
           modelWidth: 1.6, tint: 0xffffff,
+          // See dabinggi-hound's matching comment — Uumkao'ii default large
+          // (mount-eligible in the stable).
+          defaultSizeClass: 'large',
+          mountSpeed: 340,
           sprites: {
             idle: "assets/creaturesprites/uumkao'ii.png",
             run: ["assets/creaturesprites/uumkao'ii.png"],
@@ -1924,6 +1940,9 @@
           aggroRangePx: TILE * 6.2, leashRangePx: TILE * 9,
           canClimb: false, canSwim: false,
           modelWidth: 2.1, tint: 0xffffff,
+          // See dabinggi-hound's matching comment.
+          defaultSizeClass: 'medium',
+          mountSpeed: 340,
           sprites: {
             idle: 'assets/creaturesprites/gar-wolf_idle.png',
             run: ['assets/creaturesprites/gar-wolf_run1.png', 'assets/creaturesprites/gar-wolf_run2.png'],
@@ -1938,6 +1957,10 @@
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6.5, leashRangePx: TILE * 9,
           canClimb: true, canSwim: false, modelWidth: 2.2, spriteAspect: 2250 / 3000, tint: 0xffffff,
+          // See dabinggi-hound's matching comment — Grehlr default large
+          // (mount-eligible in the stable).
+          defaultSizeClass: 'large',
+          mountSpeed: 340,
           sprites: { idle: 'assets/creaturesprites/grehlr_idle.png', run: ['assets/creaturesprites/grehlr_run1.png', 'assets/creaturesprites/grehlr_run2.png'] },
           lootPool: 'creature_grehlr',
         },
@@ -1949,6 +1972,9 @@
           attacks: ['pounce'], attackTag: 'sharp', behaviorStages: ['pounceAttempt', 'evasiveOrbit'],
           aggroRangePx: TILE * 6, leashRangePx: TILE * 8.5,
           canClimb: false, canSwim: false, modelWidth: WILDLIFE_CREATURE_MODEL_WIDTHS.drenkirra, spriteAspect: 523 / 831, tint: 0xffffff,
+          // See dabinggi-hound's matching comment.
+          defaultSizeClass: 'small',
+          mountSpeed: 340,
           sprites: { idle: 'assets/creaturesprites/drenkirra_idle.png', run: ['assets/creaturesprites/drenkirra_run1.png', 'assets/creaturesprites/drenkirra_run2.png'] },
           lootPool: 'creature_drenkirra',
         },
@@ -2225,7 +2251,9 @@
       // eventually levelable), can't produce goods, and can't be placed on
       // any farm. [{ id, kind, name, genotype, aiType, level, stabledAt }]
       let stable = [];
-      let activeCompanionId = null; // which stable entry (if any) is the active companion
+      let activeCompanionId = null; // which stable entry (if any) is the active (medium-Size) companion
+      let activeMountId = null;       // which stable entry (if any) is the active (large-Size) mount
+      let activeShoulderPetId = null; // which stable entry (if any) is the active (small-Size) shoulder pet
 
       // Companion AI-type registry — a small database of follow/fight
       // behaviors a stabled species' active-companion form can use, keyed by
@@ -2244,6 +2272,16 @@
       };
       function companionAiTypeForKind(kind) {
         return COMPANION_AI_TYPE_BY_KIND[kind] || 'vigilantProtector';
+      }
+
+      // Auto-equips a freshly-stabled entry into its Size-appropriate slot if
+      // that slot is currently empty (mirrors the old "first companion is
+      // automatically active" convenience, generalized to 3 slots).
+      function _autoAssignStableRole(entry) {
+        const role = stableEntryRole(entry);
+        if (role === 'mount' && !activeMountId) activeMountId = entry.id;
+        else if (role === 'shoulderPet' && !activeShoulderPetId) activeShoulderPetId = entry.id;
+        else if (role === 'companion' && !activeCompanionId) activeCompanionId = entry.id;
       }
 
       // Tool item definitions: sprite path, compatible slots, animation style
@@ -2705,6 +2743,8 @@
           if (ch) {
             ch.stable = stable;
             ch.activeCompanionId = activeCompanionId;
+            ch.activeMountId = activeMountId;
+            ch.activeShoulderPetId = activeShoulderPetId;
             localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           }
         } catch {}
@@ -3295,6 +3335,25 @@
       const interiorFurnitureObjects = []; // Tracks decorative furniture placed inside the house.
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
       const companionObjects = new Set(); // Whistle-summoned companion creatures (0 or 1 active at a time).
+
+      // ── Mount ride state (V key / D-pad down — see toggleMount) ─────────
+      // 'none': no mount summoned. 'rushingIn': the mount is dashing in from
+      // off-screen toward the player. 'mountingUp': the mount has arrived and
+      // the player is lerping up onto it. 'mounted': steady-state riding —
+      // movement input steers the mount (see updateMountedMovement) instead
+      // of the player. 'dismountingDown': the player is lerping back off the
+      // mount. 'rushingOut': the (now riderless) mount is dashing away
+      // off-screen before despawning.
+      let mountRideState = 'none';
+      let mountRideEntity = null;
+      let mountAngle = 0;              // the mount's own heading; momentum-turned in updateMountedMovement
+      let mountCurrentSpeedPxS = 0;    // the mount's current forward speed (momentum — see MOUNT_TURN_RATE_MIN/MAX)
+      let mountTransitionT = 0;        // 0..1 progress through the current mountingUp/dismountingDown lerp
+      let mountTransitionFromX = 0, mountTransitionFromY = 0;
+      let mountDismountTargetX = 0, mountDismountTargetY = 0;
+      let mountRushOutAngle = 0;
+      let mountRushOutT = 0;
+      let mountRushInT = 0;
       const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
       const corpseObjects = new Set();    // Creatures mid-death-lerp ('dying') or settled and lootable ('corpse').
 
@@ -3945,27 +4004,94 @@
         return true;
       }
 
+      // Tinted-and-faded cheese.png canvas for a given dew color, cached by
+      // color so multiple piles sharing a color (the common case — every
+      // uumkao'ii on a farm today drops the same UUMKAOII_DEFAULT_DEW_COLOR)
+      // only pay the load/recolor cost once. Recolored via
+      // CreatureGeneticsRender's own shade-fill tint (the same technique
+      // that colors gar-wolf/dabinggi-hound fur patterns), not
+      // SpriteRecolor's HSV replace, per spec — then every non-outline
+      // pixel is faded to 20% opacity (80% transparency) so it reads as a
+      // glassy dew droplet rather than a flat opaque sticker, while the
+      // outline ink itself (recolorPixels' own near-black protection
+      // threshold) stays fully opaque so the shape still reads clearly.
+      const _dewSpriteTintCache = new Map(); // colorHex(number) -> Promise<{canvas, bottomRatio}>
+      function _tintedDewSpriteCanvas(colorHex) {
+        if (_dewSpriteTintCache.has(colorHex)) return _dewSpriteTintCache.get(colorHex);
+        const promise = new Promise((resolve, reject) => {
+          if (!window.CreatureGeneticsRender) { reject(new Error('CreatureGeneticsRender unavailable')); return; }
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            const ctx = c.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0);
+            const imgData = ctx.getImageData(0, 0, c.width, c.height);
+            const px = imgData.data;
+            const rgb = window.CreatureGeneticsRender.hexToRgb('#' + colorHex.toString(16).padStart(6, '0'));
+            window.CreatureGeneticsRender.recolorPixels(px, rgb, null);
+            for (let i = 0; i < px.length; i += 4) {
+              if (px[i + 3] === 0) continue;
+              const lum = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
+              if (lum <= 0.08) continue; // outline ink stays fully opaque
+              px[i + 3] = Math.round(px[i + 3] * 0.2);
+            }
+            ctx.putImageData(imgData, 0, 0);
+            const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+            const bottomRatio = bounds ? (bounds.bottom + 1) / img.naturalHeight : 1;
+            resolve({ canvas: c, bottomRatio });
+          };
+          img.onerror = () => reject(new Error('Failed to load cheese.png'));
+          img.src = 'assets/objectsprites/cheese.png';
+        });
+        _dewSpriteTintCache.set(colorHex, promise);
+        return promise;
+      }
+
+      // Rendered as a single upright plane (front-facing convention, like a
+      // character/NPC — cheese.png is a single icon-style sprite, not a
+      // side-view creature profile) rather than the animal system's crossed
+      // front/back planes, camera-relative dead-zone rotated the same way
+      // (perpClamp/cameraRelativePerps) since it's static — never moving, so
+      // there's no "oscillate while moving" case to handle, just settle
+      // broadside and freeze like an idle character. Grounded so the
+      // sprite's own lowest opaque pixel (not the raw image rectangle's
+      // bottom edge) sits exactly on the tile surface, the same
+      // opaque-bounds-scan technique creature planes use.
       function spawnDewPileMesh(col, row, colorKey) {
         const key = col + ',' + row;
         removeDewPileMesh(col, row);
         const group = new THREE.Group();
         group.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        group.userData.perpState = {};
         scene.add(group);
         dewPileMeshes.set(key, group);
-        if (!window.SpriteRecolor) return;
         const colorHex = ITEM_DEFS[dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
-        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/pile_dew.png', colorHex, 'direct').then(canvas => {
+        _tintedDewSpriteCanvas(colorHex).then(({ canvas, bottomRatio }) => {
           if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
           const tex = new THREE.CanvasTexture(canvas);
           tex.colorSpace = THREE.SRGBColorSpace;
-          const targetH = 0.55;
+          const targetH = 0.7; // large enough to read clearly on a tile
           const targetW = targetH * (canvas.width / canvas.height);
           const geo = new THREE.PlaneGeometry(targetW, targetH);
-          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
+          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide, depthWrite: false });
           const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.y = targetH / 2;
+          mesh.position.y = targetH / 2 + creaturePlaneGroundOffset(targetH, bottomRatio);
           group.add(mesh);
         }).catch(() => {});
+      }
+
+      // Called every frame (farm only — dew piles only ever exist there) to
+      // keep every standing dew sprite broadside to the camera within its
+      // own dead-zone-freeze state, exactly like an idle character.
+      function updateDewPileMeshRotations(dt) {
+        for (const group of dewPileMeshes.values()) {
+          const lookTarget = nearestAngleAmong(group.rotation.y, cameraRelativePerps());
+          const { effectiveTarget, snapTo } = perpClamp(group.userData.perpState, lookTarget, cameraRelativePerps());
+          if (snapTo !== null) group.rotation.y = effectiveTarget;
+          else group.rotation.y += angleDiff(effectiveTarget, group.rotation.y) * 0.18;
+        }
       }
 
       function removeDewPileMesh(col, row) {
@@ -4003,6 +4129,20 @@
         spawnDewPileMesh(col, row, colorKey);
         saveFarmLayout();
         return true;
+      }
+
+      // Used when a dew cooldown lands while the player isn't on the farm to
+      // see the animal wander and drop it naturally (see tickLivestockResources)
+      // — picks blindly rather than tracking actual open tiles since the farm
+      // grid is small and open ground is the common case; a few missed rolls
+      // on a crowded farm just cost a handful of cheap canPlaceDewPileAt checks.
+      function dropDewPileOnRandomOpenTile(colorKey, maxAttempts = 60) {
+        for (let i = 0; i < maxAttempts; i++) {
+          const col = Math.floor(rnd() * COLS);
+          const row = Math.floor(rnd() * ROWS);
+          if (dropDewPile(col, row, colorKey)) return true;
+        }
+        return false;
       }
 
       // ── Livestock genetics & breeding ───────────────────────────────
@@ -4181,6 +4321,41 @@
       // is a one-line addition instead of a hunt through 3 functions.
       const DUAL_REGION_GENOTYPE_KINDS = new Set(['uumkaoii']);
 
+      // A creature's Size (small/medium/large, carried on genotype.sizeClass)
+      // gates which one of the personal stable's three equip slots it's
+      // eligible for — see renderStablePanel/syncCompanionFromWhistle. Each
+      // stable-able species has a default Size (CREATURE_DB[kind].defaultSizeClass);
+      // breeding can rarely mutate an individual's Size a step away from
+      // whichever parent it inherited from (see crossOffspring), which is how
+      // any species can eventually turn up as any role given enough luck.
+      const CREATURE_SIZE_CLASSES = ['small', 'medium', 'large'];
+      const CREATURE_SIZE_ROLE = { small: 'shoulderPet', medium: 'companion', large: 'mount' };
+      function normalizeCreatureSizeClass(value) {
+        return CREATURE_SIZE_CLASSES.includes(value) ? value : 'medium';
+      }
+      function stableEntryRole(entry) {
+        return CREATURE_SIZE_ROLE[normalizeCreatureSizeClass(entry?.genotype?.sizeClass)];
+      }
+      // Steps a Size one notch up or down (clamped at the ends, no wraparound)
+      // — the shape a rare breeding mutation takes, mirroring mutateFurColor's
+      // role for coat genes.
+      function mutateSizeClassStep(sizeClass) {
+        const idx = CREATURE_SIZE_CLASSES.indexOf(normalizeCreatureSizeClass(sizeClass));
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        return CREATURE_SIZE_CLASSES[clamp(idx + dir, 0, CREATURE_SIZE_CLASSES.length - 1)];
+      }
+      // Offspring Size: inherited from a randomly-chosen parent (falling back
+      // to the species default for a parent with no sizeClass on record, e.g.
+      // a pre-Size save), with the same flat LIVESTOCK_MUTATION_CHANCE roll
+      // crossOffspring's coat genes use to instead step it by one.
+      function inheritedSizeClass(genotypeA, genotypeB, kind) {
+        const fallback = CREATURE_DB[kind]?.defaultSizeClass || 'medium';
+        const parentSize = Math.random() < 0.5
+          ? normalizeCreatureSizeClass(genotypeA?.sizeClass || fallback)
+          : normalizeCreatureSizeClass(genotypeB?.sizeClass || fallback);
+        return Math.random() < LIVESTOCK_MUTATION_CHANCE ? mutateSizeClassStep(parentSize) : parentSize;
+      }
+
       // Fresh (non-bred) livestock gets two independently random fur colors —
       // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
       // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
@@ -4192,10 +4367,14 @@
       // species-aware: Drenkirra use the tropical palette configured in
       // scratchbones-config.js through creation, breeding, and rendering.
       function makeDefaultGenotype(kind) {
+        // Fresh/wild specimens always roll their species' default Size — the
+        // rare mutation only ever applies on breeding (see crossOffspring).
+        const sizeClass = CREATURE_DB[kind]?.defaultSizeClass || 'medium';
         if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
           return {
             fur:    { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
             plates: { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
+            sizeClass,
           };
         }
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
@@ -4217,6 +4396,7 @@
             const enabled = Math.random() < chance;
             genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
           }
+          genotype.sizeClass = sizeClass;
           const enabledIds = patterns.filter(id => genotype[id].enabled);
           window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
           return genotype;
@@ -4293,6 +4473,7 @@
             if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
             child[layerId] = { color, copies: 2, inheritance: 'dominant' };
           }
+          child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
           return child;
         }
         const patterns = LIVESTOCK_PATTERN_DEFS[kind];
@@ -4314,6 +4495,7 @@
           if (mutated) color = mutateFurColor(color, kind);
           child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
         }
+        child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
         const childEnabledIds = patterns.filter(id => child[id].enabled);
         window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
         return child;
@@ -4395,7 +4577,12 @@
       }
 
       function _farmAnimalOnAction(animal, action, fallbackMessage) {
-        if (action === 'obj_collect_' + animal.id) return collectLivestockResource(animal.livestockId);
+        if (action === 'obj_collect_' + animal.id) {
+          const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
+          const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
+          if (resDef?.interactive) { beginHarvestInteraction(animal); return { ok: true }; }
+          return collectLivestockResource(animal.livestockId);
+        }
         return { ok: false, message: fallbackMessage };
       }
 
@@ -4404,16 +4591,31 @@
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
 
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
+        const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
           name: 'uumkaoii_' + col + '_' + row,
         });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
 
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
         avatarRef.group.rotation.y = Math.PI / 2; // start facing east
         _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
+        // Ground-anchor the visible art on its own real opaque bottom pixel
+        // (see makeCreatureEntity/creaturePlaneGroundOffset) instead of the
+        // raw sprite rectangle's edge, without moving the prism itself --
+        // shoulderGrip/saddle attachment anchors are authored relative to
+        // the prism's own frame, so leaving it untouched (only the plane
+        // meshes shift within it) keeps them landing on the exact same
+        // pixels regardless of this correction.
+        resolveCreatureGroundAnchorRatio(spriteUrl, (bottomRatio) => {
+          const offsetY = creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
+        });
 
         // Composites the always-on fur+plates layers onto the plain base —
         // see CreatureGeneticsRender.SPECIES.uumkaoii and makeDefaultGenotype's
@@ -4453,6 +4655,7 @@
             return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
           },
           tick() {
+            if (this._harvestFrozen) return;
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
@@ -4544,12 +4747,28 @@
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
           name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
         });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
 
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
         avatarRef.group.rotation.y = Math.PI / 2; // start facing east
         _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
+        // Ground-anchor on the sprite's own real opaque bottom pixel (see
+        // makeCreatureEntity/creaturePlaneGroundOffset) rather than the raw
+        // sprite rectangle's edge, without moving the prism itself -- a
+        // genotype recolor (composed further below) only changes color, not
+        // the base silhouette, so scanning baseUrl stays correct regardless
+        // of genotype, and leaving the prism untouched keeps this species'
+        // shoulderGrip/saddle attachment anchors (authored relative to the
+        // prism, and shared with the wild/companion creature path for the
+        // same kind) landing on the exact same pixels as before.
+        resolveCreatureGroundAnchorRatio(baseUrl, (bottomRatio) => {
+          const offsetY = creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
+        });
 
         if (genotype && window.CreatureGeneticsRender) {
           window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
@@ -4583,6 +4802,7 @@
             return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
           },
           tick() {
+            if (this._harvestFrozen) return;
             tickCounter++;
             if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
@@ -4813,11 +5033,109 @@
           if (l.kind === 'uumkaoii' && l.barnId && !l.dewReady) {
             if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
             l.dewDaysUntil--;
-            if (l.dewDaysUntil <= 0) l.dewReady = true;
+            if (l.dewDaysUntil <= 0) {
+              l.dewReady = true;
+              // The pile only ever actually appears from inside the live
+              // uumkao'ii's own tick() (see makeUumkaoiiAnimal), which never
+              // runs unless the player is on the farm map to simulate it
+              // (updateAnimalMeshes is gated on currentArea === 'farm'). If
+              // the cooldown lands while the player's on a different map,
+              // there's no animal stepping around to drop it naturally, so
+              // place it directly on a random open tile right now instead of
+              // leaving it stuck waiting for a farm visit that might not
+              // happen for a while.
+              if (currentArea !== 'farm' && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                l.dewReady = false;
+                l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+              }
+            }
             changed = true;
           }
         });
         if (changed) _saveWorldLivestock(list);
+      }
+
+      // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
+      // Modeled on the NPC dialogue system's own player-staging
+      // (updateNpcDialogueStaging/faceNpcDialogueParticipants): while the
+      // interaction runs, updateMovement is fully replaced by
+      // updateHarvestInteraction (see the dialogueOpen-style gate there),
+      // which quick-lerps (not snaps — see HARVEST_TRANSITION_S) the player
+      // into the authored handler position relative to the animal, holds
+      // there for the interaction's duration, grants the resource, then
+      // lerps back to wherever the player started. The animal itself is
+      // frozen in place for the whole thing (`_harvestFrozen`, checked at
+      // the top of both farm-animal tick()s) so it can't wander out from
+      // under the player mid-interaction.
+      let harvestInteraction = null;
+      const HARVEST_TRANSITION_S = 0.35; // matches MOUNT_TRANSITION_S's quick-lerp feel
+      const HARVEST_ACTIVE_DURATION_S = 2; // matches the authored milking/stink-oil templates' own duration
+
+      // Player stand-spot offset (tile units, in the animal's own unrotated
+      // local frame — rotated by the animal's current groupRot into world
+      // space), extracted from the animation-author tool's authored
+      // two-actor templates: gar-wolf/dabinggi-hound from
+      // AUTHORED_MILKING_TEMPLATE's farmerBaseTransform+
+      // animalAnchorTransform (dabinggi-hound additionally offset by
+      // venomExtractionHandlerDelta, since venom reuses the milking track —
+      // see applyVenomExtractionPreset), grehlr from
+      // AUTHORED_STINK_OIL_GREHLR_TEMPLATE_V1524's handler.baseTransform.
+      // Only the ground-plane (x/z) position is representable here — the
+      // templates' full 3D handler rotation (a crouched/kneeling pose) has
+      // no equivalent on a flat 2.5D billboard character, so the player
+      // instead just faces the animal directly once in position.
+      const HARVEST_HANDLER_OFFSET = {
+        'gar-wolf': { x: -0.243, z: 0.249 },
+        'dabinggi-hound': { x: -0.493, z: 0.429 },
+        'grehlr': { x: 0.064, z: -0.86 },
+      };
+
+      function beginHarvestInteraction(animal) {
+        if (harvestInteraction || !animal) return;
+        const offset = HARVEST_HANDLER_OFFSET[animal.animalKey];
+        if (!offset) { collectLivestockResource(animal.livestockId); return; } // no authored spot — just collect instantly
+        const theta = animal.groupRot;
+        const dx = offset.x * Math.cos(theta) + offset.z * Math.sin(theta);
+        const dz = -offset.x * Math.sin(theta) + offset.z * Math.cos(theta);
+        const animalPxX = animal.wx * TILE, animalPxY = animal.wz * TILE;
+        const targetX = animalPxX + dx * TILE, targetY = animalPxY + dz * TILE;
+        const targetAngle = Math.atan2(animalPxY - targetY, animalPxX - targetX);
+        animal._harvestFrozen = true;
+        harvestInteraction = {
+          animal, livestockId: animal.livestockId,
+          phase: 'in', t: 0,
+          startX: player.x, startY: player.y, startAngle: facingAngle,
+          targetX, targetY, targetAngle,
+        };
+      }
+
+      function updateHarvestInteraction(dt) {
+        const h = harvestInteraction;
+        if (!h) return;
+        player.vx = 0; player.vy = 0;
+        if (h.phase === 'active') {
+          facingAngle = h.targetAngle; player.angle = facingAngle;
+          h.t += dt;
+          if (h.t >= HARVEST_ACTIVE_DURATION_S) {
+            const result = collectLivestockResource(h.livestockId);
+            if (result?.message) showToast(result.message, !!result.ok);
+            h.phase = 'out'; h.t = 0;
+          }
+          return;
+        }
+        h.t = Math.min(1, h.t + dt / HARVEST_TRANSITION_S);
+        const e = h.t;
+        const [fromX, fromY, fromAngle, toX, toY, toAngle] = h.phase === 'in'
+          ? [h.startX, h.startY, h.startAngle, h.targetX, h.targetY, h.targetAngle]
+          : [h.targetX, h.targetY, h.targetAngle, h.startX, h.startY, h.startAngle];
+        player.x = fromX + (toX - fromX) * e;
+        player.y = fromY + (toY - fromY) * e;
+        facingAngle = fromAngle + angleDiff(toAngle, fromAngle) * e;
+        player.angle = facingAngle;
+        if (e >= 1) {
+          if (h.phase === 'in') { h.phase = 'active'; h.t = 0; }
+          else { if (h.animal) h.animal._harvestFrozen = false; harvestInteraction = null; }
+        }
       }
 
       // Adds a creature from an item straight into the character's personal
@@ -4837,7 +5155,7 @@
           aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
         };
         stable.push(entry);
-        if (!activeCompanionId) activeCompanionId = entry.id;
+        _autoAssignStableRole(entry);
         saveStable();
         return { ok: true, message: `${entry.name} added to your stable!`, entry };
       }
@@ -4948,7 +5266,15 @@
         // .tick() drives wander/barn-homing steps (throttled internally via
         // each animal's own tickCounter); .update(dt) is the continuous
         // position/rotation lerp toward wherever tick() last moved it.
-        for (const animal of animalObjects) { animal.tick && animal.tick(); animal.update(dt); }
+        // One _loadWorldLivestock() read for the whole frame (see
+        // _worldLivestockFrameCache) rather than one per animal per tick --
+        // in-place mutations (e.g. a dew drop resetting rec.dewReady) stay
+        // visible to every other animal in this same pass since it's the
+        // same array reference, and _saveWorldLivestock still persists it
+        // for real, so this is purely a read-dedup, not a staleness risk.
+        _worldLivestockFrameCache = _loadWorldLivestock();
+        for (const animal of animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
+        _worldLivestockFrameCache = null;
       }
 
       // ── Companion & hostile creatures (Whistle system + Combat system) ───────
@@ -5172,16 +5498,37 @@
         // "blocking" per-PIXEL (isBetweenCameraAndPlayer2D, checked against
         // camera-to-player/camera-to-companion lines only -- see
         // updateZoneVegetationCulling) and reveals ANY ghost sibling behind
-        // that tree at that screen position, not just the specific
-        // creature the LOS check was computed for. Calling this for every
-        // wild animal too (as an earlier version of this fix did) meant an
-        // unrelated animal standing behind the SAME faded tree became
-        // visible right along with the player/companion -- x-ray vision
-        // into vegetation the player has no actual line of sight through,
-        // for a creature the check was never actually run against. Only
-        // the player's own avatar and their active companion are ever a
-        // revealTarget, so only they should ever get a ghost sibling.
-        if (opts.isCompanion) addOccludedGhostSiblings(avatarRef.group);
+        // that tree at that screen position, not just the specific creature
+        // the LOS check was computed for. Calling this for every wild animal
+        // too (as an earlier version of this fix did) meant an unrelated
+        // animal standing behind the SAME faded tree became visible right
+        // along with the player/companion -- x-ray vision into vegetation
+        // the player has no actual line of sight through, for a creature the
+        // check was never actually run against. Only the player's own
+        // avatar and their active (independently-wandering) companion are
+        // ever a revealTarget, so only they should ever get a ghost sibling.
+        //
+        // Mounts and shoulder pets DO get one too (unlike an earlier version
+        // of this fix, which skipped them): they're rigidly glued to the
+        // player's own position every frame (see updateMountedMovement/
+        // updateCompanions' shoulderPet branch), sit close enough on screen
+        // to overlap the player's own body quad, and without their own
+        // ghost they simply vanish (fully depth-culled, since the faded
+        // tree material still writes depth -- see ensureTreeFadeMaterials)
+        // while the player's own ghost keeps fading in beside them, an
+        // inconsistent look the player correctly called out as "partially
+        // transparent". Giving the creature its own ghost too, at a higher
+        // renderOrder (see renderOrderBoost below) so it paints over the
+        // player's own overlapping ghost quad instead of an
+        // undefined/flickering draw order between the two, fixes that
+        // without ever making the PLAYER show through the CREATURE: the
+        // stencil is only ever written by a tree whose OWN depth test
+        // passed at that pixel (see setTreeBlockingStencil/ZPass ops), so a
+        // nearer, fully opaque creature sprite blocks the tree from writing
+        // the stencil there at all -- there is no path by which a solid
+        // creature standing in front causes the player's ghost to bleed
+        // through it.
+        if (opts.isCompanion) addOccludedGhostSiblings(avatarRef.group, { renderOrderBoost: (opts.stableRole === 'mount' || opts.stableRole === 'shoulderPet') ? 10 : 0 });
         targetScene.add(avatarRef.group);
 
         // Separate top-level object (not parented under avatarRef.group) so
@@ -5933,10 +6280,12 @@
         c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
-        // PNG planes get a separate deadzone that lerps through the perp range
-        // instead of locking at the edge (see pngDeadzoneTarget).
+        // PNG planes get a separate deadzone that can never settle inside the
+        // perp range — eases to the nearest edge when idle, or rocks back and
+        // forth across the zone when moving (see creatureDeadzoneTarget).
         c.pngRot ??= c.groupRot;
-        const pngTarget = pngDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+        const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+        const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
         c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         const planeDelta = c.pngRot - c.groupRot;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
@@ -6507,11 +6856,57 @@
       const FOLLOW_FAR_PX  = TILE * 2.2;
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
+
+      // Shared ground truth for where a mount saddle, shoulder-pet grip,
+      // character posterior (seat), and character shoulder-perch actually sit
+      // — hand-authored in docs/tools/animation-author/index.html's Rig
+      // Coordinates mode and exported to docs/config/attachment-rig-profiles.js
+      // (window.HOBUNJI_ATTACHMENT_RIG_PROFILES) so the game reads the exact
+      // same numbers instead of a separately-guessed approximation. Every
+      // anchor's position.y is in that actor's own local frame where Y=0 is
+      // its model group's own origin (the vertical center of its unscaled
+      // idle sprite plane — see buildSinglePlaneAvatarModel/
+      // buildAnimalPlaneAvatarModel in png-plane-avatar.js, which both the
+      // tool and the game build avatars with), so a character's and a
+      // creature's anchor values are directly comparable/combinable.
+      function playerAttachmentAnchor(anchorName) {
+        const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
+        if (!lib) return null;
+        const speciesId = _playerData?.appearance?.speciesId, gender = _playerData?.appearance?.gender;
+        const rec = lib[`${speciesId}::${gender}`] || lib[`<unknown species>::${gender}`];
+        const anchor = rec?.anchors?.[anchorName];
+        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+      }
+      function creatureAttachmentAnchor(kind, anchorName) {
+        const anchor = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName];
+        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+      }
+      function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
+      function creatureAttachmentAnchorY(kind, anchorName) { return creatureAttachmentAnchor(kind, anchorName)?.y ?? null; }
+      // Guessed fallbacks (species-agnostic percent-of-own-height) for the
+      // rare case rig data is missing for this character/creature pairing —
+      // everything stableable today has authored data, so this is just a
+      // safety net against a future species without rig coordinates yet.
+      const CHAR_SHOULDER_PERCENT_FALLBACK = 0.72;
+      const PET_GRIP_PERCENT_FALLBACK = 0.27;
+      const MOUNT_SADDLE_PERCENT_FALLBACK = 0.68;
       // How far a companion can "smell" a still-buried treasure chest — see
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
 
       function updateCompanions(dt) {
+        // Hat-xray toggle (see buildPlayerHatXrayOverlay/setPlayerHatXray):
+        // on for exactly as long as the player has an actively-attached
+        // shoulder pet, off otherwise, regardless of which companion (if
+        // any) is in that role this frame.
+        let hasActiveShoulderPetForPlayer = false;
+        for (const c of companionObjects) {
+          if (c.stableRole === 'shoulderPet' && c.health > 0 && c.areaId === currentArea && (c.master || player) === player) {
+            hasActiveShoulderPetForPlayer = true;
+            break;
+          }
+        }
+        setPlayerHatXray(hasActiveShoulderPetForPlayer);
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -6540,6 +6935,71 @@
             // (Only the real player has a climb-blended playerMesh height;
             // a non-player master would need its own mesh reference here.)
             c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
+            continue;
+          }
+
+          // A mount is driven entirely by updateMountRide/updateMountedMovement
+          // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
+          // the fight/wander companion AI at all, so skip it here.
+          if (c.stableRole === 'mount') continue;
+
+          // A shoulder pet doesn't fight or wander off — it stays glued to
+          // its master's side, positioned/oriented so its shoulderGrip anchor
+          // coincides with the character's shoulderPerch anchor exactly like
+          // the animation-author tool's own live attachment (see
+          // playerAttachmentAnchor/creatureAttachmentAnchor above, and
+          // setActorAttachment/updateActorAttachmentAlignment in the tool —
+          // aligning shoulderGrip to shoulderPerch inverts the grip anchor's
+          // FULL local transform, position AND rotation together, not just
+          // its position, so a grip anchor authored with its own yaw (every
+          // stableable creature's shoulderGrip carries -61°) both tilts the
+          // pet's own facing away from the character's and shifts where its
+          // position offset lands).
+          //
+          // Unlike the mount seat (where posterior.x is always authored
+          // centered, so a same-position glue is enough), shoulderPerch is
+          // authored OFF-CENTER (it's a specific shoulder, not the spine),
+          // so the combined local offset needs rotating into world space by
+          // the character's actual current facing — using
+          // playerMesh.rotation.y (the real dead-zone-clamped sprite
+          // rotation), not the raw look/movement angle, so the pet lines up
+          // with how the sprite is actually oriented on screen. It's riding,
+          // not walking, so it always stays in its idle pose regardless of
+          // whether its master is currently moving.
+          if (c.stableRole === 'shoulderPet') {
+            c.vx = 0; c.vy = 0;
+            const perch = playerAttachmentAnchor('shoulderPerch');
+            const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+            if (perch && grip) {
+              const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+              const invGripYaw = -gripYawRad;
+              const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
+              const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+              const lx = perch.x - gx, lz = (perch.z || 0) - gz;
+              const theta = (master === player) ? playerMesh.rotation.y : master.angle;
+              const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+              const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+              c.x = master.x + dx * TILE;
+              c.y = master.y + dz * TILE;
+              c.facing = master.angle + gripYawRad;
+            } else {
+              const clingAngle = master.angle + Math.PI;
+              c.x = master.x + Math.cos(clingAngle) * TILE * 0.3;
+              c.y = master.y + Math.sin(clingAngle) * TILE * 0.3;
+              c.facing = master.angle;
+            }
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            if (perch && grip) {
+              // perch.y/posterior.y are floor-relative — the same total
+              // height-above-playerMesh convention game.js's own
+              // playerToolBaseY already uses (playerMesh.position.y +
+              // playerToolBaseY, no extra avatarHeight/2 term) — so no
+              // additional half-height lift belongs here either.
+              c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+            } else {
+              c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
+            }
             continue;
           }
 
@@ -6663,24 +7123,32 @@
       // master's own companion, leaving any other master's companion alone —
       // needed so two masters (e.g. two whistle-bearing entities) syncing
       // independently don't clobber each other's pet.
-      function despawnCompanions(master) {
+      function despawnCompanions(master, role = null) {
         for (const c of [...companionObjects]) {
           if (master && c.master !== master) continue;
+          if (role && c.stableRole !== role) continue;
           despawnCreature(c);
           companionObjects.delete(c);
         }
       }
 
-      // Spawns/despawns the given master's active companion to match either
-      // the stable's designated active companion or (falling back, for any
-      // legacy whistle not represented in the stable) its equipped whistle.
-      // Called every farm/zone-area frame for the real player (master
-      // defaults to `player`); cheap no-op once in sync. Also re-spawns into
-      // the new area's scene whenever the master travels. Takes an explicit
-      // `master` (rather than always reading the real player) so this same
-      // function can eventually drive a second companion-bearing player's
-      // companion, or an NPC's, without change — see the `master` field on
-      // the companion entity itself.
+      // Spawns/despawns the given master's active companion/shoulder-pet (one
+      // per Size-gated stable role — see STABLE_ROLE_META) to match the
+      // stable's designated active entry for each slot, or (companion slot
+      // only, falling back for any legacy whistle not represented in the
+      // stable) its equipped whistle. Called every farm/zone-area frame for
+      // the real player (master defaults to `player`); cheap no-op once in
+      // sync. Also re-spawns into the new area's scene whenever the master
+      // travels. Takes an explicit `master` (rather than always reading the
+      // real player) so this same function can eventually drive a second
+      // companion-bearing player's companion, or an NPC's, without change —
+      // see the `master` field on the companion entity itself.
+      //
+      // The mount slot is deliberately NOT handled here — a mount only ever
+      // exists in the world while actively summoned/ridden/dismissing, driven
+      // by toggleMount/updateMountRide (the V key / D-pad down), not kept
+      // continuously in sync with the stable's active-mount pick the way
+      // companion/shoulder-pet are.
       function syncCompanionFromWhistle(master = player) {
         // A cutscene preview's combat card manages companionObjects directly
         // (see runCutscenePreview/runCombat) — this sync would otherwise
@@ -6689,37 +7157,317 @@
         // handoff in docs/index.html).
         if (cutscenePreviewActive) return;
 
-        // The stable is the primary source of truth for "what's my active
-        // companion" — only species with a matching CREATURE_DB entry (and
-        // therefore a companion AI type) can actually be summoned; a stabled
-        // animal of a not-yet-companion-capable kind just means no companion
-        // is spawned, rather than falling through to the legacy whistle.
-        const activeStabled = activeCompanionId ? stable.find(s => s.id === activeCompanionId) : null;
-        const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-          ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
-          : null;
-        const whistle = (!activeStabled && equipmentSlots.whistle)
-          ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
-          : null;
-        const desired = stableCompanion || whistle;
+        for (const role of ['companion', 'shoulderPet']) {
+          const activeId = activeStableIdForRole(role);
+          // The stable is the primary source of truth for "what's my active
+          // X" — only species with a matching CREATURE_DB entry (and
+          // therefore a companion AI type) can actually be summoned; a
+          // stabled animal of a not-yet-companion-capable kind just means
+          // nothing is spawned for that slot, rather than falling through to
+          // the legacy whistle.
+          const activeStabled = activeId ? stable.find(s => s.id === activeId) : null;
+          const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
+            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
+            : null;
+          // Only the companion slot honors the legacy whistle fallback —
+          // mount/shoulder-pet have no equivalent item-based summon path.
+          const whistle = (role === 'companion' && !activeStabled && equipmentSlots.whistle)
+            ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
+            : null;
+          const desired = stableCompanion || whistle;
 
-        const existing = [...companionObjects].find(c => c.master === master);
-        if (!desired) {
-          if (existing) despawnCompanions(master);
+          const existing = [...companionObjects].find(c => c.master === master && c.stableRole === role);
+          if (!desired) {
+            if (existing) despawnCompanions(master, role);
+            continue;
+          }
+          // Swapping between two stabled specimens of the same species (e.g.
+          // two differently-bred gar-wolves) still needs a respawn so the new
+          // one's genotype actually renders.
+          if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
+            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) continue;
+          despawnCompanions(master, role);
+          const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
+          const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
+          const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
+            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
+          });
+          if (companion) companionObjects.add(companion);
+        }
+      }
+
+      // ── Mounted riding (V key / D-pad down calls a mount in or dismisses
+      // it — see the 'toggleMount' input action) ──────────────────────────
+      // A rush-in/out transition well beyond the camera's visible range, so
+      // "calling" a mount reads as it charging in from off-screen rather
+      // than just popping in nearby.
+      const MOUNT_RUSH_SPEED_PX = 900;
+      const MOUNT_SPAWN_DIST_PX = TILE * 9;
+      const MOUNT_ARRIVE_PX = TILE * 0.55;
+      const MOUNT_DESPAWN_DIST_PX = TILE * 9;
+      const MOUNT_TRANSITION_S = 0.35; // how long the rider's lerp on/off the mount takes
+      // Momentum: a stationary mount can pivot quickly, but the faster it's
+      // already moving the more sluggishly it can turn — trading maneuverability
+      // for the speed a mount gives you (see updateMountedMovement).
+      const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
+      const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
+
+      function toggleMount() {
+        if (mountRideState === 'none') beginSummonMount();
+        else if (mountRideState === 'mounted' || mountRideState === 'rushingIn') beginDismissMount();
+        // 'mountingUp'/'dismountingDown'/'rushingOut': mid-transition, ignore
+        // extra presses until it settles into a steady state.
+      }
+
+      function beginSummonMount() {
+        const activeStabled = activeMountId ? stable.find(s => s.id === activeMountId) : null;
+        if (!activeStabled || !CREATURE_DB[activeStabled.kind]) {
+          showToast('No mount set in your stable.', false);
           return;
         }
-        // Swapping between two stabled specimens of the same species (e.g.
-        // two differently-bred gar-wolves) still needs a respawn so the new
-        // one's genotype actually renders.
-        if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
-          && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) return;
-        despawnCompanions(master);
-        const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
-        const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
-        const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-          isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype,
+        // Off-screen, in a random-ish direction behind the player rather than
+        // always dead behind, so the rush-in doesn't look identical every
+        // time — clamped well inside the active area's bounds (with a
+        // margin), since a fixed-distance point in an arbitrary direction can
+        // easily land outside a smaller map (creatureCanEnterTile rejects any
+        // move once the mount is stuck outside those bounds, freezing it at
+        // spawn forever).
+        const spawnAngle = player.angle + Math.PI + (rnd() - 0.5) * (Math.PI * 0.6);
+        const spawnMarginPx = TILE * 1.5;
+        const maxX = getActiveCols() * TILE - spawnMarginPx, maxY = getActiveRows() * TILE - spawnMarginPx;
+        const spawnX = clamp(player.x + Math.cos(spawnAngle) * MOUNT_SPAWN_DIST_PX, spawnMarginPx, maxX);
+        const spawnY = clamp(player.y + Math.sin(spawnAngle) * MOUNT_SPAWN_DIST_PX, spawnMarginPx, maxY);
+        const mount = makeCreatureEntity(activeStabled.kind, spawnX, spawnY, {
+          isCompanion: true, name: activeStabled.name, homeX: spawnX, homeY: spawnY, state: 'idle',
+          master: player, genotype: activeStabled.genotype, stableRole: 'mount',
         });
-        if (companion) companionObjects.add(companion);
+        if (!mount) return;
+        companionObjects.add(mount);
+        mountRideEntity = mount;
+        mountRideState = 'rushingIn';
+        mountAngle = player.angle;
+        mountCurrentSpeedPxS = 0;
+        mountRushInT = 0;
+      }
+
+      function beginDismissMount() {
+        if (!mountRideEntity) { mountRideState = 'none'; return; }
+        mountRideState = 'dismountingDown';
+        mountTransitionT = 0;
+        mountTransitionFromX = player.x; mountTransitionFromY = player.y;
+        // Dismount to the mount's side (perpendicular to its heading) rather
+        // than right in front of/behind it.
+        const sideAngle = mountAngle + Math.PI / 2;
+        mountDismountTargetX = mountRideEntity.x + Math.cos(sideAngle) * TILE * 0.6;
+        mountDismountTargetY = mountRideEntity.y + Math.sin(sideAngle) * TILE * 0.6;
+      }
+
+      function updateMountRide(dt) {
+        btnCallMount?.classList.toggle('active', mountRideState !== 'none');
+        if (mountRideState === 'none') return;
+        const m = mountRideEntity;
+        if (!m || m.health <= 0 || m.areaId !== currentArea) {
+          if (m) { despawnCreature(m); companionObjects.delete(m); }
+          mountRideState = 'none'; mountRideEntity = null;
+          return;
+        }
+
+        if (mountRideState === 'rushingIn') {
+          mountRushInT += dt;
+          const moving = moveCreatureToward(m, player.x, player.y, MOUNT_RUSH_SPEED_PX, dt);
+          const aim = Math.atan2(player.y - m.y, player.x - m.x);
+          m.facing = aim;
+          updateCreatureMesh(m, dt, aim);
+          updateCreatureAnimFrame(m, dt, moving);
+          // Falls back to a flat timeout if the mount's dash toward the
+          // player gets blocked by terrain (creatureCanEnterTile) partway —
+          // otherwise a cornered mount would never arrive at all.
+          if (Math.hypot(player.x - m.x, player.y - m.y) <= MOUNT_ARRIVE_PX || mountRushInT >= 6) {
+            mountRideState = 'mountingUp';
+            mountTransitionT = 0;
+            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
+            mountAngle = m.facing;
+          }
+          return;
+        }
+
+        if (mountRideState === 'mountingUp') {
+          mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
+          player.x = mountTransitionFromX + (m.x - mountTransitionFromX) * mountTransitionT;
+          player.y = mountTransitionFromY + (m.y - mountTransitionFromY) * mountTransitionT;
+          player.vx = 0; player.vy = 0;
+          updateCreatureMesh(m, dt, m.facing);
+          updateCreatureAnimFrame(m, dt, false);
+          if (mountTransitionT >= 1) mountRideState = 'mounted';
+          return;
+        }
+
+        if (mountRideState === 'mounted') {
+          // Position/heading itself is driven by updateMountedMovement (called
+          // from updateMovement while mounted) — this just keeps the mount's
+          // own mesh/animation in sync with wherever that left m.x/m.y/m.facing.
+          updateCreatureMesh(m, dt, m.facing);
+          return;
+        }
+
+        if (mountRideState === 'dismountingDown') {
+          mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
+          player.x = mountTransitionFromX + (mountDismountTargetX - mountTransitionFromX) * mountTransitionT;
+          player.y = mountTransitionFromY + (mountDismountTargetY - mountTransitionFromY) * mountTransitionT;
+          player.vx = 0; player.vy = 0;
+          updateCreatureMesh(m, dt, m.facing);
+          updateCreatureAnimFrame(m, dt, false);
+          if (mountTransitionT >= 1) {
+            mountRideState = 'rushingOut';
+            mountRushOutAngle = m.facing + Math.PI;
+            mountRushOutT = 0;
+          }
+          return;
+        }
+
+        if (mountRideState === 'rushingOut') {
+          mountRushOutT += dt;
+          const targetX = m.x + Math.cos(mountRushOutAngle) * TILE * 2;
+          const targetY = m.y + Math.sin(mountRushOutAngle) * TILE * 2;
+          const moving = moveCreatureToward(m, targetX, targetY, MOUNT_RUSH_SPEED_PX, dt);
+          updateCreatureMesh(m, dt, mountRushOutAngle);
+          updateCreatureAnimFrame(m, dt, moving);
+          // Falls back to a flat timeout if the dash direction happens to
+          // run straight into a wall/map edge (creatureCanEnterTile rejects
+          // any further step there) — otherwise a cornered mount would never
+          // reach MOUNT_DESPAWN_DIST_PX and would sit there forever.
+          if (Math.hypot(player.x - m.x, player.y - m.y) >= MOUNT_DESPAWN_DIST_PX || mountRushOutT >= 3) {
+            despawnCreature(m);
+            companionObjects.delete(m);
+            mountRideState = 'none';
+            mountRideEntity = null;
+          }
+          return;
+        }
+      }
+
+      // A map transition (farm↔town↔wilderness zone↔den cavern) moves the
+      // player instantly via a bunch of separate call sites (enterZone,
+      // enterBuilding/exitBuilding, warpToDenAnchor, teleportToDevArena,
+      // etc.) that only ever touch player.x/y/currentArea and the player's
+      // OWN scene graph nodes — none of them know a mount might be along for
+      // the ride, so a mount's x/y/areaId/scene are left stale in the OLD
+      // area. Rather than teach every one of those call sites about mounts,
+      // this runs once per actual mismatch (from the top of
+      // updateMountedMovement, which fires before anything glues the rider's
+      // position to the mount's) and catches the mount up to the player's
+      // already-correct new position/scene — otherwise the very next tick's
+      // `player.x = m.x` glue below would snap the rider back onto the
+      // mount's stale old-area coordinates, undoing the transition.
+      function relocateMountForAreaChange(m) {
+        const oldScene = m.scene || scene;
+        oldScene.remove(m.avatarRef.group);
+        if (m.groundShadow) oldScene.remove(m.groundShadow);
+        const newScene = getActiveScene();
+        m.scene = newScene;
+        m.areaGrid = getActiveGrid();
+        m.areaCols = getActiveCols();
+        m.areaRows = getActiveRows();
+        m.areaId = currentArea;
+        m.x = player.x; m.y = player.y;
+        m.vx = 0; m.vy = 0;
+        const col = clamp(Math.floor(m.x / TILE), 0, m.areaCols - 1);
+        const row = clamp(Math.floor(m.y / TILE), 0, m.areaRows - 1);
+        const surfY = m.areaGrid[row]?.[col] ? tileSurfaceYInArea(m.areaGrid[row][col], currentArea) : 0;
+        m.avatarRef.group.position.set(m.x / TILE, surfY + m.halfHeight * (m.scaleY ?? 1), m.y / TILE);
+        newScene.add(m.avatarRef.group);
+        if (m.groundShadow) {
+          m.groundShadow.position.set(m.x / TILE, surfY + characterGroundShadowSurfaceOffset(), m.y / TILE);
+          newScene.add(m.groundShadow);
+        }
+        // Rebuilt fresh next tick against the new scene if still applicable —
+        // cheaper and safer than trying to reparent a resource ring HUD.
+        window.ResourceRings?.disposeRingHud(m);
+      }
+
+      // Replaces updateMovement's normal on-foot movement while
+      // mountRideState === 'mounted': movement input steers the MOUNT (which
+      // turns gradually, with momentum lowering its turn rate — see
+      // MOUNT_TURN_RATE_MIN/MAX) instead of moving the player directly, and
+      // the player is glued to the mount's position. The rider's own facing
+      // stays independently controllable via right-stick/mouse-look exactly
+      // like on foot, easing back to match the mount's heading once look
+      // input goes idle (instead of easing back to the raw movement
+      // direction, since that now drives the mount, not the rider's facing).
+      function updateMountedMovement(dt) {
+        const m = mountRideEntity;
+        if (!m) { mountRideState = 'none'; return; }
+        // Entering a building/interior that doesn't support companions/mounts
+        // (see syncCompanionFromWhistle's matching area gate) would otherwise
+        // leave the mount's visuals frozen with no way to tick — force an
+        // instant dismount instead of letting the rider get stuck riding a
+        // creature that no longer exists in the scene they're in.
+        if (!(currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea))) {
+          despawnCreature(m);
+          companionObjects.delete(m);
+          mountRideState = 'none'; mountRideEntity = null;
+          return;
+        }
+        if (m.areaId !== currentArea) relocateMountForAreaChange(m);
+
+        const keyboardVector = getKeyboardVector();
+        const usingKeyboard = keyboardVector.active;
+        let ix = usingKeyboard ? keyboardVector.x : input.x;
+        let iy = usingKeyboard ? keyboardVector.y : input.y;
+        const inputLen = Math.hypot(ix, iy);
+        let inputStrength = 0;
+        if (inputLen > 0.001) {
+          inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
+          ix /= inputLen; iy /= inputLen;
+        }
+        player.inputX = ix; player.inputY = iy; player.inputStrength = inputStrength;
+
+        const topSpeed = (m.def?.mountSpeed || MOVE_SPEED) * getAlchemySpeedMul() * devGlobalSpeedMul;
+        if (inputStrength > 0.001) {
+          mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + ACCEL * dt);
+          const desiredAngle = Math.atan2(iy, ix);
+          const speedRatio = topSpeed > 0 ? clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
+          const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
+          const diff = angleDiff(desiredAngle, mountAngle);
+          mountAngle += clamp(diff, -turnRate * dt, turnRate * dt);
+        } else {
+          mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - DECEL * dt);
+        }
+
+        if (mountCurrentSpeedPxS > 0.01) {
+          const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
+          const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const nextX = clamp(desiredX, minX, maxX), nextY = clamp(desiredY, minY, maxY);
+          // A blocked axis bleeds most of the mount's speed instead of a hard
+          // stop, so clipping a corner at a gallop doesn't feel like hitting
+          // a wall outright.
+          if (canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= 0.4;
+          if (canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= 0.4;
+        }
+        m.facing = mountAngle;
+        player.x = m.x; player.y = m.y;
+        player.vx = 0; player.vy = 0; // the mount is what's moving — the rider's own velocity stays inert
+        updateCreatureAnimFrame(m, dt, mountCurrentSpeedPxS > 5);
+
+        // Facing: independent of the mount's heading via right-stick/mouse-
+        // look (identical to the on-foot system in updateMovement), easing
+        // back to match mountAngle once look input goes idle.
+        if (controllerLookActive) {
+          const diff = angleDiff(controllerLookAngle, facingAngle);
+          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+        } else if (isDesktop && mouseLookActive) {
+          if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) mouseLookActive = false;
+          else {
+            const diff = angleDiff(mouseLookAngle, facingAngle);
+            facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+          }
+        } else {
+          const diff = angleDiff(mountAngle, facingAngle);
+          facingAngle += diff * Math.min(1, FACING_LERP * dt);
+        }
+        player.angle = facingAngle;
       }
 
       function clearHostileObjects() {
@@ -6882,7 +7630,17 @@
       // [{ id, kind, col, row, releasedAt }] — released animals stay on the
       // farm for whoever plays this world, unlike gear/inventory which is
       // scoped to whichever character released them.
+      // Set only while updateAnimalMeshes is iterating this frame's animals
+      // (see below) — every farm-animal tick() reads this at least once
+      // (_farmAnimalBarnTick, plus the uumkao'ii dew check), so without a
+      // cache a farm with a handful of animals was re-parsing the entire
+      // save blob from localStorage hundreds of times per second, which
+      // reads as the whole game freezing. Left null the rest of the time so
+      // every other (infrequent — UI clicks, day-tick) caller still always
+      // gets a fresh read.
+      let _worldLivestockFrameCache = null;
       function _loadWorldLivestock() {
+        if (_worldLivestockFrameCache) return _worldLivestockFrameCache;
         const worldId = _tothalWorldId();
         if (!worldId) return [];
         try {
@@ -11312,6 +12070,16 @@
       // vary by species and are recomputed in refreshPlayerAvatar() once the per-species
       // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
+      // The player's own rendered bust-portrait model height (avatarHeight in
+      // refreshPlayerAvatar) — recomputed there alongside playerToolBaseX/Y.
+      // Used to place a shoulder pet / mounted seat height correctly (see
+      // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
+      let playerAvatarModelHeight = 0.9;
+      // Shoulder-pet hat xray (ported from the animation-author tool's
+      // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
+      // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
+      let _playerHatXrayOverlay = null; // { materials, meshes } once built for the current hat, else null.
+      let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
@@ -12419,8 +13187,20 @@
               // one is still mostly visible over/around it, and they're
               // meant to read as harmless ground clutter rather than a wall
               // — never worth the fade/ghost occlusion treatment reserved
-              // for actual trees (see updateZoneVegetationCulling).
-              if (isBush) vegGroup.userData.skipOcclusionFade = true;
+              // for actual trees (see updateZoneVegetationCulling). The
+              // generic shrub fallback (everything that isn't a real tree/
+              // bush/stump — see the comment above, and the vast majority of
+              // ground cover in most zones) is the exact same kind of squat
+              // clutter and, per that same comment, blankets the ground far
+              // more densely than actual trees ever do. Leaving it eligible
+              // for occlusion fade meant almost ANY sightline to the player
+              // or an attached mount/shoulder-pet clipped through some
+              // nearby clump, so the two flickered semi-transparent
+              // constantly whenever they stood near each other outdoors —
+              // not because they were occluding one another, but because
+              // shrubs everywhere kept getting flagged as the "blocking
+              // tree" for one or both of them.
+              if (isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
               const groundY = tileSurfaceY(TileType.GRASS) + tierY;
               vegGroup.position.set(cx, groundY, cz);
               if (isShadewood) {
@@ -14092,6 +14872,16 @@
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
         walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFacePlayerLerp ?? 0.28);
         walker.root.rotation.y = walker.rot;
+        // Head rotation: the body above only catches up to npcTargetRot
+        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
+        // neck bone at however much of that gap remains right now (clamped to
+        // a natural-looking max) — the NPC glances at the player immediately
+        // and the head straightens on its own as the body finishes turning.
+        if (walker.neckJoint) {
+          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
+          const residual = angleDiff(npcTargetRot, walker.rot);
+          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+        }
       }
 
       function updateNpcDialogueStaging(dt) {
@@ -14616,7 +15406,7 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
+          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
@@ -14646,6 +15436,11 @@
 
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
+          // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
+          // option (null if no neck pivot could be detected for this NPC's
+          // portrait) — see faceNpcDialogueParticipants for the one place
+          // this is driven today.
+          neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
@@ -19134,8 +19929,9 @@
 
         // ── Uumkao'ii Dew ────────────────────────────────────────────
         // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
-        // dropDewPile — the pile itself renders pile_dew.png, direct-recolored;
-        // see spawnDewPileMesh). What lands in the bag is the bottled dew, so
+        // dropDewPile — the pile itself renders cheese.png, shade-fill tinted
+        // and faded; see spawnDewPileMesh). What lands in the bag is the
+        // bottled dew, so
         // its item sprite is jar_liquid.png, keyed-recolored the same way as
         // any other bottled liquid. Only blueDew is actually reachable today
         // (the default/only color a farm uumkao'ii currently produces — see
@@ -19150,9 +19946,10 @@
         purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
         whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
 
-        // ── Milkable livestock resources (Gar-wolf, Dabinggi-hound) ─────
+        // ── Milkable/extractable livestock resources (Gar-wolf, Dabinggi-hound, Grehlr) ─
         garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
         dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
+        grehlrStinkOil: { icon: '🦨', label: 'Grehlr Stink Oil', cat: 'material', sellPrice: 18, tags: ['Material', 'Stink Oil', 'Grehlr'], desc: 'Denatured stink oil extracted from a housed grehlr. A murky yellow-green.', spriteIcon: 'jar_liquid.png', spriteColor: 0x8A9A3D, spriteMode: 'keyed' },
       };
 
       // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
@@ -19885,9 +20682,145 @@
           });
       }
 
+      // Pixel-diffs a "with hat" portrait render against a "hatless" render of
+      // the same profile and returns a canvas containing ONLY the pixels that
+      // differ (i.e. just the hat) — ported from the animation-author tool's
+      // canvasDifferenceOverlayV1521. Returns null if nothing differs (no hat
+      // actually present, or the diff came up empty).
+      function _hatXrayDiffCanvas(fullCanvas, hatlessCanvas) {
+        const w = fullCanvas?.width || 0, h = fullCanvas?.height || 0;
+        if (!w || !h || hatlessCanvas?.width !== w || hatlessCanvas?.height !== h) return null;
+        const out = document.createElement('canvas');
+        out.width = w; out.height = h;
+        const outCtx = out.getContext('2d');
+        const full = fullCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h);
+        const plain = hatlessCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h);
+        const result = outCtx.createImageData(w, h);
+        let kept = 0;
+        for (let i = 0; i < full.data.length; i += 4) {
+          const diff = Math.abs(full.data[i] - plain.data[i]) + Math.abs(full.data[i + 1] - plain.data[i + 1])
+                     + Math.abs(full.data[i + 2] - plain.data[i + 2]) + Math.abs(full.data[i + 3] - plain.data[i + 3]);
+          if (diff < 6 || full.data[i + 3] <= 1) continue;
+          result.data[i] = full.data[i]; result.data[i + 1] = full.data[i + 1];
+          result.data[i + 2] = full.data[i + 2]; result.data[i + 3] = full.data[i + 3];
+          kept++;
+        }
+        if (!kept) return null;
+        outCtx.putImageData(result, 0, 0);
+        return out;
+      }
+
+      // Toggles whether the hat-xray overlay's depthWrite is on (normal — the
+      // hat occludes like anything else) or off (a shoulder pet's real solid
+      // sprite wins the depth test against the hat specifically, so the pet
+      // stays visible instead of vanishing behind a tall hat).
+      function setPlayerHatXray(enabled) {
+        enabled = !!enabled;
+        if (enabled === _playerHatXrayEnabled) return;
+        _playerHatXrayEnabled = enabled;
+        for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
+      }
+
+      // Ported from the animation-author tool's shoulder-pet hat-xray feature
+      // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
+      // docs/tools/animation-author/index.html): a shoulder pet perched near
+      // the head would otherwise just vanish behind a tall hat like any other
+      // opaque foreground pixel, since the hat is baked into the same
+      // portrait texture as the rest of the body. Splitting the hat's own
+      // pixels into a separate overlay plane -- and disabling ONLY that
+      // overlay's depthWrite while a shoulder pet is attached (see
+      // updateCompanions) -- lets the pet win the depth test against the hat
+      // specifically, without touching how the hat occludes anything else,
+      // and without ever affecting the body layer's own normal occlusion (so
+      // this never makes the player see-through, only the hat).
+      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+        try {
+          const hat = profile?.hat;
+          const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
+          if (!hasHat || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+          const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
+          const hatlessFrontCanvas = document.createElement('canvas');
+          hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, { forceEyesOpen: true });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          const hatlessBackCanvas = document.createElement('canvas');
+          hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { portraitView: 'behind', forceEyesOpen: true });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+
+          // Diff through the SAME per-face variant transform (front: as-is;
+          // back: flipX) the base texture pipeline itself applies (see
+          // buildTextureSet in png-plane-avatar.js), so the overlay's pixels
+          // land in exactly the same orientation as the plane they sit on.
+          const fullFrontVariant    = window.PNGPlaneAvatar.makeVariantCanvas(frontCanvas);
+          const hatlessFrontVariant = window.PNGPlaneAvatar.makeVariantCanvas(hatlessFrontCanvas);
+          const fullBackVariant     = window.PNGPlaneAvatar.makeVariantCanvas(backCanvas, { flipX: true });
+          const hatlessBackVariant  = window.PNGPlaneAvatar.makeVariantCanvas(hatlessBackCanvas, { flipX: true });
+          const hatFrontOverlay = _hatXrayDiffCanvas(fullFrontVariant, hatlessFrontVariant);
+          const hatBackOverlay  = _hatXrayDiffCanvas(fullBackVariant, hatlessBackVariant);
+          if (!hatFrontOverlay && !hatBackOverlay) return;
+
+          // Strip the hat out of the ordinary body texture now that a
+          // separate overlay carries it -- otherwise disabling the overlay's
+          // depthWrite would do nothing, since the hat pixels baked into the
+          // body plane would still occlude normally regardless.
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(avatarGroup, hatlessFrontCanvas, { backCanvas: hatlessBackCanvas });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+
+          const assembly = avatarGroup.children[0];
+          if (!assembly) return;
+          const backOffsetZ = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.backPlaneOffsetZ ?? 0.001;
+          const materials = [], meshes = [];
+          const addPlane = (canvas, facingBack) => {
+            if (!canvas) return;
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+            const material = new THREE.MeshBasicMaterial({
+              map: texture, transparent: true, alphaTest: alphaTest ?? 0.01,
+              side: THREE.FrontSide, depthWrite: true, depthTest: true,
+              name: `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_material`,
+            });
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+            mesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_plane`;
+            // Nudged a hair closer to camera than its sibling body plane (in
+            // the SAME outward direction that plane already leans relative to
+            // anchorZ) so the hat consistently draws on top instead of
+            // z-fighting with the now-hatless body layer underneath it.
+            mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
+            if (facingBack) mesh.rotation.y = Math.PI;
+            mesh.renderOrder = 2;
+            assembly.add(mesh);
+            materials.push(material);
+            meshes.push(mesh);
+          };
+          addPlane(hatFrontOverlay, false);
+          addPlane(hatBackOverlay, true);
+          if (!meshes.length) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) {
+            for (const m of meshes) m.parent?.remove(m);
+            for (const m of materials) { m.map?.dispose(); m.dispose(); }
+            return;
+          }
+          // The base body already got its own reveal-through-trees ghost
+          // sibling above (addOccludedGhostSiblings(avatarGroup)), but that
+          // ran before these hat planes existed and the hat's own pixels are
+          // no longer part of the base texture (see refreshSinglePlaneAvatarModel
+          // above) -- without its own ghost here, the hat would just vanish
+          // behind a tree instead of fading like the rest of the player.
+          for (const m of meshes) addOccludedGhostSiblings(m);
+          _playerHatXrayOverlay = { materials, meshes };
+          _playerHatXrayEnabled = false; // fresh overlay always starts normal (hat occludes as usual)
+        } catch (err) {
+          window.__farmLog?.(`[avatar] hat-xray overlay build failed: ${err.message}`, 'warn');
+        }
+      }
+
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
+        _playerHatXrayOverlay = null;
+        _playerHatXrayEnabled = false;
         removePlayerAvatarChildren();
         const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(applyGearClothingToPlayerData(_playerData));
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
@@ -19914,6 +20847,7 @@
         avatarGroup.name = 'player_avatar';
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
+        playerAvatarModelHeight = avatarHeight;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
         // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
         // and bottom-edge pixel row (see handAttachX/handAttachY in
@@ -19939,6 +20873,7 @@
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
         addOccludedGhostSiblings(avatarGroup);
+        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
@@ -20807,7 +21742,9 @@
 
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+        if (harvestInteraction) { updateHarvestInteraction(dt); return; }
         if (fishingMinigame?.active) return;
+        if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
@@ -21657,7 +22594,7 @@
       }
       function _addToOwnStable(stabledEntry) {
         stable.push(stabledEntry);
-        if (!activeCompanionId) activeCompanionId = stabledEntry.id;
+        _autoAssignStableRole(stabledEntry);
         saveStable();
       }
 
@@ -21861,7 +22798,23 @@
         }
       }
 
-      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆' };
+      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿' };
+
+      // Which of the stable's 3 equip slots a given stable-entry role occupies,
+      // and the icon/label its row button shows — see stableEntryRole.
+      const STABLE_ROLE_META = {
+        mount: { icon: '🐴', label: 'Mount' },
+        companion: { icon: '🐕', label: 'Companion' },
+        shoulderPet: { icon: '🐿️', label: 'Shoulder pet' },
+      };
+      function activeStableIdForRole(role) {
+        return role === 'mount' ? activeMountId : role === 'shoulderPet' ? activeShoulderPetId : activeCompanionId;
+      }
+      function setActiveStableIdForRole(role, id) {
+        if (role === 'mount') activeMountId = id;
+        else if (role === 'shoulderPet') activeShoulderPetId = id;
+        else activeCompanionId = id;
+      }
 
       // Small color-swatch HTML shared by every livestock/stable row —
       // Uumkao'ii shows its two permanent regions; pattern-layer species
@@ -21883,25 +22836,29 @@
       }
 
       // Your personal companion collection — character-scoped, untradeable,
-      // never tied to any farm. Rename, set the one active companion (spawned
-      // via syncCompanionFromWhistle/updateCompanions like the starter
-      // dabinggi-hound always has been), and see the level stub for later.
+      // never tied to any farm. Rename, set the active occupant of whichever
+      // of the 3 equip slots (mount/companion/shoulder pet) its Size makes it
+      // eligible for (spawned via syncCompanionFromWhistle/updateCompanions
+      // like the starter dabinggi-hound always has been), and see the level
+      // stub for later.
       function renderStablePanel() {
         const list = document.getElementById('stableList');
         if (!list) return;
         list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
         stable.forEach(entry => {
-          const isActive = entry.id === activeCompanionId;
+          const role = stableEntryRole(entry);
+          const roleMeta = STABLE_ROLE_META[role];
+          const isActive = entry.id === activeStableIdForRole(role);
           const row = document.createElement('div');
           row.className = 'farm-row';
           row.innerHTML =
-            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? 'Active companion' : 'Set as active companion'}">${isActive ? '★' : '☆'}</button>` +
+            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${roleMeta.label.toLowerCase()}` : `Set as ${roleMeta.label.toLowerCase()}`}">${roleMeta.icon}</button>` +
             `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
             `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" maxlength="30">` +
             _livestockSwatchesHtml(entry.genotype, entry.kind) +
-            `<span class="farm-row-value">Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
+            `<span class="farm-row-value">${esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
           row.querySelector('.farm-companion-btn').addEventListener('click', () => {
-            activeCompanionId = isActive ? null : entry.id;
+            setActiveStableIdForRole(role, isActive ? null : entry.id);
             saveStable();
             renderStablePanel();
           });
@@ -24537,7 +25494,7 @@
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
       // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
-      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 30;
+      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 25;
       const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
       // Extra margin required to *exit* a dead zone once locked into it, on top of
       // the radius required to *enter* it. Without this, a rawTarget hovering right
@@ -24588,34 +25545,45 @@
         return { effectiveTarget, snapTo };
       }
 
-      // For creature PNG planes: like perpClamp but linearly maps through the
-      // dead zone (entry-edge → exit-edge) so the sprite never freezes at the
-      // perpendicular — it sweeps across the camera-perpendicular range instead.
-      function pngDeadzoneTarget(state, rawTarget, perps, deadRad) {
-        if (!state.perpSides) state.perpSides = perps.map(() => null);
-        if (!state.locked)    state.locked    = perps.map(() => false);
+      // Oscillation angular speed for creatureDeadzoneTarget's moving-in-deadzone
+      // rocking motion (see below) — ~1.2s per full back-and-forth cycle, fast
+      // enough to read clearly against the pngRot smoothing lerp in
+      // updateCreatureMesh (time constant ~0.1s) without being frantic.
+      const CREATURE_DEADZONE_OSC_RATE = 2 * Math.PI / 1.2;
+
+      // For creature PNG planes: unlike perpClamp, a creature is never allowed
+      // to settle with its rotation reading inside the dead zone. Standing
+      // still, the target eases to the nearer dead-zone edge and stops there.
+      // While moving with a raw target that falls inside the dead zone, the
+      // target instead continuously rocks back and forth along an arc
+      // centered on the movement direction (rawTarget), swinging between the
+      // nearest dead-zone edge and that edge's mirror image reflected across
+      // the movement direction — so the sprite is always mid-flip through the
+      // zone rather than resting in it or sweeping through just once.
+      //
+      // This is continuous across the dead-zone boundary (amplitude/edge both
+      // converge to rawTarget as nearestAbs approaches deadRad), so unlike
+      // perpClamp it needs no entry/exit hysteresis to avoid flicker.
+      function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
         let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
         for (let i = 0; i < perps.length; i++) {
           const dT = angleDiff(rawTarget, perps[i]);
           const a = Math.abs(dT);
           if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
         }
-        const P = perps[nearestI];
-        const wasLocked = state.locked[nearestI];
-        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
-        state.locked[nearestI] = isLocked;
-        if (!isLocked) {
-          state.perpSides[nearestI] = nearestDT > 0 ? 1 : -1;
+        if (nearestAbs >= deadRad) {
+          state.oscPhase = 0;
           return rawTarget;
         }
-        if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
-        const entrySign = state.perpSides[nearestI];
-        // Target the EXIT edge so pngRot lerps across the deadzone rather
-        // than stalling at the entry edge. The lerp in updateCreatureMesh
-        // drives the smooth sweep over time.
-        // (Note: returning a linear rawTarget mapping is a mathematical
-        // identity that produces no visible effect — must target exit edge.)
-        return P - entrySign * deadRad;
+        const sign = nearestDT >= 0 ? 1 : -1;
+        const edge = perps[nearestI] + sign * deadRad;
+        if (!moving) {
+          state.oscPhase = 0;
+          return edge;
+        }
+        const amplitude = angleDiff(edge, rawTarget);
+        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
+        return rawTarget + amplitude * Math.sin(state.oscPhase);
       }
 
       function nearestCardinalAngle(angle) {
@@ -24628,6 +25596,11 @@
         return best;
       }
 
+      const STORM_NAMES = [
+        'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
+        'Tempest Rimewind', 'Squall Cindermoor', 'Gale Thornhollow', 'Storm Marrowdeep',
+        'Tempest Sootveil', 'Gale Bramblegust', 'Squall Wraithrain', 'Storm Emberfall',
+      ];
       let lastStormDay = 0;
       function checkForMajorStorm() {
         if (calendar.weather !== 'storm') return;
@@ -25795,7 +26768,7 @@
           ghost.position.copy(mesh.position);
           ghost.rotation.copy(mesh.rotation);
           ghost.scale.copy(mesh.scale);
-          ghost.renderOrder = (mesh.renderOrder || 0) + 1;
+          ghost.renderOrder = (mesh.renderOrder || 0) + 1 + (opts.renderOrderBoost || 0);
           ghost.name = (mesh.name || 'ghost') + '_occluded_ghost';
           ghost.userData.isOccludedGhost = true;
           ghost.matrixAutoUpdate = mesh.matrixAutoUpdate;
@@ -29421,10 +30394,27 @@
         // flips (see startClimb/updateClimb).
         const standY = player.climbing ? player.climbSurfaceY : tileSurfaceYInArea(tile, currentArea);
 
+        // Riding a mount lifts the rider up so their posterior anchor
+        // coincides with the mount's saddle anchor (see
+        // playerAttachmentAnchorY/creatureAttachmentAnchorY above) — 0 the
+        // instant there's no mount to sit on, so dismounting/no-mount play
+        // is completely unaffected.
+        let mountSeatLift = 0;
+        if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+          const saddleY = creatureAttachmentAnchorY(mountRideEntity.creatureKey, 'saddle');
+          const posteriorY = playerAttachmentAnchorY('posterior');
+          // posteriorY is floor-relative (see the shoulder-pet lift comment
+          // in updateCompanions) — no separate avatarHeight/2 term belongs
+          // here, same as playerToolBaseY's own usage elsewhere.
+          mountSeatLift = (saddleY != null && posteriorY != null)
+            ? (mountRideEntity.halfHeight + saddleY) - posteriorY
+            : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2);
+        }
+
         // Smooth vertical position (bob over water, plus a combat lunge's
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
         // or a climbing hop's bounce, see player.climbHopBounce)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0);
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift;
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -30587,6 +31577,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             // scene it was last synced into.
             syncCompanionFromWhistle();
             updateCompanions(dt);
+            updateMountRide(dt);
             updateCompanionPerception(dt);
             updateBanditCampBanners(dt);
             updateHostileSpawning(dt);
@@ -30621,6 +31612,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             updateRipples(dt);
             updateLightningFlash(dt);
           }
+          if (currentArea === 'farm') updateDewPileMeshRotations(dt);
           updateActionParticles(dt);
           updateTreasureSparkles(dt);
           updateFishingFxParticles(dt);
@@ -30866,9 +31858,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
       const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
       // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-      // camera-relative dead zones where pngDeadzoneTarget lerps through rather
-      // than tracking freely. The pngRot line shows where the PNG plane is
-      // actually pointed right now (may differ from group rotation).
+      // camera-relative dead zones where creatureDeadzoneTarget eases/rocks
+      // rather than tracking freely. The pngRot line shows where the PNG plane
+      // is actually pointed right now (may differ from group rotation).
       const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
       const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
       const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
@@ -32711,6 +33703,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         toggleQuickWeaponSwitch();
       });
 
+      // Mobile mirror of the V key / D-pad down 'toggleMount' action —
+      // .active is kept in sync with mountRideState in updateMountRide.
+      btnCallMount?.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        toggleMount();
+      });
+
       // Swap Target button: its own dedicated drag-direction stick (separate
       // from applyAbt()'s tool/item-action wiring, which had its drag-repeat
       // behavior disabled). Pushing it toward a hostile swaps auto-targeting
@@ -33003,6 +34002,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performContextAction(); return; }
+        if (actionId === 'toggleMount') { toggleMount(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -33642,6 +34642,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // hound you start with is stored in the stable" holds for old saves too.
         stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
         activeCompanionId = playerData.activeCompanionId ?? null;
+        activeMountId = playerData.activeMountId ?? null;
+        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
         if (!stable.length) {
           const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
           stable.push(starter);
@@ -33650,10 +34652,15 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
         // Backfill genotype-less stable entries from older saves (e.g. a
         // starter Bingo saved before pattern genes existed) so they render
-        // real genes instead of the plain uncolored sprite forever.
+        // real genes instead of the plain uncolored sprite forever. Also
+        // backfills a missing Size (genotype.sizeClass) on entries saved
+        // before the stable's mount/companion/shoulder-pet system existed.
         for (const entry of stable) {
           if (!entry.genotype && (LIVESTOCK_PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
             entry.genotype = makeDefaultGenotype(entry.kind);
+          }
+          if (entry.genotype && !entry.genotype.sizeClass) {
+            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
           }
         }
         saveStable();

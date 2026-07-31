@@ -15,6 +15,7 @@
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/scratchbones-config.js?v=20260729a"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
+  <script src="config/attachment-rig-profiles.js?v=20260731a"></script>
   <link rel="stylesheet" href="style.css?v=20260712f">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
@@ -1041,6 +1042,13 @@
            no longer one of the regular tool-select options. -->
       <button id="btnWeaponSwitch" class="abt" aria-label="Quick-switch to weapon">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
+      </button>
+      <!-- Call/dismiss mount: same outer ring as tool/item dials and the
+           weapon switch, one more step out (135°) — evenly spaces all four
+           at 15° apart. Mirrors the V key / D-pad down 'toggleMount' action;
+           .active reflects mountRideState !== 'none' (see updateMountRide). -->
+      <button id="btnCallMount" class="abt" aria-label="Call or dismiss mount">
+        <span class="abt-icon">🐴</span>
       </button>
       <div id="toolPicker" role="menu" aria-label="Select tool">
         <div class="tool-pick-row">
