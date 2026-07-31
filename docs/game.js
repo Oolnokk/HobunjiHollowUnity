@@ -7083,10 +7083,16 @@
         let group = null;
         for (const child of playerMesh.children) if (child.name === 'player_avatar') { group = child; break; }
         if (!group) return [];
+        // The real front/back plane meshes sit inside a nested "assembly"
+        // sub-group (see buildSinglePlaneAvatarModel's root.add(assembly)
+        // in png-plane-avatar.js), not as direct children of this root —
+        // a shallow one-level scan here silently found nothing and left
+        // the player's depthWrite untouched no matter what this function
+        // computed, so this has to traverse the whole subtree.
         const mats = [];
-        for (const child of group.children) {
+        group.traverse(child => {
           if (child.isMesh && child.material && !child.userData.isOccludedGhost && !child.name.includes('hat_xray')) mats.push(child.material);
-        }
+        });
         return mats;
       }
       function setPlayerPetDepthPriority(pet, petInFront) {
