@@ -24969,7 +24969,7 @@
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
       // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
-      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 20;
+      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 25;
       const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
       // Extra margin required to *exit* a dead zone once locked into it, on top of
       // the radius required to *enter* it. Without this, a rawTarget hovering right
