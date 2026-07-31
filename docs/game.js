@@ -4565,16 +4565,6 @@
         animal._barnHome = false;
       }
 
-      // Calm wander pacing shared by every farm-livestock factory: rather
-      // than rolling for a hop every few frames (the previous
-      // tickCounter%3 + 45%-chance scheme, which let a hop's own glide
-      // barely start before the next one fired — visually a nervous,
-      // directionless shuffle rather than an animal actually walking
-      // somewhere and stopping), each animal rests at its current tile for
-      // a real few seconds before picking its next single-tile step.
-      const FARM_ANIMAL_WANDER_PAUSE_MIN_S = 2.5;
-      const FARM_ANIMAL_WANDER_PAUSE_RANGE_S = 3.5; // total pause: 2.5-6s
-
       function _farmAnimalGetButtons(animal, label, icon) {
         const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
         const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
@@ -4647,6 +4637,7 @@
           }).catch(() => {});
         }
 
+        let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
@@ -4656,7 +4647,6 @@
           halfHeight: halfH, avatarRef,
           groupRot: Math.PI / 2, targetRot: Math.PI / 2,
           perpState: {},
-          _wanderPauseT: FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S,
 
           getButtons() {
             return _farmAnimalGetButtons(this, "Uumkao’ii", '\u{1F986}');
@@ -4664,23 +4654,22 @@
           onAction(action) {
             return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
           },
-          tick(dt) {
+          tick() {
             if (this._harvestFrozen) return;
+            tickCounter++;
+            if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
 
             // Once this uumkao'ii's dew cooldown resets, drop a persistent
             // dew pile on the next open tile it wanders onto — the tile it's
             // leaving this step, which is guaranteed open the instant it
-            // steps off (see dropDewPile). Bypasses the calm wander pause
-            // below so a ready dew resolves within a few seconds instead of
-            // waiting out a full rest period too.
+            // steps off (see dropDewPile). Bypasses the normal 0.55 wander
+            // chance below so a ready dew resolves within a few ticks
+            // instead of waiting on the coin flip too.
             const livestockList = _loadWorldLivestock();
             const rec = livestockList.find(l => l.id === this.livestockId);
             const wantsDewDrop = Boolean(rec?.dewReady);
-            if (!wantsDewDrop) {
-              this._wanderPauseT -= dt;
-              if (this._wanderPauseT > 0) return;
-            }
+            if (!wantsDewDrop && rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -4704,10 +4693,6 @@
               }
               break;
             }
-            // A fresh rest period whether or not a hop actually happened —
-            // boxed in on all sides should wait before trying again too,
-            // not spin every frame.
-            this._wanderPauseT = FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S;
           },
           update(dt) {
             const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
@@ -4799,6 +4784,7 @@
           }).catch(() => {});
         }
 
+        let tickCounter = 0;
         const animal = {
           id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
@@ -4808,7 +4794,6 @@
           halfHeight: halfH, avatarRef,
           groupRot: Math.PI / 2, targetRot: Math.PI / 2,
           perpState: {},
-          _wanderPauseT: FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S,
 
           getButtons() {
             return _farmAnimalGetButtons(this, label, icon);
@@ -4816,11 +4801,12 @@
           onAction(action) {
             return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
           },
-          tick(dt) {
+          tick() {
             if (this._harvestFrozen) return;
+            tickCounter++;
+            if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
-            this._wanderPauseT -= dt;
-            if (this._wanderPauseT > 0) return;
+            if (rnd() > 0.55) return;
 
             const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
             for (let i = dirs.length - 1; i > 0; i--) {
@@ -4838,7 +4824,6 @@
               this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
               break;
             }
-            this._wanderPauseT = FARM_ANIMAL_WANDER_PAUSE_MIN_S + rnd() * FARM_ANIMAL_WANDER_PAUSE_RANGE_S;
           },
           update(dt) {
             const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
