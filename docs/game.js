@@ -285,11 +285,11 @@
         if (hint) hint.style.display = 'flex';
         renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
       }
-      function _pixelProbeHandler(ev) {
+      async function _pixelProbeHandler(ev) {
         ev.preventDefault(); ev.stopPropagation();
         _pixelProbeArmed = false;
         const hint = document.getElementById('pixelProbeHint');
-        if (hint) hint.style.display = 'none';
+        if (hint) hint.innerHTML = '<span>🎯 Reading pixel...</span>';
 
         const canvas = renderer.domElement;
         const rect = canvas.getBoundingClientRect();
@@ -319,10 +319,17 @@
         // isolation checks below mutate visibility — lets a probe that finds
         // "nothing wrong" numerically still be cross-checked against what
         // was actually on screen (e.g. something visibly there that the
-        // raycast/material dump doesn't explain).
+        // raycast/material dump doesn't explain). Deliberately does NOT
+        // force its own renderer.render() call first — reads back whatever
+        // the browser's own normal frame loop actually last drew and
+        // displayed (relies on preserveDrawingBuffer:true on the renderer
+        // for this to be reliable; see its own comment). A manually-forced
+        // extra render here would capture a DIFFERENT render of the "same"
+        // frame instead of the one the user actually saw — confirmed live:
+        // a real OS/device screenshot showed the bug, this capture (when it
+        // forced its own render) consistently did not.
         let screenshotDataUrl = null;
         try {
-          renderer.render(activeScene, camera);
           screenshotDataUrl = canvas.toDataURL('image/png');
         } catch (e) { /* toDataURL can throw on a tainted canvas — numeric probe below still stands */ }
 
@@ -364,6 +371,58 @@
           } catch (e) { /* isolation probe is best-effort — the raycast list below still stands without it */ }
         }
 
+        // Isolate the player's own avatar and each active creature avatar
+        // independently, and compare the NORMAL (everything shown) pixel
+        // against each isolated candidate. A flattened screenshot alone
+        // can't distinguish a legitimate single opaque color from a real
+        // 50/50 blend of two layers — they look identical once already
+        // composited into one frame — so this settles it directly: if the
+        // normal pixel doesn't cleanly match any single isolated layer, the
+        // pixel is a genuine blend, live, on this exact device.
+        let blendCheck = null;
+        if (pxBuf) {
+          try {
+            const gl3 = renderer.getContext();
+            const savedVis2 = [];
+            activeScene.traverse(o => { if (o.visible !== undefined) savedVis2.push([o, o.visible]); });
+            const sample2 = (px, py) => { const b = new Uint8Array(4); gl3.readPixels(px, py, 1, 1, gl3.RGBA, gl3.UNSIGNED_BYTE, b); return Array.from(b); };
+            const hideAll = () => { for (const [obj] of savedVis2) obj.visible = false; };
+            const restoreAll = () => { for (const [obj, vis] of savedVis2) obj.visible = vis; };
+
+            let playerAvatarGroup = null;
+            for (const child of playerMesh.children) if (child.name === 'player_avatar') { playerAvatarGroup = child; break; }
+            const activeCreatures = [...companionObjects].filter(c => c.health > 0 && c.areaId === currentArea && c.avatarRef?.group);
+
+            hideAll(); renderer.render(activeScene, camera);
+            const bg = sample2(fbX, fbY);
+
+            const candidates = [{ label: 'background/world only', color: bg }];
+            if (playerAvatarGroup) {
+              hideAll(); playerAvatarGroup.visible = true;
+              renderer.render(activeScene, camera);
+              candidates.push({ label: 'player alone', color: sample2(fbX, fbY) });
+            }
+            for (const c of activeCreatures) {
+              hideAll(); c.avatarRef.group.visible = true;
+              renderer.render(activeScene, camera);
+              candidates.push({ label: `${c.creatureKey} (${c.stableRole || 'creature'}) alone`, color: sample2(fbX, fbY) });
+            }
+
+            hideAll();
+            if (playerAvatarGroup) playerAvatarGroup.visible = true;
+            for (const c of activeCreatures) c.avatarRef.group.visible = true;
+            renderer.render(activeScene, camera);
+            const normal = sample2(fbX, fbY);
+
+            restoreAll(); renderer.render(activeScene, camera);
+
+            const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+            let bestMatch = null, bestDist = Infinity;
+            for (const cand of candidates) { const d = dist(normal, cand.color); if (d < bestDist) { bestDist = d; bestMatch = cand; } }
+            blendCheck = { normal, candidates, bestMatchLabel: bestMatch?.label, bestDist, isCleanMatch: bestDist < 8 };
+          } catch (e) { /* best-effort — the rest of the report still stands without it */ }
+        }
+
         const lines = [];
         lines.push('Pixel Probe report');
         // GPU/context capabilities — a mobile WebGL context commonly only
@@ -391,6 +450,73 @@
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
 
+        if (blendCheck) {
+          lines.push('');
+          lines.push('=== Blend check (isolates the player + each active creature avatar independently, live, on this device) ===');
+          lines.push(`Normal pixel (everything shown): rgba(${blendCheck.normal.join(',')})`);
+          for (const c of blendCheck.candidates) lines.push(`  ${c.label}: rgba(${c.color.join(',')})`);
+          lines.push(blendCheck.isCleanMatch
+            ? `>>> CLEAN MATCH to "${blendCheck.bestMatchLabel}" (distance ${blendCheck.bestDist.toFixed(1)}) — this pixel is a single opaque layer, NOT a blend.`
+            : `>>> NO CLEAN MATCH to any single layer (closest is "${blendCheck.bestMatchLabel}" at distance ${blendCheck.bestDist.toFixed(1)}) — this pixel does not match any one avatar alone, consistent with genuine blending between layers.`);
+        }
+
+        // Temporal flicker check — every isolation test above forces its OWN
+        // synchronous re-render, which by definition produces one clean,
+        // un-blended still frame. If the real bug is two valid renders
+        // alternating faster than the eye can resolve them individually
+        // (read by a human as translucent blending, even though no single
+        // frame actually blends anything), no still capture — a screenshot
+        // included — can ever show it; only sampling a run of REAL,
+        // untouched animation frames over time can. Critically this has to
+        // run BEFORE openMenu('debug') below: opening the menu sets
+        // paused=true, which freezes updateCompanions (so the pet's
+        // position, and this whole depth-priority system, simply stops
+        // recomputing) — capturing after that would only ever see a static
+        // scene by construction, guaranteeing a false "no flicker" result.
+        const flickerSamples = [];
+        try {
+          const glF = renderer.getContext();
+          const bufF = new Uint8Array(4);
+          // Races requestAnimationFrame against a plain timer so a tab where
+          // rAF is throttled or never fires (some headless/backgrounded
+          // contexts) can't hang this diagnostic indefinitely — it just
+          // falls back to a slower tick instead.
+          const nextTick = () => new Promise(resolve => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
+            requestAnimationFrame(finish);
+            setTimeout(finish, 200);
+          });
+          const captureStart = Date.now();
+          for (let i = 0; i < 45 && !paused && (Date.now() - captureStart) < 4000; i++) {
+            await nextTick();
+            glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
+            flickerSamples.push([bufF[0], bufF[1], bufF[2], bufF[3]]);
+          }
+        } catch (e) { /* best-effort — the rest of the report still stands without it */ }
+
+        if (flickerSamples.length) {
+          const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+          const clusters = [];
+          for (const s of flickerSamples) {
+            let c = clusters.find(c => dist(c.color, s) < 10);
+            if (c) c.count++; else clusters.push({ color: s, count: 1 });
+          }
+          clusters.sort((a, b) => b.count - a.count);
+          lines.push('');
+          lines.push(`=== Temporal flicker check (${flickerSamples.length} real animation frames sampled at this exact pixel, game running normally) ===`);
+          if (clusters.length <= 1) {
+            lines.push(`>>> STABLE — every sampled frame matched the same color (rgba(${clusters[0].color.join(',')})). No flicker at this pixel over this window.`);
+          } else {
+            lines.push(`>>> FLICKERING — ${clusters.length} distinct colors alternated across ${flickerSamples.length} frames:`);
+            for (const c of clusters) lines.push(`  rgba(${c.color.join(',')}) — ${c.count}/${flickerSamples.length} frames`);
+            lines.push('This is consistent with two valid renders alternating faster than a single screenshot can show, read by the eye as translucent blending.');
+          }
+        } else {
+          lines.push('');
+          lines.push('=== Temporal flicker check: skipped (game was already paused when the probe fired) ===');
+        }
+
         const resultEl = document.getElementById('debugProbeResult');
         if (resultEl) resultEl.textContent = lines.join('\n');
         const screenshotEl = document.getElementById('debugProbeScreenshot');
@@ -398,6 +524,7 @@
           if (screenshotDataUrl) { screenshotEl.src = screenshotDataUrl; screenshotEl.style.display = ''; }
           else screenshotEl.style.display = 'none';
         }
+        if (hint) hint.style.display = 'none';
         openMenu('debug');
         _setDebugView('probe');
         showToast('🎯 Probe captured — see Debug tab', true);
@@ -26256,7 +26383,17 @@
       scene.fog      = new THREE.FogExp2(0x1a2b20, 0.018);
 
       const threeRect = threeContainer.getBoundingClientRect();
-      const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      // preserveDrawingBuffer:true — without it, canvas.toDataURL() (see the
+      // Pixel Probe's screenshot capture) has no spec guarantee of reading
+      // back anything meaningful outside the exact rAF callback that drew
+      // it, and forcing an extra ad-hoc renderer.render() call to work
+      // around that risks capturing a DIFFERENT render of the "same" frame
+      // than what was actually displayed — GPU resolution of near-tied
+      // depth/stencil comparisons (exactly what's suspected here) isn't
+      // guaranteed identical between two separate render() invocations,
+      // especially on a tile-based mobile GPU. Keeping the buffer around
+      // lets the probe read back the literal frame the user actually saw.
+      const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight);
       renderer.shadowMap.enabled = true;
