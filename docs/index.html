@@ -917,7 +917,10 @@
             <button class="debug-filter-tab"        data-filter="other"   style="font-size:10px;padding:2px 8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;color:#d1d5db;cursor:pointer">Other</button>
           </div>
           <pre id="debugLog" style="flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent"></pre>
-          <pre id="debugProbeResult" style="display:none;flex:1;overflow-y:auto;margin:0;padding:8px 12px 12px;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent">No probe yet — press "🎯 Probe a pixel", then click/tap anywhere on the game world.</pre>
+          <div id="debugProbeView" style="display:none;flex:1;overflow-y:auto;padding:8px 12px 12px">
+            <img id="debugProbeScreenshot" style="display:none;max-width:100%;border-radius:6px;border:1px solid rgba(255,255,255,.15);margin-bottom:8px" alt="Screenshot taken at the moment of the probe click/tap">
+            <pre id="debugProbeResult" style="margin:0;font-size:11px;line-height:1.55;color:#d1d5db;white-space:pre-wrap;word-break:break-all;background:transparent">No probe yet — press "🎯 Probe a pixel", then click/tap anywhere on the game world.</pre>
+          </div>
         </div>
       </div><!-- /mpDebug -->
 

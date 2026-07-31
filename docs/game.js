@@ -256,7 +256,7 @@
       }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
-        const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeResult');
+        const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
         const filterTabs = document.getElementById('debugFilterTabs');
         if (!logBtn || !probeBtn || !logEl || !probeEl) return;
         const isLog = view === 'log';
@@ -314,6 +314,17 @@
         _pixelProbeRaycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
         const activeScene = getActiveScene();
         const hits = _pixelProbeRaycaster.intersectObjects(activeScene.children, true);
+
+        // Screenshot of the exact moment of the click/tap, BEFORE any of the
+        // isolation checks below mutate visibility — lets a probe that finds
+        // "nothing wrong" numerically still be cross-checked against what
+        // was actually on screen (e.g. something visibly there that the
+        // raycast/material dump doesn't explain).
+        let screenshotDataUrl = null;
+        try {
+          renderer.render(activeScene, camera);
+          screenshotDataUrl = canvas.toDataURL('image/png');
+        } catch (e) { /* toDataURL can throw on a tainted canvas — numeric probe below still stands */ }
 
         // A ghost sibling's own .visible=true only means it's eligible for
         // the render pass — it says nothing about whether its GreaterDepth+
@@ -382,6 +393,11 @@
 
         const resultEl = document.getElementById('debugProbeResult');
         if (resultEl) resultEl.textContent = lines.join('\n');
+        const screenshotEl = document.getElementById('debugProbeScreenshot');
+        if (screenshotEl) {
+          if (screenshotDataUrl) { screenshotEl.src = screenshotDataUrl; screenshotEl.style.display = ''; }
+          else screenshotEl.style.display = 'none';
+        }
         openMenu('debug');
         _setDebugView('probe');
         showToast('🎯 Probe captured — see Debug tab', true);
