@@ -13107,8 +13107,20 @@
               // one is still mostly visible over/around it, and they're
               // meant to read as harmless ground clutter rather than a wall
               // — never worth the fade/ghost occlusion treatment reserved
-              // for actual trees (see updateZoneVegetationCulling).
-              if (isBush) vegGroup.userData.skipOcclusionFade = true;
+              // for actual trees (see updateZoneVegetationCulling). The
+              // generic shrub fallback (everything that isn't a real tree/
+              // bush/stump — see the comment above, and the vast majority of
+              // ground cover in most zones) is the exact same kind of squat
+              // clutter and, per that same comment, blankets the ground far
+              // more densely than actual trees ever do. Leaving it eligible
+              // for occlusion fade meant almost ANY sightline to the player
+              // or an attached mount/shoulder-pet clipped through some
+              // nearby clump, so the two flickered semi-transparent
+              // constantly whenever they stood near each other outdoors —
+              // not because they were occluding one another, but because
+              // shrubs everywhere kept getting flagged as the "blocking
+              // tree" for one or both of them.
+              if (isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
               const groundY = tileSurfaceY(TileType.GRASS) + tierY;
               vegGroup.position.set(cx, groundY, cz);
               if (isShadewood) {
