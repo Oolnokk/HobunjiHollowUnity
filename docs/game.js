@@ -6970,6 +6970,7 @@
             c.vx = 0; c.vy = 0;
             const perch = playerAttachmentAnchor('shoulderPerch');
             const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+            let dx = null, dz = null;
             if (perch && grip) {
               const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
               const invGripYaw = -gripYawRad;
@@ -6977,8 +6978,8 @@
               const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
               const lx = perch.x - gx, lz = (perch.z || 0) - gz;
               const theta = (master === player) ? playerMesh.rotation.y : master.angle;
-              const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
-              const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+              dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+              dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
               c.x = master.x + dx * TILE;
               c.y = master.y + dz * TILE;
               c.facing = master.angle + gripYawRad;
@@ -6997,6 +6998,32 @@
               // playerToolBaseY, no extra avatarHeight/2 term) — so no
               // additional half-height lift belongs here either.
               c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+              // X/Z are pinned directly off playerMesh.position (the
+              // character's own already-smoothed render position), not
+              // eased in via updateCreatureMesh's generic per-creature
+              // lerp (grp.position.x/z += (target - current) * dt*10)
+              // above. That lerp is tuned for a wandering animal easing
+              // toward a waypoint; a shoulder pet's target is recomputed
+              // fresh every frame from the player's CURRENT position, so
+              // it was instead just perpetually chasing a moving target
+              // one frame behind — and since the player's own mesh eases
+              // toward player.x/y on its own, different (0.25/frame flat,
+              // see updatePlayerMesh) schedule, the two rarely finished a
+              // frame at the exact offset the rig anchors intend. Measured
+              // live: right after mount (or any facing change re-aims the
+              // anchor), the pet's camera-facing depth relative to the
+              // player's drifts through dead-equal and briefly crosses to
+              // the wrong side before the lerp catches up — and since both
+              // avatars are alphaTest cutout planes with transparent:true
+              // (so their few percent of antialiased edge pixels actually
+              // alpha-blend), that crossing reads as the pet flickering
+              // translucent with the character showing through it, not as
+              // a clean pop. Snapping straight to playerMesh.position plus
+              // the same rig offset keeps the pet locked to the exact
+              // authored offset every single frame, so their relative
+              // depth never has a lagging frame to wobble through.
+              c.avatarRef.group.position.x = playerMesh.position.x + dx;
+              c.avatarRef.group.position.z = playerMesh.position.z + dz;
             } else {
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
             }
