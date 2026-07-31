@@ -6610,17 +6610,38 @@
       const FOLLOW_FAR_PX  = TILE * 2.2;
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
-      // Matches the animation-author tool's authored attachment rig (see
-      // docs/tools/animation-author/index.html's attachmentRigProfileForActor):
-      // a character's shoulderPerch anchor sits 72% up their OWN model
-      // height, and a creature's shoulderGrip anchor (the point that gets
-      // aligned to shoulderPerch) sits 27% up the creature's OWN model
-      // height. updateCreatureMesh already grounds a creature at
-      // surfY + its own halfHeight (i.e. its own vertical center); the extra
-      // Y term below corrects that up to where its shoulderGrip point
-      // actually lands once matched against the player's shoulderPerch.
-      const CHAR_SHOULDER_PERCENT = 0.72;
-      const PET_GRIP_PERCENT = 0.27;
+
+      // Shared ground truth for where a mount saddle, shoulder-pet grip,
+      // character posterior (seat), and character shoulder-perch actually sit
+      // — hand-authored in docs/tools/animation-author/index.html's Rig
+      // Coordinates mode and exported to docs/config/attachment-rig-profiles.js
+      // (window.HOBUNJI_ATTACHMENT_RIG_PROFILES) so the game reads the exact
+      // same numbers instead of a separately-guessed approximation. Every
+      // anchor's position.y is in that actor's own local frame where Y=0 is
+      // its model group's own origin (the vertical center of its unscaled
+      // idle sprite plane — see buildSinglePlaneAvatarModel/
+      // buildAnimalPlaneAvatarModel in png-plane-avatar.js, which both the
+      // tool and the game build avatars with), so a character's and a
+      // creature's anchor values are directly comparable/combinable.
+      function playerAttachmentAnchorY(anchorName) {
+        const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
+        if (!lib) return null;
+        const speciesId = _playerData?.appearance?.speciesId, gender = _playerData?.appearance?.gender;
+        const rec = lib[`${speciesId}::${gender}`] || lib[`<unknown species>::${gender}`];
+        const y = rec?.anchors?.[anchorName]?.position?.y;
+        return Number.isFinite(y) ? y : null;
+      }
+      function creatureAttachmentAnchorY(kind, anchorName) {
+        const y = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName]?.position?.y;
+        return Number.isFinite(y) ? y : null;
+      }
+      // Guessed fallbacks (species-agnostic percent-of-own-height) for the
+      // rare case rig data is missing for this character/creature pairing —
+      // everything stableable today has authored data, so this is just a
+      // safety net against a future species without rig coordinates yet.
+      const CHAR_SHOULDER_PERCENT_FALLBACK = 0.72;
+      const PET_GRIP_PERCENT_FALLBACK = 0.27;
+      const MOUNT_SADDLE_PERCENT_FALLBACK = 0.68;
       // How far a companion can "smell" a still-buried treasure chest — see
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
@@ -6665,18 +6686,26 @@
           // A shoulder pet doesn't fight or wander off — it stays glued to
           // its master's side using the exact same teleport-and-stick
           // technique as the climbing branch above, just permanently instead
-          // of only mid-climb, lifted to its shoulder-perch height (see
-          // CHAR_SHOULDER_PERCENT/PET_GRIP_PERCENT above).
+          // of only mid-climb, lifted so its shoulderGrip anchor coincides
+          // with the character's shoulderPerch anchor (see
+          // playerAttachmentAnchorY/creatureAttachmentAnchorY above). It's
+          // riding, not walking, so it always stays in its idle pose
+          // regardless of whether its master is currently moving.
           if (c.stableRole === 'shoulderPet') {
             const clingAngle = master.angle + Math.PI;
             c.x = master.x + Math.cos(clingAngle) * TILE * 0.3;
             c.y = master.y + Math.sin(clingAngle) * TILE * 0.3;
             c.facing = master.angle;
             c.vx = 0; c.vy = 0;
-            const masterMoving = Math.hypot(master.vx || 0, master.vy || 0) > 5;
             updateCreatureMesh(c, dt, c.facing);
-            updateCreatureAnimFrame(c, dt, masterMoving);
-            c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT * c.halfHeight;
+            updateCreatureAnimFrame(c, dt, false);
+            const perchY = playerAttachmentAnchorY('shoulderPerch');
+            const gripY = creatureAttachmentAnchorY(c.creatureKey, 'shoulderGrip');
+            if (perchY != null && gripY != null) {
+              c.avatarRef.group.position.y = playerMesh.position.y + (playerAvatarModelHeight || 0.9) / 2 + perchY - gripY;
+            } else {
+              c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
+            }
             continue;
           }
 
@@ -6888,11 +6917,6 @@
       // for the speed a mount gives you (see updateMountedMovement).
       const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
       const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
-      // Matches the animation-author tool's authored attachment rig (see
-      // CHAR_SHOULDER_PERCENT/PET_GRIP_PERCENT above): a mount's "saddle"
-      // anchor sits 68% up its OWN model height — see updatePlayerMesh's
-      // mount seat lift, which raises the rider up to that point.
-      const MOUNT_SADDLE_PERCENT = 0.68;
 
       function toggleMount() {
         if (mountRideState === 'none') beginSummonMount();
@@ -7028,6 +7052,45 @@
         }
       }
 
+      // A map transition (farm↔town↔wilderness zone↔den cavern) moves the
+      // player instantly via a bunch of separate call sites (enterZone,
+      // enterBuilding/exitBuilding, warpToDenAnchor, teleportToDevArena,
+      // etc.) that only ever touch player.x/y/currentArea and the player's
+      // OWN scene graph nodes — none of them know a mount might be along for
+      // the ride, so a mount's x/y/areaId/scene are left stale in the OLD
+      // area. Rather than teach every one of those call sites about mounts,
+      // this runs once per actual mismatch (from the top of
+      // updateMountedMovement, which fires before anything glues the rider's
+      // position to the mount's) and catches the mount up to the player's
+      // already-correct new position/scene — otherwise the very next tick's
+      // `player.x = m.x` glue below would snap the rider back onto the
+      // mount's stale old-area coordinates, undoing the transition.
+      function relocateMountForAreaChange(m) {
+        const oldScene = m.scene || scene;
+        oldScene.remove(m.avatarRef.group);
+        if (m.groundShadow) oldScene.remove(m.groundShadow);
+        const newScene = getActiveScene();
+        m.scene = newScene;
+        m.areaGrid = getActiveGrid();
+        m.areaCols = getActiveCols();
+        m.areaRows = getActiveRows();
+        m.areaId = currentArea;
+        m.x = player.x; m.y = player.y;
+        m.vx = 0; m.vy = 0;
+        const col = clamp(Math.floor(m.x / TILE), 0, m.areaCols - 1);
+        const row = clamp(Math.floor(m.y / TILE), 0, m.areaRows - 1);
+        const surfY = m.areaGrid[row]?.[col] ? tileSurfaceYInArea(m.areaGrid[row][col], currentArea) : 0;
+        m.avatarRef.group.position.set(m.x / TILE, surfY + m.halfHeight * (m.scaleY ?? 1), m.y / TILE);
+        newScene.add(m.avatarRef.group);
+        if (m.groundShadow) {
+          m.groundShadow.position.set(m.x / TILE, surfY + characterGroundShadowSurfaceOffset(), m.y / TILE);
+          newScene.add(m.groundShadow);
+        }
+        // Rebuilt fresh next tick against the new scene if still applicable —
+        // cheaper and safer than trying to reparent a resource ring HUD.
+        window.ResourceRings?.disposeRingHud(m);
+      }
+
       // Replaces updateMovement's normal on-foot movement while
       // mountRideState === 'mounted': movement input steers the MOUNT (which
       // turns gradually, with momentum lowering its turn rate — see
@@ -7051,6 +7114,7 @@
           mountRideState = 'none'; mountRideEntity = null;
           return;
         }
+        if (m.areaId !== currentArea) relocateMountForAreaChange(m);
 
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
@@ -11705,7 +11769,7 @@
       // The player's own rendered bust-portrait model height (avatarHeight in
       // refreshPlayerAvatar) — recomputed there alongside playerToolBaseX/Y.
       // Used to place a shoulder pet / mounted seat height correctly (see
-      // CHAR_SHOULDER_PERCENT and the mount seat lift in updatePlayerMesh).
+      // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
@@ -29864,12 +29928,19 @@
         // flips (see startClimb/updateClimb).
         const standY = player.climbing ? player.climbSurfaceY : tileSurfaceYInArea(tile, currentArea);
 
-        // Riding a mount lifts the rider up to its saddle height (see
-        // MOUNT_SADDLE_PERCENT) — 0 the instant there's no mount to sit on,
-        // so dismounting/no-mount play is completely unaffected.
-        const mountSeatLift = (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut')
-          ? MOUNT_SADDLE_PERCENT * (mountRideEntity.halfHeight * 2) - playerAvatarModelHeight / 2
-          : 0;
+        // Riding a mount lifts the rider up so their posterior anchor
+        // coincides with the mount's saddle anchor (see
+        // playerAttachmentAnchorY/creatureAttachmentAnchorY above) — 0 the
+        // instant there's no mount to sit on, so dismounting/no-mount play
+        // is completely unaffected.
+        let mountSeatLift = 0;
+        if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+          const saddleY = creatureAttachmentAnchorY(mountRideEntity.creatureKey, 'saddle');
+          const posteriorY = playerAttachmentAnchorY('posterior');
+          mountSeatLift = (saddleY != null && posteriorY != null)
+            ? (mountRideEntity.halfHeight + saddleY) - playerAvatarModelHeight / 2 - posteriorY
+            : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2) - playerAvatarModelHeight / 2;
+        }
 
         // Smooth vertical position (bob over water, plus a combat lunge's
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
