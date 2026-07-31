@@ -7046,6 +7046,60 @@
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
 
+      // Player-vs-shoulder-pet depth-write priority (see setPlayerPetDepthPriority
+      // below, called from the shoulderPet branch) — tracked here so it can be
+      // reset once whenever no shoulder pet is active at all, mirroring
+      // _playerHatXrayEnabled's own reset pattern.
+      let _petDepthPriorityInFront = null; // null = normal depth testing both ways (no active pet)
+
+      // Both the player's own avatar planes and a shoulder pet's are flat,
+      // alphaTest-cutout billboards glued close together — at this camera's
+      // oblique ~33°-elevation angle they're genuinely tilted relative to
+      // it, so their real 3D depth spans overlap across their own width and
+      // height (confirmed live: even at the camera's default azimuth, the
+      // player's own plane corners alone span a wider depth range than the
+      // gap between the two attachment anchors). A plain depth test then
+      // interleaves the two pixel-by-pixel instead of cleanly ordering one
+      // in front of the other, which is what actually produced the
+      // "flickering translucent stained glass" look — not the occluded-
+      // ghost system (ruled out live via the Pixel Probe's isolation
+      // check), and not lag between the two avatars' positions (fixed
+      // separately, verified with zero remaining sign-crossings, but this
+      // interleaving happens even with both perfectly glued in place).
+      // Fix: every frame, decide from each one's own real camera-space
+      // distance which should read as "in front", then disable depthWrite
+      // (not depthTest — same trick setPlayerHatXray already uses safely
+      // for hat-vs-pet) on whichever is farther. depthTest stays on for
+      // both, so real-world occlusion (trees, buildings) is untouched —
+      // opaque world geometry already finishes its own depth-writing pass
+      // before either avatar (both transparent:true) ever draws, so this
+      // only ever affects the two of them relative to each other.
+      const _depthPriorityVec = new THREE.Vector3();
+      function _cameraSpaceDistance(pos) {
+        _depthPriorityVec.set(pos.x, pos.y, pos.z).applyMatrix4(camera.matrixWorldInverse);
+        return -_depthPriorityVec.z;
+      }
+      function _playerAvatarBodyMaterials() {
+        let group = null;
+        for (const child of playerMesh.children) if (child.name === 'player_avatar') { group = child; break; }
+        if (!group) return [];
+        const mats = [];
+        for (const child of group.children) {
+          if (child.isMesh && child.material && !child.userData.isOccludedGhost && !child.name.includes('hat_xray')) mats.push(child.material);
+        }
+        return mats;
+      }
+      function setPlayerPetDepthPriority(pet, petInFront) {
+        if (petInFront === _petDepthPriorityInFront) return;
+        _petDepthPriorityInFront = petInFront;
+        const playerMats = _playerAvatarBodyMaterials();
+        const petMats = pet ? [pet.avatarRef.frontPlane?.material, pet.avatarRef.backPlane?.material].filter(Boolean) : [];
+        const playerDepthWrite = petInFront === null ? true : !petInFront;
+        const petDepthWrite = petInFront === null ? true : petInFront;
+        for (const m of playerMats) { m.depthWrite = playerDepthWrite; m.needsUpdate = true; }
+        for (const m of petMats) { m.depthWrite = petDepthWrite; m.needsUpdate = true; }
+      }
+
       function updateCompanions(dt) {
         // Hat-xray toggle (see buildPlayerHatXrayOverlay/setPlayerHatXray):
         // on for exactly as long as the player has an actively-attached
@@ -7059,6 +7113,7 @@
           }
         }
         setPlayerHatXray(hasActiveShoulderPetForPlayer);
+        if (!hasActiveShoulderPetForPlayer) setPlayerPetDepthPriority(null, null);
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -7176,6 +7231,10 @@
               // depth never has a lagging frame to wobble through.
               c.avatarRef.group.position.x = playerMesh.position.x + dx;
               c.avatarRef.group.position.z = playerMesh.position.z + dz;
+              // See setPlayerPetDepthPriority above.
+              const petCamDist = _cameraSpaceDistance(c.avatarRef.group.position);
+              const playerCamDist = _cameraSpaceDistance(playerMesh.position);
+              setPlayerPetDepthPriority(c, petCamDist < playerCamDist);
             } else {
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
             }
