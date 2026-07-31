@@ -5441,28 +5441,41 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
-        // Companion-only (and not a mount/shoulder-pet — see below). The
-        // stencil ghost mechanism marks a tree as "blocking" per-PIXEL
-        // (isBetweenCameraAndPlayer2D, checked against camera-to-player/
-        // camera-to-companion lines only -- see updateZoneVegetationCulling)
-        // and reveals ANY ghost sibling behind that tree at that screen
-        // position, not just the specific creature the LOS check was
-        // computed for. Calling this for every wild animal too (as an
-        // earlier version of this fix did) meant an unrelated animal
-        // standing behind the SAME faded tree became visible right along
-        // with the player/companion -- x-ray vision into vegetation the
-        // player has no actual line of sight through, for a creature the
+        // Companion-only. The stencil ghost mechanism marks a tree as
+        // "blocking" per-PIXEL (isBetweenCameraAndPlayer2D, checked against
+        // camera-to-player/camera-to-companion lines only -- see
+        // updateZoneVegetationCulling) and reveals ANY ghost sibling behind
+        // that tree at that screen position, not just the specific creature
+        // the LOS check was computed for. Calling this for every wild animal
+        // too (as an earlier version of this fix did) meant an unrelated
+        // animal standing behind the SAME faded tree became visible right
+        // along with the player/companion -- x-ray vision into vegetation
+        // the player has no actual line of sight through, for a creature the
         // check was never actually run against. Only the player's own
         // avatar and their active (independently-wandering) companion are
         // ever a revealTarget, so only they should ever get a ghost sibling.
         //
-        // A mount or shoulder pet is rigidly glued to the player's own
-        // position every frame (see updateMountedMovement/updateCompanions'
-        // shoulderPet branch) — it never has its own independent line of
-        // sight to reveal, so it gets its own ghost sibling stacked directly
-        // on/beside the player's, which reads as the mount/pet itself
-        // flickering semi-transparent whenever a tree fades nearby.
-        if (opts.isCompanion && opts.stableRole !== 'mount' && opts.stableRole !== 'shoulderPet') addOccludedGhostSiblings(avatarRef.group);
+        // Mounts and shoulder pets DO get one too (unlike an earlier version
+        // of this fix, which skipped them): they're rigidly glued to the
+        // player's own position every frame (see updateMountedMovement/
+        // updateCompanions' shoulderPet branch), sit close enough on screen
+        // to overlap the player's own body quad, and without their own
+        // ghost they simply vanish (fully depth-culled, since the faded
+        // tree material still writes depth -- see ensureTreeFadeMaterials)
+        // while the player's own ghost keeps fading in beside them, an
+        // inconsistent look the player correctly called out as "partially
+        // transparent". Giving the creature its own ghost too, at a higher
+        // renderOrder (see renderOrderBoost below) so it paints over the
+        // player's own overlapping ghost quad instead of an
+        // undefined/flickering draw order between the two, fixes that
+        // without ever making the PLAYER show through the CREATURE: the
+        // stencil is only ever written by a tree whose OWN depth test
+        // passed at that pixel (see setTreeBlockingStencil/ZPass ops), so a
+        // nearer, fully opaque creature sprite blocks the tree from writing
+        // the stencil there at all -- there is no path by which a solid
+        // creature standing in front causes the player's ghost to bleed
+        // through it.
+        if (opts.isCompanion) addOccludedGhostSiblings(avatarRef.group, { renderOrderBoost: (opts.stableRole === 'mount' || opts.stableRole === 'shoulderPet') ? 10 : 0 });
         targetScene.add(avatarRef.group);
 
         // Separate top-level object (not parented under avatarRef.group) so
@@ -25354,6 +25367,11 @@
         return best;
       }
 
+      const STORM_NAMES = [
+        'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
+        'Tempest Rimewind', 'Squall Cindermoor', 'Gale Thornhollow', 'Storm Marrowdeep',
+        'Tempest Sootveil', 'Gale Bramblegust', 'Squall Wraithrain', 'Storm Emberfall',
+      ];
       let lastStormDay = 0;
       function checkForMajorStorm() {
         if (calendar.weather !== 'storm') return;
@@ -26521,7 +26539,7 @@
           ghost.position.copy(mesh.position);
           ghost.rotation.copy(mesh.rotation);
           ghost.scale.copy(mesh.scale);
-          ghost.renderOrder = (mesh.renderOrder || 0) + 1;
+          ghost.renderOrder = (mesh.renderOrder || 0) + 1 + (opts.renderOrderBoost || 0);
           ghost.name = (mesh.name || 'ghost') + '_occluded_ghost';
           ghost.userData.isOccludedGhost = true;
           ghost.matrixAutoUpdate = mesh.matrixAutoUpdate;
