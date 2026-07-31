@@ -108,7 +108,7 @@ window.SCRATCHBONES_CONFIG = {
     },
     "movement": {
       "perpRotDeadzoneDeg": 40,
-      "creaturePerpRotDeadzoneDeg": 30,
+      "creaturePerpRotDeadzoneDeg": 20,
       "npc": {
         "speedTilesPerSecond": 1.25,
         "endpointPauseSeconds": 1.6,
