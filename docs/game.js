@@ -4587,16 +4587,31 @@
         const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
         const halfH = ANIMAL_H / 2;
 
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, "assets/creaturesprites/uumkao'ii.png", {
+        const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
+        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
           name: 'uumkaoii_' + col + '_' + row,
         });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
 
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
         avatarRef.group.rotation.y = Math.PI / 2; // start facing east
         _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
+        // Ground-anchor the visible art on its own real opaque bottom pixel
+        // (see makeCreatureEntity/creaturePlaneGroundOffset) instead of the
+        // raw sprite rectangle's edge, without moving the prism itself --
+        // shoulderGrip/saddle attachment anchors are authored relative to
+        // the prism's own frame, so leaving it untouched (only the plane
+        // meshes shift within it) keeps them landing on the exact same
+        // pixels regardless of this correction.
+        resolveCreatureGroundAnchorRatio(spriteUrl, (bottomRatio) => {
+          const offsetY = creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
+        });
 
         // Composites the always-on fur+plates layers onto the plain base —
         // see CreatureGeneticsRender.SPECIES.uumkaoii and makeDefaultGenotype's
@@ -4733,12 +4748,28 @@
           modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
           name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
         });
+        avatarRef.frontPlane = avatarRef.group.children[0] || null;
+        avatarRef.backPlane  = avatarRef.group.children[1] || null;
 
         const initSurfY = tileSurfaceY(grid[row][col].type);
         avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
         avatarRef.group.rotation.y = Math.PI / 2; // start facing east
         _markPngPlane(avatarRef.group);
         scene.add(avatarRef.group);
+        // Ground-anchor on the sprite's own real opaque bottom pixel (see
+        // makeCreatureEntity/creaturePlaneGroundOffset) rather than the raw
+        // sprite rectangle's edge, without moving the prism itself -- a
+        // genotype recolor (composed further below) only changes color, not
+        // the base silhouette, so scanning baseUrl stays correct regardless
+        // of genotype, and leaving the prism untouched keeps this species'
+        // shoulderGrip/saddle attachment anchors (authored relative to the
+        // prism, and shared with the wild/companion creature path for the
+        // same kind) landing on the exact same pixels as before.
+        resolveCreatureGroundAnchorRatio(baseUrl, (bottomRatio) => {
+          const offsetY = creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
+          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
+          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
+        });
 
         if (genotype && window.CreatureGeneticsRender) {
           window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
