@@ -315,6 +315,44 @@
         const activeScene = getActiveScene();
         const hits = _pixelProbeRaycaster.intersectObjects(activeScene.children, true);
 
+        // A ghost sibling's own .visible=true only means it's eligible for
+        // the render pass — it says nothing about whether its GreaterDepth+
+        // stencil==7 test is actually passing at THIS pixel right now. For
+        // every ghost hit along the ray, isolate it (hide every other
+        // object in the active scene) and force a real render, then read
+        // the same pixel back — if it differs from the scene's empty
+        // background, the ghost is genuinely drawing a fragment here; if
+        // not, it's present in the graph but not actually visible at this
+        // spot. Directly answers "is a ghost bleeding through here" instead
+        // of inferring it from static material flags alone.
+        const ghostHits = hits.filter(h => h.object.userData?.isOccludedGhost);
+        const ghostChecks = new Map();
+        if (ghostHits.length && pxBuf) {
+          try {
+            const gl2 = renderer.getContext();
+            const savedVis = [];
+            activeScene.traverse(o => { if (o.visible !== undefined) savedVis.push([o, o.visible]); });
+            const sample = (px, py) => { const b = new Uint8Array(4); gl2.readPixels(px, py, 1, 1, gl2.RGBA, gl2.UNSIGNED_BYTE, b); return b; };
+
+            for (const [obj] of savedVis) obj.visible = false;
+            renderer.render(activeScene, camera);
+            const bg = sample(2, 2);
+
+            for (const hit of ghostHits) {
+              for (const [obj] of savedVis) obj.visible = false;
+              let n = hit.object;
+              while (n) { n.visible = true; n = n.parent; }
+              renderer.render(activeScene, camera);
+              const px = sample(fbX, fbY);
+              const differs = Math.abs(px[0] - bg[0]) > 6 || Math.abs(px[1] - bg[1]) > 6 || Math.abs(px[2] - bg[2]) > 6;
+              ghostChecks.set(hit.object, { actuallyRendering: differs, color: [px[0], px[1], px[2], px[3]] });
+            }
+
+            for (const [obj, vis] of savedVis) obj.visible = vis;
+            renderer.render(activeScene, camera);
+          } catch (e) { /* isolation probe is best-effort — the raycast list below still stands without it */ }
+        }
+
         const lines = [];
         lines.push('Pixel Probe report');
         lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
@@ -323,8 +361,10 @@
         hits.slice(0, 25).forEach((hit, i) => {
           const o = hit.object;
           const mats = Array.isArray(o.material) ? o.material : [o.material];
+          const check = ghostChecks.get(o);
           lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`
-            + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`);
+            + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`
+            + `${check ? (check.actuallyRendering ? ` >>> ACTUALLY RENDERING HERE (isolated color rgb(${check.color[0]},${check.color[1]},${check.color[2]}))` : ' (isolated: not actually visible at this pixel)') : ''}`);
           mats.forEach(m => { if (m) lines.push(`     material: ${_pixelProbeMatSummary(m)}`); });
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
