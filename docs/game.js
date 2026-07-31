@@ -4131,6 +4131,20 @@
         return true;
       }
 
+      // Used when a dew cooldown lands while the player isn't on the farm to
+      // see the animal wander and drop it naturally (see tickLivestockResources)
+      // — picks blindly rather than tracking actual open tiles since the farm
+      // grid is small and open ground is the common case; a few missed rolls
+      // on a crowded farm just cost a handful of cheap canPlaceDewPileAt checks.
+      function dropDewPileOnRandomOpenTile(colorKey, maxAttempts = 60) {
+        for (let i = 0; i < maxAttempts; i++) {
+          const col = Math.floor(rnd() * COLS);
+          const row = Math.floor(rnd() * ROWS);
+          if (dropDewPile(col, row, colorKey)) return true;
+        }
+        return false;
+      }
+
       // ── Livestock genetics & breeding ───────────────────────────────
       // Ported from the "Creature Pattern, Base Recolor & Breeding Lab"
       // prototype: each livestock genotype holds one named fur color per
@@ -5034,7 +5048,22 @@
           if (l.kind === 'uumkaoii' && l.barnId && !l.dewReady) {
             if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
             l.dewDaysUntil--;
-            if (l.dewDaysUntil <= 0) l.dewReady = true;
+            if (l.dewDaysUntil <= 0) {
+              l.dewReady = true;
+              // The pile only ever actually appears from inside the live
+              // uumkao'ii's own tick() (see makeUumkaoiiAnimal), which never
+              // runs unless the player is on the farm map to simulate it
+              // (updateAnimalMeshes is gated on currentArea === 'farm'). If
+              // the cooldown lands while the player's on a different map,
+              // there's no animal stepping around to drop it naturally, so
+              // place it directly on a random open tile right now instead of
+              // leaving it stuck waiting for a farm visit that might not
+              // happen for a while.
+              if (currentArea !== 'farm' && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                l.dewReady = false;
+                l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+              }
+            }
             changed = true;
           }
         });
