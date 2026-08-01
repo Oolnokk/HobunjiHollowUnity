@@ -420,34 +420,6 @@
     return session.torsoScanPromise;
   }
 
-  // A small (3-step) NEAREST-filtered gradient used as every foot
-  // material's toon gradientMap: quantizes lighting into a few discrete
-  // brightness bands instead of a smooth PBR falloff, and the top band is
-  // full white (1.0) so the brightest a lit texel ever gets is exactly its
-  // own baked/tinted color — never brightened past that by a highlight,
-  // the way MeshStandardMaterial's specular response can. Built once and
-  // shared by every foot material (identical for all of them); cached
-  // per-THREE-instance in case a preview/tool context creates its own.
-  const _toonGradientCache = new WeakMap();
-  function toonGradientMap(THREE) {
-    let tex = _toonGradientCache.get(THREE);
-    if (tex) return tex;
-    const canvas = document.createElement('canvas');
-    canvas.width = 3; canvas.height = 1;
-    const ctx = canvas.getContext('2d');
-    const shades = [90, 175, 255]; // shadow / mid / full (unattenuated) brightness
-    for (let i = 0; i < shades.length; i++) {
-      ctx.fillStyle = `rgb(${shades[i]},${shades[i]},${shades[i]})`;
-      ctx.fillRect(i, 0, 1, 1);
-    }
-    tex = new THREE.CanvasTexture(canvas);
-    tex.name = 'procedural_feet_toon_gradient';
-    tex.minFilter = THREE.NearestFilter;
-    tex.magFilter = THREE.NearestFilter;
-    tex.generateMipmaps = false;
-    _toonGradientCache.set(THREE, tex);
-    return tex;
-  }
 
   // A generated fallback foot: a flattened sphere pad, plus (for the Kenkari
   // family only) a pair of forward/backward teardrop-toe "V"s, mirroring the
@@ -456,25 +428,23 @@
   function buildFallbackFoot(THREE, options) {
     const { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex } = options;
     const group = new THREE.Group();
-    // MeshToonMaterial, not MeshStandardMaterial — every other
-    // avatar-attached object (the body plane itself, held tools/weapons,
-    // hat overlays — see makeSpriteMaterial in png-plane-avatar.js and
-    // makeToolPlaneMesh in game.js) is unlit, so its on-screen color is
-    // always exactly its baked/tinted texture regardless of scene
-    // lighting. A lit PBR material picks up the scene's directional/
-    // ambient light color on top of that (confirmed live: a texture
-    // sampled as an exact #D8C7A3 still read visibly paler/greener once
-    // lit). Toon still gives the sphere/GLB geometry some shape-reading
-    // shading (unlike a fully flat/unlit material), but quantized to a
-    // few flat brightness steps via toonGradientMap's gradient — never
-    // color-shifted by the light's own color/specular the way Standard's
-    // continuous PBR response is, and never brighter than the material's
-    // own hex/texture (that's the gradient's own top step, at 1.0).
+    // MeshBasicMaterial (fully unlit) — MeshToonMaterial's quantized
+    // gradientMap only affects the DIRECT/directional-light diffuse term;
+    // ambient and hemisphere light still apply unconditionally, full
+    // strength, on every step including the brightest. The main outdoor
+    // scene's HemisphereLight(sky #88ccff, ground #3a5a30 — a dark green)
+    // was tinting toon feet green outdoors regardless, while indoor scenes
+    // (no hemisphere light there) rendered correctly — confirmed live by
+    // switching areas. Every other avatar-attached object (the body plane
+    // itself, held tools/weapons, hat overlays — see makeSpriteMaterial in
+    // png-plane-avatar.js and makeToolPlaneMesh in game.js) is unlit for
+    // exactly this reason: it's the only way to be scene-lighting-invariant,
+    // not just direct-light-invariant.
     // Starts tinted flat (not white) so there's no stark-white flash while
     // the textured surface decodes asynchronously; buildSurfaceTexture's
     // resolved map replaces this material's map (and resets color to white
     // so the two don't multiply together) once it's ready.
-    const material = new THREE.MeshToonMaterial({ color: initialColorHex || 0xffffff, gradientMap: toonGradientMap(THREE) });
+    const material = new THREE.MeshBasicMaterial({ color: initialColorHex || 0xffffff });
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
     sphere.scale.set(sphereScaleXZ, sphereScaleY, sphereScaleXZ);
     sphere.castShadow = true;
@@ -549,8 +519,8 @@
         if (remapped.has(material)) return remapped.get(material);
         const role = roles[material.name];
         const texture = roleTextures.get(role) || defaultTexture;
-        // See buildFallbackFoot's comment on MeshToonMaterial vs Standard.
-        const cloned = new THREE.MeshToonMaterial({ map: texture, color: 0xffffff, gradientMap: toonGradientMap(THREE) });
+        // See buildFallbackFoot's comment on unlit vs lit materials.
+        const cloned = new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff });
         cloned.name = material.name;
         remapped.set(material, cloned);
         return cloned;
