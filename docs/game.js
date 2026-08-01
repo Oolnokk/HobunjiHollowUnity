@@ -15967,7 +15967,7 @@
         // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
         // Creatures/wildlife never call this; only humanoid species get legs.
         const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
-          speciesId: appearance.speciesId, bodyColors: profile?.bodyColors || appearance.bodyColors,
+          speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
@@ -21459,7 +21459,7 @@
         // be disposed explicitly.
         playerLegs?.dispose();
         playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
-          speciesId: _playerData?.appearance?.speciesId, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
+          speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, name: 'player', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
       }

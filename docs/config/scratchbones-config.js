@@ -3804,6 +3804,15 @@ window.SCRATCHBONES_CONFIG = {
           "alphaThreshold": 8,
           "boneColorHex": "#D8C7A3",
           "keratinColorHex": "#44484D",
+          "footScale": {
+            "default": 1,
+            "kenkari": { "female": 1, "male": 1 },
+            "rakakoan": { "female": 1, "male": 1 },
+            "tletingan": { "male": 1, "female": 1 },
+            "engh-sho": { "female": 1, "male": 1 },
+            "mao-ao": { "female": 1, "male": 1 },
+            "mashtzarr": { "male": 1, "female": 1 }
+          },
           "species": {
             "mashtzarr": {
               "glb": "assets/models/feet/foot_pachyderm.glb",

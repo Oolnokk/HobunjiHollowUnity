@@ -51,6 +51,29 @@
 
   const KENKARI_FAMILY = new Set(['kenkari', 'rakakoan']);
 
+  function normalizeGender(value) {
+    const g = String(value || '').trim().toLowerCase();
+    return g === 'female' || g === 'f' ? 'female' : 'male';
+  }
+
+  // Per-species/gender authored foot-size multiplier (proceduralFeet.footScale
+  // in scratchbones-config.js), mirroring png-plane-avatar.js's own
+  // avatarPlacementRatioFor species-chain + gender-key lookup. Falls back to
+  // 1 (the existing modelHeight-derived math, unchanged) for any
+  // species/gender without an authored entry.
+  function footScaleMultiplierForSpecies(speciesId, gender) {
+    const table = cfg().footScale || {};
+    const defaultMultiplier = Number.isFinite(Number(table.default)) ? Number(table.default) : 1;
+    for (const key of speciesChain(speciesId)) {
+      const entry = table[key];
+      if (entry && Object.prototype.hasOwnProperty.call(entry, gender)) {
+        const value = Number(entry[gender]);
+        if (Number.isFinite(value)) return value;
+      }
+    }
+    return defaultMultiplier;
+  }
+
   function referenceHexForSpecies(speciesId) {
     return (typeof window._dyeReferenceHexForSlot === 'function')
       ? window._dyeReferenceHexForSlot('A', speciesId)
@@ -59,6 +82,32 @@
 
   function bodyColorDescriptor(bodyColors) {
     return bodyColors?.A || { hex: '#7dc89a' };
+  }
+
+  // Synchronous flat-color resolution (no image involved) — used both as the
+  // immediate material color before the async textured surface resolves (so
+  // there's no stark-white flash/flicker while canvas.png decodes) and as
+  // the last-resort fallback if that texture ever fails to load, so a
+  // missing/blocked asset degrades to "flat but correctly tinted" instead
+  // of silently staying untinted white.
+  function resolveFlatColorHex(colorDescriptor, referenceHex) {
+    if (colorDescriptor?.hex) return colorDescriptor.hex;
+    if (typeof window._resolveTargetRgbColor === 'function') {
+      const rgb = window._resolveTargetRgbColor(colorDescriptor, referenceHex);
+      if (Array.isArray(rgb)) {
+        return '#' + rgb.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+      }
+    }
+    return referenceHex;
+  }
+
+  function flatColorCanvas(hex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 4;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = hex || '#808080';
+    ctx.fillRect(0, 0, 4, 4);
+    return canvas;
   }
 
   function smoothstep01(value) {
@@ -130,14 +179,22 @@
   // Resolves one tinted CanvasTexture for a role ('body'/'bone'/'keratin'),
   // reusing portrait-utils.js's own shadeFillTintForBodyColor/getShadeFillCanvas
   // (already globally exposed and already cached by that module — colorDescriptor
-  // may be a real {h,s,v} body color or a fixed {hex} for bone/keratin).
+  // may be a real {h,s,v} body color or a fixed {hex} for bone/keratin). Never
+  // throws and never silently falls back to the untinted source PNG — any
+  // failure (asset 404, tint pipeline unavailable) degrades to a flat canvas
+  // in the correctly resolved color instead of leaving the material white.
   async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX) {
-    const img = await loadSurfaceImage(sourcePath);
-    let source = img;
-    if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
-      const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
-      source = window.getShadeFillCanvas(img, sourcePath, tint);
+    let source = null;
+    try {
+      const img = await loadSurfaceImage(sourcePath);
+      if (typeof window.shadeFillTintForBodyColor === 'function' && typeof window.getShadeFillCanvas === 'function') {
+        const tint = window.shadeFillTintForBodyColor(colorDescriptor, referenceHex);
+        source = tint?.mode === 'shadeFill' ? window.getShadeFillCanvas(img, sourcePath, tint) : null;
+      }
+    } catch (error) {
+      source = null;
     }
+    if (!source) source = flatColorCanvas(resolveFlatColorHex(colorDescriptor, referenceHex));
     const texture = new THREE.CanvasTexture(source);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
@@ -314,18 +371,39 @@
     return -modelWidth / 2 + ((px + 0.5) / canvasWidth) * modelWidth;
   }
 
-  // Resolves the two feet's idle X placement from the avatar's own torso
-  // silhouette. Resolves to null (caller keeps its fixed-fraction guess) if
-  // the profile/species doesn't support the scan for any reason.
-  async function scanIdleFootX(profile, modelWidth, portraitSize) {
-    const torsoCanvas = await buildTorsoOnlyCanvas(profile, portraitSize);
-    if (!torsoCanvas) return null;
-    const scan = scanWidestOpaqueRow(torsoCanvas, Number(cfg().alphaThreshold) || 8);
-    if (!scan) return null;
-    return {
-      leftX: pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth),
-      rightX: pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth),
-    };
+  // ── Per-species/gender session cache ────────────────────────────────────
+  // The torso scan strips every individual/cosmetic variation (clothing,
+  // hair, body color — see buildTorsoOnlyCanvas) down to just the species'
+  // base torso sprite, so its result is identical for every NPC/player of
+  // the same species+gender. Computing it once per species+gender for the
+  // whole session (the first avatar of that species+gender to spawn pays
+  // for it; every later one reuses the resolved value) instead of once per
+  // avatar instance avoids redundantly re-rendering and re-scanning the
+  // identical silhouette for, e.g., every tletingan bandit in a camp.
+  // General-purpose (not just for this one scan) so future once-per-
+  // species/gender checks have somewhere to live instead of re-deriving
+  // their own caching each time.
+  const _speciesGenderSession = new Map(); // "species::gender" -> {}
+  function speciesGenderSession(speciesId, gender) {
+    const key = `${speciesId}::${gender}`;
+    let entry = _speciesGenderSession.get(key);
+    if (!entry) { entry = {}; _speciesGenderSession.set(key, entry); }
+    return entry;
+  }
+
+  // Resolves (once per species+gender per session) the torso silhouette's
+  // widest-row pixel scan. Resolves to null if the profile/species doesn't
+  // support the scan for any reason (caller keeps its fixed-fraction guess).
+  function cachedTorsoScan(speciesId, gender, profile, portraitSize) {
+    const session = speciesGenderSession(speciesId, gender);
+    if (!session.torsoScanPromise) {
+      session.torsoScanPromise = (async () => {
+        const torsoCanvas = await buildTorsoOnlyCanvas(profile, portraitSize);
+        if (!torsoCanvas) return null;
+        return scanWidestOpaqueRow(torsoCanvas, Number(cfg().alphaThreshold) || 8);
+      })();
+    }
+    return session.torsoScanPromise;
   }
 
   // A generated fallback foot: a flattened sphere pad, plus (for the Kenkari
@@ -333,9 +411,13 @@
   // reference tool's primitive anatomy. Used for any species without a
   // configured GLB (today: kenkari, rakako'an).
   function buildFallbackFoot(THREE, options) {
-    const { speciesId, radius, sphereScaleXZ, sphereScaleY } = options;
+    const { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex } = options;
     const group = new THREE.Group();
-    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.02 });
+    // Starts tinted flat (not white) so there's no stark-white flash while
+    // the textured surface decodes asynchronously; buildSurfaceTexture's
+    // resolved map replaces this material's map (and resets color to white
+    // so the two don't multiply together) once it's ready.
+    const material = new THREE.MeshStandardMaterial({ color: initialColorHex || 0xffffff, roughness: 0.85, metalness: 0.02 });
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), material);
     sphere.scale.set(sphereScaleXZ, sphereScaleY, sphereScaleXZ);
     sphere.castShadow = true;
@@ -449,14 +531,24 @@
     if (c.enabled === false) return null;
     const speciesId = normalizeKey(options.speciesId);
     if (!speciesId) return null;
+    const gender = normalizeGender(options.gender);
     const modelWidth = Number(options.modelWidth) || 0.9;
     const modelHeight = Number(options.modelHeight) || modelWidth;
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
-    const radius = modelHeight * footHeightFraction * 0.5;
+    // footScale is an authored per-species/gender multiplier
+    // (proceduralFeet.footScale) on top of this base formula — defaults to
+    // 1 (formula unchanged) for any species/gender without an authored
+    // entry.
+    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender);
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
     const sphereScaleXZ = isKenkariFamily ? 0.6 : 1;
     const sphereScaleY = isKenkariFamily ? 1 : 0.75;
+    const referenceHex = referenceHexForSpecies(speciesId);
+    const initialColorHex = resolveFlatColorHex(
+      isKenkariFamily ? { hex: c.keratinColorHex || '#44484D' } : bodyColorDescriptor(options.bodyColors),
+      referenceHex
+    );
 
     const root = new THREE.Group();
     root.name = `${options.name || 'avatar'}_procedural_feet`;
@@ -479,8 +571,8 @@
 
     const surfaceForRole = makeSurfaceRoleResolver(THREE, speciesId, options.bodyColors);
 
-    const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY });
-    const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY });
+    const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
+    const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
     leftFallback.name = 'left_foot';
     rightFallback.name = 'right_foot';
     placeIdle(leftFallback, true, leftFallback.userData.contactRadiusY);
@@ -495,7 +587,9 @@
       if (state.disposed) return;
       for (const foot of [leftFallback, rightFallback]) {
         const material = foot.userData.material;
-        if (material) { material.map = texture; material.needsUpdate = true; }
+        // Resets to white so the texture's own baked tint isn't multiplied
+        // by the initial flat-color placeholder (see buildFallbackFoot).
+        if (material) { material.map = texture; material.color.set(0xffffff); material.needsUpdate = true; }
       }
     }).catch(error => {
       console.warn(`[ProceduralLegAnimation] fallback foot texture failed for "${speciesId}":`, error);
@@ -529,15 +623,19 @@
     }
 
     // Refines idle X placement from the avatar's own torso silhouette once
-    // the (async) scan resolves — both feet, whichever pair is currently
-    // attached (fallback or already-swapped GLB), snap to the corrected
-    // spacing so a fast-loading GLB doesn't get stuck on the rough guess.
+    // the (per species+gender, session-cached) scan resolves — both feet,
+    // whichever pair is currently attached (fallback or already-swapped
+    // GLB), snap to the corrected spacing so a fast-loading GLB doesn't get
+    // stuck on the rough guess. The expensive part (render + pixel scan) is
+    // shared across every avatar of this species+gender for the rest of the
+    // session; only the pixel->world conversion below (modelWidth can differ
+    // per instance, e.g. a child) runs per avatar.
     if (options.profile) {
       const portraitSize = Number(options.portraitSize) || 200;
-      scanIdleFootX(options.profile, modelWidth, portraitSize).then(placement => {
-        if (state.disposed || !placement) return;
-        state.idleLeftX = placement.leftX;
-        state.idleRightX = placement.rightX;
+      cachedTorsoScan(speciesId, gender, options.profile, portraitSize).then(scan => {
+        if (state.disposed || !scan) return;
+        state.idleLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
+        state.idleRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
         if (state.left) state.left.position.x = state.idleLeftX;
         if (state.right) state.right.position.x = state.idleRightX;
       }).catch(error => {
