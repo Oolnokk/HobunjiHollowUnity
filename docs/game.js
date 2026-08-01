@@ -213,9 +213,13 @@
         window.__farmDebugLog = [];
         if (window._renderDebugPanel) window._renderDebugPanel();
       });
-      // Debug log copy-to-clipboard button
+      // Debug log copy-to-clipboard button — copies whichever of the Log/
+      // Pixel Probe views is currently showing (see _setDebugView below).
       const _dbgCopy = document.getElementById('debugCopyBtn');
-      if (_dbgCopy) _dbgCopy.addEventListener('click', () => copyDebugLog());
+      if (_dbgCopy) _dbgCopy.addEventListener('click', () => {
+        if (document.getElementById('debugViewProbeBtn')?.classList.contains('active')) copyPixelProbeResult();
+        else copyDebugLog();
+      });
       // Debug log filter tabs — filtering itself lives in debug.js's
       // _renderDebugPanel (window.__debugLogFilter), since that's what
       // actually owns window.__farmDebugLog and re-renders on every new
@@ -233,6 +237,327 @@
           if (window._renderDebugPanel) window._renderDebugPanel();
         });
       });
+
+      // ── Pixel Probe (Debug tab) ─────────────────────────────────────
+      // Diagnostic tool: arms a one-shot click/tap on the game canvas; the
+      // next click reads the raw framebuffer color there AND raycasts
+      // EVERY mesh along that screen ray (not just whichever one currently
+      // wins the pixel), so overlay/ghost/hat-xray planes show up in the
+      // list even on a frame where something else happens to be drawn on
+      // top of them — the "what's actually stacked here" question a plain
+      // screenshot can't answer on its own.
+      let _pixelProbeArmed = false;
+      const _pixelProbeRaycaster = new THREE.Raycaster();
+      function _pixelProbeMatSummary(mat) {
+        if (!mat) return '(no material)';
+        return `name="${mat.name || '(unnamed)'}" type=${mat.type} transparent=${mat.transparent} opacity=${mat.opacity} `
+          + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
+          + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
+      }
+      function _setDebugView(view) {
+        const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
+        const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
+        const filterTabs = document.getElementById('debugFilterTabs');
+        if (!logBtn || !probeBtn || !logEl || !probeEl) return;
+        const isLog = view === 'log';
+        const style = (btn, active) => {
+          btn.classList.toggle('active', active);
+          btn.style.background = active ? 'rgba(106,167,255,.22)' : 'rgba(255,255,255,.08)';
+          btn.style.borderColor = active ? 'rgba(106,167,255,.5)' : 'rgba(255,255,255,.2)';
+          btn.style.color = active ? '#6aa7ff' : '#d1d5db';
+        };
+        style(logBtn, isLog); style(probeBtn, !isLog);
+        logEl.style.display = isLog ? '' : 'none';
+        probeEl.style.display = isLog ? 'none' : '';
+        if (filterTabs) filterTabs.style.display = isLog ? '' : 'none';
+      }
+      function disarmPixelProbe() {
+        _pixelProbeArmed = false;
+        const hint = document.getElementById('pixelProbeHint');
+        if (hint) hint.style.display = 'none';
+        renderer.domElement.removeEventListener('pointerdown', _pixelProbeHandler, { capture: true });
+      }
+      function armPixelProbe() {
+        if (_pixelProbeArmed) { disarmPixelProbe(); return; }
+        _pixelProbeArmed = true;
+        closeMenu();
+        const hint = document.getElementById('pixelProbeHint');
+        if (hint) hint.style.display = 'flex';
+        renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
+      }
+      async function _pixelProbeHandler(ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        _pixelProbeArmed = false;
+        const hint = document.getElementById('pixelProbeHint');
+        if (hint) hint.innerHTML = '<span>🎯 Reading pixel...</span>';
+
+        const canvas = renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = ev.clientX ?? ev.touches?.[0]?.clientX ?? rect.left;
+        const clientY = ev.clientY ?? ev.touches?.[0]?.clientY ?? rect.top;
+        const cssX = clientX - rect.left, cssY = clientY - rect.top;
+        const ndcX = (cssX / rect.width) * 2 - 1;
+        const ndcY = -(cssY / rect.height) * 2 + 1;
+
+        // Raw pixel color, read straight off the framebuffer at this exact
+        // spot — WebGL readPixels origin is bottom-left, unlike DOM CSS Y.
+        const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+        const fbX = Math.round(cssX * scaleX), fbY = Math.round(canvas.height - cssY * scaleY);
+        let pxBuf = null;
+        try {
+          const gl = renderer.getContext();
+          pxBuf = new Uint8Array(4);
+          gl.readPixels(fbX, fbY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pxBuf);
+        } catch (e) { /* readback can fail on some GPUs/contexts — still report the raycast hits below */ }
+
+        // Every mesh along this screen ray, nearest first — not just the winner.
+        _pixelProbeRaycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+        const activeScene = getActiveScene();
+        const hits = _pixelProbeRaycaster.intersectObjects(activeScene.children, true);
+
+        // Screenshot of the exact moment of the click/tap, BEFORE any of the
+        // isolation checks below mutate visibility — lets a probe that finds
+        // "nothing wrong" numerically still be cross-checked against what
+        // was actually on screen (e.g. something visibly there that the
+        // raycast/material dump doesn't explain). Deliberately does NOT
+        // force its own renderer.render() call first — reads back whatever
+        // the browser's own normal frame loop actually last drew and
+        // displayed (relies on preserveDrawingBuffer:true on the renderer
+        // for this to be reliable; see its own comment). A manually-forced
+        // extra render here would capture a DIFFERENT render of the "same"
+        // frame instead of the one the user actually saw — confirmed live:
+        // a real OS/device screenshot showed the bug, this capture (when it
+        // forced its own render) consistently did not.
+        let screenshotDataUrl = null;
+        try {
+          const rawDataUrl = canvas.toDataURL('image/png');
+          // Mark exactly where the click/tap landed — canvas.toDataURL's
+          // pixel space is top-left-origin like any normal image (unlike
+          // WebGL readPixels' bottom-left fbX/fbY above), so the marker
+          // uses the plain CSS->canvas pixel scale, not the flipped coords.
+          const markerX = cssX * scaleX, markerY = cssY * scaleY;
+          const img = new Image();
+          await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = rawDataUrl; });
+          const markCanvas = document.createElement('canvas');
+          markCanvas.width = img.naturalWidth; markCanvas.height = img.naturalHeight;
+          const mctx = markCanvas.getContext('2d');
+          mctx.drawImage(img, 0, 0);
+          mctx.beginPath();
+          mctx.arc(markerX, markerY, 6, 0, Math.PI * 2);
+          mctx.fillStyle = 'red';
+          mctx.fill();
+          mctx.lineWidth = 2;
+          mctx.strokeStyle = 'white';
+          mctx.stroke();
+          screenshotDataUrl = markCanvas.toDataURL('image/png');
+        } catch (e) { /* toDataURL/marker drawing can fail on some contexts — numeric probe below still stands */ }
+
+        // A ghost sibling's own .visible=true only means it's eligible for
+        // the render pass — it says nothing about whether its GreaterDepth+
+        // stencil==7 test is actually passing at THIS pixel right now. For
+        // every ghost hit along the ray, isolate it (hide every other
+        // object in the active scene) and force a real render, then read
+        // the same pixel back — if it differs from the scene's empty
+        // background, the ghost is genuinely drawing a fragment here; if
+        // not, it's present in the graph but not actually visible at this
+        // spot. Directly answers "is a ghost bleeding through here" instead
+        // of inferring it from static material flags alone.
+        const ghostHits = hits.filter(h => h.object.userData?.isOccludedGhost);
+        const ghostChecks = new Map();
+        if (ghostHits.length && pxBuf) {
+          try {
+            const gl2 = renderer.getContext();
+            const savedVis = [];
+            activeScene.traverse(o => { if (o.visible !== undefined) savedVis.push([o, o.visible]); });
+            const sample = (px, py) => { const b = new Uint8Array(4); gl2.readPixels(px, py, 1, 1, gl2.RGBA, gl2.UNSIGNED_BYTE, b); return b; };
+
+            for (const [obj] of savedVis) obj.visible = false;
+            renderer.render(activeScene, camera);
+            const bg = sample(2, 2);
+
+            for (const hit of ghostHits) {
+              for (const [obj] of savedVis) obj.visible = false;
+              let n = hit.object;
+              while (n) { n.visible = true; n = n.parent; }
+              renderer.render(activeScene, camera);
+              const px = sample(fbX, fbY);
+              const differs = Math.abs(px[0] - bg[0]) > 6 || Math.abs(px[1] - bg[1]) > 6 || Math.abs(px[2] - bg[2]) > 6;
+              ghostChecks.set(hit.object, { actuallyRendering: differs, color: [px[0], px[1], px[2], px[3]] });
+            }
+
+            for (const [obj, vis] of savedVis) obj.visible = vis;
+            renderer.render(activeScene, camera);
+          } catch (e) { /* isolation probe is best-effort — the raycast list below still stands without it */ }
+        }
+
+        // Isolate the player's own avatar and each active creature avatar
+        // independently, and compare the NORMAL (everything shown) pixel
+        // against each isolated candidate. A flattened screenshot alone
+        // can't distinguish a legitimate single opaque color from a real
+        // 50/50 blend of two layers — they look identical once already
+        // composited into one frame — so this settles it directly: if the
+        // normal pixel doesn't cleanly match any single isolated layer, the
+        // pixel is a genuine blend, live, on this exact device.
+        let blendCheck = null;
+        if (pxBuf) {
+          try {
+            const gl3 = renderer.getContext();
+            const savedVis2 = [];
+            activeScene.traverse(o => { if (o.visible !== undefined) savedVis2.push([o, o.visible]); });
+            const sample2 = (px, py) => { const b = new Uint8Array(4); gl3.readPixels(px, py, 1, 1, gl3.RGBA, gl3.UNSIGNED_BYTE, b); return Array.from(b); };
+            const hideAll = () => { for (const [obj] of savedVis2) obj.visible = false; };
+            const restoreAll = () => { for (const [obj, vis] of savedVis2) obj.visible = vis; };
+
+            let playerAvatarGroup = null;
+            for (const child of playerMesh.children) if (child.name === 'player_avatar') { playerAvatarGroup = child; break; }
+            const activeCreatures = [...companionObjects].filter(c => c.health > 0 && c.areaId === currentArea && c.avatarRef?.group);
+
+            hideAll(); renderer.render(activeScene, camera);
+            const bg = sample2(fbX, fbY);
+
+            const candidates = [{ label: 'background/world only', color: bg }];
+            if (playerAvatarGroup) {
+              hideAll(); playerAvatarGroup.visible = true;
+              renderer.render(activeScene, camera);
+              candidates.push({ label: 'player alone', color: sample2(fbX, fbY) });
+            }
+            for (const c of activeCreatures) {
+              hideAll(); c.avatarRef.group.visible = true;
+              renderer.render(activeScene, camera);
+              candidates.push({ label: `${c.creatureKey} (${c.stableRole || 'creature'}) alone`, color: sample2(fbX, fbY) });
+            }
+
+            hideAll();
+            if (playerAvatarGroup) playerAvatarGroup.visible = true;
+            for (const c of activeCreatures) c.avatarRef.group.visible = true;
+            renderer.render(activeScene, camera);
+            const normal = sample2(fbX, fbY);
+
+            restoreAll(); renderer.render(activeScene, camera);
+
+            const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+            let bestMatch = null, bestDist = Infinity;
+            for (const cand of candidates) { const d = dist(normal, cand.color); if (d < bestDist) { bestDist = d; bestMatch = cand; } }
+            blendCheck = { normal, candidates, bestMatchLabel: bestMatch?.label, bestDist, isCleanMatch: bestDist < 8 };
+          } catch (e) { /* best-effort — the rest of the report still stands without it */ }
+        }
+
+        const lines = [];
+        lines.push('Pixel Probe report');
+        // GPU/context capabilities — a mobile WebGL context commonly only
+        // grants a 16-bit depth buffer where desktop gets 24, which is a
+        // classic source of z-fighting between close, overlapping geometry
+        // that never reproduces on a desktop/software-renderer test.
+        try {
+          const gl3 = renderer.getContext();
+          const dbg = gl3.getExtension('WEBGL_debug_renderer_info');
+          const gpu = dbg ? gl3.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '(unavailable — extension not exposed)';
+          lines.push(`GPU: ${gpu}`);
+          lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
+        } catch (e) { lines.push('GPU/context info: (read failed)'); }
+        lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+        lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+        lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
+        hits.slice(0, 25).forEach((hit, i) => {
+          const o = hit.object;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          const check = ghostChecks.get(o);
+          lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`
+            + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`
+            + `${check ? (check.actuallyRendering ? ` >>> ACTUALLY RENDERING HERE (isolated color rgb(${check.color[0]},${check.color[1]},${check.color[2]}))` : ' (isolated: not actually visible at this pixel)') : ''}`);
+          mats.forEach(m => { if (m) lines.push(`     material: ${_pixelProbeMatSummary(m)}`); });
+        });
+        if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
+
+        if (blendCheck) {
+          lines.push('');
+          lines.push('=== Blend check (isolates the player + each active creature avatar independently, live, on this device) ===');
+          lines.push(`Normal pixel (everything shown): rgba(${blendCheck.normal.join(',')})`);
+          for (const c of blendCheck.candidates) lines.push(`  ${c.label}: rgba(${c.color.join(',')})`);
+          lines.push(blendCheck.isCleanMatch
+            ? `>>> CLEAN MATCH to "${blendCheck.bestMatchLabel}" (distance ${blendCheck.bestDist.toFixed(1)}) — this pixel is a single opaque layer, NOT a blend.`
+            : `>>> NO CLEAN MATCH to any single layer (closest is "${blendCheck.bestMatchLabel}" at distance ${blendCheck.bestDist.toFixed(1)}) — this pixel does not match any one avatar alone, consistent with genuine blending between layers.`);
+        }
+
+        // Temporal flicker check — every isolation test above forces its OWN
+        // synchronous re-render, which by definition produces one clean,
+        // un-blended still frame. If the real bug is two valid renders
+        // alternating faster than the eye can resolve them individually
+        // (read by a human as translucent blending, even though no single
+        // frame actually blends anything), no still capture — a screenshot
+        // included — can ever show it; only sampling a run of REAL,
+        // untouched animation frames over time can. Critically this has to
+        // run BEFORE openMenu('debug') below: opening the menu sets
+        // paused=true, which freezes updateCompanions (so the pet's
+        // position, and this whole depth-priority system, simply stops
+        // recomputing) — capturing after that would only ever see a static
+        // scene by construction, guaranteeing a false "no flicker" result.
+        const flickerSamples = [];
+        try {
+          const glF = renderer.getContext();
+          const bufF = new Uint8Array(4);
+          // Races requestAnimationFrame against a plain timer so a tab where
+          // rAF is throttled or never fires (some headless/backgrounded
+          // contexts) can't hang this diagnostic indefinitely — it just
+          // falls back to a slower tick instead.
+          const nextTick = () => new Promise(resolve => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
+            requestAnimationFrame(finish);
+            setTimeout(finish, 200);
+          });
+          const captureStart = Date.now();
+          for (let i = 0; i < 45 && !paused && (Date.now() - captureStart) < 4000; i++) {
+            await nextTick();
+            glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
+            flickerSamples.push([bufF[0], bufF[1], bufF[2], bufF[3]]);
+          }
+        } catch (e) { /* best-effort — the rest of the report still stands without it */ }
+
+        if (flickerSamples.length) {
+          const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+          const clusters = [];
+          for (const s of flickerSamples) {
+            let c = clusters.find(c => dist(c.color, s) < 10);
+            if (c) c.count++; else clusters.push({ color: s, count: 1 });
+          }
+          clusters.sort((a, b) => b.count - a.count);
+          lines.push('');
+          lines.push(`=== Temporal flicker check (${flickerSamples.length} real animation frames sampled at this exact pixel, game running normally) ===`);
+          if (clusters.length <= 1) {
+            lines.push(`>>> STABLE — every sampled frame matched the same color (rgba(${clusters[0].color.join(',')})). No flicker at this pixel over this window.`);
+          } else {
+            lines.push(`>>> FLICKERING — ${clusters.length} distinct colors alternated across ${flickerSamples.length} frames:`);
+            for (const c of clusters) lines.push(`  rgba(${c.color.join(',')}) — ${c.count}/${flickerSamples.length} frames`);
+            lines.push('This is consistent with two valid renders alternating faster than a single screenshot can show, read by the eye as translucent blending.');
+          }
+        } else {
+          lines.push('');
+          lines.push('=== Temporal flicker check: skipped (game was already paused when the probe fired) ===');
+        }
+
+        const resultEl = document.getElementById('debugProbeResult');
+        if (resultEl) resultEl.textContent = lines.join('\n');
+        const screenshotEl = document.getElementById('debugProbeScreenshot');
+        if (screenshotEl) {
+          if (screenshotDataUrl) { screenshotEl.src = screenshotDataUrl; screenshotEl.style.display = ''; }
+          else screenshotEl.style.display = 'none';
+        }
+        if (hint) hint.style.display = 'none';
+        openMenu('debug');
+        _setDebugView('probe');
+        showToast('🎯 Probe captured — see Debug tab', true);
+      }
+      async function copyPixelProbeResult() {
+        const text = document.getElementById('debugProbeResult')?.textContent || '';
+        try { await navigator.clipboard.writeText(text); showToast('Pixel probe report copied.', true); }
+        catch (e) { console.log(text); showToast('Clipboard blocked — report printed to console instead.', false); }
+      }
+      document.getElementById('debugProbeArmBtn')?.addEventListener('click', armPixelProbe);
+      document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', disarmPixelProbe);
+      document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
+      document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));
+
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -6894,19 +7219,174 @@
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
 
+      // Depth-write priority between the player's own avatar and a freely-
+      // roaming companion (NOT a shoulder pet — see updatePetLayering
+      // below for that, a fixed rule instead of this distance ranking) —
+      // tracked here so it can be reset once whenever nothing needs it,
+      // mirroring _playerHatXrayEnabled's own reset pattern.
+      let _depthPriorityFrontKey = null; // null = normal depth testing all around (nothing active to arbitrate)
+
+      // The player's own avatar planes and a companion's are both flat,
+      // alphaTest-cutout billboards — at this camera's oblique ~33°-
+      // elevation angle they're genuinely tilted relative to it, so their
+      // real 3D depth spans overlap across their own width and height
+      // (confirmed live: even at the camera's default azimuth, the
+      // player's own plane corners alone span a wider depth range than a
+      // typical companion-to-player gap). A plain depth test then
+      // interleaves them pixel-by-pixel instead of cleanly ordering one in
+      // front of the other. A companion genuinely walks anywhere relative
+      // to the player (unlike a shoulder pet, always glued to the same
+      // authored offset), so there's no fixed "always in front" rule that
+      // would look right in every situation — this has to stay a live,
+      // every-frame real-camera-space-distance ranking. depthTest stays on
+      // for both, so real-world occlusion (trees, buildings) is untouched
+      // — opaque world geometry already finishes its own depth-writing
+      // pass before either avatar (both transparent:true) ever draws, so
+      // this only ever affects the two of them relative to each other.
+      const _depthPriorityVec = new THREE.Vector3();
+      function _cameraSpaceDistance(pos) {
+        _depthPriorityVec.set(pos.x, pos.y, pos.z).applyMatrix4(camera.matrixWorldInverse);
+        return -_depthPriorityVec.z;
+      }
+      function _playerAvatarBodyMaterials() {
+        let group = null;
+        for (const child of playerMesh.children) if (child.name === 'player_avatar') { group = child; break; }
+        if (!group) return [];
+        // The real front/back plane meshes sit inside a nested "assembly"
+        // sub-group (see buildSinglePlaneAvatarModel's root.add(assembly)
+        // in png-plane-avatar.js), not as direct children of this root —
+        // a shallow one-level scan here silently found nothing and left
+        // the player's depthWrite untouched no matter what this function
+        // computed, so this has to traverse the whole subtree.
+        const mats = [];
+        group.traverse(child => {
+          if (child.isMesh && child.material && !child.userData.isOccludedGhost && !child.name.includes('hat_xray')) mats.push(child.material);
+        });
+        return mats;
+      }
+      // The hat-xray plane deliberately stays OUT of this ranking — it's
+      // still governed solely by setPlayerHatXray. That's fine: unlike
+      // depthWrite (what this ranking arbitrates), which pixels ACTUALLY
+      // draw hat-vs-body is settled by draw ORDER, and the hat's fixed,
+      // always-nearer epsilon Z offset (see buildPlayerHatXrayOverlay)
+      // keeps that order stable regardless of what the body's own
+      // depthWrite is set to here.
+      function _avatarDepthParticipants() {
+        const list = [{ key: 'player', pos: playerMesh.position, mats: _playerAvatarBodyMaterials() }];
+        for (const c of companionObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea) continue;
+          if ((c.master || player) !== player) continue;
+          // Shoulder pets are excluded here — see updatePetLayering, which
+          // arbitrates that specific relationship with a fixed rule
+          // instead of a distance comparison.
+          if (c.stableRole !== 'companion') continue;
+          const mats = [c.avatarRef.frontPlane?.material, c.avatarRef.backPlane?.material].filter(Boolean);
+          if (mats.length) list.push({ key: c.id, pos: c.avatarRef.group.position, mats });
+        }
+        return list;
+      }
+      function updateAvatarDepthPriority(active) {
+        if (!active) {
+          if (_depthPriorityFrontKey !== null) {
+            _depthPriorityFrontKey = null;
+            for (const p of _avatarDepthParticipants()) for (const m of p.mats) { m.depthWrite = true; m.needsUpdate = true; }
+          }
+          return;
+        }
+        const participants = _avatarDepthParticipants();
+        if (participants.length < 2) return;
+        let front = participants[0], frontDist = _cameraSpaceDistance(front.pos);
+        for (let i = 1; i < participants.length; i++) {
+          const d = _cameraSpaceDistance(participants[i].pos);
+          if (d < frontDist) { front = participants[i]; frontDist = d; }
+        }
+        if (front.key === _depthPriorityFrontKey) return;
+        _depthPriorityFrontKey = front.key;
+        for (const p of participants) {
+          const dw = p.key === front.key;
+          for (const m of p.mats) { m.depthWrite = dw; m.needsUpdate = true; }
+        }
+      }
+
+      // Shoulder-pet-vs-player layering: fixed, NOT distance-based. A
+      // shoulder pet is always glued to the same authored offset near the
+      // player's head/shoulder (see the shoulderPet branch below), so
+      // unlike a companion there's a single visual relationship that's
+      // always correct: the pet sits ON somebody's shoulder, so it belongs
+      // in front of whichever body plane is currently facing the camera —
+      // UNLESS that's the player's own BACK (the player is facing away),
+      // in which case the body itself is between the camera and the pet,
+      // so the back plane has to win instead. That never depends on which
+      // way the camera happens to be looking or how close the pet's
+      // anchor happens to land relative to the body plane this frame — a
+      // per-frame distance comparison between two points that are always
+      // glued within a few centimeters of each other is exactly what kept
+      // flickering (the "winner" of two near-identical camera-space
+      // distances is effectively floating-point noise from one frame to
+      // the next).
+      //
+      // Implemented as a fixed renderOrder stack — front body plane (2,
+      // its unchanged default) < shoulder pet planes (3) < back body
+      // plane (4, bumped in refreshPlayerAvatar) < back hat-xray overlay
+      // (5, bumped in buildPlayerHatXrayOverlay) — plus disabling
+      // depthWrite on whichever layers could otherwise block a later one
+      // via their own real (overlapping/interleaved) depth: the front
+      // body plane and the pet's own planes. depthTest stays on
+      // throughout, so real-world occlusion (trees, buildings) is
+      // untouched; renderOrder only ever arbitrates these specific layers
+      // against each other, never against the rest of the scene.
+      const SHOULDER_PET_PLANE_RENDER_ORDER = 3;
+      // Player back body plane's renderOrder — bumped above the front
+      // plane's unchanged default (2) and the pet's (3) in refreshPlayerAvatar,
+      // so the back plane always wins whenever it's the one facing camera.
+      // Declared here (rather than as a literal in refreshPlayerAvatar) so
+      // buildPlayerHatXrayOverlay's back-facing hat overlay can derive its
+      // own renderOrder from it and stay correctly stacked above it.
+      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
+      let _petLayeringActive = false;
+      let _petLayeringPet = null;
+      function updatePetLayering(active, pet) {
+        if (active === _petLayeringActive && pet === _petLayeringPet) return;
+        // A previously-arbitrated pet (deactivated, or swapped for a
+        // different creature) needs its own planes restored to normal —
+        // otherwise a former shoulder pet demoted to a plain wandering
+        // companion would be stuck permanently unable to write depth.
+        if (_petLayeringPet && _petLayeringPet !== pet) {
+          for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
+            if (m) { m.depthWrite = true; m.needsUpdate = true; }
+          }
+          for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
+            if (mesh) mesh.renderOrder = 2;
+          }
+        }
+        _petLayeringActive = active;
+        _petLayeringPet = active ? pet : null;
+        if (_playerAvatarFrontMaterial) { _playerAvatarFrontMaterial.depthWrite = !active; _playerAvatarFrontMaterial.needsUpdate = true; }
+        const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
+        for (const m of petMats) { m.depthWrite = !active; m.needsUpdate = true; }
+        if (active && pet) {
+          for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
+            if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
+          }
+        }
+      }
+
       function updateCompanions(dt) {
         // Hat-xray toggle (see buildPlayerHatXrayOverlay/setPlayerHatXray):
         // on for exactly as long as the player has an actively-attached
         // shoulder pet, off otherwise, regardless of which companion (if
         // any) is in that role this frame.
         let hasActiveShoulderPetForPlayer = false;
+        let activeShoulderPetCompanion = null;
+        let hasActiveCompanionForPlayer = false;
         for (const c of companionObjects) {
-          if (c.stableRole === 'shoulderPet' && c.health > 0 && c.areaId === currentArea && (c.master || player) === player) {
-            hasActiveShoulderPetForPlayer = true;
-            break;
-          }
+          if (c.health <= 0 || c.areaId !== currentArea || (c.master || player) !== player) continue;
+          if (c.stableRole === 'shoulderPet') { hasActiveShoulderPetForPlayer = true; activeShoulderPetCompanion = c; }
+          else if (c.stableRole === 'companion') hasActiveCompanionForPlayer = true;
         }
-        setPlayerHatXray(hasActiveShoulderPetForPlayer);
+        setPlayerHatXray(hasActiveShoulderPetForPlayer && !s_disableHatXray);
+        updatePetLayering(hasActiveShoulderPetForPlayer, hasActiveShoulderPetForPlayer ? activeShoulderPetCompanion : null);
+        if (!hasActiveCompanionForPlayer) updateAvatarDepthPriority(false);
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -6970,6 +7450,7 @@
             c.vx = 0; c.vy = 0;
             const perch = playerAttachmentAnchor('shoulderPerch');
             const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+            let dx = null, dz = null;
             if (perch && grip) {
               const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
               const invGripYaw = -gripYawRad;
@@ -6977,8 +7458,8 @@
               const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
               const lx = perch.x - gx, lz = (perch.z || 0) - gz;
               const theta = (master === player) ? playerMesh.rotation.y : master.angle;
-              const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
-              const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+              dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+              dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
               c.x = master.x + dx * TILE;
               c.y = master.y + dz * TILE;
               c.facing = master.angle + gripYawRad;
@@ -6997,6 +7478,32 @@
               // playerToolBaseY, no extra avatarHeight/2 term) — so no
               // additional half-height lift belongs here either.
               c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+              // X/Z are pinned directly off playerMesh.position (the
+              // character's own already-smoothed render position), not
+              // eased in via updateCreatureMesh's generic per-creature
+              // lerp (grp.position.x/z += (target - current) * dt*10)
+              // above. That lerp is tuned for a wandering animal easing
+              // toward a waypoint; a shoulder pet's target is recomputed
+              // fresh every frame from the player's CURRENT position, so
+              // it was instead just perpetually chasing a moving target
+              // one frame behind — and since the player's own mesh eases
+              // toward player.x/y on its own, different (0.25/frame flat,
+              // see updatePlayerMesh) schedule, the two rarely finished a
+              // frame at the exact offset the rig anchors intend. Measured
+              // live: right after mount (or any facing change re-aims the
+              // anchor), the pet's camera-facing depth relative to the
+              // player's drifts through dead-equal and briefly crosses to
+              // the wrong side before the lerp catches up — and since both
+              // avatars are alphaTest cutout planes with transparent:true
+              // (so their few percent of antialiased edge pixels actually
+              // alpha-blend), that crossing reads as the pet flickering
+              // translucent with the character showing through it, not as
+              // a clean pop. Snapping straight to playerMesh.position plus
+              // the same rig offset keeps the pet locked to the exact
+              // authored offset every single frame, so their relative
+              // depth never has a lagging frame to wobble through.
+              c.avatarRef.group.position.x = playerMesh.position.x + dx;
+              c.avatarRef.group.position.z = playerMesh.position.z + dz;
             } else {
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
             }
@@ -7116,6 +7623,15 @@
           updateCreatureMesh(c, dt, aimAngle);
           if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving);
         }
+
+        // Run last, after every avatar's position has actually been updated
+        // for this frame (see updateAvatarDepthPriority above) — ranking
+        // stale, previous-frame positions would routinely pick the wrong
+        // front-most participant. Only companions go through this live
+        // ranking now — the shoulder pet relationship is arbitrated by the
+        // fixed updatePetLayering rule instead (called above, independent
+        // of this frame's positions).
+        if (hasActiveCompanionForPlayer) updateAvatarDepthPriority(true);
       }
 
       // With no `master` given, clears every companion (full reset/QA use —
@@ -12080,6 +12596,13 @@
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
       let _playerHatXrayOverlay = null; // { materials, meshes } once built for the current hat, else null.
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
+      // Direct references to the player's own front/back plane materials —
+      // set in refreshPlayerAvatar. Used by updatePetLayering (near
+      // updateCompanions) to toggle the front plane's depthWrite without
+      // disturbing the back plane's, which _playerAvatarBodyMaterials()'s
+      // combined front+back traversal can't do on its own.
+      let _playerAvatarFrontMaterial = null;
+      let _playerAvatarBackMaterial = null;
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
@@ -20789,7 +21312,14 @@
             // z-fighting with the now-hatless body layer underneath it.
             mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
             if (facingBack) mesh.rotation.y = Math.PI;
-            mesh.renderOrder = 2;
+            // Front stays at the body planes' shared default (2) — resolved
+            // against the front body plane by the Z-nudge above, same as
+            // always. Back has to explicitly out-rank the body's own back
+            // plane (bumped to PLAYER_BACK_PLANE_RENDER_ORDER in
+            // refreshPlayerAvatar, for the shoulder-pet layering rule — see
+            // updatePetLayering), since renderOrder is compared before the
+            // Z-nudge ever comes into play.
+            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : 2;
             assembly.add(mesh);
             materials.push(material);
             meshes.push(mesh);
@@ -20821,6 +21351,16 @@
         const refreshGeneration = ++playerAvatarRefreshGeneration;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
+        // The old front/back materials this pointed at are about to be
+        // disposed by removePlayerAvatarChildren below, and a brand new
+        // pair (default depthWrite:true) is coming — force updatePetLayering
+        // to treat the next call as a real transition even if a shoulder
+        // pet was already active before this refresh (e.g. a gear/hat
+        // change mid-session), so it actually re-applies to the new
+        // materials instead of short-circuiting on an unchanged (active,
+        // pet) pair.
+        _petLayeringActive = false;
+        _petLayeringPet = null;
         removePlayerAvatarChildren();
         const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(applyGearClothingToPlayerData(_playerData));
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
@@ -20845,6 +21385,17 @@
           { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
         );
         avatarGroup.name = 'player_avatar';
+        // Direct front/back plane refs for updatePetLayering (see near
+        // updateCompanions) — createSinglePlaneAssembly always nests them
+        // as the assembly's first two children (frontMesh, then backMesh).
+        // The back plane's renderOrder is bumped here (once, unconditionally
+        // — harmless when idle, since front/back are never simultaneously
+        // visible) so it always out-ranks a shoulder pet's planes whenever
+        // it's the one actually facing the camera.
+        const _bodyAssembly = avatarGroup.children[0];
+        _playerAvatarFrontMaterial = _bodyAssembly?.children?.[0]?.material || null;
+        _playerAvatarBackMaterial = _bodyAssembly?.children?.[1]?.material || null;
+        if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
@@ -25985,7 +26536,17 @@
       scene.fog      = new THREE.FogExp2(0x1a2b20, 0.018);
 
       const threeRect = threeContainer.getBoundingClientRect();
-      const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      // preserveDrawingBuffer:true — without it, canvas.toDataURL() (see the
+      // Pixel Probe's screenshot capture) has no spec guarantee of reading
+      // back anything meaningful outside the exact rAF callback that drew
+      // it, and forcing an extra ad-hoc renderer.render() call to work
+      // around that risks capturing a DIFFERENT render of the "same" frame
+      // than what was actually displayed — GPU resolution of near-tied
+      // depth/stencil comparisons (exactly what's suspected here) isn't
+      // guaranteed identical between two separate render() invocations,
+      // especially on a tile-based mobile GPU. Keeping the buffer around
+      // lets the probe read back the literal frame the user actually saw.
+      const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight);
       renderer.shadowMap.enabled = true;
@@ -30646,6 +31207,13 @@
       const DEV_MODE_STORAGE_KEY = 'hobunjiDevMode';
       let s_devMode = false;
       try { s_devMode = localStorage.getItem(DEV_MODE_STORAGE_KEY) === '1'; } catch {}
+      // Debug toggle for the translucent-shoulder-pet investigation — forces
+      // setPlayerHatXray's own gate (see updateCompanions) to always report
+      // "off" regardless of whether a shoulder pet is active, so the hat
+      // plane keeps its normal depthWrite and occludes exactly like any
+      // other opaque sprite. Isolates whether that specific mechanism is
+      // contributing to the reported translucency.
+      let s_disableHatXray = false;
 
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
@@ -30657,6 +31225,9 @@
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
         s_outlines = e.target.checked;
+      });
+      document.getElementById('settingDisableHatXray')?.addEventListener('change', e => {
+        s_disableHatXray = e.target.checked;
       });
       document.getElementById('settingDepthOutlines').addEventListener('change', e => {
         s_depthOutlines = e.target.checked;
@@ -34351,7 +34922,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !_pixelProbeArmed;
       }
       function cameraDragRequested(e) {
         return e.pointerType === 'touch';
@@ -34419,6 +34990,12 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // While the Pixel Probe is armed, mouse movement should only ever
+          // move the cursor toward the target pixel — not rotate the camera
+          // (Shift+drag, below) or spin the character's facing via mouse-
+          // look (which drags a glued shoulder pet along with it), either of
+          // which would shift the very thing being aimed at mid-approach.
+          if (_pixelProbeArmed) return;
           if (e.shiftKey && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
