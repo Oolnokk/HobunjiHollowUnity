@@ -330,8 +330,27 @@
         // forced its own render) consistently did not.
         let screenshotDataUrl = null;
         try {
-          screenshotDataUrl = canvas.toDataURL('image/png');
-        } catch (e) { /* toDataURL can throw on a tainted canvas — numeric probe below still stands */ }
+          const rawDataUrl = canvas.toDataURL('image/png');
+          // Mark exactly where the click/tap landed — canvas.toDataURL's
+          // pixel space is top-left-origin like any normal image (unlike
+          // WebGL readPixels' bottom-left fbX/fbY above), so the marker
+          // uses the plain CSS->canvas pixel scale, not the flipped coords.
+          const markerX = cssX * scaleX, markerY = cssY * scaleY;
+          const img = new Image();
+          await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = rawDataUrl; });
+          const markCanvas = document.createElement('canvas');
+          markCanvas.width = img.naturalWidth; markCanvas.height = img.naturalHeight;
+          const mctx = markCanvas.getContext('2d');
+          mctx.drawImage(img, 0, 0);
+          mctx.beginPath();
+          mctx.arc(markerX, markerY, 6, 0, Math.PI * 2);
+          mctx.fillStyle = 'red';
+          mctx.fill();
+          mctx.lineWidth = 2;
+          mctx.strokeStyle = 'white';
+          mctx.stroke();
+          screenshotDataUrl = markCanvas.toDataURL('image/png');
+        } catch (e) { /* toDataURL/marker drawing can fail on some contexts — numeric probe below still stands */ }
 
         // A ghost sibling's own .visible=true only means it's eligible for
         // the render pass — it says nothing about whether its GreaterDepth+
@@ -34769,7 +34788,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !_pixelProbeArmed;
       }
       function cameraDragRequested(e) {
         return e.pointerType === 'touch';
@@ -34837,6 +34856,12 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          // While the Pixel Probe is armed, mouse movement should only ever
+          // move the cursor toward the target pixel — not rotate the camera
+          // (Shift+drag, below) or spin the character's facing via mouse-
+          // look (which drags a glued shoulder pet along with it), either of
+          // which would shift the very thing being aimed at mid-approach.
+          if (_pixelProbeArmed) return;
           if (e.shiftKey && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
