@@ -10,6 +10,17 @@
 // entry) gets a generated primitive foot instead. Ported from (and should
 // stay consistent with) docs/tools/procedural-animation-editor/index.html,
 // the reference authoring tool this was designed against.
+//
+// Each foot actually hangs off an invisible 2-bone leg (hip -> thigh -> calf,
+// see docs/js/leg-bones.js) running from the avatar's "posterior" anchor
+// down to wherever the gait/idle math above says the foot should be right
+// now. Unauthored, the thigh points straight at the foot and the knee just
+// marks its midpoint, so the leg reads as one straight line and the whole
+// chain "follows the avatar wherever it goes" for free. An optional authored
+// bend (proceduralFeet.legBend in scratchbones-config.js) rotates the thigh
+// away from that straight line; the calf is never authored directly — it's
+// re-aimed at the live foot target every frame so the foot never detaches
+// from its computed ground contact point.
 (function () {
   'use strict';
 
@@ -72,6 +83,49 @@
       }
     }
     return defaultMultiplier;
+  }
+
+  // Per-species/gender authored posterior height rule (posteriorRule.
+  // heightPercentOffset in attachment-rig-profiles.js — the same rig data
+  // docs/tools/animation-author/index.html authors and the game's own
+  // mount-seat placement references), mirroring that tool's own live-preview
+  // formula: hip height = handAttachY + modelHeight * heightPercentOffset/100,
+  // both terms already in the avatar's floor-anchored root space (handAttachY
+  // is png-plane-avatar.js's own scanned hand-height, passed in via
+  // options.handAttachY). Falls back to -18 (this rig data's own default,
+  // see DEFAULT_POSTERIOR_HEIGHT_PERCENT in animation-author/index.html) for
+  // any species/gender without an authored rule.
+  function heightPercentOffsetForSpecies(speciesId, gender) {
+    const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+    const rec = lib[`${speciesId}::${gender}`];
+    const value = Number(rec?.posteriorRule?.heightPercentOffset);
+    return Number.isFinite(value) ? value : -18;
+  }
+
+  function posteriorYForSpecies(speciesId, gender, modelHeight, handAttachY) {
+    const baseY = Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2;
+    return baseY + modelHeight * heightPercentOffsetForSpecies(speciesId, gender) / 100;
+  }
+
+  // Per-species/gender authored knee bend (proceduralFeet.legBend in
+  // scratchbones-config.js), mirroring footScaleMultiplierForSpecies's own
+  // species-chain + gender-key lookup. One {x,z} (degrees) per species+
+  // gender applied to BOTH legs — the caller mirrors x (lateral) between
+  // left/right, matching how the rest of this avatar's authored data
+  // (footScale, portraitVerticalPlacement) is per-species+gender rather than
+  // per-side. Falls back to a perfectly straight leg ({x:0,z:0}) for any
+  // species/gender without an authored entry.
+  function legBendForSpecies(speciesId, gender) {
+    const table = cfg().legBend || {};
+    const fallback = { x: Number(table.default?.x) || 0, z: Number(table.default?.z) || 0 };
+    for (const key of speciesChain(speciesId)) {
+      const entry = table[key];
+      if (entry && Object.prototype.hasOwnProperty.call(entry, gender)) {
+        const x = Number(entry[gender]?.x), z = Number(entry[gender]?.z);
+        if (Number.isFinite(x) && Number.isFinite(z)) return { x, z };
+      }
+    }
+    return fallback;
   }
 
   function referenceHexForSpecies(speciesId) {
@@ -565,6 +619,10 @@
   // NpcAvatarPreview.renderProfileToCanvas when building the avatar's own
   // texture) is optional but required for the real torso-width scan;
   // without it, feet fall back to a fixed fraction of modelWidth.
+  // options.handAttachY (avatarGroup.userData.handAttachY from
+  // png-plane-avatar.js, already in this same floor-anchored space) anchors
+  // the invisible leg chain's hip pivot; without it the hip falls back to
+  // modelHeight/2 (the sprite's own vertical center).
   function attach(THREE, parent, options = {}) {
     if (!THREE || !parent) return null;
     const c = cfg();
@@ -593,6 +651,32 @@
     const root = new THREE.Group();
     root.name = `${options.name || 'avatar'}_procedural_feet`;
 
+    // Invisible hip -> thigh -> calf chain (see docs/js/leg-bones.js) — a
+    // single shared hip pivot (the avatar's own posterior anchor is centered,
+    // not per-leg) with independent thigh/calf Object3Ds per leg. Thigh/calf
+    // carry no geometry of their own; the foot mesh (built below) is
+    // reparented onto the calf once it exists.
+    const hipPivot = new THREE.Group();
+    hipPivot.name = 'hip_pivot';
+    hipPivot.position.set(0, posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY)), 0);
+    root.add(hipPivot);
+
+    function buildLegChain(sideName) {
+      const thigh = new THREE.Group();
+      thigh.name = `${sideName}_thigh`;
+      const calf = new THREE.Group();
+      calf.name = `${sideName}_calf`;
+      thigh.add(calf);
+      hipPivot.add(thigh);
+      return { thigh, calf };
+    }
+    const legChains = { left: buildLegChain('left'), right: buildLegChain('right') };
+
+    // One authored bend per species+gender applied to both legs, mirrored
+    // laterally (x) between left/right — see legBendForSpecies.
+    const bendBase = legBendForSpecies(speciesId, gender);
+    const legBend = { left: { x: bendBase.x, z: bendBase.z }, right: { x: -bendBase.x, z: bendBase.z } };
+
     const state = {
       phase: 0,
       gaitStrength: 0,
@@ -602,11 +686,49 @@
       rightContactY: radius * sphereScaleY,
       idleLeftX: -stanceWidthFraction * modelWidth * 0.5,
       idleRightX: stanceWidthFraction * modelWidth * 0.5,
+      // Live foot targets, in root-local space (the same frame the old code
+      // wrote directly onto mesh.position in) — the thigh/calf chain is
+      // solved from hip -> this point every time it changes.
+      leftTarget: new THREE.Vector3(-stanceWidthFraction * modelWidth * 0.5, radius * sphereScaleY, 0),
+      rightTarget: new THREE.Vector3(stanceWidthFraction * modelWidth * 0.5, radius * sphereScaleY, 0),
+      leftRoll: 0,
+      rightRoll: 0,
       disposed: false,
     };
 
-    function placeIdle(mesh, isLeft, contactY) {
-      mesh.position.set(isLeft ? state.idleLeftX : state.idleRightX, contactY, 0);
+    // Solves the leg chain for `side` ('left'/'right') from hipPivot to the
+    // side's current target and applies the result to its thigh/calf
+    // Object3Ds and its foot mesh (whichever is currently attached —
+    // fallback or GLB), so the foot mesh's own local position/rotation is
+    // always just (0, -calfLength, 0) plus the roll lean: every other
+    // component of where the foot actually ends up in the world comes from
+    // the chain's transforms, not from the mesh itself.
+    function applyLegChain(side) {
+      const mesh = state[side];
+      const chain = legChains[side];
+      const target = state[`${side}Target`];
+      if (!mesh || !chain || !target || !window.LegBones) return;
+      const bend = legBend[side];
+      const solved = window.LegBones.solveTwoBoneLeg(THREE, {
+        hip: hipPivot.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
+      });
+      chain.thigh.quaternion.copy(solved.thighQuaternion);
+      chain.calf.position.set(0, -solved.thighLength, 0);
+      chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+      mesh.position.set(0, -solved.calfLength, 0);
+      mesh.rotation.x = state[`${side}Roll`];
+    }
+
+    // Sets a leg's target straight to its idle stance (no damping — used
+    // both for the very first pose and whenever the foot mesh itself is
+    // swapped out, matching the previous placeIdle's snap-to-idle behavior)
+    // and immediately re-solves the chain so the new mesh doesn't render at
+    // the chain's stale/default pose for a frame.
+    function placeIdleTarget(side, contactY) {
+      const idleX = side === 'left' ? state.idleLeftX : state.idleRightX;
+      state[`${side}Target`].set(idleX, contactY, 0);
+      state[`${side}Roll`] = 0;
+      applyLegChain(side);
     }
 
     const surfaceForRole = makeSurfaceRoleResolver(THREE, speciesId, options.bodyColors);
@@ -615,13 +737,14 @@
     const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
     leftFallback.name = 'left_foot';
     rightFallback.name = 'right_foot';
-    placeIdle(leftFallback, true, leftFallback.userData.contactRadiusY);
-    placeIdle(rightFallback, false, rightFallback.userData.contactRadiusY);
-    root.add(leftFallback, rightFallback);
+    legChains.left.calf.add(leftFallback);
+    legChains.right.calf.add(rightFallback);
     state.left = leftFallback;
     state.right = rightFallback;
     state.leftContactY = leftFallback.userData.contactRadiusY;
     state.rightContactY = rightFallback.userData.contactRadiusY;
+    placeIdleTarget('left', state.leftContactY);
+    placeIdleTarget('right', state.rightContactY);
 
     surfaceForRole(isKenkariFamily ? 'keratin' : 'body').then(texture => {
       if (state.disposed) return;
@@ -646,17 +769,18 @@
         leftMesh.name = 'left_foot';
         rightMesh.name = 'right_foot';
         leftMesh.scale.x *= -1; // mirrors handedness for the left foot from a single authored mesh
-        root.remove(state.left);
-        root.remove(state.right);
+        legChains.left.calf.remove(state.left);
+        legChains.right.calf.remove(state.right);
         disposeObjectResources(state.left);
         disposeObjectResources(state.right);
-        placeIdle(leftMesh, true, leftMesh.userData.contactRadiusY);
-        placeIdle(rightMesh, false, rightMesh.userData.contactRadiusY);
-        root.add(leftMesh, rightMesh);
+        legChains.left.calf.add(leftMesh);
+        legChains.right.calf.add(rightMesh);
         state.left = leftMesh;
         state.right = rightMesh;
         state.leftContactY = leftMesh.userData.contactRadiusY;
         state.rightContactY = rightMesh.userData.contactRadiusY;
+        placeIdleTarget('left', state.leftContactY);
+        placeIdleTarget('right', state.rightContactY);
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);
       });
@@ -676,8 +800,8 @@
         if (state.disposed || !scan) return;
         state.idleLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
         state.idleRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
-        if (state.left) state.left.position.x = state.idleLeftX;
-        if (state.right) state.right.position.x = state.idleRightX;
+        if (state.left) { state.leftTarget.x = state.idleLeftX; applyLegChain('left'); }
+        if (state.right) { state.rightTarget.x = state.idleRightX; applyLegChain('right'); }
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] torso width scan failed for "${speciesId}":`, error);
       });
@@ -685,18 +809,20 @@
 
     parent.add(root);
 
-    function applyPose(mesh, contactY, idleX, pose, response, dt) {
-      if (!mesh) return;
-      mesh.position.x = damp(mesh.position.x, idleX, response, dt);
+    function applyPose(side, contactY, idleX, pose, response, dt) {
+      const target = state[`${side}Target`];
+      if (!state[side] || !target) return;
+      target.x = damp(target.x, idleX, response, dt);
       const targetZ = pose.travel;
-      mesh.position.z = damp(mesh.position.z, targetZ, response, dt);
+      target.z = damp(target.z, targetZ, response, dt);
       const rollAmount = pose.travel / Math.max(radius, 0.001) * 0.32;
-      mesh.rotation.x = damp(mesh.rotation.x, -rollAmount, response, dt);
+      state[`${side}Roll`] = damp(state[`${side}Roll`], -rollAmount, response, dt);
       if (pose.planted && state.gaitStrength > 0.04) {
-        mesh.position.y = contactY;
+        target.y = contactY;
       } else {
-        mesh.position.y = damp(mesh.position.y, contactY + pose.lift, response, dt);
+        target.y = damp(target.y, contactY + pose.lift, response, dt);
       }
+      applyLegChain(side);
     }
 
     // speedWorldUnitsPerSecond: current movement speed in the same world
@@ -732,8 +858,8 @@
       const leftPose = stridePoseAtPhase(state.phase, strideLength, liftHeight, STANCE_FRACTION);
       const rightPose = stridePoseAtPhase(state.phase + 0.5, strideLength, liftHeight, STANCE_FRACTION);
       const response = speed > 0.02 ? 18 + cadenceHz * 3 : 11;
-      applyPose(state.left, state.leftContactY, state.idleLeftX, leftPose, response, dt);
-      applyPose(state.right, state.rightContactY, state.idleRightX, rightPose, response, dt);
+      applyPose('left', state.leftContactY, state.idleLeftX, leftPose, response, dt);
+      applyPose('right', state.rightContactY, state.idleRightX, rightPose, response, dt);
     }
 
     function dispose() {

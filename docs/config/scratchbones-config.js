@@ -3813,6 +3813,15 @@ window.SCRATCHBONES_CONFIG = {
             "mao-ao": { "female": 1, "male": 1 },
             "mashtzarr": { "male": 1, "female": 1 }
           },
+          "legBend": {
+            "default": { "x": 0, "z": 0 },
+            "kenkari": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "rakakoan": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "tletingan": { "male": { "x": 0, "z": 0 }, "female": { "x": 0, "z": 0 } },
+            "engh-sho": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "mao-ao": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "mashtzarr": { "male": { "x": 0, "z": 0 }, "female": { "x": 0, "z": 0 } }
+          },
           "species": {
             "mashtzarr": {
               "glb": "assets/models/feet/foot_pachyderm.glb",

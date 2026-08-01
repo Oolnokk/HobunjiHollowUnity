@@ -16063,6 +16063,7 @@
         const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
+          handAttachY: avatarGroup.userData?.handAttachY,
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
 
@@ -21554,7 +21555,8 @@
         playerLegs?.dispose();
         playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
-          modelWidth: avatarWidth, modelHeight: avatarHeight, name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
+          name: 'player', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
       }
 
