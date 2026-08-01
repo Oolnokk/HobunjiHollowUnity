@@ -7219,46 +7219,30 @@
       // updateCompanions' treasure-hint branch and nearestBuriedTreasurePixelPos.
       const TREASURE_HINT_RANGE_PX = TILE * 9;
 
-      // Depth-write priority among the player's own avatar and every
-      // currently-active, player-glued/nearby companion avatar (shoulder
-      // pet, ordinary companion) — tracked here so it can be reset once
-      // whenever nothing needs it, mirroring _playerHatXrayEnabled's own
-      // reset pattern.
+      // Depth-write priority between the player's own avatar and a freely-
+      // roaming companion (NOT a shoulder pet — see updatePetLayering
+      // below for that, a fixed rule instead of this distance ranking) —
+      // tracked here so it can be reset once whenever nothing needs it,
+      // mirroring _playerHatXrayEnabled's own reset pattern.
       let _depthPriorityFrontKey = null; // null = normal depth testing all around (nothing active to arbitrate)
 
-      // The player's own avatar planes, a shoulder pet's, and a companion's
-      // are all flat, alphaTest-cutout billboards that end up glued or
-      // standing close together — at this camera's oblique ~33°-elevation
-      // angle they're genuinely tilted relative to it, so their real 3D
-      // depth spans overlap across their own width and height (confirmed
-      // live: even at the camera's default azimuth, the player's own plane
-      // corners alone span a wider depth range than the gap between the
-      // two attachment anchors). A plain depth test then interleaves them
-      // pixel-by-pixel instead of cleanly ordering one in front of the
-      // other, which is what actually produced the "flickering translucent
-      // stained glass" look — not the occluded-ghost system (ruled out
-      // live via the Pixel Probe's isolation check), and not lag between
-      // avatars' positions (fixed separately, verified with zero remaining
-      // sign-crossings, but this interleaving happens even with everything
-      // perfectly glued in place).
-      //
-      // An earlier version of this fix only ever resolved the player-vs-pet
-      // PAIR, which left a third contender — the companion (often just as
-      // close in practice, e.g. mid-combat), or even the player's own
-      // hat-xray plane once the player's own body started losing depthWrite
-      // sometimes too — free to interleave against whichever one had just
-      // "won" the pair. Confirmed live via a Pixel Probe's temporal flicker
-      // check landed directly on the pet's own head: still flickering
-      // between wildly different colors (near-black to bright cream) after
-      // that pairwise fix, with the companion listed as an active nearby
-      // participant the whole time. Fix: every frame, rank EVERY currently-
-      // relevant avatar by real camera-space distance and keep depthWrite
-      // enabled on ONLY the frontmost one; every other participant defers.
-      // depthTest stays on for all of them, so real-world occlusion (trees,
-      // buildings) is untouched — opaque world geometry already finishes
-      // its own depth-writing pass before any of these avatars (all
-      // transparent:true) ever draw, so this only ever affects them
-      // relative to each other.
+      // The player's own avatar planes and a companion's are both flat,
+      // alphaTest-cutout billboards — at this camera's oblique ~33°-
+      // elevation angle they're genuinely tilted relative to it, so their
+      // real 3D depth spans overlap across their own width and height
+      // (confirmed live: even at the camera's default azimuth, the
+      // player's own plane corners alone span a wider depth range than a
+      // typical companion-to-player gap). A plain depth test then
+      // interleaves them pixel-by-pixel instead of cleanly ordering one in
+      // front of the other. A companion genuinely walks anywhere relative
+      // to the player (unlike a shoulder pet, always glued to the same
+      // authored offset), so there's no fixed "always in front" rule that
+      // would look right in every situation — this has to stay a live,
+      // every-frame real-camera-space-distance ranking. depthTest stays on
+      // for both, so real-world occlusion (trees, buildings) is untouched
+      // — opaque world geometry already finishes its own depth-writing
+      // pass before either avatar (both transparent:true) ever draws, so
+      // this only ever affects the two of them relative to each other.
       const _depthPriorityVec = new THREE.Vector3();
       function _cameraSpaceDistance(pos) {
         _depthPriorityVec.set(pos.x, pos.y, pos.z).applyMatrix4(camera.matrixWorldInverse);
@@ -7292,7 +7276,10 @@
         for (const c of companionObjects) {
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           if ((c.master || player) !== player) continue;
-          if (c.stableRole !== 'shoulderPet' && c.stableRole !== 'companion') continue;
+          // Shoulder pets are excluded here — see updatePetLayering, which
+          // arbitrates that specific relationship with a fixed rule
+          // instead of a distance comparison.
+          if (c.stableRole !== 'companion') continue;
           const mats = [c.avatarRef.frontPlane?.material, c.avatarRef.backPlane?.material].filter(Boolean);
           if (mats.length) list.push({ key: c.id, pos: c.avatarRef.group.position, mats });
         }
@@ -7321,20 +7308,85 @@
         }
       }
 
+      // Shoulder-pet-vs-player layering: fixed, NOT distance-based. A
+      // shoulder pet is always glued to the same authored offset near the
+      // player's head/shoulder (see the shoulderPet branch below), so
+      // unlike a companion there's a single visual relationship that's
+      // always correct: the pet sits ON somebody's shoulder, so it belongs
+      // in front of whichever body plane is currently facing the camera —
+      // UNLESS that's the player's own BACK (the player is facing away),
+      // in which case the body itself is between the camera and the pet,
+      // so the back plane has to win instead. That never depends on which
+      // way the camera happens to be looking or how close the pet's
+      // anchor happens to land relative to the body plane this frame — a
+      // per-frame distance comparison between two points that are always
+      // glued within a few centimeters of each other is exactly what kept
+      // flickering (the "winner" of two near-identical camera-space
+      // distances is effectively floating-point noise from one frame to
+      // the next).
+      //
+      // Implemented as a fixed renderOrder stack — front body plane (2,
+      // its unchanged default) < shoulder pet planes (3) < back body
+      // plane (4, bumped in refreshPlayerAvatar) < back hat-xray overlay
+      // (5, bumped in buildPlayerHatXrayOverlay) — plus disabling
+      // depthWrite on whichever layers could otherwise block a later one
+      // via their own real (overlapping/interleaved) depth: the front
+      // body plane and the pet's own planes. depthTest stays on
+      // throughout, so real-world occlusion (trees, buildings) is
+      // untouched; renderOrder only ever arbitrates these specific layers
+      // against each other, never against the rest of the scene.
+      const SHOULDER_PET_PLANE_RENDER_ORDER = 3;
+      // Player back body plane's renderOrder — bumped above the front
+      // plane's unchanged default (2) and the pet's (3) in refreshPlayerAvatar,
+      // so the back plane always wins whenever it's the one facing camera.
+      // Declared here (rather than as a literal in refreshPlayerAvatar) so
+      // buildPlayerHatXrayOverlay's back-facing hat overlay can derive its
+      // own renderOrder from it and stay correctly stacked above it.
+      const PLAYER_BACK_PLANE_RENDER_ORDER = 4;
+      let _petLayeringActive = false;
+      let _petLayeringPet = null;
+      function updatePetLayering(active, pet) {
+        if (active === _petLayeringActive && pet === _petLayeringPet) return;
+        // A previously-arbitrated pet (deactivated, or swapped for a
+        // different creature) needs its own planes restored to normal —
+        // otherwise a former shoulder pet demoted to a plain wandering
+        // companion would be stuck permanently unable to write depth.
+        if (_petLayeringPet && _petLayeringPet !== pet) {
+          for (const m of [_petLayeringPet.avatarRef?.frontPlane?.material, _petLayeringPet.avatarRef?.backPlane?.material]) {
+            if (m) { m.depthWrite = true; m.needsUpdate = true; }
+          }
+          for (const mesh of [_petLayeringPet.avatarRef?.frontPlane, _petLayeringPet.avatarRef?.backPlane]) {
+            if (mesh) mesh.renderOrder = 2;
+          }
+        }
+        _petLayeringActive = active;
+        _petLayeringPet = active ? pet : null;
+        if (_playerAvatarFrontMaterial) { _playerAvatarFrontMaterial.depthWrite = !active; _playerAvatarFrontMaterial.needsUpdate = true; }
+        const petMats = active && pet ? [pet.avatarRef?.frontPlane?.material, pet.avatarRef?.backPlane?.material].filter(Boolean) : [];
+        for (const m of petMats) { m.depthWrite = !active; m.needsUpdate = true; }
+        if (active && pet) {
+          for (const mesh of [pet.avatarRef?.frontPlane, pet.avatarRef?.backPlane]) {
+            if (mesh) mesh.renderOrder = SHOULDER_PET_PLANE_RENDER_ORDER;
+          }
+        }
+      }
+
       function updateCompanions(dt) {
         // Hat-xray toggle (see buildPlayerHatXrayOverlay/setPlayerHatXray):
         // on for exactly as long as the player has an actively-attached
         // shoulder pet, off otherwise, regardless of which companion (if
         // any) is in that role this frame.
         let hasActiveShoulderPetForPlayer = false;
+        let activeShoulderPetCompanion = null;
+        let hasActiveCompanionForPlayer = false;
         for (const c of companionObjects) {
-          if (c.stableRole === 'shoulderPet' && c.health > 0 && c.areaId === currentArea && (c.master || player) === player) {
-            hasActiveShoulderPetForPlayer = true;
-            break;
-          }
+          if (c.health <= 0 || c.areaId !== currentArea || (c.master || player) !== player) continue;
+          if (c.stableRole === 'shoulderPet') { hasActiveShoulderPetForPlayer = true; activeShoulderPetCompanion = c; }
+          else if (c.stableRole === 'companion') hasActiveCompanionForPlayer = true;
         }
         setPlayerHatXray(hasActiveShoulderPetForPlayer && !s_disableHatXray);
-        if (!hasActiveShoulderPetForPlayer) updateAvatarDepthPriority(false);
+        updatePetLayering(hasActiveShoulderPetForPlayer, hasActiveShoulderPetForPlayer ? activeShoulderPetCompanion : null);
+        if (!hasActiveCompanionForPlayer) updateAvatarDepthPriority(false);
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -7575,8 +7627,11 @@
         // Run last, after every avatar's position has actually been updated
         // for this frame (see updateAvatarDepthPriority above) — ranking
         // stale, previous-frame positions would routinely pick the wrong
-        // front-most participant.
-        if (hasActiveShoulderPetForPlayer) updateAvatarDepthPriority(true);
+        // front-most participant. Only companions go through this live
+        // ranking now — the shoulder pet relationship is arbitrated by the
+        // fixed updatePetLayering rule instead (called above, independent
+        // of this frame's positions).
+        if (hasActiveCompanionForPlayer) updateAvatarDepthPriority(true);
       }
 
       // With no `master` given, clears every companion (full reset/QA use —
@@ -12541,6 +12596,13 @@
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
       let _playerHatXrayOverlay = null; // { materials, meshes } once built for the current hat, else null.
       let _playerHatXrayEnabled = false; // Last-applied state, so setPlayerHatXray only touches materials on a real change.
+      // Direct references to the player's own front/back plane materials —
+      // set in refreshPlayerAvatar. Used by updatePetLayering (near
+      // updateCompanions) to toggle the front plane's depthWrite without
+      // disturbing the back plane's, which _playerAvatarBodyMaterials()'s
+      // combined front+back traversal can't do on its own.
+      let _playerAvatarFrontMaterial = null;
+      let _playerAvatarBackMaterial = null;
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
@@ -21250,7 +21312,14 @@
             // z-fighting with the now-hatless body layer underneath it.
             mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
             if (facingBack) mesh.rotation.y = Math.PI;
-            mesh.renderOrder = 2;
+            // Front stays at the body planes' shared default (2) — resolved
+            // against the front body plane by the Z-nudge above, same as
+            // always. Back has to explicitly out-rank the body's own back
+            // plane (bumped to PLAYER_BACK_PLANE_RENDER_ORDER in
+            // refreshPlayerAvatar, for the shoulder-pet layering rule — see
+            // updatePetLayering), since renderOrder is compared before the
+            // Z-nudge ever comes into play.
+            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : 2;
             assembly.add(mesh);
             materials.push(material);
             meshes.push(mesh);
@@ -21282,6 +21351,16 @@
         const refreshGeneration = ++playerAvatarRefreshGeneration;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
+        // The old front/back materials this pointed at are about to be
+        // disposed by removePlayerAvatarChildren below, and a brand new
+        // pair (default depthWrite:true) is coming — force updatePetLayering
+        // to treat the next call as a real transition even if a shoulder
+        // pet was already active before this refresh (e.g. a gear/hat
+        // change mid-session), so it actually re-applies to the new
+        // materials instead of short-circuiting on an unchanged (active,
+        // pet) pair.
+        _petLayeringActive = false;
+        _petLayeringPet = null;
         removePlayerAvatarChildren();
         const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(applyGearClothingToPlayerData(_playerData));
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
@@ -21306,6 +21385,17 @@
           { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
         );
         avatarGroup.name = 'player_avatar';
+        // Direct front/back plane refs for updatePetLayering (see near
+        // updateCompanions) — createSinglePlaneAssembly always nests them
+        // as the assembly's first two children (frontMesh, then backMesh).
+        // The back plane's renderOrder is bumped here (once, unconditionally
+        // — harmless when idle, since front/back are never simultaneously
+        // visible) so it always out-ranks a shoulder pet's planes whenever
+        // it's the one actually facing the camera.
+        const _bodyAssembly = avatarGroup.children[0];
+        _playerAvatarFrontMaterial = _bodyAssembly?.children?.[0]?.material || null;
+        _playerAvatarBackMaterial = _bodyAssembly?.children?.[1]?.material || null;
+        if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
         playerAvatarModelHeight = avatarHeight;
