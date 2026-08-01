@@ -3789,12 +3789,12 @@ window.SCRATCHBONES_CONFIG = {
         "backPlaneOffsetZ": 0.001,
         "portraitVerticalPlacement": {
           "default": 0.5,
-          "kenkari": { "female": 0.562, "male": 0.618 },
+          "kenkari": { "female": 0.51, "male": 0.475 },
           "rakakoan": { "female": 0.562, "male": 0.618 },
-          "tletingan": { "male": 0.629 },
-          "engh-sho": { "female": 0.674, "male": 0.719 },
-          "mao-ao": { "female": 0.831, "male": 0.865 },
-          "mashtzarr": { "male": 1.079 }
+          "tletingan": { "male": 0.675, "female": 0.6 },
+          "engh-sho": { "female": 0.8, "male": 0.88 },
+          "mao-ao": { "female": 0.9, "male": 0.95 },
+          "mashtzarr": { "male": 0.9, "female": 0.85 }
         },
         "behindView": {
           "headUrls": {
