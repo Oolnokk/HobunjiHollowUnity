@@ -250,9 +250,46 @@
       const _pixelProbeRaycaster = new THREE.Raycaster();
       function _pixelProbeMatSummary(mat) {
         if (!mat) return '(no material)';
-        return `name="${mat.name || '(unnamed)'}" type=${mat.type} transparent=${mat.transparent} opacity=${mat.opacity} `
+        const colorHex = mat.color?.isColor ? `#${mat.color.getHexString()}` : '-';
+        return `name="${mat.name || '(unnamed)'}" type=${mat.type} color=${colorHex} map=${mat.map ? (mat.map.name || '(unnamed texture)') : 'none'} transparent=${mat.transparent} opacity=${mat.opacity} `
           + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
           + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
+      }
+      // Walks up from a raycast hit to find which avatar (if any) owns it —
+      // the player, an NPC walker, or a companion/mount/livestock creature —
+      // and reports that owner's own current body colors alongside whatever
+      // material the probe hit. Lets a tap on a procedural foot (or any
+      // other body-color-tinted part) directly answer "does this material's
+      // resolved color actually match this character's chosen body color"
+      // without a separate headless pixel-sampling pass.
+      function _pixelProbeOwnerInfo(object) {
+        let node = object;
+        while (node) {
+          if (node === playerMesh) {
+            const appearance = _playerData?.appearance || {};
+            return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors };
+          }
+          for (const w of npcWalkers) {
+            if (node === w.root) {
+              const appearance = w.rec?.appearance || {};
+              return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors };
+            }
+          }
+          for (const c of companionObjects) {
+            if (node === c.avatarRef?.group) {
+              return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
+            }
+          }
+          node = node.parent;
+        }
+        return null;
+      }
+      function _pixelProbeBodyColorSummary(bodyColors) {
+        if (!bodyColors) return '(none)';
+        return ['A', 'B', 'C'].filter(slot => bodyColors[slot]).map(slot => {
+          const c = bodyColors[slot];
+          return c.hex ? `${slot}=${c.hex}` : `${slot}=hsv(${c.h ?? '?'},${c.s ?? '?'},${c.v ?? '?'})`;
+        }).join(' ') || '(none)';
       }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
@@ -466,6 +503,10 @@
             + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`
             + `${check ? (check.actuallyRendering ? ` >>> ACTUALLY RENDERING HERE (isolated color rgb(${check.color[0]},${check.color[1]},${check.color[2]}))` : ' (isolated: not actually visible at this pixel)') : ''}`);
           mats.forEach(m => { if (m) lines.push(`     material: ${_pixelProbeMatSummary(m)}`); });
+          const owner = _pixelProbeOwnerInfo(o);
+          if (owner) {
+            lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors)}`);
+          }
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
 
@@ -33380,7 +33421,12 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (_tPtId !== null) return;
           _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
           _tDx = ev.clientX; _tDy = ev.clientY;
-          toolBtn.setPointerCapture(ev.pointerId);
+          // See handleJoystickPointerDown's comment: an uncaught throw here
+          // (possible for a touch starting before the browser considers the
+          // pointer fully active) would skip the rest of this handler and
+          // leave _tPtId stuck non-null, permanently blocking this button
+          // via the pointerdown guard above.
+          try { toolBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
           _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
           ev.preventDefault();
         });
@@ -33414,7 +33460,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             if (_iPtId !== null) return;
             _iPtId = ev.pointerId; _iHeld = false; _iMoved = false;
             _iDx = ev.clientX; _iDy = ev.clientY;
-            _itemBtn.setPointerCapture(ev.pointerId);
+            // See handleJoystickPointerDown's comment.
+            try { _itemBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
             _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 350);
             ev.preventDefault();
           });
@@ -33750,7 +33797,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             el.addEventListener('pointerdown', ev => {
               if (_ptId !== null) return;
               _ptId = ev.pointerId;
-              el.setPointerCapture(ev.pointerId);
+              // See handleJoystickPointerDown's comment.
+              try { el.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
               const rect = el.getBoundingClientRect();
               _cx = rect.left + rect.width / 2;
               _cy = rect.top + rect.height / 2;
@@ -34104,7 +34152,19 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function handleJoystickPointerDown(event) {
         input.joystickPointerId = event.pointerId;
-        joystickZone.setPointerCapture(event.pointerId);
+        // setPointerCapture can throw ("No active pointer with the given id
+        // is found") if the browser doesn't consider this pointer fully
+        // active yet — seen in practice on a touch that starts while the
+        // page/layout is still settling right after load. Uncaught, that
+        // exception used to abort this function before updateJoystick()
+        // ran, permanently stranding joystickPointerId pointed at a pointer
+        // that would never get a matching pointerup — every real touch
+        // after that got silently ignored (input.joystickPointerId !==
+        // event.pointerId in handleJoystickPointerMove/Up) until a full
+        // page reload reset the state. Without capture the joystick still
+        // works normally; the only loss is that a drag which leaves
+        // joystickZone's own DOM bounds stops being tracked.
+        try { joystickZone.setPointerCapture(event.pointerId); } catch (e) { /* see above — degrade gracefully, don't skip updateJoystick */ }
         updateJoystick(event);
       }
 
@@ -34339,7 +34399,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         btnSwapTarget.addEventListener('pointerdown', ev => {
           if (btnSwapTarget.classList.contains('abt-hidden')) return;
           ev.preventDefault();
-          btnSwapTarget.setPointerCapture?.(ev.pointerId);
+          // See handleJoystickPointerDown's comment — guarded here too so a
+          // capture failure just loses this one touch instead of throwing.
+          try { btnSwapTarget.setPointerCapture?.(ev.pointerId); } catch (err) { /* degrade gracefully */ }
           _stPtId = ev.pointerId;
           const rect = btnSwapTarget.getBoundingClientRect();
           _stCx = rect.left + rect.width / 2;
@@ -34981,7 +35043,14 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         cameraDragStartY = e.clientY;
         cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
         cameraDragStartAngleOffset = cameraAngleOffsetDeg;
-        threeContainer.setPointerCapture?.(e.pointerId);
+        // Can throw ("No active pointer with the given id is found") for a
+        // touch that starts before the browser considers the pointer fully
+        // active — e.g. right as the page/layout is still settling after
+        // load. Uncaught, that would leave cameraDragPointerId permanently
+        // stuck on a pointer that will never get a matching pointerup (see
+        // the identical fix/comment on handleJoystickPointerDown), silently
+        // dropping every real camera-look drag afterward until a reload.
+        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (err) { /* see above — degrade gracefully */ }
       });
       threeContainer.addEventListener('pointermove', (e) => {
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;
