@@ -183,7 +183,7 @@
   // throws and never silently falls back to the untinted source PNG — any
   // failure (asset 404, tint pipeline unavailable) degrades to a flat canvas
   // in the correctly resolved color instead of leaving the material white.
-  async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX) {
+  async function buildSurfaceTexture(THREE, sourcePath, colorDescriptor, referenceHex, repeatX, debugName) {
     let source = null;
     try {
       const img = await loadSurfaceImage(sourcePath);
@@ -196,6 +196,9 @@
     }
     if (!source) source = flatColorCanvas(resolveFlatColorHex(colorDescriptor, referenceHex));
     const texture = new THREE.CanvasTexture(source);
+    // Named so debug tools (e.g. the Pixel Probe's material dump) show
+    // something identifiable instead of "(unnamed texture)".
+    texture.name = debugName || sourcePath;
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
@@ -214,11 +217,11 @@
       if (promises.has(role)) return promises.get(role);
       let promise;
       if (role === 'bone') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: cfg().boneColorHex || '#D8C7A3' }, referenceHex, 1.25);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/carved_smooth.png', { hex: cfg().boneColorHex || '#D8C7A3' }, referenceHex, 1.25, `${speciesId}_foot_bone`);
       } else if (role === 'keratin') {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/boards.png', { hex: cfg().keratinColorHex || '#44484D' }, referenceHex, 1.4, `${speciesId}_foot_keratin`);
       } else {
-        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25);
+        promise = buildSurfaceTexture(THREE, 'assets/textures/canvas.png', bodyColorDescriptor(bodyColors), referenceHex, 1.25, `${speciesId}_foot_body`);
       }
       promises.set(role, promise);
       return promise;

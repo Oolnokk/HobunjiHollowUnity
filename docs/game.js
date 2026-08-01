@@ -255,6 +255,38 @@
           + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
           + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
       }
+      // Reads a material's own map texture at the raycast hit's exact UV —
+      // the "Raw color under cursor" framebuffer readback above only ever
+      // reports whatever's actually FRONTMOST at that screen pixel, which
+      // for anything not nearest-hit (a foot mesh behind foliage, say) is
+      // some other object entirely, not the one being inspected. Sampling
+      // the material's own texture data sidesteps occlusion completely:
+      // it's the color this exact mesh would draw here if nothing else
+      // were in front of it. Respects the texture's own wrap/repeat/offset
+      // and flipY so the sampled texel matches what the GPU would actually
+      // read.
+      function _pixelProbeTextureSampleAtUv(mat, uv) {
+        const tex = mat?.map;
+        if (!tex?.image || !uv) return null;
+        try {
+          const img = tex.image;
+          const w = img.width || img.naturalWidth || 0, h = img.height || img.naturalHeight || 0;
+          if (!w || !h) return null;
+          let u = uv.x * (tex.repeat?.x ?? 1) + (tex.offset?.x ?? 0);
+          let v = uv.y * (tex.repeat?.y ?? 1) + (tex.offset?.y ?? 0);
+          u = ((u % 1) + 1) % 1;
+          v = ((v % 1) + 1) % 1;
+          const flipY = tex.flipY !== false; // THREE default: row 0 of the image is v=1
+          const px = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
+          const py = Math.min(h - 1, Math.max(0, Math.floor((flipY ? 1 - v : v) * h)));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0);
+          const d = ctx.getImageData(px, py, 1, 1).data;
+          return { rgba: [d[0], d[1], d[2], d[3]], uv: [uv.x, uv.y] };
+        } catch (e) { return null; }
+      }
       // Walks up from a raycast hit to find which avatar (if any) owns it —
       // the player, an NPC walker, or a companion/mount/livestock creature —
       // and reports that owner's own current body colors alongside whatever
@@ -284,11 +316,26 @@
         }
         return null;
       }
-      function _pixelProbeBodyColorSummary(bodyColors) {
+      // bodyColors slots are almost never stored as absolute color — they're
+      // a {h,s,v} CSS-filter delta (hue-rotate deg / saturate & brightness
+      // multiplier offsets) applied on top of a per-species reference
+      // swatch (see _resolveTargetRgbColor/_dyeReferenceHexForSlot in
+      // portrait-utils.js — the same resolver the body-color tint pipeline
+      // itself uses). Printing the raw delta alone reads as nonsensical
+      // (negative "hue"/"saturation") and isn't directly comparable to a
+      // texture sample's rgba — resolve it to the actual hex here too.
+      function _pixelProbeBodyColorSummary(bodyColors, speciesId) {
         if (!bodyColors) return '(none)';
+        const referenceHex = (typeof window._dyeReferenceHexForSlot === 'function') ? window._dyeReferenceHexForSlot('A', speciesId) : '#7dc89a';
         return ['A', 'B', 'C'].filter(slot => bodyColors[slot]).map(slot => {
           const c = bodyColors[slot];
-          return c.hex ? `${slot}=${c.hex}` : `${slot}=hsv(${c.h ?? '?'},${c.s ?? '?'},${c.v ?? '?'})`;
+          const raw = c.hex ? c.hex : `hsv-delta(${c.h ?? '?'},${c.s ?? '?'},${c.v ?? '?'})`;
+          let resolvedHex = c.hex || null;
+          if (!resolvedHex && typeof window._resolveTargetRgbColor === 'function') {
+            const rgb = window._resolveTargetRgbColor(c, referenceHex);
+            if (Array.isArray(rgb)) resolvedHex = '#' + rgb.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+          }
+          return `${slot}=${raw}${resolvedHex ? ` (resolved ${resolvedHex})` : ''}`;
         }).join(' ') || '(none)';
       }
       function _setDebugView(view) {
@@ -502,10 +549,16 @@
           lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`
             + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`
             + `${check ? (check.actuallyRendering ? ` >>> ACTUALLY RENDERING HERE (isolated color rgb(${check.color[0]},${check.color[1]},${check.color[2]}))` : ' (isolated: not actually visible at this pixel)') : ''}`);
-          mats.forEach(m => { if (m) lines.push(`     material: ${_pixelProbeMatSummary(m)}`); });
+          mats.forEach(m => {
+            if (!m) return;
+            lines.push(`     material: ${_pixelProbeMatSummary(m)}`);
+            const sample = _pixelProbeTextureSampleAtUv(m, hit.uv);
+            if (sample) lines.push(`     texture sample at this mesh's own UV (${sample.uv[0].toFixed(3)},${sample.uv[1].toFixed(3)}) — occlusion-independent: rgba(${sample.rgba.join(',')})`);
+            else if (m.map) lines.push(`     texture sample: unavailable (no UV on this hit)`);
+          });
           const owner = _pixelProbeOwnerInfo(o);
           if (owner) {
-            lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors)}`);
+            lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
           }
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
