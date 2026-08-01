@@ -3816,11 +3816,11 @@ window.SCRATCHBONES_CONFIG = {
           "species": {
             "mashtzarr": {
               "glb": "assets/models/feet/foot_pachyderm.glb",
-              "materialRoles": { "Mat 1": "body", "Mat 2": "bone" }
+              "materialRoles": { "Mat 1": "bone", "Mat 2": "body" }
             },
             "tletingan": {
               "glb": "assets/models/feet/foot_sloth.glb",
-              "materialRoles": { "Mat 1": "body", "Mat 2": "bone" }
+              "materialRoles": { "Mat 1": "bone", "Mat 2": "body" }
             },
             "mao-ao": {
               "glb": "assets/models/feet/foot_feline.glb",

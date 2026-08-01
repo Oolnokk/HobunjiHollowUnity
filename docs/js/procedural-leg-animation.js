@@ -110,6 +110,17 @@
     return canvas;
   }
 
+  // Opts every real mesh under `obj` into the game's inverted-shell outline
+  // pass (see game.js's "Inverted shell outline" section / _markOutline) —
+  // that pass renders layer-1 meshes a second time, back-side-only and
+  // extruded along their normals, for the same thin black border every
+  // other 3D prop (houses, furniture, terrain decor) gets. Layer 1 is a
+  // plain THREE.Object3D API, not something private to game.js's closure,
+  // so this only needs to mirror the same convention, not call into it.
+  function markOutline(obj) {
+    obj?.traverse?.(child => { if (child.isMesh) child.layers.enable(1); });
+  }
+
   function smoothstep01(value) {
     const t = Math.max(0, Math.min(1, value));
     return t * t * (3 - 2 * t);
@@ -490,6 +501,7 @@
     }
     group.userData.contactRadiusY = radius * sphereScaleY;
     group.userData.material = material;
+    markOutline(group);
     return group;
   }
 
@@ -560,6 +572,7 @@
     const group = new THREE.Group();
     group.add(clone);
     group.userData.contactRadiusY = 0;
+    markOutline(group);
     return group;
   }
 
