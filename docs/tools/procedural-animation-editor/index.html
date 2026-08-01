@@ -5831,6 +5831,15 @@ async function chooseFootGlbMaterialSource(button) { // Mirrors the furniture au
   const override = footGlbMaterialOverride(asset, materialKey, true);
   override.textureSource = source;
   if (source !== 'original' && override.mapping === 'original') override.mapping = 'stretch';
+  // Every bundled-texture button enables fill except this one — for a
+  // material with no baked texture (every bundled foot GLB), "Original"
+  // falls back to a solid canvas of the material's own authored color (see
+  // footGlbOverrideSourceImage/solidTextureSourceCanvas), and with fill
+  // left off that flat source color is never tinted toward body color at
+  // all. Previously the only way to see a tint on "Original" was to pick a
+  // different bundled texture first (which turns fillEnabled on) and then
+  // switch back, since switching sources never turned it off again.
+  if (source === 'original' && !override.fillEnabled) { override.fillEnabled = true; override.fillPreset = 'body'; }
   if (source === 'canvas' && !override.fillEnabled) { override.fillEnabled = true; override.fillPreset = 'body'; }
   if (source === 'boards' && !override.fillEnabled) { override.fillEnabled = true; override.fillPreset = 'black'; override.fillColor = '#44484D'; }
   if (source === 'carved' && !override.fillEnabled) { override.fillEnabled = true; override.fillPreset = 'bone'; override.fillColor = '#D8C7A3'; }
