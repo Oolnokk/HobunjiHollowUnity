@@ -3796,6 +3796,33 @@ window.SCRATCHBONES_CONFIG = {
           "mao-ao": { "female": 0.9, "male": 0.95 },
           "mashtzarr": { "male": 0.9, "female": 0.85 }
         },
+        "proceduralFeet": {
+          "enabled": true,
+          "stanceWidthFraction": 0.16,
+          "footHeightFraction": 0.11,
+          "autofitMultiplier": 1,
+          "referenceSpeedWorldUnitsPerSecond": 4.3,
+          "boneColorHex": "#D8C7A3",
+          "keratinColorHex": "#44484D",
+          "species": {
+            "mashtzarr": {
+              "glb": "assets/models/feet/foot_pachyderm.glb",
+              "materialRoles": { "Mat 1": "body", "Mat 2": "bone" }
+            },
+            "tletingan": {
+              "glb": "assets/models/feet/foot_sloth.glb",
+              "materialRoles": { "Mat 1": "body", "Mat 2": "bone" }
+            },
+            "mao-ao": {
+              "glb": "assets/models/feet/foot_feline.glb",
+              "materialRoles": { "Mat 1": "body" }
+            },
+            "engh-sho": {
+              "glb": "assets/models/feet/foot_feline.glb",
+              "materialRoles": { "Mat 1": "body" }
+            }
+          }
+        },
         "behindView": {
           "headUrls": {
             "mao-ao": {

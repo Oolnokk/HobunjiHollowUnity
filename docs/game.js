@@ -12591,6 +12591,11 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // Procedural leg/foot animation handle for the player's own avatar —
+      // rebuilt in refreshPlayerAvatar (species/gender can change there),
+      // driven each frame from updatePlayerMesh. See
+      // docs/js/procedural-leg-animation.js.
+      let playerLegs = null;
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
@@ -15957,6 +15962,16 @@
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
+        // Procedural feet attach directly under `root` (floor-anchored, Y=0),
+        // NOT under avatarGroup (offset up by avatarHeight/2 — see
+        // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
+        // Creatures/wildlife never call this; only humanoid species get legs.
+        const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
+          speciesId: appearance.speciesId, bodyColors: profile?.bodyColors || appearance.bodyColors,
+          modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
+          name: rec?.id || rec?.name || 'npc',
+        }) || null;
+
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
@@ -15964,6 +15979,7 @@
           // portrait) — see faceNpcDialogueParticipants for the one place
           // this is driven today.
           neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
+          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
@@ -16033,6 +16049,15 @@
             return false;
           },
           update(dt) {
+            // Drives procedural legs from last frame's actual position delta
+            // rather than hooking every movement branch below individually —
+            // always runs regardless of which branch (or early return) this
+            // call ends up taking. One frame of lag; imperceptible at 60fps.
+            if (this.legs) {
+              const legsDist = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
+              this.legs.update(dt, dt > 0 ? legsDist / dt : 0, false);
+              this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
+            }
             if (this.pause === Infinity) return;
             const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
@@ -21425,6 +21450,18 @@
         playerMesh.add(avatarGroup);
         addOccludedGhostSiblings(avatarGroup);
         buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        // Procedural feet attach directly under playerMesh (floor-anchored,
+        // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
+        // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
+        // here (species/gender/body color can all change on a fresh
+        // refresh); removePlayerAvatarChildren() above only ever touches
+        // 'player_avatar'-named children, so the previous legs handle has to
+        // be disposed explicitly.
+        playerLegs?.dispose();
+        playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
+          speciesId: _playerData?.appearance?.speciesId, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
+          modelWidth: avatarWidth, modelHeight: avatarHeight, name: 'player',
+        }) || null;
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
@@ -31014,6 +31051,16 @@
         if (speed > 5) {
           playerMesh.position.y += Math.sin(performance.now() / 120) * 0.03;
         }
+        // Overwritten (hidden, not just idled) whenever a multi-avatar
+        // animation is driving the player's whole-body transform and the
+        // player isn't its anchor — mounted (glued to the mount's saddle,
+        // see mountSeatLift above) or mid livestock-harvest interaction (see
+        // updateHarvestInteraction). A shoulder pet never sets either of
+        // these: the player stays the anchor and keeps walking normally
+        // underneath it (see updateCompanions' shoulderPet branch), so legs
+        // simply keep animating off the player's own real velocity as usual.
+        const legsSuppressed = mountRideState !== 'none' || !!harvestInteraction;
+        playerLegs?.update(dt, speed / TILE, legsSuppressed);
       }
 
       // ── Update reticle ────────────────────────────────────────────
