@@ -573,6 +573,15 @@
     group.add(clone);
     group.userData.contactRadiusY = 0;
     markOutline(group);
+    // Seams where this foot's two materials meet (e.g. the sloth/pachyderm
+    // bone-claw mesh touching the body-pad mesh) — game.js's furniture
+    // material-ID outline pass, exposed via window.HobunjiOutlines since
+    // this module is outside that closure. Marking the whole group tags
+    // each mesh CHILD with its own unique ID independently (see that
+    // function's own comment), so this only produces a seam where two
+    // differently-tagged meshes actually touch — harmless (no seam drawn)
+    // for the single-material feline foot, which has just one mesh.
+    window.HobunjiOutlines?.markMaterialSeamId?.(group);
     return group;
   }
 

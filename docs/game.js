@@ -26972,6 +26972,16 @@
         if (obj.isMesh) { apply(obj); return; }
         obj.traverse(child => { if (child.isMesh) apply(child); });
       }
+      // Exposed so docs/js/procedural-leg-animation.js (a separate module,
+      // not part of this closure) can tag a foot's touching material
+      // sub-meshes (e.g. the pachyderm/sloth GLBs' separate bone-claw and
+      // body-pad meshes) into this same seam pass — traversing a group here
+      // assigns each mesh CHILD its own unique ID color independently
+      // (_furnitureEdgeIdSeq increments per mesh, not per call), so calling
+      // this once on a foot's root already produces a seam wherever two
+      // differently-tagged meshes touch, exactly like two touching
+      // furniture parts.
+      window.HobunjiOutlines = { markShellOutline: _markOutline, markMaterialSeamId: _markFurnitureEdgeId };
 
       // Flat-unlit material shared by every furniture part during the ID-buffer
       // pass; each part's onBeforeRender (above) stamps its own colour into the
