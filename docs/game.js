@@ -250,9 +250,93 @@
       const _pixelProbeRaycaster = new THREE.Raycaster();
       function _pixelProbeMatSummary(mat) {
         if (!mat) return '(no material)';
-        return `name="${mat.name || '(unnamed)'}" type=${mat.type} transparent=${mat.transparent} opacity=${mat.opacity} `
+        const colorHex = mat.color?.isColor ? `#${mat.color.getHexString()}` : '-';
+        return `name="${mat.name || '(unnamed)'}" type=${mat.type} color=${colorHex} map=${mat.map ? (mat.map.name || '(unnamed texture)') : 'none'} transparent=${mat.transparent} opacity=${mat.opacity} `
           + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
           + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
+      }
+      // Reads a material's own map texture at the raycast hit's exact UV —
+      // the "Raw color under cursor" framebuffer readback above only ever
+      // reports whatever's actually FRONTMOST at that screen pixel, which
+      // for anything not nearest-hit (a foot mesh behind foliage, say) is
+      // some other object entirely, not the one being inspected. Sampling
+      // the material's own texture data sidesteps occlusion completely:
+      // it's the color this exact mesh would draw here if nothing else
+      // were in front of it. Respects the texture's own wrap/repeat/offset
+      // and flipY so the sampled texel matches what the GPU would actually
+      // read.
+      function _pixelProbeTextureSampleAtUv(mat, uv) {
+        const tex = mat?.map;
+        if (!tex?.image || !uv) return null;
+        try {
+          const img = tex.image;
+          const w = img.width || img.naturalWidth || 0, h = img.height || img.naturalHeight || 0;
+          if (!w || !h) return null;
+          let u = uv.x * (tex.repeat?.x ?? 1) + (tex.offset?.x ?? 0);
+          let v = uv.y * (tex.repeat?.y ?? 1) + (tex.offset?.y ?? 0);
+          u = ((u % 1) + 1) % 1;
+          v = ((v % 1) + 1) % 1;
+          const flipY = tex.flipY !== false; // THREE default: row 0 of the image is v=1
+          const px = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
+          const py = Math.min(h - 1, Math.max(0, Math.floor((flipY ? 1 - v : v) * h)));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(img, 0, 0);
+          const d = ctx.getImageData(px, py, 1, 1).data;
+          return { rgba: [d[0], d[1], d[2], d[3]], uv: [uv.x, uv.y] };
+        } catch (e) { return null; }
+      }
+      // Walks up from a raycast hit to find which avatar (if any) owns it —
+      // the player, an NPC walker, or a companion/mount/livestock creature —
+      // and reports that owner's own current body colors alongside whatever
+      // material the probe hit. Lets a tap on a procedural foot (or any
+      // other body-color-tinted part) directly answer "does this material's
+      // resolved color actually match this character's chosen body color"
+      // without a separate headless pixel-sampling pass.
+      function _pixelProbeOwnerInfo(object) {
+        let node = object;
+        while (node) {
+          if (node === playerMesh) {
+            const appearance = _playerData?.appearance || {};
+            return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors };
+          }
+          for (const w of npcWalkers) {
+            if (node === w.root) {
+              const appearance = w.rec?.appearance || {};
+              return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors };
+            }
+          }
+          for (const c of companionObjects) {
+            if (node === c.avatarRef?.group) {
+              return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
+            }
+          }
+          node = node.parent;
+        }
+        return null;
+      }
+      // bodyColors slots are almost never stored as absolute color — they're
+      // a {h,s,v} CSS-filter delta (hue-rotate deg / saturate & brightness
+      // multiplier offsets) applied on top of a per-species reference
+      // swatch (see _resolveTargetRgbColor/_dyeReferenceHexForSlot in
+      // portrait-utils.js — the same resolver the body-color tint pipeline
+      // itself uses). Printing the raw delta alone reads as nonsensical
+      // (negative "hue"/"saturation") and isn't directly comparable to a
+      // texture sample's rgba — resolve it to the actual hex here too.
+      function _pixelProbeBodyColorSummary(bodyColors, speciesId) {
+        if (!bodyColors) return '(none)';
+        const referenceHex = (typeof window._dyeReferenceHexForSlot === 'function') ? window._dyeReferenceHexForSlot('A', speciesId) : '#7dc89a';
+        return ['A', 'B', 'C'].filter(slot => bodyColors[slot]).map(slot => {
+          const c = bodyColors[slot];
+          const raw = c.hex ? c.hex : `hsv-delta(${c.h ?? '?'},${c.s ?? '?'},${c.v ?? '?'})`;
+          let resolvedHex = c.hex || null;
+          if (!resolvedHex && typeof window._resolveTargetRgbColor === 'function') {
+            const rgb = window._resolveTargetRgbColor(c, referenceHex);
+            if (Array.isArray(rgb)) resolvedHex = '#' + rgb.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+          }
+          return `${slot}=${raw}${resolvedHex ? ` (resolved ${resolvedHex})` : ''}`;
+        }).join(' ') || '(none)';
       }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
@@ -465,7 +549,17 @@
           lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`
             + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`
             + `${check ? (check.actuallyRendering ? ` >>> ACTUALLY RENDERING HERE (isolated color rgb(${check.color[0]},${check.color[1]},${check.color[2]}))` : ' (isolated: not actually visible at this pixel)') : ''}`);
-          mats.forEach(m => { if (m) lines.push(`     material: ${_pixelProbeMatSummary(m)}`); });
+          mats.forEach(m => {
+            if (!m) return;
+            lines.push(`     material: ${_pixelProbeMatSummary(m)}`);
+            const sample = _pixelProbeTextureSampleAtUv(m, hit.uv);
+            if (sample) lines.push(`     texture sample at this mesh's own UV (${sample.uv[0].toFixed(3)},${sample.uv[1].toFixed(3)}) — occlusion-independent: rgba(${sample.rgba.join(',')})`);
+            else if (m.map) lines.push(`     texture sample: unavailable (no UV on this hit)`);
+          });
+          const owner = _pixelProbeOwnerInfo(o);
+          if (owner) {
+            lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
+          }
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
 
@@ -12591,6 +12685,11 @@
       // Used to place a shoulder pet / mounted seat height correctly (see
       // playerAttachmentAnchorY and the mount seat lift in updatePlayerMesh).
       let playerAvatarModelHeight = 0.9;
+      // Procedural leg/foot animation handle for the player's own avatar —
+      // rebuilt in refreshPlayerAvatar (species/gender can change there),
+      // driven each frame from updatePlayerMesh. See
+      // docs/js/procedural-leg-animation.js.
+      let playerLegs = null;
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
@@ -15957,6 +16056,16 @@
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
+        // Procedural feet attach directly under `root` (floor-anchored, Y=0),
+        // NOT under avatarGroup (offset up by avatarHeight/2 — see
+        // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
+        // Creatures/wildlife never call this; only humanoid species get legs.
+        const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
+          speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
+          modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
+          name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
+
         const walker = {
           root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
@@ -15964,6 +16073,7 @@
           // portrait) — see faceNpcDialogueParticipants for the one place
           // this is driven today.
           neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
+          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
@@ -16033,6 +16143,15 @@
             return false;
           },
           update(dt) {
+            // Drives procedural legs from last frame's actual position delta
+            // rather than hooking every movement branch below individually —
+            // always runs regardless of which branch (or early return) this
+            // call ends up taking. One frame of lag; imperceptible at 60fps.
+            if (this.legs) {
+              const legsDist = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
+              this.legs.update(dt, dt > 0 ? legsDist / dt : 0, false);
+              this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
+            }
             if (this.pause === Infinity) return;
             const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
@@ -21425,6 +21544,18 @@
         playerMesh.add(avatarGroup);
         addOccludedGhostSiblings(avatarGroup);
         buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        // Procedural feet attach directly under playerMesh (floor-anchored,
+        // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
+        // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
+        // here (species/gender/body color can all change on a fresh
+        // refresh); removePlayerAvatarChildren() above only ever touches
+        // 'player_avatar'-named children, so the previous legs handle has to
+        // be disposed explicitly.
+        playerLegs?.dispose();
+        playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
+          speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
+          modelWidth: avatarWidth, modelHeight: avatarHeight, name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
@@ -26841,6 +26972,16 @@
         if (obj.isMesh) { apply(obj); return; }
         obj.traverse(child => { if (child.isMesh) apply(child); });
       }
+      // Exposed so docs/js/procedural-leg-animation.js (a separate module,
+      // not part of this closure) can tag a foot's touching material
+      // sub-meshes (e.g. the pachyderm/sloth GLBs' separate bone-claw and
+      // body-pad meshes) into this same seam pass — traversing a group here
+      // assigns each mesh CHILD its own unique ID color independently
+      // (_furnitureEdgeIdSeq increments per mesh, not per call), so calling
+      // this once on a foot's root already produces a seam wherever two
+      // differently-tagged meshes touch, exactly like two touching
+      // furniture parts.
+      window.HobunjiOutlines = { markShellOutline: _markOutline, markMaterialSeamId: _markFurnitureEdgeId };
 
       // Flat-unlit material shared by every furniture part during the ID-buffer
       // pass; each part's onBeforeRender (above) stamps its own colour into the
@@ -31014,6 +31155,16 @@
         if (speed > 5) {
           playerMesh.position.y += Math.sin(performance.now() / 120) * 0.03;
         }
+        // Overwritten (hidden, not just idled) whenever a multi-avatar
+        // animation is driving the player's whole-body transform and the
+        // player isn't its anchor — mounted (glued to the mount's saddle,
+        // see mountSeatLift above) or mid livestock-harvest interaction (see
+        // updateHarvestInteraction). A shoulder pet never sets either of
+        // these: the player stays the anchor and keeps walking normally
+        // underneath it (see updateCompanions' shoulderPet branch), so legs
+        // simply keep animating off the player's own real velocity as usual.
+        const legsSuppressed = mountRideState !== 'none' || !!harvestInteraction;
+        playerLegs?.update(dt, speed / TILE, legsSuppressed);
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -33333,7 +33484,12 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (_tPtId !== null) return;
           _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
           _tDx = ev.clientX; _tDy = ev.clientY;
-          toolBtn.setPointerCapture(ev.pointerId);
+          // See handleJoystickPointerDown's comment: an uncaught throw here
+          // (possible for a touch starting before the browser considers the
+          // pointer fully active) would skip the rest of this handler and
+          // leave _tPtId stuck non-null, permanently blocking this button
+          // via the pointerdown guard above.
+          try { toolBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
           _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
           ev.preventDefault();
         });
@@ -33367,7 +33523,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             if (_iPtId !== null) return;
             _iPtId = ev.pointerId; _iHeld = false; _iMoved = false;
             _iDx = ev.clientX; _iDy = ev.clientY;
-            _itemBtn.setPointerCapture(ev.pointerId);
+            // See handleJoystickPointerDown's comment.
+            try { _itemBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
             _iTimer = setTimeout(() => { _iHeld = true; _openItemArc(); }, 350);
             ev.preventDefault();
           });
@@ -33703,7 +33860,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             el.addEventListener('pointerdown', ev => {
               if (_ptId !== null) return;
               _ptId = ev.pointerId;
-              el.setPointerCapture(ev.pointerId);
+              // See handleJoystickPointerDown's comment.
+              try { el.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
               const rect = el.getBoundingClientRect();
               _cx = rect.left + rect.width / 2;
               _cy = rect.top + rect.height / 2;
@@ -34057,7 +34215,19 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function handleJoystickPointerDown(event) {
         input.joystickPointerId = event.pointerId;
-        joystickZone.setPointerCapture(event.pointerId);
+        // setPointerCapture can throw ("No active pointer with the given id
+        // is found") if the browser doesn't consider this pointer fully
+        // active yet — seen in practice on a touch that starts while the
+        // page/layout is still settling right after load. Uncaught, that
+        // exception used to abort this function before updateJoystick()
+        // ran, permanently stranding joystickPointerId pointed at a pointer
+        // that would never get a matching pointerup — every real touch
+        // after that got silently ignored (input.joystickPointerId !==
+        // event.pointerId in handleJoystickPointerMove/Up) until a full
+        // page reload reset the state. Without capture the joystick still
+        // works normally; the only loss is that a drag which leaves
+        // joystickZone's own DOM bounds stops being tracked.
+        try { joystickZone.setPointerCapture(event.pointerId); } catch (e) { /* see above — degrade gracefully, don't skip updateJoystick */ }
         updateJoystick(event);
       }
 
@@ -34292,7 +34462,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         btnSwapTarget.addEventListener('pointerdown', ev => {
           if (btnSwapTarget.classList.contains('abt-hidden')) return;
           ev.preventDefault();
-          btnSwapTarget.setPointerCapture?.(ev.pointerId);
+          // See handleJoystickPointerDown's comment — guarded here too so a
+          // capture failure just loses this one touch instead of throwing.
+          try { btnSwapTarget.setPointerCapture?.(ev.pointerId); } catch (err) { /* degrade gracefully */ }
           _stPtId = ev.pointerId;
           const rect = btnSwapTarget.getBoundingClientRect();
           _stCx = rect.left + rect.width / 2;
@@ -34934,7 +35106,14 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         cameraDragStartY = e.clientY;
         cameraDragStartAzimuthOffset = cameraAzimuthOffsetDeg;
         cameraDragStartAngleOffset = cameraAngleOffsetDeg;
-        threeContainer.setPointerCapture?.(e.pointerId);
+        // Can throw ("No active pointer with the given id is found") for a
+        // touch that starts before the browser considers the pointer fully
+        // active — e.g. right as the page/layout is still settling after
+        // load. Uncaught, that would leave cameraDragPointerId permanently
+        // stuck on a pointer that will never get a matching pointerup (see
+        // the identical fix/comment on handleJoystickPointerDown), silently
+        // dropping every real camera-look drag afterward until a reload.
+        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (err) { /* see above — degrade gracefully */ }
       });
       threeContainer.addEventListener('pointermove', (e) => {
         if (e.pointerId !== cameraDragPointerId || !cameraDragAllowed()) return;

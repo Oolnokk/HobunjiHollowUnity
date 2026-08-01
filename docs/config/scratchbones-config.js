@@ -3789,12 +3789,48 @@ window.SCRATCHBONES_CONFIG = {
         "backPlaneOffsetZ": 0.001,
         "portraitVerticalPlacement": {
           "default": 0.5,
-          "kenkari": { "female": 0.562, "male": 0.618 },
+          "kenkari": { "female": 0.51, "male": 0.475 },
           "rakakoan": { "female": 0.562, "male": 0.618 },
-          "tletingan": { "male": 0.629 },
-          "engh-sho": { "female": 0.674, "male": 0.719 },
-          "mao-ao": { "female": 0.831, "male": 0.865 },
-          "mashtzarr": { "male": 1.079 }
+          "tletingan": { "male": 0.675, "female": 0.6 },
+          "engh-sho": { "female": 0.8, "male": 0.88 },
+          "mao-ao": { "female": 0.9, "male": 0.95 },
+          "mashtzarr": { "male": 0.9, "female": 0.85 }
+        },
+        "proceduralFeet": {
+          "enabled": true,
+          "stanceWidthFraction": 0.16,
+          "footHeightFraction": 0.11,
+          "referenceSpeedWorldUnitsPerSecond": 4.3,
+          "alphaThreshold": 8,
+          "boneColorHex": "#D8C7A3",
+          "keratinColorHex": "#44484D",
+          "footScale": {
+            "default": 1,
+            "kenkari": { "female": 1, "male": 1 },
+            "rakakoan": { "female": 1, "male": 1 },
+            "tletingan": { "male": 1, "female": 1 },
+            "engh-sho": { "female": 1, "male": 1 },
+            "mao-ao": { "female": 1, "male": 1 },
+            "mashtzarr": { "male": 1, "female": 1 }
+          },
+          "species": {
+            "mashtzarr": {
+              "glb": "assets/models/feet/foot_pachyderm.glb",
+              "materialRoles": { "Mat 1": "bone", "Mat 2": "body" }
+            },
+            "tletingan": {
+              "glb": "assets/models/feet/foot_sloth.glb",
+              "materialRoles": { "Mat 1": "bone", "Mat 2": "body" }
+            },
+            "mao-ao": {
+              "glb": "assets/models/feet/foot_feline.glb",
+              "materialRoles": { "Mat 1": "body" }
+            },
+            "engh-sho": {
+              "glb": "assets/models/feet/foot_feline.glb",
+              "materialRoles": { "Mat 1": "body" }
+            }
+          }
         },
         "behindView": {
           "headUrls": {
