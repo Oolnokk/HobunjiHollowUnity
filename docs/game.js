@@ -4958,7 +4958,7 @@
       // tile the animal just left (uumkao'ii's dew-pile drop uses this).
       // Returns true if it actually moved, false if every direction was
       // blocked (caller decides what "stuck" means for it).
-      function _farmAnimalStepToward(animal, targetCol, targetRow, onStep) {
+      function _farmAnimalStepToward(animal, targetCol, targetRow, onStep, isBlocked) {
         const dc = Math.sign(targetCol - animal.col), dr = Math.sign(targetRow - animal.row);
         const dirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }, { dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }]
           .filter(d => d.dc || d.dr);
@@ -4966,6 +4966,7 @@
           const nc = animal.col + d.dc, nr = animal.row + d.dr;
           if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
           if (!canSpawnAnimalAt(nc, nr)) continue;
+          if (isBlocked?.(nc, nr)) continue;
           const oldCol = animal.col, oldRow = animal.row;
           worldObjects.delete(animal.col + ',' + animal.row);
           animal.col = nc; animal.row = nr; animal.targetCol = nc; animal.targetRow = nr;
@@ -4973,6 +4974,24 @@
           animal.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
           onStep?.(oldCol, oldRow);
           return true;
+        }
+        return false;
+      }
+
+      // A barn's rendered structure (roof eaves, foundation slab) visually
+      // extends past its own reserved w×h footprint tiles, so a wandering
+      // animal standing on the tile immediately outside that footprint can
+      // still end up rendered behind/underneath the barn from the camera —
+      // effectively invisible despite never having stepped onto an occupied
+      // tile. This is the same 1-tile "personal space" ring the night
+      // barn-homing walk already uses to decide when it's close enough to
+      // go inside (see _farmAnimalStepTowardBarn's own touchingBarn check
+      // below) — station-wander reuses it too (see FARM_ANIMAL_WANDER_*
+      // below) so daytime wandering can never park an animal somewhere that
+      // visual overlap could hide it.
+      function _tileTouchesAnyBarn(col, row) {
+        for (const barn of farmBuildings) {
+          if (col >= barn.col - 1 && col <= barn.col + barn.w && row >= barn.row - 1 && row <= barn.row + barn.h) return true;
         }
         return false;
       }
@@ -5013,7 +5032,7 @@
           if (!dc && !dr) continue;
           const nc = animal.homeCol + dc, nr = animal.homeRow + dr;
           if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-          if (!canSpawnAnimalAt(nc, nr)) continue;
+          if (!canSpawnAnimalAt(nc, nr) || _tileTouchesAnyBarn(nc, nr)) continue;
           animal.wanderTargetCol = nc;
           animal.wanderTargetRow = nr;
           return;
@@ -5041,7 +5060,7 @@
         const arrived = Math.abs(animal.wx - (animal.targetCol + 0.5)) < 0.04
           && Math.abs(animal.wz - (animal.targetRow + 0.5)) < 0.04;
         if (!arrived) return;
-        if (!_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep)) {
+        if (!_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn)) {
           // Blocked in every direction — give up on this station and rest
           // briefly before trying a new one, rather than spinning in place.
           animal.wanderTargetCol = null;
