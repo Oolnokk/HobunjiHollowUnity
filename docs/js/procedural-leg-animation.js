@@ -874,8 +874,42 @@
     // "standing on the ground" pose while e.g. seated on a mount. A
     // shoulder pet never sets this: the host avatar stays the anchor and
     // keeps walking normally underneath it.
-    function update(dt, speedWorldUnitsPerSecond, suppressed) {
+    // seatedForwardZ (optional, root-local units, same frame as the gait's
+    // own pose.travel): when provided, bypasses gait/suppressed entirely —
+    // both feet damp toward this Z (their own idle X, own contactY for Y)
+    // with an authored forward thigh bend (SEATED_BEND_DEG) instead of each
+    // species' own standing legBend, so the knee actually reads as bent
+    // rather than one straight hip-to-foot line (see leg-bones.js's
+    // bendDegX). Used for sitting (see docs/game.js's sitInteraction).
+    const SEATED_BEND_DEG = { x: -52, z: 0 };
+    function applySeatedPose(side, forwardZ, dt) {
+      const target = state[`${side}Target`];
+      const idleX = side === 'left' ? state.idleLeftX : state.idleRightX;
+      const contactY = side === 'left' ? state.leftContactY : state.rightContactY;
+      target.x = damp(target.x, idleX, 14, dt);
+      target.y = damp(target.y, contactY, 14, dt);
+      target.z = damp(target.z, forwardZ, 14, dt);
+      state[`${side}Roll`] = damp(state[`${side}Roll`], 0, 14, dt);
+      const mesh = state[side];
+      const chain = legChains[side];
+      if (!mesh || !chain || !window.LegBones) return;
+      const solved = window.LegBones.solveTwoBoneLeg(THREE, {
+        hip: chain.hip.position, foot: target, bendDegX: SEATED_BEND_DEG.x, bendDegZ: SEATED_BEND_DEG.z,
+      });
+      chain.thigh.quaternion.copy(solved.thighQuaternion);
+      chain.calf.position.set(0, -solved.thighLength, 0);
+      chain.calf.quaternion.copy(solved.calfLocalQuaternion);
+      mesh.position.set(0, -solved.calfLength, 0);
+      mesh.rotation.x = state[`${side}Roll`];
+    }
+    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedForwardZ) {
       if (state.disposed) return;
+      if (Number.isFinite(seatedForwardZ)) {
+        state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
+        applySeatedPose('left', seatedForwardZ, dt);
+        applySeatedPose('right', seatedForwardZ, dt);
+        return;
+      }
       if (suppressed) {
         // No meaningful "standing on the ground" gait while e.g. seated on a
         // mount or mid-harvest — legs stay visible and just hang straight

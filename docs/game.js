@@ -31773,10 +31773,19 @@
             : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2);
         }
 
+        // Sinks the whole avatar down toward chair-seat height while sitting
+        // (mirrors mountSeatLift just above, negative instead of positive) —
+        // the seated leg pose (see seatedForwardZ below) bends the knees, but
+        // without this the torso sprite would still float at full standing
+        // height above the chair. Not derived from the specific seat anchor
+        // (same simplification as seatedForwardZ) — a fixed offset reads
+        // fine across every current seat height (~0.32-0.37).
+        const chairSeatSink = sitInteraction && sitInteraction.phase !== 'out' ? -0.32 : 0;
+
         // Smooth vertical position (bob over water, plus a combat lunge's
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
         // or a climbing hop's bounce, see player.climbHopBounce)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift;
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -31843,7 +31852,13 @@
         // underneath it (see updateCompanions' shoulderPet branch), so legs
         // simply keep animating off the player's own real velocity as usual.
         const legsSuppressed = mountRideState !== 'none' || !!harvestInteraction;
-        playerLegs?.update(dt, speed / TILE, legsSuppressed);
+        // Bent-knee seated pose (see procedural-leg-animation.js's own
+        // applySeatedPose) while actually seated in a chair — a fixed
+        // forward foot offset rather than anything derived from the specific
+        // seat anchor, since the leg chain has no notion of "this particular
+        // chair's depth", just "sitting" in general.
+        const seatedForwardZ = sitInteraction && sitInteraction.phase !== 'out' ? 0.16 : undefined;
+        playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedForwardZ);
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -35976,6 +35991,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => renderFarmProcessors(),
+        enterInterior: () => enterInterior(),
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
