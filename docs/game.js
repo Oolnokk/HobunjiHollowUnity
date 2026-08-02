@@ -28026,51 +28026,74 @@
         };
       }
 
-      // Pulls the camera in along the target→camera line if a plateau mesa or
-      // cliff-face rock skin (see their `.userData.cameraObstacle` tags,
-      // collected once per zone as buildZoneScene's `occlusionMeshes`) sits
-      // between them — the fixed south-of-player follow camera has no other
-      // way to keep the player visible once something tall is in that gap,
-      // since generation alone can bias terrain but can't guarantee a clear
-      // line at this camera's shallow angle (see conversation history: even
-      // a single-tier rise close to the player already eats most of the
-      // vertical slack a ~14-tile, ~33°-elevation sightline allows). Scoped
-      // to wilderness zones for now — town/farm have no elevation system to
-      // occlude with.
+      // Every mesh worth pulling the camera in front of, for whatever area is
+      // currently active. Zones keep their existing tagged-mesh collection
+      // (buildZoneScene's `occlusionMeshes`, built once per zone from
+      // `.userData.cameraObstacle` tags on cliff/mesa skins). Everywhere
+      // else has no such static collection — the farmhouse, barn, and any
+      // placed furniture can all sit between the camera and the player (the
+      // house/barn were the reported case for losing sight of animals
+      // behind them; furniture matters for the seated camera specifically,
+      // since a chair can easily have another piece of furniture right
+      // behind it) — so those are gathered fresh each call instead. Cheap
+      // in practice: a handful of structures/furniture pieces at most, and
+      // this only runs once a frame.
+      function currentAreaOcclusionMeshes() {
+        if (_isZoneArea(currentArea)) return _zoneScenes.get(currentArea)?.occlusionMeshes || [];
+        const meshes = [];
+        if (currentArea === 'farm') {
+          if (_houseModel) meshes.push(_houseModel);
+          else if (_houseFallbackMesh) meshes.push(_houseFallbackMesh);
+          for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
+        }
+        for (const obj of interiorFurnitureObjects) {
+          if (obj.area === currentArea && obj.mesh) meshes.push(obj.mesh);
+        }
+        return meshes;
+      }
+      // Pulls the camera in along the target→camera line if something from
+      // currentAreaOcclusionMeshes() sits between them — the fixed south-of-
+      // player follow camera has no other way to keep the player visible
+      // once something tall is in that gap, since generation alone can bias
+      // terrain but can't guarantee a clear line at this camera's shallow
+      // angle (see conversation history: even a single-tier rise close to
+      // the player already eats most of the vertical slack a ~14-tile,
+      // ~33°-elevation sightline allows).
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
-        if (_isZoneArea(currentArea)) {
-          const obstacles = _zoneScenes.get(currentArea)?.occlusionMeshes;
-          if (obstacles && obstacles.length) {
-            const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
-            const dist = Math.hypot(dx, dy, dz);
-            if (dist >= 0.5) {
-              const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
-              _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
-              _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
-              _cameraOcclusionRaycaster.far = dist;
-              const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, false);
-              if (hits.length) {
-                // Stop a little short of the actual hit (not flush against it) so
-                // the camera doesn't clip into the cliff face it just pulled in
-                // behind.
-                const safeDist = Math.max(3, hits[0].distance - 0.6);
-                // Wilderness plateaus can tower many tiers higher than anything
-                // an authored map ever had, so a cliff can sit close enough to
-                // the player that safeDist collapses near its floor — sliding
-                // straight back along the same shallow ideal-camera ray then
-                // just jams the camera face-first into that wall (a screen-
-                // filling close-up). Lift the camera as it's pulled in, trading
-                // "close" for "more overhead," so a tall nearby cliff still
-                // leaves the player and their surroundings in view instead of
-                // one flat wall.
-                const shrink = clamp(1 - safeDist / dist, 0, 1);
-                const lift = shrink * dist * 0.5;
-                resultX = lookAtX + dir.x * safeDist;
-                resultY = lookAtY + dir.y * safeDist + lift;
-                resultZ = lookAtZ + dir.z * safeDist;
-              }
+        const obstacles = currentAreaOcclusionMeshes();
+        if (obstacles && obstacles.length) {
+          const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+          const dist = Math.hypot(dx, dy, dz);
+          if (dist >= 0.5) {
+            const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+            _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+            _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+            _cameraOcclusionRaycaster.far = dist;
+            // recursive:true — zone occlusion meshes are already individual
+            // tagged leaf meshes (harmless either way there), but the
+            // house/barn/furniture entries above are whole Groups.
+            const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
+            if (hits.length) {
+              // Stop a little short of the actual hit (not flush against it) so
+              // the camera doesn't clip into the cliff face it just pulled in
+              // behind.
+              const safeDist = Math.max(3, hits[0].distance - 0.6);
+              // Wilderness plateaus can tower many tiers higher than anything
+              // an authored map ever had, so a cliff can sit close enough to
+              // the player that safeDist collapses near its floor — sliding
+              // straight back along the same shallow ideal-camera ray then
+              // just jams the camera face-first into that wall (a screen-
+              // filling close-up). Lift the camera as it's pulled in, trading
+              // "close" for "more overhead," so a tall nearby cliff still
+              // leaves the player and their surroundings in view instead of
+              // one flat wall.
+              const shrink = clamp(1 - safeDist / dist, 0, 1);
+              const lift = shrink * dist * 0.5;
+              resultX = lookAtX + dir.x * safeDist;
+              resultY = lookAtY + dir.y * safeDist + lift;
+              resultZ = lookAtZ + dir.z * safeDist;
             }
           }
         }
@@ -36280,6 +36303,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
         get playerMeshRotY() { return playerMesh.rotation.y; },
         get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
+        currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
