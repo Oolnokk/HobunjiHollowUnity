@@ -31805,8 +31805,8 @@
       }
 
       // ── Update water meshes each frame ─────────────────────────────
-      function updateWaterMeshes() {
-        waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
+      function updateWaterMeshes(dt) {
+        waterTime += dt; // use real elapsed time so animation speed is frame-rate independent
 
         if (_waterSimDirty) {
           // Full refresh: recompute flow direction, colour, depth, position.
@@ -31890,8 +31890,8 @@
 
       // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
       // so town weather can fill them with water exactly like farm trenches.
-      function updateTownWaterMeshes() {
-        waterTime += 0.016;
+      function updateTownWaterMeshes(dt) {
+        waterTime += dt;
         for (const wm of _townRiverWaterMeshes) wm.material.uniforms.uTime.value = waterTime;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
@@ -31969,8 +31969,8 @@
       // buildWaterfallCurtainMeshes) — there's no per-tile dynamic water sim
       // here like updateTownWaterMeshes/updateWaterMeshes, just the uTime
       // uniform driving the shader's scroll/ripple, so this is a thin loop.
-      function updateZoneWaterMeshes(mapId) {
-        waterTime += 0.016;
+      function updateZoneWaterMeshes(mapId, dt) {
+        waterTime += dt;
         const meshes = _zoneWaterMeshes.get(mapId);
         if (!meshes) return;
         for (const wm of meshes) wm.material.uniforms.uTime.value = waterTime;
@@ -33367,11 +33367,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
         if (currentArea === 'town') {
-          updateTownWaterMeshes();
+          updateTownWaterMeshes(dt);
           updateTownThreeLighting();
         }
         if (_isZoneArea(currentArea)) {
-          updateZoneWaterMeshes(currentArea);
+          updateZoneWaterMeshes(currentArea, dt);
         }
         // The player can wield tools/weapons outside the farm too (town,
         // exterior zones) — buildings/farmhouse interior intentionally
@@ -33409,7 +33409,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           syncOccludedGhostTransforms();
         }
         if (currentArea === 'farm') {
-          updateWaterMeshes();
+          updateWaterMeshes(dt);
           updateCropMeshes();
           updateAnimalMeshes(dt);
           updateThreeLighting();
