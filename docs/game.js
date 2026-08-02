@@ -5868,6 +5868,8 @@
       let sitInteraction = null;
       const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
+      const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
+      const SEATED_HEAD_MAX_YAW_DEG = 70; // realistic head-turn-without-body-turning range; look straight ahead past this instead of holding at the clamp (see updateSitInteraction)
 
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
@@ -5921,7 +5923,19 @@
         };
         activeCameraMode = 'seated';
         activeCameraTarget = { position: new THREE.Vector3(seat.x, seat.y + 0.15, seat.z) };
-        cameraAzimuthOffsetDeg = 0;
+        // Start looking at the seated character's BACK rather than whatever
+        // the 'seated' mode's base azimuth happens to be (which has no
+        // relationship to which way the character is actually facing).
+        // updateCameraPosition's own azimuth convention: azimuth=0 sits the
+        // camera due south of the target looking north (see its comment);
+        // targetAngle is in the atan2(z,x) convention facingAngle/player.angle
+        // use elsewhere (0 = +X), so the world direction the character is
+        // FACING is (cos(targetAngle), sin(targetAngle)) in (X,Z) — camera
+        // needs to sit on the OPPOSITE side (the character's back), i.e. at
+        // world azimuth atan2(-cos(targetAngle), -sin(targetAngle)), which
+        // simplifies to 270° − targetAngle(deg).
+        const behindAzimuthDeg = 270 - targetAngle * 180 / Math.PI;
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(behindAzimuthDeg - (cameraModeConfig('seated').azimuthDeg ?? 0));
         cameraAngleOffsetDeg = 0;
         return { ok: true, message: 'You sit down.' };
       }
@@ -5948,11 +5962,37 @@
           // (dragging/looking right also decreases the offset).
           const kb = getKeyboardVector();
           const ix = kb.active ? kb.x : input.x;
+          const iy = kb.active ? kb.y : input.y;
           if (Math.abs(ix) > 0.001) {
             cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
+          if (Math.abs(iy) > 0.001) {
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
+          }
+          // Head-turn (not the whole body) toward wherever the camera has
+          // orbited to, using the same neck-bone mechanism the animation-
+          // author tool/NPC dialogue staging use (see
+          // faceNpcDialogueParticipants) — lets you inspect your own
+          // character's face as you swing the camera around without the
+          // body itself rotating. playerMesh.rotation.y = activeCameraAzimuthRad()
+          // is exactly the sprite orientation that faces the camera (both
+          // are the same THREE.js Y-rotation convention — the plane's local
+          // +Z, after that rotation, points from the character straight at
+          // the camera), so the residual against the body's own CURRENT
+          // rotation (whatever the dead zone has it holding at right now)
+          // is exactly how far the head alone needs to turn. Only within a
+          // realistic range — past it, look straight ahead (0) rather than
+          // holding at the clamp like the NPC dialogue case, so an extreme
+          // camera angle just shows the back of a naturally forward-facing
+          // head instead of a craned neck.
+          if (playerNeckJoint) {
+            const residual = angleDiff(activeCameraAzimuthRad(), playerMesh.rotation.y);
+            const maxYawRad = SEATED_HEAD_MAX_YAW_DEG * Math.PI / 180;
+            playerNeckJoint.rotation.y = Math.abs(residual) <= maxYawRad ? residual : 0;
+          }
           return;
         }
+        if (playerNeckJoint) playerNeckJoint.rotation.y = 0;
         s.t = Math.min(1, s.t + dt / SIT_TRANSITION_S);
         const e = s.t;
         const [fromX, fromY, fromAngle, toX, toY, toAngle] = s.phase === 'in'
@@ -13216,6 +13256,12 @@
       // driven each frame from updatePlayerMesh. See
       // docs/js/procedural-leg-animation.js.
       let playerLegs = null;
+      // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
+      // (null if no neck pivot could be detected for the player's current
+      // portrait) — same mechanism the animation-author tool/NPC dialogue
+      // staging uses (see faceNpcDialogueParticipants), driven here for the
+      // seated look-around head-turn instead (see updateSitInteraction).
+      let playerNeckJoint = null;
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
@@ -22068,9 +22114,10 @@
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
+          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         avatarGroup.name = 'player_avatar';
+        playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
         // Direct front/back plane refs for updatePetLayering (see near
         // updateCompanions) — createSinglePlaneAssembly always nests them
         // as the assembly's first two children (frontMesh, then backMesh).
@@ -31943,6 +31990,19 @@
         if (fishingMinigame?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (sitInteraction && sitInteraction.phase !== 'out') {
+          // Seated: the body stays pinned to the chair's own facing — no
+          // perpClamp/dead-zone tracking of the camera at all (unlike the
+          // general branch below), since the camera can freely orbit all
+          // the way around while seated and a dead zone that's allowed to
+          // chase a continuously-rotating camera would drag the whole body
+          // around with it. Only the head is meant to turn as the camera
+          // moves (see updateSitInteraction's neck-bone tracking) — pinning
+          // the body here is what makes that "camera doesn't rotate your
+          // body" contract actually hold.
+          playerFacing = -facingAngle + Math.PI / 2;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
           // Glued to a mount (same guard as mountSeatLift above): track the
           // mount's own PNG-plane rotation (c.pngRot, kept current every
@@ -36182,6 +36242,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         occludedGhostVisibleCount: () => _occludedGhostPairs.filter(p => p.ghost.visible).length,
         get depthOutlinesSetting() { return s_depthOutlines; },
         get outlinesSetting() { return s_outlines; },
+        get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
+        get playerMeshRotY() { return playerMesh.rotation.y; },
+        get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
