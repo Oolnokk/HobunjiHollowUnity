@@ -32335,6 +32335,10 @@
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
       let _minimapRedrawAccum = 0;
+      // Audio state changes at most a few times/sec — no need to re-evaluate
+      // every frame at 60fps. 150ms gives responsive volume transitions while
+      // saving ~80% of the per-frame audio-update cost.
+      let _audioUpdateAccum = 0;
 
       buildTileMeshes();
       buildBorderTerrain();
@@ -33220,10 +33224,17 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
-        updateRainAudio();
-        updateExteriorBgs();
-        updateFurnitureSfxSources();
-        updateAmbientCues();
+        // Audio state only changes on area transitions, rain starts/stops, and
+        // BGM track changes — throttle to ~150ms so we're not re-evaluating
+        // every frame at 60fps for no audible benefit.
+        _audioUpdateAccum += dt;
+        if (_audioUpdateAccum >= 0.15) {
+          _audioUpdateAccum = 0;
+          updateRainAudio();
+          updateExteriorBgs();
+          updateFurnitureSfxSources();
+          updateAmbientCues();
+        }
         audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
         // Diagnostic for "bgm/cue reports playing but is silent": the actual
         // audible level lives in this GainNode graph, not on the <audio>
