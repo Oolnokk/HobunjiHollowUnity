@@ -971,7 +971,23 @@ header,
             <label class="animationCheck"><input id="animationFollowCamera" type="checkbox" checked><span>Camera follows movement</span></label>
             <label class="animationCheck"><input id="animationLoopArena" type="checkbox"><span>Wrap at preview edge</span></label>
             <label class="animationCheck"><input id="animationFeetEnabled" type="checkbox" checked><span>Experimental foot spheres</span></label>
+            <label class="animationCheck"><input id="animationLegBonesEnabled" type="checkbox" checked><span>Show invisible leg bones</span></label>
           </div>
+          <details class="footGlbPanel" id="legBendPanel">
+            <summary>Leg bend (invisible hip/thigh/calf authoring)</summary>
+            <div class="footGlbPanelBody">
+              <div id="legBendReadout" class="pill">Load an NPC to author a leg bend.</div>
+              <div class="row">
+                <button id="legBendEditBtn" class="secondary grow">Edit leg bend</button>
+                <button id="legBendResetBtn" class="secondary">Reset to straight</button>
+              </div>
+              <div class="row">
+                <button id="legBendCopyBtn" class="secondary grow">Copy legBend config block</button>
+                <button id="legBendDownloadBtn" class="secondary">Download patch JSON</button>
+              </div>
+              <div class="authorHelp">Each foot hangs off an invisible 2-bone leg running from the avatar's posterior anchor down to the foot (see docs/js/leg-bones.js) — the cyan/orange lines trace hip -&gt; knee -&gt; foot for the left/right leg. Unauthored, the knee just marks the straight-line midpoint and the leg tracks the foot automatically through the gait. "Edit leg bend" attaches a rotate-only gizmo to the left thigh; the right leg mirrors it sideways automatically. The edit applies to the currently loaded NPC's species+gender and is written into this session's live config — use the copy/download buttons to get the exact <code>proceduralFeet.legBend</code> block to paste into scratchbones-config.js.</div>
+            </div>
+          </details>
           <details class="footGlbPanel" id="footGlbPanel">
             <summary>Per-species imported foot models (.glb)</summary>
             <div class="footGlbPanelBody">
@@ -1235,10 +1251,12 @@ const KURRAYA_ASSETS = {
 };
 const REQUIRED_SCRIPTS = [
   'config/scratchbones-config.js',
+  'config/attachment-rig-profiles.js',
   'js/portrait-utils.js',
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'js/leg-bones.js',
   CREATURE_RENDER_SCRIPT,
 ];
 
@@ -1419,6 +1437,16 @@ const procedural = { // Holds live input, motion, playback, and recording state 
     liftHeight: 0, // Reports the current peak swing-foot lift above the ground-flush idle center.
     leftPhase: 'idle', // Exposes whether the left foot is planted, swinging, or settling.
     rightPhase: 'idle', // Exposes whether the right foot is planted, swinging, or settling.
+  },
+  legBones: { // Invisible hip->thigh->calf debug visualization + authored-bend gizmo (see docs/js/leg-bones.js).
+    enabled: true, // "Show leg bones" toggle.
+    editing: false, // True while the rotate gizmo has exclusive use of the left thigh's bend proxy.
+    root: null, // Parents both debug lines under the floor-anchored locomotion root, same frame as procedural.feet.root.
+    defaultFrame: null, // Object3D re-oriented every frame to the unauthored (straight-at-the-foot) left-thigh direction.
+    proxy: null, // Child of defaultFrame; its LOCAL quaternion IS the authored bend (so it survives defaultFrame's own per-frame gait tracking).
+    lines: { left: null, right: null }, // THREE.Line (hip -> knee -> foot), one per leg.
+    transformControls: null,
+    transformHelper: null,
   },
 };
 
@@ -1668,6 +1696,56 @@ function verticalPlacementSpeciesChain(speciesId) { // Matches the repository's 
     current = normalizePlacementSpeciesKey(speciesConfig[current]?.parentSpecies);
   }
   return chain;
+}
+
+// ── Leg-bend authoring (proceduralFeet.legBend) ─────────────────────────
+// Mirrors docs/js/procedural-leg-animation.js's own legBendForSpecies (same
+// species-chain + gender-key lookup as footScale/portraitVerticalPlacement)
+// and posteriorYForSpecies (same posteriorRule.heightPercentOffset formula),
+// so the gizmo here authors exactly the value the game will read at runtime.
+function legBendConfigTable() { // Returns (and lazily creates) the exact object procedural-leg-animation.js reads at game runtime.
+  const avatarConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
+  if (!avatarConfig) return null;
+  if (!avatarConfig.proceduralFeet || typeof avatarConfig.proceduralFeet !== 'object') avatarConfig.proceduralFeet = {};
+  if (!avatarConfig.proceduralFeet.legBend || typeof avatarConfig.proceduralFeet.legBend !== 'object') {
+    avatarConfig.proceduralFeet.legBend = { default: { x: 0, z: 0 } };
+  }
+  return avatarConfig.proceduralFeet.legBend;
+}
+
+function legBendForSpecies(speciesId, gender) {
+  const table = legBendConfigTable() || {};
+  const fallback = { x: Number(table.default?.x) || 0, z: Number(table.default?.z) || 0 };
+  for (const key of verticalPlacementSpeciesChain(speciesId)) {
+    const entry = table[key];
+    if (entry && Object.prototype.hasOwnProperty.call(entry, gender)) {
+      const x = Number(entry[gender]?.x), z = Number(entry[gender]?.z);
+      if (Number.isFinite(x) && Number.isFinite(z)) return { x, z };
+    }
+  }
+  return fallback;
+}
+
+function setLegBendForSpecies(speciesId, gender, bend) { // Writes a direct override for this exact species (not the chain), mirroring setLiveVerticalPlacementEntry.
+  const table = legBendConfigTable();
+  const key = normalizePlacementSpeciesKey(speciesId);
+  if (!table || !key) return;
+  if (!table[key] || typeof table[key] !== 'object') table[key] = {};
+  table[key][gender] = { x: bend.x, z: bend.z };
+}
+
+function heightPercentOffsetForSpecies(speciesId, gender) {
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const rec = lib[`${speciesId}::${gender}`];
+  const value = Number(rec?.posteriorRule?.heightPercentOffset);
+  return Number.isFinite(value) ? value : -18;
+}
+
+function posteriorYForAnalysis(analysis) {
+  if (!analysis) return 0;
+  const modelHeight = Number(analysis.gameModelHeight) || 0.9;
+  const baseY = Number.isFinite(analysis.handAttachY) ? analysis.handAttachY : modelHeight / 2;
+  return baseY + modelHeight * heightPercentOffsetForSpecies(analysis.speciesId, analysis.gender) / 100;
 }
 
 function resolveVerticalPlacementFrom(placement, speciesId, genderValue) { // Reproduces avatarPlacementRatioFor's own-property and finite-number semantics.
@@ -3803,11 +3881,199 @@ function disposeExperimentalFeet() { // Removes procedural or custom GLB clone r
   procedural.feet.right = null;
   procedural.feet.analysis = null;
   resetExperimentalFeetGait({ snap: false });
+  disposeLegBonesVisual();
 }
 
 function syncExperimentalFeetVisibility() { // Applies the authoring toggle without rebuilding or losing the current alpha analysis.
   if (procedural.feet.root) procedural.feet.root.visible = Boolean(procedural.settings.feetEnabled && state.previewMode === 'npc');
   updateAnimationReadout();
+}
+
+// ── Invisible leg-bone debug visualization + bend gizmo ─────────────────
+// Draws the same hip -> thigh -> calf chain docs/js/procedural-leg-animation.js
+// builds at runtime (via the shared docs/js/leg-bones.js solver) as a pair of
+// hip->knee->foot debug lines, and lets the left thigh's authored bend be
+// rotated directly with a TransformControls gizmo — the right leg always
+// mirrors it (lateral/x sign only), matching how legBend is authored per
+// species+gender for both legs at once (see legBendForSpecies).
+function disposeLegBonesVisual() {
+  const lb = procedural.legBones;
+  if (lb.editing) leaveLegBendEditing(false);
+  if (lb.root) { lb.root.parent?.remove(lb.root); disposeObjectResources(lb.root); }
+  lb.root = null;
+  lb.defaultFrame = null;
+  lb.proxy = null;
+  lb.lines.left = null;
+  lb.lines.right = null;
+}
+
+function buildLegBonesVisual() {
+  disposeLegBonesVisual();
+  const THREE = state.three.THREE;
+  if (!THREE || !procedural.locomotionRoot || !procedural.feet.analysis) return;
+  const lb = procedural.legBones;
+  const root = new THREE.Group();
+  root.name = 'LegBonesDebug';
+  const makeLine = color => {
+    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
+    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 999; // Reads clearly through the avatar plane/foot meshes instead of z-fighting or hiding behind them.
+    root.add(line);
+    return line;
+  };
+  lb.lines.left = makeLine(0x5ec8ff);
+  lb.lines.right = makeLine(0xffa15e);
+  lb.defaultFrame = new THREE.Object3D();
+  lb.defaultFrame.name = 'LeftThighDefaultFrame';
+  root.add(lb.defaultFrame);
+  lb.proxy = new THREE.Object3D();
+  lb.proxy.name = 'LeftThighBendGizmo';
+  const bend = legBendForSpecies(procedural.feet.analysis.speciesId, procedural.feet.analysis.gender);
+  lb.proxy.quaternion.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(bend.x), 0, THREE.MathUtils.degToRad(bend.z)));
+  lb.defaultFrame.add(lb.proxy);
+  procedural.locomotionRoot.add(root);
+  lb.root = root;
+  root.visible = Boolean(lb.enabled);
+  updateLegBonesVisual();
+}
+
+// Re-solves both legs from the current live foot targets (whatever
+// updateExperimentalFeetGait just wrote to procedural.feet.left/right this
+// frame) and redraws their debug lines. Each leg gets its own hip anchor at
+// that leg's own IDLE stance X (analysis.leftIdle/rightIdle — fixed once per
+// build, not the live swinging target) and the shared posterior height,
+// mirroring procedural-leg-animation.js's own per-leg hip. defaultFrame (the
+// left leg's gizmo parent) is re-oriented to the unauthored straight-at-the-
+// foot direction every call so it tracks gait automatically; proxy.quaternion
+// (the authored bend, LOCAL to defaultFrame) is only ever changed by a
+// direct gizmo drag or a species/gender switch, so re-orienting defaultFrame
+// here never disturbs it.
+function updateLegBonesVisual() {
+  const lb = procedural.legBones;
+  const THREE = state.three.THREE;
+  const analysis = procedural.feet.analysis;
+  if (!lb.root || !THREE || !window.LegBones || !analysis) return;
+  const hipY = posteriorYForAnalysis(analysis);
+  const leftHip = { x: Number(analysis.leftIdle?.x) || 0, y: hipY, z: 0 };
+  const rightHip = { x: Number(analysis.rightIdle?.x) || 0, y: hipY, z: 0 };
+  if (lb.defaultFrame) lb.defaultFrame.position.set(leftHip.x, leftHip.y, leftHip.z);
+  const leftFoot = procedural.feet.left;
+  const rightFoot = procedural.feet.right;
+  if (leftFoot && lb.defaultFrame) {
+    const straight = window.LegBones.solveTwoBoneLeg(THREE, { hip: leftHip, foot: leftFoot.position });
+    lb.defaultFrame.quaternion.copy(straight.thighQuaternion);
+  }
+  const bendEuler = lb.proxy ? new THREE.Euler().setFromQuaternion(lb.proxy.quaternion, 'XYZ') : new THREE.Euler();
+  const bendDegX = THREE.MathUtils.radToDeg(bendEuler.x);
+  const bendDegZ = THREE.MathUtils.radToDeg(bendEuler.z);
+  const drawLeg = (hip, foot, line, sideBendDegX) => {
+    if (!foot || !line) return;
+    const solved = window.LegBones.solveTwoBoneLeg(THREE, { hip, foot: foot.position, bendDegX: sideBendDegX, bendDegZ });
+    const positions = line.geometry.attributes.position;
+    positions.setXYZ(0, hip.x, hip.y, hip.z);
+    positions.setXYZ(1, solved.knee.x, solved.knee.y, solved.knee.z);
+    positions.setXYZ(2, foot.position.x, foot.position.y, foot.position.z);
+    positions.needsUpdate = true;
+    line.geometry.computeBoundingSphere();
+  };
+  drawLeg(leftHip, leftFoot, lb.lines.left, bendDegX);
+  drawLeg(rightHip, rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
+}
+
+function syncLegBonesVisibility() {
+  procedural.legBones.enabled = Boolean($('animationLegBonesEnabled')?.checked ?? procedural.legBones.enabled);
+  if (procedural.legBones.root) procedural.legBones.root.visible = Boolean(procedural.legBones.enabled && state.previewMode === 'npc');
+}
+
+// Persists the gizmo's current bend into scratchbones-config.js's live
+// in-session copy (legBendForSpecies reads straight back through it, so the
+// debug lines/runtime-equivalent math immediately reflect the edit) and
+// mirrors it onto the right leg.
+function syncLegBendFromGizmo() {
+  const lb = procedural.legBones;
+  const analysis = procedural.feet.analysis;
+  const THREE = state.three.THREE;
+  if (!lb.proxy || !analysis || !THREE) return;
+  const euler = new THREE.Euler().setFromQuaternion(lb.proxy.quaternion, 'XYZ');
+  const bend = { x: THREE.MathUtils.radToDeg(euler.x), z: THREE.MathUtils.radToDeg(euler.z) };
+  setLegBendForSpecies(analysis.speciesId, analysis.gender, bend);
+  updateLegBendUi();
+}
+
+function enterLegBendEditing() {
+  const lb = procedural.legBones;
+  if (!lb.proxy || !lb.transformControls) return;
+  lb.editing = true;
+  lb.enabled = true;
+  if ($('animationLegBonesEnabled')) $('animationLegBonesEnabled').checked = true;
+  syncLegBonesVisibility();
+  lb.transformControls.setMode('rotate');
+  lb.transformControls.setSpace('local');
+  lb.transformControls.attach(lb.proxy);
+  updateLegBendUi();
+  log('Editing the left thigh bend (right leg mirrors automatically).');
+}
+
+function leaveLegBendEditing(save = true) {
+  const lb = procedural.legBones;
+  if (save) syncLegBendFromGizmo();
+  lb.editing = false;
+  lb.transformControls?.detach();
+  updateLegBendUi();
+}
+
+function updateLegBendUi() {
+  const analysis = procedural.feet.analysis;
+  const bend = analysis ? legBendForSpecies(analysis.speciesId, analysis.gender) : { x: 0, z: 0 };
+  const readout = $('legBendReadout');
+  if (readout) {
+    readout.textContent = analysis
+      ? `${analysis.speciesId}.${analysis.gender}: forward ${bend.x.toFixed(1)}°, side ${bend.z.toFixed(1)}° (right leg mirrors side).`
+      : 'Load an NPC to author a leg bend.';
+  }
+  const editBtn = $('legBendEditBtn');
+  if (editBtn) editBtn.textContent = procedural.legBones.editing ? 'Done editing leg bend' : 'Edit leg bend';
+}
+
+function legBendExportObject() { // Mirrors verticalPlacementExportObject's shape for the same copy-to-clipboard authoring flow.
+  return {
+    schema: 'hobunji-leg-bend-authoring.v1',
+    source: {
+      repository: state.settings ? `${state.settings.owner}/${state.settings.repo}` : null,
+      configFile: `${state.settings?.docsRoot || 'docs/'}config/scratchbones-config.js`,
+      configPath: 'SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.legBend',
+    },
+    formula: {
+      hip: 'handAttachY + gameModelHeight * posteriorRule.heightPercentOffset/100 (docs/config/attachment-rig-profiles.js)',
+      unauthoredKnee: 'midpoint(hip, foot) — thigh points straight at the foot',
+      authoredBend: 'thigh rotated bendDegX/bendDegZ off that straight line, fixed length; calf always re-aimed at the live foot target',
+      mirroring: 'right leg = { x: -left.x, z: left.z }',
+    },
+    legBend: clone(legBendConfigTable() || { default: { x: 0, z: 0 } }),
+  };
+}
+
+async function copyLegBendBlock() {
+  const block = JSON.stringify({ legBend: clone(legBendConfigTable() || { default: { x: 0, z: 0 } }) }, null, 2);
+  try {
+    await navigator.clipboard.writeText(block);
+    setStatus('Copied the complete proceduralFeet.legBend config block.', 'good');
+  } catch (_) {
+    const textarea = document.createElement('textarea');
+    textarea.value = block;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    setStatus('Copied the complete proceduralFeet.legBend config block.', 'good');
+  }
+}
+
+function downloadLegBendPatch() {
+  downloadJson('hobunji_leg_bend_patch.json', legBendExportObject());
 }
 
 function experimentalFeetExportRecord() { // Builds a JSON-safe static description of the current torso scan and idle anchors.
@@ -3942,6 +4208,8 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   };
   procedural.feet.analysis = {
     speciesId,
+    gender: feetGenderForAvatar(avatar),
+    handAttachY: Number(model.userData?.handAttachY),
     anatomy,
     scan,
     radius: sphereRadius,
@@ -3980,6 +4248,7 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   model.userData.experimentalFeet = clone(procedural.feet.analysis);
   resetExperimentalFeetGait({ snap: true });
   syncExperimentalFeetVisibility();
+  buildLegBonesVisual();
   log(`Experimental ${speciesId} feet built from widest torso row ${scan.widestRangePx.width}px: X ${leftFoot.position.x.toFixed(3)}/${rightFoot.position.x.toFixed(3)}, Mao'ao width ratio ${rawTorsoWidthRatio.toFixed(3)}, procedural envelope X/Z ${sphereScaleXZ.toFixed(3)}, Y ${sphereScaleY.toFixed(3)}, custom GLB L/R ${importedLeftAsset?.name || 'none'}/${importedRightAsset?.name || 'none'}.`, 'info', procedural.feet.analysis);
 }
 
@@ -4534,6 +4803,24 @@ function initializeDirectionalPoseControls(TransformControls) { // Creates a sec
   log('Directional movement TransformControls gizmo loaded.');
 }
 
+function initializeLegBendControls(TransformControls) { // Creates a third gizmo, rotate-only, dedicated to the left thigh's authored bend proxy.
+  if (procedural.legBones.transformControls || !state.three.ready) return;
+  const controls = new TransformControls(state.three.camera, $('view3d'));
+  const helper = typeof controls.getHelper === 'function' ? controls.getHelper() : controls;
+  helper.visible = true;
+  controls.showX = controls.showY = controls.showZ = true;
+  state.three.scene.add(helper);
+  controls.setMode('rotate');
+  controls.setSpace('local');
+  configureTransformControlDragging(controls);
+  controls.addEventListener('objectChange', syncLegBendFromGizmo);
+  procedural.legBones.transformControls = controls;
+  procedural.legBones.transformHelper = helper;
+  if (procedural.legBones.editing && procedural.legBones.proxy) controls.attach(procedural.legBones.proxy);
+  updateLegBendUi();
+  log('Leg bend TransformControls gizmo loaded.');
+}
+
 async function loadTransformControls() {
   if ((state.kurraya.transformControls && procedural.pose.transformControls) || !state.three.ready) return;
   const configuredThreeUrl = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.threeModuleUrl || 'https://esm.sh/three@0.165.0';
@@ -4558,6 +4845,7 @@ async function loadTransformControls() {
       log('Kurraya TransformControls gizmo loaded.');
     }
     initializeDirectionalPoseControls(module.TransformControls);
+    initializeLegBendControls(module.TransformControls);
   } catch (error) {
     log(`3D transform gizmo unavailable; numeric fields still work: ${error.message}`, 'warn');
     $('kurrayaGizmoOffBtn').textContent = 'Gizmo unavailable';
@@ -5067,6 +5355,7 @@ function renderAnimationEditor() { // Synchronizes all authoring controls, badge
   $('animationFollowCamera').checked = procedural.settings.followCamera;
   $('animationLoopArena').checked = procedural.settings.loopArena;
   $('animationFeetEnabled').checked = procedural.settings.feetEnabled;
+  $('animationLegBonesEnabled').checked = procedural.legBones.enabled;
   $('animationPresetSelect').value = MOVEMENT_PRESETS[procedural.preset] ? procedural.preset : 'custom';
   $('animationRegularBtn').classList.toggle('active', procedural.preset === 'regular');
   $('animationDrunkenBtn').classList.toggle('active', procedural.preset === 'drunken');
@@ -5113,6 +5402,7 @@ function readAnimationEditor() { // Pulls current form values into the validated
   next.feetEnabled = $('animationFeetEnabled').checked;
   procedural.settings = normalizedAnimationSettings(next, 'drunken');
   syncExperimentalFeetVisibility();
+  syncLegBonesVisibility();
   markAnimationCustom();
   renderAnimationEditor();
 }
@@ -5476,6 +5766,7 @@ function updateProceduralMovement(dt) { // Advances input, movement physics, pos
   poseRoot.rotation.x += counterWave;
   poseRoot.rotation.z += -swayWave - travelLean;
   updateExperimentalFeetGait(dt, movingSpeed, characterMotion, input);
+  updateLegBonesVisual();
   updateCameraFollow();
 
   if (procedural.recording) {
@@ -5596,7 +5887,7 @@ function releaseJoystick(event = null) { // Returns touch input and the visual k
 }
 
 function initializeProceduralAnimator() { // Wires the standalone authoring UI, controls, persistence, and touch joystick once.
-  loadAnimationSettings(); renderAnimationEditor(); updateAnimationReadout();
+  loadAnimationSettings(); renderAnimationEditor(); updateAnimationReadout(); updateLegBendUi();
   $('animationRegularBtn').addEventListener('click', () => applyAnimationPreset('regular'));
   $('animationDrunkenBtn').addEventListener('click', () => applyAnimationPreset('drunken'));
   $('animationPresetSelect').addEventListener('change', event => { if (MOVEMENT_PRESETS[event.target.value]) applyAnimationPreset(event.target.value); });
@@ -5613,6 +5904,17 @@ function initializeProceduralAnimator() { // Wires the standalone authoring UI, 
   $('animationExportClipBtn').addEventListener('click', exportAnimationClip);
   $('animationCopyBtn').addEventListener('click', copyAnimationSettings);
   $('animationImportInput').addEventListener('change', event => importAnimationFile(event.target.files?.[0]));
+  $('legBendEditBtn').addEventListener('click', () => procedural.legBones.editing ? leaveLegBendEditing() : enterLegBendEditing());
+  $('legBendResetBtn').addEventListener('click', () => {
+    const analysis = procedural.feet.analysis;
+    if (!analysis) return;
+    setLegBendForSpecies(analysis.speciesId, analysis.gender, { x: 0, z: 0 });
+    if (procedural.legBones.proxy) procedural.legBones.proxy.quaternion.identity();
+    updateLegBendUi();
+    setStatus(`Reset ${analysis.speciesId}.${analysis.gender}'s leg bend to straight.`, 'good');
+  });
+  $('legBendCopyBtn').addEventListener('click', copyLegBendBlock);
+  $('legBendDownloadBtn').addEventListener('click', downloadLegBendPatch);
 
 
 let footGlbModalRestore = null; // Remembers the importer's exact location in the main settings drawer.

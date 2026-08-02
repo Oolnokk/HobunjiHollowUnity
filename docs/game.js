@@ -4947,6 +4947,55 @@
         return true;
       }
 
+      // Takes exactly one greedy tile-hop toward (targetCol,targetRow) —
+      // shared by barn-homing (_farmAnimalStepTowardBarn) and daytime
+      // station-wander (_farmAnimalWanderTick) so there's one place that
+      // knows how to move an animal one tile, instead of two hand-copies.
+      // Prefers the diagonal-ish direction first, then straightens out along
+      // whichever single axis still has distance left, then (if fully
+      // blocked) tries every other cardinal direction rather than giving up
+      // immediately — onStep, if given, runs after a successful hop with the
+      // tile the animal just left (uumkao'ii's dew-pile drop uses this).
+      // Returns true if it actually moved, false if every direction was
+      // blocked (caller decides what "stuck" means for it).
+      function _farmAnimalStepToward(animal, targetCol, targetRow, onStep, isBlocked) {
+        const dc = Math.sign(targetCol - animal.col), dr = Math.sign(targetRow - animal.row);
+        const dirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }, { dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }]
+          .filter(d => d.dc || d.dr);
+        for (const d of dirs) {
+          const nc = animal.col + d.dc, nr = animal.row + d.dr;
+          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+          if (!canSpawnAnimalAt(nc, nr)) continue;
+          if (isBlocked?.(nc, nr)) continue;
+          const oldCol = animal.col, oldRow = animal.row;
+          worldObjects.delete(animal.col + ',' + animal.row);
+          animal.col = nc; animal.row = nr; animal.targetCol = nc; animal.targetRow = nr;
+          worldObjects.set(nc + ',' + nr, animal);
+          animal.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
+          onStep?.(oldCol, oldRow);
+          return true;
+        }
+        return false;
+      }
+
+      // A barn's rendered structure (roof eaves, foundation slab) visually
+      // extends past its own reserved w×h footprint tiles, so a wandering
+      // animal standing on the tile immediately outside that footprint can
+      // still end up rendered behind/underneath the barn from the camera —
+      // effectively invisible despite never having stepped onto an occupied
+      // tile. This is the same 1-tile "personal space" ring the night
+      // barn-homing walk already uses to decide when it's close enough to
+      // go inside (see _farmAnimalStepTowardBarn's own touchingBarn check
+      // below) — station-wander reuses it too (see FARM_ANIMAL_WANDER_*
+      // below) so daytime wandering can never park an animal somewhere that
+      // visual overlap could hide it.
+      function _tileTouchesAnyBarn(col, row) {
+        for (const barn of farmBuildings) {
+          if (col >= barn.col - 1 && col <= barn.col + barn.w && row >= barn.row - 1 && row <= barn.row + barn.h) return true;
+        }
+        return false;
+      }
+
       function _farmAnimalStepTowardBarn(animal, barn) {
         const cx = barn.col + barn.w / 2, cz = barn.row + barn.h / 2;
         const touchingBarn = animal.col >= barn.col - 1 && animal.col <= barn.col + barn.w
@@ -4957,18 +5006,66 @@
           animal._barnHome = true;
           return;
         }
-        const dc = Math.sign(cx - (animal.col + 0.5)), dr = Math.sign(cz - (animal.row + 0.5));
-        const dirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }, { dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }]
-          .filter(d => d.dc || d.dr);
-        for (const d of dirs) {
-          const nc = animal.col + d.dc, nr = animal.row + d.dr;
+        _farmAnimalStepToward(animal, Math.round(cx - 0.5), Math.round(cz - 0.5));
+      }
+
+      // ── Daytime station wander ───────────────────────────────────────────
+      // Replaces the old "re-roll a brand new random direction almost every
+      // tick" wander (which produced visible jitter/reversal, since a fresh
+      // decision could interrupt a hop that hadn't even finished lerping
+      // yet — see update()'s wx/wz lerp toward targetCol/targetRow), with
+      // something closer to NPC scheduling: pick one random nearby tile as
+      // a "station", walk there one tile at a time (never starting the next
+      // hop until the previous one has visually finished), rest there for a
+      // random duration, then pick a new station and repeat. Bounded to a
+      // radius around the animal's own spawn tile (its "pen", even though
+      // there's no literal fence data) rather than its current position, so
+      // repeated station-hops can't slowly drift it across the whole farm.
+      const FARM_ANIMAL_WANDER_RADIUS_TILES = 4;
+      const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
+      const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
+
+      function _farmAnimalPickWanderTarget(animal) {
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const dc = Math.round((rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
+          const dr = Math.round((rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
+          if (!dc && !dr) continue;
+          const nc = animal.homeCol + dc, nr = animal.homeRow + dr;
           if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-          if (!canSpawnAnimalAt(nc, nr)) continue;
-          worldObjects.delete(animal.col + ',' + animal.row);
-          animal.col = nc; animal.row = nr; animal.targetCol = nc; animal.targetRow = nr;
-          worldObjects.set(nc + ',' + nr, animal);
-          animal.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
-          break;
+          if (!canSpawnAnimalAt(nc, nr) || _tileTouchesAnyBarn(nc, nr)) continue;
+          animal.wanderTargetCol = nc;
+          animal.wanderTargetRow = nr;
+          return;
+        }
+        // Pen's momentarily crowded/blocked in every sampled spot — try
+        // again shortly instead of re-rolling every single tick.
+        animal.wanderWaitT = 0.5 + rnd() * 0.5;
+      }
+
+      function _farmAnimalWanderTick(animal, dt, onStep) {
+        if (animal.wanderWaitT > 0) { animal.wanderWaitT -= dt; return; }
+        if (animal.wanderTargetCol == null) { _farmAnimalPickWanderTarget(animal); return; }
+        if (animal.col === animal.wanderTargetCol && animal.row === animal.wanderTargetRow) {
+          // Reached the station tile — rest here before picking a new one.
+          animal.wanderTargetCol = null;
+          animal.wanderTargetRow = null;
+          animal.wanderWaitT = FARM_ANIMAL_WANDER_WAIT_MIN_SEC
+            + rnd() * (FARM_ANIMAL_WANDER_WAIT_MAX_SEC - FARM_ANIMAL_WANDER_WAIT_MIN_SEC);
+          return;
+        }
+        // Only take the next hop once the previous one has actually finished
+        // lerping into place (same arrival epsilon update() uses for its own
+        // idle-facing check) — this, not a throttle/chance roll, is what
+        // stops a new decision from ever interrupting a hop mid-stride.
+        const arrived = Math.abs(animal.wx - (animal.targetCol + 0.5)) < 0.04
+          && Math.abs(animal.wz - (animal.targetRow + 0.5)) < 0.04;
+        if (!arrived) return;
+        if (!_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn)) {
+          // Blocked in every direction — give up on this station and rest
+          // briefly before trying a new one, rather than spinning in place.
+          animal.wanderTargetCol = null;
+          animal.wanderTargetRow = null;
+          animal.wanderWaitT = 0.5 + rnd() * 0.5;
         }
       }
 
@@ -4979,6 +5076,12 @@
         if (!spot) return; // no room to emerge yet — stay home another tick
         animal.col = spot.col; animal.row = spot.row; animal.targetCol = spot.col; animal.targetRow = spot.row;
         animal.wx = spot.col + 0.5; animal.wz = spot.row + 0.5;
+        // Re-centers the station-wander pen on wherever it actually emerges
+        // beside its barn each morning, not its original (possibly far-off)
+        // spawn tile, and drops any stale station target/rest timer left
+        // over from before it went inside for the night.
+        animal.homeCol = spot.col; animal.homeRow = spot.row;
+        animal.wanderTargetCol = null; animal.wanderTargetRow = null; animal.wanderWaitT = 0;
         worldObjects.set(spot.col + ',' + spot.row, animal);
         animal.avatarRef.group.visible = true;
         animal._barnHome = false;
@@ -5056,12 +5159,13 @@
           }).catch(() => {});
         }
 
-        let tickCounter = 0;
         const animal = {
           id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
           type: 'animal', animalKey: 'uumkaoii', genotype,
           col, row, targetCol: col, targetRow: row,
+          homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
+          wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
           halfHeight: halfH, avatarRef,
           groupRot: Math.PI / 2, targetRot: Math.PI / 2,
@@ -5073,45 +5177,22 @@
           onAction(action) {
             return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
           },
-          tick() {
+          tick(dt) {
             if (this._harvestFrozen) return;
-            tickCounter++;
-            if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
-
-            // Once this uumkao'ii's dew cooldown resets, drop a persistent
-            // dew pile on the next open tile it wanders onto — the tile it's
-            // leaving this step, which is guaranteed open the instant it
-            // steps off (see dropDewPile). Bypasses the normal 0.55 wander
-            // chance below so a ready dew resolves within a few ticks
-            // instead of waiting on the coin flip too.
-            const livestockList = _loadWorldLivestock();
-            const rec = livestockList.find(l => l.id === this.livestockId);
-            const wantsDewDrop = Boolean(rec?.dewReady);
-            if (!wantsDewDrop && rnd() > 0.55) return;
-
-            const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
-            for (let i = dirs.length - 1; i > 0; i--) {
-              const j = Math.floor(rnd() * (i + 1));
-              [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
-            }
-            for (const d of dirs) {
-              const nc = this.col + d.dc, nr = this.row + d.dr;
-              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-              if (!canSpawnAnimalAt(nc, nr)) continue;
-              const oldCol = this.col, oldRow = this.row;
-              worldObjects.delete(this.col + ',' + this.row);
-              this.col = nc; this.row = nr;
-              this.targetCol = nc; this.targetRow = nr;
-              worldObjects.set(nc + ',' + nr, this);
-              this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
-              if (wantsDewDrop && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+            // Drops a persistent dew pile on whichever tile a station-wander
+            // hop happens to leave next, once this uumkao'ii's dew cooldown
+            // has reset (see dropDewPile) — opportunistic rather than urgent,
+            // since the wander cycle already produces hops regularly enough.
+            _farmAnimalWanderTick(this, dt || 0, (oldCol, oldRow) => {
+              const livestockList = _loadWorldLivestock();
+              const rec = livestockList.find(l => l.id === this.livestockId);
+              if (rec?.dewReady && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 rec.dewReady = false;
                 rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
                 _saveWorldLivestock(livestockList);
               }
-              break;
-            }
+            });
           },
           update(dt) {
             const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
@@ -5203,12 +5284,13 @@
           }).catch(() => {});
         }
 
-        let tickCounter = 0;
         const animal = {
           id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
           livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
           type: 'animal', animalKey: kind, genotype,
           col, row, targetCol: col, targetRow: row,
+          homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
+          wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
           wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
           halfHeight: halfH, avatarRef,
           groupRot: Math.PI / 2, targetRot: Math.PI / 2,
@@ -5220,29 +5302,10 @@
           onAction(action) {
             return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
           },
-          tick() {
+          tick(dt) {
             if (this._harvestFrozen) return;
-            tickCounter++;
-            if (tickCounter % 3 !== 0) return;
             if (_farmAnimalBarnTick(this)) return;
-            if (rnd() > 0.55) return;
-
-            const dirs = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
-            for (let i = dirs.length - 1; i > 0; i--) {
-              const j = Math.floor(rnd() * (i + 1));
-              [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
-            }
-            for (const d of dirs) {
-              const nc = this.col + d.dc, nr = this.row + d.dr;
-              if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-              if (!canSpawnAnimalAt(nc, nr)) continue;
-              worldObjects.delete(this.col + ',' + this.row);
-              this.col = nc; this.row = nr;
-              this.targetCol = nc; this.targetRow = nr;
-              worldObjects.set(nc + ',' + nr, this);
-              this.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
-              break;
-            }
+            _farmAnimalWanderTick(this, dt || 0);
           },
           update(dt) {
             const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
@@ -5525,7 +5588,15 @@
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
+          prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
+        // Auto-zooms onto the animal the same way opening NPC dialogue swaps
+        // in its own tighter camera mode (see openNpcDialogue) — no separate
+        // tween function needed, the existing per-frame follow-lerp in the
+        // main loop (updateCameraPosition's camLerp) eases the camera into
+        // the new mode's framing smoothly over the 'in' transition below.
+        activeCameraMode = 'harvestInteraction';
+        activeCameraTarget = animal.avatarRef?.group || null;
       }
 
       function updateHarvestInteraction(dt) {
@@ -5553,7 +5624,15 @@
         player.angle = facingAngle;
         if (e >= 1) {
           if (h.phase === 'in') { h.phase = 'active'; h.t = 0; }
-          else { if (h.animal) h.animal._harvestFrozen = false; harvestInteraction = null; }
+          else {
+            if (h.animal) h.animal._harvestFrozen = false;
+            // Mirrors closeNpcDialogue's own restore of activeCameraMode/
+            // activeCameraTarget — the per-frame camLerp eases the camera
+            // back out to wherever it was before the interaction zoomed in.
+            activeCameraMode = h.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            activeCameraTarget = h.prevCameraTarget ?? null;
+            harvestInteraction = null;
+          }
         }
       }
 
@@ -7294,6 +7373,23 @@
         const speciesId = _playerData?.appearance?.speciesId, gender = _playerData?.appearance?.gender;
         const rec = lib[`${speciesId}::${gender}`] || lib[`<unknown species>::${gender}`];
         const anchor = rec?.anchors?.[anchorName];
+        if (!anchor) return null;
+        // 'posterior' is special: docs/tools/animation-author/index.html's own
+        // export always writes position.y = 0 for it and stores the real
+        // per-species height as posteriorRule.heightPercentOffset instead (the
+        // tool's own live preview recomputes from that rule — see
+        // resolvedCharacterPosteriorSnapshot in that file) — reading
+        // position.y directly here was always wrong (flat 0 for every
+        // species), which is why mounting used to seat the player too high.
+        // Recompute the same way: handAttachY + portraitModelHeight *
+        // heightPercentOffset / 100, both terms already in this same
+        // floor-anchored space (see playerToolBaseY's own usage elsewhere).
+        if (anchorName === 'posterior' && rec.posteriorRule) {
+          const offset = Number(rec.posteriorRule.heightPercentOffset);
+          const modelHeight = Number(playerAvatarModelHeight) || 0.9;
+          const y = (Number(playerToolBaseY) || modelHeight / 2) + modelHeight * (Number.isFinite(offset) ? offset : -18) / 100;
+          return { x: 0, y, z: 0, rotationDeg: anchor.rotationDeg };
+        }
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
       }
       function creatureAttachmentAnchor(kind, anchorName) {
@@ -16063,6 +16159,7 @@
         const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
+          handAttachY: avatarGroup.userData?.handAttachY,
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
 
@@ -21554,7 +21651,8 @@
         playerLegs?.dispose();
         playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
-          modelWidth: avatarWidth, modelHeight: avatarHeight, name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
+          name: 'player', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
       }
 
@@ -31155,10 +31253,12 @@
         if (speed > 5) {
           playerMesh.position.y += Math.sin(performance.now() / 120) * 0.03;
         }
-        // Overwritten (hidden, not just idled) whenever a multi-avatar
-        // animation is driving the player's whole-body transform and the
-        // player isn't its anchor — mounted (glued to the mount's saddle,
-        // see mountSeatLift above) or mid livestock-harvest interaction (see
+        // Suppressed (legs stay visible but just hang straight down from
+        // their hip anchors instead of gaiting, see procedural-leg-
+        // animation.js's own update()) whenever a multi-avatar animation is
+        // driving the player's whole-body transform and the player isn't
+        // its anchor — mounted (glued to the mount's saddle, see
+        // mountSeatLift above) or mid livestock-harvest interaction (see
         // updateHarvestInteraction). A shoulder pet never sets either of
         // these: the player stays the anchor and keeps walking normally
         // underneath it (see updateCompanions' shoulderPet branch), so legs

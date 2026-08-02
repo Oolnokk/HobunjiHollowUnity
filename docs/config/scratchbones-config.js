@@ -195,6 +195,13 @@ window.SCRATCHBONES_CONFIG = {
           "fovDeg": 42,
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.9
+        },
+        "harvestInteraction": {
+          "distanceTiles": 6,
+          "angleFromGroundDeg": 16,
+          "fovDeg": 42,
+          "followLerp": 0.15,
+          "targetYOffsetTiles": 0.55
         }
       }
     },
@@ -3812,6 +3819,15 @@ window.SCRATCHBONES_CONFIG = {
             "engh-sho": { "female": 1, "male": 1 },
             "mao-ao": { "female": 1, "male": 1 },
             "mashtzarr": { "male": 1, "female": 1 }
+          },
+          "legBend": {
+            "default": { "x": 0, "z": 0 },
+            "kenkari": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "rakakoan": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "tletingan": { "male": { "x": 0, "z": 0 }, "female": { "x": 0, "z": 0 } },
+            "engh-sho": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "mao-ao": { "female": { "x": 0, "z": 0 }, "male": { "x": 0, "z": 0 } },
+            "mashtzarr": { "male": { "x": 0, "z": 0 }, "female": { "x": 0, "z": 0 } }
           },
           "species": {
             "mashtzarr": {
