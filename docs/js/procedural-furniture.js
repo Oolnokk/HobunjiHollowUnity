@@ -53,7 +53,54 @@
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    return geo;
+    return ensureUvs(geo);
+  }
+
+  // Per-triangle dominant-axis box-projected UVs — ported from
+  // docs/js/procedural-leg-animation.js's generateBoxProjectedUvs (built for
+  // the same problem there: imported foot GLBs with no authored UVs).
+  // createTaperedBoxGeometry/createTaperedCylinderGeometry only ever set
+  // position+index, never uv, since their 8/2N shared vertices can't each
+  // carry a single correct UV across the multiple faces they belong to —
+  // this expands to non-indexed (one vertex per triangle-corner, matching
+  // how computeVertexNormals already effectively treats a shared-vertex cube
+  // as smooth-shaded, unchanged) and derives UVs from each triangle's own
+  // dominant normal axis instead of requiring a hand-authored unwrap.
+  function ensureUvs(geo) {
+    const position = geo.getAttribute('position');
+    if (!position) return geo;
+    if (geo.getAttribute('uv')) return geo;
+    const projected = geo.index ? geo.toNonIndexed() : geo;
+    const pos = projected.getAttribute('position');
+    projected.computeBoundingBox();
+    const box = projected.boundingBox;
+    const sizeX = Math.max(1e-6, box.max.x - box.min.x);
+    const sizeY = Math.max(1e-6, box.max.y - box.min.y);
+    const sizeZ = Math.max(1e-6, box.max.z - box.min.z);
+    const uv = new Float32Array(pos.count * 2);
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+    for (let first = 0; first + 2 < pos.count; first += 3) {
+      a.fromBufferAttribute(pos, first);
+      b.fromBufferAttribute(pos, first + 1);
+      c.fromBufferAttribute(pos, first + 2);
+      e1.subVectors(b, a);
+      e2.subVectors(c, a);
+      n.crossVectors(e1, e2).normalize();
+      const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      const dominant = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z';
+      for (let corner = 0; corner < 3; corner++) {
+        const v = corner === 0 ? a : corner === 1 ? b : c;
+        let u, vv;
+        if (dominant === 'x') { u = (v.z - box.min.z) / sizeZ; vv = (v.y - box.min.y) / sizeY; if (n.x < 0) u = 1 - u; }
+        else if (dominant === 'y') { u = (v.x - box.min.x) / sizeX; vv = (v.z - box.min.z) / sizeZ; if (n.y > 0) vv = 1 - vv; }
+        else { u = (v.x - box.min.x) / sizeX; vv = (v.y - box.min.y) / sizeY; if (n.z > 0) u = 1 - u; }
+        const t = (first + corner) * 2;
+        uv[t] = u; uv[t + 1] = vv;
+      }
+    }
+    projected.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return projected;
   }
 
   function createTaperedCylinderGeometry(part) {
@@ -86,7 +133,7 @@
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    return geo;
+    return ensureUvs(geo);
   }
 
   // Ring shape for 'hoop' parts (barrel/vat bands) — sx/sz set the outer

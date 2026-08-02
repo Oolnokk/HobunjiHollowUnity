@@ -36012,6 +36012,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => renderFarmProcessors(),
         enterInterior: () => enterInterior(),
+        interiorFurnitureObjects: () => interiorFurnitureObjects,
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
