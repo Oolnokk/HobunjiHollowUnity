@@ -1,0 +1,286 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "agingVase",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msby0pow_69t72",
+      "kind": "barrel",
+      "name": "Clay Aging Crock Body",
+      "transform": {
+        "x": 0,
+        "y": 0.32,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.62,
+        "sy": 0.58,
+        "sz": 0.62
+      },
+      "color": "#a96845",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 0.72,
+      "topScaleZ": 0.72,
+      "bottomScaleX": 0.78,
+      "bottomScaleZ": 0.78,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "ceramic",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": "carved_smooth.png",
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#a96845",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a4924",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_msby0pow_4o8jm",
+      "kind": "cup",
+      "name": "Open Clay Crock Neck",
+      "transform": {
+        "x": 0,
+        "y": 0.62,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.32,
+        "sy": 0.24,
+        "sz": 0.32
+      },
+      "color": "#a96845",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1.02,
+      "topScaleZ": 1.02,
+      "bottomScaleX": 0.7,
+      "bottomScaleZ": 0.7,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.72,
+      "basinDepth": 0.2,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "ceramic",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#a96845",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_msby0pow_ckfsy",
+      "name": "Aging Crock Bubbles",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_msby0pow_4o8jm",
+      "position": {
+        "x": 0,
+        "y": 0.07,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 5,
+      "lifetime": 1.7,
+      "size": 0.055,
+      "speed": 0.22,
+      "spread": 0.12,
+      "radius": 0.1,
+      "gravity": 0,
+      "colorA": "#f7e1bd",
+      "colorB": "#c88b54"
+    }
+  ],
+  "processingWarps": [
+    {
+      "id": "warp_msby0pow_v7jsa",
+      "name": "Aging Crock Processing Warp",
+      "partIds": [
+        "part_msby0pow_69t72",
+        "part_msby0pow_4o8jm"
+      ],
+      "style": "breathing",
+      "timelineDriven": true,
+      "enabled": true,
+      "strength": 0.028,
+      "speed": 1.9,
+      "downSpeed": 3.459890067215116,
+      "upSpeed": 0.3313548015281626,
+      "swayDeg": 0.45,
+      "twistDeg": 0.3,
+      "depth": 0.74,
+      "impact": 0.82,
+      "rockDeg": 0,
+      "phaseDeg": 0
+    }
+  ],
+  "processTimelines": [
+    {
+      "id": "timeline_msby0pow_a4v3o",
+      "name": "Aging Vase Process",
+      "enabled": true,
+      "playing": false,
+      "loop": false,
+      "duration": 10,
+      "progress": 0,
+      "substanceColor": "#7b1f3d",
+      "stopStompAtEnd": false,
+      "stopPourAtEnd": false,
+      "stopPlaybackAtEnd": false,
+      "emitterTracks": [
+        {
+          "emitterId": "emitter_msby0pow_ckfsy",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 1.75,
+                "lifetime": 1.7,
+                "size": 0.055,
+                "speed": 0.22,
+                "spread": 0.12,
+                "radius": 0.1,
+                "gravity": 0,
+                "colorA": "#f7e1bd",
+                "colorB": "#c88b54"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 5,
+                "lifetime": 1.7,
+                "size": 0.055,
+                "speed": 0.22,
+                "spread": 0.12,
+                "radius": 0.1,
+                "gravity": 0,
+                "colorA": "#f7e1bd",
+                "colorB": "#c88b54"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 1,
+                "lifetime": 1.7,
+                "size": 0.055,
+                "speed": 0.22,
+                "spread": 0.12,
+                "radius": 0.1,
+                "gravity": 0,
+                "colorA": "#f7e1bd",
+                "colorB": "#c88b54"
+              }
+            }
+          ]
+        }
+      ],
+      "warpTracks": [
+        {
+          "warpId": "warp_msby0pow_v7jsa",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.015400000000000002,
+                "speed": 1.9,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.45,
+                "twistDeg": 0.3,
+                "depth": 0.74,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.028,
+                "speed": 1.9,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.45,
+                "twistDeg": 0.3,
+                "depth": 0.74,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.0098,
+                "speed": 1.9,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.45,
+                "twistDeg": 0.3,
+                "depth": 0.74,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            }
+          ]
+        }
+      ],
+      "liquidTracks": []
+    }
+  ],
+  "stompAttachPoints": []
+}

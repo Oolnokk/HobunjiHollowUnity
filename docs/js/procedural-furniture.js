@@ -22,6 +22,7 @@
 
   function resolveColor(part, baseColor) {
     if (typeof part.color === 'number') return part.color;
+    if (typeof part.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(part.color)) return parseInt(part.color.slice(1), 16);
     return shade(baseColor, part.tint != null ? part.tint : 1);
   }
 
@@ -88,12 +89,26 @@
     return geo;
   }
 
+  // Ring shape for 'hoop' parts (barrel/vat bands) — sx/sz set the outer
+  // diameter, sy sets the tube (band) thickness relative to that diameter.
+  function createHoopGeometry(part) {
+    const t = part.transform;
+    const seg = Math.max(3, Math.min(64, Math.round(part.segments || 16)));
+    const outerRadius = 0.5 * Math.max(t.sx || 0.001, t.sz || 0.001);
+    const tubeRadius = Math.max(0.001, (t.sy || 0.05) * 0.5);
+    const geo = new THREE.TorusGeometry(Math.max(0.001, outerRadius - tubeRadius), tubeRadius, Math.max(4, Math.round(seg / 2)), seg);
+    geo.rotateX(Math.PI / 2);
+    return geo;
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
     if (part.kind === 'sphere') {
       geo = new THREE.SphereGeometry(0.5 * Math.max(t.sx, t.sy, t.sz), 16, 10);
-    } else if (part.kind === 'legRound' || part.kind === 'cylinder' || part.kind === 'disc') {
+    } else if (part.kind === 'hoop') {
+      geo = createHoopGeometry(part);
+    } else if (part.kind === 'legRound' || part.kind === 'cylinder' || part.kind === 'disc' || part.kind === 'barrel' || part.kind === 'cup' || part.kind === 'liquidSurface') {
       geo = createTaperedCylinderGeometry(part);
     } else {
       geo = createTaperedBoxGeometry(part);

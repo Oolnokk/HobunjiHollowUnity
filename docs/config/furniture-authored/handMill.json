@@ -1,0 +1,336 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "handMill",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msby0o7q_q9daj",
+      "kind": "box",
+      "name": "Hand Mill Box",
+      "transform": {
+        "x": 0,
+        "y": 0.22,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.62,
+        "sy": 0.44,
+        "sz": 0.62
+      },
+      "color": "#765636",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.85
+    },
+    {
+      "id": "part_msby0o7q_8r4dv",
+      "kind": "disc",
+      "name": "Hand Mill Disc",
+      "transform": {
+        "x": 0,
+        "y": 0.48,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.56,
+        "sy": 0.14,
+        "sz": 0.56
+      },
+      "color": "#996f46",
+      "segments": 18,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a5c3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 1.1
+    },
+    {
+      "id": "part_msby0o7q_vo501",
+      "kind": "cylinder",
+      "name": "Hand Mill Cylinder",
+      "transform": {
+        "x": 0.32,
+        "y": 0.5,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 90,
+        "sx": 0.06,
+        "sy": 0.3,
+        "sz": 0.06
+      },
+      "color": "#61472d",
+      "segments": 8,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.7
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_msby0o7q_c9rpj",
+      "name": "Flour Dust",
+      "type": "smoke",
+      "enabled": true,
+      "attachedPartId": "part_msby0o7q_8r4dv",
+      "position": {
+        "x": 0,
+        "y": 0.1,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 5,
+      "lifetime": 1.1,
+      "size": 0.085,
+      "speed": 0.11,
+      "spread": 0.35,
+      "radius": 0.16,
+      "gravity": 0.015,
+      "colorA": "#f0e7d0",
+      "colorB": "#b7a486"
+    }
+  ],
+  "processingWarps": [
+    {
+      "id": "warp_msby0o7q_kiev9",
+      "name": "Hand Mill Grinding Motion",
+      "partIds": [
+        "part_msby0o7q_q9daj",
+        "part_msby0o7q_8r4dv",
+        "part_msby0o7q_vo501"
+      ],
+      "style": "wobble",
+      "timelineDriven": true,
+      "enabled": true,
+      "strength": 0.018,
+      "speed": 3.4,
+      "downSpeed": 6.191382225542839,
+      "upSpeed": 0.5929506974714488,
+      "swayDeg": 1.3,
+      "twistDeg": 2.2,
+      "depth": 0.28,
+      "impact": 0.82,
+      "rockDeg": 0,
+      "phaseDeg": 0
+    }
+  ],
+  "processTimelines": [
+    {
+      "id": "timeline_msby0o7q_ig3k6",
+      "name": "Hand Mill Process",
+      "enabled": true,
+      "playing": false,
+      "loop": false,
+      "duration": 10,
+      "progress": 0,
+      "substanceColor": "#7b1f3d",
+      "stopStompAtEnd": false,
+      "stopPourAtEnd": false,
+      "stopPlaybackAtEnd": false,
+      "emitterTracks": [
+        {
+          "emitterId": "emitter_msby0o7q_c9rpj",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 1.75,
+                "lifetime": 1.1,
+                "size": 0.085,
+                "speed": 0.11,
+                "spread": 0.35,
+                "radius": 0.16,
+                "gravity": 0.015,
+                "colorA": "#f0e7d0",
+                "colorB": "#b7a486"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 5,
+                "lifetime": 1.1,
+                "size": 0.085,
+                "speed": 0.11,
+                "spread": 0.35,
+                "radius": 0.16,
+                "gravity": 0.015,
+                "colorA": "#f0e7d0",
+                "colorB": "#b7a486"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 1,
+                "lifetime": 1.1,
+                "size": 0.085,
+                "speed": 0.11,
+                "spread": 0.35,
+                "radius": 0.16,
+                "gravity": 0.015,
+                "colorA": "#f0e7d0",
+                "colorB": "#b7a486"
+              }
+            }
+          ]
+        }
+      ],
+      "warpTracks": [
+        {
+          "warpId": "warp_msby0o7q_kiev9",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "style": "wobble",
+                "strength": 0.0099,
+                "speed": 3.4,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 1.3,
+                "twistDeg": 2.2,
+                "depth": 0.28,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "style": "wobble",
+                "strength": 0.018,
+                "speed": 3.4,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 1.3,
+                "twistDeg": 2.2,
+                "depth": 0.28,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "style": "wobble",
+                "strength": 0.006299999999999999,
+                "speed": 3.4,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 1.3,
+                "twistDeg": 2.2,
+                "depth": 0.28,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            }
+          ]
+        }
+      ],
+      "liquidTracks": []
+    }
+  ],
+  "stompAttachPoints": []
+}
