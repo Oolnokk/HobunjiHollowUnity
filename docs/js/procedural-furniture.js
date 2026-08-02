@@ -126,8 +126,14 @@
       const n = (i + 1) % seg;
       idx.push(bot[i], top[n], bot[n]);
       idx.push(bot[i], top[i], top[n]);
-      idx.push(cb, bot[n], bot[i]);
-      idx.push(ct, top[i], top[n]);
+      // Cap fans wind opposite to the side quads' i/n order so their normals
+      // point outward (down for the bottom cap, up for the top) rather than
+      // facing into the solid — backwards here left both caps back-face
+      // culled from their own outward side, e.g. a flat disc's top surface
+      // (mostly cap, negligible side wall) rendering as a hole showing the
+      // clear-color background straight through it.
+      idx.push(cb, bot[i], bot[n]);
+      idx.push(ct, top[n], top[i]);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -176,19 +182,38 @@
   // — cached per filename since most parts across a whole furniture piece
   // (and across many placed instances) share the same handful of textures.
   const _texLoader = new THREE.TextureLoader();
-  const _texCache = new Map(); // filename -> THREE.Texture
-  function loadPartTexture(filename) {
-    if (_texCache.has(filename)) return _texCache.get(filename);
-    const tex = _texLoader.load('assets/textures/' + filename, undefined, undefined, () => {});
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.center.set(0.5, 0.5);
-    _texCache.set(filename, tex);
-    return tex;
+  const _texCache = new Map(); // filename -> { base: THREE.Texture, loaded: boolean, pendingClones: Set<THREE.Texture> }
+  // THREE.Texture.copy() (used by .clone()) snapshots `image` by reference at
+  // call time — the loader's onLoad only ever back-fills the ORIGINAL texture
+  // object, so a clone made before the network fetch finishes captures the
+  // still-empty image forever and renders solid black. Every part needs its
+  // own clone (independent rotation per authored part), so instead of cloning
+  // once and hoping the fetch already resolved, track pending clones per
+  // filename and patch their `image`/`needsUpdate` in when the base loads.
+  function texEntry(filename) {
+    let entry = _texCache.get(filename);
+    if (entry) return entry;
+    entry = { base: null, loaded: false, pendingClones: new Set() };
+    entry.base = _texLoader.load('assets/textures/' + filename, () => {
+      entry.loaded = true;
+      for (const clone of entry.pendingClones) {
+        clone.image = entry.base.image;
+        clone.format = entry.base.format;
+        clone.needsUpdate = true;
+      }
+      entry.pendingClones.clear();
+    }, undefined, () => {});
+    entry.base.wrapS = entry.base.wrapT = THREE.RepeatWrapping;
+    entry.base.center.set(0.5, 0.5);
+    _texCache.set(filename, entry);
+    return entry;
   }
   function applyPartTexture(mat, part) {
-    const tex = loadPartTexture(part.materialTexture).clone();
+    const entry = texEntry(part.materialTexture);
+    const tex = entry.base.clone();
     tex.needsUpdate = true;
     tex.rotation = (part.materialRotationDeg || 0) * DEG;
+    if (!entry.loaded) entry.pendingClones.add(tex);
     mat.map = tex;
     mat.color.set(0xffffff);
     mat.transparent = !!part.textureTransparent;

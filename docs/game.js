@@ -36305,6 +36305,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
         enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        setOutlines: (v) => { s_outlines = !!v; },
         playerNeckPivotInfo: () => {
           let avatarGroup = null;
           playerMesh.traverse(o => { if (o.name === 'player_avatar') avatarGroup = o; });
