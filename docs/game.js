@@ -2659,7 +2659,7 @@
         map_dev_arena: {
           label: 'Testing Arena',
           cols: 18, rows: 18,
-          groundColor: 0x55565c, fogColor: 0x24262c,
+          groundColor: 0x7a7f89, fogColor: 0x505764,
           entryCol: 9, entryRow: 9,
           exitCol: 1, exitRow: 1,
           townReturnCol: 30, townReturnRow: 2,
@@ -2667,6 +2667,49 @@
         },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
+      // Most exterior zones get a full authored/procedural _zoneLayouts entry.
+      // The dev arena intentionally never goes through that pipeline, but the
+      // rest of the wilderness/runtime code still expects a layout object for
+      // fog, minimap, collision/object scans, and any future zone-level logic.
+      // Seed one lazily the first time the arena is built so it behaves like a
+      // normal zone instead of a half-configured special case.
+      function _ensureStaticZoneLayout(mapId) {
+        let layout = _zoneLayouts.get(mapId);
+        if (layout || mapId !== 'map_dev_arena') return layout;
+        const zdef = EXTERIOR_ZONES[mapId];
+        if (!zdef) return null;
+        const cols = Math.max(1, zdef.cols | 0);
+        const rows = Math.max(1, zdef.rows | 0);
+        const tiles = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const border = c === 0 || r === 0 || c === cols - 1 || r === rows - 1;
+            tiles.push({
+              c, r,
+              type: border ? TileType.ROCK : TileType.PATH,
+              elevTier: 0,
+              rampElevation: 0,
+              skipFloor: false,
+              incline: false,
+            });
+          }
+        }
+        layout = {
+          id: mapId,
+          cols, rows,
+          tiles,
+          mesas: [],
+          dens: [],
+          rootTotems: [],
+          buildings: [],
+          decor: [],
+          furniture: [],
+          transitions: [],
+          localeInstances: [],
+        };
+        _zoneLayouts.set(mapId, layout);
+        return layout;
+      }
 
       // Used by input polling; supports both keyboard and touch joystick.
       const input = {
@@ -14469,7 +14512,7 @@
         if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
         const zdef = EXTERIOR_ZONES[mapId];
-        const zoneData = _zoneLayouts.get(mapId);
+        const zoneData = _ensureStaticZoneLayout(mapId) || _zoneLayouts.get(mapId);
         if (!zdef && !zoneData) return null;
         const ZCOLS = zoneData?.cols || zdef?.cols, ZROWS = zoneData?.rows || zdef?.rows;
 
