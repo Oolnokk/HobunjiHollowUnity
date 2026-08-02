@@ -24,19 +24,19 @@
 .panelUiWinGrip{position:absolute;z-index:30;touch-action:none;display:flex;align-items:center;justify-content:center;
   color:rgba(255,255,255,.4);font-size:10px;line-height:1;opacity:.75}
 .panelUiWinGrip:hover{opacity:1;color:rgba(106,167,255,.9)}
-.panelUiWinGrip-se{right:-3px;bottom:-3px;width:16px;height:16px;cursor:nwse-resize}
-.panelUiWinGrip-sw{left:-3px;bottom:-3px;width:16px;height:16px;cursor:nesw-resize}
-.panelUiWinGrip-ne{right:-3px;top:-3px;width:16px;height:16px;cursor:nesw-resize}
-.panelUiWinGrip-nw{left:-3px;top:-3px;width:16px;height:16px;cursor:nwse-resize}
+.panelUiWinGrip-se{right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize}
+.panelUiWinGrip-sw{left:0;bottom:0;width:18px;height:18px;cursor:nesw-resize}
+.panelUiWinGrip-ne{right:0;top:0;width:18px;height:18px;cursor:nesw-resize}
+.panelUiWinGrip-nw{left:0;top:0;width:18px;height:18px;cursor:nwse-resize}
 .panelUiWinGripEdge{position:absolute;z-index:29;touch-action:none;background:transparent;transition:background .12s}
 .panelUiWinGripEdge:hover{background:rgba(106,167,255,.3)}
 .panelUiDragScroll{touch-action:none!important;cursor:grab;-webkit-user-select:none;user-select:none}
 .panelUiDragScroll.panelUiDragging{cursor:grabbing;scroll-behavior:auto!important}
 .panelUiDragScroll input,.panelUiDragScroll select,.panelUiDragScroll button,.panelUiDragScroll textarea,.panelUiDragScroll label{-webkit-user-select:auto;user-select:auto}
-.panelUiWinGripEdge-e{top:0;right:-3px;width:6px;height:100%;cursor:ew-resize}
-.panelUiWinGripEdge-w{top:0;left:-3px;width:6px;height:100%;cursor:ew-resize}
-.panelUiWinGripEdge-s{left:0;bottom:-3px;height:6px;width:100%;cursor:ns-resize}
-.panelUiWinGripEdge-n{left:0;top:-3px;height:6px;width:100%;cursor:ns-resize}
+.panelUiWinGripEdge-e{top:0;right:0;width:8px;height:100%;cursor:ew-resize}
+.panelUiWinGripEdge-w{top:0;left:0;width:8px;height:100%;cursor:ew-resize}
+.panelUiWinGripEdge-s{left:0;bottom:0;height:8px;width:100%;cursor:ns-resize}
+.panelUiWinGripEdge-n{left:0;top:0;height:8px;width:100%;cursor:ns-resize}
 `;
     document.head.appendChild(style);
   }
@@ -308,8 +308,9 @@
     // is the only way an inline override reliably beats that.
     const setImportant = (prop, val) => el.style.setProperty(prop, val, 'important');
 
-    const minWidth = opts.minWidth != null ? opts.minWidth : (parseFloat(cs.minWidth) || 220);
-    const minHeight = opts.minHeight != null ? opts.minHeight : (parseFloat(cs.minHeight) || 140);
+    const numOrFallback = (v, fallback) => (Number.isFinite(v) ? v : fallback);
+    const minWidth = opts.minWidth != null ? opts.minWidth : numOrFallback(parseFloat(cs.minWidth), 220);
+    const minHeight = opts.minHeight != null ? opts.minHeight : numOrFallback(parseFloat(cs.minHeight), 140);
     const maxWidth = opts.maxWidth != null ? opts.maxWidth : Math.round(window.innerWidth * 0.96);
     const maxHeight = opts.maxHeight != null ? opts.maxHeight : Math.round(window.innerHeight * 0.94);
 
@@ -325,12 +326,37 @@
     grip.title = 'Drag to resize';
     el.appendChild(grip);
 
+    // A stylesheet max-width/max-height (often !important on these floating
+    // panels) would silently cap an explicit inline size once past it — max-
+    // height always wins over height in the box-size computation regardless
+    // of !important on the latter. So neutralize the CSS cap and replace it
+    // with our own JS-enforced min/max, pinning `lockedSize` (the box's
+    // current, still-capped rendered size) as the explicit value first so
+    // nothing jumps the moment this runs.
+    function neutralizeCaps(lockedSize) {
+      if (axis !== 'y') {
+        setImportant('width', px(lockedSize.width));
+        setImportant('max-width', 'none');
+        setImportant('min-width', minWidth + 'px');
+      }
+      if (axis !== 'x') {
+        setImportant('height', px(lockedSize.height));
+        setImportant('max-height', 'none');
+        setImportant('min-height', minHeight + 'px');
+      }
+    }
+
     let dragging = false, startX = 0, startY = 0, startW = 0, startH = 0;
     grip.addEventListener('pointerdown', (e) => {
       dragging = true;
       startX = e.clientX; startY = e.clientY;
       const r = el.getBoundingClientRect();
       startW = r.width; startH = r.height;
+      // Many of these panels are hidden (display:none) until the user opens
+      // them, so we can't safely snapshot/neutralize their CSS size caps at
+      // setup time — do it now instead, on the first real drag, right after
+      // reading the box's natural (still CSS-capped) size above.
+      neutralizeCaps({ width: startW, height: startH });
       grip.setPointerCapture(e.pointerId);
       document.body.style.userSelect = 'none';
       e.preventDefault();
@@ -346,6 +372,7 @@
         const dy = growDown ? (e.clientY - startY) : (startY - e.clientY);
         setImportant('height', px(clamp(startH + dy, minHeight, maxHeight)));
       }
+      if (opts.onResize) opts.onResize(el);
     });
     function endDrag() {
       if (!dragging) return;
@@ -361,9 +388,12 @@
     if (storageKey) {
       try {
         const saved = JSON.parse(localStorage.getItem(storageKey));
-        if (saved) {
-          if (saved.w && axis !== 'y') setImportant('width', saved.w);
-          if (saved.h && axis !== 'x') setImportant('height', saved.h);
+        if (saved && (saved.w || saved.h)) {
+          neutralizeCaps({
+            width: saved.w ? parseFloat(saved.w) : el.getBoundingClientRect().width,
+            height: saved.h ? parseFloat(saved.h) : el.getBoundingClientRect().height
+          });
+          if (opts.onResize) opts.onResize(el);
         }
       } catch (_) {}
     }

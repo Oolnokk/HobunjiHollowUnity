@@ -543,6 +543,20 @@ header,
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
 }
+/* Reflow the drawer's own contents as it's skewed narrow/small — keyed to
+   this container's own width (not the viewport), so dragging #leftPanel
+   down to a small corner card rearranges its fields into one column
+   instead of clipping or overlapping them. */
+#leftPanel .selectorBody { container-type: inline-size; container-name: hobunjiPanelBody; }
+@container hobunjiPanelBody (max-width: 360px) {
+  #leftPanel .repoFields,
+  #leftPanel .creatureGrid,
+  #leftPanel .animationTopGrid { grid-template-columns: 1fr; }
+}
+@container hobunjiPanelBody (max-width: 260px) {
+  #leftPanel .selectorBody { font-size: 11px; }
+  #leftPanel .panelSection { padding: 7px; }
+}
 #leftPanel #npcList { flex: 1 1 170px; min-height: 170px; }
 #leftPanel #creatureEditor { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
 #leftPanel #npcList { max-height: none !important; }
@@ -6861,14 +6875,34 @@ setTimeout(() => loadSource(initialSettings), 0);
 </script>
 <script>
 // #leftPanel is a floating <details> drawer pinned to the top-right corner
-// (top/right fixed via CSS !important), so only its left edge can grow —
-// drag-resize its width only, and let the .selectorBody CSS overflow-y:auto
-// fix (see stylesheet above) handle content taller than the drawer.
+// (top/right fixed via CSS !important), so only its bottom-left corner can
+// grow. Let it skew from a small corner card all the way up to nearly the
+// whole viewport. <details> elements don't actually propagate flex/grid
+// sizing constraints to their content in Chromium (an explicit height on
+// the <details> doesn't shrink a flex/grid child — it just renders at its
+// full content size, clipped by overflow instead of scrolling), so rather
+// than fight that, explicitly size .selectorBody to the remaining space
+// ourselves on every resize.
+function syncProceduralAnimationEditorLeftPanelBody(panel) {
+  const summary = panel.querySelector(':scope > summary');
+  const body = panel.querySelector(':scope > .selectorBody');
+  if (!summary || !body) return;
+  const remaining = panel.getBoundingClientRect().height - summary.getBoundingClientRect().height;
+  body.style.setProperty('max-height', 'none', 'important');
+  body.style.setProperty('height', Math.max(0, remaining) + 'px', 'important');
+}
 PanelUI.makeResizableBox(document.getElementById('leftPanel'), {
   corner: 'sw',
-  axis: 'x',
-  minWidth: 280,
-  storageKey: 'hobunji_procedural_animation_editor_leftpanel_width_v1'
+  axis: 'both',
+  minWidth: 180,
+  minHeight: 120,
+  maxWidth: Math.round(window.innerWidth * 0.98),
+  maxHeight: Math.round(window.innerHeight * 0.96),
+  storageKey: 'hobunji_procedural_animation_editor_leftpanel_size_v1',
+  onResize: syncProceduralAnimationEditorLeftPanelBody
+});
+document.getElementById('leftPanel').addEventListener('toggle', function () {
+  if (this.open) syncProceduralAnimationEditorLeftPanelBody(this);
 });
 // This drawer floats over the always-interactive 3D viewport, same as the
 // multi-avatar mode's own panels — give it the same touch hold-and-drag

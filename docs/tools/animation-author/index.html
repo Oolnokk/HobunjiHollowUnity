@@ -414,6 +414,19 @@ header,
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
 }
+/* Reflow the drawer's own contents as it's skewed narrow/small — keyed to
+   this container's own width (not the viewport), so dragging #leftPanel
+   down to a small corner card rearranges its fields into one column
+   instead of clipping or overlapping them. */
+#leftPanel .selectorBody { container-type: inline-size; container-name: hobunjiPanelBody; }
+@container hobunjiPanelBody (max-width: 360px) {
+  #leftPanel .repoFields,
+  #leftPanel .creatureGrid { grid-template-columns: 1fr; }
+}
+@container hobunjiPanelBody (max-width: 260px) {
+  #leftPanel .selectorBody { font-size: 11px; }
+  #leftPanel .panelSection { padding: 7px; }
+}
 #leftPanel #npcList { flex: 1 1 170px; min-height: 170px; }
 #leftPanel #creatureEditor { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
 #leftPanel #npcList { max-height: none !important; }
@@ -576,6 +589,19 @@ body[data-multi-avatar-author="true"] #leftPanel .panelSection { border-bottom: 
   touch-action: pan-y;
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
+  container-type: inline-size;
+  container-name: hobunjiMaaBody;
+}
+/* Reflow this panel's own grids as it's dragged narrow (see the width-only
+   resize grip added in JS below) — keyed to the panel's own width, not the
+   viewport, so skewing it down to a sliver on mobile still lets every field
+   stack usably instead of clipping. */
+@container hobunjiMaaBody (max-width: 260px) {
+  .maaGrid2, .maaGrid3, .maaActorCard, .maaRangeLine, .maaTimelineRow { grid-template-columns: 1fr !important; }
+}
+@container hobunjiMaaBody (max-width: 190px) {
+  .maaPanelBody { font-size: 11px; }
+  .maaSection { padding: 6px; }
 }
 #maaActorList {
   display: block;
@@ -11860,14 +11886,34 @@ setTimeout(() => loadSource(initialSettings), 0);
 </script>
 <script>
 // #leftPanel is a floating <details> drawer pinned to the top-right corner
-// (top/right fixed via CSS !important), so only its left edge can grow —
-// drag-resize its width only, and let the .selectorBody CSS overflow-y:auto
-// fix (see stylesheet above) handle content taller than the drawer.
+// (top/right fixed via CSS !important), so only its bottom-left corner can
+// grow. Let it skew from a small corner card all the way up to nearly the
+// whole viewport. <details> elements don't actually propagate flex/grid
+// sizing constraints to their content in Chromium (an explicit height on
+// the <details> doesn't shrink a flex/grid child — it just renders at its
+// full content size, clipped by overflow instead of scrolling), so rather
+// than fight that, explicitly size .selectorBody to the remaining space
+// ourselves on every resize.
+function syncAnimationAuthorLeftPanelBody(panel) {
+  const summary = panel.querySelector(':scope > summary');
+  const body = panel.querySelector(':scope > .selectorBody');
+  if (!summary || !body) return;
+  const remaining = panel.getBoundingClientRect().height - summary.getBoundingClientRect().height;
+  body.style.setProperty('max-height', 'none', 'important');
+  body.style.setProperty('height', Math.max(0, remaining) + 'px', 'important');
+}
 PanelUI.makeResizableBox(document.getElementById('leftPanel'), {
   corner: 'sw',
-  axis: 'x',
-  minWidth: 280,
-  storageKey: 'hobunji_animation_author_leftpanel_width_v1'
+  axis: 'both',
+  minWidth: 180,
+  minHeight: 120,
+  maxWidth: Math.round(window.innerWidth * 0.98),
+  maxHeight: Math.round(window.innerHeight * 0.96),
+  storageKey: 'hobunji_animation_author_leftpanel_size_v1',
+  onResize: syncAnimationAuthorLeftPanelBody
+});
+document.getElementById('leftPanel').addEventListener('toggle', function () {
+  if (this.open) syncAnimationAuthorLeftPanelBody(this);
 });
 // This drawer floats over the always-interactive 3D viewport, same as the
 // multi-avatar mode's own panels — give it the same touch hold-and-drag
@@ -11879,6 +11925,52 @@ PanelUI.makeResizableBox(document.getElementById('debugPanel'), {
   storageKey: 'hobunji_animation_author_debugpanel_size_v1'
 });
 PanelUI.installTouchDragScroll(document.getElementById('debugLog'));
+// Multi-avatar/single-avatar/rig-coordinates modes all reuse these two
+// always-open side panels for every settings field. On a phone their fixed
+// --maa-side-width (min 250px each) can eat almost the entire screen width,
+// leaving no room to actually see the 3D view react to a change. Let them
+// be dragged down to a sliver (or way out past their old CSS cap) — the
+// container-query rules above reflow each panel's own grids to one column
+// as it narrows.
+PanelUI.makeResizableBox(document.getElementById('maaLeftPanel'), {
+  corner: 'se',
+  axis: 'x',
+  minWidth: 90,
+  maxWidth: Math.round(window.innerWidth * 0.92),
+  storageKey: 'hobunji_animation_author_maaleftpanel_width_v1'
+});
+PanelUI.makeResizableBox(document.getElementById('maaRightPanel'), {
+  corner: 'sw',
+  axis: 'x',
+  minWidth: 90,
+  maxWidth: Math.round(window.innerWidth * 0.92),
+  storageKey: 'hobunji_animation_author_maarightpanel_width_v1'
+});
+// #maaLeftPanel/#maaRightPanel are also <details> elements, and (like
+// #leftPanel above) Chromium doesn't actually shrink a <details>'s
+// grid/flex content to fit — .maaPanelBody was silently rendering at full
+// content height and getting clipped by the panel's overflow:hidden well
+// past its visible ~top/bottom-anchored box, with no way to scroll to the
+// rest. Size it explicitly instead, whenever the panel's own (position-
+// anchored) height can change.
+function syncMaaPanelBodyHeight(panel) {
+  const summary = panel.querySelector(':scope > summary');
+  const body = panel.querySelector(':scope > .maaPanelBody');
+  if (!summary || !body) return;
+  const remaining = panel.getBoundingClientRect().height - summary.getBoundingClientRect().height;
+  body.style.setProperty('max-height', 'none', 'important');
+  body.style.setProperty('height', Math.max(0, remaining) + 'px', 'important');
+}
+function syncAllMaaPanelBodies() {
+  ['maaLeftPanel', 'maaRightPanel'].forEach((id) => {
+    const panel = document.getElementById(id);
+    if (panel && panel.open) syncMaaPanelBodyHeight(panel);
+  });
+}
+syncAllMaaPanelBodies();
+document.getElementById('maaLeftPanel').addEventListener('toggle', function () { if (this.open) syncMaaPanelBodyHeight(this); });
+document.getElementById('maaRightPanel').addEventListener('toggle', function () { if (this.open) syncMaaPanelBodyHeight(this); });
+window.addEventListener('resize', syncAllMaaPanelBodies);
 </script>
 </body>
 </html>
