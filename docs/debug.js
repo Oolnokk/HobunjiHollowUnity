@@ -61,7 +61,9 @@
     window.__debugLogMatchesFilter = _matchesDebugFilter;
 
     window.addEventListener('error', function (event) {
-      window.__farmLog(`${event.message} @ ${event.filename || 'inline'}:${event.lineno || '?'}:${event.colno || '?'}`, 'error');
+      const loc = `${event.filename || 'inline'}:${event.lineno || '?'}:${event.colno || '?'}`;
+      const stack = event.error && event.error.stack ? '\n' + event.error.stack : '';
+      window.__farmLog(`${event.message} @ ${loc}${stack}`, 'error');
     });
     window.addEventListener('unhandledrejection', function (event) {
       window.__farmLog(event.reason && event.reason.stack ? event.reason.stack : String(event.reason), 'promise');
