@@ -1,0 +1,458 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "alchemyTable",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msc11d7t_z2nkr",
+      "kind": "cup",
+      "name": "Open Alchemy Cauldron",
+      "transform": {
+        "x": 0,
+        "y": 0.49,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.82,
+        "sy": 0.58,
+        "sz": 0.82
+      },
+      "color": "#465252",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1.08,
+      "topScaleZ": 1.08,
+      "bottomScaleX": 0.58,
+      "bottomScaleZ": 0.58,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.8,
+      "basinDepth": 0.2,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#465252",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_msc11d7t_lcs6m",
+      "kind": "legRound",
+      "name": "Cauldron Front Leg",
+      "transform": {
+        "x": 0,
+        "y": 0.145,
+        "z": 0.235,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.13,
+        "sy": 0.29,
+        "sz": 0.13
+      },
+      "color": "#465252",
+      "segments": 10,
+      "taperAxis": "y",
+      "topScaleX": 0.78,
+      "topScaleZ": 0.78,
+      "bottomScaleX": 1.18,
+      "bottomScaleZ": 1.18,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#465252",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#6b4a28",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_msc11d7t_7s9ze",
+      "kind": "legRound",
+      "name": "Cauldron Rear Left Leg",
+      "transform": {
+        "x": -0.20351,
+        "y": 0.145,
+        "z": -0.1175,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.13,
+        "sy": 0.29,
+        "sz": 0.13
+      },
+      "color": "#465252",
+      "segments": 10,
+      "taperAxis": "y",
+      "topScaleX": 0.78,
+      "topScaleZ": 0.78,
+      "bottomScaleX": 1.18,
+      "bottomScaleZ": 1.18,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#465252",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#6b4a28",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_msc11d7t_p51v9",
+      "kind": "legRound",
+      "name": "Cauldron Rear Right Leg",
+      "transform": {
+        "x": 0.20351,
+        "y": 0.145,
+        "z": -0.1175,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.13,
+        "sy": 0.29,
+        "sz": 0.13
+      },
+      "color": "#465252",
+      "segments": 10,
+      "taperAxis": "y",
+      "topScaleX": 0.78,
+      "topScaleZ": 0.78,
+      "bottomScaleX": 1.18,
+      "bottomScaleZ": 1.18,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#465252",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#6b4a28",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_msc11d7t_kybeu",
+      "name": "Cauldron Bubbles",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_msc11d7t_z2nkr",
+      "position": {
+        "x": 0,
+        "y": 0.16,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 11,
+      "lifetime": 1.35,
+      "size": 0.075,
+      "speed": 0.31,
+      "spread": 0.16,
+      "radius": 0.25,
+      "gravity": 0,
+      "colorA": "#d4fff0",
+      "colorB": "#54c998"
+    },
+    {
+      "id": "emitter_msc11d7t_7qgiy",
+      "name": "Cauldron Vapor",
+      "type": "smoke",
+      "enabled": true,
+      "attachedPartId": "part_msc11d7t_z2nkr",
+      "position": {
+        "x": 0,
+        "y": 0.23,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 3,
+      "lifetime": 1.8,
+      "size": 0.13,
+      "speed": 0.16,
+      "spread": 0.22,
+      "radius": 0.18,
+      "gravity": -0.02,
+      "colorA": "#d9f0df",
+      "colorB": "#728b79"
+    }
+  ],
+  "processingWarps": [
+    {
+      "id": "warp_msc11d7t_txx7q",
+      "name": "Cauldron Processing Warp",
+      "partIds": [
+        "part_msc11d7t_z2nkr",
+        "part_msc11d7t_lcs6m",
+        "part_msc11d7t_7s9ze",
+        "part_msc11d7t_p51v9"
+      ],
+      "style": "breathing",
+      "timelineDriven": true,
+      "enabled": true,
+      "strength": 0.034,
+      "speed": 2.25,
+      "downSpeed": 4.097238237491585,
+      "upSpeed": 0.3923938439149294,
+      "swayDeg": 0.8,
+      "twistDeg": 0.45,
+      "depth": 0.68,
+      "impact": 0.82,
+      "rockDeg": 0,
+      "phaseDeg": 0
+    }
+  ],
+  "processTimelines": [
+    {
+      "id": "timeline_msc11d7u_2lbs7",
+      "name": "Alchemy Cauldron Process",
+      "enabled": true,
+      "playing": false,
+      "loop": false,
+      "duration": 10,
+      "progress": 0,
+      "substanceColor": "#7b1f3d",
+      "stopStompAtEnd": false,
+      "stopPourAtEnd": false,
+      "stopPlaybackAtEnd": false,
+      "emitterTracks": [
+        {
+          "emitterId": "emitter_msc11d7t_kybeu",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 3.8499999999999996,
+                "lifetime": 1.35,
+                "size": 0.075,
+                "speed": 0.31,
+                "spread": 0.16,
+                "radius": 0.25,
+                "gravity": 0,
+                "colorA": "#d4fff0",
+                "colorB": "#54c998"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 11,
+                "lifetime": 1.35,
+                "size": 0.075,
+                "speed": 0.31,
+                "spread": 0.16,
+                "radius": 0.25,
+                "gravity": 0,
+                "colorA": "#d4fff0",
+                "colorB": "#54c998"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 2.2,
+                "lifetime": 1.35,
+                "size": 0.075,
+                "speed": 0.31,
+                "spread": 0.16,
+                "radius": 0.25,
+                "gravity": 0,
+                "colorA": "#d4fff0",
+                "colorB": "#54c998"
+              }
+            }
+          ]
+        },
+        {
+          "emitterId": "emitter_msc11d7t_7qgiy",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 1.0499999999999998,
+                "lifetime": 1.8,
+                "size": 0.13,
+                "speed": 0.16,
+                "spread": 0.22,
+                "radius": 0.18,
+                "gravity": -0.02,
+                "colorA": "#d9f0df",
+                "colorB": "#728b79"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 3,
+                "lifetime": 1.8,
+                "size": 0.13,
+                "speed": 0.16,
+                "spread": 0.22,
+                "radius": 0.18,
+                "gravity": -0.02,
+                "colorA": "#d9f0df",
+                "colorB": "#728b79"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 0.6000000000000001,
+                "lifetime": 1.8,
+                "size": 0.13,
+                "speed": 0.16,
+                "spread": 0.22,
+                "radius": 0.18,
+                "gravity": -0.02,
+                "colorA": "#d9f0df",
+                "colorB": "#728b79"
+              }
+            }
+          ]
+        }
+      ],
+      "warpTracks": [
+        {
+          "warpId": "warp_msc11d7t_txx7q",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.0187,
+                "speed": 2.25,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.8,
+                "twistDeg": 0.45,
+                "depth": 0.68,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.034,
+                "speed": 2.25,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.8,
+                "twistDeg": 0.45,
+                "depth": 0.68,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.0119,
+                "speed": 2.25,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.8,
+                "twistDeg": 0.45,
+                "depth": 0.68,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            }
+          ]
+        }
+      ],
+      "liquidTracks": []
+    }
+  ],
+  "stompAttachPoints": []
+}

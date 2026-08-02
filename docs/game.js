@@ -3332,6 +3332,10 @@
       const AUTHORED_FURNITURE_KEYS = new Set([
         'chairSimple', 'chairCushion', 'stool', 'bench',
         'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
+        'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
+        'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
+        'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
+        'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
       ]);
       for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
 
