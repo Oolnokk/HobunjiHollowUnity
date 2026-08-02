@@ -5339,6 +5339,7 @@
               if (rec?.dewReady && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 rec.dewReady = false;
                 rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                rec.dewReadyStaleDays = 0;
                 _saveWorldLivestock(livestockList);
               }
             });
@@ -5662,11 +5663,14 @@
           }
           // Uumkao'ii dew cooldown — separate from the egg resource above;
           // see UUMKAOII_DEW_COOLDOWN_DAYS.
-          if (l.kind === 'uumkaoii' && l.barnId && !l.dewReady) {
-            if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-            l.dewDaysUntil--;
-            if (l.dewDaysUntil <= 0) {
-              l.dewReady = true;
+          if (l.kind === 'uumkaoii' && l.barnId) {
+            if (!l.dewReady) {
+              if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+              l.dewDaysUntil--;
+              if (l.dewDaysUntil <= 0) { l.dewReady = true; l.dewReadyStaleDays = 0; }
+              changed = true;
+            }
+            if (l.dewReady) {
               // Assigned-to-a-vat takes priority over dropping a pile at all:
               // the dew goes straight into squeezed milk/curds instead of
               // needing to be dug up first. See autoSqueezeDewAtVat — falls
@@ -5682,21 +5686,33 @@
                 }
                 l.assignedVatId = null;
               }
-              // The pile only ever actually appears from inside the live
-              // uumkao'ii's own tick() (see makeUumkaoiiAnimal), which never
-              // runs unless the player is on the farm map to simulate it
-              // (updateAnimalMeshes is gated on currentArea === 'farm'). If
-              // the cooldown lands while the player's on a different map,
-              // there's no animal stepping around to drop it naturally, so
-              // place it directly on a random open tile right now instead of
-              // leaving it stuck waiting for a farm visit that might not
-              // happen for a while.
-              if (currentArea !== 'farm' && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+              // The pile ideally appears from inside the live uumkao'ii's own
+              // tick() (see makeUumkaoiiAnimal) as it wanders — but that only
+              // runs while the player is actually on the farm AND the animal
+              // isn't mid barn-homing/asleep (_farmAnimalBarnTick short-
+              // circuits wandering entirely at night), so waiting on it
+              // indefinitely can leave dewReady stuck true forever if that
+              // alignment never happens to occur — this was reported as
+              // "never found one" despite the mechanic otherwise working.
+              // First tick it's ready: give the live wander-hop a chance to
+              // produce the nicer "dropped at its feet" flourish, same as
+              // before, but ONLY when actually on the farm to see it — off-
+              // farm still resolves immediately like it always has. Every
+              // subsequent tick it's STILL unresolved (l.dewReadyStaleDays
+              // counts real advanceDay/sleepInBed calls, not frames), force
+              // the same random-open-tile placement regardless of area
+              // instead of leaving it stuck another indefinite stretch.
+              if (l.dewReadyStaleDays == null) l.dewReadyStaleDays = 0;
+              const forceDrop = currentArea !== 'farm' || l.dewReadyStaleDays >= 1;
+              if (forceDrop && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 l.dewReady = false;
                 l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                l.dewReadyStaleDays = 0;
+              } else {
+                l.dewReadyStaleDays++;
               }
+              changed = true;
             }
-            changed = true;
           }
         });
         if (changed) _saveWorldLivestock(list);
@@ -35992,6 +36008,12 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => renderFarmProcessors(),
         enterInterior: () => enterInterior(),
+        findDewPileTiles: () => {
+          const found = [];
+          for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
+          return found;
+        },
+        currentArea: () => currentArea,
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
