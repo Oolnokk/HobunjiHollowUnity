@@ -75,6 +75,7 @@ hr.sep{border:none;border-top:1px solid rgba(255,255,255,.1);margin:10px 0}
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="shell">
@@ -637,6 +638,12 @@ window._scheduleEditorBridge = {
 };
 
 boot();
+</script>
+<script>
+PanelUI.makeResizableEdge(document.getElementById('sidebar'), {
+  edge: 'right',
+  storageKey: 'hobunji_schedule_editor_sidebar_width_v1'
+});
 </script>
 </body>
 </html>

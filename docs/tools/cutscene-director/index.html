@@ -607,6 +607,7 @@
     .add-stage-grid { grid-template-columns: repeat(2,1fr); }
   }
 </style>
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="shell">
@@ -900,6 +901,18 @@
 <script>
 (() => {
   "use strict";
+
+  PanelUI.makeResizableGridColumn(
+    document.getElementById('app-layout'),
+    document.getElementById('left-col'),
+    { edge: 'right', storageKey: 'hobunji_cutscene_director_leftcol_width_v1' }
+  );
+  PanelUI.makeResizableBox(document.getElementById('npc-picker-modal'), {
+    corner: 'se', storageKey: 'hobunji_cutscene_director_npc_picker_size_v1'
+  });
+  PanelUI.makeResizableBox(document.getElementById('creature-picker-modal'), {
+    corner: 'se', storageKey: 'hobunji_cutscene_director_creature_picker_size_v1'
+  });
 
   const STORAGE_KEY = "hobunjiCutsceneDirector.v1";
   const MAP_INDEX_URL = "../../config/maps/index.json";

@@ -330,6 +330,7 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 .poolEntryBody{padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
 .poolEntryBody label{font-size:9px}
 </style>
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="app">
@@ -454,6 +455,26 @@ hr.idiv{border:none;border-top:1px solid var(--line);margin:10px 0}
 <script src="../../js/condition-registry.js"></script>
 <script>
 'use strict';
+PanelUI.makeCollapsible(document.getElementById('npcSidebar'), {
+  toolbar: document.getElementById('topbar'),
+  before: document.getElementById('loadBtn'),
+  label: '☰ Hide NPCs',
+  collapsedLabel: '☰ Show NPCs',
+  title: 'Show/hide the conditions & NPC list sidebar',
+  storageKey: 'hobunji_dialogue_editor_sidebar_collapsed_v1'
+});
+PanelUI.makeResizableEdge(document.getElementById('npcSidebar'), {
+  edge: 'right',
+  storageKey: 'hobunji_dialogue_editor_sidebar_width_v1'
+});
+PanelUI.makeResizableBox(document.getElementById('importBox'), {
+  corner: 'se',
+  storageKey: 'hobunji_dialogue_editor_importbox_size_v1'
+});
+PanelUI.makeResizableBox(document.getElementById('poolBox'), {
+  corner: 'se',
+  storageKey: 'hobunji_dialogue_editor_poolbox_size_v1'
+});
 let db        = null;
 let sel       = { npcId: null, treeId: null, nodeId: null };
 let cam       = { panX: 60, panY: 60, zoom: 1 };
