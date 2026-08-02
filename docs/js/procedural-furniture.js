@@ -22,6 +22,7 @@
 
   function resolveColor(part, baseColor) {
     if (typeof part.color === 'number') return part.color;
+    if (typeof part.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(part.color)) return parseInt(part.color.slice(1), 16);
     return shade(baseColor, part.tint != null ? part.tint : 1);
   }
 
@@ -52,7 +53,54 @@
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    return geo;
+    return ensureUvs(geo);
+  }
+
+  // Per-triangle dominant-axis box-projected UVs — ported from
+  // docs/js/procedural-leg-animation.js's generateBoxProjectedUvs (built for
+  // the same problem there: imported foot GLBs with no authored UVs).
+  // createTaperedBoxGeometry/createTaperedCylinderGeometry only ever set
+  // position+index, never uv, since their 8/2N shared vertices can't each
+  // carry a single correct UV across the multiple faces they belong to —
+  // this expands to non-indexed (one vertex per triangle-corner, matching
+  // how computeVertexNormals already effectively treats a shared-vertex cube
+  // as smooth-shaded, unchanged) and derives UVs from each triangle's own
+  // dominant normal axis instead of requiring a hand-authored unwrap.
+  function ensureUvs(geo) {
+    const position = geo.getAttribute('position');
+    if (!position) return geo;
+    if (geo.getAttribute('uv')) return geo;
+    const projected = geo.index ? geo.toNonIndexed() : geo;
+    const pos = projected.getAttribute('position');
+    projected.computeBoundingBox();
+    const box = projected.boundingBox;
+    const sizeX = Math.max(1e-6, box.max.x - box.min.x);
+    const sizeY = Math.max(1e-6, box.max.y - box.min.y);
+    const sizeZ = Math.max(1e-6, box.max.z - box.min.z);
+    const uv = new Float32Array(pos.count * 2);
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+    for (let first = 0; first + 2 < pos.count; first += 3) {
+      a.fromBufferAttribute(pos, first);
+      b.fromBufferAttribute(pos, first + 1);
+      c.fromBufferAttribute(pos, first + 2);
+      e1.subVectors(b, a);
+      e2.subVectors(c, a);
+      n.crossVectors(e1, e2).normalize();
+      const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      const dominant = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z';
+      for (let corner = 0; corner < 3; corner++) {
+        const v = corner === 0 ? a : corner === 1 ? b : c;
+        let u, vv;
+        if (dominant === 'x') { u = (v.z - box.min.z) / sizeZ; vv = (v.y - box.min.y) / sizeY; if (n.x < 0) u = 1 - u; }
+        else if (dominant === 'y') { u = (v.x - box.min.x) / sizeX; vv = (v.z - box.min.z) / sizeZ; if (n.y > 0) vv = 1 - vv; }
+        else { u = (v.x - box.min.x) / sizeX; vv = (v.y - box.min.y) / sizeY; if (n.z > 0) u = 1 - u; }
+        const t = (first + corner) * 2;
+        uv[t] = u; uv[t + 1] = vv;
+      }
+    }
+    projected.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return projected;
   }
 
   function createTaperedCylinderGeometry(part) {
@@ -78,13 +126,31 @@
       const n = (i + 1) % seg;
       idx.push(bot[i], top[n], bot[n]);
       idx.push(bot[i], top[i], top[n]);
-      idx.push(cb, bot[n], bot[i]);
-      idx.push(ct, top[i], top[n]);
+      // Cap fans wind opposite to the side quads' i/n order so their normals
+      // point outward (down for the bottom cap, up for the top) rather than
+      // facing into the solid — backwards here left both caps back-face
+      // culled from their own outward side, e.g. a flat disc's top surface
+      // (mostly cap, negligible side wall) rendering as a hole showing the
+      // clear-color background straight through it.
+      idx.push(cb, bot[i], bot[n]);
+      idx.push(ct, top[n], top[i]);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    return ensureUvs(geo);
+  }
+
+  // Ring shape for 'hoop' parts (barrel/vat bands) — sx/sz set the outer
+  // diameter, sy sets the tube (band) thickness relative to that diameter.
+  function createHoopGeometry(part) {
+    const t = part.transform;
+    const seg = Math.max(3, Math.min(64, Math.round(part.segments || 16)));
+    const outerRadius = 0.5 * Math.max(t.sx || 0.001, t.sz || 0.001);
+    const tubeRadius = Math.max(0.001, (t.sy || 0.05) * 0.5);
+    const geo = new THREE.TorusGeometry(Math.max(0.001, outerRadius - tubeRadius), tubeRadius, Math.max(4, Math.round(seg / 2)), seg);
+    geo.rotateX(Math.PI / 2);
     return geo;
   }
 
@@ -93,7 +159,9 @@
     const t = part.transform;
     if (part.kind === 'sphere') {
       geo = new THREE.SphereGeometry(0.5 * Math.max(t.sx, t.sy, t.sz), 16, 10);
-    } else if (part.kind === 'legRound' || part.kind === 'cylinder' || part.kind === 'disc') {
+    } else if (part.kind === 'hoop') {
+      geo = createHoopGeometry(part);
+    } else if (part.kind === 'legRound' || part.kind === 'cylinder' || part.kind === 'disc' || part.kind === 'barrel' || part.kind === 'cup' || part.kind === 'liquidSurface') {
       geo = createTaperedCylinderGeometry(part);
     } else {
       geo = createTaperedBoxGeometry(part);
@@ -105,7 +173,51 @@
     mesh.position.set(t.x || 0, t.y || 0, t.z || 0);
     mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
     mesh.name = part.name || part.kind;
+    if (part.materialTexture) applyPartTexture(mat, part);
     return mesh;
+  }
+
+  // ── Authored material textures (docs/config/furniture-authored/*.json's
+  // materialTexture/materialRotationDeg fields, from docs/assets/textures/)
+  // — cached per filename since most parts across a whole furniture piece
+  // (and across many placed instances) share the same handful of textures.
+  const _texLoader = new THREE.TextureLoader();
+  const _texCache = new Map(); // filename -> { base: THREE.Texture, loaded: boolean, pendingClones: Set<THREE.Texture> }
+  // THREE.Texture.copy() (used by .clone()) snapshots `image` by reference at
+  // call time — the loader's onLoad only ever back-fills the ORIGINAL texture
+  // object, so a clone made before the network fetch finishes captures the
+  // still-empty image forever and renders solid black. Every part needs its
+  // own clone (independent rotation per authored part), so instead of cloning
+  // once and hoping the fetch already resolved, track pending clones per
+  // filename and patch their `image`/`needsUpdate` in when the base loads.
+  function texEntry(filename) {
+    let entry = _texCache.get(filename);
+    if (entry) return entry;
+    entry = { base: null, loaded: false, pendingClones: new Set() };
+    entry.base = _texLoader.load('assets/textures/' + filename, () => {
+      entry.loaded = true;
+      for (const clone of entry.pendingClones) {
+        clone.image = entry.base.image;
+        clone.format = entry.base.format;
+        clone.needsUpdate = true;
+      }
+      entry.pendingClones.clear();
+    }, undefined, () => {});
+    entry.base.wrapS = entry.base.wrapT = THREE.RepeatWrapping;
+    entry.base.center.set(0.5, 0.5);
+    _texCache.set(filename, entry);
+    return entry;
+  }
+  function applyPartTexture(mat, part) {
+    const entry = texEntry(part.materialTexture);
+    const tex = entry.base.clone();
+    tex.needsUpdate = true;
+    tex.rotation = (part.materialRotationDeg || 0) * DEG;
+    if (!entry.loaded) entry.pendingClones.add(tex);
+    mat.map = tex;
+    mat.color.set(0xffffff);
+    mat.transparent = !!part.textureTransparent;
+    mat.needsUpdate = true;
   }
 
   function buildFurnitureGroup(key, baseColor) {

@@ -338,6 +338,32 @@
           return `${slot}=${raw}${resolvedHex ? ` (resolved ${resolvedHex})` : ''}`;
         }).join(' ') || '(none)';
       }
+      // Mirrors the furniture-avatar-author tool's own Avatar-mode diagnostics
+      // panel (seatDiagnosticSnapshot/updateAvatarModeDiagnostics — "Bones"/
+      // "Runtime" readouts), using the exact numbers this run's leg chain
+      // actually solved (see procedural-leg-animation.js's applySeatedPose,
+      // which stashes them precisely for this). Only meaningful while the
+      // probed avatar is actually sitting — the tool's readout is for a
+      // seated avatar too — so callers gate this on sitInteraction being
+      // active AND the probe having actually hit the player's own avatar,
+      // and skip it entirely otherwise rather than printing stale/blank
+      // seated data for a standing character.
+      function _pixelProbeSeatedLegReadoutLines() {
+        const debug = playerLegs?.getSeatedPoseDebug?.();
+        if (!debug) return null;
+        const appearance = _playerData?.appearance || {};
+        const lines = [];
+        lines.push('=== Seated Leg Pose Readout (compare field-for-field against the furniture-avatar-author tool: load this furniture key in Avatar mode, add a seated avatar with this species/gender, read its Bones/Runtime diagnostics) ===');
+        lines.push(`Species/gender: ${appearance.speciesId || '?'} / ${appearance.gender || '?'}   Furniture: "${sitInteraction?.furnitureKey || '?'}"`);
+        lines.push(`Seat anchor: height=${(Number(sitInteraction?.seatWorldY) || 0).toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
+        for (const side of ['left', 'right']) {
+          const leg = debug[side];
+          if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
+          lines.push(`${side} hip X ${leg.hipX.toFixed(5)} · posterior height ${leg.posteriorHeight.toFixed(5)} · foot contact Y ${leg.footContactY.toFixed(5)} · full leg length ${leg.fullLegLength.toFixed(5)}`);
+          lines.push(`  fixed thigh/calf ${leg.thighLength.toFixed(5)} / ${leg.calfLength.toFixed(5)} · thigh surface gap ${leg.thighSurfaceGap.toFixed(5)} · ${leg.calfStraight ? 'calf straight (collinear with thigh)' : 'calf 90° past edge (dropped to floor)'} · knee ${leg.kneeOverSeat ? 'over seat' : 'past edge'} · knee forward offset ${leg.kneeForwardOffset.toFixed(5)} (footprint half-depth ${leg.footprintHalfDepth.toFixed(4)})`);
+        }
+        return lines;
+      }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
         const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
@@ -562,6 +588,16 @@
           }
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
+
+        // Only when this probe actually landed on the player's own avatar
+        // AND the player is currently sitting — see
+        // _pixelProbeSeatedLegReadoutLines's own comment.
+        const probedPlayerSitting = sitInteraction && sitInteraction.phase !== 'out'
+          && hits.some(h => _pixelProbeOwnerInfo(h.object)?.kind === 'player');
+        if (probedPlayerSitting) {
+          const seatedLines = _pixelProbeSeatedLegReadoutLines();
+          if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
+        }
 
         if (blendCheck) {
           lines.push('');
@@ -3280,12 +3316,12 @@
         basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
         doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
-        bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.' },
+        bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.', sit: true },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
         candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
-        chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.' },
-        chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.' },
+        chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.', sit: true },
+        chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.', sit: true },
         chest:         { itemKey: 'chestFurniture',         icon: '📦', name: 'Storage Chest',        modelFile: 'chest_storage.glb',            price: 32, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'Sturdy wooden chest for storage.' },
         crateStack:    { itemKey: 'crateStackFurniture',    icon: '📦', name: 'Crate Stack',          modelFile: 'crate_stack.glb',              price: 14, fw: 1, fd: 1, color: 0x8a6a3a, area: 'any',      desc: 'A stack of wooden crates.' },
         copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
@@ -3297,7 +3333,7 @@
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
-        stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
+        stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
         tableSmall:    { itemKey: 'tableSmallFurniture',    icon: '🍽️', name: 'Small Table',          modelFile: 'table_small.glb',              price: 18, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A small side table.' },
@@ -3320,6 +3356,33 @@
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
           price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
         }));
+
+      // ── Authored furniture (docs/config/furniture-authored/*.json) ────
+      // Furniture keys with real per-piece data exported by
+      // furniture-avatar-author (seat anchors, processing VFX, livestock
+      // stomp points) instead of just procedural-furniture.js's crude
+      // hardcoded CATALOG boxes. Kicked off once at startup so
+      // AuthoredFurniture.peek() has data ready by the time a piece is
+      // actually placed/rendered; buildFurnitureVisual falls back to the
+      // procedural CATALOG for any key not (yet) in this list.
+      const AUTHORED_FURNITURE_KEYS = new Set([
+        'chairSimple', 'chairCushion', 'stool', 'bench',
+        'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
+        'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
+        'chest', 'crateStack', 'copperBarrel', 'desk', 'dresser', 'hearth', 'loom',
+        'nightstand', 'rug', 'standingLamp', 'statue', 'tableLong', 'tableRound',
+        'tableSmall', 'wardrobe', 'washTub', 'counter', 'alchemyTable', 'bulletinBoard',
+      ]);
+      for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
+
+      // Shared by makeDecorativeFurnitureMesh/makeProcessingFurniture: use the
+      // richer authored geometry once it's loaded, otherwise the old crude
+      // procedural stand-in (never blocks placement on the fetch completing).
+      function buildFurnitureVisual(furnitureKey, color) {
+        const authored = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
+        if (authored) return window.AuthoredFurniture.buildGroup(authored, color);
+        return window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
+      }
 
       // ── Furniture blueprints ────────────────────────────────────────
       // Every processing station (PROCESSING_FURNITURE_CATALOG) and
@@ -3989,10 +4052,17 @@
       const AGING_DURATION_DAYS = 3;
       const AGING_METHODS = new Set(['barrelAging', 'vaseAging']);
 
+      // How long an instant-process (mashing/squeezing/grinding/drying/
+      // smoking) plays its processingWarp + particle burst for — aging
+      // methods don't use this at all, they animate continuously for as
+      // long as `job` is truthy instead (see makeProcessingFurniture's
+      // vfxActive()).
+      const PROCESS_BURST_S = 1.2;
+
       function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
+        const mesh = buildFurnitureVisual(furnitureKey, def.color);
         mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
         _markOutline(mesh);
         _markFurnitureEdgeId(mesh);
@@ -4005,10 +4075,37 @@
         // batch survives a save/reload instead of silently vanishing.
         let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay } : null;
 
+        // ── Processing VFX (docs/js/authored-furniture-runtime.js) ──────
+        // Reuses whatever processingWarps/particleEmitters this piece's
+        // authored data carries — no-ops entirely for furniture keys with
+        // no authored data yet (AUTHORED_FURNITURE_KEYS). vfxT is this
+        // object's own clock, only advanced while updateProcessingFurnitureVfx
+        // actually ticks it (farm scene only), so playback never jumps on
+        // a scene revisit.
+        const authoredVfx = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
+        const emitterVisuals = (authoredVfx?.particleEmitters || []).map(e => window.AuthoredFurniture.createEmitterVisual(mesh, e));
+        let vfxT = 0;
+        let burstRemaining = 0;
+        function vfxActive() { return (isAging && !!job) || burstRemaining > 0; }
+        function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
+        function updateVfx(dt) {
+          if (!authoredVfx) return;
+          vfxT += dt;
+          if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
+          const active = vfxActive();
+          for (const warp of authoredVfx.processingWarps || []) {
+            if (active) window.AuthoredFurniture.applyWarp(mesh, warp, vfxT);
+            else window.AuthoredFurniture.resetWarp(mesh, warp);
+          }
+          for (const ev of emitterVisuals) ev?.update(dt, active);
+        }
+
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
           label: def.icon + ' ' + def.name,
+          update: updateVfx,
+          triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
             if (isAging && job) {
@@ -4056,10 +4153,12 @@
             }
             outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
             playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+            triggerBurst();
             return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
           reset() {
             scene.remove(mesh);
+            emitterVisuals.forEach(ev => ev?.dispose());
             mesh.traverse(child => {
               if (child.geometry) child.geometry.dispose();
               if (child.material) child.material.dispose();
@@ -4088,6 +4187,14 @@
           obj.reset && obj.reset();
         });
         processingFurnitureObjects.clear();
+      }
+
+      // Per-frame processing-station VFX (processingWarps + particleEmitters)
+      // — see makeProcessingFurniture's updateVfx. Farm-only (processingFurnitureObjects
+      // only ever holds farm objects), called from the main loop alongside
+      // updateDewPileMeshRotations.
+      function updateProcessingFurnitureVfx(dt) {
+        processingFurnitureObjects.forEach(obj => obj.update && obj.update(dt));
       }
 
       // ── Decorative furniture (interior) ──────────────────────────
@@ -4123,13 +4230,15 @@
             },
           };
         }
+        const def = DECORATIVE_FURNITURE_DEFS[o.key];
+        if (def?.sit) return makeSitInteractable(o.key, o.col, o.row, def.fw, def.fd, 0);
         return null;
       }
 
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
+        const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
         group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
         _markOutline(group);
         _markFurnitureEdgeId(group);
@@ -4144,6 +4253,17 @@
         const sfxSource = registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, resolveFurnitureSfx(def));
 
         return { mesh: group, light, sfxSource };
+      }
+
+      // worldObjects is farm-scene-only (see its declaration) — a sittable
+      // piece placed there needs its own interactable registered there too,
+      // since interiorFurnitureObjects (below) only tracks the mesh/light,
+      // not interaction. Interior-scene sitting instead goes through
+      // getInteriorInteractableAt, which derives it from def.sit directly.
+      function registerSitWorldObject(furnitureKey, col, row, fw, fd, rotYDeg) {
+        worldObjects.set(col + ',' + row, Object.assign(makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg), {
+          type: 'decorative_furniture', col, row,
+        }));
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -4162,6 +4282,8 @@
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
         interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea });
+        if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
+        registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -4177,6 +4299,8 @@
           });
           if (obj.light) s.remove(obj.light);
           unregisterFurnitureSfxSource(obj.sfxSource);
+          if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -4258,6 +4382,8 @@
             });
             if (d.light) scene.remove(d.light);
             unregisterFurnitureSfxSource(d.sfxSource);
+            if (DECORATIVE_FURNITURE_DEFS[d.key]?.sit) worldObjects.delete(col + ',' + row);
+            unregisterChairNpcStation(d.key, col, row, 'farm');
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
@@ -4390,6 +4516,8 @@
           const targetScene = decorArea === 'interior' ? interiorScene : scene;
           const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
           if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
+          if (result && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
+          if (result) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
         });
         if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && (layout.houseCol !== houseCol || layout.houseRow !== houseRow)) {
           repositionHouse(layout.houseCol, layout.houseRow);
@@ -4569,6 +4697,60 @@
           if (dropDewPile(col, row, colorKey)) return true;
         }
         return false;
+      }
+
+      // ── Livestock-to-vat assignment (small livestock working a squeezer) ──
+      // Assigning a housed uumkao'ii to a specific placed squeezing vat
+      // redirects its dew straight into squeezed milk/curds every cooldown
+      // cycle (see tickLivestockResources) instead of dropping a pile that
+      // has to be dug up — the vat processes it automatically. Only one
+      // livestock per vat, only kinds with a squeezable resource (uumkao'ii
+      // dew today), and only while housed (barnId set), same requirement as
+      // every other livestock resource.
+      function vatCanAcceptLivestock(kind) {
+        return kind === 'uumkaoii'; // the only kind with a squeezable resource today
+      }
+      function findVatById(vatId) {
+        for (const obj of processingFurnitureObjects) if (obj.id === vatId) return obj;
+        return null;
+      }
+      function assignLivestockToVat(livestockId, vatId) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
+        if (!vatCanAcceptLivestock(rec.kind)) return { ok: false, message: `${rec.name} has nothing a vat can process.` };
+        const vat = findVatById(vatId);
+        if (!vat || PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
+        if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+        rec.assignedVatId = vatId;
+        _saveWorldLivestock(list);
+        return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
+      }
+      function unassignLivestockFromVat(livestockId) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        rec.assignedVatId = null;
+        _saveWorldLivestock(list);
+        return { ok: true, message: `${rec.name} unassigned from its vat.` };
+      }
+      // Runs the squeezing recipe for a raw dew color directly into inventory
+      // (bypassing the dig-up-a-pile step) and plays the vat's own processing
+      // VFX burst. Returns false (no state change) if the vat no longer
+      // exists — tickLivestockResources clears the stale assignment in that
+      // case and falls back to the ordinary pile-drop.
+      function autoSqueezeDewAtVat(vatId, colorKey) {
+        const vat = findVatById(vatId);
+        if (!vat) return false;
+        const outputs = getProcessingOutputs('squeezing', dewItemKey(colorKey));
+        if (!outputs) return false;
+        outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+        playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[vat.furnitureKey]]);
+        vat.triggerVfx && vat.triggerVfx();
+        return true;
       }
 
       // ── Livestock genetics & breeding ───────────────────────────────
@@ -5197,6 +5379,7 @@
               if (rec?.dewReady && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 rec.dewReady = false;
                 rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                rec.dewReadyStaleDays = 0;
                 _saveWorldLivestock(livestockList);
               }
             });
@@ -5481,6 +5664,7 @@
         const rec = list.find(l => l.id === livestockId);
         if (!rec) return { ok: false, message: 'Livestock not found.' };
         rec.barnId = null;
+        rec.assignedVatId = null; // can't work a vat while unhoused — same gate as dew/egg cooldowns
         _saveWorldLivestock(list);
         const animal = [...animalObjects].find(a => a.livestockId === livestockId);
         if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
@@ -5519,26 +5703,56 @@
           }
           // Uumkao'ii dew cooldown — separate from the egg resource above;
           // see UUMKAOII_DEW_COOLDOWN_DAYS.
-          if (l.kind === 'uumkaoii' && l.barnId && !l.dewReady) {
-            if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-            l.dewDaysUntil--;
-            if (l.dewDaysUntil <= 0) {
-              l.dewReady = true;
-              // The pile only ever actually appears from inside the live
-              // uumkao'ii's own tick() (see makeUumkaoiiAnimal), which never
-              // runs unless the player is on the farm map to simulate it
-              // (updateAnimalMeshes is gated on currentArea === 'farm'). If
-              // the cooldown lands while the player's on a different map,
-              // there's no animal stepping around to drop it naturally, so
-              // place it directly on a random open tile right now instead of
-              // leaving it stuck waiting for a farm visit that might not
-              // happen for a while.
-              if (currentArea !== 'farm' && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+          if (l.kind === 'uumkaoii' && l.barnId) {
+            if (!l.dewReady) {
+              if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+              l.dewDaysUntil--;
+              if (l.dewDaysUntil <= 0) { l.dewReady = true; l.dewReadyStaleDays = 0; }
+              changed = true;
+            }
+            if (l.dewReady) {
+              // Assigned-to-a-vat takes priority over dropping a pile at all:
+              // the dew goes straight into squeezed milk/curds instead of
+              // needing to be dug up first. See autoSqueezeDewAtVat — falls
+              // through to the ordinary pile-drop behavior below if the vat
+              // was since demolished (also clears the stale assignment so
+              // it doesn't keep trying every day).
+              if (l.assignedVatId) {
+                if (autoSqueezeDewAtVat(l.assignedVatId, l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                  l.dewReady = false;
+                  l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                  changed = true;
+                  return;
+                }
+                l.assignedVatId = null;
+              }
+              // The pile ideally appears from inside the live uumkao'ii's own
+              // tick() (see makeUumkaoiiAnimal) as it wanders — but that only
+              // runs while the player is actually on the farm AND the animal
+              // isn't mid barn-homing/asleep (_farmAnimalBarnTick short-
+              // circuits wandering entirely at night), so waiting on it
+              // indefinitely can leave dewReady stuck true forever if that
+              // alignment never happens to occur — this was reported as
+              // "never found one" despite the mechanic otherwise working.
+              // First tick it's ready: give the live wander-hop a chance to
+              // produce the nicer "dropped at its feet" flourish, same as
+              // before, but ONLY when actually on the farm to see it — off-
+              // farm still resolves immediately like it always has. Every
+              // subsequent tick it's STILL unresolved (l.dewReadyStaleDays
+              // counts real advanceDay/sleepInBed calls, not frames), force
+              // the same random-open-tile placement regardless of area
+              // instead of leaving it stuck another indefinite stretch.
+              if (l.dewReadyStaleDays == null) l.dewReadyStaleDays = 0;
+              const forceDrop = currentArea !== 'farm' || l.dewReadyStaleDays >= 1;
+              if (forceDrop && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 l.dewReady = false;
                 l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                l.dewReadyStaleDays = 0;
+              } else {
+                l.dewReadyStaleDays++;
               }
+              changed = true;
             }
-            changed = true;
           }
         });
         if (changed) _saveWorldLivestock(list);
@@ -5641,6 +5855,180 @@
             harvestInteraction = null;
           }
         }
+      }
+
+      // ── Chair sitting (docs/config/furniture-authored seat anchors) ──
+      // Same lerp-in/lerp-out shape as beginHarvestInteraction, but
+      // indefinite-duration: the player stays seated (camera zoomed tight,
+      // free 360° look via the 'seated' camera mode) until they explicitly
+      // stand, rather than auto-releasing after a fixed timer. See
+      // updateSitInteraction's early-return in the main tick and
+      // computeActionButtons'/useActiveAction's top-priority sitInteraction
+      // checks for the "Stand" override.
+      let sitInteraction = null;
+      const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
+      const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
+      const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
+      const SEATED_HEAD_MAX_YAW_DEG = 70; // realistic head-turn-without-body-turning range; look straight ahead past this instead of holding at the clamp (see updateSitInteraction)
+
+      // Resolves a furniture instance's seat anchor (local, footprint-center-
+      // relative — see docs/js/authored-furniture-runtime.js) into this
+      // placement's actual world position/facing. rotYDeg is the furniture's
+      // own placement yaw (0 for every current player-placed decorative/
+      // processing furniture path, since none of them support rotation yet).
+      function resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
+        const data = window.AuthoredFurniture?.peek(furnitureKey);
+        const anchor = data && window.AuthoredFurniture.seatAnchorFor(data, seatIndex);
+        if (!anchor) return null;
+        const yawRad = (rotYDeg || 0) * Math.PI / 180;
+        const cos = Math.cos(yawRad), sin = Math.sin(yawRad);
+        const ax = anchor.position.x || 0, az = anchor.position.z || 0;
+        const cx = col + (fw || 1) / 2, cz = row + (fd || 1) / 2;
+        const totalYawDeg = (rotYDeg || 0) + (anchor.rotationDeg.y || 0);
+        return {
+          x: cx + (ax * cos + az * sin),
+          y: anchor.position.y || 0,
+          z: cz + (-ax * sin + az * cos),
+          facingRad: Math.PI / 2 - totalYawDeg * Math.PI / 180,
+          // Seat surface tilt (pitch/roll only) and footprint depth, passed
+          // through to the leg rig's faithful surface-flush seated solve
+          // (see procedural-leg-animation.js's applySeatedPose). Read
+          // straight off the anchor's own local rotation with no further
+          // rotation applied for rotYDeg — every current player-placed
+          // furniture path always places at rotYDeg 0 (see the comment
+          // above this function), so anchor-local and world pitch/roll
+          // already coincide.
+          normalDeg: { x: anchor.rotationDeg.x || 0, z: anchor.rotationDeg.z || 0 },
+          footprintHalfDepth: Math.max(0.05, (Number(data.footprint?.d) || 1) / 2),
+          anchorZ: az,
+        };
+      }
+
+      function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
+        if (sitInteraction || harvestInteraction || dialogueOpen || mountRideState !== 'none') return { ok: false, message: 'Cannot sit right now.' };
+        const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
+        if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
+        const targetX = seat.x * TILE, targetY = seat.z * TILE;
+        const targetAngle = seat.facingRad;
+        sitInteraction = {
+          furnitureKey, col, row,
+          phase: 'in', t: 0,
+          startX: player.x, startY: player.y, startAngle: facingAngle,
+          targetX, targetY, targetAngle,
+          seatWorldY: seat.y,
+          seatNormalDeg: seat.normalDeg,
+          seatFootprintHalfDepth: seat.footprintHalfDepth,
+          seatAnchorZ: seat.anchorZ,
+          prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
+        };
+        activeCameraMode = 'seated';
+        activeCameraTarget = { position: new THREE.Vector3(seat.x, seat.y + 0.15, seat.z) };
+        // Start looking at the seated character's BACK rather than whatever
+        // the 'seated' mode's base azimuth happens to be (which has no
+        // relationship to which way the character is actually facing).
+        // updateCameraPosition's own azimuth convention: azimuth=0 sits the
+        // camera due south of the target looking north (see its comment);
+        // targetAngle is in the atan2(z,x) convention facingAngle/player.angle
+        // use elsewhere (0 = +X), so the world direction the character is
+        // FACING is (cos(targetAngle), sin(targetAngle)) in (X,Z) — camera
+        // needs to sit on the OPPOSITE side (the character's back), i.e. at
+        // world azimuth atan2(-cos(targetAngle), -sin(targetAngle)), which
+        // simplifies to 270° − targetAngle(deg).
+        const behindAzimuthDeg = 270 - targetAngle * 180 / Math.PI;
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(behindAzimuthDeg - (cameraModeConfig('seated').azimuthDeg ?? 0));
+        cameraAngleOffsetDeg = 0;
+        return { ok: true, message: 'You sit down.' };
+      }
+
+      function endSitInteraction() {
+        if (!sitInteraction || sitInteraction.phase === 'out') return;
+        sitInteraction.phase = 'out';
+        sitInteraction.t = 0;
+      }
+
+      function updateSitInteraction(dt) {
+        const s = sitInteraction;
+        if (!s) return;
+        player.vx = 0; player.vy = 0;
+        if (s.phase === 'active') {
+          facingAngle = s.targetAngle; player.angle = facingAngle;
+          // Movement input can't actually move a seated character — redirect
+          // it into rotating the free-look seated camera around them
+          // instead (see the 'seated' camera mode's freeRotate), so the
+          // same controls still do something useful rather than going dead
+          // the instant you sit down. Same keyboard-wins-over-joystick
+          // source selection as the normal movement read just above in the
+          // main update loop. Sign matches the mouse-drag azimuth control
+          // (dragging/looking right also decreases the offset).
+          const kb = getKeyboardVector();
+          const ix = kb.active ? kb.x : input.x;
+          const iy = kb.active ? kb.y : input.y;
+          if (Math.abs(ix) > 0.001) {
+            cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
+          }
+          if (Math.abs(iy) > 0.001) {
+            cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
+          }
+          // Head-turn (not the whole body) toward wherever the camera has
+          // orbited to, using the same neck-bone mechanism the animation-
+          // author tool/NPC dialogue staging use (see
+          // faceNpcDialogueParticipants) — lets you inspect your own
+          // character's face as you swing the camera around without the
+          // body itself rotating. playerMesh.rotation.y = activeCameraAzimuthRad()
+          // is exactly the sprite orientation that faces the camera (both
+          // are the same THREE.js Y-rotation convention — the plane's local
+          // +Z, after that rotation, points from the character straight at
+          // the camera), so the residual against the body's own CURRENT
+          // rotation (whatever the dead zone has it holding at right now)
+          // is exactly how far the head alone needs to turn. Only within a
+          // realistic range — past it, look straight ahead (0) rather than
+          // holding at the clamp like the NPC dialogue case, so an extreme
+          // camera angle just shows the back of a naturally forward-facing
+          // head instead of a craned neck.
+          if (playerNeckJoint) {
+            const residual = angleDiff(activeCameraAzimuthRad(), playerMesh.rotation.y);
+            const maxYawRad = SEATED_HEAD_MAX_YAW_DEG * Math.PI / 180;
+            playerNeckJoint.rotation.y = Math.abs(residual) <= maxYawRad ? residual : 0;
+          }
+          return;
+        }
+        if (playerNeckJoint) playerNeckJoint.rotation.y = 0;
+        s.t = Math.min(1, s.t + dt / SIT_TRANSITION_S);
+        const e = s.t;
+        const [fromX, fromY, fromAngle, toX, toY, toAngle] = s.phase === 'in'
+          ? [s.startX, s.startY, s.startAngle, s.targetX, s.targetY, s.targetAngle]
+          : [s.targetX, s.targetY, s.targetAngle, s.startX, s.startY, s.startAngle];
+        player.x = fromX + (toX - fromX) * e;
+        player.y = fromY + (toY - fromY) * e;
+        facingAngle = fromAngle + angleDiff(toAngle, fromAngle) * e;
+        player.angle = facingAngle;
+        if (e >= 1) {
+          if (s.phase === 'in') { s.phase = 'active'; s.t = 0; }
+          else {
+            activeCameraMode = s.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            activeCameraTarget = s.prevCameraTarget ?? null;
+            cameraAzimuthOffsetDeg = 0;
+            cameraAngleOffsetDeg = 0;
+            sitInteraction = null;
+          }
+        }
+      }
+
+      // Interactable used by both getInteriorInteractableAt (interior scene)
+      // and the farm's worldObjects registration (see placeDecorativeFurniture/
+      // registerSitWorldObject) — same onAction shape either call site expects.
+      function makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg) {
+        return {
+          interactIcon: '💺',
+          interactLabel: 'Sit',
+          getButtons() {
+            return [{ icon: '💺', label: 'Sit', action: 'obj_sit', style: 'primary', allowed: !sitInteraction }];
+          },
+          onAction(action) {
+            if (action !== 'obj_sit' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0);
+          },
+        };
       }
 
       // Adds a creature from an item straight into the character's personal
@@ -12868,6 +13256,12 @@
       // driven each frame from updatePlayerMesh. See
       // docs/js/procedural-leg-animation.js.
       let playerLegs = null;
+      // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
+      // (null if no neck pivot could be detected for the player's current
+      // portrait) — same mechanism the animation-author tool/NPC dialogue
+      // staging uses (see faceNpcDialogueParticipants), driven here for the
+      // seated look-around head-turn instead (see updateSitInteraction).
+      let playerNeckJoint = null;
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
       // buildPlayerHatXrayOverlay/setPlayerHatXray near refreshPlayerAvatar.
@@ -15918,6 +16312,30 @@
         return station ? { ...station, stationId: station.id } : null;
       }
 
+      // Chairs auto-register as NPC scheduling stations wherever they're
+      // placed — no map author has to hand-add an npcStations entry for
+      // player-placed furniture. Deterministic id (area+tile) so placing the
+      // same spot twice is idempotent and a schedule rule survives a reload.
+      // Only pose:'sit' is set here; there's no seated NPC pose animation
+      // yet (see beginSitInteraction's own player-side note on the same
+      // gap), so a scheduled NPC currently just stands at the chair like any
+      // other station — the registration/scheduling half of the request.
+      function furnitureNpcStationId(area, col, row) {
+        return `furniture_chair_${area}_${col}_${row}`;
+      }
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+        if (!def?.sit) return;
+        registerNpcStations([{
+          id: furnitureNpcStationId(area, col, row), label: def.name,
+          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit',
+        }], area);
+      }
+      function unregisterChairNpcStation(furnitureKey, col, row, area) {
+        if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
+        npcStationsById.delete(furnitureNpcStationId(area, col, row));
+      }
+
       function sceneForNpcArea(area) {
         if (area === 'interior') return interiorScene;
         if (area === 'town') return townScene;
@@ -17443,7 +17861,7 @@
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
-              const model = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
+              const model = buildFurnitureVisual(furnitureKey, color);
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
               model.scale.set(scX, scY, scZ);
@@ -17451,6 +17869,7 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
+              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId));
             } else {
               // Fallback: no procedural recipe found for this furniture key
               window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
@@ -17471,6 +17890,12 @@
             const interactableFactory = BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
             if (interactableFactory) {
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, interactableFactory());
+            } else if (def?.sit) {
+              // Sittable town/building furniture (see computeActionButtons'/
+              // useActiveAction's town+_buildingInteractables lookups) — the
+              // Highland House interior instead goes through
+              // getInteriorInteractableAt, so this only matters here.
+              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
@@ -18050,7 +18475,7 @@
         for (const f of furnitureDefs) {
           const def = PROCESSING_FURNITURE_DEFS[f.key];
           if (!def) continue;
-          const group = window.ProceduralFurniture.buildFurnitureGroup(f.key, def.color || 0x888888);
+          const group = buildFurnitureVisual(f.key, def.color || 0x888888);
           const y = NORMAL_TOP + (f.elevTier || 0) * PLATEAU_UNIT;
           group.position.set(f.col + 0.5, y, f.row + 0.5);
           _markOutline(group);
@@ -21689,9 +22114,10 @@
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01 }
+          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         avatarGroup.name = 'player_avatar';
+        playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
         // Direct front/back plane refs for updatePetLayering (see near
         // updateCompanions) — createSinglePlaneAssembly always nests them
         // as the assembly's first two children (frontMesh, then backMesh).
@@ -22614,6 +23040,7 @@
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (harvestInteraction) { updateHarvestInteraction(dt); return; }
+        if (sitInteraction) { updateSitInteraction(dt); return; }
         if (fishingMinigame?.active) return;
         if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
 
@@ -23049,6 +23476,7 @@
         renderFarmHeader();
         renderFarmGridGlance();
         renderFarmBuildings();
+        renderFarmProcessors();
         renderFarmLivestock();
         renderFarmStoragePane();
         renderFarmhandsSection();
@@ -23125,10 +23553,14 @@
         }
         // Buildings / furniture / crates — everything occupying a farm tile
         // that isn't an animal (animals get their own marker below).
+        // Processing furniture gets its actual status color (see
+        // farmProcessorStatus, shared with the Processors tile grid below)
+        // instead of the flat generic marker every other object still uses.
+        const _glanceLivestock = processingFurnitureObjects.size ? _loadWorldLivestock() : null;
         worldObjects.forEach((obj, key) => {
           if (!obj || obj.type === 'animal') return;
           const [c, r] = key.split(',').map(Number);
-          ctx.fillStyle = 'rgba(200,80,60,0.9)';
+          ctx.fillStyle = obj.type === 'processing_furniture' ? FARM_PROCESSOR_STATUS_COLORS[farmProcessorStatus(obj, _glanceLivestock).status] : 'rgba(200,80,60,0.9)';
           ctx.fillRect(c * PX, r * PX, PX, PX);
         });
         // Livestock
@@ -23145,8 +23577,12 @@
           legend.innerHTML = [
             ['#3c6e3f', 'Grass'], ['#6b4a30', 'Tilled'], ['#25445c', 'Trench'],
             ['#8fd66b', 'Growing crop'], ['#f9e28a', 'Ready crop'],
-            ['rgba(200,80,60,0.9)', 'Building'], ['#6b6b6f', 'Rock/obstruction'],
+            ['rgba(200,80,60,0.9)', 'Building/decor'], ['#6b6b6f', 'Rock/obstruction'],
             ['#ffd27a', 'Livestock'],
+            [FARM_PROCESSOR_STATUS_COLORS.idle, 'Processor: idle'],
+            [FARM_PROCESSOR_STATUS_COLORS.working, 'Processor: working'],
+            [FARM_PROCESSOR_STATUS_COLORS.ready, 'Processor: ready'],
+            [FARM_PROCESSOR_STATUS_COLORS.livestock, 'Processor: livestock-worked'],
           ].map(([color, label]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('');
         }
 
@@ -23268,6 +23704,76 @@
         return row;
       }
 
+      // ── Farm tab: processing-station status tiles ──────────────────
+      // Color-coded by the same job state makeProcessingFurniture already
+      // tracks — no separate status system, this just reads getJob()/
+      // AGING_METHODS the same way its own getButtons() does, plus whether
+      // a squeezing vat has livestock assigned (see assignLivestockToVat).
+      const FARM_PROCESSOR_STATUS_COLORS = {
+        idle: '#8f8878', working: '#c9a227', ready: '#5fbf6b', livestock: '#4a90d9',
+      };
+      // Shared by the Processors tile grid and the Layout glance canvas
+      // marker — one status computation, read from the same job state
+      // makeProcessingFurniture's own getButtons() already uses.
+      function farmProcessorStatus(obj, livestock) {
+        const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
+        if (!def) return { status: 'idle', label: 'Idle' };
+        const isAging = AGING_METHODS.has(def.method);
+        const job = obj.getJob ? obj.getJob() : null;
+        const list = livestock || (def.method === 'squeezing' ? _loadWorldLivestock() : null);
+        const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id) : null;
+        if (isAging && job) {
+          const daysLeft = Math.max(0, job.readyDay - calendar.day);
+          return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };
+        }
+        if (worker) return { status: 'livestock', label: `Worked by ${worker.name}`, worker };
+        return { status: 'idle', label: 'Idle' };
+      }
+      function renderFarmProcessors() {
+        const grid = document.getElementById('farmProcessorsGrid');
+        const note = document.getElementById('farmProcessorsNote');
+        if (!grid) return;
+        const processors = [...processingFurnitureObjects];
+        if (note) note.textContent = processors.length ? '' : 'No processing stations placed yet.';
+        const livestock = _loadWorldLivestock();
+        grid.innerHTML = '';
+        processors.forEach(obj => {
+          const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
+          if (!def) return;
+          const { status, label, worker } = farmProcessorStatus(obj, livestock);
+          const tile = document.createElement('div');
+          tile.className = 'farm-processor-tile';
+          tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
+          tile.innerHTML = `
+            <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
+            <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
+          `;
+          if (status === 'ready' && hasFarmPermission('alterFarm')) {
+            const btn = document.createElement('button');
+            btn.className = 'settings-small-btn';
+            btn.textContent = 'Collect';
+            btn.addEventListener('click', () => {
+              const result = obj.onAction('obj_process_' + obj.furnitureKey);
+              showToast(result.message, result.ok);
+              renderFarmProcessors(); renderFarmGridGlance();
+            });
+            tile.appendChild(btn);
+          }
+          if (worker && hasFarmPermission('livestock')) {
+            const btn = document.createElement('button');
+            btn.className = 'settings-small-btn';
+            btn.textContent = 'Unassign';
+            btn.addEventListener('click', () => {
+              const result = unassignLivestockFromVat(worker.id);
+              showToast(result.message, result.ok);
+              renderFarmProcessors(); renderFarmLivestock();
+            });
+            tile.appendChild(btn);
+          }
+          grid.appendChild(tile);
+        });
+      }
+
       function renderFarmLivestock() {
         const list = document.getElementById('farmLivestockList');
         if (!list) return;
@@ -23317,6 +23823,34 @@
               readyBadge.className = 'farm-note';
               readyBadge.textContent = '✅ Ready to collect — visit it on the farm';
               extra.appendChild(readyBadge);
+            }
+            // Squeezing-vat assignment — only meaningful for a housed kind
+            // with a squeezable resource (uumkao'ii dew today, see
+            // vatCanAcceptLivestock), and only once it's actually housed
+            // (same gate as the dew/egg cooldowns themselves).
+            if (entry.barnId && vatCanAcceptLivestock(entry.kind)) {
+              const vats = [...processingFurnitureObjects].filter(o => PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
+              const vatSelect = document.createElement('select');
+              vatSelect.className = 'settings-select farm-barn-select';
+              vatSelect.title = 'Assign to a placed squeezing vat — its dew is squeezed into milk/curds automatically each cooldown instead of dropping a pile to dig up.';
+              const noneOpt = document.createElement('option');
+              noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
+              vatSelect.appendChild(noneOpt);
+              vats.forEach(v => {
+                const takenBy = livestock.find(l => l.assignedVatId === v.id);
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');
+                opt.disabled = !!(takenBy && takenBy.id !== entry.id);
+                vatSelect.appendChild(opt);
+              });
+              vatSelect.value = entry.assignedVatId || '';
+              vatSelect.addEventListener('change', () => {
+                const result = vatSelect.value ? assignLivestockToVat(entry.id, vatSelect.value) : unassignLivestockFromVat(entry.id);
+                showToast(result.message, result.ok);
+                renderFarmLivestock(); renderFarmProcessors();
+              });
+              extra.appendChild(vatSelect);
             }
           }
           if (owner) {
@@ -24715,6 +25249,7 @@
       }
 
       function useActiveAction() {
+        if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
         if (dialogueOpen) { advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
@@ -24829,11 +25364,12 @@
           const _r = getReticleTile();
           // worldObjects is farm-scene-only (see its declaration) — interior
           // interactables (e.g. a bed) live in interiorFurnitureObjects
-          // instead, via getInteriorInteractableAt. Ordinary building
+          // instead, via getInteriorInteractableAt. Ordinary building/town
           // furniture has no interaction at all — only the handful
-          // registered in _buildingInteractables (e.g. the Alchemy Table).
+          // registered in _buildingInteractables (e.g. the Alchemy Table,
+          // and now sittable furniture — see the mapData.furniture loader).
           const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-            : _isBuildingArea(currentArea) ? _buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row)
+            : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
             : getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
@@ -26400,18 +26936,24 @@
         // locking. Prevents boundary chatter when rawTarget hovers near the edge.
         const wasLocked = state.locked[nearestI];
         const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
-        let effectiveTarget = rawTarget;
+        // Which edge of the dead zone rawTarget is actually closest to right
+        // now — tracked every frame regardless of lock state, not just while
+        // unlocked. A locked model can still have rawTarget keep rotating
+        // straight through the zone (e.g. a continuous camera spin, or the
+        // seated look-rotate input) without ever exiting through the far
+        // side first; checking the side only while unlocked left it stuck
+        // holding the entry edge indefinitely in that case, even long after
+        // rawTarget had clearly crossed past center to the opposite side.
+        // Always snapping to whichever edge is nearest keeps the held
+        // rotation the closest acceptable one to rawTarget at all times,
+        // snapping again immediately if it keeps going past the far edge.
+        const newSide = nearestDT > 0 ? 1 : -1;
         let snapTo = null;
-        if (!isLocked) {
-          const newSide = nearestDT > 0 ? 1 : -1;
-          if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
-            snapTo = P + newSide * deadRad;
-          }
-          state.perpSides[nearestI] = newSide;
-        } else {
-          if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
-          effectiveTarget = P + state.perpSides[nearestI] * deadRad;
+        if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
+          snapTo = P + newSide * deadRad;
         }
+        state.perpSides[nearestI] = newSide;
+        const effectiveTarget = isLocked ? P + state.perpSides[nearestI] * deadRad : rawTarget;
         state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
       }
@@ -27075,11 +27617,29 @@
           void main() {
             #ifdef USE_INSTANCING
               mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+              // Wall-brick instances are only ever rotated/shifted per
+              // instance, never non-uniformly scaled (see WallBuilder's
+              // brickJitter), so the linear part of mvMatrix itself still
+              // transforms a normal correctly here.
+              vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
             #else
               mat4 mvMatrix = modelViewMatrix;
+              // normalMatrix (three.js's own inverse-transpose of
+              // modelViewMatrix's linear part, supplied automatically) is
+              // required here rather than mat3(mvMatrix) directly —
+              // furniture placed in a building interior can carry a
+              // non-uniform per-instance scale (see loadBuildingScene's
+              // postSX/postSY/postSZ), and naively transforming a normal
+              // through a non-uniformly-scaled matrix stops being
+              // perpendicular to the actual scaled surface — confirmed live
+              // as a rescaled interior bench's shell outline bleeding onto
+              // the player sprite regardless of actual depth (not a
+              // depth-test bug at all: the shell geometry itself was wrong).
+              vec3 viewNormal = normalize(normalMatrix * normal);
             #endif
-            vec4 clip  = projectionMatrix * mvMatrix * vec4(position, 1.0);
-            vec4 clipN = projectionMatrix * mvMatrix * vec4(position + normal, 1.0);
+            vec4 viewPos = mvMatrix * vec4(position, 1.0);
+            vec4 clip  = projectionMatrix * viewPos;
+            vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
 
             vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
             float len = length(dir);
@@ -27134,11 +27694,16 @@
         void main() {
           #ifdef USE_INSTANCING
             mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+            vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
           #else
             mat4 mvMatrix = modelViewMatrix;
+            // See shellOutlineMat's own comment on this same substitution —
+            // required for correctness under non-uniform scale.
+            vec3 viewNormal = normalize(normalMatrix * normal);
           #endif
-          vec4 clip  = projectionMatrix * mvMatrix * vec4(position, 1.0);
-          vec4 clipN = projectionMatrix * mvMatrix * vec4(position + normal, 1.0);
+          vec4 viewPos = mvMatrix * vec4(position, 1.0);
+          vec4 clip  = projectionMatrix * viewPos;
+          vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
           vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
           float len = length(dir);
           dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
@@ -27461,44 +28026,102 @@
         };
       }
 
-      // Pulls the camera in along the target→camera line if a plateau mesa or
-      // cliff-face rock skin (see their `.userData.cameraObstacle` tags,
-      // collected once per zone as buildZoneScene's `occlusionMeshes`) sits
-      // between them — the fixed south-of-player follow camera has no other
-      // way to keep the player visible once something tall is in that gap,
-      // since generation alone can bias terrain but can't guarantee a clear
-      // line at this camera's shallow angle (see conversation history: even
-      // a single-tier rise close to the player already eats most of the
-      // vertical slack a ~14-tile, ~33°-elevation sightline allows). Scoped
-      // to wilderness zones for now — town/farm have no elevation system to
-      // occlude with.
+      // Every mesh worth pulling the camera in front of, for whatever area is
+      // currently active. Zones keep their existing tagged-mesh collection
+      // (buildZoneScene's `occlusionMeshes`, built once per zone from
+      // `.userData.cameraObstacle` tags on cliff/mesa skins). Everywhere
+      // else has no such static collection — the farmhouse, barn, and any
+      // placed furniture can all sit between the camera and the player (the
+      // house/barn were the reported case for losing sight of animals
+      // behind them; furniture matters for the seated camera specifically,
+      // since a chair can easily have another piece of furniture right
+      // behind it) — so those are gathered fresh each call instead. Cheap
+      // in practice: a handful of structures/furniture pieces at most, and
+      // this only runs once a frame.
+      function currentAreaOcclusionMeshes() {
+        if (_isZoneArea(currentArea)) return _zoneScenes.get(currentArea)?.occlusionMeshes || [];
+        const meshes = [];
+        if (currentArea === 'farm') {
+          if (_houseModel) meshes.push(_houseModel);
+          else if (_houseFallbackMesh) meshes.push(_houseFallbackMesh);
+          for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
+        }
+        for (const obj of interiorFurnitureObjects) {
+          if (obj.area === currentArea && obj.mesh) meshes.push(obj.mesh);
+        }
+        return meshes;
+      }
+      // Pulls the camera in along the target→camera line if something from
+      // currentAreaOcclusionMeshes() sits between them — the fixed south-of-
+      // player follow camera has no other way to keep the player visible
+      // once something tall is in that gap, since generation alone can bias
+      // terrain but can't guarantee a clear line at this camera's shallow
+      // angle (see conversation history: even a single-tier rise close to
+      // the player already eats most of the vertical slack a ~14-tile,
+      // ~33°-elevation sightline allows).
+      const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
-        if (!_isZoneArea(currentArea)) return { x: idealX, y: idealY, z: idealZ };
-        const obstacles = _zoneScenes.get(currentArea)?.occlusionMeshes;
-        if (!obstacles || !obstacles.length) return { x: idealX, y: idealY, z: idealZ };
-        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist < 0.5) return { x: idealX, y: idealY, z: idealZ };
-        const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
-        _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
-        _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
-        _cameraOcclusionRaycaster.far = dist;
-        const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, false);
-        if (!hits.length) return { x: idealX, y: idealY, z: idealZ };
-        // Stop a little short of the actual hit (not flush against it) so the
-        // camera doesn't clip into the cliff face it just pulled in behind.
-        const safeDist = Math.max(3, hits[0].distance - 0.6);
-        // Wilderness plateaus can tower many tiers higher than anything an
-        // authored map ever had, so a cliff can sit close enough to the
-        // player that safeDist collapses near its floor — sliding straight
-        // back along the same shallow ideal-camera ray then just jams the
-        // camera face-first into that wall (a screen-filling close-up).
-        // Lift the camera as it's pulled in, trading "close" for "more
-        // overhead," so a tall nearby cliff still leaves the player and
-        // their surroundings in view instead of one flat wall.
-        const shrink = clamp(1 - safeDist / dist, 0, 1);
-        const lift = shrink * dist * 0.5;
-        return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist + lift, z: lookAtZ + dir.z * safeDist };
+        let resultX = idealX, resultY = idealY, resultZ = idealZ;
+        const obstacles = currentAreaOcclusionMeshes();
+        if (obstacles && obstacles.length) {
+          const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+          const dist = Math.hypot(dx, dy, dz);
+          if (dist >= 0.5) {
+            const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+            _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+            _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+            _cameraOcclusionRaycaster.far = dist;
+            // recursive:true — zone occlusion meshes are already individual
+            // tagged leaf meshes (harmless either way there), but the
+            // house/barn/furniture entries above are whole Groups.
+            const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
+            if (hits.length) {
+              // Stop a little short of the actual hit (not flush against it) so
+              // the camera doesn't clip into the cliff face it just pulled in
+              // behind.
+              const safeDist = Math.max(3, hits[0].distance - 0.6);
+              // Wilderness plateaus can tower many tiers higher than anything
+              // an authored map ever had, so a cliff can sit close enough to
+              // the player that safeDist collapses near its floor — sliding
+              // straight back along the same shallow ideal-camera ray then
+              // just jams the camera face-first into that wall (a screen-
+              // filling close-up). Lift the camera as it's pulled in, trading
+              // "close" for "more overhead," so a tall nearby cliff still
+              // leaves the player and their surroundings in view instead of
+              // one flat wall.
+              const shrink = clamp(1 - safeDist / dist, 0, 1);
+              const lift = shrink * dist * 0.5;
+              resultX = lookAtX + dir.x * safeDist;
+              resultY = lookAtY + dir.y * safeDist + lift;
+              resultZ = lookAtZ + dir.z * safeDist;
+            }
+          }
+        }
+        // Floor guard — applies everywhere, not just zones (unlike the
+        // mesh-obstacle pull-in above, which has nothing to raycast against
+        // for the ground itself). A steep enough upward pitch (see the
+        // seated camera's up/down joystick allowance) can put the ideal
+        // position below ground with no cliff/obstacle involved at all —
+        // same pull-toward-lookAt technique as above: slide the camera back
+        // along its own look-at ray (preserving direction, not just
+        // clamping Y in isolation) until it clears a minimum floor
+        // clearance, using camTargetY (the player's own smoothed ground
+        // height, already tracked for the ordinary follow camera) as the
+        // floor reference so this still holds up on tiered zone terrain,
+        // not just the flat Y=0 farm/interior/town case that motivated it.
+        const minCameraY = camTargetY + CAMERA_FLOOR_CLEARANCE;
+        if (resultY < minCameraY) {
+          const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
+          if (dy < -1e-4) {
+            const t = clamp((minCameraY - lookAtY) / dy, 0, 1);
+            resultX = lookAtX + dx * t;
+            resultY = lookAtY + dy * t;
+            resultZ = lookAtZ + dz * t;
+          } else {
+            resultY = minCameraY;
+          }
+        }
+        return { x: resultX, y: resultY, z: resultZ };
       }
 
       // How far under a tree canopy's own recorded influence radius the player
@@ -27748,8 +28371,20 @@
         }
       }
       const _occludedGhostPairs = [];
+      // The occlusion ghost only ever has anything to guarantee visibility
+      // through in a wilderness zone — updateZoneVegetationCulling (the only
+      // place that ever marks a tree's stencil as "blocking") already
+      // early-returns everywhere else, so a ghost's stencil test can never
+      // pass in town/farm/interior/cavern. Explicitly hides (and skips
+      // updating) every ghost there too instead of leaving them sitting in
+      // the scene graph as dead weight — still built once up front (see
+      // addOccludedGhostSiblings), just inert outside the one context
+      // ("potential danger" in a wilderness zone) they exist for.
       function syncOccludedGhostTransforms() {
+        const active = _isZoneArea(currentArea);
         for (const { mesh, ghost } of _occludedGhostPairs) {
+          if (ghost.visible !== active) ghost.visible = active;
+          if (!active) continue;
           ghost.position.copy(mesh.position);
           ghost.rotation.copy(mesh.rotation);
           ghost.scale.copy(mesh.scale);
@@ -31368,10 +32003,26 @@
             : MOUNT_SADDLE_PERCENT_FALLBACK * (mountRideEntity.halfHeight * 2);
         }
 
+        // Sinks the whole avatar down toward chair-seat height while sitting
+        // (mirrors mountSeatLift just above, negative instead of positive) —
+        // the seated leg pose (see seatedPose below) bends the knees, but
+        // without this the torso sprite would still float at full standing
+        // height above the chair. Derived from the actual seat anchor's
+        // height vs. the player's own standing posterior anchor, same
+        // formula shape as mountSeatLift, so different chair/stool heights
+        // sink correctly instead of one fixed guess.
+        let chairSeatSink = 0;
+        if (sitInteraction && sitInteraction.phase !== 'out') {
+          const standingPosteriorY = playerAttachmentAnchorY('posterior');
+          chairSeatSink = standingPosteriorY != null
+            ? (Number(sitInteraction.seatWorldY) || 0) - standingPosteriorY
+            : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
+        }
+
         // Smooth vertical position (bob over water, plus a combat lunge's
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
         // or a climbing hop's bounce, see player.climbHopBounce)
-        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift;
+        const targetY = standY + (tile.water > 0.05 ? tile.water * WATER_UNIT * 0.6 : 0) + (player.lungeHopCurrent || 0) + (player.climbHopBounce || 0) + mountSeatLift + chairSeatSink;
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
@@ -31396,6 +32047,20 @@
         // without the guard it fought that and spun the character back around immediately.
         if (fishingMinigame?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
+        } else if (sitInteraction && sitInteraction.phase !== 'out') {
+          // Seated: the body stays pinned to the chair's own facing — no
+          // perpClamp/dead-zone tracking of the camera at all (unlike the
+          // general branch below), since the camera can freely orbit all
+          // the way around while seated and a dead zone that's allowed to
+          // chase a continuously-rotating camera would drag the whole body
+          // around with it. Only the head is meant to turn as the camera
+          // moves (see updateSitInteraction's neck-bone tracking) — pinning
+          // the body here is what makes that "camera doesn't rotate your
+          // body" contract actually hold.
+          playerFacing = -facingAngle + Math.PI / 2;
+          playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
           // Glued to a mount (same guard as mountSeatLift above): track the
           // mount's own PNG-plane rotation (c.pngRot, kept current every
@@ -31407,6 +32072,7 @@
           // match the mount's actual rendered silhouette and poke through it.
           playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
           playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
@@ -31414,6 +32080,18 @@
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
           playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+          // Legs are an invisible foot-placement rig, not a flat billboard —
+          // none of the foreshortening problem perpClamp's dead zone exists
+          // to hide applies to them, so they shouldn't hold/snap with the
+          // sprite (most noticeable while seated: the sprite can pin to the
+          // chair's facing or snap away from it as the camera swings past a
+          // dead-zone boundary, but the legs have no business following
+          // that snap). Counter-rotates the leg rig (a child of playerMesh,
+          // see procedural-leg-animation.js's attach()) by the gap between
+          // the clamped rotation just applied and the raw unclamped
+          // equivalent, so the legs' WORLD rotation always tracks
+          // facingAngle directly regardless of what the sprite is doing.
+          if (playerLegs?.group) playerLegs.group.rotation.y = rawTargetRotY - playerMesh.rotation.y;
         }
 
         // Bob animation when moving — amplitude ramps continuously from the
@@ -31438,7 +32116,21 @@
         // underneath it (see updateCompanions' shoulderPet branch), so legs
         // simply keep animating off the player's own real velocity as usual.
         const legsSuppressed = mountRideState !== 'none' || !!harvestInteraction;
-        playerLegs?.update(dt, speed / TILE, legsSuppressed);
+        // Bent-knee seated pose (see procedural-leg-animation.js's own
+        // applySeatedPose/solveSeatedLegSurfaceFlush) while actually seated
+        // in a chair — a faithful port of the furniture-avatar-author
+        // tool's own seat-plane-projection leg solve: the thigh rests flush
+        // against the seat's own authored surface tilt/height and the calf
+        // either continues flat or drops straight to the floor depending on
+        // whether the knee is still over the seat, instead of one fixed
+        // forward-offset/bend approximation for every chair.
+        const seatedPose = (sitInteraction && sitInteraction.phase !== 'out') ? {
+          seatY: sitInteraction.seatWorldY,
+          normalDeg: sitInteraction.seatNormalDeg,
+          footprintHalfDepth: sitInteraction.seatFootprintHalfDepth,
+          anchorZ: sitInteraction.seatAnchorZ,
+        } : undefined;
+        playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -32609,6 +33301,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             updateLightningFlash(dt);
           }
           if (currentArea === 'farm') updateDewPileMeshRotations(dt);
+          if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
           updateActionParticles(dt);
           updateTreasureSparkles(dt);
           updateFishingFxParticles(dt);
@@ -32677,12 +33370,27 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           // animates a per-mesh local transform (the tool sprite's own
           // rotation.z) after ghost creation; body-avatar ghosts move via
           // their shared parent group instead and need no such recopy, but
-          // this catches them too if that ever changes.
+          // this catches them too if that ever changes. Also hides every
+          // ghost outside a wilderness zone (see the function's own
+          // comment) — this branch already covers farm/town/cavern, the one
+          // remaining case (plain building interior) is handled in the
+          // else below since this whole branch is skipped there.
           syncOccludedGhostTransforms();
           updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
+        } else {
+          // Plain building interior — the one area the block above skips
+          // entirely (see its own comment). No tool/reticle meshes exist
+          // there, but the player's body ghost siblings still do (built
+          // once, unconditionally, at avatar-build time) — still needs
+          // this call so they actually get hidden on the very next frame
+          // after walking in from a wilderness zone, not left visible
+          // (uselessly, since nothing there can ever pass their stencil
+          // test) until the player happens to re-enter one of the areas
+          // above.
+          syncOccludedGhostTransforms();
         }
         if (currentArea === 'farm') {
           updateWaterMeshes();
@@ -33839,6 +34547,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
 
       function computeActionButtons() {
+        // Sitting overrides every other action — Stand is the only way out,
+        // same tier as fishing/dialogue below.
+        if (sitInteraction) {
+          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+        }
         // Fishing gets its own arc buttons instead of the harpoon's normal
         // "Fish" one (which would just call beginFishingCast() again and
         // silently restart the round) — the bottom-center #actionPrompt
@@ -33953,8 +34666,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
-        // 0. World object at reticle — its buttons take priority
-        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        // 0. World object at reticle — its buttons take priority. Town has
+        // no worldObjects of its own (see its "farm-scene-only" comment
+        // above) — its furniture interactables (sittable benches, etc.)
+        // live in _buildingInteractables instead, same as building interiors.
+        const obj = currentArea === 'town'
+          ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
+          : getWorldObjectAt(reticle.col, reticle.row);
         if (obj) {
           const objBtns = obj.getButtons(reticle);
           objBtns.forEach(b => btns.push(b));
@@ -34670,6 +35388,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
               const tgt = decorArea === 'interior' ? interiorScene : scene;
               const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
               if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
+              if (r && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
+              if (r) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
@@ -35250,6 +35970,18 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           return;
         }
 
+        // B: toggle debug leg-bone visualization (hip/thigh/calf/knee
+        // guides, same colored capsules the furniture-avatar-author tool
+        // draws over its own seated preview) for every visible avatar's leg
+        // rig — dev/diagnostic aid, not a player-facing mechanic.
+        if (key === 'b') {
+          event.preventDefault();
+          const next = !window.ProceduralLegAnimation?.showBones;
+          window.ProceduralLegAnimation?.setShowBones(next);
+          showToast(next ? 'Leg bones: shown' : 'Leg bones: hidden', true, false);
+          return;
+        }
+
         // R: cycle active tool's action mode (equivalent to Q on mobile)
         if (key === 'r') {
           const actions = toolActions[activeTool];
@@ -35371,6 +36103,22 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !_pixelProbeArmed;
       }
+      // Every other camera mode nudges a small look-around offset on top of a
+      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
+      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
+      // players get genuine 360° horizontal orbit instead — see the 'seated'
+      // camera mode's freeRotate flag in scratchbones-config.js.
+      function freeRotateCameraActive() {
+        return cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      // Wraps into (-180, 180] instead of clamping, so repeated drag input
+      // keeps spinning all the way around rather than pinning at an edge.
+      function wrapAzimuthDeg(deg) {
+        let d = deg % 360;
+        if (d > 180) d -= 360;
+        if (d <= -180) d += 360;
+        return d;
+      }
       function cameraDragRequested(e) {
         return e.pointerType === 'touch';
       }
@@ -35397,7 +36145,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const cfg = desktopControlsConfig();
         const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
         const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
+        cameraAzimuthOffsetDeg = freeRotateCameraActive()
+          ? wrapAzimuthDeg(cameraDragStartAzimuthOffset + dx * degPerPx)
+          : clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
         cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
         updateCameraPosition();
       });
@@ -35454,7 +36204,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-            cameraAzimuthOffsetDeg = clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
+              : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
             return;
@@ -35508,6 +36260,70 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           try { localStorage.removeItem(farmLayoutKey()); } catch {}
           showToast('Saved layout cleared. Reset the farm to apply.', true);
         },
+      };
+
+      // QA/devtools hook for the furniture placement + sitting systems,
+      // mirroring window._devSpawner/_farmEditor above — no in-game UI path
+      // to grant furniture items directly, so this exists for headless/
+      // console testing rather than as a player-facing cheat.
+      window.__hobunjiFurnitureDebug = {
+        give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
+        place: placeDecorativeFurniture,
+        sit: beginSitInteraction,
+        endSit: endSitInteraction,
+        get sitState() { return sitInteraction; },
+        get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
+        get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
+        worldObjectAt: getWorldObjectAt,
+        actionButtons: () => computeActionButtons(),
+        npcStation: (id) => npcStationsById.get(id),
+        npcStationCount: () => npcStationsById.size,
+        placeProcessing: placeProcessingFurniture,
+        tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
+        loadWorldLivestock: () => _loadWorldLivestock(),
+        saveWorldLivestock: (list) => _saveWorldLivestock(list),
+        assignVat: assignLivestockToVat,
+        unassignVat: unassignLivestockFromVat,
+        tickLivestock: tickLivestockResources,
+        getInventory: () => ({ ...inventory }),
+        loadBuildingScene: (mapId) => loadBuildingScene(mapId),
+        buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
+        buildingInteractableCount: () => _buildingInteractables.size,
+        renderFarmProcessors: () => renderFarmProcessors(),
+        enterInterior: () => enterInterior(),
+        interiorFurnitureObjects: () => interiorFurnitureObjects,
+        setShowLegBones: (v) => window.ProceduralLegAnimation?.setShowBones(v),
+        get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
+        get sitInteraction() { return sitInteraction; },
+        playerLegsRef: () => playerLegs,
+        occludedGhostCount: () => _occludedGhostPairs.length,
+        occludedGhostVisibleCount: () => _occludedGhostPairs.filter(p => p.ghost.visible).length,
+        get depthOutlinesSetting() { return s_depthOutlines; },
+        get outlinesSetting() { return s_outlines; },
+        get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },
+        get playerMeshRotY() { return playerMesh.rotation.y; },
+        get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
+        currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
+        enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        setOutlines: (v) => { s_outlines = !!v; },
+        playerNeckPivotInfo: () => {
+          let avatarGroup = null;
+          playerMesh.traverse(o => { if (o.name === 'player_avatar') avatarGroup = o; });
+          const rig = avatarGroup?.userData?.neckRig;
+          return rig ? {
+            available: rig.available,
+            neckLocal: rig.neckLocal,
+            pivotPx: rig.pivotPx,
+            modelHeight: avatarGroup.userData?.portraitModelHeight,
+            modelWidth: avatarGroup.userData?.portraitModelWidth,
+          } : null;
+        },
+        findDewPileTiles: () => {
+          const found = [];
+          for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
+          return found;
+        },
+        currentArea: () => currentArea,
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
