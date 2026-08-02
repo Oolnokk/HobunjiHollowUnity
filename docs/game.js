@@ -6199,6 +6199,12 @@
         // "flat" instead of showing its clean flat face.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
         if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = -Math.PI / 2;
+        // legsPivot carries no extra ±PI/2 twist (see updateCreatureMesh), so
+        // its own matching "rest" value is plain 0, not PI/2 -- planeDelta 0
+        // means pngRot === groupRot, the same nominal-facing convention the
+        // planes' own PI/2 rest implicitly encodes once combined with their
+        // baked mesh orientation.
+        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
         corpseObjects.add(c);
       }
 
@@ -6257,6 +6263,11 @@
           grp.rotation.z = c.deathRestRotZ * ease + turnsZ * Math.PI * 2;
           grp.rotation.x = c.deathRestRotX * ease + turnsX * Math.PI * 2;
           grp.rotation.y = c.groupRot + (c.deathRestRotY - c.groupRot) * ease + turnsY * Math.PI * 2;
+          // updateCreatureMesh stops running the instant death begins (see
+          // its own comment above), so a bandit's legs would otherwise freeze
+          // mid-stride through the whole ragdoll tumble -- ease them to a
+          // neutral planted pose instead, same suppressed path mounting uses.
+          if (c.avatarRef.legs) c.avatarRef.legs.update(dt, 0, true);
 
           if (t >= 1) {
             c.state = 'corpse';
@@ -6778,16 +6789,39 @@
         c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
-        // PNG planes get a separate deadzone that can never settle inside the
-        // perp range — eases to the nearest edge when idle, or rocks back and
-        // forth across the zone when moving (see creatureDeadzoneTarget).
+        // PNG planes get a separate deadzone from the prism, never freely
+        // tracking rawTargetRotY straight through it — exactly which of the
+        // three sway/halt/snap implementations below governs that deadzone
+        // is picked by CREATURE_PLANE_ROT_MODE (see its definition, up near
+        // perpClamp/creatureDeadzoneTarget/creatureSnapSwayTarget) and can
+        // change independently of this call site, so don't infer the active
+        // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
-        const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-        const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
-        c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        if (CREATURE_PLANE_ROT_MODE === 'snap') {
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          const { target: pngTarget, snap } = creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          if (snap) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        } else if (CREATURE_PLANE_ROT_MODE === 'sway') {
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        } else { // 'halt'
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+          if (pngSnapTo !== null) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        }
         const planeDelta = c.pngRot - c.groupRot;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
         if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = planeDelta - Math.PI / 2;
+        // Only bandits carry a legsPivot/legs pair (see buildBanditAvatar) --
+        // every CREATURE_DB animal leaves both undefined, so this is a no-op
+        // for them. legsPivot mirrors the planes' pngRot-derived rotation
+        // (unlike a plane, no extra ±PI/2 twist) so the legs track whichever
+        // dead-zone behavior currently governs the sprite instead of the
+        // prism's own free-tracking groupRot.
+        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
+        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -10394,10 +10428,36 @@
         frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
         group.add(frontPivot);
         group.add(backPivot);
+
+        // Procedural feet, mirroring the NPC walker's own ProceduralLegAnimation.attach
+        // call (see makeNpcWalker) -- needs its own floor-anchored pivot rather than
+        // reusing `group` directly, since (unlike playerMesh/the walker's root) `group`
+        // here already IS the sprite's own transform, sitting at world Y = surfY +
+        // halfHeight (see makeBanditEntity), not at floor level. A child positioned at
+        // local Y = -halfHeight cancels that back out to true floor level -- attach()
+        // itself assumes its parent's local Y=0 is the floor (see its own comment).
+        const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
+        const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+        const legsPivot = new THREE.Group();
+        legsPivot.name = 'bandit_legs_pivot';
+        legsPivot.position.y = -(modelHeight / 2);
+        group.add(legsPivot);
+        // legsPivot's rotation.y is kept in sync with the same pngRot-derived
+        // planeDelta the front/back planes use (see updateCreatureMesh), not
+        // group's own free-tracking groupRot -- so the legs share whichever
+        // dead-zone behavior currently governs the visible sprite (see
+        // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
+        // same clipping fix applied to the mounted-rider case.
+        const legs = window.ProceduralLegAnimation?.attach(THREE, legsPivot, {
+          speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
+          bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
+          modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
+          name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
+
         return {
-          group, frontPlane: frontPivot, backPlane: backPivot,
-          modelWidth: portrait.userData?.portraitModelWidth || MODEL_W,
-          modelHeight: portrait.userData?.portraitModelHeight || MODEL_W,
+          group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
+          modelWidth, modelHeight,
           // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
           // scans from the actual rendered portrait (png-plane-avatar.js's
           // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
@@ -10406,7 +10466,7 @@
           // -width/2,height/2 fallback.
           handAttachX: portrait.userData?.handAttachX,
           handAttachY: portrait.userData?.handAttachY,
-          dispose() { window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+          dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
         };
       }
 
@@ -26274,7 +26334,7 @@
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
       // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
-      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 25;
+      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 27.5;
       const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
       // Extra margin required to *exit* a dead zone once locked into it, on top of
       // the radius required to *enter* it. Without this, a rawTarget hovering right
@@ -26325,12 +26385,37 @@
         return { effectiveTarget, snapTo };
       }
 
-      // Oscillation angular speed for creatureDeadzoneTarget's moving-in-deadzone
-      // rocking motion (see below) — ~1.2s per full back-and-forth cycle, fast
-      // enough to read clearly against the pngRot smoothing lerp in
-      // updateCreatureMesh (time constant ~0.1s) without being frantic.
+      // ── Animal/creature PNG-plane dead-zone behavior — THREE implementations ──
+      // updateCreatureMesh's pngRot step (below) has been rewritten a few times
+      // while this gets tuned by feel, and all three attempts are kept side by
+      // side here on purpose rather than deleting the losers. ONLY the branch
+      // selected by CREATURE_PLANE_ROT_MODE actually runs at runtime — the
+      // other two are inert dead code, kept for quick A/B swaps back.
+      //
+      // NOTE FOR ANY LLM (or human) EDITING THIS FILE: do not assume any one
+      // of 'sway' / 'halt' / 'snap' is "the" system just because it's the one
+      // currently wired up, and do not assume the others are unused cruft
+      // safe to delete — check CREATURE_PLANE_ROT_MODE's value below before
+      // reasoning about which behavior is actually live, and ask before
+      // removing any of the three.
+      //   'sway' — legacy: continuously lerps/rocks through the dead zone via
+      //            creatureDeadzoneTarget (sine oscillation, smooth).
+      //   'halt' — current default going in: locks to the dead-zone edge and
+      //            stays there via perpClamp (same halt behavior player/NPC
+      //            avatars and farm-pen livestock already use), eased in.
+      //   'snap' — newest: alternates between the dead zone's two edges with
+      //            a hard cut (no interpolation) via creatureSnapSwayTarget,
+      //            instead of sweeping/lerping between them.
+      const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
+
+      // Oscillation angular speed shared by the 'sway' and 'snap' modes below
+      // — ~1.2s per full back-and-forth cycle, fast enough to read clearly
+      // against the pngRot smoothing lerp in updateCreatureMesh (time
+      // constant ~0.1s) without being frantic.
       const CREATURE_DEADZONE_OSC_RATE = 2 * Math.PI / 1.2;
 
+      // 'sway' mode (legacy — see CREATURE_PLANE_ROT_MODE above; may not be
+      // the active implementation, check that constant before assuming so).
       // For creature PNG planes: unlike perpClamp, a creature is never allowed
       // to settle with its rotation reading inside the dead zone. Standing
       // still, the target eases to the nearer dead-zone edge and stops there.
@@ -26364,6 +26449,47 @@
         const amplitude = angleDiff(edge, rawTarget);
         state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
         return rawTarget + amplitude * Math.sin(state.oscPhase);
+      }
+
+      // 'snap' mode (see CREATURE_PLANE_ROT_MODE above; may not be the active
+      // implementation, check that constant before assuming so).
+      // Like 'sway', a creature is never allowed to settle mid-dead-zone —
+      // but instead of continuously lerping/rocking through the zone, this
+      // alternates the target between the dead zone's two boundary angles
+      // (perp ± deadRad — the two nearest rotations actually outside the
+      // dead zone) on a timer, and reports back whether this call is a flip
+      // so the caller can assign the new value directly (a hard cut) rather
+      // than easing toward it. The first time a given lock is entered isn't
+      // flagged as a flip, so the plane still eases in from wherever it was
+      // instead of popping in from nowhere; only the alternations after that
+      // are instant.
+      // Alternation only runs while `moving` is true — mirrors creatureDeadzoneTarget's
+      // own moving gate (see 'sway' above): a creature standing still just
+      // holds at whichever edge it's nearest, instead of visibly flip-flopping
+      // in place with no motion to sell the "swap side" as a stride change.
+      function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt, moving) {
+        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
+        for (let i = 0; i < perps.length; i++) {
+          const dT = angleDiff(rawTarget, perps[i]);
+          const a = Math.abs(dT);
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
+        }
+        if (nearestAbs >= deadRad) {
+          state.oscPhase = 0;
+          state.snapSide = null;
+          return { target: rawTarget, snap: false };
+        }
+        const P = perps[nearestI];
+        if (!moving) {
+          state.oscPhase = 0;
+          if (state.snapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
+          return { target: P + state.snapSide * deadRad, snap: false };
+        }
+        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
+        const side = Math.sin(state.oscPhase) >= 0 ? 1 : -1;
+        const flip = state.snapSide !== null && state.snapSide !== side;
+        state.snapSide = side;
+        return { target: P + side * deadRad, snap: flip };
       }
 
       function nearestCardinalAngle(angle) {
@@ -31239,6 +31365,17 @@
         // without the guard it fought that and spun the character back around immediately.
         if (fishingMinigame?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
+        } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+          // Glued to a mount (same guard as mountSeatLift above): track the
+          // mount's own PNG-plane rotation (c.pngRot, kept current every
+          // frame by updateCreatureMesh — see updateMountRide) instead of
+          // running the rider's own independent perpClamp off facingAngle.
+          // The two dead zones use different angle sets/widths, so left
+          // independent, the rider's legs (children of playerMesh, see
+          // legsSuppressed below) could halt at an orientation that doesn't
+          // match the mount's actual rendered silhouette and poke through it.
+          playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
+          playerMesh.rotation.y = playerFacing;
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
@@ -32680,9 +32817,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
       const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
       // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-      // camera-relative dead zones where creatureDeadzoneTarget eases/rocks
-      // rather than tracking freely. The pngRot line shows where the PNG plane
-      // is actually pointed right now (may differ from group rotation).
+      // camera-relative dead zones the PNG plane never freely tracks through
+      // (see CREATURE_PLANE_ROT_MODE for which of sway/halt/snap governs
+      // what it does instead). The pngRot line shows where the PNG plane is
+      // actually pointed right now (may differ from group rotation).
       const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
       const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
       const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
