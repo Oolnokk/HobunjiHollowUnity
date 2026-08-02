@@ -233,7 +233,6 @@ pre {
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   pointer-events: auto;
-  resize: both;
   border: 1px solid rgba(107,169,255,.56);
   border-radius: 15px;
   background: rgba(7,16,26,.94);
@@ -280,7 +279,6 @@ pre {
     height: 38dvh;
     min-height: 190px;
     max-height: 48dvh;
-    resize: vertical;
     border-radius: 14px;
   }
   #footGlbModalBody { padding: 6px; }
@@ -295,7 +293,6 @@ pre {
     height: auto;
     min-height: 0;
     max-height: none;
-    resize: horizontal;
   }
 }
 
@@ -721,7 +718,6 @@ header,
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   pointer-events: auto;
-  resize: both;
   border: 1px solid rgba(107,169,255,.56);
   border-radius: 15px;
   background: rgba(7,16,26,.94);
@@ -769,7 +765,6 @@ header,
     height: 38dvh;
     min-height: 210px;
     max-height: 48dvh;
-    resize: vertical;
     border-radius: 14px;
   }
   #verticalPlacementModalBody { padding: 6px; }
@@ -784,7 +779,6 @@ header,
     height: auto;
     min-height: 0;
     max-height: none;
-    resize: horizontal;
   }
 }
 
@@ -5955,6 +5949,7 @@ function ensureFootGlbModal() { // Creates a compact modeless importer while kee
   document.body.appendChild(modal);
   $('footGlbModalClose')?.addEventListener('click', closeFootGlbTools);
   modal.addEventListener('click', event => { if (event.target === modal) closeFootGlbTools(); });
+  window.hobunjiInitFloatingCard?.('footGlbModalCard', 'footGlbModalBody', 'hobunji_procedural_animation_editor_footglbcard_size');
   return modal;
 }
 
@@ -6018,6 +6013,7 @@ function ensureVerticalPlacementModal() { // Creates a modeless dock so placemen
   document.body.appendChild(modal);
   $('verticalPlacementModalClose')?.addEventListener('click', closeVerticalPlacementTools);
   modal.addEventListener('click', event => { if (event.target === modal) closeVerticalPlacementTools(); });
+  window.hobunjiInitFloatingCard?.('verticalPlacementModalCard', 'verticalPlacementModalBody', 'hobunji_procedural_animation_editor_verticalplacementcard_size');
   return modal;
 }
 
@@ -6909,7 +6905,32 @@ document.getElementById('leftPanel').addEventListener('toggle', function () {
 // scroll so a finger-drag over its (now scrollable) body doesn't fight the
 // canvas underneath for the gesture.
 document.querySelectorAll('#leftPanel .selectorBody').forEach(PanelUI.installTouchDragScroll);
-document.querySelectorAll('#footGlbModalBody, #verticalPlacementModalBody').forEach(PanelUI.installTouchDragScroll);
+// #footGlbModalCard/#verticalPlacementModalCard are built lazily by
+// ensureFootGlbModal()/ensureVerticalPlacementModal() the first time the
+// user opens them (they don't exist in the DOM at page load, so wiring
+// them up here would silently find nothing) — window.hobunjiInitFloatingCard
+// is called from inside those functions instead, right after each card is
+// created. It replaces their old desktop-only `resize: both`/`vertical`
+// CSS (which most mobile browsers don't render a draggable handle for at
+// all) with the same touch-friendly grip used everywhere else, picking the
+// drag direction that matches whichever breakpoint's edge-pinning is
+// currently active (top-right pinned on desktop/landscape vs. a
+// bottom-sheet with only its top edge free on narrow portrait phones).
+window.hobunjiInitFloatingCard = function (cardId, bodyId, storageKeyBase) {
+  const card = document.getElementById(cardId);
+  if (!card || card.dataset.panelUiResizeInit === 'true') return;
+  card.dataset.panelUiResizeInit = 'true';
+  const isBottomSheet = () =>
+    window.matchMedia('(max-width: 700px)').matches &&
+    !window.matchMedia('(max-height: 520px) and (orientation: landscape)').matches;
+  if (isBottomSheet()) {
+    PanelUI.makeResizableBox(card, { corner: 'ne', axis: 'y', minHeight: 140, storageKey: storageKeyBase + '_mobile_v1' });
+  } else {
+    PanelUI.makeResizableBox(card, { corner: 'sw', axis: 'both', minWidth: 240, minHeight: 160, storageKey: storageKeyBase + '_v1' });
+  }
+  const body = document.getElementById(bodyId);
+  if (body) PanelUI.installTouchDragScroll(body);
+};
 PanelUI.makeResizableBox(document.getElementById('debugPanel'), {
   corner: 'nw',
   storageKey: 'hobunji_procedural_animation_editor_debugpanel_size_v1'
