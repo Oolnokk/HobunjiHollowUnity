@@ -360,7 +360,7 @@
           const leg = debug[side];
           if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
           lines.push(`${side} hip X ${leg.hipX.toFixed(5)} · posterior height ${leg.posteriorHeight.toFixed(5)} · foot contact Y ${leg.footContactY.toFixed(5)} · full leg length ${leg.fullLegLength.toFixed(5)}`);
-          lines.push(`  fixed thigh/calf ${leg.thighLength.toFixed(5)} / ${leg.calfLength.toFixed(5)} · thigh surface offset [${leg.hipSurfaceOffset.x.toFixed(5)}, ${leg.hipSurfaceOffset.y.toFixed(5)}, ${leg.hipSurfaceOffset.z.toFixed(5)}] · ${leg.calfStraight ? 'calf straight (collinear with thigh)' : 'calf 90° past edge (dropped to floor)'} · knee ${leg.kneeOverSeat ? 'over seat' : 'past edge'} · knee forward offset ${leg.kneeForwardOffset.toFixed(5)} (footprint half-depth ${leg.footprintHalfDepth.toFixed(4)})`);
+          lines.push(`  fixed thigh/calf ${leg.thighLength.toFixed(5)} / ${leg.calfLength.toFixed(5)} · thigh surface gap ${leg.thighSurfaceGap.toFixed(5)} · ${leg.calfStraight ? 'calf straight (collinear with thigh)' : 'calf 90° past edge (dropped to floor)'} · knee ${leg.kneeOverSeat ? 'over seat' : 'past edge'} · knee forward offset ${leg.kneeForwardOffset.toFixed(5)} (footprint half-depth ${leg.footprintHalfDepth.toFixed(4)})`);
         }
         return lines;
       }
@@ -27550,11 +27550,29 @@
           void main() {
             #ifdef USE_INSTANCING
               mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+              // Wall-brick instances are only ever rotated/shifted per
+              // instance, never non-uniformly scaled (see WallBuilder's
+              // brickJitter), so the linear part of mvMatrix itself still
+              // transforms a normal correctly here.
+              vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
             #else
               mat4 mvMatrix = modelViewMatrix;
+              // normalMatrix (three.js's own inverse-transpose of
+              // modelViewMatrix's linear part, supplied automatically) is
+              // required here rather than mat3(mvMatrix) directly —
+              // furniture placed in a building interior can carry a
+              // non-uniform per-instance scale (see loadBuildingScene's
+              // postSX/postSY/postSZ), and naively transforming a normal
+              // through a non-uniformly-scaled matrix stops being
+              // perpendicular to the actual scaled surface — confirmed live
+              // as a rescaled interior bench's shell outline bleeding onto
+              // the player sprite regardless of actual depth (not a
+              // depth-test bug at all: the shell geometry itself was wrong).
+              vec3 viewNormal = normalize(normalMatrix * normal);
             #endif
-            vec4 clip  = projectionMatrix * mvMatrix * vec4(position, 1.0);
-            vec4 clipN = projectionMatrix * mvMatrix * vec4(position + normal, 1.0);
+            vec4 viewPos = mvMatrix * vec4(position, 1.0);
+            vec4 clip  = projectionMatrix * viewPos;
+            vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
 
             vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
             float len = length(dir);
@@ -27609,11 +27627,16 @@
         void main() {
           #ifdef USE_INSTANCING
             mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+            vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
           #else
             mat4 mvMatrix = modelViewMatrix;
+            // See shellOutlineMat's own comment on this same substitution —
+            // required for correctness under non-uniform scale.
+            vec3 viewNormal = normalize(normalMatrix * normal);
           #endif
-          vec4 clip  = projectionMatrix * mvMatrix * vec4(position, 1.0);
-          vec4 clipN = projectionMatrix * mvMatrix * vec4(position + normal, 1.0);
+          vec4 viewPos = mvMatrix * vec4(position, 1.0);
+          vec4 clip  = projectionMatrix * viewPos;
+          vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
           vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
           float len = length(dir);
           dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);

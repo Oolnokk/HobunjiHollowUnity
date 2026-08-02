@@ -958,10 +958,16 @@
       const thighQuaternion = quatFromDownDir(thighDirection);
       const calfWorldQuaternion = quatFromDownDir(calfDirection);
       const calfLocalQuaternion = thighQuaternion.clone().invert().multiply(calfWorldQuaternion);
+      // Same metric as the tool's own thighSurfaceDistance: perpendicular
+      // gap from the thigh segment's own midpoint to the seat plane —
+      // should read as ~clearance-only (a few thousandths) whenever the
+      // hip seed is already near the seat, exactly like the tool's.
+      const thighMidpoint = hip.clone().add(knee).multiplyScalar(0.5);
+      const thighSurfaceGap = thighMidpoint.sub(planePoint).dot(normal);
       return {
-        hipOffset: hip.clone().sub(hipSeed), thighQuaternion, calfLocalQuaternion,
+        hip, thighQuaternion, calfLocalQuaternion,
         thighLength: boneLength, calfLength: boneLength,
-        calfStraight: kneeOverSeat, kneeForwardOffset, footprintHalfDepth,
+        calfStraight: kneeOverSeat, kneeForwardOffset, footprintHalfDepth, thighSurfaceGap,
       };
     }
     // last resolved seated-pose diagnostics (see getSeatedPoseDebug on the
@@ -978,16 +984,38 @@
       const chain = legChains[side];
       if (!mesh || !chain) return;
       const contactY = side === 'left' ? state.leftContactY : state.rightContactY;
-      const posteriorY = chain.hip.position.y;
+      const standingPosteriorY = chain.hip.position.y;
+      // Faithful to the tool's seatedAnatomicalLegMetrics: the leg math's
+      // own "posterior height" is the SEAT's own surface height, not the
+      // character's standing hip height — the tool's whole avatar root is
+      // pre-positioned so its posterior anchor already sits right there
+      // (see applySeatAttachmentTransform), so its posteriorHeight comes
+      // out seat-relative "for free"; this game instead sinks the sprite
+      // separately (chairSeatSink in docs/game.js) without moving this leg
+      // rig's own hip anchor, so it has to read the seat height directly
+      // here or the thigh ends up projected from the WRONG starting height
+      // — confirmed live: without this, "thigh surface gap" (see below)
+      // read ~0.048 instead of the tool's ~0.001 clearance-only gap for the
+      // same species/chair. Standing height is only a fallback for a seat
+      // sitting at/below floor level.
+      const seatY = seatFrame.planePoint.y;
+      const posteriorY = (Number.isFinite(seatY) && seatY > contactY + 0.001) ? seatY : standingPosteriorY;
       const fullLegLength = Math.max(0.001, posteriorY - contactY);
       const boneLength = fullLegLength * 0.5;
+      const hipSeed = new THREE.Vector3(chain.hip.position.x, posteriorY, chain.hip.position.z);
       const solved = solveSeatedLegSurfaceFlush(
-        chain.hip.position, boneLength, seatFrame.planePoint, seatFrame.normal, seatFrame.forward, seatFrame.footprintHalfDepth
+        hipSeed, boneLength, seatFrame.planePoint, seatFrame.normal, seatFrame.forward, seatFrame.footprintHalfDepth
       );
+      // chain.thigh is parented under chain.hip, which stays fixed at the
+      // avatar's STANDING hip position — thigh.position has to carry the
+      // full difference between that fixed parent and the solved seated
+      // hip point (seat-height correction + tiny surface clearance both
+      // folded in together).
+      const hipOffset = solved.hip.clone().sub(chain.hip.position);
       const slerpT = 1 - Math.exp(-SEATED_POSE_DAMP_RATE * Math.max(0, dt));
-      chain.thigh.position.x = damp(chain.thigh.position.x, solved.hipOffset.x, SEATED_POSE_DAMP_RATE, dt);
-      chain.thigh.position.y = damp(chain.thigh.position.y, solved.hipOffset.y, SEATED_POSE_DAMP_RATE, dt);
-      chain.thigh.position.z = damp(chain.thigh.position.z, solved.hipOffset.z, SEATED_POSE_DAMP_RATE, dt);
+      chain.thigh.position.x = damp(chain.thigh.position.x, hipOffset.x, SEATED_POSE_DAMP_RATE, dt);
+      chain.thigh.position.y = damp(chain.thigh.position.y, hipOffset.y, SEATED_POSE_DAMP_RATE, dt);
+      chain.thigh.position.z = damp(chain.thigh.position.z, hipOffset.z, SEATED_POSE_DAMP_RATE, dt);
       chain.thigh.quaternion.slerp(solved.thighQuaternion, slerpT);
       chain.calf.position.set(0, -solved.thighLength, 0);
       chain.calf.quaternion.slerp(solved.calfLocalQuaternion, slerpT);
@@ -999,7 +1027,7 @@
       lastSeatedPoseDebug[side] = {
         thighLength: solved.thighLength, calfLength: solved.calfLength, fullLegLength,
         posteriorHeight: posteriorY, footContactY: contactY,
-        hipSurfaceOffset: { x: solved.hipOffset.x, y: solved.hipOffset.y, z: solved.hipOffset.z },
+        thighSurfaceGap: solved.thighSurfaceGap,
         calfStraight: solved.calfStraight, calfForced90: !solved.calfStraight,
         kneeOverSeat: solved.calfStraight, kneeForwardOffset: solved.kneeForwardOffset,
         footprintHalfDepth: solved.footprintHalfDepth, hipX: chain.hip.position.x,
