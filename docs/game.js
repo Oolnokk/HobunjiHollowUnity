@@ -5851,6 +5851,17 @@
           y: anchor.position.y || 0,
           z: cz + (-ax * sin + az * cos),
           facingRad: Math.PI / 2 - totalYawDeg * Math.PI / 180,
+          // Seat surface tilt (pitch/roll only) and footprint depth, passed
+          // through to the leg rig's faithful surface-flush seated solve
+          // (see procedural-leg-animation.js's applySeatedPose). Read
+          // straight off the anchor's own local rotation with no further
+          // rotation applied for rotYDeg — every current player-placed
+          // furniture path always places at rotYDeg 0 (see the comment
+          // above this function), so anchor-local and world pitch/roll
+          // already coincide.
+          normalDeg: { x: anchor.rotationDeg.x || 0, z: anchor.rotationDeg.z || 0 },
+          footprintHalfDepth: Math.max(0.05, (Number(data.footprint?.d) || 1) / 2),
+          anchorZ: az,
         };
       }
 
@@ -5866,6 +5877,9 @@
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
           seatWorldY: seat.y,
+          seatNormalDeg: seat.normalDeg,
+          seatFootprintHalfDepth: seat.footprintHalfDepth,
+          seatAnchorZ: seat.anchorZ,
           prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
         activeCameraMode = 'seated';
@@ -31795,12 +31809,19 @@
 
         // Sinks the whole avatar down toward chair-seat height while sitting
         // (mirrors mountSeatLift just above, negative instead of positive) —
-        // the seated leg pose (see seatedForwardZ below) bends the knees, but
+        // the seated leg pose (see seatedPose below) bends the knees, but
         // without this the torso sprite would still float at full standing
-        // height above the chair. Not derived from the specific seat anchor
-        // (same simplification as seatedForwardZ) — a fixed offset reads
-        // fine across every current seat height (~0.32-0.37).
-        const chairSeatSink = sitInteraction && sitInteraction.phase !== 'out' ? -0.32 : 0;
+        // height above the chair. Derived from the actual seat anchor's
+        // height vs. the player's own standing posterior anchor, same
+        // formula shape as mountSeatLift, so different chair/stool heights
+        // sink correctly instead of one fixed guess.
+        let chairSeatSink = 0;
+        if (sitInteraction && sitInteraction.phase !== 'out') {
+          const standingPosteriorY = playerAttachmentAnchorY('posterior');
+          chairSeatSink = standingPosteriorY != null
+            ? (Number(sitInteraction.seatWorldY) || 0) - standingPosteriorY
+            : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
+        }
 
         // Smooth vertical position (bob over water, plus a combat lunge's
         // cosmetic leap arc — see beginCombatLunge/player.lungeHopCurrent —
@@ -31873,12 +31894,20 @@
         // simply keep animating off the player's own real velocity as usual.
         const legsSuppressed = mountRideState !== 'none' || !!harvestInteraction;
         // Bent-knee seated pose (see procedural-leg-animation.js's own
-        // applySeatedPose) while actually seated in a chair — a fixed
-        // forward foot offset rather than anything derived from the specific
-        // seat anchor, since the leg chain has no notion of "this particular
-        // chair's depth", just "sitting" in general.
-        const seatedForwardZ = sitInteraction && sitInteraction.phase !== 'out' ? 0.16 : undefined;
-        playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedForwardZ);
+        // applySeatedPose/solveSeatedLegSurfaceFlush) while actually seated
+        // in a chair — a faithful port of the furniture-avatar-author
+        // tool's own seat-plane-projection leg solve: the thigh rests flush
+        // against the seat's own authored surface tilt/height and the calf
+        // either continues flat or drops straight to the floor depending on
+        // whether the knee is still over the seat, instead of one fixed
+        // forward-offset/bend approximation for every chair.
+        const seatedPose = (sitInteraction && sitInteraction.phase !== 'out') ? {
+          seatY: sitInteraction.seatWorldY,
+          normalDeg: sitInteraction.seatNormalDeg,
+          footprintHalfDepth: sitInteraction.seatFootprintHalfDepth,
+          anchorZ: sitInteraction.seatAnchorZ,
+        } : undefined;
+        playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -35703,6 +35732,18 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           return;
         }
 
+        // B: toggle debug leg-bone visualization (hip/thigh/calf/knee
+        // guides, same colored capsules the furniture-avatar-author tool
+        // draws over its own seated preview) for every visible avatar's leg
+        // rig — dev/diagnostic aid, not a player-facing mechanic.
+        if (key === 'b') {
+          event.preventDefault();
+          const next = !window.ProceduralLegAnimation?.showBones;
+          window.ProceduralLegAnimation?.setShowBones(next);
+          showToast(next ? 'Leg bones: shown' : 'Leg bones: hidden', true, false);
+          return;
+        }
+
         // R: cycle active tool's action mode (equivalent to Q on mobile)
         if (key === 'r') {
           const actions = toolActions[activeTool];
@@ -36013,6 +36054,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         renderFarmProcessors: () => renderFarmProcessors(),
         enterInterior: () => enterInterior(),
         interiorFurnitureObjects: () => interiorFurnitureObjects,
+        setShowLegBones: (v) => window.ProceduralLegAnimation?.setShowBones(v),
+        get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
+        get sitInteraction() { return sitInteraction; },
+        playerLegsRef: () => playerLegs,
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
