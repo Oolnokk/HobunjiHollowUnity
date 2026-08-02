@@ -5867,6 +5867,7 @@
       // checks for the "Stand" override.
       let sitInteraction = null;
       const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
+      const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
 
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
@@ -5937,6 +5938,19 @@
         player.vx = 0; player.vy = 0;
         if (s.phase === 'active') {
           facingAngle = s.targetAngle; player.angle = facingAngle;
+          // Movement input can't actually move a seated character — redirect
+          // it into rotating the free-look seated camera around them
+          // instead (see the 'seated' camera mode's freeRotate), so the
+          // same controls still do something useful rather than going dead
+          // the instant you sit down. Same keyboard-wins-over-joystick
+          // source selection as the normal movement read just above in the
+          // main update loop. Sign matches the mouse-drag azimuth control
+          // (dragging/looking right also decreases the offset).
+          const kb = getKeyboardVector();
+          const ix = kb.active ? kb.x : input.x;
+          if (Math.abs(ix) > 0.001) {
+            cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
+          }
           return;
         }
         s.t = Math.min(1, s.t + dt / SIT_TRANSITION_S);
@@ -31922,6 +31936,7 @@
         // without the guard it fought that and spun the character back around immediately.
         if (fishingMinigame?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
           // Glued to a mount (same guard as mountSeatLift above): track the
           // mount's own PNG-plane rotation (c.pngRot, kept current every
@@ -31933,6 +31948,7 @@
           // match the mount's actual rendered silhouette and poke through it.
           playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
           playerMesh.rotation.y = playerFacing;
+          if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
@@ -31940,6 +31956,18 @@
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
           playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
+          // Legs are an invisible foot-placement rig, not a flat billboard —
+          // none of the foreshortening problem perpClamp's dead zone exists
+          // to hide applies to them, so they shouldn't hold/snap with the
+          // sprite (most noticeable while seated: the sprite can pin to the
+          // chair's facing or snap away from it as the camera swings past a
+          // dead-zone boundary, but the legs have no business following
+          // that snap). Counter-rotates the leg rig (a child of playerMesh,
+          // see procedural-leg-animation.js's attach()) by the gap between
+          // the clamped rotation just applied and the raw unclamped
+          // equivalent, so the legs' WORLD rotation always tracks
+          // facingAngle directly regardless of what the sprite is doing.
+          if (playerLegs?.group) playerLegs.group.rotation.y = rawTargetRotY - playerMesh.rotation.y;
         }
 
         // Bob animation when moving — amplitude ramps continuously from the
@@ -36146,6 +36174,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         playerLegsRef: () => playerLegs,
         occludedGhostCount: () => _occludedGhostPairs.length,
         occludedGhostVisibleCount: () => _occludedGhostPairs.filter(p => p.ghost.visible).length,
+        get depthOutlinesSetting() { return s_depthOutlines; },
+        get outlinesSetting() { return s_outlines; },
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
