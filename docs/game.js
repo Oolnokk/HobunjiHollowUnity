@@ -6761,6 +6761,13 @@
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+        // Bob animation when moving — mirrors the player's own move bob
+        // (updateMovement), just not on ordinary wildlife: an animal's plane
+        // is already grounded by its own idle/run frame art, so only bandits
+        // (which share the player's humanoid avatar rig) get it.
+        if (c.isBandit && Math.hypot(c.vx || 0, c.vy || 0) > 5) {
+          grp.position.y += Math.sin(performance.now() / 120) * 0.015;
+        }
         grp.scale.y = scaleY;
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
@@ -16300,15 +16307,15 @@
             return false;
           },
           update(dt) {
-            // Drives procedural legs from last frame's actual position delta
-            // rather than hooking every movement branch below individually —
-            // always runs regardless of which branch (or early return) this
-            // call ends up taking. One frame of lag; imperceptible at 60fps.
-            if (this.legs) {
-              const legsDist = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
-              this.legs.update(dt, dt > 0 ? legsDist / dt : 0, false);
-              this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
-            }
+            // Drives procedural legs (and the move-bob below) from last
+            // frame's actual position delta rather than hooking every
+            // movement branch below individually — always runs regardless of
+            // which branch (or early return) this call ends up taking. One
+            // frame of lag; imperceptible at 60fps.
+            const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
+            this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false);
+            this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
@@ -16426,7 +16433,11 @@
             if (this.state === 'breakoff') this.state = 'idle';
             const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * 0.2;
-            root.position.y += Math.sin(performance.now() / 140) * 0.012;
+            // Bob animation when moving — mirrors the player's own move bob
+            // (updateMovement), gated on this NPC's own actual movement
+            // speed (tiles/sec, from moveDistTiles above) rather than always
+            // running regardless of whether it's currently walking.
+            if (this._moveSpeedTiles > 0.05) root.position.y += Math.sin(performance.now() / 120) * 0.015;
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
           },
         };
@@ -31388,7 +31399,7 @@
         // Bob animation when moving
         const speed = Math.hypot(player.vx, player.vy);
         if (speed > 5) {
-          playerMesh.position.y += Math.sin(performance.now() / 120) * 0.03;
+          playerMesh.position.y += Math.sin(performance.now() / 120) * 0.015;
         }
         // Suppressed (legs stay visible but just hang straight down from
         // their hip anchors instead of gaiting, see procedural-leg-
