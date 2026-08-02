@@ -27848,6 +27848,11 @@
       // off since only the attached depth texture is read back.
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      // Cache of every PNG-plane/billboard object in the active scene, rebuilt
+      // only when the active scene reference changes (i.e. on area transition).
+      // Avoids a full scene.traverse() every frame for the depth-outline pass.
+      let _depthHideCacheScene = null;
+      let _depthHideCache = [];
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
@@ -33505,13 +33510,19 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           // Opt-in/off by default since it's an extra full scene pass on top
           // of everything above.
           if (s_depthOutlines) {
+            // Rebuild the PNG-plane/billboard cache only when the active scene
+            // changes (area transition), not every frame.
+            if (activeScene !== _depthHideCacheScene) {
+              _depthHideCacheScene = activeScene;
+              _depthHideCache = [];
+              activeScene.traverse(o => {
+                if (o.userData.isPngPlane || o.userData.isBillboard) _depthHideCache.push(o);
+              });
+            }
             const _hiddenForDepthPass = [];
-            activeScene.traverse(o => {
-              if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
-                o.visible = false;
-                _hiddenForDepthPass.push(o);
-              }
-            });
+            for (const o of _depthHideCache) {
+              if (o.visible) { o.visible = false; _hiddenForDepthPass.push(o); }
+            }
             renderer.setRenderTarget(_depthOnlyRT);
             activeScene.overrideMaterial = _depthOnlyMat;
             renderer.render(activeScene, camera);
