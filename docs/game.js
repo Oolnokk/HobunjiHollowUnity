@@ -5588,7 +5588,15 @@
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
+          prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
+        // Auto-zooms onto the animal the same way opening NPC dialogue swaps
+        // in its own tighter camera mode (see openNpcDialogue) — no separate
+        // tween function needed, the existing per-frame follow-lerp in the
+        // main loop (updateCameraPosition's camLerp) eases the camera into
+        // the new mode's framing smoothly over the 'in' transition below.
+        activeCameraMode = 'harvestInteraction';
+        activeCameraTarget = animal.avatarRef?.group || null;
       }
 
       function updateHarvestInteraction(dt) {
@@ -5616,7 +5624,15 @@
         player.angle = facingAngle;
         if (e >= 1) {
           if (h.phase === 'in') { h.phase = 'active'; h.t = 0; }
-          else { if (h.animal) h.animal._harvestFrozen = false; harvestInteraction = null; }
+          else {
+            if (h.animal) h.animal._harvestFrozen = false;
+            // Mirrors closeNpcDialogue's own restore of activeCameraMode/
+            // activeCameraTarget — the per-frame camLerp eases the camera
+            // back out to wherever it was before the interaction zoomed in.
+            activeCameraMode = h.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            activeCameraTarget = h.prevCameraTarget ?? null;
+            harvestInteraction = null;
+          }
         }
       }
 

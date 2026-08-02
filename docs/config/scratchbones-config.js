@@ -195,6 +195,13 @@ window.SCRATCHBONES_CONFIG = {
           "fovDeg": 42,
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.9
+        },
+        "harvestInteraction": {
+          "distanceTiles": 6,
+          "angleFromGroundDeg": 16,
+          "fovDeg": 42,
+          "followLerp": 0.15,
+          "targetYOffsetTiles": 0.55
         }
       }
     },
