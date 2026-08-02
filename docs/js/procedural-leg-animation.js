@@ -958,14 +958,28 @@
       const thighQuaternion = quatFromDownDir(thighDirection);
       const calfWorldQuaternion = quatFromDownDir(calfDirection);
       const calfLocalQuaternion = thighQuaternion.clone().invert().multiply(calfWorldQuaternion);
-      return { hipOffset: hip.clone().sub(hipSeed), thighQuaternion, calfLocalQuaternion, thighLength: boneLength, calfLength: boneLength };
+      return {
+        hipOffset: hip.clone().sub(hipSeed), thighQuaternion, calfLocalQuaternion,
+        thighLength: boneLength, calfLength: boneLength,
+        calfStraight: kneeOverSeat, kneeForwardOffset, footprintHalfDepth,
+      };
     }
+    // last resolved seated-pose diagnostics (see getSeatedPoseDebug on the
+    // returned handle) — a plain-data mirror of the furniture-avatar-author
+    // tool's own seatDiagnosticSnapshot/surfaceLegPose readout, kept here so
+    // docs/game.js's Pixel Probe can report the exact numbers this leg
+    // chain actually solved, comparable field-for-field against what the
+    // tool would show for the same species/gender/chair combo. Cleared
+    // whenever this avatar isn't seated so a stale reading never survives
+    // into an unrelated probe.
+    let lastSeatedPoseDebug = null;
     function applySeatedPose(side, seatFrame, dt) {
       const mesh = state[side];
       const chain = legChains[side];
       if (!mesh || !chain) return;
       const contactY = side === 'left' ? state.leftContactY : state.rightContactY;
-      const fullLegLength = Math.max(0.001, chain.hip.position.y - contactY);
+      const posteriorY = chain.hip.position.y;
+      const fullLegLength = Math.max(0.001, posteriorY - contactY);
       const boneLength = fullLegLength * 0.5;
       const solved = solveSeatedLegSurfaceFlush(
         chain.hip.position, boneLength, seatFrame.planePoint, seatFrame.normal, seatFrame.forward, seatFrame.footprintHalfDepth
@@ -981,6 +995,15 @@
       state[`${side}Roll`] = damp(state[`${side}Roll`], 0, SEATED_POSE_DAMP_RATE, dt);
       mesh.rotation.x = state[`${side}Roll`];
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
+      if (!lastSeatedPoseDebug) lastSeatedPoseDebug = {};
+      lastSeatedPoseDebug[side] = {
+        thighLength: solved.thighLength, calfLength: solved.calfLength, fullLegLength,
+        posteriorHeight: posteriorY, footContactY: contactY,
+        hipSurfaceOffset: { x: solved.hipOffset.x, y: solved.hipOffset.y, z: solved.hipOffset.z },
+        calfStraight: solved.calfStraight, calfForced90: !solved.calfStraight,
+        kneeOverSeat: solved.calfStraight, kneeForwardOffset: solved.kneeForwardOffset,
+        footprintHalfDepth: solved.footprintHalfDepth, hipX: chain.hip.position.x,
+      };
     }
     // seatedPose (see applySeatedPose's comment above): plain data —
     // { seatY, normalDeg:{x,z}, footprintHalfDepth, anchorZ } — describing
@@ -1005,6 +1028,7 @@
         applySeatedPose('right', seatFrame, dt);
         return;
       }
+      lastSeatedPoseDebug = null;
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
       if (suppressed) {
@@ -1048,7 +1072,7 @@
       disposeObjectResources(root);
     }
 
-    return { group: root, update, dispose };
+    return { group: root, update, dispose, getSeatedPoseDebug: () => lastSeatedPoseDebug };
   }
 
   window.ProceduralLegAnimation = {

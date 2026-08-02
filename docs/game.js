@@ -338,6 +338,32 @@
           return `${slot}=${raw}${resolvedHex ? ` (resolved ${resolvedHex})` : ''}`;
         }).join(' ') || '(none)';
       }
+      // Mirrors the furniture-avatar-author tool's own Avatar-mode diagnostics
+      // panel (seatDiagnosticSnapshot/updateAvatarModeDiagnostics — "Bones"/
+      // "Runtime" readouts), using the exact numbers this run's leg chain
+      // actually solved (see procedural-leg-animation.js's applySeatedPose,
+      // which stashes them precisely for this). Only meaningful while the
+      // probed avatar is actually sitting — the tool's readout is for a
+      // seated avatar too — so callers gate this on sitInteraction being
+      // active AND the probe having actually hit the player's own avatar,
+      // and skip it entirely otherwise rather than printing stale/blank
+      // seated data for a standing character.
+      function _pixelProbeSeatedLegReadoutLines() {
+        const debug = playerLegs?.getSeatedPoseDebug?.();
+        if (!debug) return null;
+        const appearance = _playerData?.appearance || {};
+        const lines = [];
+        lines.push('=== Seated Leg Pose Readout (compare field-for-field against the furniture-avatar-author tool: load this furniture key in Avatar mode, add a seated avatar with this species/gender, read its Bones/Runtime diagnostics) ===');
+        lines.push(`Species/gender: ${appearance.speciesId || '?'} / ${appearance.gender || '?'}   Furniture: "${sitInteraction?.furnitureKey || '?'}"`);
+        lines.push(`Seat anchor: height=${(Number(sitInteraction?.seatWorldY) || 0).toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
+        for (const side of ['left', 'right']) {
+          const leg = debug[side];
+          if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
+          lines.push(`${side} hip X ${leg.hipX.toFixed(5)} · posterior height ${leg.posteriorHeight.toFixed(5)} · foot contact Y ${leg.footContactY.toFixed(5)} · full leg length ${leg.fullLegLength.toFixed(5)}`);
+          lines.push(`  fixed thigh/calf ${leg.thighLength.toFixed(5)} / ${leg.calfLength.toFixed(5)} · thigh surface offset [${leg.hipSurfaceOffset.x.toFixed(5)}, ${leg.hipSurfaceOffset.y.toFixed(5)}, ${leg.hipSurfaceOffset.z.toFixed(5)}] · ${leg.calfStraight ? 'calf straight (collinear with thigh)' : 'calf 90° past edge (dropped to floor)'} · knee ${leg.kneeOverSeat ? 'over seat' : 'past edge'} · knee forward offset ${leg.kneeForwardOffset.toFixed(5)} (footprint half-depth ${leg.footprintHalfDepth.toFixed(4)})`);
+        }
+        return lines;
+      }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
         const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
@@ -562,6 +588,16 @@
           }
         });
         if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
+
+        // Only when this probe actually landed on the player's own avatar
+        // AND the player is currently sitting — see
+        // _pixelProbeSeatedLegReadoutLines's own comment.
+        const probedPlayerSitting = sitInteraction && sitInteraction.phase !== 'out'
+          && hits.some(h => _pixelProbeOwnerInfo(h.object)?.kind === 'player');
+        if (probedPlayerSitting) {
+          const seatedLines = _pixelProbeSeatedLegReadoutLines();
+          if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
+        }
 
         if (blendCheck) {
           lines.push('');
@@ -28187,8 +28223,20 @@
         }
       }
       const _occludedGhostPairs = [];
+      // The occlusion ghost only ever has anything to guarantee visibility
+      // through in a wilderness zone — updateZoneVegetationCulling (the only
+      // place that ever marks a tree's stencil as "blocking") already
+      // early-returns everywhere else, so a ghost's stencil test can never
+      // pass in town/farm/interior/cavern. Explicitly hides (and skips
+      // updating) every ghost there too instead of leaving them sitting in
+      // the scene graph as dead weight — still built once up front (see
+      // addOccludedGhostSiblings), just inert outside the one context
+      // ("potential danger" in a wilderness zone) they exist for.
       function syncOccludedGhostTransforms() {
+        const active = _isZoneArea(currentArea);
         for (const { mesh, ghost } of _occludedGhostPairs) {
+          if (ghost.visible !== active) ghost.visible = active;
+          if (!active) continue;
           ghost.position.copy(mesh.position);
           ghost.rotation.copy(mesh.rotation);
           ghost.scale.copy(mesh.scale);
@@ -33147,12 +33195,27 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           // animates a per-mesh local transform (the tool sprite's own
           // rotation.z) after ghost creation; body-avatar ghosts move via
           // their shared parent group instead and need no such recopy, but
-          // this catches them too if that ever changes.
+          // this catches them too if that ever changes. Also hides every
+          // ghost outside a wilderness zone (see the function's own
+          // comment) — this branch already covers farm/town/cavern, the one
+          // remaining case (plain building interior) is handled in the
+          // else below since this whole branch is skipped there.
           syncOccludedGhostTransforms();
           updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
+        } else {
+          // Plain building interior — the one area the block above skips
+          // entirely (see its own comment). No tool/reticle meshes exist
+          // there, but the player's body ghost siblings still do (built
+          // once, unconditionally, at avatar-build time) — still needs
+          // this call so they actually get hidden on the very next frame
+          // after walking in from a wilderness zone, not left visible
+          // (uselessly, since nothing there can ever pass their stencil
+          // test) until the player happens to re-enter one of the areas
+          // above.
+          syncOccludedGhostTransforms();
         }
         if (currentArea === 'farm') {
           updateWaterMeshes();
@@ -36058,6 +36121,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
         get sitInteraction() { return sitInteraction; },
         playerLegsRef: () => playerLegs,
+        occludedGhostCount: () => _occludedGhostPairs.length,
+        occludedGhostVisibleCount: () => _occludedGhostPairs.filter(p => p.ghost.visible).length,
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
