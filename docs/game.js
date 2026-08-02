@@ -4199,6 +4199,7 @@
         clampInventoryStack(itemKey);
         interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea });
         if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
+        registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -4215,6 +4216,7 @@
           if (obj.light) s.remove(obj.light);
           unregisterFurnitureSfxSource(obj.sfxSource);
           if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -4297,6 +4299,7 @@
             if (d.light) scene.remove(d.light);
             unregisterFurnitureSfxSource(d.sfxSource);
             if (DECORATIVE_FURNITURE_DEFS[d.key]?.sit) worldObjects.delete(col + ',' + row);
+            unregisterChairNpcStation(d.key, col, row, 'farm');
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
@@ -4430,6 +4433,7 @@
           const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
           if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
           if (result && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
+          if (result) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
         });
         if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && (layout.houseCol !== houseCol || layout.houseRow !== houseRow)) {
           repositionHouse(layout.houseCol, layout.houseRow);
@@ -16064,6 +16068,30 @@
         return station ? { ...station, stationId: station.id } : null;
       }
 
+      // Chairs auto-register as NPC scheduling stations wherever they're
+      // placed — no map author has to hand-add an npcStations entry for
+      // player-placed furniture. Deterministic id (area+tile) so placing the
+      // same spot twice is idempotent and a schedule rule survives a reload.
+      // Only pose:'sit' is set here; there's no seated NPC pose animation
+      // yet (see beginSitInteraction's own player-side note on the same
+      // gap), so a scheduled NPC currently just stands at the chair like any
+      // other station — the registration/scheduling half of the request.
+      function furnitureNpcStationId(area, col, row) {
+        return `furniture_chair_${area}_${col}_${row}`;
+      }
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+        if (!def?.sit) return;
+        registerNpcStations([{
+          id: furnitureNpcStationId(area, col, row), label: def.name,
+          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit',
+        }], area);
+      }
+      function unregisterChairNpcStation(furnitureKey, col, row, area) {
+        if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
+        npcStationsById.delete(furnitureNpcStationId(area, col, row));
+      }
+
       function sceneForNpcArea(area) {
         if (area === 'interior') return interiorScene;
         if (area === 'town') return townScene;
@@ -17597,6 +17625,7 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
+              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId));
             } else {
               // Fallback: no procedural recipe found for this furniture key
               window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
@@ -34824,6 +34853,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
               const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
               if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
               if (r && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
+              if (r) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
@@ -35698,6 +35728,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         worldObjectAt: getWorldObjectAt,
         actionButtons: () => computeActionButtons(),
+        npcStation: (id) => npcStationsById.get(id),
+        npcStationCount: () => npcStationsById.size,
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
