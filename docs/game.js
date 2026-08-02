@@ -31157,10 +31157,12 @@
         if (speed > 5) {
           playerMesh.position.y += Math.sin(performance.now() / 120) * 0.03;
         }
-        // Overwritten (hidden, not just idled) whenever a multi-avatar
-        // animation is driving the player's whole-body transform and the
-        // player isn't its anchor — mounted (glued to the mount's saddle,
-        // see mountSeatLift above) or mid livestock-harvest interaction (see
+        // Suppressed (legs stay visible but just hang straight down from
+        // their hip anchors instead of gaiting, see procedural-leg-
+        // animation.js's own update()) whenever a multi-avatar animation is
+        // driving the player's whole-body transform and the player isn't
+        // its anchor — mounted (glued to the mount's saddle, see
+        // mountSeatLift above) or mid livestock-harvest interaction (see
         // updateHarvestInteraction). A shoulder pet never sets either of
         // these: the player stays the anchor and keeps walking normally
         // underneath it (see updateCompanions' shoulderPet branch), so legs

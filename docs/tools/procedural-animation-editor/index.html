@@ -3940,28 +3940,34 @@ function buildLegBonesVisual() {
 
 // Re-solves both legs from the current live foot targets (whatever
 // updateExperimentalFeetGait just wrote to procedural.feet.left/right this
-// frame) and redraws their debug lines. defaultFrame is re-oriented to the
-// unauthored straight-at-the-foot direction every call so it tracks gait
-// automatically; proxy.quaternion (the authored bend, LOCAL to defaultFrame)
-// is only ever changed by a direct gizmo drag or a species/gender switch, so
-// re-orienting defaultFrame here never disturbs it.
+// frame) and redraws their debug lines. Each leg gets its own hip anchor at
+// that leg's own IDLE stance X (analysis.leftIdle/rightIdle — fixed once per
+// build, not the live swinging target) and the shared posterior height,
+// mirroring procedural-leg-animation.js's own per-leg hip. defaultFrame (the
+// left leg's gizmo parent) is re-oriented to the unauthored straight-at-the-
+// foot direction every call so it tracks gait automatically; proxy.quaternion
+// (the authored bend, LOCAL to defaultFrame) is only ever changed by a
+// direct gizmo drag or a species/gender switch, so re-orienting defaultFrame
+// here never disturbs it.
 function updateLegBonesVisual() {
   const lb = procedural.legBones;
   const THREE = state.three.THREE;
   const analysis = procedural.feet.analysis;
   if (!lb.root || !THREE || !window.LegBones || !analysis) return;
-  const hip = { x: 0, y: posteriorYForAnalysis(analysis), z: 0 };
-  if (lb.defaultFrame) lb.defaultFrame.position.set(hip.x, hip.y, hip.z);
+  const hipY = posteriorYForAnalysis(analysis);
+  const leftHip = { x: Number(analysis.leftIdle?.x) || 0, y: hipY, z: 0 };
+  const rightHip = { x: Number(analysis.rightIdle?.x) || 0, y: hipY, z: 0 };
+  if (lb.defaultFrame) lb.defaultFrame.position.set(leftHip.x, leftHip.y, leftHip.z);
   const leftFoot = procedural.feet.left;
   const rightFoot = procedural.feet.right;
   if (leftFoot && lb.defaultFrame) {
-    const straight = window.LegBones.solveTwoBoneLeg(THREE, { hip, foot: leftFoot.position });
+    const straight = window.LegBones.solveTwoBoneLeg(THREE, { hip: leftHip, foot: leftFoot.position });
     lb.defaultFrame.quaternion.copy(straight.thighQuaternion);
   }
   const bendEuler = lb.proxy ? new THREE.Euler().setFromQuaternion(lb.proxy.quaternion, 'XYZ') : new THREE.Euler();
   const bendDegX = THREE.MathUtils.radToDeg(bendEuler.x);
   const bendDegZ = THREE.MathUtils.radToDeg(bendEuler.z);
-  const drawLeg = (foot, line, sideBendDegX) => {
+  const drawLeg = (hip, foot, line, sideBendDegX) => {
     if (!foot || !line) return;
     const solved = window.LegBones.solveTwoBoneLeg(THREE, { hip, foot: foot.position, bendDegX: sideBendDegX, bendDegZ });
     const positions = line.geometry.attributes.position;
@@ -3971,8 +3977,8 @@ function updateLegBonesVisual() {
     positions.needsUpdate = true;
     line.geometry.computeBoundingSphere();
   };
-  drawLeg(leftFoot, lb.lines.left, bendDegX);
-  drawLeg(rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
+  drawLeg(leftHip, leftFoot, lb.lines.left, bendDegX);
+  drawLeg(rightHip, rightFoot, lb.lines.right, -bendDegX); // Right leg mirrors the left's lateral (x) bend, matching legBendForSpecies' own mirroring.
 }
 
 function syncLegBonesVisibility() {

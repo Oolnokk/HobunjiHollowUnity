@@ -12,15 +12,16 @@
 // the reference authoring tool this was designed against.
 //
 // Each foot actually hangs off an invisible 2-bone leg (hip -> thigh -> calf,
-// see docs/js/leg-bones.js) running from the avatar's "posterior" anchor
-// down to wherever the gait/idle math above says the foot should be right
-// now. Unauthored, the thigh points straight at the foot and the knee just
-// marks its midpoint, so the leg reads as one straight line and the whole
-// chain "follows the avatar wherever it goes" for free. An optional authored
-// bend (proceduralFeet.legBend in scratchbones-config.js) rotates the thigh
-// away from that straight line; the calf is never authored directly — it's
-// re-aimed at the live foot target every frame so the foot never detaches
-// from its computed ground contact point.
+// see docs/js/leg-bones.js) running from that leg's own hip anchor — X fixed
+// at the leg's own idle stance X, Y at the avatar's "posterior" anchor
+// height — down to wherever the gait/idle math above says the foot should
+// be right now. Unauthored, the thigh points straight at the foot and the
+// knee just marks its midpoint, so the leg reads as one straight line and
+// the whole chain "follows the avatar wherever it goes" for free. An
+// optional authored bend (proceduralFeet.legBend in scratchbones-config.js)
+// rotates the thigh away from that straight line; the calf is never
+// authored directly — it's re-aimed at the live foot target every frame so
+// the foot never detaches from its computed ground contact point.
 (function () {
   'use strict';
 
@@ -651,26 +652,34 @@
     const root = new THREE.Group();
     root.name = `${options.name || 'avatar'}_procedural_feet`;
 
-    // Invisible hip -> thigh -> calf chain (see docs/js/leg-bones.js) — a
-    // single shared hip pivot (the avatar's own posterior anchor is centered,
-    // not per-leg) with independent thigh/calf Object3Ds per leg. Thigh/calf
-    // carry no geometry of their own; the foot mesh (built below) is
-    // reparented onto the calf once it exists.
-    const hipPivot = new THREE.Group();
-    hipPivot.name = 'hip_pivot';
-    hipPivot.position.set(0, posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY)), 0);
-    root.add(hipPivot);
+    const posteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY));
+    const initialIdleLeftX = -stanceWidthFraction * modelWidth * 0.5;
+    const initialIdleRightX = stanceWidthFraction * modelWidth * 0.5;
 
-    function buildLegChain(sideName) {
+    // Invisible hip -> thigh -> calf chain per leg (see docs/js/leg-bones.js)
+    // — each leg gets its OWN hip anchor, at that leg's own idle stance X
+    // (not the avatar's centerline) and the shared posterior height, so an
+    // unauthored leg hangs straight down from directly above where its foot
+    // actually rests rather than converging both legs toward the center.
+    // Thigh/calf carry no geometry of their own; the foot mesh (built below)
+    // is reparented onto the calf once it exists.
+    function buildLegChain(sideName, hipX) {
+      const hip = new THREE.Group();
+      hip.name = `${sideName}_hip`;
+      hip.position.set(hipX, posteriorY, 0);
+      root.add(hip);
       const thigh = new THREE.Group();
       thigh.name = `${sideName}_thigh`;
       const calf = new THREE.Group();
       calf.name = `${sideName}_calf`;
       thigh.add(calf);
-      hipPivot.add(thigh);
-      return { thigh, calf };
+      hip.add(thigh);
+      return { hip, thigh, calf };
     }
-    const legChains = { left: buildLegChain('left'), right: buildLegChain('right') };
+    const legChains = {
+      left: buildLegChain('left', initialIdleLeftX),
+      right: buildLegChain('right', initialIdleRightX),
+    };
 
     // One authored bend per species+gender applied to both legs, mirrored
     // laterally (x) between left/right — see legBendForSpecies.
@@ -684,25 +693,32 @@
       right: null,
       leftContactY: radius * sphereScaleY,
       rightContactY: radius * sphereScaleY,
-      idleLeftX: -stanceWidthFraction * modelWidth * 0.5,
-      idleRightX: stanceWidthFraction * modelWidth * 0.5,
+      idleLeftX: initialIdleLeftX,
+      idleRightX: initialIdleRightX,
       // Live foot targets, in root-local space (the same frame the old code
       // wrote directly onto mesh.position in) — the thigh/calf chain is
-      // solved from hip -> this point every time it changes.
-      leftTarget: new THREE.Vector3(-stanceWidthFraction * modelWidth * 0.5, radius * sphereScaleY, 0),
-      rightTarget: new THREE.Vector3(stanceWidthFraction * modelWidth * 0.5, radius * sphereScaleY, 0),
+      // solved from each leg's own hip -> this point every time it changes.
+      leftTarget: new THREE.Vector3(initialIdleLeftX, radius * sphereScaleY, 0),
+      rightTarget: new THREE.Vector3(initialIdleRightX, radius * sphereScaleY, 0),
       leftRoll: 0,
       rightRoll: 0,
       disposed: false,
     };
 
-    // Solves the leg chain for `side` ('left'/'right') from hipPivot to the
-    // side's current target and applies the result to its thigh/calf
-    // Object3Ds and its foot mesh (whichever is currently attached —
-    // fallback or GLB), so the foot mesh's own local position/rotation is
-    // always just (0, -calfLength, 0) plus the roll lean: every other
-    // component of where the foot actually ends up in the world comes from
-    // the chain's transforms, not from the mesh itself.
+    // Keeps a leg's hip anchor's X pinned to its own idle stance X (the torso
+    // scan below can correct idleLeftX/idleRightX after this leg's hip was
+    // already built from the rough fixed-fraction guess).
+    function syncHipX(side) {
+      legChains[side].hip.position.x = side === 'left' ? state.idleLeftX : state.idleRightX;
+    }
+
+    // Solves the leg chain for `side` ('left'/'right') from that leg's own
+    // hip to the side's current target and applies the result to its
+    // thigh/calf Object3Ds and its foot mesh (whichever is currently
+    // attached — fallback or GLB), so the foot mesh's own local
+    // position/rotation is always just (0, -calfLength, 0) plus the roll
+    // lean: every other component of where the foot actually ends up in the
+    // world comes from the chain's transforms, not from the mesh itself.
     function applyLegChain(side) {
       const mesh = state[side];
       const chain = legChains[side];
@@ -710,7 +726,7 @@
       if (!mesh || !chain || !target || !window.LegBones) return;
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
-        hip: hipPivot.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
+        hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
@@ -800,6 +816,8 @@
         if (state.disposed || !scan) return;
         state.idleLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
         state.idleRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
+        syncHipX('left');
+        syncHipX('right');
         if (state.left) { state.leftTarget.x = state.idleLeftX; applyLegChain('left'); }
         if (state.right) { state.rightTarget.x = state.idleRightX; applyLegChain('right'); }
       }).catch(error => {
@@ -830,15 +848,24 @@
     // pixels/tiles — callers convert their own speed units before calling).
     // suppressed: true while a multi-avatar animation (mount, milking, …)
     // is driving this avatar's whole-body transform and this avatar is not
-    // the anchor — the feet are hidden rather than animated, since there's
-    // no meaningful "standing on the ground" pose while e.g. seated on a
-    // mount. A shoulder pet never sets this: the host avatar stays the
-    // anchor and keeps walking normally underneath it.
+    // the anchor — the legs stay visible but just hang straight down from
+    // their hip anchors instead of gaiting, since there's no meaningful
+    // "standing on the ground" pose while e.g. seated on a mount. A
+    // shoulder pet never sets this: the host avatar stays the anchor and
+    // keeps walking normally underneath it.
     function update(dt, speedWorldUnitsPerSecond, suppressed) {
       if (state.disposed) return;
-      root.visible = !suppressed;
       if (suppressed) {
+        // No meaningful "standing on the ground" gait while e.g. seated on a
+        // mount or mid-harvest — legs stay visible and just hang straight
+        // down from their own hip anchors instead. Each hip's X already IS
+        // its leg's idle stance X (see buildLegChain), so feeding applyPose
+        // the same neutral/idle pose it uses for a stationary leg produces
+        // exactly that straight-down hang, with no separate math needed.
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
+        const neutralPose = { travel: 0, lift: 0, planted: true };
+        applyPose('left', state.leftContactY, state.idleLeftX, neutralPose, 11, dt);
+        applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
         return;
       }
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
