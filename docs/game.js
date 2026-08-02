@@ -26889,18 +26889,24 @@
         // locking. Prevents boundary chatter when rawTarget hovers near the edge.
         const wasLocked = state.locked[nearestI];
         const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
-        let effectiveTarget = rawTarget;
+        // Which edge of the dead zone rawTarget is actually closest to right
+        // now — tracked every frame regardless of lock state, not just while
+        // unlocked. A locked model can still have rawTarget keep rotating
+        // straight through the zone (e.g. a continuous camera spin, or the
+        // seated look-rotate input) without ever exiting through the far
+        // side first; checking the side only while unlocked left it stuck
+        // holding the entry edge indefinitely in that case, even long after
+        // rawTarget had clearly crossed past center to the opposite side.
+        // Always snapping to whichever edge is nearest keeps the held
+        // rotation the closest acceptable one to rawTarget at all times,
+        // snapping again immediately if it keeps going past the far edge.
+        const newSide = nearestDT > 0 ? 1 : -1;
         let snapTo = null;
-        if (!isLocked) {
-          const newSide = nearestDT > 0 ? 1 : -1;
-          if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
-            snapTo = P + newSide * deadRad;
-          }
-          state.perpSides[nearestI] = newSide;
-        } else {
-          if (state.perpSides[nearestI] === null) state.perpSides[nearestI] = nearestDT >= 0 ? 1 : -1;
-          effectiveTarget = P + state.perpSides[nearestI] * deadRad;
+        if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
+          snapTo = P + newSide * deadRad;
         }
+        state.perpSides[nearestI] = newSide;
+        const effectiveTarget = isLocked ? P + state.perpSides[nearestI] * deadRad : rawTarget;
         state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
       }
