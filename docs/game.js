@@ -4065,6 +4065,7 @@
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
           label: def.icon + ' ' + def.name,
           update: updateVfx,
+          triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
             if (isAging && job) {
@@ -4656,6 +4657,60 @@
           if (dropDewPile(col, row, colorKey)) return true;
         }
         return false;
+      }
+
+      // ── Livestock-to-vat assignment (small livestock working a squeezer) ──
+      // Assigning a housed uumkao'ii to a specific placed squeezing vat
+      // redirects its dew straight into squeezed milk/curds every cooldown
+      // cycle (see tickLivestockResources) instead of dropping a pile that
+      // has to be dug up — the vat processes it automatically. Only one
+      // livestock per vat, only kinds with a squeezable resource (uumkao'ii
+      // dew today), and only while housed (barnId set), same requirement as
+      // every other livestock resource.
+      function vatCanAcceptLivestock(kind) {
+        return kind === 'uumkaoii'; // the only kind with a squeezable resource today
+      }
+      function findVatById(vatId) {
+        for (const obj of processingFurnitureObjects) if (obj.id === vatId) return obj;
+        return null;
+      }
+      function assignLivestockToVat(livestockId, vatId) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
+        if (!vatCanAcceptLivestock(rec.kind)) return { ok: false, message: `${rec.name} has nothing a vat can process.` };
+        const vat = findVatById(vatId);
+        if (!vat || PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
+        if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+        rec.assignedVatId = vatId;
+        _saveWorldLivestock(list);
+        return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
+      }
+      function unassignLivestockFromVat(livestockId) {
+        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
+        const list = _loadWorldLivestock();
+        const rec = list.find(l => l.id === livestockId);
+        if (!rec) return { ok: false, message: 'Livestock not found.' };
+        rec.assignedVatId = null;
+        _saveWorldLivestock(list);
+        return { ok: true, message: `${rec.name} unassigned from its vat.` };
+      }
+      // Runs the squeezing recipe for a raw dew color directly into inventory
+      // (bypassing the dig-up-a-pile step) and plays the vat's own processing
+      // VFX burst. Returns false (no state change) if the vat no longer
+      // exists — tickLivestockResources clears the stale assignment in that
+      // case and falls back to the ordinary pile-drop.
+      function autoSqueezeDewAtVat(vatId, colorKey) {
+        const vat = findVatById(vatId);
+        if (!vat) return false;
+        const outputs = getProcessingOutputs('squeezing', dewItemKey(colorKey));
+        if (!outputs) return false;
+        outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+        playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[vat.furnitureKey]]);
+        vat.triggerVfx && vat.triggerVfx();
+        return true;
       }
 
       // ── Livestock genetics & breeding ───────────────────────────────
@@ -5568,6 +5623,7 @@
         const rec = list.find(l => l.id === livestockId);
         if (!rec) return { ok: false, message: 'Livestock not found.' };
         rec.barnId = null;
+        rec.assignedVatId = null; // can't work a vat while unhoused — same gate as dew/egg cooldowns
         _saveWorldLivestock(list);
         const animal = [...animalObjects].find(a => a.livestockId === livestockId);
         if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
@@ -5611,6 +5667,21 @@
             l.dewDaysUntil--;
             if (l.dewDaysUntil <= 0) {
               l.dewReady = true;
+              // Assigned-to-a-vat takes priority over dropping a pile at all:
+              // the dew goes straight into squeezed milk/curds instead of
+              // needing to be dug up first. See autoSqueezeDewAtVat — falls
+              // through to the ordinary pile-drop behavior below if the vat
+              // was since demolished (also clears the stale assignment so
+              // it doesn't keep trying every day).
+              if (l.assignedVatId) {
+                if (autoSqueezeDewAtVat(l.assignedVatId, l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                  l.dewReady = false;
+                  l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
+                  changed = true;
+                  return;
+                }
+                l.assignedVatId = null;
+              }
               // The pile only ever actually appears from inside the live
               // uumkao'ii's own tick() (see makeUumkaoiiAnimal), which never
               // runs unless the player is on the farm map to simulate it
@@ -17689,6 +17760,12 @@
             const interactableFactory = BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
             if (interactableFactory) {
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, interactableFactory());
+            } else if (def?.sit) {
+              // Sittable town/building furniture (see computeActionButtons'/
+              // useActiveAction's town+_buildingInteractables lookups) — the
+              // Highland House interior instead goes through
+              // getInteriorInteractableAt, so this only matters here.
+              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
@@ -25049,11 +25126,12 @@
           const _r = getReticleTile();
           // worldObjects is farm-scene-only (see its declaration) — interior
           // interactables (e.g. a bed) live in interiorFurnitureObjects
-          // instead, via getInteriorInteractableAt. Ordinary building
+          // instead, via getInteriorInteractableAt. Ordinary building/town
           // furniture has no interaction at all — only the handful
-          // registered in _buildingInteractables (e.g. the Alchemy Table).
+          // registered in _buildingInteractables (e.g. the Alchemy Table,
+          // and now sittable furniture — see the mapData.furniture loader).
           const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
-            : _isBuildingArea(currentArea) ? _buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row)
+            : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
             : getWorldObjectAt(_r.col, _r.row);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
@@ -34179,8 +34257,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const tile    = getActiveGrid()[reticle.row][reticle.col];
         const btns    = [];
 
-        // 0. World object at reticle — its buttons take priority
-        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        // 0. World object at reticle — its buttons take priority. Town has
+        // no worldObjects of its own (see its "farm-scene-only" comment
+        // above) — its furniture interactables (sittable benches, etc.)
+        // live in _buildingInteractables instead, same as building interiors.
+        const obj = currentArea === 'town'
+          ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
+          : getWorldObjectAt(reticle.col, reticle.row);
         if (obj) {
           const objBtns = obj.getButtons(reticle);
           objBtns.forEach(b => btns.push(b));
@@ -35776,6 +35859,15 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         npcStationCount: () => npcStationsById.size,
         placeProcessing: placeProcessingFurniture,
         tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
+        loadWorldLivestock: () => _loadWorldLivestock(),
+        saveWorldLivestock: (list) => _saveWorldLivestock(list),
+        assignVat: assignLivestockToVat,
+        unassignVat: unassignLivestockFromVat,
+        tickLivestock: tickLivestockResources,
+        getInventory: () => ({ ...inventory }),
+        loadBuildingScene: (mapId) => loadBuildingScene(mapId),
+        buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
+        buildingInteractableCount: () => _buildingInteractables.size,
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
