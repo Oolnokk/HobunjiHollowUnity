@@ -28037,33 +28037,68 @@
       // vertical slack a ~14-tile, ~33°-elevation sightline allows). Scoped
       // to wilderness zones for now — town/farm have no elevation system to
       // occlude with.
+      const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
-        if (!_isZoneArea(currentArea)) return { x: idealX, y: idealY, z: idealZ };
-        const obstacles = _zoneScenes.get(currentArea)?.occlusionMeshes;
-        if (!obstacles || !obstacles.length) return { x: idealX, y: idealY, z: idealZ };
-        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist < 0.5) return { x: idealX, y: idealY, z: idealZ };
-        const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
-        _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
-        _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
-        _cameraOcclusionRaycaster.far = dist;
-        const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, false);
-        if (!hits.length) return { x: idealX, y: idealY, z: idealZ };
-        // Stop a little short of the actual hit (not flush against it) so the
-        // camera doesn't clip into the cliff face it just pulled in behind.
-        const safeDist = Math.max(3, hits[0].distance - 0.6);
-        // Wilderness plateaus can tower many tiers higher than anything an
-        // authored map ever had, so a cliff can sit close enough to the
-        // player that safeDist collapses near its floor — sliding straight
-        // back along the same shallow ideal-camera ray then just jams the
-        // camera face-first into that wall (a screen-filling close-up).
-        // Lift the camera as it's pulled in, trading "close" for "more
-        // overhead," so a tall nearby cliff still leaves the player and
-        // their surroundings in view instead of one flat wall.
-        const shrink = clamp(1 - safeDist / dist, 0, 1);
-        const lift = shrink * dist * 0.5;
-        return { x: lookAtX + dir.x * safeDist, y: lookAtY + dir.y * safeDist + lift, z: lookAtZ + dir.z * safeDist };
+        let resultX = idealX, resultY = idealY, resultZ = idealZ;
+        if (_isZoneArea(currentArea)) {
+          const obstacles = _zoneScenes.get(currentArea)?.occlusionMeshes;
+          if (obstacles && obstacles.length) {
+            const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+            const dist = Math.hypot(dx, dy, dz);
+            if (dist >= 0.5) {
+              const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+              _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+              _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+              _cameraOcclusionRaycaster.far = dist;
+              const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, false);
+              if (hits.length) {
+                // Stop a little short of the actual hit (not flush against it) so
+                // the camera doesn't clip into the cliff face it just pulled in
+                // behind.
+                const safeDist = Math.max(3, hits[0].distance - 0.6);
+                // Wilderness plateaus can tower many tiers higher than anything
+                // an authored map ever had, so a cliff can sit close enough to
+                // the player that safeDist collapses near its floor — sliding
+                // straight back along the same shallow ideal-camera ray then
+                // just jams the camera face-first into that wall (a screen-
+                // filling close-up). Lift the camera as it's pulled in, trading
+                // "close" for "more overhead," so a tall nearby cliff still
+                // leaves the player and their surroundings in view instead of
+                // one flat wall.
+                const shrink = clamp(1 - safeDist / dist, 0, 1);
+                const lift = shrink * dist * 0.5;
+                resultX = lookAtX + dir.x * safeDist;
+                resultY = lookAtY + dir.y * safeDist + lift;
+                resultZ = lookAtZ + dir.z * safeDist;
+              }
+            }
+          }
+        }
+        // Floor guard — applies everywhere, not just zones (unlike the
+        // mesh-obstacle pull-in above, which has nothing to raycast against
+        // for the ground itself). A steep enough upward pitch (see the
+        // seated camera's up/down joystick allowance) can put the ideal
+        // position below ground with no cliff/obstacle involved at all —
+        // same pull-toward-lookAt technique as above: slide the camera back
+        // along its own look-at ray (preserving direction, not just
+        // clamping Y in isolation) until it clears a minimum floor
+        // clearance, using camTargetY (the player's own smoothed ground
+        // height, already tracked for the ordinary follow camera) as the
+        // floor reference so this still holds up on tiered zone terrain,
+        // not just the flat Y=0 farm/interior/town case that motivated it.
+        const minCameraY = camTargetY + CAMERA_FLOOR_CLEARANCE;
+        if (resultY < minCameraY) {
+          const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
+          if (dy < -1e-4) {
+            const t = clamp((minCameraY - lookAtY) / dy, 0, 1);
+            resultX = lookAtX + dx * t;
+            resultY = lookAtY + dy * t;
+            resultZ = lookAtZ + dz * t;
+          } else {
+            resultY = minCameraY;
+          }
+        }
+        return { x: resultX, y: resultY, z: resultZ };
       }
 
       // How far under a tree canopy's own recorded influence radius the player
