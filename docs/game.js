@@ -4012,6 +4012,13 @@
       const AGING_DURATION_DAYS = 3;
       const AGING_METHODS = new Set(['barrelAging', 'vaseAging']);
 
+      // How long an instant-process (mashing/squeezing/grinding/drying/
+      // smoking) plays its processingWarp + particle burst for — aging
+      // methods don't use this at all, they animate continuously for as
+      // long as `job` is truthy instead (see makeProcessingFurniture's
+      // vfxActive()).
+      const PROCESS_BURST_S = 1.2;
+
       function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
@@ -4028,10 +4035,36 @@
         // batch survives a save/reload instead of silently vanishing.
         let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay } : null;
 
+        // ── Processing VFX (docs/js/authored-furniture-runtime.js) ──────
+        // Reuses whatever processingWarps/particleEmitters this piece's
+        // authored data carries — no-ops entirely for furniture keys with
+        // no authored data yet (AUTHORED_FURNITURE_KEYS). vfxT is this
+        // object's own clock, only advanced while updateProcessingFurnitureVfx
+        // actually ticks it (farm scene only), so playback never jumps on
+        // a scene revisit.
+        const authoredVfx = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
+        const emitterVisuals = (authoredVfx?.particleEmitters || []).map(e => window.AuthoredFurniture.createEmitterVisual(mesh, e));
+        let vfxT = 0;
+        let burstRemaining = 0;
+        function vfxActive() { return (isAging && !!job) || burstRemaining > 0; }
+        function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
+        function updateVfx(dt) {
+          if (!authoredVfx) return;
+          vfxT += dt;
+          if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
+          const active = vfxActive();
+          for (const warp of authoredVfx.processingWarps || []) {
+            if (active) window.AuthoredFurniture.applyWarp(mesh, warp, vfxT);
+            else window.AuthoredFurniture.resetWarp(mesh, warp);
+          }
+          for (const ev of emitterVisuals) ev?.update(dt, active);
+        }
+
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
           label: def.icon + ' ' + def.name,
+          update: updateVfx,
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
             if (isAging && job) {
@@ -4079,10 +4112,12 @@
             }
             outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
             playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+            triggerBurst();
             return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
           reset() {
             scene.remove(mesh);
+            emitterVisuals.forEach(ev => ev?.dispose());
             mesh.traverse(child => {
               if (child.geometry) child.geometry.dispose();
               if (child.material) child.material.dispose();
@@ -4111,6 +4146,14 @@
           obj.reset && obj.reset();
         });
         processingFurnitureObjects.clear();
+      }
+
+      // Per-frame processing-station VFX (processingWarps + particleEmitters)
+      // — see makeProcessingFurniture's updateVfx. Farm-only (processingFurnitureObjects
+      // only ever holds farm objects), called from the main loop alongside
+      // updateDewPileMeshRotations.
+      function updateProcessingFurnitureVfx(dt) {
+        processingFurnitureObjects.forEach(obj => obj.update && obj.update(dt));
       }
 
       // ── Decorative furniture (interior) ──────────────────────────
@@ -32786,6 +32829,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             updateLightningFlash(dt);
           }
           if (currentArea === 'farm') updateDewPileMeshRotations(dt);
+          if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
           updateActionParticles(dt);
           updateTreasureSparkles(dt);
           updateFishingFxParticles(dt);
@@ -35730,6 +35774,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         actionButtons: () => computeActionButtons(),
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
+        placeProcessing: placeProcessingFurniture,
+        tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
