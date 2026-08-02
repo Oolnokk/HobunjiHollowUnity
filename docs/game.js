@@ -6199,6 +6199,12 @@
         // "flat" instead of showing its clean flat face.
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
         if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = -Math.PI / 2;
+        // legsPivot carries no extra ±PI/2 twist (see updateCreatureMesh), so
+        // its own matching "rest" value is plain 0, not PI/2 -- planeDelta 0
+        // means pngRot === groupRot, the same nominal-facing convention the
+        // planes' own PI/2 rest implicitly encodes once combined with their
+        // baked mesh orientation.
+        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
         corpseObjects.add(c);
       }
 
@@ -6257,6 +6263,11 @@
           grp.rotation.z = c.deathRestRotZ * ease + turnsZ * Math.PI * 2;
           grp.rotation.x = c.deathRestRotX * ease + turnsX * Math.PI * 2;
           grp.rotation.y = c.groupRot + (c.deathRestRotY - c.groupRot) * ease + turnsY * Math.PI * 2;
+          // updateCreatureMesh stops running the instant death begins (see
+          // its own comment above), so a bandit's legs would otherwise freeze
+          // mid-stride through the whole ragdoll tumble -- ease them to a
+          // neutral planted pose instead, same suppressed path mounting uses.
+          if (c.avatarRef.legs) c.avatarRef.legs.update(dt, 0, true);
 
           if (t >= 1) {
             c.state = 'corpse';
@@ -6803,6 +6814,14 @@
         const planeDelta = c.pngRot - c.groupRot;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
         if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = planeDelta - Math.PI / 2;
+        // Only bandits carry a legsPivot/legs pair (see buildBanditAvatar) --
+        // every CREATURE_DB animal leaves both undefined, so this is a no-op
+        // for them. legsPivot mirrors the planes' pngRot-derived rotation
+        // (unlike a plane, no extra ±PI/2 twist) so the legs track whichever
+        // dead-zone behavior currently governs the sprite instead of the
+        // prism's own free-tracking groupRot.
+        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
+        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false);
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -10409,10 +10428,36 @@
         frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
         group.add(frontPivot);
         group.add(backPivot);
+
+        // Procedural feet, mirroring the NPC walker's own ProceduralLegAnimation.attach
+        // call (see makeNpcWalker) -- needs its own floor-anchored pivot rather than
+        // reusing `group` directly, since (unlike playerMesh/the walker's root) `group`
+        // here already IS the sprite's own transform, sitting at world Y = surfY +
+        // halfHeight (see makeBanditEntity), not at floor level. A child positioned at
+        // local Y = -halfHeight cancels that back out to true floor level -- attach()
+        // itself assumes its parent's local Y=0 is the floor (see its own comment).
+        const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
+        const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+        const legsPivot = new THREE.Group();
+        legsPivot.name = 'bandit_legs_pivot';
+        legsPivot.position.y = -(modelHeight / 2);
+        group.add(legsPivot);
+        // legsPivot's rotation.y is kept in sync with the same pngRot-derived
+        // planeDelta the front/back planes use (see updateCreatureMesh), not
+        // group's own free-tracking groupRot -- so the legs share whichever
+        // dead-zone behavior currently governs the visible sprite (see
+        // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
+        // same clipping fix applied to the mounted-rider case.
+        const legs = window.ProceduralLegAnimation?.attach(THREE, legsPivot, {
+          speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
+          bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
+          modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
+          name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
+
         return {
-          group, frontPlane: frontPivot, backPlane: backPivot,
-          modelWidth: portrait.userData?.portraitModelWidth || MODEL_W,
-          modelHeight: portrait.userData?.portraitModelHeight || MODEL_W,
+          group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
+          modelWidth, modelHeight,
           // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
           // scans from the actual rendered portrait (png-plane-avatar.js's
           // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
@@ -10421,7 +10466,7 @@
           // -width/2,height/2 fallback.
           handAttachX: portrait.userData?.handAttachX,
           handAttachY: portrait.userData?.handAttachY,
-          dispose() { window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+          dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
         };
       }
 
