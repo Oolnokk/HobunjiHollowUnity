@@ -79,7 +79,7 @@ header h1 { margin: 0; font-size: 16px; letter-spacing: .25px; color: var(--acce
 .collapsiblePanel > summary > :last-child { margin-left: auto; }
 .collapsibleBody { border-top: 1px solid rgba(255,255,255,.08); }
 #leftPanel { display: block; }
-#leftPanel .selectorBody { max-height: min(68vh, 720px); display: grid; grid-template-rows: auto auto minmax(180px,1fr); overflow: hidden; }
+#leftPanel .selectorBody { max-height: min(68vh, 720px); display: grid; grid-template-rows: auto auto minmax(180px,1fr); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #rightPanel { display: block; overflow: visible; padding-bottom: 0; }
 #rightPanel .detailsBody { max-height: min(72vh, 760px); overflow: auto; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
 .panelSection { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
@@ -167,7 +167,7 @@ pre {
 .toolSource dd { margin: 0; overflow-wrap: anywhere; }
 .segmented { display: flex; gap: 6px; flex-wrap: wrap; }
 .segmented button { flex: 1 1 92px; }
-#kurrayaJson { max-height: 34vh; }
+#kurrayaJson { max-height: 34vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 #kurrayaPanel .card { margin-bottom: 0; }
 
 .creatureGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -181,7 +181,7 @@ pre {
 .creatureColorRow input[type="color"] { min-height: 42px; padding: 3px; cursor: pointer; }
 .creatureColorRow input[type="checkbox"] { width: 18px; min-height: 18px; margin: 0 6px 0 0; accent-color: var(--accent); }
 .creatureLayerToggle { display: flex; align-items: center; min-width: 0; }
-#creatureGenotypeJson { max-height: 24vh; margin-top: 8px; }
+#creatureGenotypeJson { max-height: 24vh; margin-top: 8px; overflow: auto; -webkit-overflow-scrolling: touch; }
 #creatureEditor .row > button { flex: 1 1 112px; }
 #creaturePreviewCanvas { width: 100%; max-height: 180px; margin-top: 8px; display: block; object-fit: contain; image-rendering: pixelated; border: 1px solid rgba(255,255,255,.1); border-radius: 11px; background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.11), rgba(255,255,255,.02)); }
 
@@ -411,7 +411,8 @@ header,
   max-height: calc(var(--viewport-height, 100dvh) - 56px) !important;
   display: flex !important;
   flex-direction: column !important;
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 #leftPanel #npcList { flex: 1 1 170px; min-height: 170px; }
 #leftPanel #creatureEditor { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
@@ -923,6 +924,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 
 </style>
 
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="app">
@@ -11855,6 +11857,28 @@ showOverlay('Loading animation author', 'Fetching the repository NPC runtime plu
 log('Versatile animation author initialized from the repository-backed gameplay viewer.');
 setTimeout(() => loadSource(initialSettings), 0);
 })();
+</script>
+<script>
+// #leftPanel is a floating <details> drawer pinned to the top-right corner
+// (top/right fixed via CSS !important), so only its left edge can grow —
+// drag-resize its width only, and let the .selectorBody CSS overflow-y:auto
+// fix (see stylesheet above) handle content taller than the drawer.
+PanelUI.makeResizableBox(document.getElementById('leftPanel'), {
+  corner: 'sw',
+  axis: 'x',
+  minWidth: 280,
+  storageKey: 'hobunji_animation_author_leftpanel_width_v1'
+});
+// This drawer floats over the always-interactive 3D viewport, same as the
+// multi-avatar mode's own panels — give it the same touch hold-and-drag
+// scroll so a finger-drag over its (now scrollable) body doesn't fight the
+// canvas underneath for the gesture.
+document.querySelectorAll('#leftPanel .selectorBody').forEach(PanelUI.installTouchDragScroll);
+PanelUI.makeResizableBox(document.getElementById('debugPanel'), {
+  corner: 'nw',
+  storageKey: 'hobunji_animation_author_debugpanel_size_v1'
+});
+PanelUI.installTouchDragScroll(document.getElementById('debugLog'));
 </script>
 </body>
 </html>

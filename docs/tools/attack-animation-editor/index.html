@@ -84,6 +84,7 @@ canvas{display:block;width:100%;height:100%}
   #sidebar{width:320px;max-width:68vw;min-width:280px}
 }
 </style>
+<script src="../../js/panel-ui.js"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -1156,6 +1157,12 @@ $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
 refreshJsonView();
 setDebug('Hobunji Attack Animation Editor\nNeutral, Windup, and Strike are all authored poses.\nPlayback auto-lerps Neutral→Windup→Strike→(hold)→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
 logDebug('Attack Animation Editor ready');
+</script>
+<script>
+PanelUI.makeResizableEdge(document.getElementById('sidebar'), {
+  edge: 'right',
+  storageKey: 'hobunji_attack_animation_editor_sidebar_width_v1'
+});
 </script>
 </body>
 </html>

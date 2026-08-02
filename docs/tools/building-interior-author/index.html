@@ -48,9 +48,10 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
-<div class="app">
+<div class="app" id="biaApp">
   <header class="panel">
     <div class="title"><h1>Building Interior Editor</h1><div class="status" id="statusLine">Loading scripts…</div></div>
     <div class="row">
@@ -62,7 +63,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
   </header>
 
-  <aside class="panel">
+  <aside class="panel" id="biaLeftPanel">
     <div class="section">
       <h2>1. Room identity</h2>
       <div class="grid2">
@@ -165,7 +166,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
     </div>
   </main>
 
-  <aside class="panel">
+  <aside class="panel" id="biaRightPanel">
     <div class="section">
       <h2>5. Post-transform (3D visual only)</h2>
       <div id="noSelMsg" class="hint">Select a furniture tile on the 2D grid or click a piece in 3D.</div>
@@ -1227,6 +1228,15 @@ window._biaBridge = {
 };
 
 })(); // end IIFE
+</script>
+<script>
+const biaAppGrid = document.getElementById('biaApp');
+PanelUI.makeResizableGridColumn(biaAppGrid, document.getElementById('biaLeftPanel'), {
+  edge: 'right', storageKey: 'hobunji_building_interior_author_leftpanel_width_v1'
+});
+PanelUI.makeResizableGridColumn(biaAppGrid, document.getElementById('biaRightPanel'), {
+  edge: 'left', storageKey: 'hobunji_building_interior_author_rightpanel_width_v1'
+});
 </script>
 </body>
 </html>

@@ -58,6 +58,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
   header{align-items:flex-start;flex-direction:column}
 }
 </style>
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="app">
@@ -74,7 +75,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
     </div>
   </header>
 
-  <aside class="panel">
+  <aside class="panel" id="favLeftPanel">
     <div class="tabs">
       <button class="active" data-left-tab="parts">Pieces</button>
       <button data-left-tab="presets">Presets</button>
@@ -243,7 +244,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
     </div>
   </main>
 
-  <aside class="panel">
+  <aside class="panel" id="favRightPanel">
     <div class="section">
       <h2>Selected object</h2>
       <div id="noSelection" class="muted">Select a piece or placement plane.</div>
@@ -1798,6 +1799,15 @@ syncMaoaoAvatarConfigFromRuntime();
 resize();
 animate();
 log('Ready. Includes tapered top/bottom surfaces, PNG texture import, actual GitHub Mao’ao portrait rendering/config sync, adjustable avatar visual lift, Y-up part normalization, placement planes, and tile base visual.');
+</script>
+<script>
+const favAppGrid = document.getElementById('app');
+PanelUI.makeResizableGridColumn(favAppGrid, document.getElementById('favLeftPanel'), {
+  edge: 'right', storageKey: 'hobunji_furniture_avatar_author_leftpanel_width_v1'
+});
+PanelUI.makeResizableGridColumn(favAppGrid, document.getElementById('favRightPanel'), {
+  edge: 'left', storageKey: 'hobunji_furniture_avatar_author_rightpanel_width_v1'
+});
 </script>
 </body>
 </html>
