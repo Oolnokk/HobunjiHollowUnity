@@ -23345,6 +23345,7 @@
         renderFarmHeader();
         renderFarmGridGlance();
         renderFarmBuildings();
+        renderFarmProcessors();
         renderFarmLivestock();
         renderFarmStoragePane();
         renderFarmhandsSection();
@@ -23421,10 +23422,14 @@
         }
         // Buildings / furniture / crates — everything occupying a farm tile
         // that isn't an animal (animals get their own marker below).
+        // Processing furniture gets its actual status color (see
+        // farmProcessorStatus, shared with the Processors tile grid below)
+        // instead of the flat generic marker every other object still uses.
+        const _glanceLivestock = processingFurnitureObjects.size ? _loadWorldLivestock() : null;
         worldObjects.forEach((obj, key) => {
           if (!obj || obj.type === 'animal') return;
           const [c, r] = key.split(',').map(Number);
-          ctx.fillStyle = 'rgba(200,80,60,0.9)';
+          ctx.fillStyle = obj.type === 'processing_furniture' ? FARM_PROCESSOR_STATUS_COLORS[farmProcessorStatus(obj, _glanceLivestock).status] : 'rgba(200,80,60,0.9)';
           ctx.fillRect(c * PX, r * PX, PX, PX);
         });
         // Livestock
@@ -23441,8 +23446,12 @@
           legend.innerHTML = [
             ['#3c6e3f', 'Grass'], ['#6b4a30', 'Tilled'], ['#25445c', 'Trench'],
             ['#8fd66b', 'Growing crop'], ['#f9e28a', 'Ready crop'],
-            ['rgba(200,80,60,0.9)', 'Building'], ['#6b6b6f', 'Rock/obstruction'],
+            ['rgba(200,80,60,0.9)', 'Building/decor'], ['#6b6b6f', 'Rock/obstruction'],
             ['#ffd27a', 'Livestock'],
+            [FARM_PROCESSOR_STATUS_COLORS.idle, 'Processor: idle'],
+            [FARM_PROCESSOR_STATUS_COLORS.working, 'Processor: working'],
+            [FARM_PROCESSOR_STATUS_COLORS.ready, 'Processor: ready'],
+            [FARM_PROCESSOR_STATUS_COLORS.livestock, 'Processor: livestock-worked'],
           ].map(([color, label]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('');
         }
 
@@ -23564,6 +23573,76 @@
         return row;
       }
 
+      // ── Farm tab: processing-station status tiles ──────────────────
+      // Color-coded by the same job state makeProcessingFurniture already
+      // tracks — no separate status system, this just reads getJob()/
+      // AGING_METHODS the same way its own getButtons() does, plus whether
+      // a squeezing vat has livestock assigned (see assignLivestockToVat).
+      const FARM_PROCESSOR_STATUS_COLORS = {
+        idle: '#8f8878', working: '#c9a227', ready: '#5fbf6b', livestock: '#4a90d9',
+      };
+      // Shared by the Processors tile grid and the Layout glance canvas
+      // marker — one status computation, read from the same job state
+      // makeProcessingFurniture's own getButtons() already uses.
+      function farmProcessorStatus(obj, livestock) {
+        const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
+        if (!def) return { status: 'idle', label: 'Idle' };
+        const isAging = AGING_METHODS.has(def.method);
+        const job = obj.getJob ? obj.getJob() : null;
+        const list = livestock || (def.method === 'squeezing' ? _loadWorldLivestock() : null);
+        const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id) : null;
+        if (isAging && job) {
+          const daysLeft = Math.max(0, job.readyDay - calendar.day);
+          return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };
+        }
+        if (worker) return { status: 'livestock', label: `Worked by ${worker.name}`, worker };
+        return { status: 'idle', label: 'Idle' };
+      }
+      function renderFarmProcessors() {
+        const grid = document.getElementById('farmProcessorsGrid');
+        const note = document.getElementById('farmProcessorsNote');
+        if (!grid) return;
+        const processors = [...processingFurnitureObjects];
+        if (note) note.textContent = processors.length ? '' : 'No processing stations placed yet.';
+        const livestock = _loadWorldLivestock();
+        grid.innerHTML = '';
+        processors.forEach(obj => {
+          const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
+          if (!def) return;
+          const { status, label, worker } = farmProcessorStatus(obj, livestock);
+          const tile = document.createElement('div');
+          tile.className = 'farm-processor-tile';
+          tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
+          tile.innerHTML = `
+            <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
+            <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
+          `;
+          if (status === 'ready' && hasFarmPermission('alterFarm')) {
+            const btn = document.createElement('button');
+            btn.className = 'settings-small-btn';
+            btn.textContent = 'Collect';
+            btn.addEventListener('click', () => {
+              const result = obj.onAction('obj_process_' + obj.furnitureKey);
+              showToast(result.message, result.ok);
+              renderFarmProcessors(); renderFarmGridGlance();
+            });
+            tile.appendChild(btn);
+          }
+          if (worker && hasFarmPermission('livestock')) {
+            const btn = document.createElement('button');
+            btn.className = 'settings-small-btn';
+            btn.textContent = 'Unassign';
+            btn.addEventListener('click', () => {
+              const result = unassignLivestockFromVat(worker.id);
+              showToast(result.message, result.ok);
+              renderFarmProcessors(); renderFarmLivestock();
+            });
+            tile.appendChild(btn);
+          }
+          grid.appendChild(tile);
+        });
+      }
+
       function renderFarmLivestock() {
         const list = document.getElementById('farmLivestockList');
         if (!list) return;
@@ -23613,6 +23692,34 @@
               readyBadge.className = 'farm-note';
               readyBadge.textContent = '✅ Ready to collect — visit it on the farm';
               extra.appendChild(readyBadge);
+            }
+            // Squeezing-vat assignment — only meaningful for a housed kind
+            // with a squeezable resource (uumkao'ii dew today, see
+            // vatCanAcceptLivestock), and only once it's actually housed
+            // (same gate as the dew/egg cooldowns themselves).
+            if (entry.barnId && vatCanAcceptLivestock(entry.kind)) {
+              const vats = [...processingFurnitureObjects].filter(o => PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
+              const vatSelect = document.createElement('select');
+              vatSelect.className = 'settings-select farm-barn-select';
+              vatSelect.title = 'Assign to a placed squeezing vat — its dew is squeezed into milk/curds automatically each cooldown instead of dropping a pile to dig up.';
+              const noneOpt = document.createElement('option');
+              noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
+              vatSelect.appendChild(noneOpt);
+              vats.forEach(v => {
+                const takenBy = livestock.find(l => l.assignedVatId === v.id);
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');
+                opt.disabled = !!(takenBy && takenBy.id !== entry.id);
+                vatSelect.appendChild(opt);
+              });
+              vatSelect.value = entry.assignedVatId || '';
+              vatSelect.addEventListener('change', () => {
+                const result = vatSelect.value ? assignLivestockToVat(entry.id, vatSelect.value) : unassignLivestockFromVat(entry.id);
+                showToast(result.message, result.ok);
+                renderFarmLivestock(); renderFarmProcessors();
+              });
+              extra.appendChild(vatSelect);
             }
           }
           if (owner) {
@@ -35868,6 +35975,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
+        renderFarmProcessors: () => renderFarmProcessors(),
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });

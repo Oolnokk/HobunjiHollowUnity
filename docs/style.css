@@ -2480,6 +2480,20 @@
     .farm-row-value { font-size: 10px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
     .farm-row-value.tier-Rare, .farm-row-value.tier-Exceptional { color: var(--accent); }
 
+    /* Processing-station status tiles — color-coded by the same job state
+       makeProcessingFurniture already tracks (idle/aging-in-progress/ready),
+       plus a livestock-worked state for an assigned squeezing vat. */
+    .farm-processor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+    .farm-processor-tile {
+      display: flex; flex-direction: column; gap: 3px; padding: 7px 8px; border-radius: 8px;
+      background: rgba(255,255,255,0.025); border: 1px solid var(--border); border-left-width: 4px;
+    }
+    .farm-processor-tile .fp-top { display: flex; align-items: center; gap: 5px; }
+    .farm-processor-tile .fp-icon { font-size: 14px; }
+    .farm-processor-tile .fp-name { font-size: 11px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .farm-processor-tile .fp-status { font-size: 9px; color: var(--muted); }
+    .farm-processor-tile button { font-size: 9px; padding: 3px 5px; margin-top: 2px; }
+
     .farm-storage { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .farm-storage-col-title { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
     .farm-storage-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; background: rgba(255,255,255,0.025); border: 1px solid var(--border); }

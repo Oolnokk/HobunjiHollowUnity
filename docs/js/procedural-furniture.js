@@ -120,7 +120,32 @@
     mesh.position.set(t.x || 0, t.y || 0, t.z || 0);
     mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
     mesh.name = part.name || part.kind;
+    if (part.materialTexture) applyPartTexture(mat, part);
     return mesh;
+  }
+
+  // ── Authored material textures (docs/config/furniture-authored/*.json's
+  // materialTexture/materialRotationDeg fields, from docs/assets/textures/)
+  // — cached per filename since most parts across a whole furniture piece
+  // (and across many placed instances) share the same handful of textures.
+  const _texLoader = new THREE.TextureLoader();
+  const _texCache = new Map(); // filename -> THREE.Texture
+  function loadPartTexture(filename) {
+    if (_texCache.has(filename)) return _texCache.get(filename);
+    const tex = _texLoader.load('assets/textures/' + filename, undefined, undefined, () => {});
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.center.set(0.5, 0.5);
+    _texCache.set(filename, tex);
+    return tex;
+  }
+  function applyPartTexture(mat, part) {
+    const tex = loadPartTexture(part.materialTexture).clone();
+    tex.needsUpdate = true;
+    tex.rotation = (part.materialRotationDeg || 0) * DEG;
+    mat.map = tex;
+    mat.color.set(0xffffff);
+    mat.transparent = !!part.textureTransparent;
+    mat.needsUpdate = true;
   }
 
   function buildFurnitureGroup(key, baseColor) {
