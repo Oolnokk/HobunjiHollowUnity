@@ -108,6 +108,19 @@
     return baseY + modelHeight * heightPercentOffsetForSpecies(speciesId, gender) / 100;
   }
 
+  // Per-species/gender authored posterior anchor X (attachment-rig-profiles.js
+  // anchors.posterior.position.x — "center", i.e. 0, for every authored
+  // species today, but read live rather than hardcoded so an eventually
+  // off-center posterior anchor is still honored). Falls back to 0 (the
+  // avatar's own local centerline) for any species/gender without an
+  // authored rig entry.
+  function posteriorXForSpecies(speciesId, gender) {
+    const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+    const rec = lib[`${speciesId}::${gender}`];
+    const value = Number(rec?.anchors?.posterior?.position?.x);
+    return Number.isFinite(value) ? value : 0;
+  }
+
   // Per-species/gender authored knee bend (proceduralFeet.legBend in
   // scratchbones-config.js), mirroring footScaleMultiplierForSpecies's own
   // species-chain + gender-key lookup. One {x,z} (degrees) per species+
@@ -814,8 +827,16 @@
       const portraitSize = Number(options.portraitSize) || 200;
       cachedTorsoScan(speciesId, gender, options.profile, portraitSize).then(scan => {
         if (state.disposed || !scan) return;
-        state.idleLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
-        state.idleRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
+        const scannedLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
+        const scannedRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
+        // The scan's own left/right medians can land asymmetrically around
+        // the torso's true centerline (e.g. a lopsided silhouette); re-center
+        // both legs by the same shift so the posterior attach point's X ends
+        // up exactly midway between them rather than inheriting that skew.
+        const posteriorX = posteriorXForSpecies(speciesId, gender);
+        const recenterShift = posteriorX - (scannedLeftX + scannedRightX) / 2;
+        state.idleLeftX = scannedLeftX + recenterShift;
+        state.idleRightX = scannedRightX + recenterShift;
         syncHipX('left');
         syncHipX('right');
         if (state.left) { state.leftTarget.x = state.idleLeftX; applyLegChain('left'); }

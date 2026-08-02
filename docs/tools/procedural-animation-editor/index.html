@@ -1758,6 +1758,16 @@ function posteriorYForAnalysis(analysis) {
   return baseY + modelHeight * heightPercentOffsetForSpecies(analysis.speciesId, analysis.gender) / 100;
 }
 
+// Mirrors docs/js/procedural-leg-animation.js's own posteriorXForSpecies:
+// anchors.posterior.position.x from attachment-rig-profiles.js ("center",
+// i.e. 0, for every authored species today), falling back to 0.
+function posteriorXForSpecies(speciesId, gender) {
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const rec = lib[`${speciesId}::${gender}`];
+  const value = Number(rec?.anchors?.posterior?.position?.x);
+  return Number.isFinite(value) ? value : 0;
+}
+
 function resolveVerticalPlacementFrom(placement, speciesId, genderValue) { // Reproduces avatarPlacementRatioFor's own-property and finite-number semantics.
   const sourcePlacement = placement && typeof placement === 'object' ? placement : {};
   const gender = normalizeGender(genderValue);
@@ -4143,6 +4153,12 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   const rightModelPoint = new THREE.Vector3(pixelToModelX(scan.sampleColumnsPx.rightMedian), 0, 0); // Starts the right median in avatar-model local coordinates.
   model.localToWorld(leftModelPoint); model.localToWorld(rightModelPoint);
   procedural.locomotionRoot.worldToLocal(leftModelPoint); procedural.locomotionRoot.worldToLocal(rightModelPoint);
+  const posteriorModelPoint = new THREE.Vector3(posteriorXForSpecies(speciesId, feetGenderForAvatar(avatar)), 0, 0); // Same rig anchor procedural-leg-animation.js recenters against at runtime.
+  model.localToWorld(posteriorModelPoint);
+  procedural.locomotionRoot.worldToLocal(posteriorModelPoint);
+  const legRecenterShiftX = posteriorModelPoint.x - (leftModelPoint.x + rightModelPoint.x) / 2; // Re-centers both legs by the same amount so the posterior attach point's X lands exactly midway between them.
+  leftModelPoint.x += legRecenterShiftX;
+  rightModelPoint.x += legRecenterShiftX;
   const colliderRootWorld = procedural.locomotionRoot.getWorldPosition(new THREE.Vector3()); // Treats the game floor root as the collider's X/Z origin.
   const colliderRootLocal = procedural.locomotionRoot.worldToLocal(colliderRootWorld.clone()); // Supplies collider-local Z without using portrait bounds.
   const groundWorldY = previewGroundWorldY(); // Anchors to the rendered world floor, never the portrait's bottom edge.
