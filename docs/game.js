@@ -6778,13 +6778,14 @@
         c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
-        // PNG planes get a separate deadzone that can never settle inside the
-        // perp range — eases to the nearest edge when idle, or rocks back and
-        // forth across the zone when moving (see creatureDeadzoneTarget).
+        // PNG planes get a separate deadzone from the prism: same halt
+        // behavior as player/NPC avatars (perpClamp) rather than freely
+        // tracking rawTargetRotY — locks to the nearest dead-zone edge and
+        // stays there instead of sweeping through with the raw aim.
         c.pngRot ??= c.groupRot;
-        const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-        const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
-        c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+        if (pngSnapTo !== null) c.pngRot = pngTarget;
+        else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         const planeDelta = c.pngRot - c.groupRot;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
         if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = planeDelta - Math.PI / 2;
@@ -26274,7 +26275,7 @@
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
       // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
-      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 25;
+      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 27.5;
       const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
       // Extra margin required to *exit* a dead zone once locked into it, on top of
       // the radius required to *enter* it. Without this, a rawTarget hovering right
@@ -26323,47 +26324,6 @@
         }
         state.locked[nearestI] = isLocked;
         return { effectiveTarget, snapTo };
-      }
-
-      // Oscillation angular speed for creatureDeadzoneTarget's moving-in-deadzone
-      // rocking motion (see below) — ~1.2s per full back-and-forth cycle, fast
-      // enough to read clearly against the pngRot smoothing lerp in
-      // updateCreatureMesh (time constant ~0.1s) without being frantic.
-      const CREATURE_DEADZONE_OSC_RATE = 2 * Math.PI / 1.2;
-
-      // For creature PNG planes: unlike perpClamp, a creature is never allowed
-      // to settle with its rotation reading inside the dead zone. Standing
-      // still, the target eases to the nearer dead-zone edge and stops there.
-      // While moving with a raw target that falls inside the dead zone, the
-      // target instead continuously rocks back and forth along an arc
-      // centered on the movement direction (rawTarget), swinging between the
-      // nearest dead-zone edge and that edge's mirror image reflected across
-      // the movement direction — so the sprite is always mid-flip through the
-      // zone rather than resting in it or sweeping through just once.
-      //
-      // This is continuous across the dead-zone boundary (amplitude/edge both
-      // converge to rawTarget as nearestAbs approaches deadRad), so unlike
-      // perpClamp it needs no entry/exit hysteresis to avoid flicker.
-      function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        if (nearestAbs >= deadRad) {
-          state.oscPhase = 0;
-          return rawTarget;
-        }
-        const sign = nearestDT >= 0 ? 1 : -1;
-        const edge = perps[nearestI] + sign * deadRad;
-        if (!moving) {
-          state.oscPhase = 0;
-          return edge;
-        }
-        const amplitude = angleDiff(edge, rawTarget);
-        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
-        return rawTarget + amplitude * Math.sin(state.oscPhase);
       }
 
       function nearestCardinalAngle(angle) {
@@ -31239,6 +31199,17 @@
         // without the guard it fought that and spun the character back around immediately.
         if (fishingMinigame?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
+        } else if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+          // Glued to a mount (same guard as mountSeatLift above): track the
+          // mount's own PNG-plane rotation (c.pngRot, kept current every
+          // frame by updateCreatureMesh — see updateMountRide) instead of
+          // running the rider's own independent perpClamp off facingAngle.
+          // The two dead zones use different angle sets/widths, so left
+          // independent, the rider's legs (children of playerMesh, see
+          // legsSuppressed below) could halt at an orientation that doesn't
+          // match the mount's actual rendered silhouette and poke through it.
+          playerFacing += angleDiff(mountRideEntity.pngRot, playerFacing) * 0.25;
+          playerMesh.rotation.y = playerFacing;
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
@@ -32680,7 +32651,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
       const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
       // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-      // camera-relative dead zones where creatureDeadzoneTarget eases/rocks
+      // camera-relative dead zones where perpClamp halts the PNG plane
       // rather than tracking freely. The pngRot line shows where the PNG plane
       // is actually pointed right now (may differ from group rotation).
       const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
