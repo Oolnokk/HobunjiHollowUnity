@@ -6778,14 +6778,27 @@
         c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
-        // PNG planes get a separate deadzone from the prism: same halt
-        // behavior as player/NPC avatars (perpClamp) rather than freely
-        // tracking rawTargetRotY — locks to the nearest dead-zone edge and
-        // stays there instead of sweeping through with the raw aim.
+        // PNG planes get a separate deadzone from the prism, never freely
+        // tracking rawTargetRotY straight through it — exactly which of the
+        // three sway/halt/snap implementations below governs that deadzone
+        // is picked by CREATURE_PLANE_ROT_MODE (see its definition, up near
+        // perpClamp/creatureDeadzoneTarget/creatureSnapSwayTarget) and can
+        // change independently of this call site, so don't infer the active
+        // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
-        const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
-        if (pngSnapTo !== null) c.pngRot = pngTarget;
-        else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        if (CREATURE_PLANE_ROT_MODE === 'snap') {
+          const { target: pngTarget, snap } = creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt);
+          if (snap) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        } else if (CREATURE_PLANE_ROT_MODE === 'sway') {
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        } else { // 'halt'
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+          if (pngSnapTo !== null) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
+        }
         const planeDelta = c.pngRot - c.groupRot;
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = planeDelta + Math.PI / 2;
         if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = planeDelta - Math.PI / 2;
@@ -26326,6 +26339,103 @@
         return { effectiveTarget, snapTo };
       }
 
+      // ── Animal/creature PNG-plane dead-zone behavior — THREE implementations ──
+      // updateCreatureMesh's pngRot step (below) has been rewritten a few times
+      // while this gets tuned by feel, and all three attempts are kept side by
+      // side here on purpose rather than deleting the losers. ONLY the branch
+      // selected by CREATURE_PLANE_ROT_MODE actually runs at runtime — the
+      // other two are inert dead code, kept for quick A/B swaps back.
+      //
+      // NOTE FOR ANY LLM (or human) EDITING THIS FILE: do not assume any one
+      // of 'sway' / 'halt' / 'snap' is "the" system just because it's the one
+      // currently wired up, and do not assume the others are unused cruft
+      // safe to delete — check CREATURE_PLANE_ROT_MODE's value below before
+      // reasoning about which behavior is actually live, and ask before
+      // removing any of the three.
+      //   'sway' — legacy: continuously lerps/rocks through the dead zone via
+      //            creatureDeadzoneTarget (sine oscillation, smooth).
+      //   'halt' — current default going in: locks to the dead-zone edge and
+      //            stays there via perpClamp (same halt behavior player/NPC
+      //            avatars and farm-pen livestock already use), eased in.
+      //   'snap' — newest: alternates between the dead zone's two edges with
+      //            a hard cut (no interpolation) via creatureSnapSwayTarget,
+      //            instead of sweeping/lerping between them.
+      const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
+
+      // Oscillation angular speed shared by the 'sway' and 'snap' modes below
+      // — ~1.2s per full back-and-forth cycle, fast enough to read clearly
+      // against the pngRot smoothing lerp in updateCreatureMesh (time
+      // constant ~0.1s) without being frantic.
+      const CREATURE_DEADZONE_OSC_RATE = 2 * Math.PI / 1.2;
+
+      // 'sway' mode (legacy — see CREATURE_PLANE_ROT_MODE above; may not be
+      // the active implementation, check that constant before assuming so).
+      // For creature PNG planes: unlike perpClamp, a creature is never allowed
+      // to settle with its rotation reading inside the dead zone. Standing
+      // still, the target eases to the nearer dead-zone edge and stops there.
+      // While moving with a raw target that falls inside the dead zone, the
+      // target instead continuously rocks back and forth along an arc
+      // centered on the movement direction (rawTarget), swinging between the
+      // nearest dead-zone edge and that edge's mirror image reflected across
+      // the movement direction — so the sprite is always mid-flip through the
+      // zone rather than resting in it or sweeping through just once.
+      //
+      // This is continuous across the dead-zone boundary (amplitude/edge both
+      // converge to rawTarget as nearestAbs approaches deadRad), so unlike
+      // perpClamp it needs no entry/exit hysteresis to avoid flicker.
+      function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
+        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
+        for (let i = 0; i < perps.length; i++) {
+          const dT = angleDiff(rawTarget, perps[i]);
+          const a = Math.abs(dT);
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
+        }
+        if (nearestAbs >= deadRad) {
+          state.oscPhase = 0;
+          return rawTarget;
+        }
+        const sign = nearestDT >= 0 ? 1 : -1;
+        const edge = perps[nearestI] + sign * deadRad;
+        if (!moving) {
+          state.oscPhase = 0;
+          return edge;
+        }
+        const amplitude = angleDiff(edge, rawTarget);
+        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
+        return rawTarget + amplitude * Math.sin(state.oscPhase);
+      }
+
+      // 'snap' mode (see CREATURE_PLANE_ROT_MODE above; may not be the active
+      // implementation, check that constant before assuming so).
+      // Like 'sway', a creature is never allowed to settle mid-dead-zone —
+      // but instead of continuously lerping/rocking through the zone, this
+      // alternates the target between the dead zone's two boundary angles
+      // (perp ± deadRad — the two nearest rotations actually outside the
+      // dead zone) on a timer, and reports back whether this call is a flip
+      // so the caller can assign the new value directly (a hard cut) rather
+      // than easing toward it. The first time a given lock is entered isn't
+      // flagged as a flip, so the plane still eases in from wherever it was
+      // instead of popping in from nowhere; only the alternations after that
+      // are instant.
+      function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt) {
+        let nearestI = 0, nearestAbs = Infinity;
+        for (let i = 0; i < perps.length; i++) {
+          const a = Math.abs(angleDiff(rawTarget, perps[i]));
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; }
+        }
+        if (nearestAbs >= deadRad) {
+          state.oscPhase = 0;
+          state.snapSide = null;
+          return { target: rawTarget, snap: false };
+        }
+        const P = perps[nearestI];
+        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
+        const side = Math.sin(state.oscPhase) >= 0 ? 1 : -1;
+        const flip = state.snapSide !== null && state.snapSide !== side;
+        state.snapSide = side;
+        return { target: P + side * deadRad, snap: flip };
+      }
+
       function nearestCardinalAngle(angle) {
         const cardinals = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // E S W N
         let best = cardinals[0], bestDiff = Infinity;
@@ -32651,9 +32761,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
       const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
       // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-      // camera-relative dead zones where perpClamp halts the PNG plane
-      // rather than tracking freely. The pngRot line shows where the PNG plane
-      // is actually pointed right now (may differ from group rotation).
+      // camera-relative dead zones the PNG plane never freely tracks through
+      // (see CREATURE_PLANE_ROT_MODE for which of sway/halt/snap governs
+      // what it does instead). The pngRot line shows where the PNG plane is
+      // actually pointed right now (may differ from group rotation).
       const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
       const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
       const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
