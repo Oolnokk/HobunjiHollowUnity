@@ -52,11 +52,15 @@
   }
 
   // index defaults to 0 (single-seat pieces like chairs/stools); bench-like
-  // pieces carry one anchor per seat column, in authoring order.
+  // pieces carry one anchor per seat column, in authoring order. position/
+  // rotationDeg are already resolved to the piece's own local footprint-
+  // center-relative space (matching every part's transform convention) —
+  // see docs/tools/furniture-avatar-author's seatAnchorWorldTransform,
+  // which this data was extracted from at the piece's authoring origin.
   function seatAnchorFor(data, index) {
     const anchor = data && data.seatAnchors && data.seatAnchors[index || 0];
     if (!anchor) return null;
-    return { position: Object.assign({}, anchor.position), rotation: Object.assign({}, anchor.rotation) };
+    return { position: Object.assign({}, anchor.position), rotationDeg: Object.assign({}, anchor.rotationDeg) };
   }
 
   function seatCount(data) {

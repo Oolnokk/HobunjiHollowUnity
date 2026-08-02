@@ -3280,12 +3280,12 @@
         basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
         doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
-        bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.' },
+        bench:         { itemKey: 'benchFurniture',         icon: '🪑', name: 'Short Bench',          modelFile: 'bench_short.glb',              price: 18, fw: 2, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A short wooden bench.', sit: true },
         bookshelf:     { itemKey: 'bookshelfFurniture',     icon: '📚', name: 'Bookshelf',            modelFile: 'bookshelf_low.glb',            price: 28, fw: 2, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A low bookshelf.' },
         bucket:        { itemKey: 'bucketFurniture',        icon: '🪣', name: 'Tin Bucket',           modelFile: 'bucket_tin.glb',               price: 8,  fw: 1, fd: 1, color: 0x888888, area: 'any',      desc: 'A utilitarian tin bucket.' },
         candleTable:   { itemKey: 'candleTableFurniture',   icon: '🕯️', name: 'Candle Table',         modelFile: 'candle_table.glb',             price: 15, fw: 1, fd: 1, color: 0x5a4020, area: 'interior', desc: 'Small table with a candle for warm light.', light: { color: 0xffaa44, intensity: 0.7, distance: 5, height: 0.55 } },
-        chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.' },
-        chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.' },
+        chairSimple:   { itemKey: 'chairSimpleFurniture',   icon: '🪑', name: 'Simple Chair',         modelFile: 'chair_simple.glb',             price: 12, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A plain wooden chair.', sit: true },
+        chairCushion:  { itemKey: 'chairCushionFurniture',  icon: '🪑', name: 'Cushioned Chair',      modelFile: 'chair_with_blue_cushion.glb',  price: 22, fw: 1, fd: 1, color: 0x3a5c8a, area: 'interior', desc: 'A chair with a soft blue cushion.', sit: true },
         chest:         { itemKey: 'chestFurniture',         icon: '📦', name: 'Storage Chest',        modelFile: 'chest_storage.glb',            price: 32, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'Sturdy wooden chest for storage.' },
         crateStack:    { itemKey: 'crateStackFurniture',    icon: '📦', name: 'Crate Stack',          modelFile: 'crate_stack.glb',              price: 14, fw: 1, fd: 1, color: 0x8a6a3a, area: 'any',      desc: 'A stack of wooden crates.' },
         copperBarrel:  { itemKey: 'copperBarrelFurniture',  icon: '🛢️', name: 'Copper Barrel',        modelFile: 'barrel_copper_hoop.glb',       price: 20, fw: 1, fd: 1, color: 0xb87333, area: 'any',      desc: 'A sturdy copper-hooped barrel.' },
@@ -3297,7 +3297,7 @@
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
-        stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.' },
+        stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
         tableLong:     { itemKey: 'tableLongFurniture',     icon: '🍽️', name: 'Long Table',           modelFile: 'table_long.glb',               price: 42, fw: 4, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A long communal dining table.' },
         tableRound:    { itemKey: 'tableRoundFurniture',    icon: '🍽️', name: 'Round Table',          modelFile: 'table_round.glb',              price: 28, fw: 2, fd: 2, color: 0x7a5c3a, area: 'interior', desc: 'A round wooden dining table.' },
         tableSmall:    { itemKey: 'tableSmallFurniture',    icon: '🍽️', name: 'Small Table',          modelFile: 'table_small.glb',              price: 18, fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'A small side table.' },
@@ -3320,6 +3320,29 @@
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
           price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture'
         }));
+
+      // ── Authored furniture (docs/config/furniture-authored/*.json) ────
+      // Furniture keys with real per-piece data exported by
+      // furniture-avatar-author (seat anchors, processing VFX, livestock
+      // stomp points) instead of just procedural-furniture.js's crude
+      // hardcoded CATALOG boxes. Kicked off once at startup so
+      // AuthoredFurniture.peek() has data ready by the time a piece is
+      // actually placed/rendered; buildFurnitureVisual falls back to the
+      // procedural CATALOG for any key not (yet) in this list.
+      const AUTHORED_FURNITURE_KEYS = new Set([
+        'chairSimple', 'chairCushion', 'stool', 'bench',
+        'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
+      ]);
+      for (const key of AUTHORED_FURNITURE_KEYS) window.AuthoredFurniture?.load(key);
+
+      // Shared by makeDecorativeFurnitureMesh/makeProcessingFurniture: use the
+      // richer authored geometry once it's loaded, otherwise the old crude
+      // procedural stand-in (never blocks placement on the fetch completing).
+      function buildFurnitureVisual(furnitureKey, color) {
+        const authored = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
+        if (authored) return window.AuthoredFurniture.buildGroup(authored, color);
+        return window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
+      }
 
       // ── Furniture blueprints ────────────────────────────────────────
       // Every processing station (PROCESSING_FURNITURE_CATALOG) and
@@ -3992,7 +4015,7 @@
       function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const mesh = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color);
+        const mesh = buildFurnitureVisual(furnitureKey, def.color);
         mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
         _markOutline(mesh);
         _markFurnitureEdgeId(mesh);
@@ -4123,13 +4146,15 @@
             },
           };
         }
+        const def = DECORATIVE_FURNITURE_DEFS[o.key];
+        if (def?.sit) return makeSitInteractable(o.key, o.col, o.row, def.fw, def.fd, 0);
         return null;
       }
 
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const group = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, def.color || 0x8b6540);
+        const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
         group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
         _markOutline(group);
         _markFurnitureEdgeId(group);
@@ -4144,6 +4169,17 @@
         const sfxSource = registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, resolveFurnitureSfx(def));
 
         return { mesh: group, light, sfxSource };
+      }
+
+      // worldObjects is farm-scene-only (see its declaration) — a sittable
+      // piece placed there needs its own interactable registered there too,
+      // since interiorFurnitureObjects (below) only tracks the mesh/light,
+      // not interaction. Interior-scene sitting instead goes through
+      // getInteriorInteractableAt, which derives it from def.sit directly.
+      function registerSitWorldObject(furnitureKey, col, row, fw, fd, rotYDeg) {
+        worldObjects.set(col + ',' + row, Object.assign(makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg), {
+          type: 'decorative_furniture', col, row,
+        }));
       }
 
       function placeDecorativeFurniture(col, row, furnitureKey) {
@@ -4162,6 +4198,7 @@
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
         interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea });
+        if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -4177,6 +4214,7 @@
           });
           if (obj.light) s.remove(obj.light);
           unregisterFurnitureSfxSource(obj.sfxSource);
+          if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -4258,6 +4296,7 @@
             });
             if (d.light) scene.remove(d.light);
             unregisterFurnitureSfxSource(d.sfxSource);
+            if (DECORATIVE_FURNITURE_DEFS[d.key]?.sit) worldObjects.delete(col + ',' + row);
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
@@ -4390,6 +4429,7 @@
           const targetScene = decorArea === 'interior' ? interiorScene : scene;
           const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
           if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
+          if (result && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
         });
         if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && (layout.houseCol !== houseCol || layout.houseRow !== houseRow)) {
           repositionHouse(layout.houseCol, layout.houseRow);
@@ -5641,6 +5681,112 @@
             harvestInteraction = null;
           }
         }
+      }
+
+      // ── Chair sitting (docs/config/furniture-authored seat anchors) ──
+      // Same lerp-in/lerp-out shape as beginHarvestInteraction, but
+      // indefinite-duration: the player stays seated (camera zoomed tight,
+      // free 360° look via the 'seated' camera mode) until they explicitly
+      // stand, rather than auto-releasing after a fixed timer. See
+      // updateSitInteraction's early-return in the main tick and
+      // computeActionButtons'/useActiveAction's top-priority sitInteraction
+      // checks for the "Stand" override.
+      let sitInteraction = null;
+      const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
+
+      // Resolves a furniture instance's seat anchor (local, footprint-center-
+      // relative — see docs/js/authored-furniture-runtime.js) into this
+      // placement's actual world position/facing. rotYDeg is the furniture's
+      // own placement yaw (0 for every current player-placed decorative/
+      // processing furniture path, since none of them support rotation yet).
+      function resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
+        const data = window.AuthoredFurniture?.peek(furnitureKey);
+        const anchor = data && window.AuthoredFurniture.seatAnchorFor(data, seatIndex);
+        if (!anchor) return null;
+        const yawRad = (rotYDeg || 0) * Math.PI / 180;
+        const cos = Math.cos(yawRad), sin = Math.sin(yawRad);
+        const ax = anchor.position.x || 0, az = anchor.position.z || 0;
+        const cx = col + (fw || 1) / 2, cz = row + (fd || 1) / 2;
+        const totalYawDeg = (rotYDeg || 0) + (anchor.rotationDeg.y || 0);
+        return {
+          x: cx + (ax * cos + az * sin),
+          y: anchor.position.y || 0,
+          z: cz + (-ax * sin + az * cos),
+          facingRad: Math.PI / 2 - totalYawDeg * Math.PI / 180,
+        };
+      }
+
+      function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
+        if (sitInteraction || harvestInteraction || dialogueOpen || mountRideState !== 'none') return { ok: false, message: 'Cannot sit right now.' };
+        const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
+        if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
+        const targetX = seat.x * TILE, targetY = seat.z * TILE;
+        const targetAngle = seat.facingRad;
+        sitInteraction = {
+          furnitureKey, col, row,
+          phase: 'in', t: 0,
+          startX: player.x, startY: player.y, startAngle: facingAngle,
+          targetX, targetY, targetAngle,
+          seatWorldY: seat.y,
+          prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
+        };
+        activeCameraMode = 'seated';
+        activeCameraTarget = { position: new THREE.Vector3(seat.x, seat.y + 0.15, seat.z) };
+        cameraAzimuthOffsetDeg = 0;
+        cameraAngleOffsetDeg = 0;
+        return { ok: true, message: 'You sit down.' };
+      }
+
+      function endSitInteraction() {
+        if (!sitInteraction || sitInteraction.phase === 'out') return;
+        sitInteraction.phase = 'out';
+        sitInteraction.t = 0;
+      }
+
+      function updateSitInteraction(dt) {
+        const s = sitInteraction;
+        if (!s) return;
+        player.vx = 0; player.vy = 0;
+        if (s.phase === 'active') {
+          facingAngle = s.targetAngle; player.angle = facingAngle;
+          return;
+        }
+        s.t = Math.min(1, s.t + dt / SIT_TRANSITION_S);
+        const e = s.t;
+        const [fromX, fromY, fromAngle, toX, toY, toAngle] = s.phase === 'in'
+          ? [s.startX, s.startY, s.startAngle, s.targetX, s.targetY, s.targetAngle]
+          : [s.targetX, s.targetY, s.targetAngle, s.startX, s.startY, s.startAngle];
+        player.x = fromX + (toX - fromX) * e;
+        player.y = fromY + (toY - fromY) * e;
+        facingAngle = fromAngle + angleDiff(toAngle, fromAngle) * e;
+        player.angle = facingAngle;
+        if (e >= 1) {
+          if (s.phase === 'in') { s.phase = 'active'; s.t = 0; }
+          else {
+            activeCameraMode = s.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
+            activeCameraTarget = s.prevCameraTarget ?? null;
+            cameraAzimuthOffsetDeg = 0;
+            cameraAngleOffsetDeg = 0;
+            sitInteraction = null;
+          }
+        }
+      }
+
+      // Interactable used by both getInteriorInteractableAt (interior scene)
+      // and the farm's worldObjects registration (see placeDecorativeFurniture/
+      // registerSitWorldObject) — same onAction shape either call site expects.
+      function makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg) {
+        return {
+          interactIcon: '💺',
+          interactLabel: 'Sit',
+          getButtons() {
+            return [{ icon: '💺', label: 'Sit', action: 'obj_sit', style: 'primary', allowed: !sitInteraction }];
+          },
+          onAction(action) {
+            if (action !== 'obj_sit' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0);
+          },
+        };
       }
 
       // Adds a creature from an item straight into the character's personal
@@ -17443,7 +17589,7 @@
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
             const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
             if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
-              const model = window.ProceduralFurniture.buildFurnitureGroup(furnitureKey, color);
+              const model = buildFurnitureVisual(furnitureKey, color);
               model.position.set(bx, by, bz);
               model.rotation.y = rotRad;
               model.scale.set(scX, scY, scZ);
@@ -18050,7 +18196,7 @@
         for (const f of furnitureDefs) {
           const def = PROCESSING_FURNITURE_DEFS[f.key];
           if (!def) continue;
-          const group = window.ProceduralFurniture.buildFurnitureGroup(f.key, def.color || 0x888888);
+          const group = buildFurnitureVisual(f.key, def.color || 0x888888);
           const y = NORMAL_TOP + (f.elevTier || 0) * PLATEAU_UNIT;
           group.position.set(f.col + 0.5, y, f.row + 0.5);
           _markOutline(group);
@@ -22614,6 +22760,7 @@
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (harvestInteraction) { updateHarvestInteraction(dt); return; }
+        if (sitInteraction) { updateSitInteraction(dt); return; }
         if (fishingMinigame?.active) return;
         if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
 
@@ -24715,6 +24862,7 @@
       }
 
       function useActiveAction() {
+        if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
         if (dialogueOpen) { advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
@@ -33839,6 +33987,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
 
       function computeActionButtons() {
+        // Sitting overrides every other action — Stand is the only way out,
+        // same tier as fishing/dialogue below.
+        if (sitInteraction) {
+          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+        }
         // Fishing gets its own arc buttons instead of the harpoon's normal
         // "Fish" one (which would just call beginFishingCast() again and
         // silently restart the round) — the bottom-center #actionPrompt
@@ -34670,6 +34823,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
               const tgt = decorArea === 'interior' ? interiorScene : scene;
               const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
               if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
+              if (r && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
@@ -35371,6 +35525,22 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       function cameraDragAllowed() {
         return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !_pixelProbeArmed;
       }
+      // Every other camera mode nudges a small look-around offset on top of a
+      // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
+      // default ±45°) since it's meant to be a peek, not a free orbit. Seated
+      // players get genuine 360° horizontal orbit instead — see the 'seated'
+      // camera mode's freeRotate flag in scratchbones-config.js.
+      function freeRotateCameraActive() {
+        return cameraModeConfig(activeCameraMode).freeRotate === true;
+      }
+      // Wraps into (-180, 180] instead of clamping, so repeated drag input
+      // keeps spinning all the way around rather than pinning at an edge.
+      function wrapAzimuthDeg(deg) {
+        let d = deg % 360;
+        if (d > 180) d -= 360;
+        if (d <= -180) d += 360;
+        return d;
+      }
       function cameraDragRequested(e) {
         return e.pointerType === 'touch';
       }
@@ -35397,7 +35567,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const cfg = desktopControlsConfig();
         const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
         const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-        cameraAzimuthOffsetDeg = clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
+        cameraAzimuthOffsetDeg = freeRotateCameraActive()
+          ? wrapAzimuthDeg(cameraDragStartAzimuthOffset + dx * degPerPx)
+          : clamp(cameraDragStartAzimuthOffset + dx * degPerPx, -clampDeg, clampDeg);
         cameraAngleOffsetDeg   = clamp(cameraDragStartAngleOffset   - dy * degPerPx, -clampDeg, clampDeg);
         updateCameraPosition();
       });
@@ -35454,7 +35626,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
             const clampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Number(cfg.cameraRotateClampDeg) : 45;
-            cameraAzimuthOffsetDeg = clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
+            cameraAzimuthOffsetDeg = freeRotateCameraActive()
+              ? wrapAzimuthDeg(cameraAzimuthOffsetDeg - e.movementX * degPerPx)
+              : clamp(cameraAzimuthOffsetDeg - e.movementX * degPerPx, -clampDeg, clampDeg);
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + e.movementY * degPerPx, -clampDeg, clampDeg);
             updateCameraPosition();
             return;
@@ -35508,6 +35682,22 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           try { localStorage.removeItem(farmLayoutKey()); } catch {}
           showToast('Saved layout cleared. Reset the farm to apply.', true);
         },
+      };
+
+      // QA/devtools hook for the furniture placement + sitting systems,
+      // mirroring window._devSpawner/_farmEditor above — no in-game UI path
+      // to grant furniture items directly, so this exists for headless/
+      // console testing rather than as a player-facing cheat.
+      window.__hobunjiFurnitureDebug = {
+        give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
+        place: placeDecorativeFurniture,
+        sit: beginSitInteraction,
+        endSit: endSitInteraction,
+        get sitState() { return sitInteraction; },
+        get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
+        get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
+        worldObjectAt: getWorldObjectAt,
+        actionButtons: () => computeActionButtons(),
       };
 
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
