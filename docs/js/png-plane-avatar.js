@@ -238,7 +238,7 @@
   // docs/tools/animation-author/index.html's detectNeckAndEyePixels, trimmed
   // to just the pivot (no eye-target point — gameplay head-turns don't need
   // one). Returns null if the canvas has no readable opaque pixels.
-  function detectNeckPivotPx(canvas, alphaThreshold) {
+  function detectNeckPivotPx(canvas, alphaThreshold, neckHeightFraction) {
     const w = canvas?.width, h = canvas?.height;
     if (!canvas || !w || !h) return null;
     const threshold = alphaThreshold ?? 12;
@@ -258,9 +258,27 @@
     if (bottom < 0) return null;
     const minimumRowPixels = Math.max(2, Math.round(w * .012));
     while (bottom > top && rowCounts[bottom] < minimumRowPixels) bottom--;
-    const bandTop = Math.max(top, bottom - Math.max(2, Math.round(h * .015)));
+    // The neck sits near the TOP of the figure (the head/shoulders
+    // boundary), not its bottom edge — "bottommost opaque row" is only
+    // correct for a bust/headshot crop that ends right at the neck. This
+    // function's one caller (buildSkinnedSinglePlaneAssembly) instead feeds
+    // it a FULL-BODY world-avatar sprite (feet included), where the
+    // bottommost opaque row is the character's FEET — confirmed live: the
+    // resulting neckLocal.y landed at -0.83 of a 0.9-unit-tall model, deep
+    // in the legs, silently making the "head turn" pivot almost the entire
+    // body from ground level instead of the head (basically invisible in
+    // practice, since the skin-weight blend band sits right at the very
+    // bottom edge with nothing below it to visibly hinge). Placing the
+    // pivot a fixed fraction of the total opaque height down from the TOP
+    // instead — ~13%, a standard human head-height proportion (head ≈
+    // 1/7.5 of total height) — lands much closer to the actual neck.
+    const totalHeight = Math.max(1, bottom - top);
+    const fraction = Number.isFinite(neckHeightFraction) ? neckHeightFraction : 0.13;
+    const neckY = Math.min(bottom, Math.round(top + totalHeight * fraction));
+    const bandHalf = Math.max(1, Math.round(h * .015));
+    const bandTop = Math.max(top, neckY - bandHalf), bandBottom = Math.min(bottom, neckY + bandHalf);
     let weightedX = 0, totalWeight = 0;
-    for (let y = bandTop; y <= bottom; y++) {
+    for (let y = bandTop; y <= bandBottom; y++) {
       for (let x = 0; x < w; x++) {
         const alpha = data[(y * w + x) * 4 + 3];
         if (alpha <= threshold) continue;
@@ -268,7 +286,7 @@
         totalWeight += alpha;
       }
     }
-    return { x: totalWeight ? weightedX / totalWeight : w / 2, y: bottom + .5 };
+    return { x: totalWeight ? weightedX / totalWeight : w / 2, y: neckY + .5 };
   }
 
   function smoothstep01(value) {

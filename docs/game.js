@@ -36304,6 +36304,19 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         get playerMeshRotY() { return playerMesh.rotation.y; },
         get activeCameraAzimuthDeg() { return activeCameraAzimuthRad() * 180 / Math.PI; },
         currentAreaOcclusionMeshCount: () => currentAreaOcclusionMeshes().length,
+        enterZoneDebug: (mapId, col, row) => enterZone(mapId, col, row),
+        playerNeckPivotInfo: () => {
+          let avatarGroup = null;
+          playerMesh.traverse(o => { if (o.name === 'player_avatar') avatarGroup = o; });
+          const rig = avatarGroup?.userData?.neckRig;
+          return rig ? {
+            available: rig.available,
+            neckLocal: rig.neckLocal,
+            pivotPx: rig.pivotPx,
+            modelHeight: avatarGroup.userData?.portraitModelHeight,
+            modelWidth: avatarGroup.userData?.portraitModelWidth,
+          } : null;
+        },
         findDewPileTiles: () => {
           const found = [];
           for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r]?.[c]?.dewPile) found.push({ c, r, color: grid[r][c].dewPile });
