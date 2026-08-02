@@ -6787,7 +6787,8 @@
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
         if (CREATURE_PLANE_ROT_MODE === 'snap') {
-          const { target: pngTarget, snap } = creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt);
+          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
+          const { target: pngTarget, snap } = creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (CREATURE_PLANE_ROT_MODE === 'sway') {
@@ -26417,11 +26418,16 @@
       // flagged as a flip, so the plane still eases in from wherever it was
       // instead of popping in from nowhere; only the alternations after that
       // are instant.
-      function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt) {
-        let nearestI = 0, nearestAbs = Infinity;
+      // Alternation only runs while `moving` is true — mirrors creatureDeadzoneTarget's
+      // own moving gate (see 'sway' above): a creature standing still just
+      // holds at whichever edge it's nearest, instead of visibly flip-flopping
+      // in place with no motion to sell the "swap side" as a stride change.
+      function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt, moving) {
+        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
         for (let i = 0; i < perps.length; i++) {
-          const a = Math.abs(angleDiff(rawTarget, perps[i]));
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; }
+          const dT = angleDiff(rawTarget, perps[i]);
+          const a = Math.abs(dT);
+          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
         }
         if (nearestAbs >= deadRad) {
           state.oscPhase = 0;
@@ -26429,6 +26435,11 @@
           return { target: rawTarget, snap: false };
         }
         const P = perps[nearestI];
+        if (!moving) {
+          state.oscPhase = 0;
+          if (state.snapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
+          return { target: P + state.snapSide * deadRad, snap: false };
+        }
         state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
         const side = Math.sin(state.oscPhase) >= 0 ? 1 : -1;
         const flip = state.snapSide !== null && state.snapSide !== side;
