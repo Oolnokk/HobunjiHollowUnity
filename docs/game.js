@@ -1513,6 +1513,13 @@
       // does this thing walk," so scaling them would desync a swing's
       // animation from where its hit lands rather than just changing pace.
       let devGlobalSpeedMul = 0.75;
+      // Move-bob distances (world Y units), shared by the player, NPC
+      // walkers, and bandits: WALK is the amplitude right as a character
+      // starts moving, RUN is the amplitude at full effort (current speed at
+      // that character's own max) — each call site lerps between the two by
+      // its own effort ratio rather than using a flat distance.
+      const MOVE_BOB_WALK_AMP = 0.015;
+      const MOVE_BOB_RUN_AMP  = 0.03;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
@@ -6761,12 +6768,20 @@
         grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
         grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
         grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
-        // Bob animation when moving — mirrors the player's own move bob
-        // (updateMovement), just not on ordinary wildlife: an animal's plane
-        // is already grounded by its own idle/run frame art, so only bandits
+        // Bob animation when moving — mirrors the player's own effort-based
+        // move bob (updateMovement): amplitude ramps from the calm-walking
+        // baseline up to the full-effort peak as speed approaches this
+        // bandit's own max (def.moveSpeed, scaled by the same
+        // devGlobalSpeedMul moveCreatureToward already applies to it), not a
+        // flat distance. Not applied to ordinary wildlife: an animal's plane
+        // is already grounded by its own idle/run frame art — only bandits
         // (which share the player's humanoid avatar rig) get it.
-        if (c.isBandit && Math.hypot(c.vx || 0, c.vy || 0) > 5) {
-          grp.position.y += Math.sin(performance.now() / 120) * 0.015;
+        if (c.isBandit) {
+          const banditSpeed = Math.hypot(c.vx || 0, c.vy || 0);
+          if (banditSpeed > 5) {
+            const bobEffort = clamp(banditSpeed / ((c.def.moveSpeed || MOVE_SPEED) * devGlobalSpeedMul), 0, 1);
+            grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
+          }
         }
         grp.scale.y = scaleY;
         // Tracks the body's own smoothed XZ (not the raw target, and not
@@ -16433,11 +16448,16 @@
             if (this.state === 'breakoff') this.state = 'idle';
             const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * 0.2;
-            // Bob animation when moving — mirrors the player's own move bob
-            // (updateMovement), gated on this NPC's own actual movement
-            // speed (tiles/sec, from moveDistTiles above) rather than always
-            // running regardless of whether it's currently walking.
-            if (this._moveSpeedTiles > 0.05) root.position.y += Math.sin(performance.now() / 120) * 0.015;
+            // Bob animation when moving — mirrors the player's own
+            // effort-based move bob (updateMovement): amplitude ramps from
+            // the calm-walking baseline up to the full-effort peak as this
+            // NPC's own actual movement speed (tiles/sec, from moveDistTiles
+            // above) approaches its own max (cfg.speedTilesPerSecond),
+            // rather than a flat distance whenever it's walking at all.
+            if (this._moveSpeedTiles > 0.05) {
+              const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+              root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+            }
             groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
           },
         };
@@ -31396,10 +31416,16 @@
           playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
         }
 
-        // Bob animation when moving
+        // Bob animation when moving — amplitude ramps continuously from the
+        // calm-walking baseline up toward the full-effort/running peak as
+        // current speed approaches the player's own max attainable speed
+        // (MOVE_SPEED scaled by the same devGlobalSpeedMul that already
+        // governs it in updateMovement), not a flat distance the instant
+        // movement starts.
         const speed = Math.hypot(player.vx, player.vy);
         if (speed > 5) {
-          playerMesh.position.y += Math.sin(performance.now() / 120) * 0.015;
+          const bobEffort = clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
+          playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
         }
         // Suppressed (legs stay visible but just hang straight down from
         // their hip anchors instead of gaiting, see procedural-leg-
