@@ -33780,13 +33780,17 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             octx.strokeStyle = '#cce8ff';
             octx.lineWidth = l.w;
             const ph = (t * l.spd * 40) % l.sp;
+            // Batch all lines into a single path per layer — one stroke() call
+            // instead of one per line, which was thousands of draw calls/frame.
+            octx.beginPath();
             for (let gx = -40; gx < W+60; gx += l.sp) {
               for (let gy = -60; gy < H+80; gy += l.sp*2.2) {
                 const rx = gx + ((gy/11) % l.sp);
                 const ry = (gy + ph) % (H+80) - 40;
-                octx.beginPath(); octx.moveTo(rx, ry); octx.lineTo(rx+l.sl, ry+l.len); octx.stroke();
+                octx.moveTo(rx, ry); octx.lineTo(rx+l.sl, ry+l.len);
               }
             }
+            octx.stroke();
           }
           octx.globalAlpha = 1;
         }
