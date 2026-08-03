@@ -242,9 +242,9 @@
       // Diagnostic tool: arms a one-shot click/tap on the game canvas; the
       // next click reads the raw framebuffer color there AND raycasts
       // EVERY mesh along that screen ray (not just whichever one currently
-      // wins the pixel), so overlay/ghost/hat-xray planes show up in the
-      // list even on a frame where something else happens to be drawn on
-      // top of them — the "what's actually stacked here" question a plain
+      // wins the pixel), so overlay/hat-xray planes show up in the list
+      // even on a frame where something else happens to be drawn on top of
+      // them — the "what's actually stacked here" question a plain
       // screenshot can't answer on its own.
       let _pixelProbeArmed = false;
       const _pixelProbeRaycaster = new THREE.Raycaster();
@@ -462,44 +462,6 @@
           screenshotDataUrl = markCanvas.toDataURL('image/png');
         } catch (e) { /* toDataURL/marker drawing can fail on some contexts — numeric probe below still stands */ }
 
-        // A ghost sibling's own .visible=true only means it's eligible for
-        // the render pass — it says nothing about whether its GreaterDepth+
-        // stencil==7 test is actually passing at THIS pixel right now. For
-        // every ghost hit along the ray, isolate it (hide every other
-        // object in the active scene) and force a real render, then read
-        // the same pixel back — if it differs from the scene's empty
-        // background, the ghost is genuinely drawing a fragment here; if
-        // not, it's present in the graph but not actually visible at this
-        // spot. Directly answers "is a ghost bleeding through here" instead
-        // of inferring it from static material flags alone.
-        const ghostHits = hits.filter(h => h.object.userData?.isOccludedGhost);
-        const ghostChecks = new Map();
-        if (ghostHits.length && pxBuf) {
-          try {
-            const gl2 = renderer.getContext();
-            const savedVis = [];
-            activeScene.traverse(o => { if (o.visible !== undefined) savedVis.push([o, o.visible]); });
-            const sample = (px, py) => { const b = new Uint8Array(4); gl2.readPixels(px, py, 1, 1, gl2.RGBA, gl2.UNSIGNED_BYTE, b); return b; };
-
-            for (const [obj] of savedVis) obj.visible = false;
-            renderer.render(activeScene, camera);
-            const bg = sample(2, 2);
-
-            for (const hit of ghostHits) {
-              for (const [obj] of savedVis) obj.visible = false;
-              let n = hit.object;
-              while (n) { n.visible = true; n = n.parent; }
-              renderer.render(activeScene, camera);
-              const px = sample(fbX, fbY);
-              const differs = Math.abs(px[0] - bg[0]) > 6 || Math.abs(px[1] - bg[1]) > 6 || Math.abs(px[2] - bg[2]) > 6;
-              ghostChecks.set(hit.object, { actuallyRendering: differs, color: [px[0], px[1], px[2], px[3]] });
-            }
-
-            for (const [obj, vis] of savedVis) obj.visible = vis;
-            renderer.render(activeScene, camera);
-          } catch (e) { /* isolation probe is best-effort — the raycast list below still stands without it */ }
-        }
-
         // Isolate the player's own avatar and each active creature avatar
         // independently, and compare the NORMAL (everything shown) pixel
         // against each isolated candidate. A flattened screenshot alone
@@ -571,10 +533,7 @@
         hits.slice(0, 25).forEach((hit, i) => {
           const o = hit.object;
           const mats = Array.isArray(o.material) ? o.material : [o.material];
-          const check = ghostChecks.get(o);
-          lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`
-            + `${o.userData?.isOccludedGhost ? ' [GHOST SIBLING]' : ''}`
-            + `${check ? (check.actuallyRendering ? ` >>> ACTUALLY RENDERING HERE (isolated color rgb(${check.color[0]},${check.color[1]},${check.color[2]}))` : ' (isolated: not actually visible at this pixel)') : ''}`);
+          lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`);
           mats.forEach(m => {
             if (!m) return;
             lines.push(`     material: ${_pixelProbeMatSummary(m)}`);
@@ -6387,41 +6346,6 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
-        // Companion-only. The stencil ghost mechanism marks a tree as
-        // "blocking" per-PIXEL (isBetweenCameraAndPlayer2D, checked against
-        // camera-to-player/camera-to-companion lines only -- see
-        // updateZoneVegetationCulling) and reveals ANY ghost sibling behind
-        // that tree at that screen position, not just the specific creature
-        // the LOS check was computed for. Calling this for every wild animal
-        // too (as an earlier version of this fix did) meant an unrelated
-        // animal standing behind the SAME faded tree became visible right
-        // along with the player/companion -- x-ray vision into vegetation
-        // the player has no actual line of sight through, for a creature the
-        // check was never actually run against. Only the player's own
-        // avatar and their active (independently-wandering) companion are
-        // ever a revealTarget, so only they should ever get a ghost sibling.
-        //
-        // Mounts and shoulder pets DO get one too (unlike an earlier version
-        // of this fix, which skipped them): they're rigidly glued to the
-        // player's own position every frame (see updateMountedMovement/
-        // updateCompanions' shoulderPet branch), sit close enough on screen
-        // to overlap the player's own body quad, and without their own
-        // ghost they simply vanish (fully depth-culled, since the faded
-        // tree material still writes depth -- see ensureTreeFadeMaterials)
-        // while the player's own ghost keeps fading in beside them, an
-        // inconsistent look the player correctly called out as "partially
-        // transparent". Giving the creature its own ghost too, at a higher
-        // renderOrder (see renderOrderBoost below) so it paints over the
-        // player's own overlapping ghost quad instead of an
-        // undefined/flickering draw order between the two, fixes that
-        // without ever making the PLAYER show through the CREATURE: the
-        // stencil is only ever written by a tree whose OWN depth test
-        // passed at that pixel (see setTreeBlockingStencil/ZPass ops), so a
-        // nearer, fully opaque creature sprite blocks the tree from writing
-        // the stencil there at all -- there is no path by which a solid
-        // creature standing in front causes the player's ghost to bleed
-        // through it.
-        if (opts.isCompanion) addOccludedGhostSiblings(avatarRef.group, { renderOrderBoost: (opts.stableRole === 'mount' || opts.stableRole === 'shoulderPet') ? 10 : 0 });
         targetScene.add(avatarRef.group);
 
         // Separate top-level object (not parented under avatarRef.group) so
@@ -7894,7 +7818,7 @@
         // computed, so this has to traverse the whole subtree.
         const mats = [];
         group.traverse(child => {
-          if (child.isMesh && child.material && !child.userData.isOccludedGhost && !child.name.includes('hat_xray')) mats.push(child.material);
+          if (child.isMesh && child.material && !child.name.includes('hat_xray')) mats.push(child.material);
         });
         return mats;
       }
@@ -12272,13 +12196,6 @@
         const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
         avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
         _markPngPlane(avatarRef.group);
-        // No ghost sibling here -- see makeCreatureEntity's matching
-        // comment. A bandit is never a revealTarget (only the player and
-        // their active companion are), so giving it a ghost sibling meant
-        // it became visible x-rayed through vegetation whenever it
-        // happened to stand behind the SAME tree the player/companion was
-        // fading through, which is real line-of-sight the player doesn't
-        // actually have to that bandit.
         targetScene.add(avatarRef.group);
         const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
         if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
@@ -14380,8 +14297,8 @@
               // Small bushes are short enough that a player standing behind
               // one is still mostly visible over/around it, and they're
               // meant to read as harmless ground clutter rather than a wall
-              // — never worth the fade/ghost occlusion treatment reserved
-              // for actual trees (see updateZoneVegetationCulling). The
+              // — never worth the fade occlusion treatment reserved for
+              // actual trees (see updateZoneVegetationCulling). The
               // generic shrub fallback (everything that isn't a real tree/
               // bush/stump — see the comment above, and the vast majority of
               // ground cover in most zones) is the exact same kind of squat
@@ -22064,13 +21981,6 @@
             for (const m of materials) { m.map?.dispose(); m.dispose(); }
             return;
           }
-          // The base body already got its own reveal-through-trees ghost
-          // sibling above (addOccludedGhostSiblings(avatarGroup)), but that
-          // ran before these hat planes existed and the hat's own pixels are
-          // no longer part of the base texture (see refreshSinglePlaneAvatarModel
-          // above) -- without its own ghost here, the hat would just vanish
-          // behind a tree instead of fading like the rest of the player.
-          for (const m of meshes) addOccludedGhostSiblings(m);
           _playerHatXrayOverlay = { materials, meshes };
           _playerHatXrayEnabled = false; // fresh overlay always starts normal (hat occludes as usual)
         } catch (err) {
@@ -22156,7 +22066,6 @@
         }
         removePlayerAvatarChildren();
         playerMesh.add(avatarGroup);
-        addOccludedGhostSiblings(avatarGroup);
         buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
         // Procedural feet attach directly under playerMesh (floor-anchored,
         // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
@@ -28209,48 +28118,30 @@
       const VEG_CULL_HYSTERESIS_TILES = 1;
       let _vegCullAccum = 999; // force a real pass on the first tick
 
-      // Keep the player visible when foliage is between them and the camera —
-      // two parts, doing two different jobs, after earlier single-mechanism
-      // attempts each broke something:
-      //
-      // 1. GUARANTEE: a "ghost" duplicate of the avatar/tool plane, sharing
-      //    the same geometry+texture, gated by the STENCIL buffer rather
-      //    than by depth alone. Only the tree(s) actually identified as
-      //    blocking (below, via isBetweenCameraAndPlayer2D against the
-      //    camera-player line — the same test the cosmetic fade uses) write a
-      //    stencil marker while they're drawn; the ghost only renders where
-      //    that marker is present. A first attempt gated purely on
-      //    depthFunc=GreaterDepth (show wherever *anything* already nearer
-      //    is in the depth buffer) was verified in a Playwright repro to
-      //    also show the ghost over ordinary grass billboards standing
-      //    legitimately in front of the player — grass here renders opaque
-      //    with depthWrite:true (alphaTest cutout, not blended), so from the
-      //    depth buffer alone a near grass blade is indistinguishable from a
-      //    near occluding tree. Requiring the stencil marker too restricts
-      //    the ghost to exactly the pixels of trees we've actually flagged
-      //    as blocking, so grass (never marked) is unaffected regardless of
-      //    how near it is. An earlier version before that forced
-      //    depthTest:false + a huge renderOrder on the real avatar/tool
-      //    whenever *anything* occluded them, which broke grass even worse
-      //    (ignoring ALL prior depth, everywhere on screen).
-      //    See addOccludedGhostSiblings below; wired in at avatar/tool build
-      //    time, nothing to update per frame beyond the stencil toggling
-      //    updateZoneVegetationCulling already does for the fade.
-      // 2. COSMETIC: a plain whole-object opacity fade on whichever tree(s)
-      //    are actually sitting on the camera-to-player line, so the
-      //    obstruction itself looks acknowledged instead of staying a flat
-      //    solid wall while the player's ghost shows through it. This reuses
-      //    the same per-tree cutout attempt from earlier — that approach was
-      //    abandoned as the sole fix because dissolving tree #1 doesn't
-      //    reveal the player if tree #2 is right behind it, but as a purely
-      //    cosmetic dimming layered UNDER the ghost guarantee above (which
-      //    doesn't care whether the blocking tree is faded or fully opaque —
-      //    it keys off the stencil marker and real depth, both of which a
-      //    transparent-but-depthWrite-true clone still writes) that
-      //    limitation no longer matters.
+      // Keep the player (and anyone/anything else) visible when foliage is
+      // between them and the camera. A tree flagged as blocking the
+      // camera-player sightline (below, via isBetweenCameraAndPlayer2D)
+      // fades its own opacity down — but a transparent object with
+      // depthWrite left at its default (true) still writes full depth, so
+      // whatever's behind it still fails the depth test and gets fully
+      // occluded despite the tree visually reading as see-through. That
+      // asymmetry (tools showing through, characters not) was originally
+      // patched around with a "ghost" duplicate of the avatar/tool plane,
+      // stencil-gated to draw only behind a flagged-blocking tree — real,
+      // but a bandaid: it needed its own mesh built per revealable target
+      // (player, companion, mount, each tool, each hat swap) at avatar-build
+      // time, its own per-frame transform resync for anything that animates
+      // its own local transform after ghost creation (see the old
+      // updateToolMesh spinPlane note), and a wilderness-zone visibility
+      // gate — all just to work around one flag on the actual occluder.
+      // Dropping depthWrite once a tree is actually fading removes the
+      // occlusion at its source instead: the tree stops writing depth for
+      // exactly as long as it's actually transparent, so ANYTHING behind it
+      // (player, companion, wild animal, a bandit's weapon, whatever) shows
+      // through via ordinary alpha blending — no per-target ghost mesh, no
+      // stencil buffer, nothing to keep in sync each frame.
       const TREE_FADE_OPACITY = 0.25;
       const TREE_FADE_LERP_PER_SEC = 6;
-      const OCCLUSION_STENCIL_REF = 7; // arbitrary; nothing else in this codebase uses the stencil buffer
       // Sideways tolerance for the camera-player occlusion line test, as a
       // fraction of a tree's own horizontal footprint radius (cullSphere's
       // xzRadius) — halved from the full footprint so only trees whose trunk
@@ -28265,7 +28156,7 @@
         for (const child of vegGroup.children) {
           if (!child.material) continue;
           const clone = child.material.clone();
-          clone.transparent = true; // depthWrite stays at its default (true) — see comment above
+          clone.transparent = true;
           child.material = clone;
           mats.push(clone);
         }
@@ -28274,20 +28165,26 @@
         vegGroup.userData._fadeTarget = 1;
         return mats;
       }
-      // Toggles the stencil-write state used to gate the occlusion ghost —
-      // see part 1 above. Only called on the specific tree(s) currently
-      // flagged as blocking the camera-player sightline.
-      function setTreeBlockingStencil(mats, blocking) {
-        for (const m of mats || []) {
-          m.stencilWrite = blocking;
-          if (blocking) {
-            m.stencilRef = OCCLUSION_STENCIL_REF;
-            m.stencilFunc = THREE.AlwaysStencilFunc;
-            m.stencilZPass = THREE.ReplaceStencilOp;
-            m.stencilZFail = THREE.KeepStencilOp;
-            m.stencilFail = THREE.KeepStencilOp;
-          }
-        }
+      // depthWrite:false only while a tree is actually in its blocking-fade
+      // state — see the comment above. Reverted (true) the instant a tree
+      // stops blocking, alongside the opacity revert in
+      // updateZoneVegetationCulling, so a tree back at full opacity also
+      // goes back to normally occluding things behind it.
+      //
+      // Also pulls the tree off the shell-outline pass's layer (see
+      // shellOutlineMat/_markOutline) while blocking. That pass renders
+      // every layer-1 mesh's silhouette in solid, opacity-independent black
+      // (back faces extruded along normals, its own override material —
+      // unrelated to the mesh's real material entirely), so a "faded" tree
+      // still traced a fully opaque black outline over whatever it was
+      // supposed to be letting show through, defeating the whole point.
+      // Re-enabled the instant a tree stops blocking, same as depthWrite.
+      function setTreeBlocking(vegGroup, mats, blocking) {
+        for (const m of mats || []) m.depthWrite = !blocking;
+        vegGroup.traverse(child => {
+          if (!child.isMesh || child.userData.noOutline) return;
+          if (blocking) child.layers.disable(1); else child.layers.enable(1);
+        });
       }
       function updateTreeFadeAnimation(dt) {
         if (!_treeFadeActive.size) return;
@@ -28300,94 +28197,6 @@
           vegGroup.userData._fadeOpacity = opacity;
           for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
           if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
-        }
-      }
-      // GUARANTEE half — adds a ghost duplicate of each textured mesh under
-      // `root`, sharing the same geometry+texture. The ghost only draws
-      // where BOTH hold: something nearer is already in the depth buffer
-      // (depthFunc=GreaterDepth), AND that something was one of the trees
-      // explicitly marked as blocking via the stencil buffer (see
-      // setTreeBlockingStencil above) — the stencil check is what keeps
-      // grass and everything else that isn't a flagged occluder from
-      // triggering it. depthWrite:false keeps the ghost from affecting
-      // anything drawn after it. No per-frame bookkeeping needed here: it
-      // reacts automatically to whatever's in the depth/stencil buffers
-      // each frame, however many layers of trees are stacked up.
-      function addOccludedGhostSiblings(root, opts = {}) {
-        if (!root) return;
-        const originals = [];
-        root.traverse(o => { if (o.isMesh && o.material && o.material.map) originals.push(o); });
-        for (const mesh of originals) {
-          const srcMat = mesh.material;
-          const ghostMat = new THREE.MeshBasicMaterial({
-            map: srcMat.map,
-            color: opts.color ?? 0xffffff,
-            transparent: true,
-            opacity: opts.opacity ?? 0.6,
-            alphaTest: srcMat.alphaTest || 0.001,
-            side: srcMat.side,
-            depthTest: true,
-            depthFunc: THREE.GreaterDepth,
-            depthWrite: false,
-            // stencilWrite:true here doesn't mean "writes" — in three.js this
-            // flag is what enables the stencil TEST at all (WebGLState just
-            // calls stencilBuffer.setTest(material.stencilWrite), so false
-            // would skip stencil testing entirely and fall back to the
-            // depth-only check, which is exactly the grass-showing bug this
-            // was meant to fix). The Keep/Keep/Keep ops below mean it still
-            // never actually writes a new value despite the test being on.
-            stencilWrite: true,
-            stencilFunc: THREE.EqualStencilFunc,
-            stencilRef: OCCLUSION_STENCIL_REF,
-            stencilFuncMask: 0xff,
-            stencilFail: THREE.KeepStencilOp,
-            stencilZFail: THREE.KeepStencilOp,
-            stencilZPass: THREE.KeepStencilOp,
-          });
-          const ghost = new THREE.Mesh(mesh.geometry, ghostMat);
-          ghost.position.copy(mesh.position);
-          ghost.rotation.copy(mesh.rotation);
-          ghost.scale.copy(mesh.scale);
-          ghost.renderOrder = (mesh.renderOrder || 0) + 1 + (opts.renderOrderBoost || 0);
-          ghost.name = (mesh.name || 'ghost') + '_occluded_ghost';
-          ghost.userData.isOccludedGhost = true;
-          ghost.matrixAutoUpdate = mesh.matrixAutoUpdate;
-          mesh.parent.add(ghost);
-          // The copies above only match the source mesh's transform at THIS
-          // instant. A tool's sprite plane keeps getting its OWN local
-          // rotation.z animated every frame after this (the sweep style's
-          // blade-parallel twist / mace "spinning" twirl -- see
-          // updateToolMesh's spinPlane block), and the ghost, being a
-          // wholly separate Object3D, never picks that up on its own --
-          // confirmed live as a weapon that visibly swings normally but
-          // shows a second, frozen-orientation copy of itself whenever
-          // ghosted behind a tree. Tracking the pair here and re-copying
-          // the transform every frame (syncOccludedGhostTransforms, called
-          // once from the main loop) keeps every ghost -- tool or body --
-          // correct regardless of what animates the source mesh's own
-          // local transform, without needing every such animation site to
-          // know or care that a ghost even exists.
-          _occludedGhostPairs.push({ mesh, ghost });
-        }
-      }
-      const _occludedGhostPairs = [];
-      // The occlusion ghost only ever has anything to guarantee visibility
-      // through in a wilderness zone — updateZoneVegetationCulling (the only
-      // place that ever marks a tree's stencil as "blocking") already
-      // early-returns everywhere else, so a ghost's stencil test can never
-      // pass in town/farm/interior/cavern. Explicitly hides (and skips
-      // updating) every ghost there too instead of leaving them sitting in
-      // the scene graph as dead weight — still built once up front (see
-      // addOccludedGhostSiblings), just inert outside the one context
-      // ("potential danger" in a wilderness zone) they exist for.
-      function syncOccludedGhostTransforms() {
-        const active = _isZoneArea(currentArea);
-        for (const { mesh, ghost } of _occludedGhostPairs) {
-          if (ghost.visible !== active) ghost.visible = active;
-          if (!active) continue;
-          ghost.position.copy(mesh.position);
-          ghost.rotation.copy(mesh.rotation);
-          ghost.scale.copy(mesh.scale);
         }
       }
       // Is (px,pz) actually BETWEEN (ax,az) [camera] and (bx,bz) [player],
@@ -28428,14 +28237,13 @@
         const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
         const hysteresis = VEG_CULL_HYSTERESIS_TILES;
         // Every character worth revealing an occluder for, not just the
-        // player -- an active companion (or, before this, any other
-        // creature) walking behind a tree/wall previously just vanished
-        // outright, with no ghost silhouette, because the fade/stencil
-        // trigger below only ever checked the camera-to-PLAYER line. A tree
-        // can easily sit on the camera-to-companion line without also
-        // sitting on the camera-to-player line (they're rarely standing on
-        // exactly the same spot), so this needs its own check per target
-        // rather than reusing the player's.
+        // player -- a tree that only fades for the player would leave a
+        // companion standing behind the SAME tree fully hidden by it, since
+        // the fade/depthWrite trigger below only checks whichever line(s)
+        // it's given. A tree can easily sit on the camera-to-companion line
+        // without also sitting on the camera-to-player line (they're rarely
+        // standing on exactly the same spot), so this needs its own check
+        // per target rather than reusing the player's.
         const revealTargets = [{ x: player.x / TILE, z: player.y / TILE }];
         for (const c of companionObjects) {
           if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
@@ -28460,13 +28268,13 @@
               const mats = ensureTreeFadeMaterials(obj);
               obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
-              setTreeBlockingStencil(mats, blocking);
+              setTreeBlocking(obj, mats, blocking);
             }
           } else if (obj.userData._fadeMaterials) {
             obj.userData._fadeTarget = 1;
             obj.userData._fadeOpacity = 1;
             for (const m of obj.userData._fadeMaterials) m.opacity = 1;
-            setTreeBlockingStencil(obj.userData._fadeMaterials, false);
+            setTreeBlocking(obj, obj.userData._fadeMaterials, false);
             _treeFadeActive.delete(obj);
           }
         }
@@ -30529,16 +30337,9 @@
       }
 
       // Build a PNG plane mesh sized to the sprite's pixel aspect ratio.
-      // `ghost` defaults to false -- this factory is shared by the player's
-      // own equipped-tool mesh (rebuildToolMeshes, the one call site that
-      // opts in below), a bandit's weapon (makeBanditToolHolder), and an
-      // NPC work station's displayed tool -- only the player's own tool
-      // should ever get a see-through ghost sibling, for the same reason
-      // makeCreatureEntity/makeBanditEntity's own ghost call is now
-      // player/companion-only: a bandit or NPC is never a revealTarget, so
-      // giving its weapon a ghost sibling let the player see it x-rayed
-      // through vegetation whenever it stood behind the same tree fading
-      // for the player/companion's sake.
+      // Shared by the player's own equipped-tool mesh (rebuildToolMeshes), a
+      // bandit's weapon (makeBanditToolHolder), and an NPC work station's
+      // displayed tool.
       function makeToolPlaneMesh(itemKey, opts = {}) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
@@ -30563,7 +30364,6 @@
         // the blade) faces forward instead when built for the pick slot.
         plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
         g.add(plane);
-        if (opts.ghost) addOccludedGhostSiblings(g);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
         // from whichever anim is actually playing rather than baked in per-item here — see
@@ -30583,7 +30383,7 @@
           // regardless of swing phase — a static idle-pose difference so a
           // pick-shovel equipped in both the shovel and pick slots at once
           // still reads as two distinct tools at rest, not just mid-swing.
-          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { ghost: true, flip: slot === 'pick' }) : null;
+          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: slot === 'pick' }) : null;
         }
         // machete alias → weapon mesh for legacy code paths
         if (!toolMeshMap.machete) toolMeshMap.machete = toolMeshMap.weapon;
@@ -32736,6 +32536,28 @@
       const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'lieutenant', 'captain'];
       let devSpawnBanditTier = 0;
 
+      // Same species FoliageGenerator builds for a real wilderness zone's
+      // SHRUB tiles (see _buildZoneFloorMeshes) — spawning them here lets a
+      // tree/stump's view-corridor culling and camera-occlusion fade (see
+      // updateZoneVegetationCulling) get exercised and screenshotted without
+      // needing an actual zone (Southern Cloud Forest's real terrain alone
+      // takes a couple minutes to generate). skipOcclusionFade/scale2x mirror
+      // that same switch's own per-species handling exactly, so a spawned
+      // bush/shrub behaves (and doesn't fade) the same as a real one.
+      const DEV_SPAWN_FOLIAGE_TYPES = {
+        crownedPine: { label: 'Crowned Pine', build: (seed) => window.FoliageGenerator.buildCrownedPineMesh(seed, 0) },
+        shadewood: { label: 'Shadewood', build: (seed) => window.FoliageGenerator.buildShadewoodMesh(seed, 0) },
+        stump: { label: 'Old Stump', build: (seed) => window.FoliageGenerator.buildStumpMesh(seed, 0) },
+        bush: { label: 'Wilderness Bush', build: (seed) => window.FoliageGenerator.buildWildernessBushMesh(seed, 0), skipOcclusionFade: true },
+        shrub: { label: 'Generic Shrub', build: (seed) => window.FoliageGenerator.buildShrubMesh(seed, 0), skipOcclusionFade: true, scale2x: true },
+      };
+      let devSpawnFoliageSelectedKey = Object.keys(DEV_SPAWN_FOLIAGE_TYPES)[0];
+      let _arenaFoliageSeedCounter = 0;
+      // Separate from _arenaSpawnedCreatures — these are plain decorative
+      // meshes, not AI entities, so "Clear Objects" just removes/disposes
+      // them directly instead of going through damageCreature.
+      const _arenaSpawnedFoliage = new Set();
+
       function renderDevSpawnPanel() {
         const grid = document.getElementById('devSpawnSpeciesGrid');
         if (grid) {
@@ -32761,11 +32583,26 @@
         }
         const countEl = document.getElementById('devArenaSpawnCount');
         if (countEl) countEl.textContent = String(_arenaSpawnedCreatures.size);
+        const foliageGrid = document.getElementById('devSpawnFoliageGrid');
+        if (foliageGrid) {
+          foliageGrid.innerHTML = Object.entries(DEV_SPAWN_FOLIAGE_TYPES).map(([key, def]) => {
+            const active = key === devSpawnFoliageSelectedKey ? ' fed-active' : '';
+            return `<button type="button" class="fed-btn${active}" data-foliage="${esc(key)}">${esc(def.label)}</button>`;
+          }).join('');
+        }
+        const foliageCountEl = document.getElementById('devArenaFoliageCount');
+        if (foliageCountEl) foliageCountEl.textContent = String(_arenaSpawnedFoliage.size);
       }
       document.getElementById('devSpawnSpeciesGrid')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.fed-btn');
         if (!btn) return;
         devSpawnSelectedKey = btn.dataset.species;
+        renderDevSpawnPanel();
+      });
+      document.getElementById('devSpawnFoliageGrid')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.fed-btn');
+        if (!btn) return;
+        devSpawnFoliageSelectedKey = btn.dataset.foliage;
         renderDevSpawnPanel();
       });
       document.getElementById('devSpawnBanditTierGrid')?.addEventListener('click', (e) => {
@@ -32864,6 +32701,71 @@
         renderDevSpawnPanel();
       }
       document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
+
+      // Places a real FoliageGenerator tree/bush/stump near the player, wired
+      // into the exact same view-corridor culling + camera-occlusion fade a
+      // real zone's own trees get (see updateZoneVegetationCulling) by
+      // computing the same cullSphere bounding-sphere tag _buildZoneFloorMeshes
+      // does and pushing it onto this zone's own cullables list — the only
+      // other place that list is ever built is once, at zone-build time (see
+      // buildZoneScene), so a tree spawned after that has to be added here by
+      // hand rather than picked up automatically.
+      function spawnDevArenaFoliage(key) {
+        if (currentArea !== DEV_ARENA_ZONE_ID) return;
+        const typeDef = DEV_SPAWN_FOLIAGE_TYPES[key];
+        if (!typeDef) return;
+        if (!window.FoliageGenerator) { showToast('Could not spawn — FoliageGenerator not loaded.', false); return; }
+        const vegGroup = typeDef.build(_arenaFoliageSeedCounter++);
+        if (typeDef.scale2x) vegGroup.scale.multiplyScalar(2);
+        if (typeDef.skipOcclusionFade) vegGroup.userData.skipOcclusionFade = true;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = TILE * (1.5 + Math.random() * 2.5);
+        const x = player.x + Math.cos(angle) * dist;
+        const y = player.y + Math.sin(angle) * dist;
+        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
+        const targetGrid = getActiveGrid();
+        const surfY = targetGrid?.[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
+        vegGroup.position.set(x / TILE, surfY, y / TILE);
+        const box = new THREE.Box3().setFromObject(vegGroup);
+        if (!box.isEmpty()) {
+          const sphere = box.getBoundingSphere(new THREE.Sphere());
+          const xzRadius = Math.hypot((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2);
+          vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius, xzRadius };
+        }
+        getActiveScene().add(vegGroup);
+        _markOutline(vegGroup);
+        const zi = _zoneScenes.get(DEV_ARENA_ZONE_ID);
+        if (zi && vegGroup.userData.cullSphere) {
+          zi.cullables = zi.cullables || [];
+          zi.cullables.push(vegGroup);
+        }
+        _arenaSpawnedFoliage.add(vegGroup);
+        renderDevSpawnPanel();
+      }
+      document.getElementById('devSpawnFoliageBtnAction')?.addEventListener('click', () => {
+        spawnDevArenaFoliage(devSpawnFoliageSelectedKey);
+      });
+      function devArenaClearFoliage() {
+        const zi = _zoneScenes.get(DEV_ARENA_ZONE_ID);
+        const toRemove = [..._arenaSpawnedFoliage];
+        for (const vegGroup of toRemove) {
+          _arenaSpawnedFoliage.delete(vegGroup);
+          _treeFadeActive.delete(vegGroup);
+          vegGroup.parent?.remove(vegGroup);
+          if (zi?.cullables) {
+            const idx = zi.cullables.indexOf(vegGroup);
+            if (idx !== -1) zi.cullables.splice(idx, 1);
+          }
+          vegGroup.traverse(o => {
+            if (!o.isMesh) return;
+            o.geometry?.dispose();
+            for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m?.map?.dispose(); m?.dispose(); }
+          });
+        }
+        showToast(`Cleared ${toRemove.length} arena object${toRemove.length === 1 ? '' : 's'}.`, true);
+        renderDevSpawnPanel();
+      }
+      document.getElementById('devClearFoliageBtn')?.addEventListener('click', devArenaClearFoliage);
 
       // ── Combat log (for AI/Claude review, not players) ─────────────────
       // One button dumps every arena entity's internal AI/combat state as
@@ -33332,9 +33234,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         camTargetY += (wy - camTargetY) * camLerp;
         updateCameraPosition();
 
-        // Throttled to ~7Hz, not every frame — drives the cosmetic tree-fade
-        // targets. The ghost-sibling visibility guarantee needs no per-frame
-        // work (it's just always in the scene, reacting to the depth buffer).
+        // Throttled to ~7Hz, not every frame — drives the tree-fade targets
+        // (opacity and, while a tree is actually blocking, depthWrite).
         _vegCullAccum += dt;
         if (_vegCullAccum >= 0.14) {
           const force = _vegCullAccum >= 900; // first tick after script load
@@ -33364,33 +33265,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // arena, so combat has to work there too (see _isCavernBuildingArea).
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
           updateToolMesh(dt);
-          // Re-copy every ghosted mesh's live transform onto its ghost
-          // sibling -- see addOccludedGhostSiblings' matching comment.
-          // Placed right after updateToolMesh since that's what actually
-          // animates a per-mesh local transform (the tool sprite's own
-          // rotation.z) after ghost creation; body-avatar ghosts move via
-          // their shared parent group instead and need no such recopy, but
-          // this catches them too if that ever changes. Also hides every
-          // ghost outside a wilderness zone (see the function's own
-          // comment) — this branch already covers farm/town/cavern, the one
-          // remaining case (plain building interior) is handled in the
-          // else below since this whole branch is skipped there.
-          syncOccludedGhostTransforms();
           updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
           updateReticleMesh();
-        } else {
-          // Plain building interior — the one area the block above skips
-          // entirely (see its own comment). No tool/reticle meshes exist
-          // there, but the player's body ghost siblings still do (built
-          // once, unconditionally, at avatar-build time) — still needs
-          // this call so they actually get hidden on the very next frame
-          // after walking in from a wilderness zone, not left visible
-          // (uselessly, since nothing there can ever pass their stencil
-          // test) until the player happens to re-enter one of the areas
-          // above.
-          syncOccludedGhostTransforms();
         }
         if (currentArea === 'farm') {
           updateWaterMeshes();
@@ -36296,8 +36174,6 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
         get sitInteraction() { return sitInteraction; },
         playerLegsRef: () => playerLegs,
-        occludedGhostCount: () => _occludedGhostPairs.length,
-        occludedGhostVisibleCount: () => _occludedGhostPairs.filter(p => p.ghost.visible).length,
         get depthOutlinesSetting() { return s_depthOutlines; },
         get outlinesSetting() { return s_outlines; },
         get playerNeckJointRotY() { return playerNeckJoint ? playerNeckJoint.rotation.y : null; },

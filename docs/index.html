@@ -230,6 +230,17 @@
       <div class="fed-section">
         <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
       </div>
+      <div class="fed-section">
+        <div class="fed-label">Foliage / objects — trees/stumps participate in the same view-corridor culling and camera-occlusion fade as a real wilderness zone's, for testing that behavior without leaving the arena</div>
+        <div class="fed-grid" id="devSpawnFoliageGrid"></div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devSpawnFoliageBtnAction">🌲 Spawn Selected</button>
+        <button class="fed-action-btn fed-danger" id="devClearFoliageBtn">🗑️ Clear Objects</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Objects from this panel: <span id="devArenaFoliageCount">0</span></div>
+      </div>
       <div class="fed-section fed-actions">
         <button class="fed-action-btn" id="devCombatLogBtn">📋 Copy Combat Log (last 7s, for AI review)</button>
       </div>
