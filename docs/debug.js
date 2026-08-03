@@ -61,7 +61,14 @@
     window.__debugLogMatchesFilter = _matchesDebugFilter;
 
     window.addEventListener('error', function (event) {
-      window.__farmLog(`${event.message} @ ${event.filename || 'inline'}:${event.lineno || '?'}:${event.colno || '?'}`, 'error');
+      // Browsers sanitize cross-origin script errors to "Script error." with
+      // no filename/line/col — distinguish that from a genuinely inline error.
+      const crossOrigin = event.message === 'Script error.' && !event.filename;
+      const loc = crossOrigin
+        ? '(cross-origin script — no details available)'
+        : `${event.filename || 'inline'}:${event.lineno || '?'}:${event.colno || '?'}`;
+      const stack = event.error && event.error.stack ? '\n' + event.error.stack : '';
+      window.__farmLog(`${event.message} @ ${loc}${stack}`, 'error');
     });
     window.addEventListener('unhandledrejection', function (event) {
       window.__farmLog(event.reason && event.reason.stack ? event.reason.stack : String(event.reason), 'promise');

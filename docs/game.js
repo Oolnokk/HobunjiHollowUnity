@@ -2659,7 +2659,7 @@
         map_dev_arena: {
           label: 'Testing Arena',
           cols: 18, rows: 18,
-          groundColor: 0x55565c, fogColor: 0x24262c,
+          groundColor: 0x7a7f89, fogColor: 0x505764,
           entryCol: 9, entryRow: 9,
           exitCol: 1, exitRow: 1,
           townReturnCol: 30, townReturnRow: 2,
@@ -2667,6 +2667,49 @@
         },
       };
       function _isZoneArea(area) { return typeof area === 'string' && (!!EXTERIOR_ZONES[area] || _zoneLayouts.has(area)); }
+      // Most exterior zones get a full authored/procedural _zoneLayouts entry.
+      // The dev arena intentionally never goes through that pipeline, but the
+      // rest of the wilderness/runtime code still expects a layout object for
+      // fog, minimap, collision/object scans, and any future zone-level logic.
+      // Seed one lazily the first time the arena is built so it behaves like a
+      // normal zone instead of a half-configured special case.
+      function _ensureStaticZoneLayout(mapId) {
+        let layout = _zoneLayouts.get(mapId);
+        if (layout || mapId !== 'map_dev_arena') return layout;
+        const zdef = EXTERIOR_ZONES[mapId];
+        if (!zdef) return null;
+        const cols = Math.max(1, zdef.cols | 0);
+        const rows = Math.max(1, zdef.rows | 0);
+        const tiles = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const border = c === 0 || r === 0 || c === cols - 1 || r === rows - 1;
+            tiles.push({
+              c, r,
+              type: border ? TileType.ROCK : TileType.PATH,
+              elevTier: 0,
+              rampElevation: 0,
+              skipFloor: false,
+              incline: false,
+            });
+          }
+        }
+        layout = {
+          id: mapId,
+          cols, rows,
+          tiles,
+          mesas: [],
+          dens: [],
+          rootTotems: [],
+          buildings: [],
+          decor: [],
+          furniture: [],
+          transitions: [],
+          localeInstances: [],
+        };
+        _zoneLayouts.set(mapId, layout);
+        return layout;
+      }
 
       // Used by input polling; supports both keyboard and touch joystick.
       const input = {
@@ -14469,7 +14512,7 @@
         if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
         if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
         const zdef = EXTERIOR_ZONES[mapId];
-        const zoneData = _zoneLayouts.get(mapId);
+        const zoneData = _ensureStaticZoneLayout(mapId) || _zoneLayouts.get(mapId);
         if (!zdef && !zoneData) return null;
         const ZCOLS = zoneData?.cols || zdef?.cols, ZROWS = zoneData?.rows || zdef?.rows;
 
@@ -27848,6 +27891,11 @@
       // off since only the attached depth texture is read back.
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      // Cache of every PNG-plane/billboard object in the active scene, rebuilt
+      // only when the active scene reference changes (i.e. on area transition).
+      // Avoids a full scene.traverse() every frame for the depth-outline pass.
+      let _depthHideCacheScene = null;
+      let _depthHideCache = [];
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
@@ -31800,8 +31848,8 @@
       }
 
       // ── Update water meshes each frame ─────────────────────────────
-      function updateWaterMeshes() {
-        waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
+      function updateWaterMeshes(dt) {
+        waterTime += dt; // use real elapsed time so animation speed is frame-rate independent
 
         if (_waterSimDirty) {
           // Full refresh: recompute flow direction, colour, depth, position.
@@ -31885,8 +31933,8 @@
 
       // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
       // so town weather can fill them with water exactly like farm trenches.
-      function updateTownWaterMeshes() {
-        waterTime += 0.016;
+      function updateTownWaterMeshes(dt) {
+        waterTime += dt;
         for (const wm of _townRiverWaterMeshes) wm.material.uniforms.uTime.value = waterTime;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
@@ -31964,8 +32012,8 @@
       // buildWaterfallCurtainMeshes) — there's no per-tile dynamic water sim
       // here like updateTownWaterMeshes/updateWaterMeshes, just the uTime
       // uniform driving the shader's scroll/ripple, so this is a thin loop.
-      function updateZoneWaterMeshes(mapId) {
-        waterTime += 0.016;
+      function updateZoneWaterMeshes(mapId, dt) {
+        waterTime += dt;
         const meshes = _zoneWaterMeshes.get(mapId);
         if (!meshes) return;
         for (const wm of meshes) wm.material.uniforms.uTime.value = waterTime;
@@ -32335,6 +32383,10 @@
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
       let _minimapRedrawAccum = 0;
+      // Audio state changes at most a few times/sec — no need to re-evaluate
+      // every frame at 60fps. 150ms gives responsive volume transitions while
+      // saving ~80% of the per-frame audio-update cost.
+      let _audioUpdateAccum = 0;
 
       buildTileMeshes();
       buildBorderTerrain();
@@ -33220,10 +33272,17 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
-        updateRainAudio();
-        updateExteriorBgs();
-        updateFurnitureSfxSources();
-        updateAmbientCues();
+        // Audio state only changes on area transitions, rain starts/stops, and
+        // BGM track changes — throttle to ~150ms so we're not re-evaluating
+        // every frame at 60fps for no audible benefit.
+        _audioUpdateAccum += dt;
+        if (_audioUpdateAccum >= 0.15) {
+          _audioUpdateAccum = 0;
+          updateRainAudio();
+          updateExteriorBgs();
+          updateFurnitureSfxSources();
+          updateAmbientCues();
+        }
         audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
         // Diagnostic for "bgm/cue reports playing but is silent": the actual
         // audible level lives in this GainNode graph, not on the <audio>
@@ -33351,11 +33410,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
         if (currentArea === 'town') {
-          updateTownWaterMeshes();
+          updateTownWaterMeshes(dt);
           updateTownThreeLighting();
         }
         if (_isZoneArea(currentArea)) {
-          updateZoneWaterMeshes(currentArea);
+          updateZoneWaterMeshes(currentArea, dt);
         }
         // The player can wield tools/weapons outside the farm too (town,
         // exterior zones) — buildings/farmhouse interior intentionally
@@ -33393,7 +33452,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           syncOccludedGhostTransforms();
         }
         if (currentArea === 'farm') {
-          updateWaterMeshes();
+          updateWaterMeshes(dt);
           updateCropMeshes();
           updateAnimalMeshes(dt);
           updateThreeLighting();
@@ -33494,13 +33553,19 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           // Opt-in/off by default since it's an extra full scene pass on top
           // of everything above.
           if (s_depthOutlines) {
+            // Rebuild the PNG-plane/billboard cache only when the active scene
+            // changes (area transition), not every frame.
+            if (activeScene !== _depthHideCacheScene) {
+              _depthHideCacheScene = activeScene;
+              _depthHideCache = [];
+              activeScene.traverse(o => {
+                if (o.userData.isPngPlane || o.userData.isBillboard) _depthHideCache.push(o);
+              });
+            }
             const _hiddenForDepthPass = [];
-            activeScene.traverse(o => {
-              if ((o.userData.isPngPlane || o.userData.isBillboard) && o.visible) {
-                o.visible = false;
-                _hiddenForDepthPass.push(o);
-              }
-            });
+            for (const o of _depthHideCache) {
+              if (o.visible) { o.visible = false; _hiddenForDepthPass.push(o); }
+            }
             renderer.setRenderTarget(_depthOnlyRT);
             activeScene.overrideMaterial = _depthOnlyMat;
             renderer.render(activeScene, camera);
@@ -33780,13 +33845,17 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             octx.strokeStyle = '#cce8ff';
             octx.lineWidth = l.w;
             const ph = (t * l.spd * 40) % l.sp;
+            // Batch all lines into a single path per layer — one stroke() call
+            // instead of one per line, which was thousands of draw calls/frame.
+            octx.beginPath();
             for (let gx = -40; gx < W+60; gx += l.sp) {
               for (let gy = -60; gy < H+80; gy += l.sp*2.2) {
                 const rx = gx + ((gy/11) % l.sp);
                 const ry = (gy + ph) % (H+80) - 40;
-                octx.beginPath(); octx.moveTo(rx, ry); octx.lineTo(rx+l.sl, ry+l.len); octx.stroke();
+                octx.moveTo(rx, ry); octx.lineTo(rx+l.sl, ry+l.len);
               }
             }
+            octx.stroke();
           }
           octx.globalAlpha = 1;
         }
