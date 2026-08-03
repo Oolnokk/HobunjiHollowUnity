@@ -7735,7 +7735,28 @@
       // buildAnimalPlaneAvatarModel in png-plane-avatar.js, which both the
       // tool and the game build avatars with), so a character's and a
       // creature's anchor values are directly comparable/combinable.
+      // Both caches hold the *resolved* anchor object, keyed by everything
+      // its value actually depends on. That's static rig-profile data plus
+      // (for the player) speciesId/gender/playerAvatarModelHeight/
+      // playerToolBaseY — and every one of those only ever changes inside
+      // refreshPlayerAvatar (species/gender edits and gear/cosmetic swaps
+      // all funnel through it to rebuild the avatar), which is where
+      // _playerAttachmentAnchorCache gets cleared. creatureAttachmentAnchor
+      // has no player-state dependency at all (pure rig-profile lookup by
+      // kind), so its cache never needs invalidating. Without this, a
+      // mounted rider or an active shoulder pet was re-deriving these same
+      // objects (template-string key, several optional-chain lookups, a
+      // fresh {x,y,z,rotationDeg} allocation) every single frame even
+      // though the answer can't have changed since the last avatar rebuild.
+      let _playerAttachmentAnchorCache = new Map();
+      const _creatureAttachmentAnchorCache = new Map();
       function playerAttachmentAnchor(anchorName) {
+        if (_playerAttachmentAnchorCache.has(anchorName)) return _playerAttachmentAnchorCache.get(anchorName);
+        const result = _computePlayerAttachmentAnchor(anchorName);
+        _playerAttachmentAnchorCache.set(anchorName, result);
+        return result;
+      }
+      function _computePlayerAttachmentAnchor(anchorName) {
         const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
         if (!lib) return null;
         const speciesId = _playerData?.appearance?.speciesId, gender = _playerData?.appearance?.gender;
@@ -7761,8 +7782,12 @@
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
       }
       function creatureAttachmentAnchor(kind, anchorName) {
+        const cacheKey = `${kind}::${anchorName}`;
+        if (_creatureAttachmentAnchorCache.has(cacheKey)) return _creatureAttachmentAnchorCache.get(cacheKey);
         const anchor = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName];
-        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+        const result = Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+        _creatureAttachmentAnchorCache.set(cacheKey, result);
+        return result;
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName) { return creatureAttachmentAnchor(kind, anchorName)?.y ?? null; }
@@ -7807,8 +7832,14 @@
         return -_depthPriorityVec.z;
       }
       function _playerAvatarBodyMaterials() {
+        if (_playerAvatarBodyMaterialsCache) return _playerAvatarBodyMaterialsCache;
         let group = null;
         for (const child of playerMesh.children) if (child.name === 'player_avatar') { group = child; break; }
+        // Not cached: mid-refreshPlayerAvatar (between the cache clear at
+        // its top and its own playerMesh.add(avatarGroup) later on), the
+        // avatar isn't attached yet — caching [] here would freeze this
+        // empty result in place with nothing left to invalidate it once
+        // the real avatar does land.
         if (!group) return [];
         // The real front/back plane meshes sit inside a nested "assembly"
         // sub-group (see buildSinglePlaneAvatarModel's root.add(assembly)
@@ -7820,6 +7851,7 @@
         group.traverse(child => {
           if (child.isMesh && child.material && !child.name.includes('hat_xray')) mats.push(child.material);
         });
+        _playerAvatarBodyMaterialsCache = mats;
         return mats;
       }
       // The hat-xray plane deliberately stays OUT of this ranking — it's
@@ -13191,6 +13223,11 @@
       // combined front+back traversal can't do on its own.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
+      // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
+      // cleared in refreshPlayerAvatar (the only place the avatar's mesh
+      // hierarchy is rebuilt), so a stable hierarchy isn't re-traversed
+      // every frame just to find the same handful of materials again.
+      let _playerAvatarBodyMaterialsCache = null;
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
@@ -21991,6 +22028,13 @@
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
+        // Every input playerAttachmentAnchor()/_playerAvatarBodyMaterials()
+        // memoize (species/gender, playerAvatarModelHeight, playerToolBaseY,
+        // the avatar mesh subtree) is about to be replaced below, so their
+        // caches would otherwise keep answering with the outgoing avatar's
+        // values.
+        _playerAttachmentAnchorCache = new Map();
+        _playerAvatarBodyMaterialsCache = null;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
         // The old front/back materials this pointed at are about to be
@@ -22052,6 +22096,14 @@
         }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
+        // Re-clear (not just at this function's top): the 'posterior' anchor
+        // is derived from playerAvatarModelHeight/playerToolBaseY, just set
+        // above — anything that called playerAttachmentAnchor('posterior')
+        // during this function's earlier awaits (e.g. updatePlayerMesh
+        // computing a mounted rider's seat lift mid-refresh) would have
+        // cached an answer built from the OUTGOING avatar's height/hand-Y,
+        // and nothing else would ever flush it back out.
+        _playerAttachmentAnchorCache = new Map();
         // Anchored to playerToolBaseY (the real per-species/gender scanned hand
         // height) rather than a flat fraction of avatarHeight, so differently
         // proportioned species/genders get a correctly offset chest height
