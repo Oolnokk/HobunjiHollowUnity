@@ -1609,6 +1609,17 @@
       const EVAP_RATE    = 0.002;  // evapotranspiration — drains all tiles slowly even when dry
       const FLOW_RATE         = 0.45;  // fraction of head difference transferred per tick
       const TRENCH_FLOW_BONUS = 3.0;   // trenches pull water from neighbours faster (scaled by tile.depth)
+      // West/east edges seep water in from the surrounding far terrain (instead of
+      // only the south edge draining out) so a player can't starve the whole
+      // irrigation system just by damming the north-south channel — the far
+      // terrain still gets in from the sides. Fraction of the gap to the far
+      // terrain's level closed per tick.
+      const SIDE_INFLOW_RATE  = 0.06;
+      // How fast the far terrain immediately south of the map (the decorative
+      // border terrain) tracks the south-edge tile's water level, per column.
+      // Low = the gap a player digs at the south edge visibly continues into
+      // the far terrain rather than snapping dry/wet instantly.
+      const FAR_SOUTH_TRACK_RATE = 0.2;
       // Rain gradually silts trenches back in — depth drains while raining and the
       // trench reverts to grass once fully filled. Redigging (single tap) restores depth to 1.
       const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
@@ -13270,6 +13281,7 @@
       // ── Town zone ──────────────────────────────────────────────────
       let _townZone          = null;   // parsed hobunji_town_v1 layout
       let townGrid           = [];     // 2-D tile array for the town map
+      let townSouthLevel     = new Float32Array(0); // per-column far-terrain water level south of townGrid; sized in initTownTravel
       let townScene          = null;   // THREE.Scene, built lazily
       let townAmbientLight   = null;
       let townSunLight       = null;
@@ -17267,6 +17279,9 @@
         for (const { c, r, type } of (layout.tiles || [])) {
           if (townGrid[r]?.[c]) townGrid[r][c].type = type || TileType.GRASS;
         }
+        // Per-column far-terrain water level south of the town grid — same
+        // gap-continuation tracking as the farm's farSouthLevel (see recomputeWater).
+        townSouthLevel = new Float32Array(TCOLS).fill(0.5);
         worldTownTransitions = (layout.transitions || []).filter(t =>
           t && Number.isFinite(t.col) && Number.isFinite(t.row) && (
             (Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) ||
@@ -22676,6 +22691,18 @@
       // inside createInitialGrid) sets these — they must not be in TDZ.
       let _waterSimDirty = true;
       let _flowingTrenchTiles = [];
+      // The town's average water level (0..1), refreshed every time the town's
+      // water sim ticks. The farm's far terrain (and its west/east edge inflow)
+      // tracks this, so the town's own water state shows up out past the farm's
+      // playable edges. Town itself has no "upstream" grid to draw from, so its
+      // own far terrain/edge inflow tracks its own average instead (see
+      // recomputeWater's farLevel computation).
+      let _townWaterLevel = 0.5;
+      // Per-column water level (0..1) of the far terrain immediately south of
+      // the farm's playable grid — tracks each column's south-edge tile so a
+      // player-made gap in the water reaching the bottom row continues into
+      // the far terrain beyond the map instead of stopping dead at the seam.
+      let farSouthLevel = new Float32Array(COLS).fill(0.5);
       let grid = createInitialGrid();
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
       { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
@@ -29910,6 +29937,16 @@
       // (not part of the rain-fed water sim — rivers always flow).
       let _townRiverWaterMeshes = [];
 
+      // ── Far-terrain south apron (gap continuation) ─────────────────
+      // Shallow decorative puddle strip just past the map's south edge,
+      // keyed "col,depthRow". Its per-column depth tracks farSouthLevel /
+      // townSouthLevel, so a player-made dry gap at the bottom row visibly
+      // keeps going out into the far terrain instead of stopping at the seam.
+      const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
+      const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
+      const farmFarAquiferMeshes = new Map();
+      const townFarAquiferMeshes = new Map();
+
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
@@ -31600,6 +31637,40 @@
       }
 
       // ── Update water meshes each frame ─────────────────────────────
+      // Refreshes the shallow decorative puddle apron just past a grid's south
+      // edge (see farmFarAquiferMeshes/townFarAquiferMeshes) — one column-keyed
+      // mesh per apron row, depth tracking southLevel[col] with distance falloff.
+      function _updateFarAquiferApron(cols, seamRow, southLevel, meshMap, sceneObj) {
+        for (let col = 0; col < cols; col++) {
+          const level = southLevel[col];
+          for (let d = 0; d < FAR_APRON_ROWS; d++) {
+            const key = col + ',' + d;
+            const depthFrac = level * Math.pow(FAR_APRON_FALLOFF, d);
+            if (depthFrac < 0.02) {
+              const old = meshMap.get(key);
+              if (old) { sceneObj.remove(old); meshMap.delete(key); }
+              continue;
+            }
+            const surfaceA = NORMAL_TOP + depthFrac * WATER_UNIT;
+            const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
+            const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
+            let wm = meshMap.get(key);
+            if (!wm) {
+              wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, seamRow + d));
+              wm.receiveShadow = false;
+              sceneObj.add(wm);
+              meshMap.set(key, wm);
+            }
+            wm.position.set(col + 0.5, surfaceA + 0.015, seamRow + d + 0.5);
+            const u = wm.material.uniforms;
+            u.uTime.value  = waterTime;
+            u.uDepth.value = depthFrac;
+            u.uFlow.value.set(0, 1); // gentle outward/southward drift
+            u.uColor.value.setRGB(r, g, 1.0);
+          }
+        }
+      }
+
       function updateWaterMeshes() {
         waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
 
@@ -31674,11 +31745,15 @@
               u.uColor.value.setRGB(r, g, 1.0);
             }
           }
+          _updateFarAquiferApron(COLS, ROWS, farSouthLevel, farmFarAquiferMeshes, scene);
         } else {
           // Fast path: only push updated time uniform — all other values are stable
           // between sim ticks so no recomputation is needed.
           for (const i of _waterActive) {
             waterMeshes[i].material.uniforms.uTime.value = waterTime;
+          }
+          for (const wm of farmFarAquiferMeshes.values()) {
+            wm.material.uniforms.uTime.value = waterTime;
           }
         }
       }
@@ -31753,8 +31828,12 @@
               u.uColor.value.setRGB(r, g, 1.0);
             }
           }
+          _updateFarAquiferApron(TCOLS, TROWS, townSouthLevel, townFarAquiferMeshes, townScene);
         } else {
           for (const wm of townWaterMeshes.values()) {
+            wm.material.uniforms.uTime.value = waterTime;
+          }
+          for (const wm of townFarAquiferMeshes.values()) {
             wm.material.uniforms.uTime.value = waterTime;
           }
         }
@@ -33840,6 +33919,23 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         return waterMul * ditchMul;
       }
 
+      // Average water fraction (0..1) across a grid's non-solid tiles — used
+      // as the "how wet is this place overall" reading the far terrain and
+      // edge inflow track. Rivers/streams are included at their pinned
+      // MAX_WATER, same as any other tile, since they're real wet ground.
+      function avgGridWaterLevel(targetGrid, rows, cols) {
+        let sum = 0, n = 0;
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const t = targetGrid[row][col];
+            if (isSolid(t.type)) continue;
+            sum += t.water / MAX_WATER;
+            n++;
+          }
+        }
+        return n ? sum / n : 0;
+      }
+
       // ═══════════════════════════════════════════════════════════════
       //  WATER SIMULATION
       //  Model: each tile has a float `water` = depth above its floor.
@@ -33852,13 +33948,31 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       //       neighbours, south-biased, half-difference per tick.
       //       Trenches pull with TRENCH_FLOW_BONUS multiplier.
       //    4. Overflow: any water above MAX_WATER is shed to neighbours.
+      //  Edges: south is a runoff outlet (always was); west/east instead seep
+      //  water IN from the surrounding far terrain, so damming the north-south
+      //  channel alone can't cut off the whole map (see SIDE_INFLOW_RATE).
+      //  The farm's far terrain tracks the town's overall water level; the
+      //  town (having no upstream grid of its own) tracks its own average.
+      //  Whatever water actually reaches each south-edge column also drives
+      //  that column's far-terrain level just past the map's south edge, so a
+      //  player-made dry gap at the bottom row continues out into the far
+      //  terrain instead of stopping dead at the seam (farSouthLevel/townSouthLevel).
       // ═══════════════════════════════════════════════════════════════
 
       function recomputeWater(decayOnly, targetGrid = grid, rows = ROWS, cols = COLS) {
         const str = calendar.rainStrength || 1;
         const isRaining = calendar.isRaining && !decayOnly;
+        const isTown = targetGrid === townGrid;
 
-        // Pass 1: rain + absorption + evaporation + south-edge runoff
+        // The far terrain's level for this grid's edges: the town tracks its
+        // own average (it has nothing upstream of it); the farm tracks the
+        // town's last-known average, so the town's water shows up beyond the
+        // farm's edges too. Read before Pass 1 mutates anything, one tick of
+        // lag is imperceptible at this sim's ~0.7s cadence.
+        const farLevel = isTown ? avgGridWaterLevel(targetGrid, rows, cols) : _townWaterLevel;
+        if (isTown) _townWaterLevel = farLevel;
+
+        // Pass 1: rain + absorption + evaporation + edge exchange
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
             const t = targetGrid[row][col];
@@ -33896,6 +34010,14 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             if (row >= rows - 2) {
               const runoffRate = row === rows - 1 ? 0.08 : 0.03;
               t.water = Math.max(0, t.water - runoffRate);
+            }
+
+            // West/east edge inflow — the far terrain seeps water into the
+            // side columns toward its own level, entering the map from the
+            // sides instead of only ever draining out the south.
+            if (col === 0 || col === cols - 1) {
+              const target = farLevel * MAX_WATER;
+              if (t.water < target) t.water += (target - t.water) * SIDE_INFLOW_RATE;
             }
 
             t.water = Math.min(tileWaterCapacity(t), t.water);
@@ -33952,8 +34074,22 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           }
         }
 
+        // Pass 4: far-terrain gap continuation — each column's south-edge
+        // tile (post-flow, so it reflects any upstream damming) eases the
+        // matching far-terrain column level toward it. A player who blocks
+        // water from reaching that column's bottom row drives its far-terrain
+        // level toward 0 too, so the dry gap keeps going past the map edge.
+        {
+          const southLevel = isTown ? townSouthLevel : farSouthLevel;
+          const southRow = targetGrid[rows - 1];
+          for (let col = 0; col < cols; col++) {
+            const edgeFrac = clamp(southRow[col].water / MAX_WATER, 0, 1);
+            southLevel[col] += (edgeFrac - southLevel[col]) * FAR_SOUTH_TRACK_RATE;
+          }
+        }
+
         // Signal the matching mesh updater to do a full refresh this frame.
-        if (targetGrid === townGrid) _townWaterSimDirty = true;
+        if (isTown) _townWaterSimDirty = true;
         else _waterSimDirty = true;
       }
 
