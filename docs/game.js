@@ -364,6 +364,85 @@
         }
         return lines;
       }
+      // A shoulder pet visibly clipping through the player has exactly two
+      // possible mechanisms: a depthWrite/renderOrder mismatch (see
+      // updatePetLayering — its overrides only get (re)applied when the
+      // (active,pet) pair actually changes, so anything that left it out of
+      // sync would keep drawing with the wrong depthWrite/renderOrder every
+      // frame after) or a positional mismatch (the shoulderPerch/
+      // shoulderGrip anchor math in updateCompanions landing the pet mesh
+      // somewhere other than where the rig actually intends, e.g. a stale
+      // cached anchor — see playerAttachmentAnchor/creatureAttachmentAnchor).
+      // This recomputes both live and diffs them against actual live state,
+      // so a probe click can confirm or rule out each directly instead of a
+      // human cross-referencing several unrelated numbers by hand. Only
+      // meaningful when the probe actually landed on the player's own
+      // avatar or a creature currently (or, per _petLayeringPet, previously)
+      // in the shoulder-pet role — gated the same way
+      // _pixelProbeSeatedLegReadoutLines gates on sitInteraction, so an
+      // unrelated click doesn't pad the report with a "no shoulder pet"
+      // section nobody asked about.
+      function _pixelProbeShoulderPetLines(hits) {
+        const isDescendant = (obj, ancestor) => {
+          if (!ancestor) return false;
+          let n = obj;
+          while (n) { if (n === ancestor) return true; n = n.parent; }
+          return false;
+        };
+        let liveActivePet = null;
+        for (const c of companionObjects) {
+          if (c.health > 0 && c.areaId === currentArea && (c.master || player) === player && c.stableRole === 'shoulderPet') { liveActivePet = c; break; }
+        }
+        const hitObjects = hits.map(h => h.object);
+        const hitPlayer = hitObjects.some(o => isDescendant(o, playerMesh));
+        const hitTrackedPet = hitObjects.some(o => isDescendant(o, _petLayeringPet?.avatarRef?.group));
+        const hitLivePet = hitObjects.some(o => isDescendant(o, liveActivePet?.avatarRef?.group));
+        if (!hitPlayer && !hitTrackedPet && !hitLivePet) return null;
+
+        const lines = ['', '=== Shoulder-pet diagnostics ==='];
+        lines.push(`Live active shoulder pet this frame: ${liveActivePet ? `${liveActivePet.creatureKey} (id ${liveActivePet.id})` : '(none)'}`);
+        lines.push(`updatePetLayering's last-applied state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
+        if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet) {
+          lines.push(`>>> MISMATCH — updatePetLayering hasn't caught up to this frame's live shoulder-pet state. Its depthWrite/renderOrder overrides only get (re)applied when (active,pet) actually changes (see its own early-return), so the checks below may be comparing against a stale layering pass.`);
+        }
+
+        const checks = [];
+        if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
+        if (liveActivePet) {
+          for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
+            if (!mesh?.material) continue;
+            checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
+            checks.push([label, 'renderOrder', SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
+          }
+        }
+        const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
+        if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} given the live shoulder-pet state above.`));
+        else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
+
+        if (liveActivePet) {
+          const perch = playerAttachmentAnchor('shoulderPerch');
+          const grip = creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip');
+          if (perch && grip) {
+            const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+            const invGripYaw = -gripYawRad;
+            const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
+            const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+            const lx = perch.x - gx, lz = (perch.z || 0) - gz;
+            const theta = playerMesh.rotation.y;
+            const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+            const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+            const expectedX = playerMesh.position.x + dx, expectedZ = playerMesh.position.z + dz;
+            const expectedY = playerMesh.position.y + perch.y - grip.y;
+            const actual = liveActivePet.avatarRef.group.position;
+            const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
+            lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
+            if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the current rig-anchor math says it should be (drift ${drift.toFixed(4)} world units). Consistent with a stale cached anchor (see playerAttachmentAnchor/creatureAttachmentAnchor) rather than this frame's actual position.`);
+          } else {
+            lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
+          }
+        }
+        return lines;
+      }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
         const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
@@ -557,6 +636,9 @@
           const seatedLines = _pixelProbeSeatedLegReadoutLines();
           if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
         }
+
+        const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
+        if (shoulderPetLines) lines.push(...shoulderPetLines);
 
         if (blendCheck) {
           lines.push('');
