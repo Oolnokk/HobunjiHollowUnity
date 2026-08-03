@@ -364,6 +364,85 @@
         }
         return lines;
       }
+      // A shoulder pet visibly clipping through the player has exactly two
+      // possible mechanisms: a depthWrite/renderOrder mismatch (see
+      // updatePetLayering — its overrides only get (re)applied when the
+      // (active,pet) pair actually changes, so anything that left it out of
+      // sync would keep drawing with the wrong depthWrite/renderOrder every
+      // frame after) or a positional mismatch (the shoulderPerch/
+      // shoulderGrip anchor math in updateCompanions landing the pet mesh
+      // somewhere other than where the rig actually intends, e.g. a stale
+      // cached anchor — see playerAttachmentAnchor/creatureAttachmentAnchor).
+      // This recomputes both live and diffs them against actual live state,
+      // so a probe click can confirm or rule out each directly instead of a
+      // human cross-referencing several unrelated numbers by hand. Only
+      // meaningful when the probe actually landed on the player's own
+      // avatar or a creature currently (or, per _petLayeringPet, previously)
+      // in the shoulder-pet role — gated the same way
+      // _pixelProbeSeatedLegReadoutLines gates on sitInteraction, so an
+      // unrelated click doesn't pad the report with a "no shoulder pet"
+      // section nobody asked about.
+      function _pixelProbeShoulderPetLines(hits) {
+        const isDescendant = (obj, ancestor) => {
+          if (!ancestor) return false;
+          let n = obj;
+          while (n) { if (n === ancestor) return true; n = n.parent; }
+          return false;
+        };
+        let liveActivePet = null;
+        for (const c of companionObjects) {
+          if (c.health > 0 && c.areaId === currentArea && (c.master || player) === player && c.stableRole === 'shoulderPet') { liveActivePet = c; break; }
+        }
+        const hitObjects = hits.map(h => h.object);
+        const hitPlayer = hitObjects.some(o => isDescendant(o, playerMesh));
+        const hitTrackedPet = hitObjects.some(o => isDescendant(o, _petLayeringPet?.avatarRef?.group));
+        const hitLivePet = hitObjects.some(o => isDescendant(o, liveActivePet?.avatarRef?.group));
+        if (!hitPlayer && !hitTrackedPet && !hitLivePet) return null;
+
+        const lines = ['', '=== Shoulder-pet diagnostics ==='];
+        lines.push(`Live active shoulder pet this frame: ${liveActivePet ? `${liveActivePet.creatureKey} (id ${liveActivePet.id})` : '(none)'}`);
+        lines.push(`updatePetLayering's last-applied state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
+        if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet) {
+          lines.push(`>>> MISMATCH — updatePetLayering hasn't caught up to this frame's live shoulder-pet state. Its depthWrite/renderOrder overrides only get (re)applied when (active,pet) actually changes (see its own early-return), so the checks below may be comparing against a stale layering pass.`);
+        }
+
+        const checks = [];
+        if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
+        if (liveActivePet) {
+          for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
+            if (!mesh?.material) continue;
+            checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
+            checks.push([label, 'renderOrder', SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
+          }
+        }
+        const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
+        if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} given the live shoulder-pet state above.`));
+        else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
+
+        if (liveActivePet) {
+          const perch = playerAttachmentAnchor('shoulderPerch');
+          const grip = creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip');
+          if (perch && grip) {
+            const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+            const invGripYaw = -gripYawRad;
+            const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
+            const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+            const lx = perch.x - gx, lz = (perch.z || 0) - gz;
+            const theta = playerMesh.rotation.y;
+            const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
+            const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
+            const expectedX = playerMesh.position.x + dx, expectedZ = playerMesh.position.z + dz;
+            const expectedY = playerMesh.position.y + perch.y - grip.y;
+            const actual = liveActivePet.avatarRef.group.position;
+            const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
+            lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
+            if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the current rig-anchor math says it should be (drift ${drift.toFixed(4)} world units). Consistent with a stale cached anchor (see playerAttachmentAnchor/creatureAttachmentAnchor) rather than this frame's actual position.`);
+          } else {
+            lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
+          }
+        }
+        return lines;
+      }
       function _setDebugView(view) {
         const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
         const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
@@ -557,6 +636,9 @@
           const seatedLines = _pixelProbeSeatedLegReadoutLines();
           if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
         }
+
+        const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
+        if (shoulderPetLines) lines.push(...shoulderPetLines);
 
         if (blendCheck) {
           lines.push('');
@@ -7746,7 +7828,28 @@
       // buildAnimalPlaneAvatarModel in png-plane-avatar.js, which both the
       // tool and the game build avatars with), so a character's and a
       // creature's anchor values are directly comparable/combinable.
+      // Both caches hold the *resolved* anchor object, keyed by everything
+      // its value actually depends on. That's static rig-profile data plus
+      // (for the player) speciesId/gender/playerAvatarModelHeight/
+      // playerToolBaseY — and every one of those only ever changes inside
+      // refreshPlayerAvatar (species/gender edits and gear/cosmetic swaps
+      // all funnel through it to rebuild the avatar), which is where
+      // _playerAttachmentAnchorCache gets cleared. creatureAttachmentAnchor
+      // has no player-state dependency at all (pure rig-profile lookup by
+      // kind), so its cache never needs invalidating. Without this, a
+      // mounted rider or an active shoulder pet was re-deriving these same
+      // objects (template-string key, several optional-chain lookups, a
+      // fresh {x,y,z,rotationDeg} allocation) every single frame even
+      // though the answer can't have changed since the last avatar rebuild.
+      let _playerAttachmentAnchorCache = new Map();
+      const _creatureAttachmentAnchorCache = new Map();
       function playerAttachmentAnchor(anchorName) {
+        if (_playerAttachmentAnchorCache.has(anchorName)) return _playerAttachmentAnchorCache.get(anchorName);
+        const result = _computePlayerAttachmentAnchor(anchorName);
+        _playerAttachmentAnchorCache.set(anchorName, result);
+        return result;
+      }
+      function _computePlayerAttachmentAnchor(anchorName) {
         const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters;
         if (!lib) return null;
         const speciesId = _playerData?.appearance?.speciesId, gender = _playerData?.appearance?.gender;
@@ -7772,11 +7875,34 @@
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
       }
       function creatureAttachmentAnchor(kind, anchorName) {
+        const cacheKey = `${kind}::${anchorName}`;
+        if (_creatureAttachmentAnchorCache.has(cacheKey)) return _creatureAttachmentAnchorCache.get(cacheKey);
         const anchor = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName];
-        return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+        const result = Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+        _creatureAttachmentAnchorCache.set(cacheKey, result);
+        return result;
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName) { return creatureAttachmentAnchor(kind, anchorName)?.y ?? null; }
+      // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
+      // shared by updateCompanions' shoulderPet branch (which also needs
+      // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
+      // and updateShoulderPetMeshPin (a second pass that re-pins the pet's
+      // RENDERED position after updatePlayerMesh — see that function's own
+      // comment for why it exists). A pure function of the player's current
+      // rig anchor + facing, not of playerMesh.position itself, so it's
+      // cheap (rig anchors are cached — see playerAttachmentAnchor/
+      // creatureAttachmentAnchor) and safe to call twice a frame rather than
+      // needing dx/dz stashed as extra state on the creature.
+      function _shoulderPetOffsetXZ(perch, grip) {
+        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+        const invGripYaw = -gripYawRad;
+        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
+        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
+        const theta = playerMesh.rotation.y;
+        return { dx: lx * Math.cos(theta) + lz * Math.sin(theta), dz: -lx * Math.sin(theta) + lz * Math.cos(theta), gripYawRad };
+      }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
       // everything stableable today has authored data, so this is just a
@@ -7818,8 +7944,14 @@
         return -_depthPriorityVec.z;
       }
       function _playerAvatarBodyMaterials() {
+        if (_playerAvatarBodyMaterialsCache) return _playerAvatarBodyMaterialsCache;
         let group = null;
         for (const child of playerMesh.children) if (child.name === 'player_avatar') { group = child; break; }
+        // Not cached: mid-refreshPlayerAvatar (between the cache clear at
+        // its top and its own playerMesh.add(avatarGroup) later on), the
+        // avatar isn't attached yet — caching [] here would freeze this
+        // empty result in place with nothing left to invalidate it once
+        // the real avatar does land.
         if (!group) return [];
         // The real front/back plane meshes sit inside a nested "assembly"
         // sub-group (see buildSinglePlaneAvatarModel's root.add(assembly)
@@ -7831,6 +7963,7 @@
         group.traverse(child => {
           if (child.isMesh && child.material && !child.name.includes('hat_xray')) mats.push(child.material);
         });
+        _playerAvatarBodyMaterialsCache = mats;
         return mats;
       }
       // The hat-xray plane deliberately stays OUT of this ranking — it's
@@ -8019,7 +8152,7 @@
             c.vx = 0; c.vy = 0;
             const perch = playerAttachmentAnchor('shoulderPerch');
             const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
-            let dx = null, dz = null;
+            let dx = null, dz = null, clingDx = null, clingDz = null;
             if (perch && grip) {
               const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
               const invGripYaw = -gripYawRad;
@@ -8034,48 +8167,61 @@
               c.facing = master.angle + gripYawRad;
             } else {
               const clingAngle = master.angle + Math.PI;
-              c.x = master.x + Math.cos(clingAngle) * TILE * 0.3;
-              c.y = master.y + Math.sin(clingAngle) * TILE * 0.3;
+              clingDx = Math.cos(clingAngle) * 0.3;
+              clingDz = Math.sin(clingAngle) * 0.3;
+              c.x = master.x + clingDx * TILE;
+              c.y = master.y + clingDz * TILE;
               c.facing = master.angle;
             }
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
             if (perch && grip) {
-              // perch.y/posterior.y are floor-relative — the same total
-              // height-above-playerMesh convention game.js's own
-              // playerToolBaseY already uses (playerMesh.position.y +
-              // playerToolBaseY, no extra avatarHeight/2 term) — so no
-              // additional half-height lift belongs here either.
+              // perch.y/grip.y are floor-relative — the same total
+              // height-above-playerMesh convention playerToolBaseY already
+              // uses elsewhere — so no additional half-height lift belongs
+              // here either. X/Z are NOT pinned here (see below).
               c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
-              // X/Z are pinned directly off playerMesh.position (the
-              // character's own already-smoothed render position), not
-              // eased in via updateCreatureMesh's generic per-creature
-              // lerp (grp.position.x/z += (target - current) * dt*10)
-              // above. That lerp is tuned for a wandering animal easing
-              // toward a waypoint; a shoulder pet's target is recomputed
-              // fresh every frame from the player's CURRENT position, so
-              // it was instead just perpetually chasing a moving target
-              // one frame behind — and since the player's own mesh eases
-              // toward player.x/y on its own, different (0.25/frame flat,
-              // see updatePlayerMesh) schedule, the two rarely finished a
-              // frame at the exact offset the rig anchors intend. Measured
-              // live: right after mount (or any facing change re-aims the
-              // anchor), the pet's camera-facing depth relative to the
-              // player's drifts through dead-equal and briefly crosses to
-              // the wrong side before the lerp catches up — and since both
-              // avatars are alphaTest cutout planes with transparent:true
-              // (so their few percent of antialiased edge pixels actually
-              // alpha-blend), that crossing reads as the pet flickering
-              // translucent with the character showing through it, not as
-              // a clean pop. Snapping straight to playerMesh.position plus
-              // the same rig offset keeps the pet locked to the exact
-              // authored offset every single frame, so their relative
-              // depth never has a lagging frame to wobble through.
-              c.avatarRef.group.position.x = playerMesh.position.x + dx;
-              c.avatarRef.group.position.z = playerMesh.position.z + dz;
             } else {
+              // No authored rig anchors for this species/creature pairing —
+              // a flat increment on top of updateCreatureMesh's own
+              // terrain-based Y for this creature, unrelated to
+              // playerMesh.position, so — unlike X/Z below — it has no
+              // frame-staleness to fix and stays right here.
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
             }
+            // X/Z (both branches — the fallback's clingDx/clingDz read
+            // playerMesh.position exactly the same way perch/grip's dx/dz
+            // do) are deliberately NOT pinned here — see
+            // updateShoulderPetMeshPin (called after updatePlayerMesh in the
+            // main loop), which does it instead. History: this used to pin
+            // straight to playerMesh.position (the character's own
+            // already-smoothed render position) right here, instead of
+            // easing in via updateCreatureMesh's generic per-creature lerp
+            // (grp.position += (target - current) * dt*10) above — that
+            // lerp is tuned for a wandering animal easing toward a waypoint,
+            // and a shoulder pet's target recomputed fresh every frame from
+            // the player's CURRENT position just left it perpetually
+            // chasing a moving target one frame behind, which read as the
+            // pet visibly trailing the player and (since both avatars are
+            // alphaTest cutout planes with transparent:true, so their few
+            // percent of antialiased edge pixels actually alpha-blend)
+            // occasionally flickering translucent where their depth
+            // crossed. Pinning here fixed THAT lag, but this whole
+            // companion/mount update block runs BEFORE updatePlayerMesh
+            // (see the main loop — updatePlayerMesh has to run after it, so
+            // it can read this frame's freshly-resolved mount seat lift/
+            // chair sink), so playerMesh.position read from here is still
+            // LAST frame's value. During continuous movement
+            // playerMesh.position is itself still easing toward the
+            // player's actual position (see its own 0.25/frame lerp in
+            // updatePlayerMesh), so pinning to a frame-stale copy of an
+            // already-lagging value compounded into one more small,
+            // constant frame of gap — invisible once stationary (both
+            // values settle on the same target), but a persistent slight
+            // trail while moving. updateShoulderPetMeshPin re-applies this
+            // same X/Z pin (for whichever branch actually applies) after
+            // updatePlayerMesh has actually advanced playerMesh.position
+            // for this frame, closing that last gap.
             continue;
           }
 
@@ -8201,6 +8347,37 @@
         // fixed updatePetLayering rule instead (called above, independent
         // of this frame's positions).
         if (hasActiveCompanionForPlayer) updateAvatarDepthPriority(true);
+      }
+
+      // Second pass for the real player's own shoulder pet(s), called after
+      // updatePlayerMesh in the main loop (updateCompanions itself runs
+      // before it — see the long comment in its shoulderPet branch for why
+      // that ordering is otherwise required, and why it leaves
+      // playerMesh.position one frame stale for this pin). Re-pins X/Z for
+      // BOTH the rig-anchor (perch/grip) and no-rig-data fallback cases —
+      // both read playerMesh.position the same way, so both need this.
+      // Y is only re-pinned for the perch/grip case: the fallback's Y is a
+      // flat increment on top of updateCreatureMesh's own terrain-based Y
+      // for this creature (not playerMesh-based), already applied once in
+      // updateCompanions with nothing stale about it — re-adding it here
+      // too would double it.
+      function updateShoulderPetMeshPin() {
+        for (const c of companionObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
+          if ((c.master || player) !== player) continue; // playerMesh only ever represents the real player
+          const perch = playerAttachmentAnchor('shoulderPerch');
+          const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+          if (perch && grip) {
+            const { dx, dz } = _shoulderPetOffsetXZ(perch, grip);
+            c.avatarRef.group.position.x = playerMesh.position.x + dx;
+            c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+            c.avatarRef.group.position.z = playerMesh.position.z + dz;
+          } else {
+            const clingAngle = player.angle + Math.PI;
+            c.avatarRef.group.position.x = playerMesh.position.x + Math.cos(clingAngle) * 0.3;
+            c.avatarRef.group.position.z = playerMesh.position.z + Math.sin(clingAngle) * 0.3;
+          }
+        }
       }
 
       // With no `master` given, clears every companion (full reset/QA use —
@@ -8351,10 +8528,45 @@
         btnCallMount?.classList.toggle('active', mountRideState !== 'none');
         if (mountRideState === 'none') return;
         const m = mountRideEntity;
-        if (!m || m.health <= 0 || m.areaId !== currentArea) {
+        if (!m || m.health <= 0) {
           if (m) { despawnCreature(m); companionObjects.delete(m); }
           mountRideState = 'none'; mountRideEntity = null;
           return;
+        }
+        // An area transition (e.g. riding through the farm's town gate) can
+        // land mid-ride-transition, not just mid-'mounted'. The 'mounted'
+        // state's own area-change handling lives in updateMountedMovement
+        // (relocateMountForAreaChange), which only runs while
+        // mountRideState === 'mounted' (see updateMovement's early return) —
+        // every other phase here used to have no equivalent at all, so
+        // m.areaId went stale the instant the area changed. That used to
+        // just despawn the mount outright below (the old
+        // `m.areaId !== currentArea` branch of this same guard). Worse:
+        // mountingUp/dismountingDown's own lerp reads mountTransitionFromX/Y
+        // and (dismountingDown only) mountDismountTargetX/Y, both captured
+        // back when the transition began, in the OLD area's coordinate
+        // space — so on whichever frame actually got there first, either
+        // the mount vanished with no animation, or (if a couple of
+        // in-between frames won that race first) the rider kept getting
+        // dragged toward those stale old-area coordinates for the rest of
+        // the lerp even though enterTown/performTravel had already moved
+        // player.x/y into the new area — surfacing as the rider ending up
+        // standing at the old area's exit coordinates, just rendered in the
+        // new area's scene. Relocating (like the 'mounted' case already
+        // does) and rebasing the in-flight lerp's endpoints against the
+        // post-relocation, already-correct positions keeps the animation
+        // continuous across the boundary instead of losing the mount or the
+        // rider's position.
+        if (m.areaId !== currentArea) {
+          relocateMountForAreaChange(m);
+          if (mountRideState === 'mountingUp' || mountRideState === 'dismountingDown') {
+            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
+          }
+          if (mountRideState === 'dismountingDown') {
+            const sideAngle = mountAngle + Math.PI / 2;
+            mountDismountTargetX = m.x + Math.cos(sideAngle) * TILE * 0.6;
+            mountDismountTargetY = m.y + Math.sin(sideAngle) * TILE * 0.6;
+          }
         }
 
         if (mountRideState === 'rushingIn') {
@@ -13202,6 +13414,11 @@
       // combined front+back traversal can't do on its own.
       let _playerAvatarFrontMaterial = null;
       let _playerAvatarBackMaterial = null;
+      // Cache for _playerAvatarBodyMaterials()'s mesh-subtree traversal —
+      // cleared in refreshPlayerAvatar (the only place the avatar's mesh
+      // hierarchy is rebuilt), so a stable hierarchy isn't re-traversed
+      // every frame just to find the same handful of materials again.
+      let _playerAvatarBodyMaterialsCache = null;
       // Chest-height anchor for a bag item held statically in front of the body
       // (see heldItemHolder near the tool meshes below) — higher than
       // playerToolBaseY, which targets hand height near the bottom of these
@@ -22006,6 +22223,13 @@
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
+        // Every input playerAttachmentAnchor()/_playerAvatarBodyMaterials()
+        // memoize (species/gender, playerAvatarModelHeight, playerToolBaseY,
+        // the avatar mesh subtree) is about to be replaced below, so their
+        // caches would otherwise keep answering with the outgoing avatar's
+        // values.
+        _playerAttachmentAnchorCache = new Map();
+        _playerAvatarBodyMaterialsCache = null;
         _playerHatXrayOverlay = null;
         _playerHatXrayEnabled = false;
         // The old front/back materials this pointed at are about to be
@@ -22067,6 +22291,14 @@
         }
         playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
         playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
+        // Re-clear (not just at this function's top): the 'posterior' anchor
+        // is derived from playerAvatarModelHeight/playerToolBaseY, just set
+        // above — anything that called playerAttachmentAnchor('posterior')
+        // during this function's earlier awaits (e.g. updatePlayerMesh
+        // computing a mounted rider's seat lift mid-refresh) would have
+        // cached an answer built from the OUTGOING avatar's height/hand-Y,
+        // and nothing else would ever flush it back out.
+        _playerAttachmentAnchorCache = new Map();
         // Anchored to playerToolBaseY (the real per-species/gender scanned hand
         // height) rather than a flat fraction of avatarHeight, so differently
         // proportioned species/genders get a correctly offset chest height
@@ -33325,6 +33557,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
+        // Must run right after updatePlayerMesh, not folded into
+        // updateCompanions (called earlier, before it) — see
+        // updateShoulderPetMeshPin's own comment for why.
+        updateShoulderPetMeshPin();
         updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
