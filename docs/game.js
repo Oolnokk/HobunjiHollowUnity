@@ -28170,8 +28170,21 @@
       // stops blocking, alongside the opacity revert in
       // updateZoneVegetationCulling, so a tree back at full opacity also
       // goes back to normally occluding things behind it.
-      function setTreeBlockingDepth(mats, blocking) {
+      //
+      // Also pulls the tree off the shell-outline pass's layer (see
+      // shellOutlineMat/_markOutline) while blocking. That pass renders
+      // every layer-1 mesh's silhouette in solid, opacity-independent black
+      // (back faces extruded along normals, its own override material —
+      // unrelated to the mesh's real material entirely), so a "faded" tree
+      // still traced a fully opaque black outline over whatever it was
+      // supposed to be letting show through, defeating the whole point.
+      // Re-enabled the instant a tree stops blocking, same as depthWrite.
+      function setTreeBlocking(vegGroup, mats, blocking) {
         for (const m of mats || []) m.depthWrite = !blocking;
+        vegGroup.traverse(child => {
+          if (!child.isMesh || child.userData.noOutline) return;
+          if (blocking) child.layers.disable(1); else child.layers.enable(1);
+        });
       }
       function updateTreeFadeAnimation(dt) {
         if (!_treeFadeActive.size) return;
@@ -28255,13 +28268,13 @@
               const mats = ensureTreeFadeMaterials(obj);
               obj.userData._fadeTarget = target;
               _treeFadeActive.add(obj);
-              setTreeBlockingDepth(mats, blocking);
+              setTreeBlocking(obj, mats, blocking);
             }
           } else if (obj.userData._fadeMaterials) {
             obj.userData._fadeTarget = 1;
             obj.userData._fadeOpacity = 1;
             for (const m of obj.userData._fadeMaterials) m.opacity = 1;
-            setTreeBlockingDepth(obj.userData._fadeMaterials, false);
+            setTreeBlocking(obj, obj.userData._fadeMaterials, false);
             _treeFadeActive.delete(obj);
           }
         }
