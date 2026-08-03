@@ -108,6 +108,19 @@
     return baseY + modelHeight * heightPercentOffsetForSpecies(speciesId, gender) / 100;
   }
 
+  // Per-species/gender authored posterior anchor X (attachment-rig-profiles.js
+  // anchors.posterior.position.x — "center", i.e. 0, for every authored
+  // species today, but read live rather than hardcoded so an eventually
+  // off-center posterior anchor is still honored). Falls back to 0 (the
+  // avatar's own local centerline) for any species/gender without an
+  // authored rig entry.
+  function posteriorXForSpecies(speciesId, gender) {
+    const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+    const rec = lib[`${speciesId}::${gender}`];
+    const value = Number(rec?.anchors?.posterior?.position?.x);
+    return Number.isFinite(value) ? value : 0;
+  }
+
   // Per-species/gender authored knee bend (proceduralFeet.legBend in
   // scratchbones-config.js), mirroring footScaleMultiplierForSpecies's own
   // species-chain + gender-key lookup. One {x,z} (degrees) per species+
@@ -612,6 +625,32 @@
 
   const STANCE_FRACTION = 0.62;
 
+  // ── Debug leg-bone visualization ────────────────────────────────────
+  // Same colored capsule-and-joint guides the furniture-avatar-author tool
+  // draws over its own seated preview (makeSeatedBoneGuide et al.) — a
+  // shared toggle so every avatar's leg chain (player and NPCs alike, since
+  // they all attach() through here) shows/hides together. Guides are built
+  // once per leg alongside the real hip/thigh/calf pivots and just ride
+  // along for free; only their scale/visibility needs updating per frame,
+  // done inline in applyLegChain/applySeatedPose right next to the pivot
+  // transforms they mirror.
+  let showLegBoneGuides = false;
+  function makeBoneGuide(THREE, color) {
+    const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.62, depthTest: false, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.015, 1, 8), material);
+    mesh.renderOrder = 42;
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    return mesh;
+  }
+  function makeJointGuide(THREE, color, radius) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false }));
+    mesh.renderOrder = 43;
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    return mesh;
+  }
+
   // Attaches a procedural feet pair under `parent` (the avatar's own
   // floor-anchored root/playerMesh — NOT the billboard plane child, which
   // sits modelHeight/2 above it). Returns a handle with update()/dispose(),
@@ -674,7 +713,15 @@
       calf.name = `${sideName}_calf`;
       thigh.add(calf);
       hip.add(thigh);
-      return { hip, thigh, calf };
+      const hipGuide = makeJointGuide(THREE, 0xffd98f, 0.021);
+      hip.add(hipGuide);
+      const thighGuide = makeBoneGuide(THREE, 0xffb267);
+      thigh.add(thighGuide);
+      const kneeGuide = makeJointGuide(THREE, 0xffd39a, 0.022);
+      calf.add(kneeGuide);
+      const calfGuide = makeBoneGuide(THREE, 0xff7f50);
+      calf.add(calfGuide);
+      return { hip, thigh, calf, hipGuide, thighGuide, kneeGuide, calfGuide };
     }
     const legChains = {
       left: buildLegChain('left', initialIdleLeftX),
@@ -719,6 +766,18 @@
     // position/rotation is always just (0, -calfLength, 0) plus the roll
     // lean: every other component of where the foot actually ends up in the
     // world comes from the chain's transforms, not from the mesh itself.
+    function applyBoneGuideTransforms(chain, thighLength, calfLength) {
+      chain.hipGuide.visible = showLegBoneGuides;
+      chain.thighGuide.visible = showLegBoneGuides;
+      chain.kneeGuide.visible = showLegBoneGuides;
+      chain.calfGuide.visible = showLegBoneGuides;
+      if (!showLegBoneGuides) return;
+      chain.thighGuide.scale.set(1, thighLength, 1);
+      chain.thighGuide.position.y = -thighLength * 0.5;
+      chain.calfGuide.scale.set(1, calfLength, 1);
+      chain.calfGuide.position.y = -calfLength * 0.5;
+    }
+
     function applyLegChain(side) {
       const mesh = state[side];
       const chain = legChains[side];
@@ -733,6 +792,7 @@
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
       mesh.position.set(0, -solved.calfLength, 0);
       mesh.rotation.x = state[`${side}Roll`];
+      applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
     }
 
     // Sets a leg's target straight to its idle stance (no damping — used
@@ -814,8 +874,16 @@
       const portraitSize = Number(options.portraitSize) || 200;
       cachedTorsoScan(speciesId, gender, options.profile, portraitSize).then(scan => {
         if (state.disposed || !scan) return;
-        state.idleLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
-        state.idleRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
+        const scannedLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
+        const scannedRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
+        // The scan's own left/right medians can land asymmetrically around
+        // the torso's true centerline (e.g. a lopsided silhouette); re-center
+        // both legs by the same shift so the posterior attach point's X ends
+        // up exactly midway between them rather than inheriting that skew.
+        const posteriorX = posteriorXForSpecies(speciesId, gender);
+        const recenterShift = posteriorX - (scannedLeftX + scannedRightX) / 2;
+        state.idleLeftX = scannedLeftX + recenterShift;
+        state.idleRightX = scannedRightX + recenterShift;
         syncHipX('left');
         syncHipX('right');
         if (state.left) { state.leftTarget.x = state.idleLeftX; applyLegChain('left'); }
@@ -853,8 +921,144 @@
     // "standing on the ground" pose while e.g. seated on a mount. A
     // shoulder pet never sets this: the host avatar stays the anchor and
     // keeps walking normally underneath it.
-    function update(dt, speedWorldUnitsPerSecond, suppressed) {
+    // seatedPose (optional): { seatY, normalDeg:{x,z}, footprintHalfDepth,
+    // anchorZ } describing the furniture's own authored seat anchor — when
+    // provided, bypasses gait/suppressed entirely and runs the faithful
+    // surface-flush seated solve below (ported from the furniture-avatar-
+    // author tool's solveSurfaceFlushSeatedLeg/seatedLegPose) instead of a
+    // fixed-bend approximation. Used for sitting (see docs/game.js's
+    // sitInteraction).
+    const SEATED_THIGH_SURFACE_CLEARANCE = 0.006;
+    const SEATED_KNEE_EDGE_TOLERANCE = 0.03;
+    const SEATED_POSE_DAMP_RATE = 14;
+    const SEATED_DEG = Math.PI / 180;
+    function quatFromDownDir(dir) {
+      const down = new THREE.Vector3(0, -1, 0);
+      if (!Number.isFinite(dir.x) || !Number.isFinite(dir.y) || !Number.isFinite(dir.z) || dir.lengthSq() < 1e-12) return new THREE.Quaternion();
+      return new THREE.Quaternion().setFromUnitVectors(down, dir.clone().normalize());
+    }
+    // Faithful port of the authoring tool's solveSurfaceFlushSeatedLeg: the
+    // thigh is projected flush against the seat's own surface plane (not
+    // aimed at a live foot target at all) so it visually rests along the
+    // seat, and the calf is a simple two-state rule off the knee —
+    // continues collinear with the thigh while the knee still projects
+    // over the seat's own footprint (only matters for unusually deep
+    // seats), otherwise drops exactly 90 degrees opposite the surface
+    // normal, i.e. straight down toward the floor. hipSeed/planePoint/
+    // normal/forward are all in the leg-rig root's own local space.
+    function solveSeatedLegSurfaceFlush(hipSeed, boneLength, planePoint, normal, forward, footprintHalfDepth) {
+      const delta = hipSeed.clone().sub(planePoint);
+      const signedDistance = delta.dot(normal);
+      const hip = hipSeed.clone().addScaledVector(normal, -signedDistance + SEATED_THIGH_SURFACE_CLEARANCE);
+      const thighDirection = forward.clone().normalize();
+      const knee = hip.clone().addScaledVector(thighDirection, boneLength);
+      const kneeForwardOffset = knee.clone().sub(planePoint).dot(forward);
+      const kneeOverSeat = kneeForwardOffset <= footprintHalfDepth + SEATED_KNEE_EDGE_TOLERANCE;
+      const calfDirection = (kneeOverSeat ? thighDirection : normal.clone().negate()).normalize();
+      const thighQuaternion = quatFromDownDir(thighDirection);
+      const calfWorldQuaternion = quatFromDownDir(calfDirection);
+      const calfLocalQuaternion = thighQuaternion.clone().invert().multiply(calfWorldQuaternion);
+      // Same metric as the tool's own thighSurfaceDistance: perpendicular
+      // gap from the thigh segment's own midpoint to the seat plane —
+      // should read as ~clearance-only (a few thousandths) whenever the
+      // hip seed is already near the seat, exactly like the tool's.
+      const thighMidpoint = hip.clone().add(knee).multiplyScalar(0.5);
+      const thighSurfaceGap = thighMidpoint.sub(planePoint).dot(normal);
+      return {
+        hip, thighQuaternion, calfLocalQuaternion,
+        thighLength: boneLength, calfLength: boneLength,
+        calfStraight: kneeOverSeat, kneeForwardOffset, footprintHalfDepth, thighSurfaceGap,
+      };
+    }
+    // last resolved seated-pose diagnostics (see getSeatedPoseDebug on the
+    // returned handle) — a plain-data mirror of the furniture-avatar-author
+    // tool's own seatDiagnosticSnapshot/surfaceLegPose readout, kept here so
+    // docs/game.js's Pixel Probe can report the exact numbers this leg
+    // chain actually solved, comparable field-for-field against what the
+    // tool would show for the same species/gender/chair combo. Cleared
+    // whenever this avatar isn't seated so a stale reading never survives
+    // into an unrelated probe.
+    let lastSeatedPoseDebug = null;
+    function applySeatedPose(side, seatFrame, dt) {
+      const mesh = state[side];
+      const chain = legChains[side];
+      if (!mesh || !chain) return;
+      const contactY = side === 'left' ? state.leftContactY : state.rightContactY;
+      const standingPosteriorY = chain.hip.position.y;
+      // Faithful to the tool's seatedAnatomicalLegMetrics: the leg math's
+      // own "posterior height" is the SEAT's own surface height, not the
+      // character's standing hip height — the tool's whole avatar root is
+      // pre-positioned so its posterior anchor already sits right there
+      // (see applySeatAttachmentTransform), so its posteriorHeight comes
+      // out seat-relative "for free"; this game instead sinks the sprite
+      // separately (chairSeatSink in docs/game.js) without moving this leg
+      // rig's own hip anchor, so it has to read the seat height directly
+      // here or the thigh ends up projected from the WRONG starting height
+      // — confirmed live: without this, "thigh surface gap" (see below)
+      // read ~0.048 instead of the tool's ~0.001 clearance-only gap for the
+      // same species/chair. Standing height is only a fallback for a seat
+      // sitting at/below floor level.
+      const seatY = seatFrame.planePoint.y;
+      const posteriorY = (Number.isFinite(seatY) && seatY > contactY + 0.001) ? seatY : standingPosteriorY;
+      const fullLegLength = Math.max(0.001, posteriorY - contactY);
+      const boneLength = fullLegLength * 0.5;
+      const hipSeed = new THREE.Vector3(chain.hip.position.x, posteriorY, chain.hip.position.z);
+      const solved = solveSeatedLegSurfaceFlush(
+        hipSeed, boneLength, seatFrame.planePoint, seatFrame.normal, seatFrame.forward, seatFrame.footprintHalfDepth
+      );
+      // chain.thigh is parented under chain.hip, which stays fixed at the
+      // avatar's STANDING hip position — thigh.position has to carry the
+      // full difference between that fixed parent and the solved seated
+      // hip point (seat-height correction + tiny surface clearance both
+      // folded in together).
+      const hipOffset = solved.hip.clone().sub(chain.hip.position);
+      const slerpT = 1 - Math.exp(-SEATED_POSE_DAMP_RATE * Math.max(0, dt));
+      chain.thigh.position.x = damp(chain.thigh.position.x, hipOffset.x, SEATED_POSE_DAMP_RATE, dt);
+      chain.thigh.position.y = damp(chain.thigh.position.y, hipOffset.y, SEATED_POSE_DAMP_RATE, dt);
+      chain.thigh.position.z = damp(chain.thigh.position.z, hipOffset.z, SEATED_POSE_DAMP_RATE, dt);
+      chain.thigh.quaternion.slerp(solved.thighQuaternion, slerpT);
+      chain.calf.position.set(0, -solved.thighLength, 0);
+      chain.calf.quaternion.slerp(solved.calfLocalQuaternion, slerpT);
+      mesh.position.set(0, -solved.calfLength, 0);
+      state[`${side}Roll`] = damp(state[`${side}Roll`], 0, SEATED_POSE_DAMP_RATE, dt);
+      mesh.rotation.x = state[`${side}Roll`];
+      applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
+      if (!lastSeatedPoseDebug) lastSeatedPoseDebug = {};
+      lastSeatedPoseDebug[side] = {
+        thighLength: solved.thighLength, calfLength: solved.calfLength, fullLegLength,
+        posteriorHeight: posteriorY, footContactY: contactY,
+        thighSurfaceGap: solved.thighSurfaceGap,
+        calfStraight: solved.calfStraight, calfForced90: !solved.calfStraight,
+        kneeOverSeat: solved.calfStraight, kneeForwardOffset: solved.kneeForwardOffset,
+        footprintHalfDepth: solved.footprintHalfDepth, hipX: chain.hip.position.x,
+      };
+    }
+    // seatedPose (see applySeatedPose's comment above): plain data —
+    // { seatY, normalDeg:{x,z}, footprintHalfDepth, anchorZ } — describing
+    // the furniture's authored seat anchor. Resolved once per frame into
+    // the shared seat-plane frame (a world-down-tilted normal/forward pair,
+    // since the seat anchor's own yaw is already absorbed into the avatar's
+    // facing before this runs) both legs solve against.
+    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       if (state.disposed) return;
+      if (seatedPose) {
+        state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
+        const pitchRad = (Number(seatedPose.normalDeg?.x) || 0) * SEATED_DEG;
+        const rollRad = (Number(seatedPose.normalDeg?.z) || 0) * SEATED_DEG;
+        const tiltEuler = new THREE.Euler(pitchRad, 0, rollRad, 'XYZ');
+        const seatFrame = {
+          planePoint: new THREE.Vector3(0, Number(seatedPose.seatY) || 0, Number(seatedPose.anchorZ) || 0),
+          normal: new THREE.Vector3(0, 1, 0).applyEuler(tiltEuler),
+          forward: new THREE.Vector3(0, 0, 1).applyEuler(tiltEuler),
+          footprintHalfDepth: Number.isFinite(seatedPose.footprintHalfDepth) ? seatedPose.footprintHalfDepth : 0.4,
+        };
+        applySeatedPose('left', seatFrame, dt);
+        applySeatedPose('right', seatFrame, dt);
+        return;
+      }
+      lastSeatedPoseDebug = null;
+      legChains.left.thigh.position.set(0, 0, 0);
+      legChains.right.thigh.position.set(0, 0, 0);
       if (suppressed) {
         // No meaningful "standing on the ground" gait while e.g. seated on a
         // mount or mid-harvest — legs stay visible and just hang straight
@@ -896,8 +1100,12 @@
       disposeObjectResources(root);
     }
 
-    return { group: root, update, dispose };
+    return { group: root, update, dispose, getSeatedPoseDebug: () => lastSeatedPoseDebug };
   }
 
-  window.ProceduralLegAnimation = { attach };
+  window.ProceduralLegAnimation = {
+    attach,
+    setShowBones: (visible) => { showLegBoneGuides = !!visible; },
+    get showBones() { return showLegBoneGuides; },
+  };
 })();

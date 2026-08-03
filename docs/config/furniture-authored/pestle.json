@@ -1,0 +1,336 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "pestle",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msby0n93_gl8d1",
+      "kind": "box",
+      "name": "Pestle Box",
+      "transform": {
+        "x": 0,
+        "y": 0.19,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.6,
+        "sy": 0.38,
+        "sz": 0.6
+      },
+      "color": "#765636",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.85
+    },
+    {
+      "id": "part_msby0n93_kfd4i",
+      "kind": "disc",
+      "name": "Pestle Disc",
+      "transform": {
+        "x": 0,
+        "y": 0.42,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.5,
+        "sy": 0.1,
+        "sz": 0.5
+      },
+      "color": "#a0744a",
+      "segments": 18,
+      "taperAxis": "y",
+      "topScaleX": 0.8,
+      "topScaleZ": 0.8,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a5c3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 1.15
+    },
+    {
+      "id": "part_msby0n93_jiyux",
+      "kind": "cylinder",
+      "name": "Pestle Cylinder",
+      "transform": {
+        "x": 0.12,
+        "y": 0.55,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.08,
+        "sy": 0.3,
+        "sz": 0.08
+      },
+      "color": "#61472d",
+      "segments": 8,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.7
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_msby0n93_j8jrs",
+      "name": "Grinding Dust",
+      "type": "smoke",
+      "enabled": true,
+      "attachedPartId": "part_msby0n93_kfd4i",
+      "position": {
+        "x": 0,
+        "y": 0.1,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 4,
+      "lifetime": 0.9,
+      "size": 0.075,
+      "speed": 0.1,
+      "spread": 0.32,
+      "radius": 0.12,
+      "gravity": 0.02,
+      "colorA": "#e2d2b5",
+      "colorB": "#8d7758"
+    }
+  ],
+  "processingWarps": [
+    {
+      "id": "warp_msby0n94_cm85n",
+      "name": "Pestle Grinding Motion",
+      "partIds": [
+        "part_msby0n93_gl8d1",
+        "part_msby0n93_kfd4i",
+        "part_msby0n93_jiyux"
+      ],
+      "style": "wobble",
+      "timelineDriven": true,
+      "enabled": true,
+      "strength": 0.022,
+      "speed": 2.8,
+      "downSpeed": 5.09878536221175,
+      "upSpeed": 0.4883123390941343,
+      "swayDeg": 2.2,
+      "twistDeg": 1.2,
+      "depth": 0.3,
+      "impact": 0.82,
+      "rockDeg": 0,
+      "phaseDeg": 0
+    }
+  ],
+  "processTimelines": [
+    {
+      "id": "timeline_msby0n94_ab23a",
+      "name": "Pestle Process",
+      "enabled": true,
+      "playing": false,
+      "loop": false,
+      "duration": 10,
+      "progress": 0,
+      "substanceColor": "#7b1f3d",
+      "stopStompAtEnd": false,
+      "stopPourAtEnd": false,
+      "stopPlaybackAtEnd": false,
+      "emitterTracks": [
+        {
+          "emitterId": "emitter_msby0n93_j8jrs",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 1.4,
+                "lifetime": 0.9,
+                "size": 0.075,
+                "speed": 0.1,
+                "spread": 0.32,
+                "radius": 0.12,
+                "gravity": 0.02,
+                "colorA": "#e2d2b5",
+                "colorB": "#8d7758"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 4,
+                "lifetime": 0.9,
+                "size": 0.075,
+                "speed": 0.1,
+                "spread": 0.32,
+                "radius": 0.12,
+                "gravity": 0.02,
+                "colorA": "#e2d2b5",
+                "colorB": "#8d7758"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 0.8,
+                "lifetime": 0.9,
+                "size": 0.075,
+                "speed": 0.1,
+                "spread": 0.32,
+                "radius": 0.12,
+                "gravity": 0.02,
+                "colorA": "#e2d2b5",
+                "colorB": "#8d7758"
+              }
+            }
+          ]
+        }
+      ],
+      "warpTracks": [
+        {
+          "warpId": "warp_msby0n94_cm85n",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "style": "wobble",
+                "strength": 0.0121,
+                "speed": 2.8,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 2.2,
+                "twistDeg": 1.2,
+                "depth": 0.3,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "style": "wobble",
+                "strength": 0.022,
+                "speed": 2.8,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 2.2,
+                "twistDeg": 1.2,
+                "depth": 0.3,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "style": "wobble",
+                "strength": 0.007699999999999999,
+                "speed": 2.8,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 2.2,
+                "twistDeg": 1.2,
+                "depth": 0.3,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            }
+          ]
+        }
+      ],
+      "liquidTracks": []
+    }
+  ],
+  "stompAttachPoints": []
+}

@@ -35,14 +35,6 @@
   ],
   "npcStations": [
     { "id": "station_inn_bar_stand", "label": "Standing Behind Bar", "col": 3, "row": 4, "rotY": 180, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_bar_kegs", "label": "Checking Kegs", "col": 7, "row": 4, "rotY": 0, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_e_n", "label": "East Table Stool (North)", "col": 14, "row": 7, "rotY": 180, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_e_s", "label": "East Table Stool (South)", "col": 14, "row": 11, "rotY": 0, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_e_e", "label": "East Table Stool (East)", "col": 16, "row": 9, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_e_w", "label": "East Table Stool (West)", "col": 12, "row": 9, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_w_n", "label": "West Table Stool (North)", "col": 4, "row": 7, "rotY": 180, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_w_s", "label": "West Table Stool (South)", "col": 4, "row": 11, "rotY": 0, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_w_e", "label": "West Table Stool (East)", "col": 6, "row": 9, "rotY": 90, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_inn_stool_w_w", "label": "West Table Stool (West)", "col": 2, "row": 9, "rotY": 270, "pose": "sit", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
+    { "id": "station_inn_bar_kegs", "label": "Checking Kegs", "col": 7, "row": 4, "rotY": 0, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
   ]
 }

@@ -1,0 +1,288 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "smoker",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 2,
+    "d": 2
+  },
+  "parts": [
+    {
+      "id": "part_msby0oyd_s2jkx",
+      "kind": "box",
+      "name": "Smoker Box",
+      "transform": {
+        "x": 0,
+        "y": 0.8,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.5,
+        "sy": 1.6,
+        "sz": 1.5
+      },
+      "color": "#6f5133",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.8
+    },
+    {
+      "id": "part_msby0oyd_7j10h",
+      "kind": "cylinder",
+      "name": "Smoker Cylinder",
+      "transform": {
+        "x": 0,
+        "y": 1.75,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.26,
+        "sy": 0.35,
+        "sz": 0.26
+      },
+      "color": "#4c3823",
+      "segments": 10,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#43b3ae",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.55
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_msby0oyd_dtzcj",
+      "name": "Smoker Chimney Smoke",
+      "type": "smoke",
+      "enabled": true,
+      "attachedPartId": "part_msby0oyd_7j10h",
+      "position": {
+        "x": 0,
+        "y": 0.22,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 7,
+      "lifetime": 2.8,
+      "size": 0.2,
+      "speed": 0.22,
+      "spread": 0.16,
+      "radius": 0.08,
+      "gravity": -0.025,
+      "colorA": "#c7c4bd",
+      "colorB": "#4e4a47"
+    }
+  ],
+  "processingWarps": [
+    {
+      "id": "warp_msby0oyd_8qzo2",
+      "name": "Smoker Processing Warp",
+      "partIds": [
+        "part_msby0oyd_s2jkx",
+        "part_msby0oyd_7j10h"
+      ],
+      "style": "breathing",
+      "timelineDriven": true,
+      "enabled": true,
+      "strength": 0.015,
+      "speed": 1,
+      "downSpeed": 1.8209947722184818,
+      "upSpeed": 0.17439726396219082,
+      "swayDeg": 0.35,
+      "twistDeg": 0.2,
+      "depth": 0.68,
+      "impact": 0.82,
+      "rockDeg": 0,
+      "phaseDeg": 0
+    }
+  ],
+  "processTimelines": [
+    {
+      "id": "timeline_msby0oyd_nl7iw",
+      "name": "Smoker Process",
+      "enabled": true,
+      "playing": false,
+      "loop": false,
+      "duration": 10,
+      "progress": 0,
+      "substanceColor": "#7b1f3d",
+      "stopStompAtEnd": false,
+      "stopPourAtEnd": false,
+      "stopPlaybackAtEnd": false,
+      "emitterTracks": [
+        {
+          "emitterId": "emitter_msby0oyd_dtzcj",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 2.4499999999999997,
+                "lifetime": 2.8,
+                "size": 0.2,
+                "speed": 0.22,
+                "spread": 0.16,
+                "radius": 0.08,
+                "gravity": -0.025,
+                "colorA": "#c7c4bd",
+                "colorB": "#4e4a47"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 7,
+                "lifetime": 2.8,
+                "size": 0.2,
+                "speed": 0.22,
+                "spread": 0.16,
+                "radius": 0.08,
+                "gravity": -0.025,
+                "colorA": "#c7c4bd",
+                "colorB": "#4e4a47"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 1.4000000000000001,
+                "lifetime": 2.8,
+                "size": 0.2,
+                "speed": 0.22,
+                "spread": 0.16,
+                "radius": 0.08,
+                "gravity": -0.025,
+                "colorA": "#c7c4bd",
+                "colorB": "#4e4a47"
+              }
+            }
+          ]
+        }
+      ],
+      "warpTracks": [
+        {
+          "warpId": "warp_msby0oyd_8qzo2",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.00825,
+                "speed": 1,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.35,
+                "twistDeg": 0.2,
+                "depth": 0.68,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.015,
+                "speed": 1,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.35,
+                "twistDeg": 0.2,
+                "depth": 0.68,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.0052499999999999995,
+                "speed": 1,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.35,
+                "twistDeg": 0.2,
+                "depth": 0.68,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            }
+          ]
+        }
+      ],
+      "liquidTracks": []
+    }
+  ],
+  "stompAttachPoints": []
+}

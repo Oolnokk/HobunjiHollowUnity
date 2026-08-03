@@ -80,6 +80,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:#9fb4cf;font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="shell">
@@ -289,7 +290,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <button id="tocJumpBtn" class="sec" title="Jump to the sidebar's table of contents">⤴ TOC</button>
 
 <div id="diffModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);overflow:auto;padding:20px">
-  <div style="max-width:760px;margin:0 auto;background:#111b28;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:20px">
+  <div id="diffBox" style="width:760px;margin:0 auto;background:#111b28;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:20px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
       <b style="flex:1;font-size:13px">Export Diff — <span id="diffTitle" style="color:#6aa7ff"></span></b>
       <button id="diffCopyBtn" class="ok" style="padding:5px 12px">📋 Copy</button>
@@ -4087,6 +4088,19 @@ loadAudioCueIndexes();
 loadBuildingInteriorMaps();
 loadTerrainMaterials();
 })();
+</script>
+<script>
+PanelUI.makeResizableEdge(document.getElementById('sidebar'), {
+  edge: 'right',
+  storageKey: 'hobunji_map_editor_sidebar_width_v1'
+});
+PanelUI.makeResizableBox(document.getElementById('diffBox'), {
+  corner: 'se',
+  axis: 'x',
+  minWidth: 480,
+  maxWidth: 1200,
+  storageKey: 'hobunji_map_editor_diffbox_width_v1'
+});
 </script>
 </body>
 </html>

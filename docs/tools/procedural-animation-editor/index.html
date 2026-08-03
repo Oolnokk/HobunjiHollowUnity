@@ -79,7 +79,7 @@ header h1 { margin: 0; font-size: 16px; letter-spacing: .25px; color: var(--acce
 .collapsiblePanel > summary > :last-child { margin-left: auto; }
 .collapsibleBody { border-top: 1px solid rgba(255,255,255,.08); }
 #leftPanel { display: block; }
-#leftPanel .selectorBody { max-height: min(68vh, 720px); display: grid; grid-template-rows: auto auto minmax(180px,1fr); overflow: hidden; }
+#leftPanel .selectorBody { max-height: min(68vh, 720px); display: grid; grid-template-rows: auto auto minmax(180px,1fr); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #rightPanel { display: block; overflow: visible; padding-bottom: 0; }
 #rightPanel .detailsBody { max-height: min(72vh, 760px); overflow: auto; padding-bottom: 24px; -webkit-overflow-scrolling: touch; }
 .panelSection { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
@@ -167,7 +167,7 @@ pre {
 .toolSource dd { margin: 0; overflow-wrap: anywhere; }
 .segmented { display: flex; gap: 6px; flex-wrap: wrap; }
 .segmented button { flex: 1 1 92px; }
-#kurrayaJson { max-height: 34vh; }
+#kurrayaJson { max-height: 34vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 #kurrayaPanel .card { margin-bottom: 0; }
 
 .creatureGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -181,7 +181,7 @@ pre {
 .creatureColorRow input[type="color"] { min-height: 42px; padding: 3px; cursor: pointer; }
 .creatureColorRow input[type="checkbox"] { width: 18px; min-height: 18px; margin: 0 6px 0 0; accent-color: var(--accent); }
 .creatureLayerToggle { display: flex; align-items: center; min-width: 0; }
-#creatureGenotypeJson { max-height: 24vh; margin-top: 8px; }
+#creatureGenotypeJson { max-height: 24vh; margin-top: 8px; overflow: auto; -webkit-overflow-scrolling: touch; }
 #creatureEditor .row > button { flex: 1 1 112px; }
 #creaturePreviewCanvas { width: 100%; max-height: 180px; margin-top: 8px; display: block; object-fit: contain; image-rendering: pixelated; border: 1px solid rgba(255,255,255,.1); border-radius: 11px; background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.11), rgba(255,255,255,.02)); }
 
@@ -233,7 +233,6 @@ pre {
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   pointer-events: auto;
-  resize: both;
   border: 1px solid rgba(107,169,255,.56);
   border-radius: 15px;
   background: rgba(7,16,26,.94);
@@ -280,7 +279,6 @@ pre {
     height: 38dvh;
     min-height: 190px;
     max-height: 48dvh;
-    resize: vertical;
     border-radius: 14px;
   }
   #footGlbModalBody { padding: 6px; }
@@ -295,7 +293,6 @@ pre {
     height: auto;
     min-height: 0;
     max-height: none;
-    resize: horizontal;
   }
 }
 
@@ -540,7 +537,22 @@ header,
   max-height: calc(var(--viewport-height, 100dvh) - 56px) !important;
   display: flex !important;
   flex-direction: column !important;
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+/* Reflow the drawer's own contents as it's skewed narrow/small — keyed to
+   this container's own width (not the viewport), so dragging #leftPanel
+   down to a small corner card rearranges its fields into one column
+   instead of clipping or overlapping them. */
+#leftPanel .selectorBody { container-type: inline-size; container-name: hobunjiPanelBody; }
+@container hobunjiPanelBody (max-width: 360px) {
+  #leftPanel .repoFields,
+  #leftPanel .creatureGrid,
+  #leftPanel .animationTopGrid { grid-template-columns: 1fr; }
+}
+@container hobunjiPanelBody (max-width: 260px) {
+  #leftPanel .selectorBody { font-size: 11px; }
+  #leftPanel .panelSection { padding: 7px; }
 }
 #leftPanel #npcList { flex: 1 1 170px; min-height: 170px; }
 #leftPanel #creatureEditor { flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
@@ -645,7 +657,7 @@ header,
 #animationEditor .animationChecks { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
 #animationEditor .animationCheck { display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 7px 8px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(0,0,0,.12); color: var(--muted); font-size: 11px; }
 #animationEditor .animationCheck input { width: 18px; min-height: 18px; margin: 0; accent-color: var(--accent); }
-#animationSettingsJson { max-height: 25vh; }
+#animationSettingsJson { max-height: 25vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 #animationImportInput { display: none; }
 #footGlbImportInput { display: none; }
 .footGlbPanel { border: 1px solid rgba(107,169,255,.24); border-radius: 12px; background: rgba(7,16,26,.46); overflow: hidden; }
@@ -706,7 +718,6 @@ header,
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   pointer-events: auto;
-  resize: both;
   border: 1px solid rgba(107,169,255,.56);
   border-radius: 15px;
   background: rgba(7,16,26,.94);
@@ -754,7 +765,6 @@ header,
     height: 38dvh;
     min-height: 210px;
     max-height: 48dvh;
-    resize: vertical;
     border-radius: 14px;
   }
   #verticalPlacementModalBody { padding: 6px; }
@@ -769,12 +779,12 @@ header,
     height: auto;
     min-height: 0;
     max-height: none;
-    resize: horizontal;
   }
 }
 
 </style>
 
+<script src="../../js/panel-ui.js"></script>
 </head>
 <body>
 <div id="app">
@@ -1746,6 +1756,16 @@ function posteriorYForAnalysis(analysis) {
   const modelHeight = Number(analysis.gameModelHeight) || 0.9;
   const baseY = Number.isFinite(analysis.handAttachY) ? analysis.handAttachY : modelHeight / 2;
   return baseY + modelHeight * heightPercentOffsetForSpecies(analysis.speciesId, analysis.gender) / 100;
+}
+
+// Mirrors docs/js/procedural-leg-animation.js's own posteriorXForSpecies:
+// anchors.posterior.position.x from attachment-rig-profiles.js ("center",
+// i.e. 0, for every authored species today), falling back to 0.
+function posteriorXForSpecies(speciesId, gender) {
+  const lib = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
+  const rec = lib[`${speciesId}::${gender}`];
+  const value = Number(rec?.anchors?.posterior?.position?.x);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function resolveVerticalPlacementFrom(placement, speciesId, genderValue) { // Reproduces avatarPlacementRatioFor's own-property and finite-number semantics.
@@ -4133,6 +4153,12 @@ async function buildExperimentalFeetForAvatar(sourceCanvas, model, avatar) { // 
   const rightModelPoint = new THREE.Vector3(pixelToModelX(scan.sampleColumnsPx.rightMedian), 0, 0); // Starts the right median in avatar-model local coordinates.
   model.localToWorld(leftModelPoint); model.localToWorld(rightModelPoint);
   procedural.locomotionRoot.worldToLocal(leftModelPoint); procedural.locomotionRoot.worldToLocal(rightModelPoint);
+  const posteriorModelPoint = new THREE.Vector3(posteriorXForSpecies(speciesId, feetGenderForAvatar(avatar)), 0, 0); // Same rig anchor procedural-leg-animation.js recenters against at runtime.
+  model.localToWorld(posteriorModelPoint);
+  procedural.locomotionRoot.worldToLocal(posteriorModelPoint);
+  const legRecenterShiftX = posteriorModelPoint.x - (leftModelPoint.x + rightModelPoint.x) / 2; // Re-centers both legs by the same amount so the posterior attach point's X lands exactly midway between them.
+  leftModelPoint.x += legRecenterShiftX;
+  rightModelPoint.x += legRecenterShiftX;
   const colliderRootWorld = procedural.locomotionRoot.getWorldPosition(new THREE.Vector3()); // Treats the game floor root as the collider's X/Z origin.
   const colliderRootLocal = procedural.locomotionRoot.worldToLocal(colliderRootWorld.clone()); // Supplies collider-local Z without using portrait bounds.
   const groundWorldY = previewGroundWorldY(); // Anchors to the rendered world floor, never the portrait's bottom edge.
@@ -5939,6 +5965,7 @@ function ensureFootGlbModal() { // Creates a compact modeless importer while kee
   document.body.appendChild(modal);
   $('footGlbModalClose')?.addEventListener('click', closeFootGlbTools);
   modal.addEventListener('click', event => { if (event.target === modal) closeFootGlbTools(); });
+  window.hobunjiInitFloatingCard?.('footGlbModalCard', 'footGlbModalBody', 'hobunji_procedural_animation_editor_footglbcard_size');
   return modal;
 }
 
@@ -6002,6 +6029,7 @@ function ensureVerticalPlacementModal() { // Creates a modeless dock so placemen
   document.body.appendChild(modal);
   $('verticalPlacementModalClose')?.addEventListener('click', closeVerticalPlacementTools);
   modal.addEventListener('click', event => { if (event.target === modal) closeVerticalPlacementTools(); });
+  window.hobunjiInitFloatingCard?.('verticalPlacementModalCard', 'verticalPlacementModalBody', 'hobunji_procedural_animation_editor_verticalplacementcard_size');
   return modal;
 }
 
@@ -6856,6 +6884,74 @@ showOverlay('Loading HobunjiHollowUnity', 'Fetching the NPC database plus the re
 log('Procedural movement animator host initialized. Auto-walk defaults off; four character-relative endpoints drive normal movement, one rotated Sprint Forward endpoint drives sprinting, and Drunken retains recoil plus low-intensity random idle rocking.');
 setTimeout(() => loadSource(initialSettings), 0);
 })();
+</script>
+<script>
+// #leftPanel is a floating <details> drawer pinned to the top-right corner
+// (top/right fixed via CSS !important), so only its bottom-left corner can
+// grow. Let it skew from a small corner card all the way up to nearly the
+// whole viewport. <details> elements don't actually propagate flex/grid
+// sizing constraints to their content in Chromium (an explicit height on
+// the <details> doesn't shrink a flex/grid child — it just renders at its
+// full content size, clipped by overflow instead of scrolling), so rather
+// than fight that, explicitly size .selectorBody to the remaining space
+// ourselves on every resize.
+function syncProceduralAnimationEditorLeftPanelBody(panel) {
+  const summary = panel.querySelector(':scope > summary');
+  const body = panel.querySelector(':scope > .selectorBody');
+  if (!summary || !body) return;
+  const remaining = panel.getBoundingClientRect().height - summary.getBoundingClientRect().height;
+  body.style.setProperty('max-height', 'none', 'important');
+  body.style.setProperty('height', Math.max(0, remaining) + 'px', 'important');
+}
+PanelUI.makeResizableBox(document.getElementById('leftPanel'), {
+  corner: 'sw',
+  axis: 'both',
+  minWidth: 180,
+  minHeight: 120,
+  maxWidth: Math.round(window.innerWidth * 0.98),
+  maxHeight: Math.round(window.innerHeight * 0.96),
+  storageKey: 'hobunji_procedural_animation_editor_leftpanel_size_v1',
+  onResize: syncProceduralAnimationEditorLeftPanelBody
+});
+document.getElementById('leftPanel').addEventListener('toggle', function () {
+  if (this.open) syncProceduralAnimationEditorLeftPanelBody(this);
+});
+// This drawer floats over the always-interactive 3D viewport, same as the
+// multi-avatar mode's own panels — give it the same touch hold-and-drag
+// scroll so a finger-drag over its (now scrollable) body doesn't fight the
+// canvas underneath for the gesture.
+document.querySelectorAll('#leftPanel .selectorBody').forEach(PanelUI.installTouchDragScroll);
+// #footGlbModalCard/#verticalPlacementModalCard are built lazily by
+// ensureFootGlbModal()/ensureVerticalPlacementModal() the first time the
+// user opens them (they don't exist in the DOM at page load, so wiring
+// them up here would silently find nothing) — window.hobunjiInitFloatingCard
+// is called from inside those functions instead, right after each card is
+// created. It replaces their old desktop-only `resize: both`/`vertical`
+// CSS (which most mobile browsers don't render a draggable handle for at
+// all) with the same touch-friendly grip used everywhere else, picking the
+// drag direction that matches whichever breakpoint's edge-pinning is
+// currently active (top-right pinned on desktop/landscape vs. a
+// bottom-sheet with only its top edge free on narrow portrait phones).
+window.hobunjiInitFloatingCard = function (cardId, bodyId, storageKeyBase) {
+  const card = document.getElementById(cardId);
+  if (!card || card.dataset.panelUiResizeInit === 'true') return;
+  card.dataset.panelUiResizeInit = 'true';
+  const isBottomSheet = () =>
+    window.matchMedia('(max-width: 700px)').matches &&
+    !window.matchMedia('(max-height: 520px) and (orientation: landscape)').matches;
+  if (isBottomSheet()) {
+    PanelUI.makeResizableBox(card, { corner: 'ne', axis: 'y', minHeight: 140, storageKey: storageKeyBase + '_mobile_v1' });
+  } else {
+    PanelUI.makeResizableBox(card, { corner: 'sw', axis: 'both', minWidth: 240, minHeight: 160, storageKey: storageKeyBase + '_v1' });
+  }
+  const body = document.getElementById(bodyId);
+  if (body) PanelUI.installTouchDragScroll(body);
+};
+PanelUI.makeResizableBox(document.getElementById('debugPanel'), {
+  corner: 'nw',
+  storageKey: 'hobunji_procedural_animation_editor_debugpanel_size_v1'
+});
+PanelUI.installTouchDragScroll(document.getElementById('debugLog'));
 </script>
 </body>
 </html>

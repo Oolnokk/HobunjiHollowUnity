@@ -109,7 +109,7 @@ window.SCRATCHBONES_CONFIG = {
     },
     "movement": {
       "perpRotDeadzoneDeg": 40,
-      "creaturePerpRotDeadzoneDeg": 25,
+      "creaturePerpRotDeadzoneDeg": 27.5,
       "npc": {
         "speedTilesPerSecond": 1.25,
         "endpointPauseSeconds": 1.6,
@@ -202,6 +202,14 @@ window.SCRATCHBONES_CONFIG = {
           "fovDeg": 42,
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.55
+        },
+        "seated": {
+          "distanceTiles": 4,
+          "angleFromGroundDeg": 14,
+          "fovDeg": 42,
+          "followLerp": 0.18,
+          "targetYOffsetTiles": 0,
+          "freeRotate": true
         }
       }
     },

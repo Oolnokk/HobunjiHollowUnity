@@ -39,6 +39,9 @@
   <script src="js/foliage-generator.js?v=20260712d"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20260712f"></script>
+  <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
+       anchors, processing VFX/warps, livestock stomp points) on top of it -->
+  <script src="js/authored-furniture-runtime.js?v=20260802a"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
@@ -226,6 +229,17 @@
       </div>
       <div class="fed-section">
         <div class="fed-label">Alive from this panel: <span id="devArenaSpawnCount">0</span></div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Foliage / objects — trees/stumps participate in the same view-corridor culling and camera-occlusion fade as a real wilderness zone's, for testing that behavior without leaving the arena</div>
+        <div class="fed-grid" id="devSpawnFoliageGrid"></div>
+      </div>
+      <div class="fed-section fed-actions">
+        <button class="fed-action-btn" id="devSpawnFoliageBtnAction">🌲 Spawn Selected</button>
+        <button class="fed-action-btn fed-danger" id="devClearFoliageBtn">🗑️ Clear Objects</button>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Objects from this panel: <span id="devArenaFoliageCount">0</span></div>
       </div>
       <div class="fed-section fed-actions">
         <button class="fed-action-btn" id="devCombatLogBtn">📋 Copy Combat Log (last 7s, for AI review)</button>
@@ -431,6 +445,12 @@
             <div class="farm-toolbar">
               <button id="farmCancelPlacementBtn" class="settings-small-btn" hidden>Cancel</button>
             </div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Processors</div>
+            <div id="farmProcessorsNote" class="farm-note"></div>
+            <div id="farmProcessorsGrid" class="farm-processor-grid"></div>
           </div>
 
           <div class="farm-section">

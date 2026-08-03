@@ -1,0 +1,333 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "copperBarrel",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msc1196j_hg49g",
+      "kind": "barrel",
+      "name": "Copper Barrel Body",
+      "transform": {
+        "x": 0,
+        "y": 0.29,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.76,
+        "sy": 0.58,
+        "sz": 0.76
+      },
+      "color": "#b87333",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 0.82,
+      "topScaleZ": 0.82,
+      "bottomScaleX": 0.82,
+      "bottomScaleZ": 0.82,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "boards.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": "carved_smooth.png",
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#b87333",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a4924",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_msc1196j_30lgz",
+      "kind": "hoop",
+      "name": "Copper Top Hoop",
+      "transform": {
+        "x": 0,
+        "y": 0.545,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.69,
+        "sy": 0.0809,
+        "sz": 0.69
+      },
+      "color": "#b87333",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.84,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#b87333",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a9299",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_msc1196j_1zh5r",
+      "kind": "hoop",
+      "name": "Copper Bottom Hoop",
+      "transform": {
+        "x": 0,
+        "y": 0.035,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.69,
+        "sy": 0.0809,
+        "sz": 0.69
+      },
+      "color": "#b87333",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.84,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "metal",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": true,
+      "materialFillColor": "#b87333",
+      "materialFillMode": "always",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a9299",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_msc1196j_1g77j",
+      "name": "Copper Barrel Bubbles",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_msc1196j_hg49g",
+      "position": {
+        "x": 0,
+        "y": 0.32,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rate": 6,
+      "lifetime": 1.65,
+      "size": 0.06,
+      "speed": 0.34,
+      "spread": 0.1,
+      "radius": 0.16,
+      "gravity": 0,
+      "colorA": "#e6fbff",
+      "colorB": "#75d4e8"
+    }
+  ],
+  "processingWarps": [
+    {
+      "id": "warp_msc1196j_f3k37",
+      "name": "Copper Barrel Processing Warp",
+      "partIds": [
+        "part_msc1196j_hg49g",
+        "part_msc1196j_30lgz",
+        "part_msc1196j_1zh5r"
+      ],
+      "style": "breathing",
+      "timelineDriven": true,
+      "enabled": true,
+      "strength": 0.022,
+      "speed": 2.2,
+      "downSpeed": 4.006188498880661,
+      "upSpeed": 0.38367398071681985,
+      "swayDeg": 0.5,
+      "twistDeg": 0.3,
+      "depth": 0.72,
+      "impact": 0.82,
+      "rockDeg": 0,
+      "phaseDeg": 0
+    }
+  ],
+  "processTimelines": [
+    {
+      "id": "timeline_msc1196j_2jfur",
+      "name": "Copper Barrel Process",
+      "enabled": true,
+      "playing": false,
+      "loop": false,
+      "duration": 10,
+      "progress": 0,
+      "substanceColor": "#7b1f3d",
+      "stopStompAtEnd": false,
+      "stopPourAtEnd": false,
+      "stopPlaybackAtEnd": false,
+      "emitterTracks": [
+        {
+          "emitterId": "emitter_msc1196j_1g77j",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "rate": 2.0999999999999996,
+                "lifetime": 1.65,
+                "size": 0.06,
+                "speed": 0.34,
+                "spread": 0.1,
+                "radius": 0.16,
+                "gravity": 0,
+                "colorA": "#e6fbff",
+                "colorB": "#75d4e8"
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "rate": 6,
+                "lifetime": 1.65,
+                "size": 0.06,
+                "speed": 0.34,
+                "spread": 0.1,
+                "radius": 0.16,
+                "gravity": 0,
+                "colorA": "#e6fbff",
+                "colorB": "#75d4e8"
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "rate": 1.2000000000000002,
+                "lifetime": 1.65,
+                "size": 0.06,
+                "speed": 0.34,
+                "spread": 0.1,
+                "radius": 0.16,
+                "gravity": 0,
+                "colorA": "#e6fbff",
+                "colorB": "#75d4e8"
+              }
+            }
+          ]
+        }
+      ],
+      "warpTracks": [
+        {
+          "warpId": "warp_msc1196j_f3k37",
+          "useSubstanceColor": false,
+          "colorFromSubstance": false,
+          "keyframes": [
+            {
+              "time": 0,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.0121,
+                "speed": 2.2,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.5,
+                "twistDeg": 0.3,
+                "depth": 0.72,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 0.5,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.022,
+                "speed": 2.2,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.5,
+                "twistDeg": 0.3,
+                "depth": 0.72,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            },
+            {
+              "time": 1,
+              "value": {
+                "enabled": true,
+                "style": "breathing",
+                "strength": 0.007699999999999999,
+                "speed": 2.2,
+                "downSpeed": 10,
+                "upSpeed": 2.85,
+                "swayDeg": 0.5,
+                "twistDeg": 0.3,
+                "depth": 0.72,
+                "impact": 0.82,
+                "rockDeg": 0,
+                "phaseDeg": 0
+              }
+            }
+          ]
+        }
+      ],
+      "liquidTracks": []
+    }
+  ],
+  "stompAttachPoints": []
+}

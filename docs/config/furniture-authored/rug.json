@@ -1,0 +1,63 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "rug",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 2,
+    "d": 2
+  },
+  "parts": [
+    {
+      "id": "part_msc11atv_br5pr",
+      "kind": "box",
+      "name": "Rug Box",
+      "transform": {
+        "x": 0,
+        "y": 0.015,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.85,
+        "sy": 0.03,
+        "sz": 1.85
+      },
+      "color": "#8b6540",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "fabric",
+      "materialTexture": "canvas.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "auto",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": []
+}

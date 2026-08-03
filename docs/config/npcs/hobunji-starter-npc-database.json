@@ -881,7 +881,7 @@
                                     "from": "12:00",
                                     "to": "14:00",
                                     "mapId": "map_i_ginju_farmstead",
-                                    "stationId": "station_ginju_table_sit1",
+                                    "stationId": "furniture_chair_map_i_ginju_farmstead_9_3",
                                     "activity": "resting"
                               },
                               {
@@ -1870,7 +1870,7 @@
                                     "from": "12:00",
                                     "to": "17:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "station_inn_stool_e_n",
+                                    "stationId": "furniture_chair_map_i_inn_14_7",
                                     "activity": "having a drink at the inn"
                               },
                               {
@@ -2807,7 +2807,7 @@
                                     "from": "10:00",
                                     "to": "18:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "station_inn_stool_e_s",
+                                    "stationId": "furniture_chair_map_i_inn_14_11",
                                     "activity": "relaxing at the inn"
                               },
                               {
@@ -2823,7 +2823,7 @@
                                     "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
                               }
                         ],
-                        "defaultStationId": "station_inn_stool_e_s"
+                        "defaultStationId": "furniture_chair_map_i_inn_14_11"
                   },
                   "loreBackground": "Original concept: a lonely fisherman mourning a dead Kenkari husband named Pahu ao Pakamu. The current schedule keeps both Leaf and Pahu alive and active in town, which contradicts the widower framing. <suggestion: decision needed — either retcon one of them as deceased (and rewrite their relationship status/schedule/dialogue accordingly) or drop the widower angle and keep them as a living couple>",
                   "phrasePools": [
@@ -3310,14 +3310,14 @@
                                     "from": "08:00",
                                     "to": "14:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "station_inn_stool_w_n",
+                                    "stationId": "furniture_chair_map_i_inn_4_7",
                                     "activity": "socializing at the inn"
                               },
                               {
                                     "from": "14:00",
                                     "to": "20:00",
                                     "mapId": "map_i_inn",
-                                    "stationId": "station_inn_stool_w_s",
+                                    "stationId": "furniture_chair_map_i_inn_4_11",
                                     "activity": "enjoying the inn"
                               },
                               {
@@ -3333,7 +3333,7 @@
                                     "contentIncompleteReason": "mapId map_i_swamp_house has no map file yet in docs/config/maps — needs a real interior + station before this rule can resolve."
                               }
                         ],
-                        "defaultStationId": "station_inn_stool_w_s"
+                        "defaultStationId": "furniture_chair_map_i_inn_4_11"
                   },
                   "phrasePools": [
                         {
@@ -7079,7 +7079,7 @@
                                     "from": "00:00",
                                     "to": "03:00",
                                     "mapId": "map_i_temple",
-                                    "stationId": "station_temple_counsel_hunundi",
+                                    "stationId": "furniture_chair_map_i_temple_12_11",
                                     "activity": "watching the Spirit Counsel from a far pew"
                               },
                               {
@@ -8123,7 +8123,7 @@
                                     "from": "09:00",
                                     "to": "13:00",
                                     "mapId": "map_i_temple",
-                                    "stationId": "station_temple_reflection",
+                                    "stationId": "furniture_chair_map_i_temple_6_7",
                                     "activity": "temple"
                               },
                               {
@@ -8137,7 +8137,7 @@
                                     "from": "18:00",
                                     "to": "21:00",
                                     "mapId": "map_i_temple",
-                                    "stationId": "station_temple_reflection",
+                                    "stationId": "furniture_chair_map_i_temple_6_7",
                                     "activity": "temple"
                               },
                               {
@@ -8148,7 +8148,7 @@
                                     "activity": "sleeping"
                               }
                         ],
-                        "defaultStationId": "station_temple_reflection"
+                        "defaultStationId": "furniture_chair_map_i_temple_6_7"
                   },
                   "loreBackground": "<suggestion: backstory — what specifically drives Taku'a toward mining once given the chance, and how that differs from Namu'i's path>",
                   "questHooks": [

@@ -25,11 +25,12 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
+<script src="../../js/panel-ui.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 </head>
 <body>
-<div class="app">
+<div class="app" id="hpaApp">
   <header class="panel">
     <div class="title"><h1>House Editor</h1><div class="status" id="statusLine">Booting...</div></div>
     <div class="row">
@@ -42,7 +43,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
     </div>
   </header>
 
-  <aside class="panel">
+  <aside class="panel" id="hpaLeftPanel">
     <div class="section">
       <h2>1. Piece + footprint grid</h2>
       <div class="grid2">
@@ -188,7 +189,7 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
     </div>
   </main>
 
-  <aside class="panel">
+  <aside class="panel" id="hpaRightPanel">
     <div class="section">
       <h2>4. Detail GLB assets</h2>
       <div class="row"><label class="fileButton" for="glbInput">Import detail GLB</label><input id="glbInput" class="hidden" type="file" accept=".glb,model/gltf-binary" multiple><button id="removeAssetBtn" class="danger" type="button">Remove selected</button></div>
@@ -2325,6 +2326,15 @@ function setInteriorMode(on) {
   const intSection = document.getElementById('interiorFurnitureSection');
   if (intSection) intSection.appendChild(furnPicker);
 })();
+</script>
+<script>
+const hpaAppGrid = document.getElementById('hpaApp');
+PanelUI.makeResizableGridColumn(hpaAppGrid, document.getElementById('hpaLeftPanel'), {
+  edge: 'right', storageKey: 'hobunji_house_piece_author_leftpanel_width_v1'
+});
+PanelUI.makeResizableGridColumn(hpaAppGrid, document.getElementById('hpaRightPanel'), {
+  edge: 'left', storageKey: 'hobunji_house_piece_author_rightpanel_width_v1'
+});
 </script>
 </body>
 </html>
