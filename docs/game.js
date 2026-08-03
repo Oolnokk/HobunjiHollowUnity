@@ -28316,10 +28316,24 @@
       function addOccludedGhostSiblings(root, opts = {}) {
         if (!root) return;
         const originals = [];
-        root.traverse(o => { if (o.isMesh && o.material && o.material.map) originals.push(o); });
+        // mesh.material is an array on any multi-material mesh (e.g. the
+        // player/NPC neck-turn rig's SkinnedMesh, bound with separate
+        // front/back materials over one geometry's material groups — see
+        // buildSkinnedSinglePlaneAssembly). `o.material.map` on an ARRAY
+        // silently resolves to Array.prototype.map (a function — always
+        // truthy), not undefined, so that mesh used to slip through this
+        // check as if it were single-material and textured, corrupting the
+        // ghost built below with a material whose `map` is literally
+        // Array.prototype.map instead of a texture. That ghost sits
+        // harmlessly invisible outside wilderness zones (see
+        // syncOccludedGhostTransforms's currentArea gate), then throws the
+        // instant it's actually drawn in one — three.js's uvTransform setup
+        // reads `map.matrix`, which a bare function doesn't have.
+        const hasMap = (mat) => Array.isArray(mat) ? mat.some(m => m?.map) : !!mat?.map;
+        root.traverse(o => { if (o.isMesh && o.material && hasMap(o.material)) originals.push(o); });
         for (const mesh of originals) {
-          const srcMat = mesh.material;
-          const ghostMat = new THREE.MeshBasicMaterial({
+          const srcMats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          const buildGhostMat = (srcMat) => new THREE.MeshBasicMaterial({
             map: srcMat.map,
             color: opts.color ?? 0xffffff,
             transparent: true,
@@ -28344,6 +28358,7 @@
             stencilZFail: THREE.KeepStencilOp,
             stencilZPass: THREE.KeepStencilOp,
           });
+          const ghostMat = Array.isArray(mesh.material) ? srcMats.map(buildGhostMat) : buildGhostMat(srcMats[0]);
           const ghost = new THREE.Mesh(mesh.geometry, ghostMat);
           ghost.position.copy(mesh.position);
           ghost.rotation.copy(mesh.rotation);
