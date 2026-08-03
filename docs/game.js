@@ -7873,6 +7873,25 @@
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
       function creatureAttachmentAnchorY(kind, anchorName) { return creatureAttachmentAnchor(kind, anchorName)?.y ?? null; }
+      // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
+      // shared by updateCompanions' shoulderPet branch (which also needs
+      // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
+      // and updateShoulderPetMeshPin (a second pass that re-pins the pet's
+      // RENDERED position after updatePlayerMesh — see that function's own
+      // comment for why it exists). A pure function of the player's current
+      // rig anchor + facing, not of playerMesh.position itself, so it's
+      // cheap (rig anchors are cached — see playerAttachmentAnchor/
+      // creatureAttachmentAnchor) and safe to call twice a frame rather than
+      // needing dx/dz stashed as extra state on the creature.
+      function _shoulderPetOffsetXZ(perch, grip) {
+        const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
+        const invGripYaw = -gripYawRad;
+        const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
+        const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
+        const lx = perch.x - gx, lz = (perch.z || 0) - gz;
+        const theta = playerMesh.rotation.y;
+        return { dx: lx * Math.cos(theta) + lz * Math.sin(theta), dz: -lx * Math.sin(theta) + lz * Math.cos(theta), gripYawRad };
+      }
       // Guessed fallbacks (species-agnostic percent-of-own-height) for the
       // rare case rig data is missing for this character/creature pairing —
       // everything stableable today has authored data, so this is just a
@@ -8146,53 +8165,52 @@
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
             if (perch && grip) {
-              // perch.y/posterior.y are floor-relative — the same total
-              // height-above-playerMesh convention game.js's own
-              // playerToolBaseY already uses (playerMesh.position.y +
-              // playerToolBaseY, no extra avatarHeight/2 term) — so no
-              // additional half-height lift belongs here either.
+              // perch.y/grip.y are floor-relative — the same total
+              // height-above-playerMesh convention playerToolBaseY already
+              // uses elsewhere — so no additional half-height lift belongs
+              // here either. X/Z are NOT pinned here (see below).
               c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
-              // X/Z are pinned directly off playerMesh.position (the
-              // character's own already-smoothed render position), not
-              // eased in via updateCreatureMesh's generic per-creature
-              // lerp (grp.position.x/z += (target - current) * dt*10)
-              // above. That lerp is tuned for a wandering animal easing
-              // toward a waypoint; a shoulder pet's target is recomputed
-              // fresh every frame from the player's CURRENT position, so
-              // it was instead just perpetually chasing a moving target
-              // one frame behind — and since the player's own mesh eases
-              // toward player.x/y on its own, different (0.25/frame flat,
-              // see updatePlayerMesh) schedule, the two rarely finished a
-              // frame at the exact offset the rig anchors intend. Measured
-              // live: right after mount (or any facing change re-aims the
-              // anchor), the pet's camera-facing depth relative to the
-              // player's drifts through dead-equal and briefly crosses to
-              // the wrong side before the lerp catches up — and since both
-              // avatars are alphaTest cutout planes with transparent:true
-              // (so their few percent of antialiased edge pixels actually
-              // alpha-blend), that crossing reads as the pet flickering
-              // translucent with the character showing through it, not as
-              // a clean pop. Snapping straight to playerMesh.position plus
-              // the same rig offset keeps the pet locked to the exact
-              // authored offset every single frame, so their relative
-              // depth never has a lagging frame to wobble through.
-              c.avatarRef.group.position.x = playerMesh.position.x + dx;
-              c.avatarRef.group.position.z = playerMesh.position.z + dz;
             } else {
+              // No authored rig anchors for this species/creature pairing —
+              // a flat increment on top of updateCreatureMesh's own
+              // terrain-based Y for this creature, unrelated to
+              // playerMesh.position, so — unlike X/Z below — it has no
+              // frame-staleness to fix and stays right here.
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
-              // Same fix as the rig-anchor branch above (see its own long
-              // comment): pin X/Z directly to playerMesh.position plus the
-              // same cling offset instead of leaving them to
-              // updateCreatureMesh's generic per-creature lerp. That lerp
-              // chases a target that moves every frame, so it visibly trails
-              // the master — worse the faster the master moves, converging
-              // back to the correct spot only once the master stops — and
-              // this fallback path (no authored shoulderPerch/shoulderGrip
-              // rig data for this species/creature pairing) had never gotten
-              // the direct-pin treatment the rig-anchor path already has.
-              c.avatarRef.group.position.x = playerMesh.position.x + clingDx;
-              c.avatarRef.group.position.z = playerMesh.position.z + clingDz;
             }
+            // X/Z (both branches — the fallback's clingDx/clingDz read
+            // playerMesh.position exactly the same way perch/grip's dx/dz
+            // do) are deliberately NOT pinned here — see
+            // updateShoulderPetMeshPin (called after updatePlayerMesh in the
+            // main loop), which does it instead. History: this used to pin
+            // straight to playerMesh.position (the character's own
+            // already-smoothed render position) right here, instead of
+            // easing in via updateCreatureMesh's generic per-creature lerp
+            // (grp.position += (target - current) * dt*10) above — that
+            // lerp is tuned for a wandering animal easing toward a waypoint,
+            // and a shoulder pet's target recomputed fresh every frame from
+            // the player's CURRENT position just left it perpetually
+            // chasing a moving target one frame behind, which read as the
+            // pet visibly trailing the player and (since both avatars are
+            // alphaTest cutout planes with transparent:true, so their few
+            // percent of antialiased edge pixels actually alpha-blend)
+            // occasionally flickering translucent where their depth
+            // crossed. Pinning here fixed THAT lag, but this whole
+            // companion/mount update block runs BEFORE updatePlayerMesh
+            // (see the main loop — updatePlayerMesh has to run after it, so
+            // it can read this frame's freshly-resolved mount seat lift/
+            // chair sink), so playerMesh.position read from here is still
+            // LAST frame's value. During continuous movement
+            // playerMesh.position is itself still easing toward the
+            // player's actual position (see its own 0.25/frame lerp in
+            // updatePlayerMesh), so pinning to a frame-stale copy of an
+            // already-lagging value compounded into one more small,
+            // constant frame of gap — invisible once stationary (both
+            // values settle on the same target), but a persistent slight
+            // trail while moving. updateShoulderPetMeshPin re-applies this
+            // same X/Z pin (for whichever branch actually applies) after
+            // updatePlayerMesh has actually advanced playerMesh.position
+            // for this frame, closing that last gap.
             continue;
           }
 
@@ -8318,6 +8336,37 @@
         // fixed updatePetLayering rule instead (called above, independent
         // of this frame's positions).
         if (hasActiveCompanionForPlayer) updateAvatarDepthPriority(true);
+      }
+
+      // Second pass for the real player's own shoulder pet(s), called after
+      // updatePlayerMesh in the main loop (updateCompanions itself runs
+      // before it — see the long comment in its shoulderPet branch for why
+      // that ordering is otherwise required, and why it leaves
+      // playerMesh.position one frame stale for this pin). Re-pins X/Z for
+      // BOTH the rig-anchor (perch/grip) and no-rig-data fallback cases —
+      // both read playerMesh.position the same way, so both need this.
+      // Y is only re-pinned for the perch/grip case: the fallback's Y is a
+      // flat increment on top of updateCreatureMesh's own terrain-based Y
+      // for this creature (not playerMesh-based), already applied once in
+      // updateCompanions with nothing stale about it — re-adding it here
+      // too would double it.
+      function updateShoulderPetMeshPin() {
+        for (const c of companionObjects) {
+          if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
+          if ((c.master || player) !== player) continue; // playerMesh only ever represents the real player
+          const perch = playerAttachmentAnchor('shoulderPerch');
+          const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+          if (perch && grip) {
+            const { dx, dz } = _shoulderPetOffsetXZ(perch, grip);
+            c.avatarRef.group.position.x = playerMesh.position.x + dx;
+            c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
+            c.avatarRef.group.position.z = playerMesh.position.z + dz;
+          } else {
+            const clingAngle = player.angle + Math.PI;
+            c.avatarRef.group.position.x = playerMesh.position.x + Math.cos(clingAngle) * 0.3;
+            c.avatarRef.group.position.z = playerMesh.position.z + Math.sin(clingAngle) * 0.3;
+          }
+        }
       }
 
       // With no `master` given, clears every companion (full reset/QA use —
@@ -33429,6 +33478,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
+        // Must run right after updatePlayerMesh, not folded into
+        // updateCompanions (called earlier, before it) — see
+        // updateShoulderPetMeshPin's own comment for why.
+        updateShoulderPetMeshPin();
         updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
