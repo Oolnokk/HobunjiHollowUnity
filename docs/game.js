@@ -8372,10 +8372,45 @@
         btnCallMount?.classList.toggle('active', mountRideState !== 'none');
         if (mountRideState === 'none') return;
         const m = mountRideEntity;
-        if (!m || m.health <= 0 || m.areaId !== currentArea) {
+        if (!m || m.health <= 0) {
           if (m) { despawnCreature(m); companionObjects.delete(m); }
           mountRideState = 'none'; mountRideEntity = null;
           return;
+        }
+        // An area transition (e.g. riding through the farm's town gate) can
+        // land mid-ride-transition, not just mid-'mounted'. The 'mounted'
+        // state's own area-change handling lives in updateMountedMovement
+        // (relocateMountForAreaChange), which only runs while
+        // mountRideState === 'mounted' (see updateMovement's early return) —
+        // every other phase here used to have no equivalent at all, so
+        // m.areaId went stale the instant the area changed. That used to
+        // just despawn the mount outright below (the old
+        // `m.areaId !== currentArea` branch of this same guard). Worse:
+        // mountingUp/dismountingDown's own lerp reads mountTransitionFromX/Y
+        // and (dismountingDown only) mountDismountTargetX/Y, both captured
+        // back when the transition began, in the OLD area's coordinate
+        // space — so on whichever frame actually got there first, either
+        // the mount vanished with no animation, or (if a couple of
+        // in-between frames won that race first) the rider kept getting
+        // dragged toward those stale old-area coordinates for the rest of
+        // the lerp even though enterTown/performTravel had already moved
+        // player.x/y into the new area — surfacing as the rider ending up
+        // standing at the old area's exit coordinates, just rendered in the
+        // new area's scene. Relocating (like the 'mounted' case already
+        // does) and rebasing the in-flight lerp's endpoints against the
+        // post-relocation, already-correct positions keeps the animation
+        // continuous across the boundary instead of losing the mount or the
+        // rider's position.
+        if (m.areaId !== currentArea) {
+          relocateMountForAreaChange(m);
+          if (mountRideState === 'mountingUp' || mountRideState === 'dismountingDown') {
+            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
+          }
+          if (mountRideState === 'dismountingDown') {
+            const sideAngle = mountAngle + Math.PI / 2;
+            mountDismountTargetX = m.x + Math.cos(sideAngle) * TILE * 0.6;
+            mountDismountTargetY = m.y + Math.sin(sideAngle) * TILE * 0.6;
+          }
         }
 
         if (mountRideState === 'rushingIn') {
