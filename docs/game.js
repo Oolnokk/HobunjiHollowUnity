@@ -8122,7 +8122,7 @@
             c.vx = 0; c.vy = 0;
             const perch = playerAttachmentAnchor('shoulderPerch');
             const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
-            let dx = null, dz = null;
+            let dx = null, dz = null, clingDx = null, clingDz = null;
             if (perch && grip) {
               const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
               const invGripYaw = -gripYawRad;
@@ -8137,8 +8137,10 @@
               c.facing = master.angle + gripYawRad;
             } else {
               const clingAngle = master.angle + Math.PI;
-              c.x = master.x + Math.cos(clingAngle) * TILE * 0.3;
-              c.y = master.y + Math.sin(clingAngle) * TILE * 0.3;
+              clingDx = Math.cos(clingAngle) * 0.3;
+              clingDz = Math.sin(clingAngle) * 0.3;
+              c.x = master.x + clingDx * TILE;
+              c.y = master.y + clingDz * TILE;
               c.facing = master.angle;
             }
             updateCreatureMesh(c, dt, c.facing);
@@ -8178,6 +8180,18 @@
               c.avatarRef.group.position.z = playerMesh.position.z + dz;
             } else {
               c.avatarRef.group.position.y += CHAR_SHOULDER_PERCENT_FALLBACK * (playerAvatarModelHeight || 0.9) - 2 * PET_GRIP_PERCENT_FALLBACK * c.halfHeight;
+              // Same fix as the rig-anchor branch above (see its own long
+              // comment): pin X/Z directly to playerMesh.position plus the
+              // same cling offset instead of leaving them to
+              // updateCreatureMesh's generic per-creature lerp. That lerp
+              // chases a target that moves every frame, so it visibly trails
+              // the master — worse the faster the master moves, converging
+              // back to the correct spot only once the master stops — and
+              // this fallback path (no authored shoulderPerch/shoulderGrip
+              // rig data for this species/creature pairing) had never gotten
+              // the direct-pin treatment the rig-anchor path already has.
+              c.avatarRef.group.position.x = playerMesh.position.x + clingDx;
+              c.avatarRef.group.position.z = playerMesh.position.z + clingDz;
             }
             continue;
           }
