@@ -27,6 +27,11 @@
   let RANGE_SCALE = 0.6;
   let LUNGE_SCALE = 1.5;
 
+  // Populated by attack-values.json through applyComboConfig below. Keeping
+  // the fallback empty means an unavailable config produces no override and
+  // the shared SFX pipeline retains its neutral pitch.
+  const SFX_PITCH_BY_STEP = [];
+
   // Short forward step layered under each combo swing's windup/strike — see
   // game.js's beginCombatLunge. Expressed as a TILE multiple (per-step
   // `lungeMul` below) so it scales with the game's tile size rather than a
@@ -123,7 +128,13 @@
       const t = now();
       if (t - lastTapAt > COMBO_RESET_S) comboIndex = 0;
       lastTapAt = t;
-      const step = steps[comboIndex % steps.length];
+      // Preserve the selected zero-based step before advancing the combo so
+      // strike-time consumers receive the identity/pitch of this attack,
+      // rather than the next attack in the sequence.
+      const comboStep = comboIndex % steps.length;
+      const step = steps[comboStep];
+      const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
+      const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
       comboIndex = (comboIndex + 1) % steps.length;
 
       // Every affliction this combo can inflict, and every stat bonus on top
@@ -201,7 +212,7 @@
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!deps.inCone(deps.player.x, deps.player.y, deps.player.angle, c.x, c.y, rangePx, halfConeRad)) continue;
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, { tag: dmgType, heavy: step.heavy, afflictionBonuses: effects.afflictions });
-            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId);
+            deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch);
             hits++;
             lastName = c.def.label;
           }
@@ -217,6 +228,7 @@
         },
         onComplete: () => { busyAction = null; },
         onCancel: () => { busyAction = null; },
+        data: { comboId: id, comboStep, sfxPitch },
       });
     }
 
@@ -237,7 +249,7 @@
   // Keyed by the same ability ids ('swingCombo'/'pokeCombo') a loadout slot
   // stores, not the raw step-array constant names, so a lookup by loadout
   // value works directly.
-  window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
+  window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, sfxPitchByStep: SFX_PITCH_BY_STEP, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
 
   // Applies docs/config/combat/attack-values.json's `combo` section (called
   // by combat-config-loader.js once it's fetched, after this module has
@@ -252,6 +264,7 @@
     if (!cfg) return;
     if (Array.isArray(cfg.swingCombo)) SWING_STEPS.splice(0, SWING_STEPS.length, ...cfg.swingCombo.map(s => ({ ...s, pose: SWEEP_POSE })));
     if (Array.isArray(cfg.pokeCombo)) POKE_STEPS.splice(0, POKE_STEPS.length, ...cfg.pokeCombo.map(s => ({ ...s })));
+    if (Array.isArray(cfg.sfxPitchByStep)) SFX_PITCH_BY_STEP.splice(0, SFX_PITCH_BY_STEP.length, ...cfg.sfxPitchByStep);
     if (cfg.RANGE_SCALE != null) RANGE_SCALE = cfg.RANGE_SCALE;
     if (cfg.LUNGE_SCALE != null) LUNGE_SCALE = cfg.LUNGE_SCALE;
     if (cfg.COMBO_RESET_S != null) COMBO_RESET_S = cfg.COMBO_RESET_S;

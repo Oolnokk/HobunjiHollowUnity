@@ -2179,8 +2179,8 @@
         playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
       }
 
-      function playWeaponSlashSfx() {
-        playOneShotSfx(combatSfxConfig().weaponSlash, 1, 1);
+      function playWeaponSlashSfx(pitch) {
+        playOneShotSfx(combatSfxConfig().weaponSlash, 1, pitch);
       }
 
       // Impact sound for any WEAPON hit landing (player Combo/Quick Attack/
@@ -2194,14 +2194,14 @@
       // works equally for a bandit attacker (which has all three already)
       // and the player attacker (which has no .areaId field of its own --
       // see combat-core.js's deps.getCurrentArea()).
-      function playWeaponHitSfx(tag, x, y, areaId) {
+      function playWeaponHitSfx(tag, x, y, areaId, pitch) {
         if (areaId !== currentArea) return;
         const cfgEntry = combatSfxConfig()[tag === 'blunt' ? 'weaponHitBlunt' : 'weaponHitSharp'];
         if (!cfgEntry) return;
         const distToPlayer = Math.hypot(x - player.x, y - player.y);
         if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
         const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-        playOneShotSfx(cfgEntry, falloff, 1);
+        playOneShotSfx(cfgEntry, falloff, pitch);
       }
 
       // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.

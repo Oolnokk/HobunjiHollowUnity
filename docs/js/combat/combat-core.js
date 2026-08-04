@@ -89,7 +89,11 @@
     // so this single choke point covers "every weapon strike" without each
     // ability module needing its own SFX call — future abilities registered
     // through beginStagedAction get the slash sound for free.
-    deps?.playWeaponSlashSfx?.();
+    // Combo actions can override pitch through their staged metadata. An
+    // absent override is intentionally forwarded as undefined so the audio
+    // helper's existing neutral-pitch default remains authoritative for
+    // quick/charged/flurry/counter and future staged attacks.
+    deps?.playWeaponSlashSfx?.(action.data?.sfxPitch);
     if (action.onStrike) action.onStrike(action);
   }
 
