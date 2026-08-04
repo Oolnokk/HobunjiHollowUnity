@@ -6,6 +6,9 @@
 
   const STORAGE_KEY    = 'hobunjiPlayerProfile';
   const SAVE_META_KEY  = 'hobunjiSaveMeta';
+  const SAVE_SELECT_CONFIG = window.SCRATCHBONES_CONFIG.game.saveSelect;
+  const DEFAULT_WORLD_NAME = SAVE_SELECT_CONFIG.defaultWorldName;
+  const WORLD_NAME_MAX_LENGTH = SAVE_SELECT_CONFIG.worldNameMaxLength;
 
   // ── Species / cosmetic slot definitions ──────────────────────────────────
   // Adapted from ScratchbonesGame BASE_SPECIES_DATA.
@@ -491,7 +494,7 @@
   function makeDefaultWorld(characterId) {
     const world = {
       id:                uid('world'),
-      label:             'Hobunji Hollow',
+      label:             DEFAULT_WORLD_NAME,
       ownerCharacterId:  characterId,
       farmhands:         [],   // [{ characterId, permissions }] — non-owner members with farm access grants
       members:           {},   // { [characterId]: memberState } — world-scoped data per character who has joined
@@ -885,7 +888,7 @@
           <button class="sl-world-card${w.id === _selWorldId ? ' sl-selected' : ''}" data-sl-world="${esc(w.id)}" type="button">
             <div class="sl-world-icon">🌿</div>
             <div class="sl-world-info">
-              <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}${owner ? '' : ' <span class="sl-world-role">(Farmhand)</span>'}</div>
+              <div class="sl-world-name">${esc(w.label || DEFAULT_WORLD_NAME)}${owner ? '' : ' <span class="sl-world-role">(Farmhand)</span>'}</div>
               <div class="sl-world-meta">Day ${w.lastDay ?? 1} · ${esc(w.lastSeason ?? '—')}</div>
               <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
             </div>
@@ -902,7 +905,7 @@
             <div class="sl-world-info">
               <div class="sl-world-name">New World</div>
               ${newWorldSelected
-                ? `<input type="text" id="slNewWorldName" class="sl-world-name-input" placeholder="Hobunji Hollow" value="${esc(_newWorldName)}" maxlength="40" />`
+                ? `<input type="text" id="slNewWorldName" class="sl-world-name-input" placeholder="${esc(DEFAULT_WORLD_NAME)}" value="${esc(_newWorldName)}" maxlength="${WORLD_NAME_MAX_LENGTH}" />`
                 : `<div class="sl-world-meta">Fresh start</div>`}
             </div>
           </div>
@@ -928,7 +931,7 @@
             <button class="sl-world-card sl-world-joinable" data-sl-world-join="${esc(w.id)}" type="button">
               <div class="sl-world-icon">🌿</div>
               <div class="sl-world-info">
-                <div class="sl-world-name">${esc(w.label || 'Hobunji Hollow')}</div>
+                <div class="sl-world-name">${esc(w.label || DEFAULT_WORLD_NAME)}</div>
                 <div class="sl-world-meta">${esc(owner?.nickname || 'Unknown')}'s farm · Day ${w.lastDay ?? 1}</div>
                 <div class="sl-world-date">${relDate(w.lastPlayed)}</div>
               </div>
@@ -996,7 +999,7 @@
       const worldId = btn.dataset.slWorldDelete;
       const world = (_saveMeta.worlds || []).find(w => w.id === worldId);
       if (!world) return;
-      if (!confirm(`Delete "${world.label || 'Hobunji Hollow'}"? This cannot be undone.`)) return;
+      if (!confirm(`Delete "${world.label || DEFAULT_WORLD_NAME}"? This cannot be undone.`)) return;
       _saveMeta.worlds = (_saveMeta.worlds || []).filter(w => w.id !== worldId);
       saveSaveMeta(_saveMeta);
       if (_selWorldId === worldId) _selWorldId = null;
@@ -1012,7 +1015,7 @@
       const worldId = btn.dataset.slWorldLeave;
       const world = (_saveMeta.worlds || []).find(w => w.id === worldId);
       if (!world) return;
-      if (!confirm(`Leave "${world.label || 'Hobunji Hollow'}"? You'll need a new invite to rejoin.`)) return;
+      if (!confirm(`Leave "${world.label || DEFAULT_WORLD_NAME}"? You'll need a new invite to rejoin.`)) return;
       removeFarmhand(world, _selCharId);
       if (world.members) delete world.members[_selCharId];
       saveSaveMeta(_saveMeta);
@@ -1151,7 +1154,7 @@
     let world, isNewWorld;
     if (_selWorldId === 'new' || (!_selWorldId && worlds.length === 0)) {
       world = makeDefaultWorld(char.id);
-      world.label = _newWorldName.trim() || 'Hobunji Hollow';
+      world.label = _newWorldName.trim() || DEFAULT_WORLD_NAME;
       _newWorldName = '';
       _saveMeta.worlds.push(world);
       isNewWorld = true;

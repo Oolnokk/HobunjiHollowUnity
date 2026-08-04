@@ -9271,22 +9271,24 @@
       // creation in onboarding.js) ────────────────────────────────────────
       function getFarmName() {
         const worldId = _tothalWorldId();
-        if (!worldId) return _playerData?.worldLabel || 'Hobunji Hollow';
+        const defaultWorldName = window.SCRATCHBONES_CONFIG.game.saveSelect.defaultWorldName;
+        if (!worldId) return _playerData?.worldLabel || defaultWorldName;
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.label || 'Hobunji Hollow';
-        } catch { return 'Hobunji Hollow'; }
+          return (meta?.worlds || []).find(w => w.id === worldId)?.label || defaultWorldName;
+        } catch { return defaultWorldName; }
       }
 
       function setFarmName(label) {
         const worldId = _tothalWorldId();
         const trimmed = String(label || '').trim();
+        const maxLength = window.SCRATCHBONES_CONFIG.game.saveSelect.worldNameMaxLength;
         if (!worldId || !trimmed) return;
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
           const world = (meta?.worlds || []).find(w => w.id === worldId);
           if (!world) return;
-          world.label = trimmed.slice(0, 40);
+          world.label = trimmed.slice(0, maxLength);
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
           if (_playerData) _playerData.worldLabel = world.label;
         } catch {}

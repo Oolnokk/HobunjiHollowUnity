@@ -12,6 +12,12 @@ window.SCRATCHBONES_CONFIG = {
   clothingLightOffset: 0,
 
   game: {
+    // Save-select world naming. Keep the persisted fallback and input limit in
+    // one place so onboarding and the in-game world label cannot drift apart.
+    "saveSelect": {
+      "defaultWorldName": "Hobunji Hollow",
+      "worldNameMaxLength": 40
+    },
     // Shared presentation settings for the Character Studio avatar editor.
     // Body-color ranges themselves remain species data under config/species.
     "avatarEditor": {
