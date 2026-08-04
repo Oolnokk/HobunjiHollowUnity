@@ -137,3 +137,15 @@
     deriveDoorLocal, resolveDoorEntrance, doorWorldFromBuilding, computeDefaultDoorLocal,
   };
 })(typeof window !== 'undefined' ? window : this);
+
+// The map editor needs repo-index-backed destination choices, but the live
+// game also loads this shared geometry module. Load the editor controller only
+// on the map-editor page so runtime building behavior remains untouched.
+if (typeof document !== 'undefined'
+    && /\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)
+    && !document.querySelector('script[data-map-editor-building-entrances]')) {
+  const script = document.createElement('script');
+  script.src = '../../js/map-editor-building-entrances.js';
+  script.dataset.mapEditorBuildingEntrances = '1';
+  document.head.appendChild(script);
+}
