@@ -11536,12 +11536,19 @@
         const comboData = window.Combat?.comboData;
         const steps = comboData?.[loadout.tap1];
         if (!steps || !steps.length) return false;
-        const step = steps[c._banditComboIndex % steps.length];
-        const isFinalStep = (c._banditComboIndex % steps.length) === steps.length - 1;
+        // Preserve the selected index before advancing, matching the player
+        // combo path. comboData's pitch array is updated in place by
+        // applyComboConfig, so the loaded attack-values config remains the
+        // authority for bandit mirrors of either combo family too.
+        const comboStep = c._banditComboIndex % steps.length;
+        const step = steps[comboStep];
+        const configuredPitch = comboData.sfxPitchByStep?.[comboStep];
+        const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
+        const isFinalStep = comboStep === steps.length - 1;
         // Landed-step tally for this combo cycle, reset at the opening step
         // -- see banditRetreatDurationS, which uses it to size the eventual
         // retreat to how much of the combo actually connected.
-        if (c._banditComboIndex % steps.length === 0) c._banditComboLandCount = 0;
+        if (comboStep === 0) c._banditComboLandCount = 0;
         c._banditComboIndex++;
         const base = banditAttackBaseline(def);
         const damage = Math.max(1, Math.round(base.damage * step.damageMul));
@@ -11575,7 +11582,7 @@
           // (on the final combo step) retreatT/resets comboIndex -- a
           // landing bandit attack was silently skipping its own cooldown
           // and never retreating after its 3-hit combo.
-          data: { isBandit: true },
+          data: { isBandit: true, comboId: loadout.tap1, comboStep, sfxPitch },
           onStrike: () => {
             c.telegraphState = 'strike';
             // c.facing, not the fire-time aimAngle local -- see
@@ -11591,7 +11598,7 @@
               // swing by combo family (sweep=blunt/thrust=sharp) regardless
               // of the equipped weapon's real material.
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch);
             }
           },
           onComplete: () => {
