@@ -13,12 +13,18 @@
 // so it runs unmodified in Node for the CLI checker and in the browser for
 // the live preview, and so it's directly unit-testable.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.TerrainPreview = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) {
+    require('../config/config.js');
+    module.exports = factory(globalThis.HOBUNJI_CONFIG);
+  } else root.TerrainPreview = factory(root.HOBUNJI_CONFIG);
+})(typeof self !== 'undefined' ? self : this, function (CONFIG) {
   'use strict';
 
-  const PLATEAU_UNIT = 2.5;
+  const TERRAIN_CONFIG = CONFIG?.terrain || {};
+  const PLATEAU_UNIT = TERRAIN_CONFIG.plateauVerticalUnit || 2.5;
+  const VISUAL_HEIGHT_MIN = TERRAIN_CONFIG.subtleHeightMin ?? -1;
+  const VISUAL_HEIGHT_MAX = TERRAIN_CONFIG.subtleHeightMax ?? 1;
+  const VISUAL_HEIGHT_DISPLACEMENT = TERRAIN_CONFIG.subtleHeightMaxDisplacement ?? PLATEAU_UNIT * 0.24;
   const NORMAL_TOP = 0.0;
   const RIVER_TOP = -0.55; // mirrors docs/game.js RIVER_TOP/STREAM_TOP — river/stream/waterfall bed depth
   const TRENCH_TOP = -0.5; // mirrors docs/game.js TRENCH_TOP
@@ -44,7 +50,24 @@
   // Mirrors docs/game.js mergeZoneTiles exactly (including the pinhole-fill
   // pass), generalized to take its two lookups as params instead of closing
   // over _loadTownFromWorkspace's locals.
-  function mergeZoneTilesInto(m, offsetC, offsetR, baseTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings) {
+  function mergeZoneTilesInto(m, offsetC, offsetR, baseTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings, outVisualHeights) {
+    // Recursion visits parents before children. A child map owns its complete
+    // rectangular extent, so sparse absence there means an authoritative zero,
+    // not "inherit the parent value". Clear first, then stamp nonzero entries.
+    if (m.isSubmap) {
+      for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+        outVisualHeights.delete(`${c + offsetC},${r + offsetR}`);
+      }
+    }
+    for (const [key, raw] of Object.entries(m.visualHeights || {})) {
+      const match = /^(\d+),(\d+)$/.exec(key);
+      if (!match || !Number.isFinite(raw)) continue;
+      const c = Number(match[1]), r = Number(match[2]);
+      if (c >= m.cols || r >= m.rows) continue;
+      const value = Math.max(VISUAL_HEIGHT_MIN, Math.min(VISUAL_HEIGHT_MAX, raw));
+      const worldKey = `${c + offsetC},${r + offsetR}`;
+      if (value === 0) outVisualHeights.delete(worldKey); else outVisualHeights.set(worldKey, value);
+    }
     const groupMask = new Map();
     for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
       const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
@@ -168,7 +191,7 @@
     }
 
     for (const { child, childOffsetC, childOffsetR, toTier } of children) {
-      mergeZoneTilesInto(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings);
+      mergeZoneTilesInto(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings, outVisualHeights);
     }
   }
 
@@ -179,8 +202,8 @@
     const maps = ws.maps || [];
     const mapsById = new Map(maps.map(m => [m.id, m]));
     const rootMap = mapsById.get(rootMapId);
-    const outTiles = new Map(), mesas = [], outBuildings = [];
-    if (!rootMap) return { cols: 0, rows: 0, tiles: outTiles, mesas, rootMap: null, buildings: outBuildings };
+    const outTiles = new Map(), visualHeights = new Map(), mesas = [], outBuildings = [];
+    if (!rootMap) return { cols: 0, rows: 0, tiles: outTiles, visualHeights, mesas, rootMap: null, buildings: outBuildings };
 
     const childByParentGroup = new Map();
     for (const m of maps) {
@@ -190,13 +213,13 @@
     }
     const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
 
-    mergeZoneTilesInto(rootMap, 0, 0, 0, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings);
+    mergeZoneTilesInto(rootMap, 0, 0, 0, outTiles, mesas, childByParentGroup, plateauElevById, outBuildings, visualHeights);
     for (const b of outBuildings) {
       const t = outTiles.get(`${b.gridX},${b.gridZ}`);
       b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);
       delete b._baseTier;
     }
-    return { cols: rootMap.cols, rows: rootMap.rows, tiles: outTiles, mesas, rootMap, buildings: outBuildings };
+    return { cols: rootMap.cols, rows: rootMap.rows, tiles: outTiles, visualHeights, mesas, rootMap, buildings: outBuildings };
   }
 
   // ── zGrid: dense [r][c] grid buildPlateauMesa/ramp geometry reads ──────────
@@ -206,7 +229,7 @@
   // exactly like the real zone scene does.
   function buildZGrid(cols, rows, tiles) {
     const zGrid = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => ({ type: TileType.GRASS, elevTier: 0, skipFloor: false, incline: false, rampElevation: 0 })));
+      Array.from({ length: cols }, () => ({ type: TileType.GRASS, elevTier: 0, skipFloor: false, incline: false, rampElevation: 0, visualHeight: 0 })));
     for (const t of tiles.values()) {
       if (!zGrid[t.r]?.[t.c]) continue;
       zGrid[t.r][t.c].type = t.type || TileType.GRASS;
@@ -216,6 +239,40 @@
       if (t.type === TileType.RAMP) zGrid[t.r][t.c].rampElevation = t.rampElevation || 0;
     }
     return zGrid;
+  }
+
+  // Values are authored at tile centers. Missing cells and samples beyond the
+  // root boundary are deterministically zero; this makes sparse edges taper to
+  // the undisplaced surface instead of extending an implicit plateau.
+  function sampleVisualHeight(visualHeights, worldX, worldZ, cols = Infinity, rows = Infinity) {
+    const x = worldX - 0.5, z = worldZ - 0.5;
+    const c0 = Math.floor(x), r0 = Math.floor(z), tx = x - c0, tz = z - r0;
+    const valueAt = (c, r) => {
+      if (c < 0 || r < 0 || c >= cols || r >= rows) return 0;
+      const raw = visualHeights instanceof Map ? visualHeights.get(`${c},${r}`) : visualHeights?.[`${c},${r}`];
+      return Number.isFinite(raw) ? Math.max(VISUAL_HEIGHT_MIN, Math.min(VISUAL_HEIGHT_MAX, raw)) : 0;
+    };
+    const a = valueAt(c0, r0) * (1 - tx) + valueAt(c0 + 1, r0) * tx;
+    const b = valueAt(c0, r0 + 1) * (1 - tx) + valueAt(c0 + 1, r0 + 1) * tx;
+    return Math.max(VISUAL_HEIGHT_MIN, Math.min(VISUAL_HEIGHT_MAX, a * (1 - tz) + b * tz)) * VISUAL_HEIGHT_DISPLACEMENT;
+  }
+
+  function displaceGeometryPositions(pos, visualHeights, cols, rows) {
+    for (let i = 0; i < pos.length; i += 3) pos[i + 1] += sampleVisualHeight(visualHeights, pos[i], pos[i + 2], cols, rows);
+    return pos;
+  }
+
+  function diffSparseCoordinateField(current = {}, baseline = {}) {
+    const set = {}, removed = [];
+    const keys = new Set([...Object.keys(current || {}), ...Object.keys(baseline || {})]);
+    for (const key of keys) {
+      const hasCurrent = Object.prototype.hasOwnProperty.call(current, key);
+      const hasBaseline = Object.prototype.hasOwnProperty.call(baseline, key);
+      if (!hasCurrent && hasBaseline) removed.push(key);
+      else if (hasCurrent && (!hasBaseline || current[key] !== baseline[key])) set[key] = current[key];
+    }
+    removed.sort();
+    return Object.keys(set).length || removed.length ? { set, removed } : null;
   }
 
   function applyRampCurtainFlags(zGrid, cols, rows) {
@@ -922,6 +979,21 @@
 
   function validateTerrain(ws, rootMapId) {
     const issues = [];
+    const maxDelta = TERRAIN_CONFIG.subtleHeightMaxNeighborDelta ?? (VISUAL_HEIGHT_MAX - VISUAL_HEIGHT_MIN);
+    for (const m of (ws.maps || [])) {
+      for (const [key, value] of Object.entries(m.visualHeights || {})) {
+        const match = /^(0|[1-9]\d*),(0|[1-9]\d*)$/.exec(key);
+        if (!match) { issues.push({ severity:'error', code:'VISUAL_HEIGHT_KEY', mapId:m.id, message:`Malformed visualHeights key "${key}".` }); continue; }
+        const c=Number(match[1]), r=Number(match[2]);
+        if (c>=m.cols || r>=m.rows) issues.push({ severity:'error', code:'VISUAL_HEIGHT_BOUNDS', mapId:m.id, message:`visualHeights cell ${key} is outside ${m.cols}x${m.rows}.` });
+        if (!Number.isFinite(value)) issues.push({ severity:'error', code:'VISUAL_HEIGHT_FINITE', mapId:m.id, message:`visualHeights cell ${key} is not finite.` });
+        else if (value<VISUAL_HEIGHT_MIN || value>VISUAL_HEIGHT_MAX) issues.push({ severity:'error', code:'VISUAL_HEIGHT_LIMIT', mapId:m.id, message:`visualHeights cell ${key} exceeds configured limits.` });
+        for (const [dc,dr] of [[1,0],[0,1]]) {
+          const neighbor=m.visualHeights?.[`${c+dc},${r+dr}`] || 0;
+          if (Number.isFinite(value) && Math.abs(value-neighbor)>maxDelta) issues.push({ severity:'error', code:'VISUAL_HEIGHT_DISCONTINUITY', mapId:m.id, message:`visualHeights edge at ${key} violates the no-cliff delta.` });
+        }
+      }
+    }
     const maps = ws.maps || [];
     const groupsById = new Map((ws.plateauGroups || []).map(g => [g.id, g]));
     const mapsById = new Map(maps.map(m => [m.id, m]));
@@ -1015,7 +1087,8 @@
   }
 
   return {
-    PLATEAU_UNIT, NORMAL_TOP, TileType,
+    PLATEAU_UNIT, NORMAL_TOP, VISUAL_HEIGHT_MIN, VISUAL_HEIGHT_MAX, VISUAL_HEIGHT_DISPLACEMENT, TileType,
+    sampleVisualHeight, displaceGeometryPositions, diffSparseCoordinateField,
     buildMergedZoneGrid, buildZGrid, applyRampCurtainFlags,
     buildPlateauMesaGeometry, buildRampMeshGeometry, buildRampCurtainGeometry,
     buildRockSourceSpans, buildRockFormationGeometry, validateRockFormationGeometry,
