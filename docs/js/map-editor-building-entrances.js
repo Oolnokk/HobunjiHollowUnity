@@ -9,12 +9,37 @@
   const FOCUS_KEY = 'hobunji_map_editor_building_entrance_focus_v1';
   const STYLE_ID = 'mapEditorBuildingEntranceStyles';
   const PANEL_CLASS = 'mapEditorBuildingEntranceEditor';
+  const MAP_INDEX_URL = '../../config/maps/index.json';
   let renderTimer = 0;
   let lastError = '';
+  let repoInteriorMaps = [];
+  let repoIndexState = 'loading';
 
   const esc = value => String(value ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  function isInterior(mapId) {
+    return String(mapId || '').startsWith('map_i_');
+  }
+
+  async function loadRepoInteriorIndex() {
+    repoIndexState = 'loading';
+    try {
+      const response = await fetch(MAP_INDEX_URL, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const index = await response.json();
+      repoInteriorMaps = (index.maps || [])
+        .filter(map => map && map.id && (map.category === 'building_interior' || isInterior(map.id)))
+        .map(map => ({ id: map.id, name: map.name || map.id, category: map.category || 'building_interior', file: map.file || '' }));
+      repoIndexState = 'ready';
+      lastError = '';
+    } catch (error) {
+      repoIndexState = 'failed';
+      lastError = `Interior map index failed to load: ${error.message}`;
+    }
+    scheduleRender(0);
+  }
 
   function readWorkspace() {
     try {
@@ -36,10 +61,6 @@
 
   function linkedTransition(map, buildingId) {
     return (map?.transitions || []).find(transition => transition.buildingId === buildingId) || null;
-  }
-
-  function isInterior(mapId) {
-    return String(mapId || '').startsWith('map_i_');
   }
 
   function isAssigned(transition) {
@@ -102,20 +123,45 @@
     document.head.appendChild(style);
   }
 
+  function allDestinationMaps(workspace, currentMap) {
+    const byId = new Map();
+    // Workspace entries retain their full transitions[] for non-interior targets.
+    for (const map of workspace.maps || []) {
+      if (map?.id && map.id !== currentMap.id) byId.set(map.id, map);
+    }
+    // Repo index entries guarantee every authored map_i_* interior is offered,
+    // even after Load Town replaces the editor workspace or before those maps
+    // finish loading into it.
+    for (const map of repoInteriorMaps) {
+      if (map.id !== currentMap.id && !byId.has(map.id)) byId.set(map.id, map);
+    }
+    return Array.from(byId.values());
+  }
+
   function destinationOptions(workspace, currentMap, selectedId) {
-    const candidates = workspace.maps.filter(map => map.id !== currentMap.id);
-    const interiors = candidates.filter(map => isInterior(map.id) || map.category === 'building_interior');
-    const others = candidates.filter(map => !interiors.includes(map));
+    const candidates = allDestinationMaps(workspace, currentMap);
+    const interiors = candidates
+      .filter(map => isInterior(map.id) || map.category === 'building_interior')
+      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+    const others = candidates
+      .filter(map => !interiors.includes(map))
+      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
     const options = maps => maps.map(map =>
       `<option value="${esc(map.id)}" ${map.id === selectedId ? 'selected' : ''}>${esc(map.name || map.id)}</option>`
     ).join('');
     let html = '<option value="">— No destination —</option>';
-    if (interiors.length) html += `<optgroup label="Building interiors">${options(interiors)}</optgroup>`;
-    if (others.length) html += `<optgroup label="Other maps">${options(others)}</optgroup>`;
+    if (interiors.length) html += `<optgroup label="All repo interiors (${interiors.length})">${options(interiors)}</optgroup>`;
+    if (others.length) html += `<optgroup label="Other loaded maps">${options(others)}</optgroup>`;
     if (selectedId && !candidates.some(map => map.id === selectedId)) {
       html += `<option value="${esc(selectedId)}" selected>[Missing] ${esc(selectedId)}</option>`;
     }
     return html;
+  }
+
+  function destinationMapById(workspace, mapId) {
+    return workspace.maps.find(map => map.id === mapId)
+      || repoInteriorMaps.find(map => map.id === mapId)
+      || null;
   }
 
   function focusBuilding(buildingId) {
@@ -160,7 +206,8 @@
     const building = (map.buildings || []).find(candidate => candidate.id === buildingId);
     const transition = linkedTransition(map, buildingId);
     const signature = [map.id, buildingId, transition?.targetMapId || '', transition?.targetSpotId || '',
-      workspace.maps.map(candidate => `${candidate.id}:${(candidate.transitions || []).length}`).join('|'), lastError].join('::');
+      workspace.maps.map(candidate => `${candidate.id}:${(candidate.transitions || []).length}`).join('|'),
+      repoIndexState, repoInteriorMaps.length, lastError].join('::');
     if (box.querySelector(`.${PANEL_CLASS}`) && box.dataset.mebeSignature === signature) return;
     box.dataset.mebeSignature = signature;
 
@@ -171,7 +218,7 @@
       return;
     }
 
-    const targetMap = workspace.maps.find(candidate => candidate.id === transition.targetMapId) || null;
+    const targetMap = destinationMapById(workspace, transition.targetMapId);
     const automaticArrival = isInterior(transition.targetMapId);
     const assigned = (map.buildings || []).filter(candidate => isAssigned(linkedTransition(map, candidate.id))).length;
     const next = nextUnassigned(map, buildingId);
@@ -181,13 +228,19 @@
         ? `<div class="mebeAuto">Arrival is automatic at <b>${esc(targetMap?.name || transition.targetMapId)}</b>'s Front Door exit zone.</div>`
         : `<div><label>Arrive at</label><select data-mebe-spot><option value="">— Choose an arrival spot —</option>${(targetMap?.transitions || []).map(spot => `<option value="${esc(spot.id)}" ${spot.id === transition.targetSpotId ? 'selected' : ''}>${esc(spot.label || spot.id)}</option>`).join('')}</select></div>`;
 
+    const indexMessage = repoIndexState === 'loading'
+      ? 'Loading the repo interior index…'
+      : repoIndexState === 'failed'
+        ? lastError
+        : `${repoInteriorMaps.length} repo interiors available, including floors and private rooms.`;
+
     box.innerHTML = `<div class="${PANEL_CLASS}">
       <div class="mebeSummary"><span class="pill">${assigned}/${(map.buildings || []).length} entrances assigned</span><button class="sec" data-mebe-next ${next ? '' : 'disabled'}>${next ? 'Next unassigned' : 'All assigned'}</button></div>
-      <div><label>Destination map</label><select data-mebe-map>${destinationOptions(workspace, map, transition.targetMapId || '')}</select></div>
+      <div><label>Destination map</label><select data-mebe-map ${repoIndexState === 'loading' ? 'disabled' : ''}>${destinationOptions(workspace, map, transition.targetMapId || '')}</select></div>
       ${arrival}
-      <div class="mebeRow">${transition.targetMapId ? '<button class="bad" data-mebe-clear>Clear destination</button>' : ''}<button class="sec" data-mebe-refresh>Refresh destinations</button></div>
-      <div class="mebeStatus ${lastError ? 'mebeError' : ''}" data-mebe-status>${esc(lastError || 'Entrance changes save to this browser’s map-editor workspace.')}</div>
-      <details><summary>Entrance debug</summary><code>map=${esc(map.id)} · building=${esc(buildingId)} · transition=${esc(transition.id || 'missing')} · target=${esc(transition.targetMapId || 'none')} · maps=${workspace.maps.length}</code></details>
+      <div class="mebeRow">${transition.targetMapId ? '<button class="bad" data-mebe-clear>Clear destination</button>' : ''}<button class="sec" data-mebe-refresh>Reload interior index</button></div>
+      <div class="mebeStatus ${repoIndexState === 'failed' || lastError ? 'mebeError' : ''}" data-mebe-status>${esc(indexMessage)}</div>
+      <details><summary>Entrance debug</summary><code>map=${esc(map.id)} · building=${esc(buildingId)} · transition=${esc(transition.id || 'missing')} · target=${esc(transition.targetMapId || 'none')} · workspaceMaps=${workspace.maps.length} · indexedInteriors=${repoInteriorMaps.length}</code></details>
     </div>`;
 
     const status = box.querySelector('[data-mebe-status]');
@@ -201,7 +254,7 @@
     });
     box.querySelector('[data-mebe-clear]')?.addEventListener('click', () => saveDestination(map.id, buildingId, '', '', status));
     box.querySelector('[data-mebe-next]')?.addEventListener('click', () => { if (next) focusBuilding(next.id); });
-    box.querySelector('[data-mebe-refresh]')?.addEventListener('click', () => { lastError = ''; box.dataset.mebeSignature = ''; scheduleRender(0); });
+    box.querySelector('[data-mebe-refresh]')?.addEventListener('click', () => loadRepoInteriorIndex());
   }
 
   function scheduleRender(delay = 40) {
@@ -216,13 +269,15 @@
     }, true);
     window.MapEditorBuildingEntrances = {
       refresh: () => scheduleRender(0),
+      reloadIndex: () => loadRepoInteriorIndex(),
       debugSnapshot: () => {
         const workspace = readWorkspace();
         const map = activeMap(workspace);
         const buildingId = selectedBuildingId();
-        return { mapId: map?.id || null, buildingId, transition: linkedTransition(map, buildingId), mapCount: workspace?.maps?.length || 0, lastError };
+        return { mapId: map?.id || null, buildingId, transition: linkedTransition(map, buildingId), workspaceMapCount: workspace?.maps?.length || 0, indexedInteriorCount: repoInteriorMaps.length, repoIndexState, lastError };
       },
     };
+    loadRepoInteriorIndex();
     scheduleRender(0);
   }
 
