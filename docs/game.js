@@ -6752,6 +6752,14 @@
         // baked mesh orientation.
         if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
         corpseObjects.add(c);
+        // This transition is the sole alive -> dead edge. The entity guard
+        // makes camp releases exactly-once even if a future caller invokes
+        // beginCreatureDeath redundantly; damage/corpse frame updates do not
+        // own reinforcement behavior.
+        if (c.isBandit && !c._banditCampDeathHandled) {
+          c._banditCampDeathHandled = true;
+          releaseBanditsAfterCampDeath(c);
+        }
       }
 
       // Turns accumulated for one axis by time-progress t: whole turns from
@@ -7028,7 +7036,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
-        _banditTentHoldT = 0; // ...and a bandit-tent loot/burn, same reasoning
+        resetBanditTentInteraction(); // ...and both bandit-tent timers
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
         else player.health = Math.max(0, player.health - amount);
         if (player.health > 0) {
@@ -11258,11 +11266,11 @@
         };
       }
 
-      function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
+      function makeBanditDef(cfg, rank, tier, mastery, modelWidth, rolledEquipment) {
         const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
         const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
         const statMul = weaken * tierMul;
-        const weapon = banditWeaponFor(cfg, rank, tier);
+        const weapon = rolledEquipment?.weapon || banditWeaponFor(cfg, rank, tier);
         const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
         const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
         return {
@@ -11279,7 +11287,7 @@
           attackCooldownS: rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER,
           attackTag: weapon.dmgType,
           weaponKey: weapon.weaponKey,
-          banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
+          banditAbilityLoadout: rolledEquipment?.abilityLoadout || banditAbilityLoadout(weapon.shapeKey, held),
           aiType: 'vigilantProtector',
           aggroRangePx: TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
           leashRangePx: TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
@@ -12540,7 +12548,9 @@
       }
 
       async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-        const roster = await rollBanditRoster(cfg, rank, opts.nameOverride);
+        // Delayed camp reinforcements arrive with a fully rolled roster record;
+        // never reroll their face, name, clothing, weapon, or abilities here.
+        const roster = opts.rosterRecord || await rollBanditRoster(cfg, rank, opts.nameOverride);
         const avatarRef = await buildBanditAvatar(roster);
         if (!avatarRef) {
           window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
@@ -12555,8 +12565,8 @@
           avatarRef.dispose();
           return null;
         }
-        const mastery = banditMasteryFor(cfg, rank, tier);
-        const def = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+        const mastery = roster.mastery ?? banditMasteryFor(cfg, rank, tier);
+        const def = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth, roster.equipment);
         const targetScene = opts.scene || getActiveScene();
         const targetGrid = opts.grid || getActiveGrid();
         const gridCols = opts.cols || getActiveCols();
@@ -12850,8 +12860,10 @@
 
       // ── Camp lifecycle ────────────────────────────────────────────────
 
-      // zoneId -> [{ zoneId, instance, tier, gangIds: Set<creatureId>,
-      //              props: [stamped tent/decor objects] }]
+      // Each camp owns fully rolled roster records. tents is keyed by stamped
+      // tent id and owns queued records, active ids, and burn timing; reserve
+      // explicitly retains records whose asynchronous construction outlived
+      // their tent/zone. pendingSpawns counts construction promises.
       const _banditCampInstances = new Map();
       // Zones the player has just (re-)entered; consumed by
       // ensureCurrentZoneBanditCamps so a cleared camp only ever re-rolls
@@ -12878,10 +12890,77 @@
         const view = _banditZoneViews.get(rec.zoneId);
         if (!view) return false;
         if (window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
+        if (rec.reserve?.length || rec.pendingSpawns?.size) return false;
+        for (const state of rec.tents?.values?.() || []) {
+          if (state.queued.length || state.activeMemberIds.size) return false;
+        }
         for (const c of hostileObjects) {
           if (c.banditCampInstanceId === rec.instance.id && c.health > 0) return false;
         }
         return true;
+      }
+
+      function banditCampRecord(zoneId, instanceId) {
+        return (_banditCampInstances.get(zoneId) || []).find(r => r.instance.id === instanceId) || null;
+      }
+
+      function takeEligibleBandit(queue) {
+        if (!queue?.length) return null;
+        const preferred = queue.map((r, i) => ({ r, i })).filter(x => x.r.rank !== 'captain');
+        const pool = preferred.length ? preferred : queue.map((r, i) => ({ r, i }));
+        const picked = pool[Math.floor(rnd() * pool.length)];
+        return queue.splice(picked.i, 1)[0];
+      }
+
+      async function spawnQueuedBandit(rec, tentState, roster) {
+        if (!rec || !roster) return null;
+        roster.sourceTentId = tentState.tent.id;
+        rec.pendingSpawns.add(roster);
+        const center = banditTentCenterPx(tentState.tent);
+        const offsetTiles = Number(rec.cfg?.reinforcements?.spawnOffsetTiles ?? 0);
+        // Stable per-roster angle avoids overlap without consuming another
+        // random character roll at release time.
+        const angle = ((roster.rosterIndex || 0) * 2.399963229728653) % (Math.PI * 2);
+        const x = center.x + Math.cos(angle) * offsetTiles * TILE;
+        const y = center.y + Math.sin(angle) * offsetTiles * TILE;
+        const c = await makeBanditEntity(rec.cfg, roster.rank, rec.tier, x, y, {
+          zoneId: rec.zoneId, rosterRecord: roster,
+          extra: { homeX: center.x, homeY: center.y, banditCampInstanceId: rec.instance.id, banditSourceTentId: tentState.tent.id, state: 'idle' },
+        });
+        rec.pendingSpawns.delete(roster);
+        // Construction can finish after travel or after the tent was burned.
+        // Keep the already-rolled person in an explicit reserve; never drop it.
+        if (!c) { rec.reserve.push(roster); return null; }
+        hostileObjects.add(c);
+        rec.gangIds.add(c.id);
+        tentState.activeMemberIds.add(c.id);
+        return c;
+      }
+
+      function releaseFromTent(rec, tentState, count) {
+        if (!rec || !tentState || tentState.tent.destroyed) return 0;
+        let released = 0;
+        while (released < count) {
+          const roster = takeEligibleBandit(tentState.queued);
+          if (!roster) break;
+          spawnQueuedBandit(rec, tentState, roster).catch(e => {
+            rec.pendingSpawns.delete(roster); rec.reserve.push(roster);
+            debugLog('Bandits: reinforcement build failed: ' + e.message, 'warn');
+          });
+          released++;
+        }
+        return released;
+      }
+
+      function releaseBanditsAfterCampDeath(c) {
+        const rec = banditCampRecord(c.areaId, c.banditCampInstanceId);
+        if (!rec) return;
+        rec.gangIds.delete(c.id);
+        rec.tents.get(c.banditSourceTentId)?.activeMemberIds.delete(c.id);
+        const count = Math.max(0, Number(rec.cfg?.reinforcements?.releasedPerTentAfterDeath ?? 0));
+        for (const state of rec.tents.values()) {
+          if (!state.tent.destroyed) releaseFromTent(rec, state, count);
+        }
       }
 
       // Location title card ("<Captain>'s Bandit Camp") when the player
@@ -13016,7 +13095,8 @@
         }
       }
 
-      // Stamps one camp into an already-generated zone and spawns its gang.
+      // Stamps one camp, rolls its complete gang up front, assigns those
+      // records to tents, then stages only the configured initial grunts.
       // Returns the TemporaryLocales instance record, or null if the zone had
       // no room for the footprint.
       async function spawnBanditCamp(zoneId, localeDef, cfg) {
@@ -13058,10 +13138,11 @@
           && (_banditCampInstances.get(zoneId) || []).some(r => r.captainName === bountyPin.captainName);
         const pinThisCamp = bountyPin && !alreadyHasPinnedCaptain;
         const tier = pinThisCamp ? bountyPin.tier : banditTierForSite(cfg, view, instance.site);
-        const rec = {
-          zoneId, instance, tier, gangIds: new Set(),
-          props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
-        };
+        const props = view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id);
+        const tents = props.filter(o => o.type === 'tent');
+        const rec = { zoneId, instance, tier, cfg, gangIds: new Set(), props,
+          tents: new Map(tents.map(tent => [tent.id, { tent, queued: [], activeMemberIds: new Set(), burnReleaseAccumS: 0 }])),
+          reserve: [], pendingSpawns: new Set() };
         const tracked = _banditCampInstances.get(zoneId) || [];
         tracked.push(rec);
         _banditCampInstances.set(zoneId, tracked);
@@ -13070,38 +13151,45 @@
         const comp = cfg?.gangComposition || {};
         const grunts = (comp.gruntsMin ?? 3) + Math.floor(rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
         const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
-        const roster = [
+        const ranks = [
           ...Array(grunts).fill('grunt'),
           ...Array(lieutenants).fill('lieutenant'),
           ...Array(comp.captains ?? 1).fill('captain'),
         ];
-        // Camp centre in world pixels -- the same homeX/homeY + angle/distance
-        // scatter spawnPackAtDen uses around a den's footprint.
-        const homeX = (instance.site.x + instance.site.w / 2) * TILE;
-        const homeY = (instance.site.y + instance.site.h / 2) * TILE;
-        let spawned = 0;
-        for (const rank of roster) {
-          if (zoneId !== currentArea) break; // player left mid-build; the next visit re-seeds
-          const angle = rnd() * Math.PI * 2;
-          const dist = TILE * (1.0 + rnd() * 2.6);
-          const c = await makeBanditEntity(cfg, rank, tier, homeX + Math.cos(angle) * dist, homeY + Math.sin(angle) * dist, {
-            zoneId,
-            extra: { homeX, homeY, banditCampInstanceId: instance.id, state: 'idle' },
-            nameOverride: (pinThisCamp && rank === 'captain') ? bountyPin.captainName : undefined,
-          });
-          if (!c) continue;
-          hostileObjects.add(c);
-          rec.gangIds.add(c.id);
-          spawned++;
-          // _banditName(rank) only appends a surname for rank==='captain'
-          // (see its own comment), so c.name is already the captain's full
-          // "First Last" -- captured here for the camp-entry title banner
-          // (updateBanditCampBanners) rather than re-deriving it. First
-          // captain found wins if gangComposition.captains is ever >1.
-          if (rank === 'captain' && !rec.captainName) rec.captainName = c.name;
+        const roster = [];
+        for (let i = 0; i < ranks.length; i++) {
+          const rank = ranks[i];
+          const rolled = await rollBanditRoster(cfg, rank, (pinThisCamp && rank === 'captain') ? bountyPin.captainName : undefined);
+          const mastery = banditMasteryFor(cfg, rank, tier);
+          const weapon = banditWeaponFor(cfg, rank, tier);
+          rolled.rank = rank; rolled.rosterIndex = i; rolled.mastery = mastery;
+          rolled.equipment = { weapon, abilityLoadout: banditAbilityLoadout(weapon.shapeKey, Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0)) };
+          roster.push(rolled);
+          if (rank === 'captain' && !rec.captainName) rec.captainName = rolled.name;
         }
-        window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${spawned}/${roster.length} gang members spawned.`, 'wildlife');
-        if (spawned > 0 && zoneId === currentArea) showToast('Smoke on the wind — a bandit camp is nearby.', false);
+        if (tents.length) roster.forEach((member, i) => rec.tents.get(tents[i % tents.length].id).queued.push(member));
+        else rec.reserve.push(...roster);
+        const initialCount = Math.max(0, Number(cfg?.reinforcements?.initialActiveGruntCount ?? 0));
+        let staged = 0;
+        for (const state of rec.tents.values()) {
+          while (staged < initialCount) {
+            const idx = state.queued.findIndex(r => r.rank === 'grunt');
+            if (idx < 0) break;
+            const member = state.queued.splice(idx, 1)[0];
+            await spawnQueuedBandit(rec, state, member);
+            staged++;
+          }
+          if (staged >= initialCount) break;
+        }
+        // Deterministic malformed-config fallback: stage the first assigned
+        // record only, never the whole gang, when no grunt exists.
+        if (!staged && initialCount > 0) {
+          const state = rec.tents.values().next().value;
+          const member = state?.queued.shift();
+          if (member) { await spawnQueuedBandit(rec, state, member); staged = 1; }
+        }
+        window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${staged}/${roster.length} initially active.`, 'wildlife');
+        if (staged > 0 && zoneId === currentArea) showToast('Smoke on the wind — a bandit camp is nearby.', false);
         return instance;
       }
 
@@ -13172,6 +13260,19 @@
           return;
         }
         ensureBanditCampMeshes(zoneId);
+        for (const rec of (_banditCampInstances.get(zoneId) || [])) {
+          const living = [...rec.tents.values()].filter(s => !s.tent.destroyed);
+          while (rec.reserve.length) {
+            const roster = rec.reserve.shift();
+            const state = living[0] || rec.tents.get(roster.sourceTentId) || rec.tents.values().next().value;
+            if (!state) { rec.reserve.unshift(roster); break; }
+            if (living.length) state.queued.push(roster);
+            else spawnQueuedBandit(rec, state, roster).catch(e => {
+              rec.pendingSpawns.delete(roster); rec.reserve.push(roster);
+              debugLog('Bandits: reserve build failed: ' + e.message, 'warn');
+            });
+          }
+        }
         if (!reentered) return;
         const cleared = (_banditCampInstances.get(zoneId) || []).filter(isBanditCampCleared);
         if (!cleared.length) return;
@@ -13190,14 +13291,16 @@
       // rather than the nest's one, and they're sequential rather than a menu:
       // the first completed hold LOOTS it (grants the tent's supplies and
       // clears interactable.lootable, leaving the tent standing), the second
-      // BURNS it (no loot, tent removed from the world). That keeps the nest's
-      // one-action-when-near UX exactly as-is while making both authored
-      // interactable flags meaningful, and means clearing a camp always
-      // requires burning every tent out rather than just rifling through them.
+      // BURNS it. Camps initially stage only their configured grunt count;
+      // deaths release defenders from every living tent, while holding a burn
+      // periodically releases defenders assigned specifically to that tent.
+      // Burn completion drains that tent before removing it, so no roster
+      // record is silently erased with the geometry.
       const BANDIT_TENT_HOLD_S = 4;
       const BANDIT_TENT_NEAR_PX = TILE * 1.7;
       let _banditTentHoldT = 0;
       let _banditTentHoldId = null;
+      let _banditTentBurnReleaseAccumS = 0;
       const _tentActionHudEl = document.getElementById('tentActionHud');
       const _tentActionLabelEl = document.getElementById('tentActionLabel');
       const _tentActionFillEl = document.getElementById('tentActionFill');
@@ -13224,7 +13327,27 @@
           : 'Nothing worth taking in the tent.', true);
       }
 
+      function resetBanditTentInteraction() {
+        if (_banditTentHoldId) {
+          for (const camps of _banditCampInstances.values()) {
+            for (const rec of camps) {
+              const state = rec.tents?.get(_banditTentHoldId);
+              if (state) state.burnReleaseAccumS = 0;
+            }
+          }
+        }
+        _banditTentHoldT = 0;
+        _banditTentHoldId = null;
+        _banditTentBurnReleaseAccumS = 0;
+      }
+
       function burnBanditTent(zoneId, obj) {
+        const rec = banditCampRecord(zoneId, obj.temporaryLocaleInstanceId);
+        const state = rec?.tents.get(obj.id);
+        // Resolve every occupant before destroying its assigned tent. Any
+        // build that finishes after zone travel is retained by spawnQueuedBandit
+        // in rec.reserve rather than silently discarded.
+        if (state) releaseFromTent(rec, state, state.queued.length);
         obj.destroyed = true;
         if (obj.interactable) { obj.interactable.lootable = false; obj.interactable.burnable = false; }
         const view = _banditZoneViews.get(zoneId);
@@ -13249,25 +13372,40 @@
         const zoneId = currentArea;
         const tent = _isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
         if (!tent || !actionHeldDown) {
-          if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
+          resetBanditTentInteraction();
           if (_tentActionHudEl?.classList.contains('visible')) _tentActionHudEl.classList.remove('visible');
           return;
         }
         // Walking from one tent to another restarts the hold rather than
         // carrying accumulated progress across to the new one.
-        if (_banditTentHoldId !== tent.id) { _banditTentHoldId = tent.id; _banditTentHoldT = 0; }
+        if (_banditTentHoldId !== tent.id) { resetBanditTentInteraction(); _banditTentHoldId = tent.id; }
         const looting = !!tent.interactable?.lootable;
         // The locale authors its own hold duration per tent (interactable.
         // holdSeconds); BANDIT_TENT_HOLD_S is only the fallback.
         const holdS = Number(tent.interactable?.holdSeconds) > 0
           ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
         _banditTentHoldT += dt;
+        if (!looting) {
+          const rec = banditCampRecord(zoneId, tent.temporaryLocaleInstanceId);
+          const state = rec?.tents.get(tent.id);
+          const intervalS = Number(rec?.cfg?.reinforcements?.burnIntervalSeconds ?? 0);
+          const perInterval = Math.max(0, Number(rec?.cfg?.reinforcements?.releasedPerBurnInterval ?? 0));
+          if (state && intervalS > 0) {
+            _banditTentBurnReleaseAccumS += dt;
+            // Subtract rather than zeroing: fractional remainder survives,
+            // and a long frame processes every elapsed two-second boundary.
+            while (_banditTentBurnReleaseAccumS >= intervalS) {
+              _banditTentBurnReleaseAccumS -= intervalS;
+              releaseFromTent(rec, state, perInterval);
+            }
+            state.burnReleaseAccumS = _banditTentBurnReleaseAccumS;
+          }
+        }
         if (_tentActionLabelEl) _tentActionLabelEl.textContent = looting ? 'Looting Tent...' : 'Burning Tent...';
         if (_tentActionFillEl) _tentActionFillEl.style.width = Math.min(100, (_banditTentHoldT / holdS) * 100) + '%';
         _tentActionHudEl?.classList.add('visible');
         if (_banditTentHoldT < holdS) return;
-        _banditTentHoldT = 0;
-        _banditTentHoldId = null;
+        resetBanditTentInteraction();
         _tentActionHudEl?.classList.remove('visible');
         if (looting) lootBanditTent(zoneId, tent);
         else burnBanditTent(zoneId, tent);

@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_bandit_gang_config.v1",
-  "description": "Tunable data for bandit gang generation (docs/js/bandit-gang-generator.js). No code lives here -- species/clothing pools, rank composition, and mastery/difficulty scaling are all data so gangs can be rebalanced without touching game.js. Corpse loot per rank now lives in docs/config/loot/loot-pools.json (pools bandit_grunt/bandit_lieutenant/bandit_captain), alongside every other drop table.",
+  "description": "Tunable data for the Bandit Gangs section of docs/game.js. No code lives here -- species/clothing pools, rank composition, staged tent reinforcements, and mastery/difficulty scaling are data so gangs can be rebalanced without touching game.js. Corpse loot per rank lives in docs/config/loot/loot-pools.json (pools bandit_grunt/bandit_lieutenant/bandit_captain), alongside every other drop table.",
 
   "speciesWeights": {
     "mao-ao": 40,
@@ -39,6 +39,15 @@
     "captains": 1
   },
 
+  "reinforcements": {
+    "_comment": "The full roster is rolled once when the camp is stamped, distributed across stamped tent IDs, and released without rerolling. Death releases apply independently to every living tent. Burning releases only that tent's occupants on each elapsed interval; completion drains the remainder before the tent is removed.",
+    "initialActiveGruntCount": 1,
+    "releasedPerTentAfterDeath": 1,
+    "burnIntervalSeconds": 2,
+    "releasedPerBurnInterval": 1,
+    "spawnOffsetTiles": 1.25
+  },
+
   "weaponMetalTierRangeByRank": {
     "_comment": "A bandit's actual held weapon: a random TOOL_SHAPE_DEFS shape (the same hatchet/fishing-mace/fishing-spear/pick-shovel improvised-weapon pool the player fights with -- this game has no dedicated 'sword' item) crafted from a random METAL_DEFS verdigris metal whose tier falls in this [min,max] range for the bandit's rank, bumped by +1 per difficulty tier (clamped to tier 7, tumbaga) -- 'their weapons have mastery ranks too, with randomly chosen upgrades, tied to their rank within the gang.' Drives both the rendered weapon prop and an attackDamage bump via game.js's own metalDmgMultiplier, and the weapon shape's own dmgType (sharp/blunt) replaces the flat hardcoded attackTag.",
     "grunt": [1, 2],
@@ -75,7 +84,7 @@
   },
 
   "campLifecycle": {
-    "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
+    "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp. Queued, reserved, constructing, and spawned roster members all keep a camp alive.",
     "maxCampsPerZone": 2,
     "tentsCountTowardClear": true
   }
