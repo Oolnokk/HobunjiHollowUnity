@@ -2346,6 +2346,21 @@
         return 'front';
       }
 
+      // Splits an incoming hit into Health and Footing amounts before either
+      // resource is changed. Damage-type identity travels from each attack's
+      // dmgOpts.tag through damageCreature/damagePlayer to this choke point.
+      // Untuned tags retain the original amount; blunt trades 25% Health
+      // damage for 25% more Footing pressure via scratchbones-config.js.
+      function hitResourceDamage(amount, dmgOpts) {
+        const multipliers = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger?.damageTypeMultipliers?.[dmgOpts?.tag] || {};
+        const healthMultiplier = Number(multipliers.healthDamage ?? 1);
+        const footingMultiplier = Number(multipliers.footingDamage ?? 1);
+        return {
+          health: amount * healthMultiplier,
+          footing: amount * footingMultiplier,
+        };
+      }
+
       // Footing loss + stagger lockout for a landed hit that didn't kill its
       // target — called from damageCreature/damagePlayer right after their
       // existing cancel-in-progress-action + knockback sequence, only when
@@ -2354,38 +2369,37 @@
       // beginStagger (the actual attack lockout, read by every combat-*.js
       // ability module's own isStaggered guard).
       //
-      // Duration = the direction-matched 'impact' clip's own authored length
-      // (ImpactBlendLibrary), stretched by how depleted Footing already is
-      // — mirrors the procedural-animation-editor tool's own
-      // footingStaggerMultiplier (1 + loss² * staggerMultiplierK) so a
-      // punch-drunk fighter's stagger visibly drags the lower Footing gets,
-      // "without altering the authored keys" (same comment as that tool's).
-      // For the player, ImpactRagdollPlayback.trigger() is the actual source
-      // of truth for how long the clip will play (playbackRate-scaled), so
-      // its return value drives beginStagger directly instead of this
-      // function recomputing the same number a second way; creatures (no
-      // ragdoll playback) fall back to reading the clip's own duration.
-      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, damage) {
+      // Duration starts at the configured tiny baseline and rises
+      // quadratically toward one second as Footing approaches 1% remaining.
+      // Scaling from the post-hit Footing value makes a punch-drunk fighter's
+      // stagger visibly drag without making ordinary hits one-second stuns.
+      // The player's direction-matched visual clip is retimed to that exact
+      // gameplay duration. Thus every direction has the same stun at a given
+      // Footing level even though the authored clips have different lengths.
+      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, footingDamage) {
         if (!window.ResourceSystem || entity.prone) return;
         const direction = hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY);
         const staggerCfg = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger || {};
-        const footingLossPerDamage = Number(staggerCfg.footingLossPerDamage) || 1.6;
-        const staggerMultiplierK = Number(staggerCfg.staggerMultiplierK) || 1.5;
-        window.ResourceSystem.spendFooting(entity, Math.max(0, damage) * footingLossPerDamage, 'hit');
+        const footingLossPerDamage = Number(staggerCfg.footingLossPerDamage);
+        const baseDurationS = Number(staggerCfg.baseDurationSeconds);
+        const maxDurationS = Number(staggerCfg.maxDurationSeconds);
+        const maxDurationAtFootingFrac = Number(staggerCfg.maxDurationAtFootingFraction);
+        window.ResourceSystem.spendFooting(entity, Math.max(0, footingDamage) * footingLossPerDamage, 'hit');
 
         // This hit emptied Footing — go straight to the full breakThrow
         // knockdown instead of playing a regular stagger reaction that would
         // just get immediately overwritten by it.
         if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
 
-        const footingLossFrac = entity.maxFooting ? 1 - clamp(entity.footing / entity.maxFooting, 0, 1) : 0;
-        const multiplier = 1 + footingLossFrac * footingLossFrac * staggerMultiplierK;
+        const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
+        const lossRange = 1 - maxDurationAtFootingFrac;
+        const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
+        const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
-        let durationS = 0;
-        if (isPlayer) durationS = window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier: multiplier }) || 0;
-        if (!durationS) {
+        if (isPlayer) {
           const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
-          durationS = (clip?.durationSeconds || 0.5) * multiplier;
+          const durationMultiplier = clip?.durationSeconds > 0 ? durationS / clip.durationSeconds : 1;
+          window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
         }
         window.Combat?.beginStagger(entity, direction, durationS);
       }
@@ -6992,8 +7006,9 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         amount = banditTryGuard(c, amount, player);
-        if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, amount, dmgOpts || {});
-        else c.health = Math.max(0, c.health - amount);
+        const resourceDamage = hitResourceDamage(amount, dmgOpts);
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
+        else c.health = Math.max(0, c.health - resourceDamage.health);
         c.hitFlashT = 0.25;
         spawnCreatureHitSpark(c);
         if (c.health <= 0) {
@@ -7018,26 +7033,27 @@
         // combo silently resume its step count once it recovers.
         if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
-        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, amount);
+        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         if (performance.now() < player.invulnUntil) return;
+        const resourceDamage = hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
-        if (window.Combat?.tryInterceptPlayerDamage?.(amount, fromX, fromY)) return;
+        if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
         _banditTentHoldT = 0; // ...and a bandit-tent loot/burn, same reasoning
-        if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, amount, dmgOpts || {});
-        else player.health = Math.max(0, player.health - amount);
+        if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
+        else player.health = Math.max(0, player.health - resourceDamage.health);
         if (player.health > 0) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
           window.Combat?.cancelAllStaged?.();
           if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
-          applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, amount);
+          applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
         }
         if (player.health <= 0) respawnPlayer();
       }
