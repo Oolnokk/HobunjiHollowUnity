@@ -34,6 +34,7 @@
   let playerMeshRef = null;
   let playerLegsRef = null;
   let baseMeshY = 0;
+  let baseBodyY = 0;
 
   const playback = {
     active: false,
@@ -101,8 +102,14 @@
     _euler.setFromQuaternion(bodyQuat, "YXZ");
     playerMeshRef.rotation.x = _euler.x;
     playerMeshRef.rotation.z = _euler.z;
+    // Authored body positions are absolute in the avatar-local locomotion
+    // space: the standing first frame is around the body's 0.45-unit centre,
+    // not a 0.45-unit root-motion lift. Only apply the change from that
+    // first-frame position to the floor-anchored playerMesh. Adding the raw
+    // value here double-counted the avatar's standing height and made every
+    // ordinary stagger float far above the ground.
     const bodyY = lerp(frameA.ragdoll.body.localPosition.y, frameB.ragdoll.body.localPosition.y, t);
-    playerMeshRef.position.y = baseMeshY + bodyY;
+    playerMeshRef.position.y = baseMeshY + bodyY - baseBodyY;
     playerLegsRef.applyRecordedLegPose("left", sampleLeg(frameA.ragdoll.ik.left, frameB.ragdoll.ik.left, t));
     playerLegsRef.applyRecordedLegPose("right", sampleLeg(frameA.ragdoll.ik.right, frameB.ragdoll.ik.right, t));
   }
@@ -116,6 +123,11 @@
     const clip = window.ImpactBlendLibrary?.getClip(bank, direction);
     if (!clip || !clip.frames.length) return 0;
     const durationMultiplier = Math.max(0.01, Number(opts.durationMultiplier) || 1);
+    // A new hit can replace a clip before its previous stagger completes.
+    // Recover the floor-level root rather than treating the previous clip's
+    // currently offset pose as the new baseline, which would accumulate
+    // vertical displacement across rapid hits.
+    if (playback.active && playerMeshRef) playerMeshRef.position.y = baseMeshY;
     playback.active = true;
     playback.holding = false;
     playback.bank = bank;
@@ -124,6 +136,7 @@
     playback.elapsedS = 0;
     playback.playbackRate = 1 / durationMultiplier;
     if (playerMeshRef) baseMeshY = playerMeshRef.position.y;
+    baseBodyY = Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0;
     const [frameA, frameB, t] = findBracket(clip.frames, 0);
     applyFrame(frameA, frameB, t);
     return clip.durationSeconds * durationMultiplier;
