@@ -4,7 +4,7 @@
   "name": "Bandit Camp (Small)",
   "category": "bandit_camp",
   "singleton": false,
-  "description": "A small mismatched-tent bandit camp, stamped as a temporary locale into already-generated wilderness -- clears whatever flora was there, and can be fully re-rolled elsewhere once every tent is looted or burned down and the player leaves and returns to the zone. See docs/js/temporary-locales.js and docs/js/bandit-gang-generator.js.",
+  "description": "A small mismatched-tent bandit camp, stamped as a temporary locale into already-generated wilderness. Its complete roster is rolled by the Bandit Gangs section of docs/game.js, assigned to these tents, and released through deaths and burning. It can be re-rolled elsewhere only after every tent is burned and every queued, reserved, constructing, or living member is gone, followed by a zone revisit. See docs/js/temporary-locales.js and docs/game.js.",
   "tags": [
     "bandit",
     "camp",
@@ -315,7 +315,7 @@
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "Bandit camp: placed by scanning already-generated wilderness for a flat, unoccupied, river/path-free 9x8 (+clearance) rectangle, not reserved before generation. See temporary-locales.js findSite/stamp. Re-rolled elsewhere once cleared (all tents looted/burned) and the zone is revisited."
+    "notes": "Bandit camp: placed by scanning already-generated wilderness for a flat, unoccupied, river/path-free 9x8 (+clearance) rectangle, not reserved before generation. See temporary-locales.js findSite/stamp. Re-rolled elsewhere only once all tents are burned, all roster members are resolved, and the zone is revisited."
   },
   "meta": {
     "createdAt": "2026-07-25T00:00:00.000Z",
