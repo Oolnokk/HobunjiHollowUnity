@@ -23,7 +23,7 @@
 // Usage (see game.js's damagePlayer / updateMovement / the per-frame leg
 // update site):
 //   ImpactRagdollPlayback.attach(playerMesh, playerLegs)
-//   const staggerS = ImpactRagdollPlayback.trigger('impact', direction, { durationMultiplier })
+//   ImpactRagdollPlayback.trigger('impact', direction, { durationMultiplier })
 //   ImpactRagdollPlayback.update(dt)     — call instead of playerLegs.update() while isActive()
 //   ImpactRagdollPlayback.isActive()     — true while a clip is playing OR holding
 //   ImpactRagdollPlayback.isHolding()    — true once a 'breakThrow' clip has settled into its prone hold
@@ -115,9 +115,9 @@
   }
 
   // Returns the wall-clock seconds this playback will actually take
-  // (clip.durationSeconds * durationMultiplier) so the caller can hand that
-  // exact number to combat-core.js's beginStagger — the two are kept in sync
-  // by construction instead of each recomputing the multiplier separately.
+  // (clip.durationSeconds * durationMultiplier). applyHitStagger computes
+  // the gameplay duration first and derives this multiplier from it, keeping
+  // visual playback and combat-core.js's lockout synchronized.
   // Returns 0 (and does nothing) if the bank/direction has no loaded clip.
   function trigger(bank, direction, opts = {}) {
     const clip = window.ImpactBlendLibrary?.getClip(bank, direction);

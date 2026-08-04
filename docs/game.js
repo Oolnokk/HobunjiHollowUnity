@@ -2354,23 +2354,22 @@
       // beginStagger (the actual attack lockout, read by every combat-*.js
       // ability module's own isStaggered guard).
       //
-      // Duration = the direction-matched 'impact' clip's own authored length
-      // (ImpactBlendLibrary), stretched by how depleted Footing already is
-      // — mirrors the procedural-animation-editor tool's own
-      // footingStaggerMultiplier (1 + loss² * staggerMultiplierK) so a
+      // Duration = the configured one-second baseline, stretched by how
+      // depleted Footing already is — mirrors the procedural-animation-
+      // editor tool's own footingStaggerMultiplier
+      // (1 + loss² * staggerMultiplierK) so a
       // punch-drunk fighter's stagger visibly drags the lower Footing gets,
       // "without altering the authored keys" (same comment as that tool's).
-      // For the player, ImpactRagdollPlayback.trigger() is the actual source
-      // of truth for how long the clip will play (playbackRate-scaled), so
-      // its return value drives beginStagger directly instead of this
-      // function recomputing the same number a second way; creatures (no
-      // ragdoll playback) fall back to reading the clip's own duration.
+      // The player's direction-matched visual clip is retimed to that exact
+      // gameplay duration. Thus every direction has the same stun at a given
+      // Footing level even though the authored clips have different lengths.
       function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, damage) {
         if (!window.ResourceSystem || entity.prone) return;
         const direction = hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY);
         const staggerCfg = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger || {};
-        const footingLossPerDamage = Number(staggerCfg.footingLossPerDamage) || 1.6;
-        const staggerMultiplierK = Number(staggerCfg.staggerMultiplierK) || 1.5;
+        const footingLossPerDamage = Number(staggerCfg.footingLossPerDamage);
+        const staggerMultiplierK = Number(staggerCfg.staggerMultiplierK);
+        const baseDurationS = Number(staggerCfg.baseDurationSeconds);
         window.ResourceSystem.spendFooting(entity, Math.max(0, damage) * footingLossPerDamage, 'hit');
 
         // This hit emptied Footing — go straight to the full breakThrow
@@ -2379,13 +2378,12 @@
         if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
 
         const footingLossFrac = entity.maxFooting ? 1 - clamp(entity.footing / entity.maxFooting, 0, 1) : 0;
-        const multiplier = 1 + footingLossFrac * footingLossFrac * staggerMultiplierK;
+        const durationS = baseDurationS * (1 + footingLossFrac * footingLossFrac * staggerMultiplierK);
 
-        let durationS = 0;
-        if (isPlayer) durationS = window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier: multiplier }) || 0;
-        if (!durationS) {
+        if (isPlayer) {
           const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
-          durationS = (clip?.durationSeconds || 0.5) * multiplier;
+          const durationMultiplier = clip?.durationSeconds > 0 ? durationS / clip.durationSeconds : 1;
+          window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier });
         }
         window.Combat?.beginStagger(entity, direction, durationS);
       }

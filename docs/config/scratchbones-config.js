@@ -288,12 +288,14 @@ window.SCRATCHBONES_CONFIG = {
         "footingRegenPerSec": 6,
         "proneRecoveryDelayS": 1.5
       },
-      // Stagger duration = the direction-matched impact clip's own authored
-      // duration (docs/config/animations/impact-blend-v3.json), stretched by
-      // how much Footing has already been lost — see resource-system.js's
-      // spendFooting and game.js's damagePlayer/damageCreature, which read
-      // this alongside ImpactBlendLibrary's clip durations.
+      // Every landed, non-lethal hit causes a full interrupt and stagger.
+      // Non-prone stagger duration starts at baseDurationSeconds and is
+      // stretched by how much Footing has already been lost — see
+      // game.js's applyHitStagger. Impact clips are retimed to this gameplay
+      // duration rather than making differently authored directions stun for
+      // different lengths.
       "stagger": {
+        "baseDurationSeconds": 1,
         "staggerMultiplierK": 1.5,
         "footingLossPerDamage": 1.6
       },
