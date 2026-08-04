@@ -299,7 +299,13 @@ window.SCRATCHBONES_CONFIG = {
         "baseDurationSeconds": 0.1,
         "maxDurationSeconds": 1,
         "maxDurationAtFootingFraction": 0.01,
-        "footingLossPerDamage": 1.6
+        "footingLossPerDamage": 1.6,
+        "damageTypeMultipliers": {
+          "blunt": {
+            "healthDamage": 0.75,
+            "footingDamage": 1.25
+          }
+        }
       },
       "combatConeReticle": {
         "enabled": true,
