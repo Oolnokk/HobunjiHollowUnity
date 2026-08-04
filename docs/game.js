@@ -3095,9 +3095,8 @@
       // separate from the Motes of Prowess spent on its abilities' upgrade
       // choices (see combat-progression.js). Placeholder tuning; easy to
       // rebalance later without touching the mechanism.
-      const MASTERY_XP_THRESHOLDS = [40, 90, 150, 220, 300];
-      const MASTERY_XP_PER_COMBAT_HIT = 2;
-      const MASTERY_XP_PER_TOOL_USE = 1;
+      const TOOL_MASTERY_CONFIG = window.HOBUNJI_CONFIG.toolMastery;
+      const MASTERY_XP_THRESHOLDS = TOOL_MASTERY_CONFIG.xpThresholds;
 
       function toolMasteryXp(itemKey) {
         return gearInventory?.toolMastery?.[itemKey]?.xp || 0;
@@ -3109,6 +3108,17 @@
         let level = 0;
         while (level < MASTERY_XP_THRESHOLDS.length && xp >= MASTERY_XP_THRESHOLDS[level]) level++;
         return level;
+      }
+
+      function toolMasteryProgress(itemKey) {
+        const xp = toolMasteryXp(itemKey);
+        const level = toolMasteryLevel(itemKey);
+        const maxLevel = MASTERY_XP_THRESHOLDS.length;
+        if (level >= maxLevel) return { level, xp, progress: 1, label: `Mastery ${level}/${maxLevel} — Max` };
+        const levelStartXp = level === 0 ? 0 : MASTERY_XP_THRESHOLDS[level - 1];
+        const levelTargetXp = MASTERY_XP_THRESHOLDS[level];
+        const progress = Math.max(0, Math.min(1, (xp - levelStartXp) / (levelTargetXp - levelStartXp)));
+        return { level, xp, progress, label: `Mastery ${level}/${maxLevel} — ${xp - levelStartXp}/${levelTargetXp - levelStartXp} XP` };
       }
 
       function awardToolMasteryXp(itemKey, amount) {
@@ -3136,13 +3146,13 @@
       // landed a hit (see combat-*.js) — grows whichever tool is currently
       // equipped as the weapon.
       function awardWeaponMasteryXp() {
-        awardToolMasteryXp(equipmentSlots.weapon, MASTERY_XP_PER_COMBAT_HIT);
+        awardToolMasteryXp(equipmentSlots.weapon, TOOL_MASTERY_CONFIG.xpPerCombatHit);
       }
 
       // Called from a successful hoe/shovel/axe/pick/harpoon action —
       // ordinary tool use also builds a tool's affinity, not just combat.
       function awardToolUseMasteryXp(tool) {
-        awardToolMasteryXp(equipmentSlots[tool], MASTERY_XP_PER_TOOL_USE);
+        awardToolMasteryXp(equipmentSlots[tool], TOOL_MASTERY_CONFIG.xpPerToolUse);
       }
 
       // ── Verdigris coverage, cosmetic plating, metal reinforcement ──────
@@ -23002,6 +23012,7 @@
           cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
           cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
           if (def) {
+            const mastery = toolMasteryProgress(itemKey);
             const img = document.createElement('img');
             img.src = metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
             cell.appendChild(img);
@@ -23009,6 +23020,19 @@
             unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unassign ' + def.label;
             unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
             cell.appendChild(unBtn);
+            const masteryBar = document.createElement('span');
+            masteryBar.className = 'ies-mastery';
+            masteryBar.title = mastery.label;
+            masteryBar.setAttribute('role', 'progressbar');
+            masteryBar.setAttribute('aria-label', `${def.label} ${mastery.label}`);
+            masteryBar.setAttribute('aria-valuemin', '0');
+            masteryBar.setAttribute('aria-valuemax', '100');
+            masteryBar.setAttribute('aria-valuenow', String(Math.round(mastery.progress * 100)));
+            masteryBar.style.setProperty('--mastery-progress', `${mastery.progress * 100}%`);
+            const masteryFill = document.createElement('span');
+            masteryFill.className = 'ies-mastery-fill';
+            masteryBar.appendChild(masteryFill);
+            cell.appendChild(masteryBar);
           }
           const lbl = document.createElement('span');
           lbl.className = 'ies-label';
