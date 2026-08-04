@@ -19,6 +19,7 @@
   let indexError = '';
   let renderTimer = 0;
   let nativeMapSelect = null;
+  let observer = null;
 
   function isInteriorMap(entry) {
     return entry?.category === 'building_interior' || String(entry?.id || '').startsWith('map_i_');
@@ -68,7 +69,7 @@
     if (missing.length) {
       const group = document.createElement('optgroup');
       group.label = `All repo interiors (${repoInteriors.length})`;
-      group.dataset[EXTRA_GROUP_MARKER.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = '1';
+      group.dataset.repoInteriorOptions = '1';
       for (const entry of missing) {
         const option = document.createElement('option');
         option.value = entry.id;
@@ -93,6 +94,17 @@
     return pill?.textContent.match(/(map_i_[A-Za-z0-9_]+)/)?.[1] || '';
   }
 
+  function selectedBuildingId() {
+    return document.querySelector('#buildingList [data-bid].sel')?.dataset.bid || '';
+  }
+
+  function selectBuilding(buildingId) {
+    const item = Array.from(document.querySelectorAll('#buildingList [data-bid]'))
+      .find(candidate => candidate.dataset.bid === buildingId);
+    item?.click();
+    return !!item;
+  }
+
   function primeNativeSelect(originalBuildingId) {
     if (nativeMapSelect) return true;
     const items = Array.from(document.querySelectorAll('#buildingList [data-bid]'));
@@ -102,16 +114,12 @@
       const candidate = document.querySelector('#bldgDoorTarget select[data-bldgdoortarget]');
       if (candidate) {
         nativeMapSelect = candidate;
-        document.querySelector(`#buildingList [data-bid="${CSS.escape(originalBuildingId)}"]`)?.click();
+        selectBuilding(originalBuildingId);
         return true;
       }
     }
-    document.querySelector(`#buildingList [data-bid="${CSS.escape(originalBuildingId)}"]`)?.click();
+    selectBuilding(originalBuildingId);
     return false;
-  }
-
-  function selectedBuildingId() {
-    return document.querySelector('#buildingList [data-bid].sel')?.dataset.bid || '';
   }
 
   function renderStatus(box) {
@@ -122,67 +130,77 @@
       box.appendChild(status);
     }
     status.classList.toggle('error', indexState === 'failed');
-    if (indexState === 'loading') status.textContent = 'Loading the complete interior map list…';
-    else if (indexState === 'failed') status.textContent = indexError;
-    else status.textContent = `${repoInteriors.length} repo interiors available, including upper floors, bedrooms, and basements.`;
+    const message = indexState === 'loading'
+      ? 'Loading the complete interior map list…'
+      : indexState === 'failed'
+        ? indexError
+        : `${repoInteriors.length} repo interiors available, including upper floors, bedrooms, and basements.`;
+    status.replaceChildren(document.createTextNode(message));
 
-    if (!status.querySelector('.mebeRefresh')) {
-      const refresh = document.createElement('button');
-      refresh.type = 'button';
-      refresh.className = 'sec mebeRefresh';
-      refresh.textContent = 'Reload';
-      refresh.addEventListener('click', loadIndex);
-      status.appendChild(refresh);
-    }
+    const refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.className = 'sec mebeRefresh';
+    refresh.textContent = 'Reload';
+    refresh.addEventListener('click', loadIndex);
+    status.appendChild(refresh);
+  }
+
+  function observe() {
+    observer?.observe(document.body, { childList: true, subtree: true });
   }
 
   function render() {
-    installStyles();
-    const box = document.getElementById('bldgDoorTarget');
-    if (!box) return;
+    observer?.disconnect();
+    try {
+      installStyles();
+      const box = document.getElementById('bldgDoorTarget');
+      if (!box) return;
 
-    const currentNative = box.querySelector('select[data-bldgdoortarget]');
-    if (currentNative) {
-      // MutationObserver runs after renderBuildingPanel wires this exact node,
-      // so retaining it also retains the editor's own change listener.
-      nativeMapSelect = currentNative;
-      augmentSelect(nativeMapSelect, nativeMapSelect.value);
-      box.querySelector('.mebeChangeRow')?.remove();
-      renderStatus(box);
-      return;
-    }
-
-    const assignedId = assignedInteriorId(box);
-    if (!assignedId) {
-      renderStatus(box);
-      return;
-    }
-
-    const buildingId = selectedBuildingId();
-    if (!nativeMapSelect && buildingId) primeNativeSelect(buildingId);
-    if (!nativeMapSelect) {
-      renderStatus(box);
-      const status = box.querySelector(':scope > .mebeStatus');
-      if (status && indexState === 'ready') {
-        status.firstChild.textContent += ' Select any unassigned building once to enable reassignment controls for already-assigned interiors.';
+      const currentNative = box.querySelector('select[data-bldgdoortarget]');
+      if (currentNative) {
+        // MutationObserver runs after renderBuildingPanel wires this exact node,
+        // so retaining it also retains the editor's own change listener.
+        nativeMapSelect = currentNative;
+        augmentSelect(nativeMapSelect, nativeMapSelect.value);
+        box.querySelector('.mebeChangeRow')?.remove();
+        renderStatus(box);
+        return;
       }
-      return;
-    }
 
-    augmentSelect(nativeMapSelect, assignedId);
-    let row = box.querySelector('.mebeChangeRow');
-    if (!row) {
-      row = document.createElement('div');
-      row.className = 'mebeChangeRow';
-      const label = document.createElement('label');
-      label.textContent = 'Change destination';
-      row.append(label, nativeMapSelect);
-      box.prepend(row);
-    } else if (!row.contains(nativeMapSelect)) {
-      row.appendChild(nativeMapSelect);
+      const assignedId = assignedInteriorId(box);
+      if (!assignedId) {
+        renderStatus(box);
+        return;
+      }
+
+      const buildingId = selectedBuildingId();
+      if (!nativeMapSelect && buildingId) primeNativeSelect(buildingId);
+      if (!nativeMapSelect) {
+        renderStatus(box);
+        const status = box.querySelector(':scope > .mebeStatus');
+        if (status && indexState === 'ready') {
+          status.insertBefore(document.createTextNode(' Select any unassigned building once to enable reassignment controls for already-assigned interiors.'), status.querySelector('button'));
+        }
+        return;
+      }
+
+      augmentSelect(nativeMapSelect, assignedId);
+      let row = box.querySelector('.mebeChangeRow');
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'mebeChangeRow';
+        const label = document.createElement('label');
+        label.textContent = 'Change destination';
+        row.append(label, nativeMapSelect);
+        box.prepend(row);
+      } else if (!row.contains(nativeMapSelect)) {
+        row.appendChild(nativeMapSelect);
+      }
+      nativeMapSelect.value = assignedId;
+      renderStatus(box);
+    } finally {
+      observe();
     }
-    nativeMapSelect.value = assignedId;
-    renderStatus(box);
   }
 
   function scheduleRender(delay = 35) {
@@ -191,7 +209,8 @@
   }
 
   function install() {
-    new MutationObserver(() => scheduleRender()).observe(document.body, { childList: true, subtree: true });
+    observer = new MutationObserver(() => scheduleRender());
+    observe();
     document.addEventListener('click', event => {
       if (event.target.closest('#buildingList [data-bid]')) scheduleRender(0);
     }, true);
