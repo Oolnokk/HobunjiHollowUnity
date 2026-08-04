@@ -1,0 +1,4726 @@
+{
+  "schema": "modular-house-piece-author/v37",
+  "createdAt": "2026-08-04T18:27:07.330Z",
+  "currentPiece": {
+    "id": "0d77aa2a-66d4-4de7-ab35-ec4982fa8bfb",
+    "name": "Smithy",
+    "type": "room",
+    "preset": "highland",
+    "gridSize": 18,
+    "tileSize": 1,
+    "footprint": {
+      "cells": [
+        {
+          "x": 5,
+          "y": 6
+        },
+        {
+          "x": 6,
+          "y": 6
+        },
+        {
+          "x": 7,
+          "y": 6
+        },
+        {
+          "x": 8,
+          "y": 6
+        },
+        {
+          "x": 9,
+          "y": 6
+        },
+        {
+          "x": 10,
+          "y": 6
+        },
+        {
+          "x": 11,
+          "y": 6
+        },
+        {
+          "x": 12,
+          "y": 6
+        },
+        {
+          "x": 5,
+          "y": 7
+        },
+        {
+          "x": 6,
+          "y": 7
+        },
+        {
+          "x": 7,
+          "y": 7
+        },
+        {
+          "x": 8,
+          "y": 7
+        },
+        {
+          "x": 9,
+          "y": 7
+        },
+        {
+          "x": 10,
+          "y": 7
+        },
+        {
+          "x": 11,
+          "y": 7
+        },
+        {
+          "x": 12,
+          "y": 7
+        },
+        {
+          "x": 5,
+          "y": 8
+        },
+        {
+          "x": 6,
+          "y": 8
+        },
+        {
+          "x": 7,
+          "y": 8
+        },
+        {
+          "x": 8,
+          "y": 8
+        },
+        {
+          "x": 9,
+          "y": 8
+        },
+        {
+          "x": 10,
+          "y": 8
+        },
+        {
+          "x": 11,
+          "y": 8
+        },
+        {
+          "x": 12,
+          "y": 8
+        },
+        {
+          "x": 9,
+          "y": 9
+        },
+        {
+          "x": 10,
+          "y": 9
+        },
+        {
+          "x": 11,
+          "y": 9
+        },
+        {
+          "x": 9,
+          "y": 10
+        },
+        {
+          "x": 10,
+          "y": 10
+        },
+        {
+          "x": 11,
+          "y": 10
+        },
+        {
+          "x": 9,
+          "y": 11
+        },
+        {
+          "x": 10,
+          "y": 11
+        },
+        {
+          "x": 11,
+          "y": 11
+        }
+      ],
+      "door": {
+        "x": 10,
+        "y": 11
+      },
+      "connectors": [],
+      "extensions": {
+        "entryTunnels": [
+          {
+            "x": 10,
+            "y": 11
+          }
+        ],
+        "chimneys": [
+          {
+            "x": 11,
+            "y": 6
+          },
+          {
+            "x": 6,
+            "y": 7
+          }
+        ],
+        "porches": [],
+        "porchStairs": [],
+        "railings": []
+      }
+    },
+    "base": {
+      "height": 1.4,
+      "wallThickness": 0.15,
+      "groundY": 0,
+      "faces": [
+        {
+          "id": 902,
+          "v": [
+            [
+              -4,
+              0,
+              -3
+            ],
+            [
+              4,
+              0,
+              -3
+            ],
+            [
+              4,
+              0,
+              0
+            ],
+            [
+              -4,
+              0,
+              0
+            ]
+          ],
+          "tag": "floor",
+          "color": null,
+          "highlandSectionRole": "primary",
+          "highlandFrustumBottom": true
+        },
+        {
+          "id": 903,
+          "v": [
+            [
+              -3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              -3.4,
+              1.4,
+              -2.775
+            ]
+          ],
+          "tag": "ceiling",
+          "color": null,
+          "highlandSectionRole": "primary",
+          "highlandFrustumTop": true,
+          "highlandTopScale": 0.85
+        },
+        {
+          "id": 904,
+          "v": [
+            [
+              -4,
+              0,
+              -3
+            ],
+            [
+              -3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              4,
+              0,
+              -3
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "primary",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 905,
+          "v": [
+            [
+              4,
+              0,
+              -3
+            ],
+            [
+              3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              4,
+              0,
+              0
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "primary",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 906,
+          "v": [
+            [
+              4,
+              0,
+              0
+            ],
+            [
+              3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              -3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              -4,
+              0,
+              0
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "primary",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 907,
+          "v": [
+            [
+              -4,
+              0,
+              0
+            ],
+            [
+              -3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              -3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              -4,
+              0,
+              -3
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "primary",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 908,
+          "v": [
+            [
+              -2.8899999999999997,
+              2.5900000000000003,
+              -1.46
+            ],
+            [
+              2.8899999999999997,
+              2.5900000000000003,
+              -1.46
+            ],
+            [
+              2.8899999999999997,
+              2.5900000000000003,
+              -1.54
+            ],
+            [
+              -2.8899999999999997,
+              2.5900000000000003,
+              -1.54
+            ]
+          ],
+          "tag": "ceiling",
+          "color": null,
+          "roofSectionRole": "primary",
+          "roofRidgeCap": true,
+          "resolvedRoofHeight": 1.19,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 909,
+          "v": [
+            [
+              -3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              -2.8899999999999997,
+              2.5900000000000003,
+              -1.54
+            ],
+            [
+              2.8899999999999997,
+              2.5900000000000003,
+              -1.54
+            ],
+            [
+              3.4,
+              1.4,
+              -2.775
+            ]
+          ],
+          "tag": "roof",
+          "color": null,
+          "roofAcrossOffset": -0.25,
+          "roofOffsetRole": "cross_gable_edgeward",
+          "roofSectionRole": "primary",
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 910,
+          "v": [
+            [
+              3.4,
+              1.4,
+              -2.775
+            ],
+            [
+              2.8899999999999997,
+              2.5900000000000003,
+              -1.54
+            ],
+            [
+              2.8899999999999997,
+              2.5900000000000003,
+              -1.46
+            ],
+            [
+              3.4,
+              1.4,
+              -0.2250000000000001
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "roofSectionRole": "primary",
+          "gableEnd": true,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 911,
+          "v": [
+            [
+              3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              2.8899999999999997,
+              2.5900000000000003,
+              -1.46
+            ],
+            [
+              -2.8899999999999997,
+              2.5900000000000003,
+              -1.46
+            ],
+            [
+              -3.4,
+              1.4,
+              -0.2250000000000001
+            ]
+          ],
+          "tag": "roof",
+          "color": null,
+          "roofAcrossOffset": 0,
+          "roofOffsetRole": "cross_gable_reference",
+          "roofSectionRole": "primary",
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 912,
+          "v": [
+            [
+              -3.4,
+              1.4,
+              -0.2250000000000001
+            ],
+            [
+              -2.8899999999999997,
+              2.5900000000000003,
+              -1.46
+            ],
+            [
+              -2.8899999999999997,
+              2.5900000000000003,
+              -1.54
+            ],
+            [
+              -3.4,
+              1.4,
+              -2.775
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "roofSectionRole": "primary",
+          "gableEnd": true,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 913,
+          "v": [
+            [
+              0,
+              0,
+              -1.5
+            ],
+            [
+              3,
+              0,
+              -1.5
+            ],
+            [
+              3,
+              0,
+              3
+            ],
+            [
+              0,
+              0,
+              3
+            ]
+          ],
+          "tag": "floor",
+          "color": null,
+          "highlandSectionRole": "cross_gable_clipped_to_main_ridge",
+          "highlandFrustumBottom": true
+        },
+        {
+          "id": 914,
+          "v": [
+            [
+              0.2250000000000001,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              2.775,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              2.775,
+              1.4,
+              -1.1624999999999999
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              -1.1624999999999999
+            ]
+          ],
+          "tag": "ceiling",
+          "color": null,
+          "highlandSectionRole": "cross_gable_clipped_to_main_ridge",
+          "highlandFrustumTop": true,
+          "highlandTopScale": 0.85
+        },
+        {
+          "id": 915,
+          "v": [
+            [
+              0,
+              0,
+              -1.5
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              -1.1624999999999999
+            ],
+            [
+              2.775,
+              1.4,
+              -1.1624999999999999
+            ],
+            [
+              3,
+              0,
+              -1.5
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "cross_gable_clipped_to_main_ridge",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 916,
+          "v": [
+            [
+              3,
+              0,
+              -1.5
+            ],
+            [
+              2.775,
+              1.4,
+              -1.1624999999999999
+            ],
+            [
+              2.775,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              3,
+              0,
+              3
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "cross_gable_clipped_to_main_ridge",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 917,
+          "v": [
+            [
+              3,
+              0,
+              3
+            ],
+            [
+              2.775,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              0,
+              0,
+              3
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "cross_gable_clipped_to_main_ridge",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 918,
+          "v": [
+            [
+              0,
+              0,
+              3
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              -1.1624999999999996
+            ],
+            [
+              0,
+              0,
+              -1.5
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "highlandSectionRole": "cross_gable_clipped_to_main_ridge",
+          "highlandFrustumWall": true,
+          "highlandTopScale": 0.85,
+          "entryPortalCut": false,
+          "entryPortalPart": ""
+        },
+        {
+          "id": 919,
+          "v": [
+            [
+              1.46,
+              2.5899999999999985,
+              2.3756249999999994
+            ],
+            [
+              1.54,
+              2.5899999999999985,
+              2.3756249999999994
+            ],
+            [
+              1.54,
+              2.5899999999999985,
+              -0.8756249999999998
+            ],
+            [
+              1.46,
+              2.5899999999999985,
+              -0.8756249999999998
+            ]
+          ],
+          "tag": "ceiling",
+          "color": null,
+          "roofSectionRole": "cross_gable_clipped_to_main_ridge",
+          "roofRidgeCap": true,
+          "resolvedRoofHeight": 1.19,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 920,
+          "v": [
+            [
+              0.2250000000000001,
+              1.4,
+              -1.1624999999999999
+            ],
+            [
+              1.46,
+              2.5899999999999985,
+              -0.8756249999999998
+            ],
+            [
+              1.54,
+              2.5899999999999985,
+              -0.8756249999999998
+            ],
+            [
+              2.775,
+              1.4,
+              -1.1624999999999999
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "roofSectionRole": "cross_gable_clipped_to_main_ridge",
+          "gableEnd": true,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 921,
+          "v": [
+            [
+              2.775,
+              1.4,
+              -1.1624999999999999
+            ],
+            [
+              1.54,
+              2.5899999999999985,
+              -0.8756249999999998
+            ],
+            [
+              1.54,
+              2.5899999999999985,
+              2.3756249999999994
+            ],
+            [
+              2.775,
+              1.4,
+              2.6624999999999996
+            ]
+          ],
+          "tag": "roof",
+          "color": null,
+          "roofAcrossOffset": -0.25,
+          "roofOffsetRole": "cross_gable_edgeward",
+          "roofSectionRole": "cross_gable_clipped_to_main_ridge",
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 922,
+          "v": [
+            [
+              2.775,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              1.54,
+              2.5899999999999985,
+              2.3756249999999994
+            ],
+            [
+              1.46,
+              2.5899999999999985,
+              2.3756249999999994
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              2.6624999999999996
+            ]
+          ],
+          "tag": "wall",
+          "color": null,
+          "roofSectionRole": "cross_gable_clipped_to_main_ridge",
+          "gableEnd": true,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 923,
+          "v": [
+            [
+              0.2250000000000001,
+              1.4,
+              2.6624999999999996
+            ],
+            [
+              1.46,
+              2.5899999999999985,
+              2.3756249999999994
+            ],
+            [
+              1.46,
+              2.5899999999999985,
+              -0.8756249999999998
+            ],
+            [
+              0.2250000000000001,
+              1.4,
+              -1.1624999999999999
+            ]
+          ],
+          "tag": "roof",
+          "color": null,
+          "roofAcrossOffset": 0,
+          "roofOffsetRole": "cross_gable_reference",
+          "roofSectionRole": "cross_gable_clipped_to_main_ridge",
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "highlandRidgeLongScale": 0.85
+        },
+        {
+          "id": 924,
+          "v": [
+            [
+              1,
+              0.006,
+              2
+            ],
+            [
+              2,
+              0.006,
+              2
+            ],
+            [
+              2,
+              0.006,
+              3
+            ],
+            [
+              1,
+              0.006,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "floor",
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "generatedConnectionRun": false,
+          "continuesIntoStructure": true,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": false
+        },
+        {
+          "id": 925,
+          "v": [
+            [
+              1,
+              1.156,
+              3
+            ],
+            [
+              2,
+              1.156,
+              3
+            ],
+            [
+              2,
+              1.156,
+              2
+            ],
+            [
+              1,
+              1.156,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "ceiling",
+          "tunnelSkywardCap": true,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "generatedConnectionRun": false,
+          "continuesIntoStructure": true,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "skywardFaceClosed": true,
+          "horizontalOpeningsRemainOpen": true,
+          "openTop": false
+        },
+        {
+          "id": 926,
+          "v": [
+            [
+              1,
+              0,
+              2.87
+            ],
+            [
+              1.09,
+              0,
+              2.87
+            ],
+            [
+              1.09,
+              0,
+              3
+            ],
+            [
+              1,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "leftJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 927,
+          "v": [
+            [
+              1,
+              1.148,
+              3
+            ],
+            [
+              1.09,
+              1.148,
+              3
+            ],
+            [
+              1.09,
+              1.148,
+              2.87
+            ],
+            [
+              1,
+              1.148,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "leftJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 928,
+          "v": [
+            [
+              1,
+              0,
+              2.87
+            ],
+            [
+              1,
+              1.148,
+              2.87
+            ],
+            [
+              1.09,
+              1.148,
+              2.87
+            ],
+            [
+              1.09,
+              0,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "leftJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 929,
+          "v": [
+            [
+              1.09,
+              0,
+              2.87
+            ],
+            [
+              1.09,
+              1.148,
+              2.87
+            ],
+            [
+              1.09,
+              1.148,
+              3
+            ],
+            [
+              1.09,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "leftJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 930,
+          "v": [
+            [
+              1.09,
+              0,
+              3
+            ],
+            [
+              1.09,
+              1.148,
+              3
+            ],
+            [
+              1,
+              1.148,
+              3
+            ],
+            [
+              1,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "leftJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 931,
+          "v": [
+            [
+              1,
+              0,
+              3
+            ],
+            [
+              1,
+              1.148,
+              3
+            ],
+            [
+              1,
+              1.148,
+              2.87
+            ],
+            [
+              1,
+              0,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "leftJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 932,
+          "v": [
+            [
+              1.91,
+              0,
+              2.87
+            ],
+            [
+              2,
+              0,
+              2.87
+            ],
+            [
+              2,
+              0,
+              3
+            ],
+            [
+              1.91,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "rightJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 933,
+          "v": [
+            [
+              1.91,
+              1.148,
+              3
+            ],
+            [
+              2,
+              1.148,
+              3
+            ],
+            [
+              2,
+              1.148,
+              2.87
+            ],
+            [
+              1.91,
+              1.148,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "rightJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 934,
+          "v": [
+            [
+              1.91,
+              0,
+              2.87
+            ],
+            [
+              1.91,
+              1.148,
+              2.87
+            ],
+            [
+              2,
+              1.148,
+              2.87
+            ],
+            [
+              2,
+              0,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "rightJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 935,
+          "v": [
+            [
+              2,
+              0,
+              2.87
+            ],
+            [
+              2,
+              1.148,
+              2.87
+            ],
+            [
+              2,
+              1.148,
+              3
+            ],
+            [
+              2,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "rightJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 936,
+          "v": [
+            [
+              2,
+              0,
+              3
+            ],
+            [
+              2,
+              1.148,
+              3
+            ],
+            [
+              1.91,
+              1.148,
+              3
+            ],
+            [
+              1.91,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "rightJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 937,
+          "v": [
+            [
+              1.91,
+              0,
+              3
+            ],
+            [
+              1.91,
+              1.148,
+              3
+            ],
+            [
+              1.91,
+              1.148,
+              2.87
+            ],
+            [
+              1.91,
+              0,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "rightJamb",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 938,
+          "v": [
+            [
+              1.09,
+              1.05616,
+              2.87
+            ],
+            [
+              1.91,
+              1.05616,
+              2.87
+            ],
+            [
+              1.91,
+              1.05616,
+              3
+            ],
+            [
+              1.09,
+              1.05616,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "lowLintel",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 939,
+          "v": [
+            [
+              1.09,
+              1.148,
+              3
+            ],
+            [
+              1.91,
+              1.148,
+              3
+            ],
+            [
+              1.91,
+              1.148,
+              2.87
+            ],
+            [
+              1.09,
+              1.148,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "lowLintel",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 940,
+          "v": [
+            [
+              1.09,
+              1.05616,
+              2.87
+            ],
+            [
+              1.09,
+              1.148,
+              2.87
+            ],
+            [
+              1.91,
+              1.148,
+              2.87
+            ],
+            [
+              1.91,
+              1.05616,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "lowLintel",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 941,
+          "v": [
+            [
+              1.91,
+              1.05616,
+              2.87
+            ],
+            [
+              1.91,
+              1.148,
+              2.87
+            ],
+            [
+              1.91,
+              1.148,
+              3
+            ],
+            [
+              1.91,
+              1.05616,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "lowLintel",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 942,
+          "v": [
+            [
+              1.91,
+              1.05616,
+              3
+            ],
+            [
+              1.91,
+              1.148,
+              3
+            ],
+            [
+              1.09,
+              1.148,
+              3
+            ],
+            [
+              1.09,
+              1.05616,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "lowLintel",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 943,
+          "v": [
+            [
+              1.09,
+              1.05616,
+              3
+            ],
+            [
+              1.09,
+              1.148,
+              3
+            ],
+            [
+              1.09,
+              1.148,
+              2.87
+            ],
+            [
+              1.09,
+              1.05616,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "doorwayFrame": true,
+          "doorwayFramePart": "lowLintel",
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "openingFacesAwayFromAdjacentWall": true,
+          "nearFullHeightOpening": true,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 944,
+          "v": [
+            [
+              1,
+              1.154,
+              3
+            ],
+            [
+              2,
+              1.154,
+              3
+            ],
+            [
+              2,
+              1.154,
+              2.87
+            ],
+            [
+              1,
+              1.154,
+              2.87
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "topRimCap",
+          "rimSide": "south",
+          "explicitSkywardCap": true,
+          "rooflessCenterStillOpen": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "exteriorEntryOpening": true,
+          "continuousMultiTileOpening": false,
+          "openingRunTiles": 1,
+          "explicitOpeningTopCap": true,
+          "fusedHollow": true,
+          "continuousWhenAdjacent": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 945,
+          "v": [
+            [
+              1,
+              0,
+              2
+            ],
+            [
+              2,
+              0,
+              2
+            ],
+            [
+              2,
+              0,
+              2.13
+            ],
+            [
+              1,
+              0,
+              2.13
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 946,
+          "v": [
+            [
+              1,
+              1.148,
+              2.13
+            ],
+            [
+              2,
+              1.148,
+              2.13
+            ],
+            [
+              2,
+              1.148,
+              2
+            ],
+            [
+              1,
+              1.148,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 947,
+          "v": [
+            [
+              1,
+              0,
+              2
+            ],
+            [
+              1,
+              1.148,
+              2
+            ],
+            [
+              2,
+              1.148,
+              2
+            ],
+            [
+              2,
+              0,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 948,
+          "v": [
+            [
+              2,
+              0,
+              2
+            ],
+            [
+              2,
+              1.148,
+              2
+            ],
+            [
+              2,
+              1.148,
+              2.13
+            ],
+            [
+              2,
+              0,
+              2.13
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 949,
+          "v": [
+            [
+              2,
+              0,
+              2.13
+            ],
+            [
+              2,
+              1.148,
+              2.13
+            ],
+            [
+              1,
+              1.148,
+              2.13
+            ],
+            [
+              1,
+              0,
+              2.13
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 950,
+          "v": [
+            [
+              1,
+              0,
+              2.13
+            ],
+            [
+              1,
+              1.148,
+              2.13
+            ],
+            [
+              1,
+              1.148,
+              2
+            ],
+            [
+              1,
+              0,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 951,
+          "v": [
+            [
+              1,
+              1.15,
+              2.13
+            ],
+            [
+              2,
+              1.15,
+              2.13
+            ],
+            [
+              2,
+              1.15,
+              2
+            ],
+            [
+              1,
+              1.15,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "topRimCap",
+          "rimSide": "north",
+          "explicitSkywardCap": true,
+          "rooflessCenterStillOpen": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true,
+          "duplicateSafeTopRim": true
+        },
+        {
+          "id": 952,
+          "v": [
+            [
+              1.87,
+              0,
+              2
+            ],
+            [
+              2,
+              0,
+              2
+            ],
+            [
+              2,
+              0,
+              3
+            ],
+            [
+              1.87,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 953,
+          "v": [
+            [
+              1.87,
+              1.148,
+              3
+            ],
+            [
+              2,
+              1.148,
+              3
+            ],
+            [
+              2,
+              1.148,
+              2
+            ],
+            [
+              1.87,
+              1.148,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 954,
+          "v": [
+            [
+              1.87,
+              0,
+              2
+            ],
+            [
+              1.87,
+              1.148,
+              2
+            ],
+            [
+              2,
+              1.148,
+              2
+            ],
+            [
+              2,
+              0,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 955,
+          "v": [
+            [
+              2,
+              0,
+              2
+            ],
+            [
+              2,
+              1.148,
+              2
+            ],
+            [
+              2,
+              1.148,
+              3
+            ],
+            [
+              2,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 956,
+          "v": [
+            [
+              2,
+              0,
+              3
+            ],
+            [
+              2,
+              1.148,
+              3
+            ],
+            [
+              1.87,
+              1.148,
+              3
+            ],
+            [
+              1.87,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 957,
+          "v": [
+            [
+              1.87,
+              0,
+              3
+            ],
+            [
+              1.87,
+              1.148,
+              3
+            ],
+            [
+              1.87,
+              1.148,
+              2
+            ],
+            [
+              1.87,
+              0,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 958,
+          "v": [
+            [
+              1.87,
+              1.15,
+              3
+            ],
+            [
+              2,
+              1.15,
+              3
+            ],
+            [
+              2,
+              1.15,
+              2
+            ],
+            [
+              1.87,
+              1.15,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "topRimCap",
+          "rimSide": "east",
+          "explicitSkywardCap": true,
+          "rooflessCenterStillOpen": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true,
+          "duplicateSafeTopRim": true
+        },
+        {
+          "id": 959,
+          "v": [
+            [
+              1,
+              0,
+              2
+            ],
+            [
+              1.13,
+              0,
+              2
+            ],
+            [
+              1.13,
+              0,
+              3
+            ],
+            [
+              1,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 960,
+          "v": [
+            [
+              1,
+              1.148,
+              3
+            ],
+            [
+              1.13,
+              1.148,
+              3
+            ],
+            [
+              1.13,
+              1.148,
+              2
+            ],
+            [
+              1,
+              1.148,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 961,
+          "v": [
+            [
+              1,
+              0,
+              2
+            ],
+            [
+              1,
+              1.148,
+              2
+            ],
+            [
+              1.13,
+              1.148,
+              2
+            ],
+            [
+              1.13,
+              0,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 962,
+          "v": [
+            [
+              1.13,
+              0,
+              2
+            ],
+            [
+              1.13,
+              1.148,
+              2
+            ],
+            [
+              1.13,
+              1.148,
+              3
+            ],
+            [
+              1.13,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 963,
+          "v": [
+            [
+              1.13,
+              0,
+              3
+            ],
+            [
+              1.13,
+              1.148,
+              3
+            ],
+            [
+              1,
+              1.148,
+              3
+            ],
+            [
+              1,
+              0,
+              3
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 964,
+          "v": [
+            [
+              1,
+              0,
+              3
+            ],
+            [
+              1,
+              1.148,
+              3
+            ],
+            [
+              1,
+              1.148,
+              2
+            ],
+            [
+              1,
+              0,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true
+        },
+        {
+          "id": 965,
+          "v": [
+            [
+              1,
+              1.15,
+              3
+            ],
+            [
+              1.13,
+              1.15,
+              3
+            ],
+            [
+              1.13,
+              1.15,
+              2
+            ],
+            [
+              1,
+              1.15,
+              2
+            ]
+          ],
+          "tag": "entryTunnel",
+          "color": null,
+          "extensionFace": "topRimCap",
+          "rimSide": "west",
+          "explicitSkywardCap": true,
+          "rooflessCenterStillOpen": true,
+          "wallThickness": 0.13,
+          "extensionType": "entryTunnel",
+          "sourceTile": {
+            "x": 10,
+            "y": 11
+          },
+          "wallRunTiles": 1,
+          "continuousWhenAdjacent": false,
+          "generatedConnectionRun": false,
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "openTop": true,
+          "duplicateSafeTopRim": true
+        },
+        {
+          "id": 966,
+          "v": [
+            [
+              1.9774500289250747,
+              0,
+              -2.994840021645846
+            ],
+            [
+              2.986954434884003,
+              0,
+              -2.994840021645846
+            ],
+            [
+              2.986954434884003,
+              0,
+              -2.8377275947252585
+            ],
+            [
+              1.9774500289250747,
+              0,
+              -2.8377275947252585
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 967,
+          "v": [
+            [
+              1.9774500289250747,
+              3.4828821534141623,
+              -2.8377275947252585
+            ],
+            [
+              2.986954434884003,
+              3.4828821534141623,
+              -2.8377275947252585
+            ],
+            [
+              2.986954434884003,
+              3.4828821534141623,
+              -2.994840021645846
+            ],
+            [
+              1.9774500289250747,
+              3.4828821534141623,
+              -2.994840021645846
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 968,
+          "v": [
+            [
+              1.9774500289250747,
+              0,
+              -2.994840021645846
+            ],
+            [
+              1.9774500289250747,
+              3.4828821534141623,
+              -2.994840021645846
+            ],
+            [
+              2.986954434884003,
+              3.4828821534141623,
+              -2.994840021645846
+            ],
+            [
+              2.986954434884003,
+              0,
+              -2.994840021645846
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 969,
+          "v": [
+            [
+              2.986954434884003,
+              0,
+              -2.994840021645846
+            ],
+            [
+              2.986954434884003,
+              3.4828821534141623,
+              -2.994840021645846
+            ],
+            [
+              2.986954434884003,
+              3.4828821534141623,
+              -2.8377275947252585
+            ],
+            [
+              2.986954434884003,
+              0,
+              -2.8377275947252585
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 970,
+          "v": [
+            [
+              2.986954434884003,
+              0,
+              -2.8377275947252585
+            ],
+            [
+              2.986954434884003,
+              3.4828821534141623,
+              -2.8377275947252585
+            ],
+            [
+              1.9774500289250747,
+              3.4828821534141623,
+              -2.8377275947252585
+            ],
+            [
+              1.9774500289250747,
+              0,
+              -2.8377275947252585
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 971,
+          "v": [
+            [
+              1.9774500289250747,
+              0,
+              -2.8377275947252585
+            ],
+            [
+              1.9774500289250747,
+              3.4828821534141623,
+              -2.8377275947252585
+            ],
+            [
+              1.9774500289250747,
+              3.4828821534141623,
+              -2.994840021645846
+            ],
+            [
+              1.9774500289250747,
+              0,
+              -2.994840021645846
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 972,
+          "v": [
+            [
+              2.8559713503504107,
+              0,
+              -3.0248656971293655
+            ],
+            [
+              2.9867397013988204,
+              0,
+              -3.0248656971293655
+            ],
+            [
+              2.9867397013988204,
+              0,
+              -1.9937650694306392
+            ],
+            [
+              2.8559713503504107,
+              0,
+              -1.9937650694306392
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 973,
+          "v": [
+            [
+              2.8559713503504107,
+              3.493197804062208,
+              -1.9937650694306392
+            ],
+            [
+              2.9867397013988204,
+              3.493197804062208,
+              -1.9937650694306392
+            ],
+            [
+              2.9867397013988204,
+              3.493197804062208,
+              -3.0248656971293655
+            ],
+            [
+              2.8559713503504107,
+              3.493197804062208,
+              -3.0248656971293655
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 974,
+          "v": [
+            [
+              2.8559713503504107,
+              0,
+              -3.0248656971293655
+            ],
+            [
+              2.8559713503504107,
+              3.493197804062208,
+              -3.0248656971293655
+            ],
+            [
+              2.9867397013988204,
+              3.493197804062208,
+              -3.0248656971293655
+            ],
+            [
+              2.9867397013988204,
+              0,
+              -3.0248656971293655
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 975,
+          "v": [
+            [
+              2.9867397013988204,
+              0,
+              -3.0248656971293655
+            ],
+            [
+              2.9867397013988204,
+              3.493197804062208,
+              -3.0248656971293655
+            ],
+            [
+              2.9867397013988204,
+              3.493197804062208,
+              -1.9937650694306392
+            ],
+            [
+              2.9867397013988204,
+              0,
+              -1.9937650694306392
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 976,
+          "v": [
+            [
+              2.9867397013988204,
+              0,
+              -1.9937650694306392
+            ],
+            [
+              2.9867397013988204,
+              3.493197804062208,
+              -1.9937650694306392
+            ],
+            [
+              2.8559713503504107,
+              3.493197804062208,
+              -1.9937650694306392
+            ],
+            [
+              2.8559713503504107,
+              0,
+              -1.9937650694306392
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 977,
+          "v": [
+            [
+              2.8559713503504107,
+              0,
+              -1.9937650694306392
+            ],
+            [
+              2.8559713503504107,
+              3.493197804062208,
+              -1.9937650694306392
+            ],
+            [
+              2.8559713503504107,
+              3.493197804062208,
+              -3.0248656971293655
+            ],
+            [
+              2.8559713503504107,
+              0,
+              -3.0248656971293655
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 978,
+          "v": [
+            [
+              1.9914804418407102,
+              0,
+              -2.163677284934483
+            ],
+            [
+              2.990342269355511,
+              0,
+              -2.163677284934483
+            ],
+            [
+              2.990342269355511,
+              0,
+              -2.0021652357010558
+            ],
+            [
+              1.9914804418407102,
+              0,
+              -2.0021652357010558
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 979,
+          "v": [
+            [
+              1.9914804418407102,
+              3.453301014661859,
+              -2.0021652357010558
+            ],
+            [
+              2.990342269355511,
+              3.453301014661859,
+              -2.0021652357010558
+            ],
+            [
+              2.990342269355511,
+              3.453301014661859,
+              -2.163677284934483
+            ],
+            [
+              1.9914804418407102,
+              3.453301014661859,
+              -2.163677284934483
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 980,
+          "v": [
+            [
+              1.9914804418407102,
+              0,
+              -2.163677284934483
+            ],
+            [
+              1.9914804418407102,
+              3.453301014661859,
+              -2.163677284934483
+            ],
+            [
+              2.990342269355511,
+              3.453301014661859,
+              -2.163677284934483
+            ],
+            [
+              2.990342269355511,
+              0,
+              -2.163677284934483
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 981,
+          "v": [
+            [
+              2.990342269355511,
+              0,
+              -2.163677284934483
+            ],
+            [
+              2.990342269355511,
+              3.453301014661859,
+              -2.163677284934483
+            ],
+            [
+              2.990342269355511,
+              3.453301014661859,
+              -2.0021652357010558
+            ],
+            [
+              2.990342269355511,
+              0,
+              -2.0021652357010558
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 982,
+          "v": [
+            [
+              2.990342269355511,
+              0,
+              -2.0021652357010558
+            ],
+            [
+              2.990342269355511,
+              3.453301014661859,
+              -2.0021652357010558
+            ],
+            [
+              1.9914804418407102,
+              3.453301014661859,
+              -2.0021652357010558
+            ],
+            [
+              1.9914804418407102,
+              0,
+              -2.0021652357010558
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 983,
+          "v": [
+            [
+              1.9914804418407102,
+              0,
+              -2.0021652357010558
+            ],
+            [
+              1.9914804418407102,
+              3.453301014661859,
+              -2.0021652357010558
+            ],
+            [
+              1.9914804418407102,
+              3.453301014661859,
+              -2.163677284934483
+            ],
+            [
+              1.9914804418407102,
+              0,
+              -2.163677284934483
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 984,
+          "v": [
+            [
+              1.9973033816701042,
+              0,
+              -2.994330323210063
+            ],
+            [
+              2.1570751707984774,
+              0,
+              -2.994330323210063
+            ],
+            [
+              2.1570751707984774,
+              0,
+              -1.9584201221094513
+            ],
+            [
+              1.9973033816701042,
+              0,
+              -1.9584201221094513
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 985,
+          "v": [
+            [
+              1.9973033816701042,
+              3.4863907780380434,
+              -1.9584201221094513
+            ],
+            [
+              2.1570751707984774,
+              3.4863907780380434,
+              -1.9584201221094513
+            ],
+            [
+              2.1570751707984774,
+              3.4863907780380434,
+              -2.994330323210063
+            ],
+            [
+              1.9973033816701042,
+              3.4863907780380434,
+              -2.994330323210063
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 986,
+          "v": [
+            [
+              1.9973033816701042,
+              0,
+              -2.994330323210063
+            ],
+            [
+              1.9973033816701042,
+              3.4863907780380434,
+              -2.994330323210063
+            ],
+            [
+              2.1570751707984774,
+              3.4863907780380434,
+              -2.994330323210063
+            ],
+            [
+              2.1570751707984774,
+              0,
+              -2.994330323210063
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 987,
+          "v": [
+            [
+              2.1570751707984774,
+              0,
+              -2.994330323210063
+            ],
+            [
+              2.1570751707984774,
+              3.4863907780380434,
+              -2.994330323210063
+            ],
+            [
+              2.1570751707984774,
+              3.4863907780380434,
+              -1.9584201221094513
+            ],
+            [
+              2.1570751707984774,
+              0,
+              -1.9584201221094513
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 988,
+          "v": [
+            [
+              2.1570751707984774,
+              0,
+              -1.9584201221094513
+            ],
+            [
+              2.1570751707984774,
+              3.4863907780380434,
+              -1.9584201221094513
+            ],
+            [
+              1.9973033816701042,
+              3.4863907780380434,
+              -1.9584201221094513
+            ],
+            [
+              1.9973033816701042,
+              0,
+              -1.9584201221094513
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 989,
+          "v": [
+            [
+              1.9973033816701042,
+              0,
+              -1.9584201221094513
+            ],
+            [
+              1.9973033816701042,
+              3.4863907780380434,
+              -1.9584201221094513
+            ],
+            [
+              1.9973033816701042,
+              3.4863907780380434,
+              -2.994330323210063
+            ],
+            [
+              1.9973033816701042,
+              0,
+              -2.994330323210063
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 11,
+            "y": 6
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:11,6"
+        },
+        {
+          "id": 990,
+          "v": [
+            [
+              -3.0217334452922766,
+              0,
+              -2.0269842905413786
+            ],
+            [
+              -2.01925363115623,
+              0,
+              -2.0269842905413786
+            ],
+            [
+              -2.01925363115623,
+              0,
+              -1.879645816386595
+            ],
+            [
+              -3.0217334452922766,
+              0,
+              -1.879645816386595
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 991,
+          "v": [
+            [
+              -3.0217334452922766,
+              3.4876534052883863,
+              -1.879645816386595
+            ],
+            [
+              -2.01925363115623,
+              3.4876534052883863,
+              -1.879645816386595
+            ],
+            [
+              -2.01925363115623,
+              3.4876534052883863,
+              -2.0269842905413786
+            ],
+            [
+              -3.0217334452922766,
+              3.4876534052883863,
+              -2.0269842905413786
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 992,
+          "v": [
+            [
+              -3.0217334452922766,
+              0,
+              -2.0269842905413786
+            ],
+            [
+              -3.0217334452922766,
+              3.4876534052883863,
+              -2.0269842905413786
+            ],
+            [
+              -2.01925363115623,
+              3.4876534052883863,
+              -2.0269842905413786
+            ],
+            [
+              -2.01925363115623,
+              0,
+              -2.0269842905413786
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 993,
+          "v": [
+            [
+              -2.01925363115623,
+              0,
+              -2.0269842905413786
+            ],
+            [
+              -2.01925363115623,
+              3.4876534052883863,
+              -2.0269842905413786
+            ],
+            [
+              -2.01925363115623,
+              3.4876534052883863,
+              -1.879645816386595
+            ],
+            [
+              -2.01925363115623,
+              0,
+              -1.879645816386595
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 994,
+          "v": [
+            [
+              -2.01925363115623,
+              0,
+              -1.879645816386595
+            ],
+            [
+              -2.01925363115623,
+              3.4876534052883863,
+              -1.879645816386595
+            ],
+            [
+              -3.0217334452922766,
+              3.4876534052883863,
+              -1.879645816386595
+            ],
+            [
+              -3.0217334452922766,
+              0,
+              -1.879645816386595
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 995,
+          "v": [
+            [
+              -3.0217334452922766,
+              0,
+              -1.879645816386595
+            ],
+            [
+              -3.0217334452922766,
+              3.4876534052883863,
+              -1.879645816386595
+            ],
+            [
+              -3.0217334452922766,
+              3.4876534052883863,
+              -2.0269842905413786
+            ],
+            [
+              -3.0217334452922766,
+              0,
+              -2.0269842905413786
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "north",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 996,
+          "v": [
+            [
+              -2.142471318666467,
+              0,
+              -1.960196117983711
+            ],
+            [
+              -1.9816938925971495,
+              0,
+              -1.960196117983711
+            ],
+            [
+              -1.9816938925971495,
+              0,
+              -0.9771796790564385
+            ],
+            [
+              -2.142471318666467,
+              0,
+              -0.9771796790564385
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 997,
+          "v": [
+            [
+              -2.142471318666467,
+              3.4834646667350233,
+              -0.9771796790564385
+            ],
+            [
+              -1.9816938925971495,
+              3.4834646667350233,
+              -0.9771796790564385
+            ],
+            [
+              -1.9816938925971495,
+              3.4834646667350233,
+              -1.960196117983711
+            ],
+            [
+              -2.142471318666467,
+              3.4834646667350233,
+              -1.960196117983711
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 998,
+          "v": [
+            [
+              -2.142471318666467,
+              0,
+              -1.960196117983711
+            ],
+            [
+              -2.142471318666467,
+              3.4834646667350233,
+              -1.960196117983711
+            ],
+            [
+              -1.9816938925971495,
+              3.4834646667350233,
+              -1.960196117983711
+            ],
+            [
+              -1.9816938925971495,
+              0,
+              -1.960196117983711
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 999,
+          "v": [
+            [
+              -1.9816938925971495,
+              0,
+              -1.960196117983711
+            ],
+            [
+              -1.9816938925971495,
+              3.4834646667350233,
+              -1.960196117983711
+            ],
+            [
+              -1.9816938925971495,
+              3.4834646667350233,
+              -0.9771796790564385
+            ],
+            [
+              -1.9816938925971495,
+              0,
+              -0.9771796790564385
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1000,
+          "v": [
+            [
+              -1.9816938925971495,
+              0,
+              -0.9771796790564385
+            ],
+            [
+              -1.9816938925971495,
+              3.4834646667350233,
+              -0.9771796790564385
+            ],
+            [
+              -2.142471318666467,
+              3.4834646667350233,
+              -0.9771796790564385
+            ],
+            [
+              -2.142471318666467,
+              0,
+              -0.9771796790564385
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1001,
+          "v": [
+            [
+              -2.142471318666467,
+              0,
+              -0.9771796790564385
+            ],
+            [
+              -2.142471318666467,
+              3.4834646667350233,
+              -0.9771796790564385
+            ],
+            [
+              -2.142471318666467,
+              3.4834646667350233,
+              -1.960196117983711
+            ],
+            [
+              -2.142471318666467,
+              0,
+              -1.960196117983711
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "east",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1002,
+          "v": [
+            [
+              -2.9588731419203973,
+              0,
+              -1.1908997462249593
+            ],
+            [
+              -1.9992942167197574,
+              0,
+              -1.1908997462249593
+            ],
+            [
+              -1.9992942167197574,
+              0,
+              -1.0140839817272695
+            ],
+            [
+              -2.9588731419203973,
+              0,
+              -1.0140839817272695
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1003,
+          "v": [
+            [
+              -2.9588731419203973,
+              3.5061329939135195,
+              -1.0140839817272695
+            ],
+            [
+              -1.9992942167197574,
+              3.5061329939135195,
+              -1.0140839817272695
+            ],
+            [
+              -1.9992942167197574,
+              3.5061329939135195,
+              -1.1908997462249593
+            ],
+            [
+              -2.9588731419203973,
+              3.5061329939135195,
+              -1.1908997462249593
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1004,
+          "v": [
+            [
+              -2.9588731419203973,
+              0,
+              -1.1908997462249593
+            ],
+            [
+              -2.9588731419203973,
+              3.5061329939135195,
+              -1.1908997462249593
+            ],
+            [
+              -1.9992942167197574,
+              3.5061329939135195,
+              -1.1908997462249593
+            ],
+            [
+              -1.9992942167197574,
+              0,
+              -1.1908997462249593
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1005,
+          "v": [
+            [
+              -1.9992942167197574,
+              0,
+              -1.1908997462249593
+            ],
+            [
+              -1.9992942167197574,
+              3.5061329939135195,
+              -1.1908997462249593
+            ],
+            [
+              -1.9992942167197574,
+              3.5061329939135195,
+              -1.0140839817272695
+            ],
+            [
+              -1.9992942167197574,
+              0,
+              -1.0140839817272695
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1006,
+          "v": [
+            [
+              -1.9992942167197574,
+              0,
+              -1.0140839817272695
+            ],
+            [
+              -1.9992942167197574,
+              3.5061329939135195,
+              -1.0140839817272695
+            ],
+            [
+              -2.9588731419203973,
+              3.5061329939135195,
+              -1.0140839817272695
+            ],
+            [
+              -2.9588731419203973,
+              0,
+              -1.0140839817272695
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1007,
+          "v": [
+            [
+              -2.9588731419203973,
+              0,
+              -1.0140839817272695
+            ],
+            [
+              -2.9588731419203973,
+              3.5061329939135195,
+              -1.0140839817272695
+            ],
+            [
+              -2.9588731419203973,
+              3.5061329939135195,
+              -1.1908997462249593
+            ],
+            [
+              -2.9588731419203973,
+              0,
+              -1.1908997462249593
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "south",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1008,
+          "v": [
+            [
+              -3.0143247456905256,
+              0,
+              -2.0268134479282454
+            ],
+            [
+              -2.860970055935199,
+              0,
+              -2.0268134479282454
+            ],
+            [
+              -2.860970055935199,
+              0,
+              -1.0273127050943003
+            ],
+            [
+              -3.0143247456905256,
+              0,
+              -1.0273127050943003
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1009,
+          "v": [
+            [
+              -3.0143247456905256,
+              3.490510192950608,
+              -1.0273127050943003
+            ],
+            [
+              -2.860970055935199,
+              3.490510192950608,
+              -1.0273127050943003
+            ],
+            [
+              -2.860970055935199,
+              3.490510192950608,
+              -2.0268134479282454
+            ],
+            [
+              -3.0143247456905256,
+              3.490510192950608,
+              -2.0268134479282454
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1010,
+          "v": [
+            [
+              -3.0143247456905256,
+              0,
+              -2.0268134479282454
+            ],
+            [
+              -3.0143247456905256,
+              3.490510192950608,
+              -2.0268134479282454
+            ],
+            [
+              -2.860970055935199,
+              3.490510192950608,
+              -2.0268134479282454
+            ],
+            [
+              -2.860970055935199,
+              0,
+              -2.0268134479282454
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1011,
+          "v": [
+            [
+              -2.860970055935199,
+              0,
+              -2.0268134479282454
+            ],
+            [
+              -2.860970055935199,
+              3.490510192950608,
+              -2.0268134479282454
+            ],
+            [
+              -2.860970055935199,
+              3.490510192950608,
+              -1.0273127050943003
+            ],
+            [
+              -2.860970055935199,
+              0,
+              -1.0273127050943003
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1012,
+          "v": [
+            [
+              -2.860970055935199,
+              0,
+              -1.0273127050943003
+            ],
+            [
+              -2.860970055935199,
+              3.490510192950608,
+              -1.0273127050943003
+            ],
+            [
+              -3.0143247456905256,
+              3.490510192950608,
+              -1.0273127050943003
+            ],
+            [
+              -3.0143247456905256,
+              0,
+              -1.0273127050943003
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        },
+        {
+          "id": 1013,
+          "v": [
+            [
+              -3.0143247456905256,
+              0,
+              -1.0273127050943003
+            ],
+            [
+              -3.0143247456905256,
+              3.490510192950608,
+              -1.0273127050943003
+            ],
+            [
+              -3.0143247456905256,
+              3.490510192950608,
+              -2.0268134479282454
+            ],
+            [
+              -3.0143247456905256,
+              0,
+              -2.0268134479282454
+            ]
+          ],
+          "tag": "chimney",
+          "color": null,
+          "extensionFace": "west",
+          "solidifiedWall": true,
+          "wallThickness": 0.15,
+          "extensionType": "chimney",
+          "sourceTile": {
+            "x": 6,
+            "y": 7
+          },
+          "fusedHollow": true,
+          "solidifiedWalls": true,
+          "flueContinuesToGround": true,
+          "openTop": true,
+          "wonkySeed": "chimney:6,7"
+        }
+      ]
+    },
+    "roof": {
+      "tubeRadius": 0.08,
+      "tubeSpacing": 0.5,
+      "overhang": 1.25,
+      "wallOriginReach": true,
+      "direction": "u",
+      "lift": 0.04,
+      "flipX": true,
+      "flipY": false,
+      "flipZ": false,
+      "shingleScaleX": 1.2,
+      "shingleScaleY": 1.2,
+      "shingleScaleZ": 2,
+      "shingleRotX": -10,
+      "shingleRotZ": 0,
+      "peakRotateAway": true,
+      "secondLayer": true,
+      "secondLayerAcross": 0.25,
+      "secondLayerLift": 0,
+      "secondLayerOverhang": 1,
+      "secondLayerWallOriginReach": false,
+      "secondLayerShingleScaleX": 1.5,
+      "secondLayerShingleScaleY": 1.2,
+      "secondLayerShingleScaleZ": 2,
+      "secondLayerShingleRotX": 0,
+      "secondLayerPeakRotateAway": false,
+      "secondLayerFlipX": true,
+      "secondLayerFlipY": false,
+      "secondLayerFlipZ": false,
+      "peakRotate": true,
+      "peakRotateStrength": 0.05,
+      "peakRotateFalloff": 0,
+      "highlandInterlockOffset": 0.25,
+      "shingleSource": "",
+      "crossGableSections": [
+        {
+          "axis": "x",
+          "x0": 5,
+          "x1": 13,
+          "y0": 6,
+          "y1": 9,
+          "role": "primary",
+          "roofSpan": 3,
+          "roofHeight": 1.19,
+          "highlandBodyTopScale": 0.85,
+          "roofBaseAlignedToCeiling": true,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "clipToPrimaryRidge": false,
+          "clipSide": ""
+        },
+        {
+          "axis": "z",
+          "x0": 9,
+          "x1": 12,
+          "y0": 7.5,
+          "y1": 12,
+          "role": "cross_gable_clipped_to_main_ridge",
+          "roofSpan": 3,
+          "roofHeight": 1.19,
+          "highlandBodyTopScale": 0.85,
+          "roofBaseAlignedToCeiling": true,
+          "continuousFrustumSlope": true,
+          "triangularPrismRidge": true,
+          "clipToPrimaryRidge": true,
+          "clipSide": "south_to_main_ridge",
+          "originalX0": 9,
+          "originalX1": 12,
+          "originalY0": 6,
+          "originalY1": 12
+        }
+      ]
+    },
+    "assets": [],
+    "extensionGeneration": {
+      "entryTunnelGroups": 1,
+      "chimneyGroups": 2,
+      "porches": 0,
+      "porchStairs": 0,
+      "railings": 0,
+      "generatedAt": "2026-08-04T18:26:20.462Z"
+    }
+  },
+  "library": []
+}
