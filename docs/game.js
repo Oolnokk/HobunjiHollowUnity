@@ -2354,12 +2354,10 @@
       // beginStagger (the actual attack lockout, read by every combat-*.js
       // ability module's own isStaggered guard).
       //
-      // Duration = the configured one-second baseline, stretched by how
-      // depleted Footing already is — mirrors the procedural-animation-
-      // editor tool's own footingStaggerMultiplier
-      // (1 + loss² * staggerMultiplierK) so a
-      // punch-drunk fighter's stagger visibly drags the lower Footing gets,
-      // "without altering the authored keys" (same comment as that tool's).
+      // Duration starts at the configured tiny baseline and rises
+      // quadratically toward one second as Footing approaches 1% remaining.
+      // Scaling from the post-hit Footing value makes a punch-drunk fighter's
+      // stagger visibly drag without making ordinary hits one-second stuns.
       // The player's direction-matched visual clip is retimed to that exact
       // gameplay duration. Thus every direction has the same stun at a given
       // Footing level even though the authored clips have different lengths.
@@ -2368,8 +2366,9 @@
         const direction = hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY);
         const staggerCfg = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger || {};
         const footingLossPerDamage = Number(staggerCfg.footingLossPerDamage);
-        const staggerMultiplierK = Number(staggerCfg.staggerMultiplierK);
         const baseDurationS = Number(staggerCfg.baseDurationSeconds);
+        const maxDurationS = Number(staggerCfg.maxDurationSeconds);
+        const maxDurationAtFootingFrac = Number(staggerCfg.maxDurationAtFootingFraction);
         window.ResourceSystem.spendFooting(entity, Math.max(0, damage) * footingLossPerDamage, 'hit');
 
         // This hit emptied Footing — go straight to the full breakThrow
@@ -2377,8 +2376,10 @@
         // just get immediately overwritten by it.
         if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
 
-        const footingLossFrac = entity.maxFooting ? 1 - clamp(entity.footing / entity.maxFooting, 0, 1) : 0;
-        const durationS = baseDurationS * (1 + footingLossFrac * footingLossFrac * staggerMultiplierK);
+        const footingFrac = entity.maxFooting ? clamp(entity.footing / entity.maxFooting, 0, 1) : 1;
+        const lossRange = 1 - maxDurationAtFootingFrac;
+        const staggerProgress = lossRange > 0 ? clamp((1 - footingFrac) / lossRange, 0, 1) : 1;
+        const durationS = baseDurationS + (maxDurationS - baseDurationS) * staggerProgress * staggerProgress;
 
         if (isPlayer) {
           const clip = window.ImpactBlendLibrary?.getClip('impact', direction);

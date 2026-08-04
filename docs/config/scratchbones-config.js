@@ -289,14 +289,16 @@ window.SCRATCHBONES_CONFIG = {
         "proneRecoveryDelayS": 1.5
       },
       // Every landed, non-lethal hit causes a full interrupt and stagger.
-      // Non-prone stagger duration starts at baseDurationSeconds and is
-      // stretched by how much Footing has already been lost — see
-      // game.js's applyHitStagger. Impact clips are retimed to this gameplay
-      // duration rather than making differently authored directions stun for
-      // different lengths.
+      // The lockout is normally only baseDurationSeconds, then approaches
+      // maxDurationSeconds as remaining Footing approaches
+      // maxDurationAtFootingFraction (1 Footing on the default 100-point
+      // resource). See game.js's applyHitStagger. Impact clips are retimed to
+      // this gameplay duration rather than making differently authored
+      // directions stun for different lengths.
       "stagger": {
-        "baseDurationSeconds": 1,
-        "staggerMultiplierK": 1.5,
+        "baseDurationSeconds": 0.1,
+        "maxDurationSeconds": 1,
+        "maxDurationAtFootingFraction": 0.01,
         "footingLossPerDamage": 1.6
       },
       "combatConeReticle": {
