@@ -13,6 +13,9 @@
   "use strict";
   if (typeof THREE === "undefined") { console.error("resource-rings.js requires three.js to load first"); return; }
 
+  const ringConfig = window.HOBUNJI_CONFIG?.resourceRings;
+  if (!ringConfig) { console.error("resource-rings.js requires HOBUNJI_CONFIG.resourceRings"); return; }
+
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   function parseCssColor(value, fallback) {
@@ -32,30 +35,22 @@
   // ->end linearly with no modulo, so Footing's end MUST be given as -56,
   // not 304 — 304 would sweep the long way around through Health/Stamina
   // instead of straight across the front gap.
-  const HEALTH_ARC = { start: 292, end: 186 };
-  const STAMINA_ARC = { start: 174, end: 68 };
-  const FOOTING_ARC = { start: 56, end: -56 };
+  const HEALTH_ARC = ringConfig.arcs.health;
+  const STAMINA_ARC = ringConfig.arcs.stamina;
+  const FOOTING_ARC = ringConfig.arcs.footing;
 
-  const HEALTH_COLOR = 0x55d76f;
-  const STAMINA_COLOR = 0x67b7ff;
-  const FOOTING_COLOR = 0xd9a441;
-  const EXHAUSTED_COLOR = 0x050608;
-  const OUTLINE_COLOR = 0x000000;
+  const HEALTH_COLOR = parseCssColor(ringConfig.colors.health, 0);
+  const STAMINA_COLOR = parseCssColor(ringConfig.colors.stamina, 0);
+  const FOOTING_COLOR = parseCssColor(ringConfig.colors.footing, 0);
+  const EXHAUSTED_COLOR = parseCssColor(ringConfig.colors.exhausted, 0);
+  const OUTLINE_COLOR = parseCssColor(ringConfig.colors.outline, 0);
   // Fill only — each affliction now entirely replaces the bar's color over
   // the points it claims (see buildGroundResourceArc's precedence-clipped
   // segments) rather than tinting an overlay on top of it, so there's no
   // separate outline-per-affliction color anymore; every segment boundary
   // gets the same black outline (see addSegmentOutlines).
-  const AFFLICTION_COLORS = {
-    woundedStamina: 0xff9b2f,
-    bleedingHealth: 0xcf1e2e,
-    congealedHealth: 0xc98d41,
-    infectedStamina: 0x284f2a,
-    windedStamina: 0x90949c,
-    bruisedHealth: 0x4c42a9,
-    shatteredStamina: 0x8c4ad9,
-    poisonedHealth: 0x37651c,
-  };
+  const AFFLICTION_COLORS = Object.fromEntries(Object.entries(ringConfig.afflictionColors)
+    .map(([id, color]) => [id, parseCssColor(color, 0xffffff)]));
 
   function makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments) {
     const span = endDeg - startDeg;
@@ -123,11 +118,11 @@
   // left completely alone: they have no real hue to push toward, and
   // forcing one in would turn "drained"/"winded" some arbitrary random-
   // looking color instead of reading as gray/dark on purpose.
-  const NEON_MIN_SOURCE_SATURATION = 0.12;
-  const NEON_MIN_SOURCE_LIGHTNESS = 0.08;
-  const NEON_SATURATION = 1;
-  const NEON_MIN_LIGHTNESS = 0.42;
-  const NEON_MAX_LIGHTNESS = 0.6;
+  const NEON_MIN_SOURCE_SATURATION = ringConfig.neon.minSourceSaturation;
+  const NEON_MIN_SOURCE_LIGHTNESS = ringConfig.neon.minSourceLightness;
+  const NEON_SATURATION = ringConfig.neon.saturation;
+  const NEON_MIN_LIGHTNESS = ringConfig.neon.minLightness;
+  const NEON_MAX_LIGHTNESS = ringConfig.neon.maxLightness;
   function neonizeColor(hex) {
     const hsl = {};
     new THREE.Color(hex).getHSL(hsl);
@@ -146,8 +141,8 @@
   // the fill itself to full saturation (see neonizeColor) up front, and
   // letting the halo spread that same saturated hue outward instead of
   // brightening it, is what actually reads as neon without any white in it.
-  const GLOW_HALO_PAD_FRAC = 0.34; // fraction of the bar's own radial width the halo bleeds past each edge — a real spreading glow, not a thin fringe
-  const GLOW_HALO_OPACITY_MUL = 0.75;
+  const GLOW_HALO_PAD_FRAC = ringConfig.neon.glowHaloPadFraction;
+  const GLOW_HALO_OPACITY_MUL = ringConfig.neon.glowHaloOpacityMultiplier;
   function makeGlowArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32) {
     const group = new THREE.Group();
     const width = outerRadius - innerRadius;
@@ -283,9 +278,9 @@
   // decrease it), that resource's whole arc group gets a brief scale pulse
   // + position jitter so a landed affliction reads as an event instead of
   // its color just silently appearing next frame.
-  const AFFLICTION_PULSE_DURATION_S = 1.0;
-  const AFFLICTION_PULSE_SCALE = 0.22;
-  const AFFLICTION_SHAKE_UNITS = 0.035;
+  const AFFLICTION_PULSE_DURATION_S = ringConfig.afflictionPulse.durationSeconds;
+  const AFFLICTION_PULSE_SCALE = ringConfig.afflictionPulse.scale;
+  const AFFLICTION_SHAKE_UNITS = ringConfig.afflictionPulse.shakeUnits;
 
   function afflictionTotalFor(entity, resourceKey) {
     const RS = window.ResourceSystem;
@@ -315,7 +310,14 @@
   // tagged with a resourceKey — runs every frame (not just on rebuild) so
   // the animation keeps playing across frames where nothing else changed.
   function applyAfflictionPulseTransform(hudGroup, entity, nowMs) {
-    for (const child of hudGroup.children) {
+    // Resource arcs live one level below the rotated fighter-ring wrapper.
+    // Walk the tree rather than checking only the HUD's direct children;
+    // the old direct-child loop never reached a tagged arc, so the intended
+    // affliction feedback animation could not run.
+    const pending = [...hudGroup.children];
+    while (pending.length) {
+      const child = pending.pop();
+      pending.push(...child.children);
       const key = child.userData?.resourceKey;
       if (!key) continue;
       const until = entity._afflictionPulseUntil?.[key] || 0;
@@ -391,9 +393,9 @@
     group.rotation.y = Math.PI / 2;
     const healthSpec = { resourceKey: "health", ...HEALTH_ARC, color: HEALTH_COLOR, innerMul: .74, outerMul: .92, y: .018 };
     const staminaSpec = { resourceKey: "stamina", ...STAMINA_ARC, color: entity.exhaustion.active ? EXHAUSTED_COLOR : STAMINA_COLOR, innerMul: .74, outerMul: .92, y: .02 };
-    group.add(buildGroundResourceArc(entity, healthSpec, radius));
-    group.add(buildGroundResourceArc(entity, staminaSpec, radius));
-    if (Number.isFinite(entity.maxFooting)) {
+    if (!isResourceHomeostatic(entity, "health")) group.add(buildGroundResourceArc(entity, healthSpec, radius));
+    if (!isResourceHomeostatic(entity, "stamina")) group.add(buildGroundResourceArc(entity, staminaSpec, radius));
+    if (Number.isFinite(entity.maxFooting) && !isResourceHomeostatic(entity, "footing")) {
       const footingSpec = { resourceKey: "footing", ...FOOTING_ARC, color: FOOTING_COLOR, innerMul: .74, outerMul: .92, y: .022 };
       group.add(buildGroundResourceArc(entity, footingSpec, radius));
     }
@@ -407,7 +409,7 @@
   // read as a halo the resource ring sits on top of. Rotationally
   // symmetric, so the group.rotation.y = Math.PI/2 on the resource ring
   // above doesn't matter for these.
-  const TARGET_RING_COLOR = 0xff2020;
+  const TARGET_RING_COLOR = parseCssColor(ringConfig.colors.target, 0);
   function buildTargetIndicatorRings(radius) {
     const group = new THREE.Group();
     const y = .008;
@@ -416,15 +418,21 @@
     return group;
   }
 
-  // Homeostasis = full Health, full Stamina, not Exhausted, and no active
-  // affliction — the ring should be invisible at rest and only appear once
-  // something is actually missing or afflicted.
+  // Each resource independently disappears at its own homeostasis. A Health
+  // affliction must not reveal full Stamina/Footing, and vice versa.
+  function isResourceHomeostatic(entity, resourceKey) {
+    if (resourceKey === "stamina" && entity.exhaustion.active) return false;
+    const { max, current } = resourceFields(entity, resourceKey);
+    if (current < max) return false;
+    const RS = window.ResourceSystem;
+    return !Object.entries(RS.AFFLICTIONS).some(([id, def]) =>
+      def.resource === resourceKey && RS.getAffliction(entity, id) > 0);
+  }
+
   function isHomeostatic(entity) {
-    if (entity.exhaustion.active) return false;
-    if (entity.health < entity.maxHealth) return false;
-    if (entity.stamina < entity.maxStamina) return false;
-    if (Number.isFinite(entity.maxFooting) && entity.footing < entity.maxFooting) return false;
-    return Object.values(entity.afflictions).every(v => !(v > 0));
+    if (!isResourceHomeostatic(entity, "health")) return false;
+    if (!isResourceHomeostatic(entity, "stamina")) return false;
+    return !Number.isFinite(entity.maxFooting) || isResourceHomeostatic(entity, "footing");
   }
 
   function clearGroup(group) {
@@ -475,9 +483,8 @@
   // (same as this game's existing groundShadow.position.set(...) calls).
   // opts.isTarget: true while this entity is the player's current weapon
   // auto-target (see game.js's findAutoTarget) — draws the red target-lock
-  // rings and forces the resource ring visible even at full Health/Stamina,
-  // so targeting a healthy creature doesn't leave you with no ring at all
-  // until it first takes damage.
+  // rings independently of the resource arcs. Full, unafflicted resources
+  // stay hidden even when the target indicator itself is visible.
   function updateRingHud(entity, scene, radius = .6, opts = {}) {
     const isTarget = !!opts.isTarget;
     const nowMs = performance.now();
@@ -536,5 +543,6 @@
     // resource rings instead of using AFFLICTION_COLORS' raw, often-muddy
     // source tone directly.
     neonizeColor,
+    isResourceHomeostatic,
   };
 })();
