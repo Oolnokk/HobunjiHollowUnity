@@ -13889,6 +13889,14 @@
         if (tile && tile.type === TileType.RAMP) return NORMAL_TOP + (tile.rampElevation || 0) * PLATEAU_UNIT;
         return tileSurfaceY(tile ? tile.type : TileType.GRASS) + (tile?.elevTier || 0) * PLATEAU_UNIT;
       }
+      function surfaceYAtWorld(areaId, worldX, worldZ) {
+        const sceneGrid = _zoneScenes.get(areaId)?.grid;
+        const tile = sceneGrid?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
+        const base = tileSurfaceYInArea(tile, areaId);
+        const layout = _zoneLayouts.get(areaId);
+        const subtle = window.TerrainPreview?.sampleVisualHeight(layout?.visualHeights, worldX, worldZ, layout?.cols, layout?.rows) || 0;
+        return base + subtle;
+      }
 
       const _audioCueIndexes = new Map();
       const _mapAudioIndexes = new Map();
@@ -16713,7 +16721,7 @@
         if (!tile) return 0;
         // Zone terrain has real plateau tiers/ramps — tileSurfaceY(type) alone
         // (used by every other area, all flat ground) would ignore them.
-        return _isZoneArea(area) ? tileSurfaceYInArea(tile, area) : tileSurfaceY(tile.type);
+        return _isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type);
       }
       function resolveNpcSpawnPosition(rec, target) {
         const legacy = target?.legacyPath || null;
@@ -17657,7 +17665,8 @@
             // procedurally-placed animalDen anchors — only the Tothal Shift
             // path (WildernessMapGenerator) produces those (see
             // performTothalShift), so wild packs simply don't spawn here yet.
-            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
+            const visualHeights = window.TerrainPreview?.buildMergedZoneGrid(ws, zoneMapId)?.visualHeights || new Map();
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
             console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
           }
           const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
