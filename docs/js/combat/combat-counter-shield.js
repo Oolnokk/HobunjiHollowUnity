@@ -73,8 +73,13 @@
       const t = now();
       const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0));
       if (t - lastCounterAt < cooldownS) return;
-      lastCounterAt = t;
       const deps = window.Combat.deps;
+      // Footing/impact stagger lockout — see combat-combo.js's matching
+      // guard. The block absorption itself (tryAbsorb, above) still happens
+      // — only the automatic riposte is withheld while reeling from an
+      // earlier hit.
+      if (window.Combat.isStaggered(deps.player)) return;
+      lastCounterAt = t;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const damage = Math.round(baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)));
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;

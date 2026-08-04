@@ -283,7 +283,19 @@ window.SCRATCHBONES_CONFIG = {
         "bleedTickPerSec": 5,
         "poisonTickPerSec": 1.8,
         "exhaustionRegenPerSec": 24,
-        "pukeChancePerSec": 0.16
+        "pukeChancePerSec": 0.16,
+        "footingMax": 100,
+        "footingRegenPerSec": 6,
+        "proneRecoveryDelayS": 1.5
+      },
+      // Stagger duration = the direction-matched impact clip's own authored
+      // duration (docs/config/animations/impact-blend-v3.json), stretched by
+      // how much Footing has already been lost — see resource-system.js's
+      // spendFooting and game.js's damagePlayer/damageCreature, which read
+      // this alongside ImpactBlendLibrary's clip durations.
+      "stagger": {
+        "staggerMultiplierK": 1.5,
+        "footingLossPerDamage": 1.6
       },
       "combatConeReticle": {
         "enabled": true,

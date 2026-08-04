@@ -48,8 +48,22 @@
     return true;
   }
 
+  // Same choke point, for the Footing/impact stagger lockout (see combat-
+  // core.js's isStaggered/beginStagger, set from game.js's damagePlayer) —
+  // reeling from a hit blocks starting any weapon action, tap or hold alike
+  // (combo/quick-attack/charged-breaker/flurry/counter-shield's riposte also
+  // each carry their own isStaggered guard at their actual attack-commit
+  // point, since a hold ability like Charged Breaker can still be staggered
+  // AFTER startHold already passed this check but before it releases).
+  function blockedByStagger() {
+    const deps = window.Combat.deps;
+    if (!window.Combat.isStaggered(deps?.player)) return false;
+    deps?.showToast?.("Staggered!", false);
+    return true;
+  }
+
   function fireTap(slotIndex) {
-    if (blockedBySwimming()) return;
+    if (blockedBySwimming() || blockedByStagger()) return;
     const slotId = 'tap' + slotIndex;
     const ability = abilityForSlot(slotId);
     if (ability?.onTap) {
@@ -60,7 +74,7 @@
   }
 
   function startHold(slotIndex) {
-    if (blockedBySwimming()) return;
+    if (blockedBySwimming() || blockedByStagger()) return;
     const slotId = 'hold' + slotIndex;
     const ability = abilityForSlot(slotId);
     if (ability?.onHoldStart) ability.onHoldStart({ slotIndex, slotId });

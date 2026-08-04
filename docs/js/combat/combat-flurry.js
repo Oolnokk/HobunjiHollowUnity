@@ -42,6 +42,11 @@
     }
 
     function fireStrike(deps) {
+      // Footing/impact stagger lockout — see combat-combo.js's matching
+      // guard. Leaves `active`/nextStrikeAt untouched so the flurry just
+      // pauses (no strike, no stamina spent) and resumes on its own once
+      // the stagger clears, rather than needing onHoldEnd to be called.
+      if (window.Combat.isStaggered(deps.player)) return;
       // Every affliction this strike can inflict, and every stat bonus on
       // top of the base numbers below, comes from the player's own chosen
       // upgrades (see combat-progression.js) — a fresh, unleveled flurry

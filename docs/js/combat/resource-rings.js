@@ -25,12 +25,20 @@
   // Same fixed sweep angles (degrees) as the source demo: Health occupies
   // the right side of the ring, Stamina the left, leaving a gap at the
   // front (south, ~0deg) and a smaller one at the back — this is what
-  // reads as an "open ring" HUD rather than a full annulus.
+  // reads as an "open ring" HUD rather than a full annulus. Footing is
+  // carved out of that front gap (68deg->292deg the long way around, 136deg
+  // total) rather than resizing Health/Stamina's own arcs, leaving 12deg
+  // buffer gaps on each side of it. makeFlatArcGeometry interpolates start
+  // ->end linearly with no modulo, so Footing's end MUST be given as -56,
+  // not 304 — 304 would sweep the long way around through Health/Stamina
+  // instead of straight across the front gap.
   const HEALTH_ARC = { start: 292, end: 186 };
   const STAMINA_ARC = { start: 174, end: 68 };
+  const FOOTING_ARC = { start: 56, end: -56 };
 
   const HEALTH_COLOR = 0x55d76f;
   const STAMINA_COLOR = 0x67b7ff;
+  const FOOTING_COLOR = 0xd9a441;
   const EXHAUSTED_COLOR = 0x050608;
   const OUTLINE_COLOR = 0x000000;
   // Fill only — each affliction now entirely replaces the bar's color over
@@ -179,11 +187,17 @@
     return result;
   }
 
+  // health/stamina/footing max+current field lookup for buildGroundResourceArc.
+  function resourceFields(entity, resourceKey) {
+    if (resourceKey === "health") return { max: entity.maxHealth, current: entity.health };
+    if (resourceKey === "footing") return { max: entity.maxFooting, current: entity.footing };
+    return { max: entity.maxStamina, current: entity.stamina };
+  }
+
   function buildGroundResourceArc(entity, spec, radius) {
     const RS = window.ResourceSystem;
     const group = new THREE.Group();
-    const max = spec.resourceKey === "health" ? entity.maxHealth : entity.maxStamina;
-    const current = spec.resourceKey === "health" ? entity.health : entity.stamina;
+    const { max, current } = resourceFields(entity, spec.resourceKey);
     const displayFraction = RS.getRingFillFraction(entity, spec.resourceKey);
     const effectiveMax = RS.getEffectiveMax(entity, spec.resourceKey);
     const capFraction = max ? clamp(effectiveMax / max, 0, 1) : 0;
@@ -379,6 +393,10 @@
     const staminaSpec = { resourceKey: "stamina", ...STAMINA_ARC, color: entity.exhaustion.active ? EXHAUSTED_COLOR : STAMINA_COLOR, innerMul: .74, outerMul: .92, y: .02 };
     group.add(buildGroundResourceArc(entity, healthSpec, radius));
     group.add(buildGroundResourceArc(entity, staminaSpec, radius));
+    if (Number.isFinite(entity.maxFooting)) {
+      const footingSpec = { resourceKey: "footing", ...FOOTING_ARC, color: FOOTING_COLOR, innerMul: .74, outerMul: .92, y: .022 };
+      group.add(buildGroundResourceArc(entity, footingSpec, radius));
+    }
     return group;
   }
 
@@ -405,6 +423,7 @@
     if (entity.exhaustion.active) return false;
     if (entity.health < entity.maxHealth) return false;
     if (entity.stamina < entity.maxStamina) return false;
+    if (Number.isFinite(entity.maxFooting) && entity.footing < entity.maxFooting) return false;
     return Object.values(entity.afflictions).every(v => !(v > 0));
   }
 
@@ -445,7 +464,7 @@
   // "should I rebuild at all" decision is quantized.
   function makeHudKey(entity) {
     const q = v => Math.round(v);
-    return `${q(entity.health)}|${entity.maxHealth}|${q(entity.stamina)}|${entity.maxStamina}|${entity.exhaustion.active}|${entity.exhaustion.blackStamina}|${Object.values(entity.afflictions).map(q).join(",")}`;
+    return `${q(entity.health)}|${entity.maxHealth}|${q(entity.stamina)}|${entity.maxStamina}|${q(entity.footing ?? 0)}|${entity.maxFooting ?? 0}|${entity.exhaustion.active}|${entity.exhaustion.blackStamina}|${Object.values(entity.afflictions).map(q).join(",")}`;
   }
 
   const HOMEOSTASIS_KEY = "homeostasis";

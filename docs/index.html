@@ -71,6 +71,12 @@
   <script src="js/combat/resource-system.js?v=20260712d"></script>
   <script src="js/combat/resource-rings.js?v=20260712d"></script>
   <script src="js/combat/combat-core.js?v=20260712d"></script>
+  <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
+       runtime playback onto the player's existing procedural-leg-animation.js
+       rig. Must load after that module (see the "Procedural leg/foot
+       animation" script above) and after resource-system.js/combat-core.js. -->
+  <script src="js/combat/impact-blend-library.js?v=20260804a"></script>
+  <script src="js/combat/impact-ragdoll-playback.js?v=20260804a"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20260712d"></script>
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
@@ -127,6 +133,10 @@
     <div class="vb-row">
       <span class="vb-icon">⚡</span>
       <div class="vb-track"><div class="vb-fill vb-stamina" id="vbStaminaFill"></div></div>
+    </div>
+    <div class="vb-row">
+      <span class="vb-icon">🦶</span>
+      <div class="vb-track"><div class="vb-fill vb-footing" id="vbFootingFill"></div></div>
     </div>
   </div>
 

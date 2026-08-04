@@ -100,6 +100,8 @@
     function onTap() {
       if (busyAction) return; // previous strike's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      // Footing/impact stagger lockout — see combat-combo.js's matching guard.
+      if (window.Combat.isStaggered(deps.player)) return;
       const target = deps.findAutoTarget();
       const cond = getConditions(deps, target);
       const tech = buildTechnique(def, cond);
