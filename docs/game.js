@@ -8924,7 +8924,15 @@
       }
 
       function clearHostileObjects() {
-        hostileObjects.forEach(c => despawnCreature(c));
+        // Administrative cleanup (farm reset/Tothal Shift) bypasses the
+        // alive->dying transition, so explicitly detach bandits from their
+        // camp/tent bookkeeping before despawning them. Otherwise their IDs
+        // survive in activeMemberIds forever and isBanditCampCleared can
+        // never allow the camp's bounty/reroll lifecycle to finish.
+        hostileObjects.forEach(c => {
+          if (c.isBandit) detachBanditCampMembership(c);
+          despawnCreature(c);
+        });
         hostileObjects.clear();
       }
 
@@ -12955,12 +12963,20 @@
       function releaseBanditsAfterCampDeath(c) {
         const rec = banditCampRecord(c.areaId, c.banditCampInstanceId);
         if (!rec) return;
-        rec.gangIds.delete(c.id);
-        rec.tents.get(c.banditSourceTentId)?.activeMemberIds.delete(c.id);
+        detachBanditCampMembership(c, rec);
         const count = Math.max(0, Number(rec.cfg?.reinforcements?.releasedPerTentAfterDeath ?? 0));
         for (const state of rec.tents.values()) {
           if (!state.tent.destroyed) releaseFromTent(rec, state, count);
         }
+      }
+
+      // Both ordinary death and non-combat despawn paths must update the two
+      // membership indexes together. rec is optional so clearHostileObjects
+      // can use the same operation without first performing its own lookup.
+      function detachBanditCampMembership(c, rec = banditCampRecord(c.areaId, c.banditCampInstanceId)) {
+        if (!rec) return;
+        rec.gangIds.delete(c.id);
+        rec.tents.get(c.banditSourceTentId)?.activeMemberIds.delete(c.id);
       }
 
       // Location title card ("<Captain>'s Bandit Camp") when the player
