@@ -13897,6 +13897,23 @@
         const subtle = window.TerrainPreview?.sampleVisualHeight(layout?.visualHeights, worldX, worldZ, layout?.cols, layout?.rows) || 0;
         return base + subtle;
       }
+      // Runtime counterpart to TerrainPreview's preview-only displacement pass.
+      // Most zone builders bake world X/Z into their buffers; per-tile water
+      // planes are local, so callers may supply the mesh translation as well.
+      function displaceZoneGeometry(geometry, mapId, offsetX = 0, offsetZ = 0) {
+        const pos = geometry?.getAttribute?.('position');
+        const layout = _zoneLayouts.get(mapId);
+        if (!pos || !layout?.visualHeights || !window.TerrainPreview?.sampleVisualHeight) return geometry;
+        for (let i = 0; i < pos.count; i++) {
+          const subtle = window.TerrainPreview.sampleVisualHeight(
+            layout.visualHeights, pos.getX(i) + offsetX, pos.getZ(i) + offsetZ,
+            layout.cols, layout.rows
+          );
+          pos.setY(i, pos.getY(i) + subtle);
+        }
+        pos.needsUpdate = true;
+        return geometry;
+      }
 
       const _audioCueIndexes = new Map();
       const _mapAudioIndexes = new Map();
@@ -14821,6 +14838,8 @@
 
         for (const [matKey, entries] of _floorBuckets) {
           const merged = _mergeTileGeos(entries);
+          displaceZoneGeometry(merged, mapId);
+          merged.computeVertexNormals();
           const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
           mesh.receiveShadow = true;
           zScene.add(mesh);
@@ -15265,6 +15284,7 @@
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
         if (grassIdx.length) geo.addGroup(0, grassIdx.length, 0);
         if (stoneIdx.length) geo.addGroup(grassIdx.length, stoneIdx.length, 1);
+        displaceZoneGeometry(geo, mapId);
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, [resolveTileMat(mapId, TileType.GRASS), resolveTileMat(mapId, TileType.ROCK)]);
         mesh.receiveShadow = true;
@@ -15318,6 +15338,7 @@
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        displaceZoneGeometry(geo, mapId);
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.PATH));
         mesh.receiveShadow = true;
@@ -15368,6 +15389,7 @@
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        displaceZoneGeometry(geo, mapId);
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.GRASS));
         mesh.receiveShadow = true;
@@ -15474,6 +15496,7 @@
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        displaceZoneGeometry(geo, mapId);
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(geo, mat);
         mesh.receiveShadow = true;
@@ -15749,6 +15772,7 @@
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+        displaceZoneGeometry(geo, mapId);
         geo.computeVertexNormals();
 
         const mat = new THREE.ShaderMaterial({
@@ -15820,6 +15844,8 @@
           // waterGeo's own baked-in orientation so the plane lies flat.
           const geo = new THREE.PlaneGeometry(1.0, 1.0);
           geo.rotateX(-Math.PI / 2);
+          displaceZoneGeometry(geo, mapId, c + 0.5, r + 0.5);
+          geo.computeVertexNormals();
           const wm = new THREE.Mesh(geo, mat);
           wm.receiveShadow = false;
           wm.position.set(c + 0.5, NORMAL_TOP + tierY - (deep ? 0.10 : 0.05), r + 0.5);
@@ -32327,7 +32353,8 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const standY = player.climbing ? player.climbSurfaceY : tileSurfaceYInArea(tile, currentArea);
+        const standY = player.climbing ? player.climbSurfaceY
+          : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
 
         // Riding a mount lifts the rider up so their posterior anchor
         // coincides with the mount's saddle anchor (see
