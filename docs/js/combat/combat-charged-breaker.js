@@ -89,6 +89,12 @@
     function releaseNow(held, forced) {
       startedAt = -1;
       const deps = window.Combat.deps;
+      // Footing/impact stagger lockout — see combat-combo.js's matching
+      // guard. A stagger landing mid-charge still cancels the hold (see
+      // combat-core.js's cancelAllStaged, called from damagePlayer), so this
+      // only matters for the rare case of releasing in the same instant a
+      // new stagger begins.
+      if (window.Combat.isStaggered(deps.player)) { deps.cancelWeaponSwingHold(); return; }
       if (held < MIN_READY_S) {
         deps.cancelWeaponSwingHold();
         deps.showToast(forced

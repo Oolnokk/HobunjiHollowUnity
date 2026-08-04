@@ -188,6 +188,7 @@
     }
     .vb-health  { background: linear-gradient(90deg, #d44848, #ff8060); }
     .vb-stamina { background: linear-gradient(90deg, #d4a838, #f9e28a); }
+    .vb-footing { background: linear-gradient(90deg, #a8781f, #e0b04a); }
 
     /* ── Buff bar: active alchemy effects, anchored top-right ────── */
     #buffBar {

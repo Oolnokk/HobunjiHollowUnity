@@ -116,6 +116,10 @@
     function onTap() {
       if (busyAction) return; // previous step's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      // Footing/impact stagger lockout (see combat-core.js's isStaggered/
+      // beginStagger, set by game.js's damagePlayer) — a staggered player
+      // can't start a new combo step until it clears.
+      if (window.Combat.isStaggered(deps.player)) return;
       const t = now();
       if (t - lastTapAt > COMBO_RESET_S) comboIndex = 0;
       lastTapAt = t;

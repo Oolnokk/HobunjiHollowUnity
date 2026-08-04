@@ -1100,7 +1100,33 @@
       disposeObjectResources(root);
     }
 
-    return { group: root, update, dispose, getSeatedPoseDebug: () => lastSeatedPoseDebug };
+    // Writes an already-solved leg pose straight onto this side's thigh/calf
+    // chain and foot mesh, bypassing solveTwoBoneLeg entirely — for
+    // docs/js/combat/impact-ragdoll-playback.js, which samples pre-recorded
+    // impact/ragdoll clips (docs/tools/procedural-animation-editor/index.html
+    // exports) whose frames already carry each leg's thighQuaternion/
+    // calfLocalQuaternion/upperLength/lowerLength in this exact shape (see
+    // that tool's own IK solve, which this mirrors). Quaternions are plain
+    // {x,y,z,w}; lengths are the same "distance along local -Y" convention
+    // applyLegChain uses for chain.calf.position/mesh.position above, so a
+    // recorded pose composites into this rig with zero remapping. Caller
+    // owns interpolation between clip frames — this only ever applies one
+    // already-resolved instant.
+    function applyRecordedLegPose(side, record) {
+      const mesh = state[side];
+      const chain = legChains[side];
+      if (!mesh || !chain || !record) return;
+      const upperLength = Number(record.upperLength) || 0;
+      const lowerLength = Number(record.lowerLength) || 0;
+      chain.thigh.quaternion.set(record.thighQuaternion.x, record.thighQuaternion.y, record.thighQuaternion.z, record.thighQuaternion.w);
+      chain.calf.position.set(0, -upperLength, 0);
+      chain.calf.quaternion.set(record.calfLocalQuaternion.x, record.calfLocalQuaternion.y, record.calfLocalQuaternion.z, record.calfLocalQuaternion.w);
+      mesh.position.set(0, -lowerLength, 0);
+      mesh.rotation.x = Number(record.roll) || 0;
+      applyBoneGuideTransforms(chain, upperLength, lowerLength);
+    }
+
+    return { group: root, update, dispose, applyRecordedLegPose, getSeatedPoseDebug: () => lastSeatedPoseDebug };
   }
 
   window.ProceduralLegAnimation = {

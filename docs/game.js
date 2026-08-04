@@ -2327,6 +2327,140 @@
         if (target.lunging) { target.lunging = false; target.lungeHopCurrent = 0; }
       }
 
+      // Classifies where a hit landed relative to the victim's own facing,
+      // in the same front/right/back/left buckets the tool's impact/
+      // breakThrow blend clips are authored against (angleConvention:
+      // front=0, right=90, back=180, left=-90 — see docs/config/animations/
+      // impact-blend-v3.json's own angleConvention block). fromX/fromY is
+      // the attack's origin (same param every damageCreature/damagePlayer
+      // caller already passes for knockback); facingAngle is player.angle
+      // for the player or c.facing for a creature.
+      function hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY) {
+        if (fromX === undefined) return 'front';
+        const attackerAngle = Math.atan2(fromY - victimY, fromX - victimX);
+        let relDeg = (attackerAngle - facingAngle) * 180 / Math.PI;
+        relDeg = ((relDeg + 180) % 360 + 360) % 360 - 180; // normalize to (-180, 180]
+        if (relDeg > 45 && relDeg <= 135) return 'right';
+        if (relDeg > -135 && relDeg <= -45) return 'left';
+        if (relDeg > 135 || relDeg <= -135) return 'back';
+        return 'front';
+      }
+
+      // Footing loss + stagger lockout for a landed hit that didn't kill its
+      // target — called from damageCreature/damagePlayer right after their
+      // existing cancel-in-progress-action + knockback sequence, only when
+      // the victim survived. See docs/js/combat/resource-system.js's
+      // spendFooting (Footing loss, immune while prone) and combat-core.js's
+      // beginStagger (the actual attack lockout, read by every combat-*.js
+      // ability module's own isStaggered guard).
+      //
+      // Duration = the direction-matched 'impact' clip's own authored length
+      // (ImpactBlendLibrary), stretched by how depleted Footing already is
+      // — mirrors the procedural-animation-editor tool's own
+      // footingStaggerMultiplier (1 + loss² * staggerMultiplierK) so a
+      // punch-drunk fighter's stagger visibly drags the lower Footing gets,
+      // "without altering the authored keys" (same comment as that tool's).
+      // For the player, ImpactRagdollPlayback.trigger() is the actual source
+      // of truth for how long the clip will play (playbackRate-scaled), so
+      // its return value drives beginStagger directly instead of this
+      // function recomputing the same number a second way; creatures (no
+      // ragdoll playback) fall back to reading the clip's own duration.
+      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, damage) {
+        if (!window.ResourceSystem || entity.prone) return;
+        const direction = hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY);
+        const staggerCfg = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger || {};
+        const footingLossPerDamage = Number(staggerCfg.footingLossPerDamage) || 1.6;
+        const staggerMultiplierK = Number(staggerCfg.staggerMultiplierK) || 1.5;
+        window.ResourceSystem.spendFooting(entity, Math.max(0, damage) * footingLossPerDamage, 'hit');
+
+        // This hit emptied Footing — go straight to the full breakThrow
+        // knockdown instead of playing a regular stagger reaction that would
+        // just get immediately overwritten by it.
+        if (entity.footing <= 0) { enterProneIfFootingDepleted(entity, isPlayer, direction); return; }
+
+        const footingLossFrac = entity.maxFooting ? 1 - clamp(entity.footing / entity.maxFooting, 0, 1) : 0;
+        const multiplier = 1 + footingLossFrac * footingLossFrac * staggerMultiplierK;
+
+        let durationS = 0;
+        if (isPlayer) durationS = window.ImpactRagdollPlayback?.trigger('impact', direction, { durationMultiplier: multiplier }) || 0;
+        if (!durationS) {
+          const clip = window.ImpactBlendLibrary?.getClip('impact', direction);
+          durationS = (clip?.durationSeconds || 0.5) * multiplier;
+        }
+        window.Combat?.beginStagger(entity, direction, durationS);
+      }
+
+      // Drunken movement degradation — continuous with Footing, not a
+      // discrete regular/drunken swap: read directly at updateMovement's own
+      // targetSpeed/accel computation as an independent factor rather than
+      // through Combat.setMovementSpeedMul, which is already a single slot
+      // contested between combat-flurry.js and combat-blink-dodge.js. Scoped
+      // to speed/acceleration/turn-response only for now — see this repo's
+      // procedural-animation-editor tool for the fuller regular<->drunken
+      // pose-sway blend this deliberately doesn't also port onto the live
+      // rig (no existing system applies an authored body-lean pose to the
+      // live avatar the way this one does foot IK, and building a second
+      // clip-sampling pipeline for a purely cosmetic effect isn't worth it
+      // here — a future pass can add a lightweight sinusoidal wobble on the
+      // avatar root instead, scaled by the same footing-loss fraction below).
+      const FOOTING_SPEED_MUL_MIN = 0.55;
+      function getFootingSpeedMul(entity) {
+        if (!entity || !(entity.maxFooting > 0)) return 1;
+        const frac = clamp(entity.footing / entity.maxFooting, 0, 1);
+        return FOOTING_SPEED_MUL_MIN + (1 - FOOTING_SPEED_MUL_MIN) * frac;
+      }
+
+      // Forced disengage-jump duration for a creature/bandit whose Footing
+      // has just recovered to full after going prone — longer than the
+      // ordinary post-combo jump-back (JUMP_BACK_DUR_S, 0.4s) since this is
+      // an unconditional flee, not a chained retreat between combo cycles.
+      const FORCED_SOMERSAULT_RETREAT_S = 0.6;
+      const SOMERSAULT_STAMINA_COST = 30;
+
+      // Zero-Footing transition — called only once applyHitStagger's own
+      // spendFooting has already driven entity.footing to 0. Both the player
+      // and any creature/bandit go fully prone here (immune to further
+      // Footing loss — see resource-system.js's spendFooting), matching each
+      // other exactly; they differ only in how they LEAVE prone: the player
+      // needs a dodge input once Footing is back to full (see performDodge's
+      // somersault-recovery hook below), while a creature/bandit's own AI
+      // does it automatically the instant its Footing reaches full — see
+      // updateHostiles' own `if (c.prone)` branch, which calls
+      // beginCreatureSomersaultRecovery below once c.footing >= c.maxFooting.
+      // No bespoke ragdoll-fall visual exists for arbitrary creature rigs the
+      // way ImpactRagdollPlayback provides for the player (billboard sprite +
+      // procedural legs only) — a prone creature just holds still (see that
+      // `if (c.prone)` branch pre-empting its whole AI dispatch) until it
+      // springs back up.
+      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
+        if (entity.footing > 0 || entity.prone) return;
+        entity.prone = true;
+        // Creatures/bandits need nothing further here — damageCreature
+        // already cancelled any in-progress bandit action before calling
+        // applyHitStagger, and updateHostiles' `if (c.prone)` branch takes
+        // over from here (see beginCreatureSomersaultRecovery above).
+        if (!isPlayer) return;
+        player.somersaultRecovering = false;
+        player.vx = 0; player.vy = 0;
+        window.Combat?.cancelAllStaged?.();
+        window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 });
+      }
+
+      // Called from updateHostiles once a prone creature's Footing is back
+      // to full — forces it back into 'chase' (so updateBanditCombatAI's/
+      // the plain-wildlife retreatT branch's existing jump-back movement
+      // actually picks it up next frame) and spends stamina first, so an
+      // already-gassed creature can overspend straight into Exhausted (see
+      // resource-system.js's spendStamina -> enterExhausted) — exhaustion
+      // chaining falls out of that existing call for free.
+      function beginCreatureSomersaultRecovery(c, targetPlayer) {
+        c.prone = false;
+        c.state = 'chase';
+        c.targetPlayer = targetPlayer;
+        window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
+        c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
+      }
+
       const PLAYER_STAMINA_REGEN = 14;   // per second
       const PLAYER_HEALTH_REGEN  = 1.2;  // per second, passive
       const DODGE_DUR_S = 0.22;
@@ -6884,6 +7018,7 @@
         // combo silently resume its step count once it recovers.
         if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
+        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, amount);
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
@@ -6902,6 +7037,7 @@
           // attack/charged-breaker strike the player was mid-windup on.
           window.Combat?.cancelAllStaged?.();
           if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
+          applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, amount);
         }
         if (player.health <= 0) respawnPlayer();
       }
@@ -7563,7 +7699,19 @@
           }
 
           let moving = false, aimAngle = c.facing || 0;
-          if (c.knockbackT > 0) {
+          if (c.prone) {
+            // Zero-Footing knockdown (see enterProneIfFootingDepleted) — the
+            // same state the player goes into, just without a bespoke
+            // ragdoll-fall visual (no rig/blend data for arbitrary creature
+            // avatars — see that function's comment): holds completely still,
+            // immune to further Footing loss (resource-system.js's
+            // spendFooting), pre-empting every other branch below (attacks,
+            // telegraph, chase/return/patrol) until Footing regenerates back
+            // to full, at which point its own AI immediately springs it back
+            // up and away from whatever it was fighting — see
+            // beginCreatureSomersaultRecovery above.
+            if (c.footing >= c.maxFooting) beginCreatureSomersaultRecovery(c, targetPlayer);
+          } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
             // the player's own knockback/dodge/lunge and the pounce/guard-
@@ -13250,7 +13398,45 @@
       // from whatever the player's actually aiming at instead: the locked
       // auto-target if the weapon's out and one's engaged, otherwise the
       // player's own facing (player.angle, same aim used by attacks).
+      // Holds the player still (physics-wise) for the whole prone duration —
+      // ImpactRagdollPlayback owns playerMesh's tilt/height and leg poses
+      // directly from the separate per-frame leg-update site (guarded by its
+      // own isActive() there), both during the settled hold and during the
+      // recovery roll, so there's nothing else to drive here.
+      function updateProneState(dt) {
+        player.vx = 0; player.vy = 0;
+      }
+
+      // Somersault recovery — the dodge input's meaning while prone (see
+      // performDodge's own guard below): rolls the player back onto their
+      // feet via a procedurally coded arc (docs/js/combat/impact-ragdoll-
+      // playback.js's beginRecoveryArc — no authored blend exists for this
+      // transition). Requires Footing to be back to full, same eligibility a
+      // prone creature's own AI waits on before it auto-recovers (see
+      // updateHostiles' `if (c.prone)` branch/beginCreatureSomersaultRecovery)
+      // — the player's own recovery is just input-gated instead of automatic.
+      // Returns false if not actually prone, already mid-roll, or not yet
+      // eligible.
+      const SOMERSAULT_RECOVERY_DUR_S = 0.5;
+      function beginSomersaultRecovery() {
+        if (!player.prone || player.somersaultRecovering) return false;
+        if (player.footing < player.maxFooting) {
+          showToast("Footing hasn't recovered enough yet.", false);
+          return false;
+        }
+        player.somersaultRecovering = true;
+        window.ImpactRagdollPlayback?.beginRecoveryArc(SOMERSAULT_RECOVERY_DUR_S, () => {
+          player.prone = false;
+          player.somersaultRecovering = false;
+        });
+        return true;
+      }
+
       function performDodge() {
+        // While prone (0 Footing — see enterProneIfFootingDepleted), the
+        // dodge button somersaults the player back to standing instead of a
+        // normal evasive dodge.
+        if (player.prone) return beginSomersaultRecovery();
         if (player.dodging || player.dodgeCooldownT > 0) return false;
         let dirX, dirY;
         if (player.inputStrength > 0.001) {
@@ -13353,9 +13539,11 @@
 
       const _vbHealthFill  = document.getElementById('vbHealthFill');
       const _vbStaminaFill = document.getElementById('vbStaminaFill');
+      const _vbFootingFill = document.getElementById('vbFootingFill');
       function refreshVitalsHud() {
         if (_vbHealthFill)  _vbHealthFill.style.width  = `${Math.max(0, Math.min(100, player.health  / player.maxHealth  * 100))}%`;
         if (_vbStaminaFill) _vbStaminaFill.style.width = `${Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100))}%`;
+        if (_vbFootingFill && player.maxFooting) _vbFootingFill.style.width = `${Math.max(0, Math.min(100, player.footing / player.maxFooting * 100))}%`;
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -22327,6 +22515,10 @@
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
           name: 'player', profile, portraitSize: PORTRAIT_SIZE,
         }) || null;
+        // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
+        // playback.js) writes directly into this same legs handle — re-attach
+        // it every time the avatar (and therefore playerLegs) refreshes.
+        window.ImpactRagdollPlayback?.attach(playerMesh, playerLegs);
       }
 
       function clothingSpriteForCosmetic(cosmeticId) {
@@ -23211,6 +23403,13 @@
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (fishingMinigame?.active) return;
         if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
+        // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
+        // and performDodge below (the somersault-recovery trigger). Covers
+        // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
+        // recovery roll (player.somersaultRecovering) — both keep the player
+        // fully out of normal movement/physics until recovery finishes and
+        // clears player.prone itself (see beginSomersaultRecovery).
+        if (player.prone) { updateProneState(dt); return; }
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
@@ -23358,13 +23557,14 @@
         // Lets a held movement ability (Blink Dodge) slow normal walking
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul;
+        const footingSpeedMul = getFootingSpeedMul(player);
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
           const currentSpeed = Math.hypot(player.vx, player.vy);
           const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
-          const accel = targetDot < 0.35 ? TURN_ACCEL : ACCEL;
+          const accel = (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
           player.vx += clamp(targetVx - player.vx, -step, step);
           player.vy += clamp(targetVy - player.vy, -step, step);
@@ -32241,7 +32441,15 @@
           footprintHalfDepth: sitInteraction.seatFootprintHalfDepth,
           anchorZ: sitInteraction.seatAnchorZ,
         } : undefined;
-        playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
+        // Stagger/Footing ragdoll playback (docs/js/combat/impact-ragdoll-
+        // playback.js) owns both legs and playerMesh's tilt/height for as
+        // long as it's active/holding — skip the normal gait solve entirely
+        // rather than suppressing it, since suppressed still writes a
+        // straight-hang pose into the same leg-chain objects every frame
+        // (see that module's own update()), which would fight the recorded
+        // ragdoll pose instead of stepping aside for it.
+        if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
+        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose);
       }
 
       // ── Update reticle ────────────────────────────────────────────

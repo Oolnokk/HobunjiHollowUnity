@@ -11,7 +11,8 @@
 //   ResourceSystem.tick(entity, dt, opts)            — every frame
 //   ResourceSystem.spendStamina(entity, cost, why)   — ability costs
 //   ResourceSystem.applyDamage(entity, amount, opts) — instead of raw health -=
-//   ResourceSystem.getEffectiveMax(entity, 'health'|'stamina')
+//   ResourceSystem.spendFooting(entity, amount, why) — balance loss on a hit
+//   ResourceSystem.getEffectiveMax(entity, 'health'|'stamina'|'footing')
 //
 // AFFLICTIONS/tuning below are intentionally config-backed the same way
 // combatConfig().weaponAbilities is, so damage/recovery rates can be tuned
@@ -52,9 +53,11 @@
     getSeed: () => _rngSeed,
   };
 
-  // Footing-bar and archived rules from the source demo are omitted — this
-  // game has no Footing resource. woundedStamina/infectedStamina/
-  // shatteredStamina/windedStamina live on 'stamina'; the rest on 'health'.
+  // Footing (balance) lives as its own flat entity.footing/maxFooting pair,
+  // set up in initEntity/tick alongside health/stamina below — it has no
+  // afflictions of its own (see getRingFillFraction/spendFooting instead of
+  // this AFFLICTIONS map). woundedStamina/infectedStamina/shatteredStamina/
+  // windedStamina live on 'stamina'; the rest on 'health'.
   const AFFLICTIONS = {
     woundedStamina: {
       name: "Wounded Stamina", resource: "stamina", extend: "zero", priority: 55, recovers: true,
@@ -127,6 +130,16 @@
       poisonTickPerSec: Number(cfg.poisonTickPerSec) || 1.8,
       exhaustionRegenPerSec: Number(cfg.exhaustionRegenPerSec) || 24,
       pukeChancePerSec: cfg.pukeChancePerSec ?? 0.16,
+      footingMax: Number(cfg.footingMax) || 100,
+      footingRegenPerSec: Number(cfg.footingRegenPerSec) || 6,
+      // How long a prone entity holds at 0 Footing (ragdoll settle + stun
+      // hold, see impact-ragdoll-playback.js) before Footing starts
+      // regenerating again — mirrors the authored impact clips' own
+      // recoveryDelay (~1.35s) so the number reads as intentional rather
+      // than arbitrary. Regen resuming is what eventually lets the player's
+      // dodge input trigger the somersault recovery (see game.js's
+      // performDodge/updateProneState) — prone itself only clears there.
+      proneRecoveryDelayS: Number(cfg.proneRecoveryDelayS) || 1.5,
     };
   }
 
@@ -135,6 +148,15 @@
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
     if (!Number.isFinite(entity.lastAttackAttemptAt)) entity.lastAttackAttemptAt = -1e9;
     if (!Number.isFinite(entity.lastAttackReceivedAt)) entity.lastAttackReceivedAt = -1e9;
+    if (!Number.isFinite(entity.maxFooting)) entity.maxFooting = resourceSystemConfig().footingMax;
+    if (!Number.isFinite(entity.footing)) entity.footing = entity.maxFooting;
+    // prone: full-ragdoll knockdown state entered at 0 Footing (see game.js's
+    // updateMovement/performDodge and impact-ragdoll-playback.js) — immune to
+    // further Footing loss (spendFooting below) until the somersault recovery
+    // clears it. staggered: the shared lockout combat-core.js's
+    // isStaggered/beginStagger read to block starting new staged actions.
+    if (entity.prone === undefined) entity.prone = false;
+    entity.staggered = { active: false, direction: null, endsAt: 0, ...(entity.staggered || {}) };
     return entity;
   }
 
@@ -166,6 +188,7 @@
   function getEffectiveMax(entity, key) {
     if (key === "stamina") return clamp((entity.maxStamina || 0) - getAffliction(entity, "windedStamina"), 0, entity.maxStamina || 0);
     if (key === "health") return clamp((entity.maxHealth || 0) - getAffliction(entity, "congealedHealth"), 0, entity.maxHealth || 0);
+    if (key === "footing") return entity.maxFooting || 0;
     return 0;
   }
 
@@ -173,6 +196,7 @@
     entity.health = round1(clamp(entity.health, 0, getEffectiveMax(entity, "health")));
     if (!entity.exhaustion.active) entity.stamina = round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina")));
     entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina, 0, 100));
+    if (Number.isFinite(entity.footing)) entity.footing = round1(clamp(entity.footing, 0, getEffectiveMax(entity, "footing")));
   }
 
   // Floor on how far Exhausted can slow an in-flight attack's own
@@ -244,6 +268,21 @@
 
     enforceCaps(entity);
     return { spent: normalSpent, excess };
+  }
+
+  // Balance loss from being hit (see game.js's damagePlayer/damageCreature,
+  // which call this right after applying knockback and before starting the
+  // stagger via combat-core.js's beginStagger). Unlike spendStamina there's
+  // no black-debt overspend branch — Footing simply floors at 0, and hitting
+  // 0 is what the caller uses as its signal to enter prone (see initEntity's
+  // comment) rather than anything tracked in here. A prone entity is immune
+  // to further loss until it recovers, per the feature's own rule.
+  function spendFooting(entity, amount, reason = "hit") {
+    if (entity.prone) return 0;
+    if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
+    const before = entity.footing;
+    entity.footing = round1(clamp(before - amount, 0, getEffectiveMax(entity, "footing")));
+    return round1(before - entity.footing);
   }
 
   // Spending through the [0, afflictionAmount] band of a zero-based stamina
@@ -343,6 +382,13 @@
 
     if (entity.health > 0) entity.health = round1(clamp(entity.health + healthRate * mul * dt, 0, getEffectiveMax(entity, "health")));
 
+    entity.proneT = entity.prone ? (entity.proneT || 0) + dt : 0;
+    const footingRegenGated = entity.prone && entity.proneT < cfg.proneRecoveryDelayS;
+    if (!footingRegenGated && Number.isFinite(entity.footing)) {
+      const footingRate = opts.footingRegenPerSec ?? cfg.footingRegenPerSec;
+      entity.footing = round1(clamp(entity.footing + footingRate * mul * dt, 0, getEffectiveMax(entity, "footing")));
+    }
+
     resolveBleedingTick(entity, dt, rest, cfg);
     resolvePoisonTick(entity, dt, cfg);
     resolveCongealedTick(entity, dt, rest, cfg);
@@ -400,15 +446,21 @@
   }
 
   // ── Ring-HUD support (docs/js/combat/resource-rings.js) ───────────────
+  function maxFieldFor(entity, resourceKey) {
+    if (resourceKey === "health") return entity.maxHealth;
+    if (resourceKey === "footing") return entity.maxFooting;
+    return entity.maxStamina;
+  }
+
   function getRingFillFraction(entity, resourceKey) {
     if (resourceKey === "stamina" && entity.exhaustion.active) return clamp(entity.exhaustion.blackStamina / 100, 0, 1);
-    const max = resourceKey === "health" ? entity.maxHealth : entity.maxStamina;
+    const max = maxFieldFor(entity, resourceKey);
     return max ? clamp(entity[resourceKey] / max, 0, 1) : 0;
   }
 
   function getSegmentBox(entity, resourceKey, id) {
     const def = AFFLICTIONS[id];
-    const max = resourceKey === "health" ? entity.maxHealth : entity.maxStamina;
+    const max = maxFieldFor(entity, resourceKey);
     const current = resourceKey === "health" ? entity.health : entity.stamina;
     const amount = clamp(getAffliction(entity, id), 0, max || 0);
     let leftPoints = 0;
@@ -434,6 +486,7 @@
     getEffectiveMax,
     getExhaustionSpeed,
     spendStamina,
+    spendFooting,
     applyDamage,
     tick,
     getRestInfo,

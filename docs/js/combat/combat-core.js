@@ -146,6 +146,31 @@
     deps = injectedDeps;
   }
 
+  // ── Stagger lockout (Footing/impact system) ────────────────────────────
+  //
+  // A landed hit already cancels whatever the victim was mid-windup on (see
+  // cancelAllStaged() above); this adds a real duration on top of that
+  // cancellation during which the victim can't START a new staged action —
+  // today's cancel-and-immediately-act-again gap is what this closes. Set by
+  // game.js's damagePlayer/damageCreature (see docs/js/combat/resource-
+  // system.js's spendFooting for the Footing-loss half of the same call),
+  // read by the one-line guard each combat-*.js ability module adds at its
+  // own beginStagedAction call site.
+  function isStaggered(entity) {
+    // Prone (0 Footing — see resource-system.js/game.js's enterProneIfFooting
+    // Depleted) is an indefinite lockout with no fixed endsAt: it lasts until
+    // Footing regenerates and the player somersaults back up (game.js's
+    // performDodge), so it's checked directly here instead of needing a
+    // synthetic multi-second beginStagger duration to fake "indefinite."
+    if (entity?.prone) return true;
+    return !!(entity?.staggered?.active && performance.now() < entity.staggered.endsAt);
+  }
+
+  function beginStagger(entity, direction, durationS) {
+    if (!entity || !(durationS > 0)) return;
+    entity.staggered = { active: true, direction, endsAt: performance.now() + durationS * 1000 };
+  }
+
   // ── Single-slot hooks for held defensive/movement abilities ───────────
   //
   // Only one hold1/hold2 ability can be actively held at a time, so a
@@ -178,6 +203,8 @@
     resolveWeaponHit,
     beginStagedAction,
     cancelAllStaged,
+    isStaggered,
+    beginStagger,
     update,
     setPlayerDamageInterceptor,
     tryInterceptPlayerDamage,
