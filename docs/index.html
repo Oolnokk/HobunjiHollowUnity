@@ -13,11 +13,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20260804a"></script>
+  <script src="config/config.js?v=20260804b"></script>
   <script src="config/scratchbones-config.js?v=20260801b"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
-  <link rel="stylesheet" href="style.css?v=20260712f">
+  <link rel="stylesheet" href="style.css?v=20260804a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -270,12 +270,12 @@
 
   <!-- Menu Panel: grid x:3 y:2 w:27 h:14 (32×18)
        Inventory sub-grid: 54 cols × 28 rows               -->
-  <div id="menuPanel" role="dialog" aria-label="Game menu">
+  <div id="menuPanel" role="dialog" aria-modal="true" aria-label="Game menu" aria-hidden="true">
 
     <!-- Header: tab bar + control buttons -->
     <div class="mp-header">
       <div class="mp-tabs" role="tablist">
-        <button class="mp-tab active" data-mpanel="inventory"     role="tab">🎒 Inventory</button>
+        <button class="mp-tab active" data-mpanel="inventory"     role="tab" aria-selected="true">🎒 Inventory</button>
         <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
         <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
@@ -1233,7 +1233,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260801b"></script>
+  <script src="game.js?v=20260804a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

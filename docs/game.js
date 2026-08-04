@@ -42,9 +42,6 @@
       const menuBtn        = document.getElementById('menuBtn');
       const menuBackdrop   = document.getElementById('menuBackdrop');
       const menuPanel      = document.getElementById('menuPanel');
-      // Legacy compat arrays — empty since old .menu-tab/.menu-page elements removed
-      const menuTabs       = [];
-      const menuPages      = [];
       const menuPauseBtn   = document.getElementById('menuPauseBtn');
       const menuResetBtn   = document.getElementById('menuResetBtn');
       const toastEl   = document.getElementById('toast');
@@ -133,12 +130,41 @@
 
       // ── Menu open/close ────────────────────────────────────
       let menuOpen = false;
+      const menuUiConfig = window.HOBUNJI_CONFIG?.ui?.menu || {};
+      const menuControllerConfig = menuUiConfig.controller || {};
+      let menuFocusBeforeOpen = null;
+
+      function scaleMenuFonts(root = menuPanel) {
+        const scale = Number(menuUiConfig.fontScale) || 1;
+        if (scale === 1 || !root) return;
+        const wholeMenu = root === menuPanel;
+        // Snapshot before writing so inherited sizes cannot compound once a
+        // parent has been scaled. Dynamic children already inherit a scaled
+        // parent, so only independently sized descendants need multiplication.
+        const snapshots = [root, ...root.querySelectorAll('*')].map(element => ({
+          element,
+          size: Number.parseFloat(getComputedStyle(element).fontSize),
+          parentSize: Number.parseFloat(getComputedStyle(element.parentElement || element).fontSize)
+        }));
+        snapshots.forEach(({ element, size, parentSize }) => {
+          if (element.dataset.menuFontScaled || !Number.isFinite(size)) return;
+          if (wholeMenu || Math.abs(size - parentSize) > 0.01) element.style.fontSize = `${size * scale}px`;
+          element.dataset.menuFontScaled = 'true';
+        });
+      }
+      scaleMenuFonts();
+      new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
+        if (node.nodeType === Node.ELEMENT_NODE) scaleMenuFonts(node);
+      }))).observe(menuPanel, { childList: true, subtree: true });
+
       function openMenu(targetPanel = 'inventory') {
+        if (!menuOpen) menuFocusBeforeOpen = document.activeElement;
         menuOpen = true;
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
         menuBackdrop.classList.add('open');
         menuPanel.classList.add('open');
+        menuPanel.setAttribute('aria-hidden', 'false');
         paused = true;
         switchMenuPanel(targetPanel);
         buildInventoryGrid();
@@ -154,6 +180,7 @@
         if (targetPanel === 'tasks') renderTasksPanel();
         if (targetPanel === 'relationships') renderRelationshipsPanel();
         auditInventorySizing();
+        requestAnimationFrame(() => focusMenuControl());
       }
       function closeMenu() {
         menuOpen = false;
@@ -161,7 +188,11 @@
         menuBtn.setAttribute('aria-expanded', 'false');
         menuBackdrop.classList.remove('open');
         menuPanel.classList.remove('open');
+        menuPanel.setAttribute('aria-hidden', 'true');
+        clearMenuControllerFocus();
         paused = false;
+        if (menuFocusBeforeOpen instanceof HTMLElement) menuFocusBeforeOpen.focus({ preventScroll: true });
+        menuFocusBeforeOpen = null;
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -174,11 +205,16 @@
       // ── New panel tab switching ────────────────────────────
 
       function switchMenuPanel(id) {
-        document.querySelectorAll('.mp-tab').forEach(t =>
-          t.classList.toggle('active', t.dataset.mpanel === id));
-        document.querySelectorAll('.mp-pane').forEach(p =>
-          p.classList.toggle('active',
-            p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
+        document.querySelectorAll('.mp-tab').forEach(t => {
+          const active = t.dataset.mpanel === id;
+          t.classList.toggle('active', active);
+          t.setAttribute('aria-selected', String(active));
+        });
+        document.querySelectorAll('.mp-pane').forEach(p => {
+          const active = p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1);
+          p.classList.toggle('active', active);
+          p.setAttribute('aria-hidden', String(!active));
+        });
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'crafting') renderCraftingPanel();
         if (id === 'calendar') renderCalendarPanel();
@@ -196,6 +232,7 @@
         if (id === 'relationships') renderRelationshipsPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
+        requestAnimationFrame(() => focusMenuControl(document.querySelector(`.mp-tab[data-mpanel="${id}"]`)));
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -36063,6 +36100,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       })();
       const inputBindings = loadInputBindings();
       const gamepadState = { focused: document.hasFocus(), previous: new Set(), activeShift: null, hadPad: false };
+      const menuRepeatState = new Map();
       const CONTROLLER_INPUT_OPTIONS = [
         'Button0', 'Button1', 'Button2', 'Button3', 'Button4', 'Button5',
         'LeftTrigger', 'RightTrigger',
@@ -36286,6 +36324,126 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const bindings = inputBindings[device] || {};
         return Object.keys(bindings).find(actionId => bindings[actionId] === button) || null;
       }
+
+      function visibleMenuControls() {
+        const selector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+        return [...menuPanel.querySelectorAll(selector)].filter(element => {
+          if (element.disabled || element.getAttribute('aria-hidden') === 'true') return false;
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        });
+      }
+
+      function clearMenuControllerFocus() {
+        menuPanel.classList.remove('controller-active');
+        menuPanel.querySelectorAll('.controller-focused').forEach(element => element.classList.remove('controller-focused'));
+        menuRepeatState.clear();
+      }
+
+      function focusMenuControl(preferred = null) {
+        const controls = visibleMenuControls();
+        const target = controls.includes(preferred)
+          ? preferred
+          : controls.includes(document.activeElement) ? document.activeElement : controls[0];
+        if (!target) return;
+        menuPanel.querySelectorAll('.controller-focused').forEach(element => element.classList.remove('controller-focused'));
+        menuPanel.classList.add('controller-active');
+        target.classList.add('controller-focused');
+        target.focus({ preventScroll: true });
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      }
+
+      function moveMenuFocus(direction) {
+        const controls = visibleMenuControls();
+        if (!controls.length) return;
+        const current = controls.includes(document.activeElement)
+          ? document.activeElement
+          : menuPanel.querySelector('.controller-focused');
+        if (!current || !controls.includes(current)) { focusMenuControl(controls[0]); return; }
+        const origin = current.getBoundingClientRect();
+        const ox = origin.left + origin.width / 2;
+        const oy = origin.top + origin.height / 2;
+        const horizontal = direction === 'left' || direction === 'right';
+        const sign = direction === 'left' || direction === 'up' ? -1 : 1;
+        let best = null;
+        let bestScore = Infinity;
+        controls.forEach(candidate => {
+          if (candidate === current) return;
+          const rect = candidate.getBoundingClientRect();
+          const dx = rect.left + rect.width / 2 - ox;
+          const dy = rect.top + rect.height / 2 - oy;
+          const primary = horizontal ? dx * sign : dy * sign;
+          if (primary <= 1) return;
+          const secondary = Math.abs(horizontal ? dy : dx);
+          const score = primary + secondary * 2.5;
+          if (score < bestScore) { best = candidate; bestScore = score; }
+        });
+        if (best) focusMenuControl(best);
+      }
+
+      function adjustFocusedMenuControl(direction) {
+        if (direction !== 'left' && direction !== 'right') return false;
+        const control = menuPanel.querySelector('.controller-focused');
+        if (control instanceof HTMLSelectElement) {
+          const delta = direction === 'left' ? -1 : 1;
+          control.selectedIndex = Math.max(0, Math.min(control.options.length - 1, control.selectedIndex + delta));
+          control.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        if (control instanceof HTMLInputElement && control.type === 'range') {
+          const delta = (Number(control.step) || 1) * (direction === 'left' ? -1 : 1);
+          control.value = String(Math.max(Number(control.min) || 0, Math.min(Number(control.max) || 100, Number(control.value) + delta)));
+          control.dispatchEvent(new Event('input', { bubbles: true }));
+          control.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      }
+
+      function switchMenuTabByOffset(offset) {
+        const tabs = visibleMenuControls().filter(element => element.matches('.mp-tab'));
+        if (!tabs.length) return;
+        const active = tabs.findIndex(tab => tab.classList.contains('active'));
+        const next = tabs[(Math.max(0, active) + offset + tabs.length) % tabs.length];
+        next.click();
+        focusMenuControl(next);
+      }
+
+      function handleMenuController(down, now) {
+        input.x = 0;
+        input.y = 0;
+        controllerLookActive = false;
+        const pressed = code => down.has(code) && !gamepadState.previous.has(code);
+        const includesPressed = codes => (codes || []).some(pressed);
+        if (includesPressed(menuControllerConfig.cancelButtons)) { closeMenu(); return true; }
+        if (includesPressed(menuControllerConfig.confirmButtons)) {
+          const focused = menuPanel.querySelector('.controller-focused') || document.activeElement;
+          if (focused && menuPanel.contains(focused)) focused.click();
+        }
+        if (includesPressed(menuControllerConfig.previousTabButtons)) switchMenuTabByOffset(-1);
+        if (includesPressed(menuControllerConfig.nextTabButtons)) switchMenuTabByOffset(1);
+        const directions = [
+          ['left', 'Button14', 'MenuAxisLeft'], ['right', 'Button15', 'MenuAxisRight'],
+          ['up', 'Button12', 'MenuAxisUp'], ['down', 'Button13', 'MenuAxisDown']
+        ];
+        const delay = Number(menuControllerConfig.repeatDelayMs) || 360;
+        const interval = Number(menuControllerConfig.repeatIntervalMs) || 110;
+        directions.forEach(([direction, dpadCode, axisCode]) => {
+          const active = down.has(dpadCode) || down.has(axisCode);
+          if (!active) { menuRepeatState.delete(direction); return; }
+          const state = menuRepeatState.get(direction);
+          if (!state) {
+            if (!adjustFocusedMenuControl(direction)) moveMenuFocus(direction);
+            menuRepeatState.set(direction, { next: now + delay });
+          } else if (now >= state.next) {
+            if (!adjustFocusedMenuControl(direction)) moveMenuFocus(direction);
+            state.next = now + interval;
+          }
+        });
+        return true;
+      }
+
       function pollControllerInput() {
         if (!gamepadState.focused) return;
         const pads = navigator.getGamepads?.() || [];
@@ -36319,6 +36477,29 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (rx >= axisPress) down.add('RightStickRight');
         if (ry <= -axisPress) down.add('RightStickUp');
         if (ry >= axisPress) down.add('RightStickDown');
+        if (ax <= -axisPress) down.add('MenuAxisLeft');
+        if (ax >= axisPress) down.add('MenuAxisRight');
+        if (ay <= -axisPress) down.add('MenuAxisUp');
+        if (ay >= axisPress) down.add('MenuAxisDown');
+        const menuButtonPressed = (menuControllerConfig.menuButtons || []).some(code => down.has(code) && !gamepadState.previous.has(code));
+        if (menuButtonPressed && !menuOpen) {
+          lastInputDevice = 'controller';
+          openMenu();
+          gamepadState.previous = down;
+          return;
+        }
+        if (menuOpen) {
+          if (menuButtonPressed) {
+            closeMenu();
+            gamepadState.previous = down;
+            return;
+          }
+          lastInputDevice = 'controller';
+          handleMenuController(down, performance.now());
+          gamepadState.previous = down;
+          gamepadState.activeShift = null;
+          return;
+        }
         const heldShift = inputBindings.modeShifts.find(s => s.device === 'controller' && down.has(s.button));
         if (heldShift) controllerLookActive = false;
         for (const button of down) {

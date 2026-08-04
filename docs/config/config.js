@@ -22,6 +22,20 @@
         Object.freeze({ value: 0, color: '#f8fafc' }),
         Object.freeze({ value: 1, color: '#ef4444' })
       ])
+    }),
+    ui: Object.freeze({
+      menu: Object.freeze({
+        fontScale: 1.75,
+        controller: Object.freeze({
+          menuButtons: Object.freeze(['Button8']),
+          confirmButtons: Object.freeze(['Button0']),
+          cancelButtons: Object.freeze(['Button1']),
+          previousTabButtons: Object.freeze(['Button4']),
+          nextTabButtons: Object.freeze(['Button5']),
+          repeatDelayMs: 360,
+          repeatIntervalMs: 110
+        })
+      })
     })
   });
 })(typeof self !== 'undefined' ? self : globalThis);

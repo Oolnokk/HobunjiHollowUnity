@@ -1607,6 +1607,13 @@
       transition: opacity 0.2s, transform 0.2s;
     }
     #menuPanel.open { opacity: 1; pointer-events: all; transform: scale(1) translateY(0); }
+    #menuPanel .controller-focused {
+      outline: 2px solid var(--accent) !important;
+      outline-offset: 2px;
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 3px rgba(249,226,138,0.18), 0 0 16px rgba(249,226,138,0.22);
+    }
+    #menuPanel.controller-active .controller-focused { position: relative; z-index: 2; }
 
     /* Header */
     .mp-header {
