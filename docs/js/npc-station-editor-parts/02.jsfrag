@@ -1,0 +1,161 @@
+  function inspectorMarkup(station) {
+    ensureStationData(station);
+    const behavior = station.stationBehavior;
+    const attention = station.attentionPriorities;
+    const connected = core()?.connectedComponent(behavior.tiles, [station.col, station.row]) || behavior.tiles;
+    const disconnected = core()?.disconnectedTiles(behavior.tiles, [station.col, station.row]) || [];
+    const modeOptions = [
+      ['single', 'Single tile'],
+      ['wander', 'Wander in marked area'],
+      ['patrol', 'Patrol every connected tile'],
+    ].map(([value, label]) => `<option value="${value}" ${behavior.mode === value ? 'selected' : ''}>${label}</option>`).join('');
+
+    const movementFields = behavior.mode === 'wander' ? `
+      <div class="g2" style="margin-top:6px">
+        ${numberField('Repath min sec', behavior.wander.repathMinSec, 'wander.repathMinSec', 'min="0.1" step="0.1"')}
+        ${numberField('Repath max sec', behavior.wander.repathMaxSec, 'wander.repathMaxSec', 'min="0.1" step="0.1"')}
+        ${numberField('Min path distance', behavior.wander.minPathDistance, 'wander.minPathDistance', 'min="0" step="1"')}
+        ${numberField('Max path distance', behavior.wander.maxPathDistance, 'wander.maxPathDistance', 'min="0" step="1"')}
+      </div>` : behavior.mode === 'patrol' ? `
+      <label class="row" style="margin-top:7px"><input type="checkbox" data-patrol-random style="width:auto" ${behavior.patrol.randomizeNextTile ? 'checked' : ''}> Randomize among equally-near unvisited patrol tiles</label>` : '';
+
+    const stop = behavior.stopAndLook;
+    const stopFields = stop.enabled ? `
+      <div class="g2" style="margin-top:6px">
+        ${numberField('Stop interval min', stop.intervalMinSec, 'stopAndLook.intervalMinSec', 'min="0.1" step="0.1"')}
+        ${numberField('Stop interval max', stop.intervalMaxSec, 'stopAndLook.intervalMaxSec', 'min="0.1" step="0.1"')}
+        ${numberField('Look duration min', stop.durationMinSec, 'stopAndLook.durationMinSec', 'min="0.1" step="0.1"')}
+        ${numberField('Look duration max', stop.durationMaxSec, 'stopAndLook.durationMaxSec', 'min="0.1" step="0.1"')}
+        ${numberField('Direction hold min', stop.turnMinSec, 'stopAndLook.turnMinSec', 'min="0.1" step="0.1"')}
+        ${numberField('Direction hold max', stop.turnMaxSec, 'stopAndLook.turnMaxSec', 'min="0.1" step="0.1"')}
+      </div>` : '';
+
+    return `<div class="npc-station-behavior-panel" style="margin-top:8px;border-top:1px solid rgba(34,211,238,.28);padding-top:8px" data-station-panel="${escapeHtml(station.id)}">
+      <div class="sect-head" style="margin-bottom:5px"><b style="color:#67e8f9">Area Behavior</b><span class="sect-tag">${connected.length}/${behavior.tiles.length} connected</span></div>
+      <div><label>Station movement</label><select data-station-mode>${modeOptions}</select></div>
+      ${behavior.mode !== 'single' ? `<div class="row" style="margin-top:6px">
+        <button class="${state.paintActive ? 'ok act' : 'sec'}" data-area-paint>${state.paintActive ? '✓ Painting area' : '🖌 Paint area tiles'}</button>
+        <button class="sec" data-area-clear>Clear extras</button>
+        <span class="pill" style="color:${disconnected.length ? '#fb7185' : '#34d399'}">${disconnected.length ? `${disconnected.length} disconnected (red)` : 'All connected'}</span>
+      </div>
+      <p class="muted" style="margin-top:4px">With painting enabled, drag on the map to add/remove tiles. The cyan origin remains permanent. Only this selected station's area is shown.</p>` : ''}
+      ${movementFields}
+      <label class="row" style="margin-top:8px"><input type="checkbox" data-stop-enabled style="width:auto" ${stop.enabled ? 'checked' : ''}> Randomly stop and look around</label>
+      ${stopFields}
+      <div class="sect-head" style="margin:10px 0 5px"><b style="color:#c4b5fd">Attention Priorities</b><span class="sect-tag">${attention.length || 'fallback only'}</span></div>
+      <p class="muted">First matching entry wins. When none matches, they face their last movement direction, except a visible player at 3+ hearts is watched instead.</p>
+      <div data-attention-list>${attention.map((entry, index) => renderAttentionRow(entry, index, attention.length)).join('')}</div>
+      <div class="row" style="margin-top:6px"><select data-new-attention-type style="flex:1"><option value="thinking">Thinking</option><option value="people">People-watching</option><option value="person">Person-watching</option><option value="origin">Origin watching</option></select><button class="ok" data-add-attention>+ Priority</button></div>
+      <button class="sec" data-station-debug style="width:100%;margin-top:7px">📋 Station Behavior Debug</button>
+    </div>`;
+  }
+
+  function setNestedField(object, path, value) {
+    const keys = String(path).split('.');
+    let cursor = object;
+    for (let index = 0; index < keys.length - 1; index += 1) {
+      cursor[keys[index]] = cursor[keys[index]] && typeof cursor[keys[index]] === 'object' ? cursor[keys[index]] : {};
+      cursor = cursor[keys[index]];
+    }
+    cursor[keys[keys.length - 1]] = value;
+  }
+
+  function bindAttentionRow(row, station) {
+    const index = Number(row.dataset.attnIndex);
+    const edit = callback => updateAttention(station, entries => callback(entries[index], entries));
+    row.querySelector('[data-attn-type]')?.addEventListener('change', event => edit(entry => {
+      entry.type = event.target.value;
+      if (entry.type !== 'person') entry.targetIds = [];
+    }));
+    row.querySelector('[data-attn-up]')?.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      updateAttention(station, entries => {
+        if (index > 0) [entries[index - 1], entries[index]] = [entries[index], entries[index - 1]];
+      });
+    });
+    row.querySelector('[data-attn-down]')?.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      updateAttention(station, entries => {
+        if (index < entries.length - 1) [entries[index + 1], entries[index]] = [entries[index], entries[index + 1]];
+      });
+    });
+    row.querySelector('[data-attn-delete]')?.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      updateAttention(station, entries => entries.splice(index, 1));
+    });
+    row.querySelector('[data-attn-targets]')?.addEventListener('change', event => edit(entry => {
+      entry.targetIds = fromCsv(event.target.value);
+    }));
+    row.querySelector('[data-attn-expression]')?.addEventListener('change', event => edit(entry => {
+      entry.expression = event.target.value.trim();
+    }));
+    row.querySelectorAll('[data-attn-condition]').forEach(input => input.addEventListener('change', event => edit(entry => {
+      entry.conditions = entry.conditions || {};
+      entry.conditions[event.target.dataset.attnCondition] = fromCsv(event.target.value);
+    })));
+    row.querySelectorAll('[data-attn-number]').forEach(input => input.addEventListener('change', event => edit(entry => {
+      entry.conditions = entry.conditions || {};
+      const raw = event.target.value.trim();
+      entry.conditions[event.target.dataset.attnNumber] = raw === '' ? null : Number(raw);
+    })));
+    row.querySelector('[data-attn-player-rule]')?.addEventListener('change', event => edit(entry => {
+      entry.conditions = entry.conditions || {};
+      entry.conditions.playerOnly = event.target.value === 'only';
+      entry.conditions.excludePlayer = event.target.value === 'exclude';
+    }));
+  }
+
+  function bindInspector(panel, station) {
+    panel.addEventListener('pointerdown', event => event.stopPropagation());
+    panel.addEventListener('click', event => event.stopPropagation());
+
+    panel.querySelector('[data-station-mode]')?.addEventListener('change', event => updateBehavior(station, behavior => {
+      behavior.mode = event.target.value;
+      if (behavior.mode === 'single') state.paintActive = false;
+    }, `Station mode: ${event.target.value}.`));
+
+    panel.querySelector('[data-area-paint]')?.addEventListener('click', event => {
+      event.preventDefault();
+      state.paintActive = !state.paintActive;
+      renderInspector();
+      setStatus(state.paintActive ? 'Station area brush enabled. Drag on the map.' : 'Station area brush disabled.');
+    });
+
+    panel.querySelector('[data-area-clear]')?.addEventListener('click', event => {
+      event.preventDefault();
+      updateBehavior(station, behavior => {
+        behavior.tiles = [[station.col, station.row]];
+      }, 'Cleared extra station tiles.');
+    });
+
+    panel.querySelectorAll('[data-station-field]').forEach(input => input.addEventListener('change', event => updateBehavior(station, behavior => {
+      setNestedField(behavior, event.target.dataset.stationField, Number(event.target.value));
+    })));
+
+    panel.querySelector('[data-patrol-random]')?.addEventListener('change', event => updateBehavior(station, behavior => {
+      behavior.patrol.randomizeNextTile = event.target.checked;
+    }));
+
+    panel.querySelector('[data-stop-enabled]')?.addEventListener('change', event => updateBehavior(station, behavior => {
+      behavior.stopAndLook.enabled = event.target.checked;
+    }));
+
+    panel.querySelector('[data-add-attention]')?.addEventListener('click', event => {
+      event.preventDefault();
+      const type = panel.querySelector('[data-new-attention-type]')?.value || 'thinking';
+      updateAttention(station, entries => entries.push({
+        id: `attention_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        type,
+        targetIds: [],
+        expression: '',
+        conditions: {},
+      }));
+    });
+
+    panel.querySelectorAll('.station-attention-row').forEach(row => bindAttentionRow(row, station));
+    panel.querySelector('[data-station-debug]')?.addEventListener('click', event => {
+      event.preventDefault();
+      showDebugDialog(station);
+    });
+  }
+
