@@ -1,0 +1,97 @@
+name: Assemble NPC station feature
+
+on:
+  push:
+    branches:
+      - agent/npc-station-areas-attention
+    paths:
+      - .github/npc-station-payload/READY
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/npc-station-areas-attention
+
+      - name: Assemble, validate, and commit source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          assemble() {
+            prefix="$1"
+            target="$2"
+            expected="$3"
+            mkdir -p "$(dirname "$target")"
+            cat .github/npc-station-payload/"$prefix".* \
+              | tr -cd 'A-Za-z0-9+/=' \
+              | base64 --decode > "$target"
+            echo "$expected  $target" | sha256sum -c -
+          }
+
+          fetch_blob() {
+            sha="$1"
+            target="$2"
+            expected="$3"
+            mkdir -p "$(dirname "$target")"
+            curl --fail-with-body --silent --show-error --location \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github.raw+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" \
+              > "$target"
+            echo "$expected  $target" | sha256sum -c -
+          }
+
+          assemble editor-clean docs/js/npc-station-editor.js bd80d8e3aaf7fd6adfe4445106a4d6874b8f41b84ca7b7405c541860bc4af2c1
+
+          # A connector transport retry duplicated one pair of identical function
+          # declarations in the final runtime fragment. Remove only that exact
+          # second declaration pair, then verify against the tested source hash.
+          cat .github/npc-station-payload/runtime-clean.* \
+            | tr -cd 'A-Za-z0-9+/=' \
+            | base64 --decode > docs/js/npc-station-runtime.js
+          python - <<'PY'
+          from pathlib import Path
+
+          target = Path('docs/js/npc-station-runtime.js')
+          source = target.read_text(encoding='utf-8')
+          marker = 'function updateMovementHeading'
+          first = source.find(marker)
+          second = source.find(marker, first + len(marker)) if first >= 0 else -1
+          if second >= 0:
+              next_function = source.find('function updateDebugRow', second)
+              if next_function < 0:
+                  raise SystemExit('Could not locate the end of the duplicated runtime declarations.')
+              source = source[:second] + source[next_function:]
+              target.write_text(source, encoding='utf-8')
+          PY
+          echo "78ac90bb5583060dda2b00ca05444d9b6af61814691e59a3a483e63c27821ec9  docs/js/npc-station-runtime.js" | sha256sum -c -
+
+          assemble building-clean docs/js/building-door.js 27348b671003dd6292c90e6f7b10f193275680764db4b99264109bd036fcde3a
+          fetch_blob 900f8df18c8aadb0101cb3e549193e91cdd363a7 docs/js/npc-station-behavior-core.js aeda78c7ccb888447f75933ef1551505cdcd4d829d0444083ef9720918112d01
+          fetch_blob fe4d51c2f5901cb0766991fb51bdff97b626521d docs/js/NPC_STATION_BEHAVIOR.md 4477c51c136c891954336f4b93662858638e35e7eee1d86e79f27acbccb11729
+          fetch_blob fda36c4aaacc8fc47325e2d7a2982bb5386d9ac0 scripts/test-npc-station-behavior.js 0addd28b5a545fbb3ac9fec2e4549b4ad5554978fee1a8a9d43780c7e69dc31b
+          fetch_blob 0f5b292d8001759aae10e7b9bdd855bad9bf9615 scripts/test-npc-station-runtime-smoke.js 29c9b7510f04f84af58751b0e9808b44eba40e5eb0ba8d5544b5b94ad657e2d5
+
+          node --check docs/js/npc-station-behavior-core.js
+          node --check docs/js/npc-station-editor.js
+          node --check docs/js/npc-station-runtime.js
+          node --check docs/js/building-door.js
+          node scripts/test-npc-station-behavior.js
+          node scripts/test-npc-station-runtime-smoke.js
+
+          rm -rf .github/npc-station-payload
+          rm -f .github/workflows/assemble-npc-station.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add multi-tile NPC station behavior and attention priorities"
+          git push origin HEAD:agent/npc-station-areas-attention
