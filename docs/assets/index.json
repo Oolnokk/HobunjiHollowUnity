@@ -60,9 +60,13 @@
     { "name": "Placeholder: Small (4×4)", "path": "config/pieces/placeholder-small.json", "category": "placeholder" },
     { "name": "Placeholder: Medium (5×4)", "path": "config/pieces/placeholder-medium.json", "category": "placeholder" },
     { "name": "Hobunji House 1", "path": "config/pieces/hobunjihouse1.json", "category": "house" },
+    { "name": "Generic House: Medium", "path": "config/pieces/generic-house-medium.json", "category": "house" },
     { "name": "Smithy", "path": "config/pieces/smithy.json", "category": "smithy" },
     { "name": "Funji & Son's General Store", "path": "config/pieces/general-store.json", "category": "shop" },
     { "name": "Kunji's Potion Shop", "path": "config/pieces/potion-shop.json", "category": "shop" },
+    { "name": "Inn", "path": "config/pieces/inn.json", "category": "inn" },
+    { "name": "Hobunji Hollow Temple", "path": "config/pieces/temple.json", "category": "temple" },
+    { "name": "Stable", "path": "config/pieces/stable.json", "category": "stable" },
     { "name": "Researcher's Tent", "path": "config/pieces/researchers-tent.json", "category": "tent" }
   ]
 }
