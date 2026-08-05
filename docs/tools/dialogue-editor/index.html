@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Hobunji Dialogue Editor</title>
-<link rel="stylesheet" href="dialogue-editor.css">
+<link rel="stylesheet" href="dialogue-editor-shell.css">
+<link rel="stylesheet" href="dialogue-editor-graph.css">
+<link rel="stylesheet" href="dialogue-editor-authoring.css">
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/condition-registry.js"></script>
 </head>
@@ -162,9 +164,15 @@
   <div id="diagBody"><pre id="diagLog"></pre></div>
 </div>
 
-<script src="dialogue-editor-data.js"></script>
-<script src="dialogue-editor-layout.js"></script>
-<script src="dialogue-editor-authoring.js"></script>
+<script src="dialogue-editor-schema.js"></script>
+<script src="dialogue-editor-state.js"></script>
+<script src="dialogue-editor-hierarchy.js"></script>
+<script src="dialogue-editor-ui.js"></script>
+<script src="dialogue-editor-graph.js"></script>
+<script src="dialogue-editor-inspector.js"></script>
+<script src="dialogue-editor-routing.js"></script>
+<script src="dialogue-editor-authoring-core.js"></script>
+<script src="dialogue-editor-modals.js"></script>
 <script src="dialogue-editor-boot.js"></script>
 </body>
 </html>
