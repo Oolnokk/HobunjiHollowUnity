@@ -238,6 +238,7 @@
 
     if (!baseline) {
       diff.mode = 'full-map-fallback';
+      diff.fallbackReason = 'no-baseline';
       diff._note = 'No baseline was available for this map, so the complete current map is included.';
       diff.fullMap = buildStandaloneMapExport(map);
       return diff;
@@ -265,7 +266,12 @@
       tileChanges: tileChangeCount,
       changedFields: Object.keys(changes),
     };
-    if (!diff.summary.changed) diff._note = 'No changes since this map was loaded or created.';
+    if (!diff.summary.changed) {
+      diff.mode = 'full-map-fallback';
+      diff.fallbackReason = 'no-detected-changes';
+      diff._note = 'No differences were detected against the session baseline, so the complete current map is included.';
+      diff.fullMap = buildStandaloneMapExport(map);
+    }
     return diff;
   }
 
@@ -302,76 +308,66 @@
       const output = buildStandaloneMapExport(map);
       const suffix = map.category === 'building_interior' ? '.json' : '.map.json';
       downloadJson(`${fileStem(map.name)}${suffix}`, output);
-      setStatus(map.category === 'building_interior' ? 'Building interior JSON downloaded.' : 'Map JSON downloaded.');
-    } catch (error) {
-      console.error('Map JSON export failed:', error);
-      setStatus(`Map JSON export failed: ${error?.message || error}`);
-    }
-  }
+      setStattÊX\˜Ø]YÛÜHOOH	ØZ[[™×Ú[\š[Ü‰ÈÈ	ĞZ[[™È[\š[Üˆ”ÓÓˆİÛ›ØYY‰Èˆ	ÓX\”ÓÓˆİÛ›ØYY‰ÊNÂˆHØ]Ú
+\œ›ÜŠHÂˆÛÛœÛÛK™\œ›ÜŠ	ÓX\”ÓÓˆ^Ü˜Z[Y‰Ë\œ›ÜŠNÂˆÙ]İ]\ÊX\”ÓÓˆ^Ü˜Z[Yˆ	Ù\œ›ÜË›Y\ÜØYÙH\œ›ÜŸX
+NÂˆBˆB‚ˆ[˜İ[Ûˆ[™QY™‘^Ü
+]™[
+HÂˆİÜÜšYÚ[˜[
+]™[
+NÂˆHÂˆÛÛœİX\HXİ]™SX\
 
-  function handleDiffExport(event) {
-    stopOriginal(event);
-    try {
-      const map = activeMap();
-      if (!map) throw new Error('No active map is available.');
-      const diff = buildDetailedDiff(map);
-      const json = JSON.stringify(diff, null, 2);
-      if ($('diffTitle')) $('diffTitle').textContent = String(map.name || 'Map');
-      if ($('diffSubtitle')) {
-        if (diff.mode === 'full-map-fallback') {
-          $('diffSubtitle').textContent = `No baseline was available; complete current map included Â· ${json.length.toLocaleString()} chars`;
-        } else {
-          $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} Â· ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} Â· ${json.length.toLocaleString()} chars`;
-        }
-      }
-      if ($('diffTextarea')) $('diffTextarea').value = json;
-      if ($('diffModal')) $('diffModal').style.display = 'block';
-    } catch (error) {
-      console.error('Map diff export failed:', error);
-      setStatus(`Map diff export failed: ${error?.message || error}`);
-    }
-  }
+NÂˆYˆ
+[X\
+H›İÈ™]È\œ›ÜŠ	Ó›ÈXİ]™HX\\È]˜Z[X›K‰ÊNÂˆÛÛœİY™ˆHZ[]Z[YY™ŠX\
+NÂˆÛÛœİœÛÛˆH”ÓÓ‹œİš[™ÚYJY™‹[ŠNÂˆYˆ
+	
+	ÙY™•]IÊJH	
+	ÙY™•]IÊK^ÛÛ[Hİš[™ÊX\›˜[YH	ÓX\	ÊNÂˆYˆ
+	
+	ÙY™”İX]IÊJHÂˆYˆ
+Y™‹›[ÙHOOH	Ù[[X\Y˜[˜XÚÉÊHÂˆ	
+	ÙY™”İX]IÊK^ÛÛ[H	ÙY™‹—Û›İ_H0­È	ÚœÛÛ‹›[™İÓØØ[Tİš[™Ê
+_HÚ\œØÂˆH[ÙHÂˆ	
+	ÙY™”İX]IÊK^ÛÛ[H	ÙY™‹œİ[[X\K[PÚ[™Ù\ßH[HÚ[™ÙIÙY™‹œİ[[X\K[PÚ[™Ù\ÈOOHHÈ	ÉÈˆ	ÜÉßH0­È	ÙY™‹œİ[[X\K˜Ú[™ÙYšY[Ë›[™İHÚ[™ÙYšY[	ÙY™‹œİ[[X\K˜Ú[™ÙYšY[Ë›[™İOOHHÈ	ÉÈˆ	ÜÉßH0­È	ÚœÛÛ‹›[™İÓØØ[Tİš[™Ê
+_HÚ\œØÂˆBˆBˆYˆ
+	
+	ÙY™•^\™XIÊJH	
+	ÙY™•^\™XIÊK˜[YHHœÛÛÂˆYˆ
+	
+	ÙY™“[Ù[	ÊJH	
+	ÙY™“[Ù[	ÊKœİ[K™\Ü^HH	Ø›ØÚÉÎÂˆHØ]Ú
+\œ›ÜŠHÂˆÛÛœÛÛK™\œ›ÜŠ	ÓX\Y™ˆ^Ü˜Z[Y‰Ë\œ›ÜŠNÂˆÙ]İ]\ÊX\Y™ˆ^Ü˜Z[Yˆ	Ù\œ›ÜË›Y\ÜØYÙH\œ›ÜŸX
+NÂˆBˆB‚ˆ[˜İ[Ûˆ[™QY™‘İÛ›ØY
+]™[
+HÂˆİÜÜšYÚ[˜[
+]™[
+NÂˆHÂˆÛÛœİX\HXİ]™SX\
 
-  function handleDiffDownload(event) {
-    stopOriginal(event);
-    try {
-      const map = activeMap();
-      const text = $('diffTextarea')?.value || '';
-      const parsed = JSON.parse(text);
-      downloadJson(`${fileStem(map?.name)}.diff.json`, parsed);
-      setStatus('Diff downloaded.');
-    } catch (error) {
-      console.error('Diff download failed:', error);
-      setStatus(`Diff download failed: ${error?.message || error}`);
-    }
-  }
+NÂˆÛÛœİ^H	
+	ÙY™•^\™XIÊOË˜[YH	ÉÎÂˆÛÛœİ\œÙYH”ÓÓ‹œ\œÙJ^
+NÂˆİÛ›ØYœÛÛŠ	Ùš[Tİ[JX\Ë›˜[YJ_K™Y™‹šœÛÛ˜\œÙY
+NÂˆÙ]İ]\Ê	ÑY™ˆİÛ›ØYY‰ÊNÂˆHØ]Ú
+\œ›ÜŠHÂˆÛÛœÛÛK™\œ›ÜŠ	ÑY™ˆİÛ›ØY˜Z[Y‰Ë\œ›ÜŠNÂˆÙ]İ]\ÊY™ˆİÛ›ØY˜Z[Yˆ	Ù\œ›ÜË›Y\ÜØYÙH\œ›ÜŸX
+NÂˆBˆB‚ˆ[˜İ[Ûˆ[œİ[
 
-  function install() {
-    if (installed) return;
-    const bridge = window._mapEditorBridge;
-    if (!bridge?.getWorkspace) {
-      setTimeout(install, 25);
-      return;
-    }
-    installed = true;
-    captureWorkspaceBaselines(true);
-    installMapListObserver();
-    $('exportMapBtn')?.addEventListener('click', handleMapExport, { capture: true });
-    $('exportDiffBtn')?.addEventListener('click', handleDiffExport, { capture: true });
-    $('diffDownloadBtn')?.addEventListener('click', handleDiffDownload, { capture: true });
+HÂˆYˆ
+[œİ[Y
+H™]\›ÂˆÛÛœİœšYÙHHÚ[™İË—ÛX\Y]ÜœšYÙNÂˆYˆ
+XœšYÙOË™Ù]ÛÜšÜÜXÙJHÂˆÙ][Y[İ]
+[œİ[JNÂˆ™]\›ÂˆBˆ[œİ[YHYNÂˆØ\\™UÛÜšÜÜXÙP˜\Ù[[™\ÊYJNÂˆ[œİ[X\\İØœÙ\™\Š
+NÂˆ	
+	Ù^ÜX\‰ÊOË˜Y]™[\İ[™\Š	ØÛXÚÉË[™SX\^ÜÈØ\\™NˆYHJNÂˆ	
+	Ù^ÜY™‰ÊOË˜Y]™[\İ[™\Š	ØÛXÚÉË[™QY™‘^ÜÈØ\\™NˆYHJNÂˆ	
+	ÙY™‘İÛ›ØY‰ÊOË˜Y]™[\İ[™\Š	ØÛXÚÉË[™QY™‘İÛ›ØYÈØ\\™NˆYHJNÂ‚ˆÚ[™İË“X\Y]Ü‘^Üš^\ÈHÂˆZ[İ[™[Û™SX\^ÜˆZ[]Z[YY™‹ˆØ\\™UÛÜšÜÜXÙP˜\Ù[[™\Îˆ
 
-    window.MapEditorExportFixes = {
-      buildStandaloneMapExport,
-      buildDetailedDiff,
-      captureWorkspaceBaselines: () => captureWorkspaceBaselines(true),
-      debugSnapshot: () => ({
-        installed,
-        baselineIds: Array.from(baselineById.keys()),
-        activeMapId: activeMap()?.id || null,
-      }),
-    };
-  }
+HOˆØ\\™UÛÜšÜÜXÙP˜\Ù[[™\ÊYJKˆXYÔÛ˜\Úİˆ
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
-  else install();
-})();
+HOˆ
+Âˆ[œİ[Yˆ˜\Ù[[™RYÎˆ\œ˜^K™œ›ÛJ˜\Ù[[™PRYšÙ^\Ê
+JKˆXİ]™SX\YˆXİ]™SX\
+
+OËšY[ˆJKˆNÂˆB‚ˆYˆ
+Øİ[Y[œ™XYTİ]HOOH	ÛØY[™ÉÊHØİ[Y[˜Y]™[\İ[™\Š	ÑÓPÛÛ[ØYY	Ë[œİ[ÈÛ˜ÙNˆYHJNÂˆ[ÙH[œİ[
+
+NÂŸJJ
+NÂ
