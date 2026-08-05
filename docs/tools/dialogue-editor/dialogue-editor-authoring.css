@@ -1,0 +1,82 @@
+/* Production dialogue-authoring controls layered onto the laboratory layout. */
+#authorBar{display:flex;align-items:center;gap:6px;padding:6px 9px;border-bottom:1px solid var(--line);background:#0a1521;overflow-x:auto;flex:0 0 auto;scrollbar-width:thin}
+#authorBar button{font-size:10px;padding:6px 8px;white-space:nowrap}
+.authorSep{width:1px;height:21px;background:var(--line);flex:0 0 auto;margin:0 2px}
+#dbOverrideStatus{max-width:190px;overflow:hidden;text-overflow:ellipsis}
+#treeEditorBtn.active{border-color:rgba(67,214,161,.55);background:rgba(67,214,161,.14);color:var(--good)}
+#deleteNodeBtn,#setEntryBtn{display:none}
+#deleteNodeBtn.show,#setEntryBtn.show{display:inline-flex}
+
+/* Shared condition picker used by tree and phrase-pool editors. */
+.condChipList{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.condChip{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 5px 3px 8px;border-radius:999px;border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.14);color:var(--text);white-space:nowrap}
+.condChip.exclude{border-color:rgba(255,123,147,.4);background:rgba(255,123,147,.12)}
+.condChipX{width:15px;height:15px;padding:0;border:none;background:transparent;color:var(--muted);font-size:11px;line-height:1;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.condChipX:hover{background:rgba(255,255,255,.12);color:var(--text)}
+.condAddBtn{font-size:10px;padding:4px 8px}
+.condPopover{margin-top:6px;padding:8px;border-radius:9px;border:1px solid rgba(255,255,255,.13);background:#08121d;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}
+.condPopover.hidden{display:none}
+.condPopover select{font-size:11px;padding:5px 7px}
+.condPopMapScope.hidden,.condPopRel.hidden{display:none}
+.condPopValList{display:flex;flex-direction:column;gap:1px;max-height:180px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:2px}
+.condCheckRow{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:5px;font-size:11px;cursor:pointer;user-select:none;text-transform:none;color:var(--text);letter-spacing:0;margin:0}
+.condCheckRow:hover{background:rgba(255,255,255,.05)}
+.condCheckRow input{width:auto;flex:0 0 auto}
+.condPopRel{display:flex;align-items:center;gap:5px}
+.condPopRel input{font-size:11px;padding:5px 7px;min-width:0}
+.condPopRel span{font-size:10px;color:var(--muted);flex:0 0 auto}
+.condPopClose{width:100%;font-size:10px;padding:5px 0}
+
+/* Rich node authoring fields. */
+.editorSection{border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:8px;background:rgba(255,255,255,.02);min-width:0}
+.editorSection>label:first-child{margin-bottom:7px}
+.editorActions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.editorActions button{font-size:10px;padding:6px 8px}
+.tokenBtnRow{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.tokenBtn{font-size:9px;padding:3px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:var(--muted);font-weight:600;font-family:ui-monospace,Menlo,monospace}
+.tokenBtn:hover{background:rgba(106,167,255,.16);color:var(--text);border-color:rgba(106,167,255,.4)}
+.tokenBtn.poolTokenBtn{border-color:rgba(54,216,207,.3);background:rgba(54,216,207,.08);color:var(--seq)}
+.actionStack{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.actionRow{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(120px,1fr) auto;gap:5px;align-items:center}
+.actionRow button{padding:6px 8px}
+.tagRowEditor{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(140px,1fr) auto;gap:5px;align-items:center;margin-bottom:5px}
+
+/* Modal surfaces retained from the production editor. */
+.editorModal{position:fixed;inset:0;background:rgba(0,0,0,.76);z-index:180;display:flex;align-items:center;justify-content:center;padding:10px}
+.editorModal.hidden{display:none}
+.modalBox{background:#0a1521;border:1px solid var(--line);border-radius:14px;box-shadow:0 22px 80px rgba(0,0,0,.62);width:min(940px,96vw);height:min(720px,92vh);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.modalHead{display:flex;align-items:flex-start;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.modalHead h2{font-size:14px;margin:0;color:var(--text)}
+.modalHeadText{flex:1;min-width:0}
+.modalBody{flex:1;min-height:0;overflow:auto;padding:12px}
+#poolBoxBody{height:100%;display:flex;gap:12px;min-height:0}
+#poolListCol{width:210px;min-width:170px;display:flex;flex-direction:column;gap:8px;min-height:0}
+#poolList{flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:5px}
+.poolListItem{display:flex;align-items:center;gap:5px;padding:7px 8px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;border:1px solid transparent}
+.poolListItem:hover{background:rgba(255,255,255,.05)}
+.poolListItem.sel{border-color:var(--accent);background:rgba(106,167,255,.1)}
+.poolListItemName{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.poolListItemCount{font-size:9px;color:var(--muted);background:rgba(255,255,255,.06);border-radius:999px;padding:1px 6px}
+#poolDetailCol{flex:1;min-width:0;overflow:auto;padding-right:2px}
+.poolEmptyState{color:var(--muted);font-size:12px;text-align:center;padding:40px 10px}
+.poolNameRow{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.poolNameRow input{font-size:13px;font-weight:700}
+.poolEntryCard{border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.02);margin-bottom:8px;overflow:hidden}
+.poolEntryHead{display:flex;align-items:center;gap:6px;padding:8px 10px}
+.poolEntryTag{font-size:9px;font-weight:800;color:var(--seq);background:rgba(54,216,207,.12);border:1px solid rgba(54,216,207,.28);border-radius:4px;padding:2px 6px}
+.poolEntryText{flex:1;min-width:0;min-height:38px;resize:vertical}
+.poolEntryBody{padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
+#randomPromptGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.promptCard{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);border-radius:12px;padding:11px;display:flex;flex-direction:column;gap:6px}
+.pcNpc{font-size:14px;font-weight:800}.pcNpcMeta,.pcDesc,.pcCond{font-size:10px;color:var(--muted);line-height:1.45}.pcArchetype{font-size:12px;font-weight:800;color:var(--accent)}.pcAlready{font-size:10px;color:var(--warn)}
+
+@media (max-width:720px){
+  #authorBar{padding:5px 6px}
+  #dbOverrideStatus{display:none}
+  .actionRow,.tagRowEditor{grid-template-columns:1fr}
+  .modalBox{width:100%;height:96vh}
+  #poolBoxBody{flex-direction:column}
+  #poolListCol{width:100%;height:180px;min-height:140px}
+  #poolDetailCol{overflow:visible}
+}
+
