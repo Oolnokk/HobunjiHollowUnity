@@ -185,14 +185,20 @@
   installProjectExportCompatibility();
 })(typeof window !== 'undefined' ? window : this);
 
-// The map editor needs repo-index-backed destination choices, but the live
-// game also loads this shared geometry module. Load the editor controller only
-// on the map-editor page so runtime building behavior remains untouched.
+// Editor-only companion controllers. The live game also loads this shared
+// geometry module, so gate all tool behavior to the Map Editor URL.
 if (typeof document !== 'undefined'
-    && /\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)
-    && !document.querySelector('script[data-map-editor-building-entrances]')) {
-  const script = document.createElement('script');
-  script.src = '../../js/map-editor-building-entrances.js';
-  script.dataset.mapEditorBuildingEntrances = '1';
-  document.head.appendChild(script);
+    && /\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)) {
+  if (!document.querySelector('script[data-map-editor-building-entrances]')) {
+    const entrancesScript = document.createElement('script');
+    entrancesScript.src = '../../js/map-editor-building-entrances.js';
+    entrancesScript.dataset.mapEditorBuildingEntrances = '1';
+    document.head.appendChild(entrancesScript);
+  }
+  if (!document.querySelector('script[data-map-editor-export-fixes]')) {
+    const exportScript = document.createElement('script');
+    exportScript.src = '../../js/map-editor-export-fixes.js';
+    exportScript.dataset.mapEditorExportFixes = '1';
+    document.head.appendChild(exportScript);
+  }
 }
