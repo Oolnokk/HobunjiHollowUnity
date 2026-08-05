@@ -201,4 +201,10 @@ if (typeof document !== 'undefined'
     exportScript.dataset.mapEditorExportFixes = '1';
     document.head.appendChild(exportScript);
   }
+  if (!document.querySelector('script[data-map-editor-interior-instance-sync]')) {
+    const interiorSyncScript = document.createElement('script');
+    interiorSyncScript.src = '../../js/map-editor-interior-instance-sync.js';
+    interiorSyncScript.dataset.mapEditorInteriorInstanceSync = '1';
+    document.head.appendChild(interiorSyncScript);
+  }
 }
