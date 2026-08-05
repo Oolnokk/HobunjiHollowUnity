@@ -1,0 +1,194 @@
+(() => {
+  'use strict';
+
+  if (!/\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)) return;
+
+  const WORKSPACE_KEY = 'hobunji_map_editor_workspace_v1';
+  const state = {
+    installed: false,
+    paintActive: false,
+    paintPointerId: null,
+    paintOperation: 'add',
+    selectedStationId: null,
+    viewTransform: null,
+    overlayDraws: 0,
+    lastError: '',
+  };
+
+  let overlayCanvas = null;
+  let overlayContext = null;
+  let paletteObserver = null;
+  let animationFrame = 0;
+
+  function core() {
+    return window.NpcStationBehaviorCore || null;
+  }
+
+  function workspace() {
+    try {
+      return window._mapEditorBridge?.getWorkspace?.() || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function activeMap() {
+    const ws = workspace();
+    if (!ws?.maps?.length) return null;
+    return ws.maps.find(map => map?.id === ws.activeId) || ws.maps[0] || null;
+  }
+
+  function selectedStationId() {
+    const selected = document.querySelector('#palette [data-stationsel].sel, #palette .item.sel[data-stationsel]');
+    return selected?.dataset?.stationsel || null;
+  }
+
+  function selectedStation() {
+    const map = activeMap();
+    const id = selectedStationId();
+    return (map?.npcStations || []).find(station => String(station?.id) === String(id)) || null;
+  }
+
+  function setStatus(message) {
+    const pill = document.getElementById('statusPill');
+    if (pill) pill.textContent = message;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function csv(value) {
+    return Array.isArray(value) ? value.join(', ') : '';
+  }
+
+  function fromCsv(value) {
+    return String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+  }
+
+  function persistWorkspace(message) {
+    const ws = workspace();
+    if (!ws) return;
+    try {
+      localStorage.setItem(WORKSPACE_KEY, JSON.stringify(ws));
+      window.MapEditorExportFixes?.captureWorkspaceBaselines?.();
+      if (message) setStatus(message);
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      setStatus(`Station save failed: ${state.lastError}`);
+    }
+    requestOverlayDraw();
+  }
+
+  function requestNativeRefresh() {
+    const bridge = window._mapEditorBridge;
+    for (const method of ['rerender', 'refresh', 'updateAll']) {
+      if (typeof bridge?.[method] === 'function') {
+        bridge[method]();
+        return;
+      }
+    }
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  function normalizedBehavior(station) {
+    return core()?.normalizeStationBehavior(station) || {
+      mode: 'single',
+      tiles: [[station.col, station.row]],
+      wander: { repathMinSec: 10, repathMaxSec: 10, minPathDistance: 1, maxPathDistance: 999 },
+      patrol: { randomizeNextTile: true },
+      stopAndLook: {
+        enabled: false,
+        intervalMinSec: 12,
+        intervalMaxSec: 24,
+        durationMinSec: 1,
+        durationMaxSec: 3,
+        turnMinSec: 0.4,
+        turnMaxSec: 1.2,
+      },
+    };
+  }
+
+  function normalizedAttention(station) {
+    return core()?.normalizeAttentionPriorities(station) || [];
+  }
+
+  function ensureStationData(station) {
+    station.stationBehavior = normalizedBehavior(station);
+    station.attentionPriorities = normalizedAttention(station);
+    return station;
+  }
+
+  function updateBehavior(station, mutate, message) {
+    ensureStationData(station);
+    mutate(station.stationBehavior);
+    station.stationBehavior = normalizedBehavior(station);
+    persistWorkspace(message || `Updated ${station.label || station.id}.`);
+    renderInspector();
+  }
+
+  function updateAttention(station, mutate, message) {
+    ensureStationData(station);
+    mutate(station.attentionPriorities);
+    station.attentionPriorities = normalizedAttention(station);
+    persistWorkspace(message || `Updated attention for ${station.label || station.id}.`);
+    renderInspector();
+  }
+
+  function numberField(label, value, attr, options = '') {
+    return `<div><label>${label}</label><input type="number" ${options} data-station-field="${attr}" value="${escapeHtml(value)}"></div>`;
+  }
+
+  function renderAttentionRow(entry, index, total) {
+    const condition = entry.conditions || {};
+    const typeOptions = [
+      ['thinking', 'Thinking / last movement'],
+      ['people', 'People-watching'],
+      ['person', 'Person-watching'],
+      ['origin', 'Origin watching'],
+    ].map(([value, label]) => `<option value="${value}" ${entry.type === value ? 'selected' : ''}>${label}</option>`).join('');
+
+    const conditionFields = entry.type === 'people' ? `
+      <div class="g2" style="margin-top:5px">
+        <div><label>Include species</label><input data-attn-condition="species" value="${escapeHtml(csv(condition.species))}" placeholder="mao-ao, kenkarri"></div>
+        <div><label>Exclude species</label><input data-attn-condition="notSpecies" value="${escapeHtml(csv(condition.notSpecies))}" placeholder="mao-ao"></div>
+        <div><label>Include genders</label><input data-attn-condition="genders" value="${escapeHtml(csv(condition.genders))}" placeholder="female, male"></div>
+        <div><label>Exclude genders</label><input data-attn-condition="notGenders" value="${escapeHtml(csv(condition.notGenders))}"></div>
+        <div><label>Only NPC ids</label><input data-attn-condition="npcIds" value="${escapeHtml(csv(condition.npcIds))}"></div>
+        <div><label>Exclude NPC ids</label><input data-attn-condition="excludeNpcIds" value="${escapeHtml(csv(condition.excludeNpcIds))}"></div>
+        <div><label>Required tags</label><input data-attn-condition="tags" value="${escapeHtml(csv(condition.tags))}"></div>
+        <div><label>Excluded tags</label><input data-attn-condition="excludeTags" value="${escapeHtml(csv(condition.excludeTags))}"></div>
+      </div>
+      <div class="g3" style="margin-top:5px">
+        <div><label>Player rule</label><select data-attn-player-rule>
+          <option value="any" ${!condition.playerOnly && !condition.excludePlayer ? 'selected' : ''}>Any</option>
+          <option value="only" ${condition.playerOnly ? 'selected' : ''}>Player only</option>
+          <option value="exclude" ${condition.excludePlayer ? 'selected' : ''}>Exclude player</option>
+        </select></div>
+        <div><label>Min hearts</label><input type="number" step="0.25" data-attn-number="minHearts" value="${condition.minHearts ?? ''}"></div>
+        <div><label>Max hearts</label><input type="number" step="0.25" data-attn-number="maxHearts" value="${condition.maxHearts ?? ''}"></div>
+      </div>
+      <div style="margin-top:5px"><label>Ignore player at this many hearts <span class="qhelp" title="Example: 3 makes Kinami's non-Mao'ao frown rule stop targeting a 3+ heart player.">?</span></label><input type="number" step="0.25" data-attn-number="playerMinHeartsToIgnore" value="${condition.playerMinHeartsToIgnore ?? ''}" placeholder="3"></div>` : '';
+
+    const targetField = entry.type === 'person' ? `
+      <div style="margin-top:5px"><label>Specific person ids <span class="qhelp" title="Comma-separated NPC ids. Use player for the player character.">?</span></label><input data-attn-targets value="${escapeHtml(csv(entry.targetIds))}" placeholder="kinami_kunji, player"></div>` : '';
+
+    const expressionField = entry.type === 'people' || entry.type === 'person' ? `
+      <div style="margin-top:5px"><label>Expression while focused</label><input data-attn-expression value="${escapeHtml(entry.expression)}" placeholder="frown"></div>` : '';
+
+    return `<div class="item station-attention-row" data-attn-index="${index}" style="margin-top:6px;background:rgba(255,255,255,.035)">
+      <div class="row">
+        <span class="pill">Priority ${index + 1}</span>
+        <select data-attn-type style="flex:1">${typeOptions}</select>
+        <button class="sec" data-attn-up ${index === 0 ? 'disabled' : ''} title="Higher priority">↑</button>
+        <button class="sec" data-attn-down ${index === total - 1 ? 'disabled' : ''} title="Lower priority">↓</button>
+        <button class="bad" data-attn-delete title="Delete">×</button>
+      </div>
+      ${targetField}${conditionFields}${expressionField}
+    </div>`;
+  }
+
