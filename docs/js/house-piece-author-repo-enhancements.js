@@ -34,10 +34,6 @@
     return payload && payload.currentPiece ? payload.currentPiece : payload;
   }
 
-  function pieceSignature(payload) {
-    return JSON.stringify(payloadPiece(payload) || null);
-  }
-
   function refreshAndReadPayload() {
     const refresh = byId('refreshExportBtn');
     const output = byId('exportText');
@@ -62,6 +58,16 @@
   function identityMatches(expected, actual) {
     if (expected.id) return actual.id === expected.id;
     return Boolean(expected.name && actual.name === expected.name);
+  }
+
+  function identitiesMatch(left, right) {
+    return left.id === right.id && left.name === right.name;
+  }
+
+  function makeTemporaryIdentity(piece, label) {
+    const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    piece.id = `__mhpa_${label}_${nonce}`;
+    piece.name = `__MHPA ${label} ${nonce}`;
   }
 
   function isExtensionFace(face) {
@@ -138,11 +144,8 @@
     });
   }
 
-  function waitForImportedPiece(expectedPayload, options = {}) {
-    const strict = options.strict === true;
-    const timeoutMs = Number(options.timeoutMs) || 3000;
+  function waitForImportedPiece(expectedPayload, timeoutMs = 3000) {
     const expectedIdentity = pieceIdentity(expectedPayload);
-    const expectedSignature = pieceSignature(expectedPayload);
     const started = performance.now();
 
     return new Promise((resolve, reject) => {
@@ -150,9 +153,10 @@
         const elapsed = performance.now() - started;
         try {
           const current = refreshAndReadPayload();
-          const sameIdentity = identityMatches(expectedIdentity, pieceIdentity(current));
-          const samePayload = pieceSignature(current) === expectedSignature;
-          if (elapsed >= MIN_IMPORT_SETTLE_MS && (strict ? samePayload : sameIdentity)) {
+          if (
+            elapsed >= MIN_IMPORT_SETTLE_MS &&
+            identityMatches(expectedIdentity, pieceIdentity(current))
+          ) {
             resolve(current);
             return;
           }
@@ -172,7 +176,7 @@
     });
   }
 
-  async function importPayloadThroughEditor(payload, fileName = 'repo-house.json', options = {}) {
+  async function importPayloadThroughEditor(payload, fileName = 'repo-house.json') {
     const input = byId('jsonInput');
     if (!input) throw new Error('House editor JSON input is unavailable.');
 
@@ -184,7 +188,26 @@
 
     setInputFiles(input, file);
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    return waitForImportedPiece(payload, options);
+    return waitForImportedPiece(payload);
+  }
+
+  async function importPayloadSafely(payload, fileName = 'repo-house.json') {
+    let currentIdentity = null;
+    try {
+      currentIdentity = pieceIdentity(refreshAndReadPayload());
+    } catch (_error) {
+      // A first-time import does not require a comparison.
+    }
+
+    const targetIdentity = pieceIdentity(payload);
+    if (!currentIdentity || !identitiesMatch(currentIdentity, targetIdentity)) {
+      return importPayloadThroughEditor(payload, fileName);
+    }
+
+    const staged = clone(payload);
+    makeTemporaryIdentity(payloadPiece(staged), 'reload');
+    await importPayloadThroughEditor(staged, `staged-${fileName}`);
+    return importPayloadThroughEditor(payload, fileName);
   }
 
   function clickOriginalGenerator() {
@@ -209,21 +232,22 @@
     try {
       const originalPayload = refreshAndReadPayload();
       const originalPiece = payloadPiece(originalPayload);
+      const originalIdentity = pieceIdentity(originalPayload);
       const originalExtensions = clone(ensureExtensions(originalPiece));
       const preservedExtensionFaces = (originalPiece.base?.faces || []).filter(isExtensionFace);
 
       const mainOnlyInput = clone(originalPayload);
-      clearExtensionMarkers(payloadPiece(mainOnlyInput));
-      await importPayloadThroughEditor(
-        mainOnlyInput,
-        'main-body-generation-input.json',
-        { strict: true }
-      );
+      const mainOnlyPiece = payloadPiece(mainOnlyInput);
+      clearExtensionMarkers(mainOnlyPiece);
+      makeTemporaryIdentity(mainOnlyPiece, 'main');
+      await importPayloadThroughEditor(mainOnlyInput, 'main-body-generation-input.json');
 
       clickOriginalGenerator();
 
       const generatedPayload = refreshAndReadPayload();
       const generatedPiece = payloadPiece(generatedPayload);
+      generatedPiece.id = originalIdentity.id;
+      generatedPiece.name = originalIdentity.name;
       ensureExtensions(generatedPiece);
       generatedPiece.footprint.extensions = originalExtensions;
       generatedPiece.base.faces = mergeFacesWithUniqueExtensionIds(
@@ -239,8 +263,7 @@
 
       await importPayloadThroughEditor(
         generatedPayload,
-        'main-body-and-roof.json',
-        { strict: true }
+        'main-body-and-roof.json'
       );
 
       const mainCount = generatedPiece.base.faces.filter(face => !isExtensionFace(face)).length;
@@ -289,10 +312,9 @@
         delete mergedPiece.extensionGeneration;
       }
 
-      await importPayloadThroughEditor(
+      await importPayloadSafely(
         mergedPayload,
-        'generated-house-extensions.json',
-        { strict: true }
+        'generated-house-extensions.json'
       );
 
       log(`Generated ${generatedExtensionFaces.length} extension faces while preserving ${preservedMainFaces.length} main body/roof faces.`);
@@ -313,11 +335,7 @@
     busy = true;
     try {
       const payload = normalizeTempleDoor(clone(data), entry);
-      await importPayloadThroughEditor(
-        payload,
-        entry?.name || 'repo-house.json',
-        { strict: false }
-      );
+      await importPayloadSafely(payload, entry?.name || 'repo-house.json');
       const piece = payloadPiece(payload);
       log(`Imported repo house: ${piece?.name || entry?.name || 'unnamed house'}.`);
     } catch (error) {
