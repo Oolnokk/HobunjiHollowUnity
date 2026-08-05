@@ -2,23 +2,15 @@
   'use strict';
 
   const EXTENSION_TAGS = new Set(['entryTunnel', 'chimney', 'porch', 'porchStair', 'railing']);
-  const EMPTY_EXTENSIONS = Object.freeze({
-    entryTunnels: [],
-    chimneys: [],
-    porches: [],
-    porchStairs: [],
-    railings: []
-  });
+  const EXTENSION_KEYS = ['entryTunnels', 'chimneys', 'porches', 'porchStairs', 'railings'];
+  const MIN_IMPORT_SETTLE_MS = 80;
 
   let installed = false;
   let busy = false;
   let allowOriginalGenerate = false;
 
   const clone = value => JSON.parse(JSON.stringify(value));
-
-  function byId(id) {
-    return document.getElementById(id);
-  }
+  const byId = id => document.getElementById(id);
 
   function log(message, level = 'info') {
     const prefix = '[house repo/split]';
@@ -42,13 +34,20 @@
     return payload && payload.currentPiece ? payload.currentPiece : payload;
   }
 
+  function pieceSignature(payload) {
+    return JSON.stringify(payloadPiece(payload) || null);
+  }
+
   function refreshAndReadPayload() {
     const refresh = byId('refreshExportBtn');
     const output = byId('exportText');
     if (!refresh || !output) throw new Error('House editor export controls are unavailable.');
     refresh.click();
+
     const payload = JSON.parse(output.value);
-    if (!payloadPiece(payload)?.base) throw new Error('The current house payload is missing base data.');
+    if (!payloadPiece(payload)?.base) {
+      throw new Error('The current house payload is missing base data.');
+    }
     return payload;
   }
 
@@ -60,50 +59,19 @@
     };
   }
 
+  function identityMatches(expected, actual) {
+    if (expected.id) return actual.id === expected.id;
+    return Boolean(expected.name && actual.name === expected.name);
+  }
+
   function isExtensionFace(face) {
-    return Boolean(
-      face &&
-      (
-        face.extensionType ||
-        EXTENSION_TAGS.has(face.tag)
-      )
-    );
-  }
-
-  function nextAvailableFaceId(used, start) {
-    let id = start;
-    do id += 1;
-    while (used.has(id));
-    return id;
-  }
-
-  function mergeFacesWithUniqueExtensionIds(mainFaces, extensionFaces) {
-    const main = clone(mainFaces || []);
-    const used = new Set();
-    let maxNumericId = 0;
-
-    for (const face of main) {
-      const id = Number(face?.id);
-      if (Number.isFinite(id)) {
-        used.add(id);
-        maxNumericId = Math.max(maxNumericId, id);
-      }
-    }
-
-    const extensions = clone(extensionFaces || []);
-    for (const face of extensions) {
-      maxNumericId = nextAvailableFaceId(used, maxNumericId);
-      face.id = maxNumericId;
-      used.add(maxNumericId);
-    }
-
-    return main.concat(extensions);
+    return Boolean(face && (face.extensionType || EXTENSION_TAGS.has(face.tag)));
   }
 
   function ensureExtensions(piece) {
-    if (!piece.footprint) piece.footprint = {};
-    if (!piece.footprint.extensions) piece.footprint.extensions = {};
-    for (const key of Object.keys(EMPTY_EXTENSIONS)) {
+    piece.footprint = piece.footprint || {};
+    piece.footprint.extensions = piece.footprint.extensions || {};
+    for (const key of EXTENSION_KEYS) {
       if (!Array.isArray(piece.footprint.extensions[key])) {
         piece.footprint.extensions[key] = [];
       }
@@ -113,21 +81,46 @@
 
   function clearExtensionMarkers(piece) {
     piece.footprint = piece.footprint || {};
-    piece.footprint.extensions = clone(EMPTY_EXTENSIONS);
+    piece.footprint.extensions = Object.fromEntries(
+      EXTENSION_KEYS.map(key => [key, []])
+    );
     delete piece.extensionGeneration;
+  }
+
+  function mergeFacesWithUniqueExtensionIds(mainFaces, extensionFaces) {
+    const main = clone(mainFaces || []);
+    const used = new Set();
+    let nextId = 0;
+
+    for (const face of main) {
+      const id = Number(face?.id);
+      if (Number.isFinite(id)) {
+        used.add(id);
+        nextId = Math.max(nextId, id);
+      }
+    }
+
+    const extensions = clone(extensionFaces || []);
+    for (const face of extensions) {
+      do nextId += 1;
+      while (used.has(nextId));
+      face.id = nextId;
+      used.add(nextId);
+    }
+    return main.concat(extensions);
   }
 
   function normalizeTempleDoor(payload, entry) {
     const piece = payloadPiece(payload);
     if (!piece?.footprint) return payload;
 
-    const templeSource = /temple/i.test(String(entry?.name || '')) ||
+    const isTemple = /temple/i.test(String(entry?.name || '')) ||
       /temple(?:\.json)?$/i.test(String(entry?.path || '')) ||
       /temple/i.test(String(piece.name || ''));
 
-    const firstTunnel = piece.footprint.extensions?.entryTunnels?.[0];
-    if (templeSource && firstTunnel) {
-      piece.footprint.door = { x: firstTunnel.x, y: firstTunnel.y };
+    const tunnel = piece.footprint.extensions?.entryTunnels?.[0];
+    if (isTemple && tunnel) {
+      piece.footprint.door = { x: tunnel.x, y: tunnel.y };
     }
     return payload;
   }
@@ -139,23 +132,27 @@
       input.files = transfer.files;
       return;
     }
-
     Object.defineProperty(input, 'files', {
       configurable: true,
       value: [file]
     });
   }
 
-  function waitForImportedPiece(expected, timeoutMs = 3000) {
+  function waitForImportedPiece(expectedPayload, options = {}) {
+    const strict = options.strict === true;
+    const timeoutMs = Number(options.timeoutMs) || 3000;
+    const expectedIdentity = pieceIdentity(expectedPayload);
+    const expectedSignature = pieceSignature(expectedPayload);
     const started = performance.now();
+
     return new Promise((resolve, reject) => {
       const check = () => {
+        const elapsed = performance.now() - started;
         try {
           const current = refreshAndReadPayload();
-          const actual = pieceIdentity(current);
-          const idMatches = expected.id && actual.id === expected.id;
-          const nameMatches = expected.name && actual.name === expected.name;
-          if (idMatches || (!expected.id && nameMatches) || (expected.id && expected.name && nameMatches)) {
+          const sameIdentity = identityMatches(expectedIdentity, pieceIdentity(current));
+          const samePayload = pieceSignature(current) === expectedSignature;
+          if (elapsed >= MIN_IMPORT_SETTLE_MS && (strict ? samePayload : sameIdentity)) {
             resolve(current);
             return;
           }
@@ -163,21 +160,22 @@
           // FileReader/import may still be in progress.
         }
 
-        if (performance.now() - started >= timeoutMs) {
-          reject(new Error(`Timed out importing ${expected.name || expected.id || 'house JSON'}.`));
+        if (elapsed >= timeoutMs) {
+          reject(new Error(
+            `Timed out importing ${expectedIdentity.name || expectedIdentity.id || 'house JSON'}.`
+          ));
           return;
         }
         setTimeout(check, 40);
       };
-      check();
+      setTimeout(check, MIN_IMPORT_SETTLE_MS);
     });
   }
 
-  async function importPayloadThroughEditor(payload, fileName = 'repo-house.json') {
+  async function importPayloadThroughEditor(payload, fileName = 'repo-house.json', options = {}) {
     const input = byId('jsonInput');
     if (!input) throw new Error('House editor JSON input is unavailable.');
 
-    const expected = pieceIdentity(payload);
     const file = new File(
       [JSON.stringify(payload, null, 2)],
       fileName.replace(/[^a-z0-9_.-]+/gi, '_'),
@@ -186,12 +184,13 @@
 
     setInputFiles(input, file);
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    return waitForImportedPiece(expected);
+    return waitForImportedPiece(payload, options);
   }
 
   function clickOriginalGenerator() {
     const button = byId('generateBaseBtn');
     if (!button) throw new Error('Original footprint generator is unavailable.');
+
     allowOriginalGenerate = true;
     try {
       button.click();
@@ -211,20 +210,25 @@
       const originalPayload = refreshAndReadPayload();
       const originalPiece = payloadPiece(originalPayload);
       const originalExtensions = clone(ensureExtensions(originalPiece));
-      const existingExtensionFaces = (originalPiece.base?.faces || []).filter(isExtensionFace);
+      const preservedExtensionFaces = (originalPiece.base?.faces || []).filter(isExtensionFace);
 
       const mainOnlyInput = clone(originalPayload);
       clearExtensionMarkers(payloadPiece(mainOnlyInput));
-      await importPayloadThroughEditor(mainOnlyInput, 'main-body-generation-input.json');
+      await importPayloadThroughEditor(
+        mainOnlyInput,
+        'main-body-generation-input.json',
+        { strict: true }
+      );
 
       clickOriginalGenerator();
+
       const generatedPayload = refreshAndReadPayload();
       const generatedPiece = payloadPiece(generatedPayload);
       ensureExtensions(generatedPiece);
       generatedPiece.footprint.extensions = originalExtensions;
       generatedPiece.base.faces = mergeFacesWithUniqueExtensionIds(
         (generatedPiece.base.faces || []).filter(face => !isExtensionFace(face)),
-        existingExtensionFaces
+        preservedExtensionFaces
       );
 
       if (originalPiece.extensionGeneration) {
@@ -233,7 +237,12 @@
         delete generatedPiece.extensionGeneration;
       }
 
-      await importPayloadThroughEditor(generatedPayload, 'main-body-and-roof.json');
+      await importPayloadThroughEditor(
+        generatedPayload,
+        'main-body-and-roof.json',
+        { strict: true }
+      );
+
       const mainCount = generatedPiece.base.faces.filter(face => !isExtensionFace(face)).length;
       log(`Generated the main body and roof (${mainCount} main faces) without regenerating extension geometry.`);
     } catch (error) {
@@ -255,12 +264,17 @@
       const originalPayload = refreshAndReadPayload();
       const originalPiece = payloadPiece(originalPayload);
       ensureExtensions(originalPiece);
-      const preservedMainFaces = (originalPiece.base?.faces || []).filter(face => !isExtensionFace(face));
+      const preservedMainFaces = (originalPiece.base?.faces || []).filter(
+        face => !isExtensionFace(face)
+      );
 
       clickOriginalGenerator();
+
       const fullyGeneratedPayload = refreshAndReadPayload();
       const fullyGeneratedPiece = payloadPiece(fullyGeneratedPayload);
-      const generatedExtensionFaces = (fullyGeneratedPiece.base?.faces || []).filter(isExtensionFace);
+      const generatedExtensionFaces = (fullyGeneratedPiece.base?.faces || []).filter(
+        isExtensionFace
+      );
 
       const mergedPayload = clone(originalPayload);
       const mergedPiece = payloadPiece(mergedPayload);
@@ -275,7 +289,12 @@
         delete mergedPiece.extensionGeneration;
       }
 
-      await importPayloadThroughEditor(mergedPayload, 'generated-house-extensions.json');
+      await importPayloadThroughEditor(
+        mergedPayload,
+        'generated-house-extensions.json',
+        { strict: true }
+      );
+
       log(`Generated ${generatedExtensionFaces.length} extension faces while preserving ${preservedMainFaces.length} main body/roof faces.`);
     } catch (error) {
       log(`Extension generation failed: ${error.message || error}`, 'error');
@@ -294,7 +313,11 @@
     busy = true;
     try {
       const payload = normalizeTempleDoor(clone(data), entry);
-      await importPayloadThroughEditor(payload, entry?.name || 'repo-house.json');
+      await importPayloadThroughEditor(
+        payload,
+        entry?.name || 'repo-house.json',
+        { strict: false }
+      );
       const piece = payloadPiece(payload);
       log(`Imported repo house: ${piece?.name || entry?.name || 'unnamed house'}.`);
     } catch (error) {
@@ -334,7 +357,6 @@
     original.dataset.splitGenerationInstalled = '1';
     original.textContent = 'Generate main body + roof';
     original.title = 'Regenerate only the blue-footprint house body and roof. Existing extension geometry is preserved.';
-
     original.addEventListener('click', event => {
       if (allowOriginalGenerate) return;
       event.preventDefault();
@@ -342,26 +364,26 @@
       void generateMainBodyAndRoof();
     }, true);
 
-    const extensionButton = document.createElement('button');
-    extensionButton.id = 'generateExtensionsBtn';
-    extensionButton.type = 'button';
-    extensionButton.textContent = 'Generate extensions';
-    extensionButton.title = 'Regenerate entry tunnels, chimneys, porches, stairs, fences and railings without replacing main body/roof faces.';
-    extensionButton.addEventListener('click', () => void generateExtensionsOnly());
-    original.after(extensionButton);
+    const extensions = document.createElement('button');
+    extensions.id = 'generateExtensionsBtn';
+    extensions.type = 'button';
+    extensions.textContent = 'Generate extensions';
+    extensions.title = 'Regenerate entry tunnels, chimneys, porches, stairs, fences and railings without replacing main body/roof faces.';
+    extensions.addEventListener('click', () => void generateExtensionsOnly());
+    original.after(extensions);
 
-    const debugButton = document.createElement('button');
-    debugButton.id = 'debugHouseGenerationBtn';
-    debugButton.type = 'button';
-    debugButton.textContent = 'Debug generation';
-    debugButton.addEventListener('click', () => {
+    const debug = document.createElement('button');
+    debug.id = 'debugHouseGenerationBtn';
+    debug.type = 'button';
+    debug.textContent = 'Debug generation';
+    debug.addEventListener('click', () => {
       try {
         debugSnapshot();
       } catch (error) {
         log(`Debug snapshot failed: ${error.message || error}`, 'error');
       }
     });
-    extensionButton.after(debugButton);
+    extensions.after(debug);
 
     const hint = original.closest('.section')?.querySelector('.hint');
     if (hint) {
@@ -387,8 +409,8 @@
       showDisk: false,
       onLoad: (entry, data) => void importHouseData(entry, data)
     });
-
     host.appendChild(picker);
+
     const hint = document.createElement('span');
     hint.className = 'hint';
     hint.textContent = 'Load an indexed house piece directly from the repository.';
