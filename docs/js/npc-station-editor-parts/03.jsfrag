@@ -1,0 +1,207 @@
+  function renderInspector() {
+    const station = selectedStation();
+    const nativeItem = station && document.querySelector(`#palette [data-stationsel="${CSS.escape(String(station.id))}"]`);
+    document.querySelectorAll('.npc-station-behavior-panel').forEach(panel => panel.remove());
+    state.selectedStationId = station?.id || null;
+    if (!station || !nativeItem) {
+      state.paintActive = false;
+      requestOverlayDraw();
+      return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = inspectorMarkup(station);
+    const panel = wrapper.firstElementChild;
+    nativeItem.appendChild(panel);
+    bindInspector(panel, station);
+    requestOverlayDraw();
+  }
+
+  function showDebugDialog(station) {
+    ensureStationData(station);
+    const connected = core()?.connectedComponent(station.stationBehavior.tiles, [station.col, station.row]) || [];
+    const disconnected = core()?.disconnectedTiles(station.stationBehavior.tiles, [station.col, station.row]) || [];
+    const report = {
+      stationId: station.id,
+      label: station.label,
+      mapId: activeMap()?.id || null,
+      origin: [station.col, station.row],
+      connectedTiles: connected,
+      disconnectedTiles: disconnected,
+      stationBehavior: station.stationBehavior,
+      attentionPriorities: station.attentionPriorities,
+      editorState: { ...state, viewTransform: state.viewTransform },
+    };
+    document.getElementById('npcStationDebugDialog')?.remove();
+    const dialog = document.createElement('dialog');
+    dialog.id = 'npcStationDebugDialog';
+    dialog.style.cssText = 'max-width:min(94vw,780px);width:780px;background:#111827;color:#e5e7eb;border:1px solid #4b5563;border-radius:10px;padding:14px';
+    dialog.innerHTML = `<h3 style="margin:0 0 8px">NPC Station Behavior Debug</h3><textarea readonly style="width:100%;height:58vh;box-sizing:border-box;background:#030712;color:#d1d5db;border:1px solid #374151;border-radius:6px;padding:8px"></textarea><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px"><button data-copy>Copy</button><button data-close>Close</button></div>`;
+    const text = JSON.stringify(report, null, 2);
+    dialog.querySelector('textarea').value = text;
+    dialog.querySelector('[data-copy]').addEventListener('click', () => navigator.clipboard?.writeText(text));
+    dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => dialog.remove());
+    document.body.appendChild(dialog);
+    dialog.showModal();
+  }
+
+  function rootMapFor(map) {
+    const ws = workspace();
+    let current = map;
+    const seen = new Set();
+    while (current?.parentMapId && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = ws?.maps?.find(candidate => candidate.id === current.parentMapId);
+      if (!parent) break;
+      current = parent;
+    }
+    return current || map;
+  }
+
+  function patchCanvasTransformCapture() {
+    const canvas = document.getElementById('canvas2d');
+    if (!canvas) return false;
+    const context = canvas.getContext('2d');
+    if (!context || context.__npcStationTransformCapture) return true;
+    context.__npcStationTransformCapture = true;
+    const originalStrokeRect = context.strokeRect.bind(context);
+    context.strokeRect = function patchedStrokeRect(x, y, width, height) {
+      try {
+        const map = activeMap();
+        const root = rootMapFor(map);
+        if (root?.cols > 0 && root?.rows > 0 && width > 30 && height > 30) {
+          const zx = width / root.cols;
+          const zy = height / root.rows;
+          if (Math.abs(zx - zy) < 0.02 && zx >= 1) {
+            state.viewTransform = {
+              x, y, z: (zx + zy) / 2,
+              rootMapId: root.id,
+              capturedAt: performance.now(),
+            };
+            requestOverlayDraw();
+          }
+        }
+      } catch (error) {
+        state.lastError = String(error?.message || error);
+      }
+      return originalStrokeRect(x, y, width, height);
+    };
+    return true;
+  }
+
+  function ensureOverlay() {
+    const baseCanvas = document.getElementById('canvas2d');
+    const view = document.getElementById('view') || baseCanvas?.parentElement;
+    if (!baseCanvas || !view) return false;
+    if (!overlayCanvas) {
+      overlayCanvas = document.createElement('canvas');
+      overlayCanvas.id = 'npcStationAreaOverlay';
+      overlayCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5';
+      view.appendChild(overlayCanvas);
+      overlayContext = overlayCanvas.getContext('2d');
+    }
+    const rect = baseCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+    if (overlayCanvas.width !== width || overlayCanvas.height !== height) {
+      overlayCanvas.width = width;
+      overlayCanvas.height = height;
+    }
+    overlayContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
+
+  function requestOverlayDraw() {
+    if (animationFrame) return;
+    animationFrame = requestAnimationFrame(() => {
+      animationFrame = 0;
+      drawOverlay();
+    });
+  }
+
+  function drawOverlay() {
+    if (!ensureOverlay()) return;
+    const baseCanvas = document.getElementById('canvas2d');
+    const rect = baseCanvas.getBoundingClientRect();
+    overlayContext.clearRect(0, 0, rect.width, rect.height);
+    const station = selectedStation();
+    if (!station || !state.viewTransform) return;
+    const behavior = normalizedBehavior(station);
+    if (behavior.mode === 'single') return;
+    const map = activeMap();
+    const root = rootMapFor(map);
+    if (root?.id !== map?.id) {
+      state.lastError = 'Area painting on plateau sub-maps is disabled because their local-to-root offset is not exposed by the editor bridge.';
+      return;
+    }
+    const connectedKeys = new Set((core()?.connectedComponent(behavior.tiles, [station.col, station.row]) || []).map(core().tileKey));
+    const originKey = core().tileKey([station.col, station.row]);
+    const { x, y, z } = state.viewTransform;
+    for (const tile of behavior.tiles) {
+      const key = core().tileKey(tile);
+      const sx = x + tile[0] * z;
+      const sy = y + tile[1] * z;
+      const disconnected = !connectedKeys.has(key);
+      overlayContext.fillStyle = key === originKey ? 'rgba(34,211,238,.50)' : disconnected ? 'rgba(251,113,133,.48)' : 'rgba(34,211,238,.24)';
+      overlayContext.strokeStyle = disconnected ? '#fb7185' : '#22d3ee';
+      overlayContext.lineWidth = key === originKey ? 3 : 2;
+      overlayContext.fillRect(sx + 1, sy + 1, Math.max(1, z - 2), Math.max(1, z - 2));
+      overlayContext.strokeRect(sx + 1, sy + 1, Math.max(1, z - 2), Math.max(1, z - 2));
+    }
+    state.overlayDraws += 1;
+  }
+
+  function eventTile(event) {
+    const canvas = document.getElementById('canvas2d');
+    const transform = state.viewTransform;
+    if (!canvas || !transform) return null;
+    const map = activeMap();
+    if (!map || rootMapFor(map)?.id !== map.id) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const col = Math.floor((x - transform.x) / transform.z);
+    const row = Math.floor((y - transform.y) / transform.z);
+    if (col < 0 || row < 0 || col >= map.cols || row >= map.rows) return null;
+    return [col, row];
+  }
+
+  function applyPaintTile(tile) {
+    const station = selectedStation();
+    if (!station || !tile) return;
+    ensureStationData(station);
+    if (station.stationBehavior.mode === 'single') return;
+    const key = core().tileKey(tile);
+    const originKey = core().tileKey([station.col, station.row]);
+    const existing = new Map(station.stationBehavior.tiles.map(item => [core().tileKey(item), item]));
+    if (state.paintOperation === 'remove' && key !== originKey) existing.delete(key);
+    if (state.paintOperation === 'add') existing.set(key, tile);
+    station.stationBehavior.tiles = Array.from(existing.values());
+    station.stationBehavior = normalizedBehavior(station);
+    persistWorkspace();
+    requestOverlayDraw();
+  }
+
+  function bindCanvasPainting() {
+    const canvas = document.getElementById('canvas2d');
+    if (!canvas || canvas.__npcStationAreaPainting) return;
+    canvas.__npcStationAreaPainting = true;
+
+    canvas.addEventListener('pointerdown', event => {
+      if (!state.paintActive || event.button !== 0) return;
+      const station = selectedStation();
+      const tile = eventTile(event);
+      if (!station || !tile) return;
+      ensureStationData(station);
+      const key = core().tileKey(tile);
+      const originKey = core().tileKey([station.col, station.row]);
+      const exists = station.stationBehavior.tiles.some(item => core().tileKey(item) === key);
+      state.paintOperation = exists && key !== originKey ? 'remove' : 'add';
+      state.paintPointerId = event.pointerId;
+      canvas.setPointerCapture?.(event.pointerId);
+      applyPaintTile(tile);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+
