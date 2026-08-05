@@ -1,0 +1,89 @@
+name: Apply uploaded maps and house metadata
+
+on:
+  push:
+    branches:
+      - agent/house-repo-import-generation-split
+    paths:
+      - .github/workflows/agent-house-update.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Replace maps and update house metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          town_b64 = Path('.agent/town-map.json.gz.b64').read_text(encoding='utf-8').strip()
+          smithy_b64 = '''H4sIAER+c2oC/81ZS2/bOBC+51cIuuwlCPSWuLe+AhTFAov60nYRGJRMS2wkUaBoJ3HR/15RTvRwpBk7yTb1wbbmGw6/eVEi9ePMMMw6yVhBzb8NMxPxpvzOl/GG5ytepkteKia5kBdb2zzXuuuNLLnaSNao/9cIDONH+91AfKVNrIs6jcM4Tna79K4dswcVKz6xO62RiI22etlZ6pQSkTcKttsJpLhpBNHgWn1tBFYnqEStvmjJhWfbI+ljvW+PJAs91L5wQ2cs1mPH1hZ6sN1Kfp7Puk1v1zn1b9W025IqtlA0uZ73PDjwnBzh+TFeo8R31XabW9+fTNw7IB78NuLbbWLXqycTd1+JeJJu6K0vyUyHVBWTb6mULJ+n7r8W9cznhDl3z6AevAj1Cz/wjurwl+nuVRGKOKPpq/t9espYHSmZONEk9YxRqbJZ0tH/yrn5vmpvLHu2Ba2WfFkXXGX7+jJLWuh7jflpt4k36V+18VaKcsduhLyu9xoNzbrRcNo5NMnBFbvlqp67VWlQz7VcNyYHi3ZOY6Y9Ny+13HgvhOxBxXPWW9Sf/p8xWAjbK7+7uLr/d9UbojJl6h9a6Zl6+3VFb8p3beStsfBzG34o161DTb5XURp7E/4s+IrNufNSxLqENmnJm/lkH6yHQPVtEJ0NYtLBPgx7MOwewB2hLStXQn4T5cBhs6ySf6nKZmukUtnyui29iXjua9Joa9FYiyZsvVJj+GNr4XB0KVZAAQXD+gn78jmf1CYnafdPSE9QJydxQbWDGe2z4e90leuU1LkQBZ8q8RYwaFVJViqeTGXkcDCckZFfERo05xnqtn1SkHH14Bnq0VxSuoZa53opedTdnUsB3J8B3N0BvDZMwwEMdxUdTsIODLsw7MGwD8MBDNvwouectiaetuAiy3VHjcDUCEyNwEElMHMCMycwc9uCqc/gLoJ7CO4jeIDgFlztFlxSFpxWC46ddTR3G8EdJDYOElsHyY2D5BbDbcS+jfCzEf9sZH4XwT0E9xH+PsLfR/j7SH4x3ENwF5nfRfh7CO4i8cFwD+E3iRO4fQjYfATsXAK2PQHXjOg4NATRCEQJiE6HIzwSJiAagWgIopPxgJ824EcV7zg0BC2HICsYjUDLMEpAzjAagawIiE6nH7mNesfepZHHG+SR0oeXYR8ejSziCOzCxl34Du6C6wSMerBp72AP3uzBFooqLsrZHXe9x/cHM+M9db/L0wdEvEyxs6pHbw7saHQSxe4nLAcHyEqI/P5kbCz8qN9abGm+YMnoDERjb0peLNRd3ho0gc3r0LupTWrn4psONOa8Jdjbgj/KW7ZlpX6lNHua8mGvYFBlqIwZl+Pcz5zX96X24LQT/oFOz55XPDj9LhOS1bi7zqG75Pd5q7v47Ocvl2kXxjMcAAA='''
+
+          town_bytes = gzip.decompress(base64.b64decode(town_b64))
+          smithy_bytes = gzip.decompress(base64.b64decode(smithy_b64))
+
+          assert hashlib.sha256(town_bytes).hexdigest() == 'bc6ecd19618cfda8caa737bb806c34a18a9cbe7c60ee6025087e48d93ff0c259'
+          assert hashlib.sha256(smithy_bytes).hexdigest() == 'ea370abfab7eae6564a854e6e02f04bcdaa6c1d61e628f8a9081726ad6b2082b'
+
+          Path('docs/config/maps/hobunji_hollow_town.map.json').write_bytes(town_bytes)
+          Path('docs/config/maps/map_i_smithy.json').write_bytes(smithy_bytes)
+
+          town = json.loads(town_bytes)
+          smithy = json.loads(smithy_bytes)
+          assert town['schema'] == 'hobunji_map.v1'
+          assert town['id'] == 'map_hobunji_town'
+          assert town['cols'] == 60 and town['rows'] == 50
+          assert smithy['schema'] == 'hobunji_building_interior.v1'
+          assert smithy['id'] == 'map_i_smithy'
+
+          temple_path = Path('docs/config/pieces/temple.json')
+          temple = json.loads(temple_path.read_text(encoding='utf-8'))
+          tunnels = temple['footprint']['extensions']['entryTunnels']
+          assert tunnels
+          temple['footprint']['door'] = {'x': tunnels[0]['x'], 'y': tunnels[0]['y']}
+          temple_path.write_text(json.dumps(temple, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          index_path = Path('docs/assets/index.json')
+          index = json.loads(index_path.read_text(encoding='utf-8'))
+          house_pieces = index.setdefault('housePieces', [])
+          temple_entry = {
+              'name': 'Hobunji Hollow Temple',
+              'path': 'config/pieces/temple.json',
+              'category': 'temple'
+          }
+          if not any(entry.get('path') == temple_entry['path'] for entry in house_pieces):
+              house_pieces.append(temple_entry)
+          index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          assert temple['footprint']['door'] == tunnels[0]
+          assert any(entry.get('path') == 'config/pieces/temple.json' for entry in house_pieces)
+          PY
+
+      - name: Validate editor scripts
+        run: |
+          node --check docs/js/repo-picker.js
+          node --check docs/js/house-piece-author-repo-enhancements.js
+
+      - name: Commit generated source updates
+        run: |
+          git config user.name "OpenAI Agent"
+          git config user.email "noreply@openai.com"
+          git add docs/config/maps/hobunji_hollow_town.map.json \
+                  docs/config/maps/map_i_smithy.json \
+                  docs/config/pieces/temple.json \
+                  docs/assets/index.json
+          git commit -m "Apply uploaded maps and align house metadata"
+          git push origin HEAD:${{ github.ref_name }}
