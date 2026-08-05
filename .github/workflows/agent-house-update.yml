@@ -1,3 +1,4 @@
+# Retry trigger for the branch-local map application job.
 name: Apply uploaded maps and house metadata
 
 on:
