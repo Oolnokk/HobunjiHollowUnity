@@ -1,4 +1,4 @@
-// Map Editor — resilient full-map and diff JSON exports.
+// Map Editor â€” resilient full-map and diff JSON exports.
 //
 // The editor's original export handlers assume every map has a dictionary-shaped
 // `tiles` field and its diff baseline covers only a subset of map properties.
@@ -319,9 +319,9 @@
       if ($('diffTitle')) $('diffTitle').textContent = String(map.name || 'Map');
       if ($('diffSubtitle')) {
         if (diff.mode === 'full-map-fallback') {
-          $('diffSubtitle').textContent = `No baseline was available; complete current map included · ${json.length.toLocaleString()} chars`;
+          $('diffSubtitle').textContent = `No baseline was available; complete current map included Â· ${json.length.toLocaleString()} chars`;
         } else {
-          $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} · ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} · ${json.length.toLocaleString()} chars`;
+          $('diffSubtitle').textContent = `${diff.summary.tileChanges} tile change${diff.summary.tileChanges === 1 ? '' : 's'} Â· ${diff.summary.changedFields.length} changed field${diff.summary.changedFields.length === 1 ? '' : 's'} Â· ${json.length.toLocaleString()} chars`;
         }
       }
       if ($('diffTextarea')) $('diffTextarea').value = json;
