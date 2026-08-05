@@ -1,7 +1,7 @@
 {
   "schema": "hobunji_map.v1",
-  "id": "map_13032",
-  "name": "Hobunji Hollow — Town",
+  "id": "map_hobunji_town",
+  "name": "Hobunji Hollow \u2014 Town",
   "category": "exterior",
   "cols": 60,
   "rows": 50,
@@ -18007,7 +18007,6 @@
       "crop": ""
     }
   ],
-  "visualHeights": {},
   "objects": {},
   "furniture": [],
   "decor": [],
@@ -18296,6 +18295,87 @@
       "targetSpotId": ""
     },
     {
+      "id": "spot_85srj",
+      "label": "Enter Temple",
+      "col": 11,
+      "row": 35,
+      "targetMapId": "map_i_temple",
+      "targetSpotId": "sp_tmp_entry",
+      "buildingId": "bldg_6feel"
+    },
+    {
+      "id": "spot_bggvy",
+      "label": "Enter Inn",
+      "col": 29,
+      "row": 27,
+      "targetMapId": "map_i_inn",
+      "targetSpotId": "sp_inn_entry",
+      "buildingId": "bldg_52zui"
+    },
+    {
+      "id": "spot_x3opy",
+      "label": "Enter Carpenter's Shop",
+      "col": 22,
+      "row": 10,
+      "targetMapId": "map_i_carpenters",
+      "targetSpotId": "sp_car_entry",
+      "buildingId": "bldg_7kl2f"
+    },
+    {
+      "id": "spot_0b01r",
+      "label": "Enter Unumanuk Household",
+      "col": 45,
+      "row": 27,
+      "targetMapId": "map_i_unumanuk_household",
+      "targetSpotId": "sp_unmh_entry",
+      "buildingId": "bldg_8r0d6"
+    },
+    {
+      "id": "spot_1mkut",
+      "label": "Enter Kunji's Potions",
+      "col": 44,
+      "row": 35,
+      "targetMapId": "map_i_kunjis_potions_F1",
+      "targetSpotId": "sp_pot_entry",
+      "buildingId": "bldg_ty9gy"
+    },
+    {
+      "id": "spot_bu2c3",
+      "label": "Enter Funji and Son's",
+      "col": 37,
+      "row": 34,
+      "targetMapId": "map_i_general_store",
+      "targetSpotId": "",
+      "buildingId": "bldg_3bhxe"
+    },
+    {
+      "id": "spot_x988u",
+      "label": "Ginju Farmstead",
+      "col": 35,
+      "row": 9,
+      "targetMapId": "map_i_ginju_farmstead",
+      "targetSpotId": "",
+      "buildingId": "bldg_3ws71"
+    },
+    {
+      "id": "spot_pyc2r",
+      "label": "To Kzubug's Bronzeworks",
+      "col": 11,
+      "row": 22,
+      "targetMapId": "map_i_smithy",
+      "targetSpotId": "sp_smi_entry",
+      "buildingId": "bldg_2ntww"
+    },
+    {
+      "id": "spot_qstbl1",
+      "label": "Enter Stable",
+      "col": 35,
+      "row": 27,
+      "targetMapId": "map_i_stable",
+      "targetSpotId": "sp_stb_entry",
+      "buildingId": "bldg_stbl1"
+    },
+    {
       "id": "sp_town_north",
       "label": "To Northern Cliffs",
       "col": 30,
@@ -18328,84 +18408,12 @@
       "targetSpotId": "sp_scloud_n"
     },
     {
-      "id": "spot_a0msd",
-      "label": "Enter Smithy",
-      "col": 12,
-      "row": 22,
-      "targetMapId": "map_i_smithy",
-      "targetSpotId": "",
-      "buildingId": "bldg_6sd51"
-    },
-    {
-      "id": "spot_avi04",
-      "label": "Enter Temple",
-      "col": 15,
-      "row": 26,
-      "targetMapId": "map_i_temple",
-      "targetSpotId": "",
-      "buildingId": "bldg_6feel"
-    },
-    {
-      "id": "spot_6ihik",
-      "label": "Enter Stable",
-      "col": 29,
-      "row": 21,
-      "targetMapId": "",
-      "targetSpotId": "",
-      "buildingId": "bldg_stbl1"
-    },
-    {
-      "id": "spot_zq4xl",
-      "label": "Enter HobunjiHouse1",
-      "col": 49,
-      "row": 28,
-      "targetMapId": "map_i_unumanuk_household",
-      "targetSpotId": "",
-      "buildingId": "bldg_kzu3x"
-    },
-    {
-      "id": "spot_rjksi",
-      "label": "Enter HobunjiHouse1",
-      "col": 36,
-      "row": 8,
-      "targetMapId": "map_i_ginju_farmstead",
-      "targetSpotId": "",
-      "buildingId": "bldg_q8i9s"
-    },
-    {
-      "id": "spot_g3efc",
-      "label": "Enter HobunjiHouse1",
-      "col": 23,
-      "row": 9,
-      "targetMapId": "map_i_carpenters",
-      "targetSpotId": "",
-      "buildingId": "bldg_pb9bn"
-    },
-    {
-      "id": "spot_g9i6e",
-      "label": "Enter Funji & Son's General Store",
-      "col": 37,
-      "row": 34,
-      "targetMapId": "",
-      "targetSpotId": "",
-      "buildingId": "bldg_3bhxe"
-    },
-    {
-      "id": "spot_wv30l",
-      "label": "Enter Kunji's Potion Shop",
-      "col": 44,
-      "row": 35,
-      "targetMapId": "",
-      "targetSpotId": "",
-      "buildingId": "bldg_ty9gy"
-    },
-    {
-      "id": "spot_niv92",
-      "label": "Enter Watchhouse",
-      "col": 53,
-      "row": 34,
-      "targetMapId": "",
-      "targetSpotId": "",
+      "id": "spot_watchhouse",
+      "label": "Enter the Watchhouse",
+      "col": 55,
+      "row": 31,
+      "targetMapId": "map_i_watchhouse",
+      "targetSpotId": "sp_watchhouse_entry",
       "buildingId": "bldg_watchhouse"
     }
   ],
@@ -18565,6 +18573,17 @@
       "toolAnimStyle": ""
     },
     {
+      "id": "station_teacup_duties",
+      "label": "Overseeing Elder Duties",
+      "col": 32,
+      "row": 33,
+      "rotY": 0,
+      "pose": "stand",
+      "toolKey": "",
+      "toolIntervalSec": 0,
+      "toolAnimStyle": ""
+    },
+    {
       "id": "station_foroji_music",
       "label": "Playing Music in the Square",
       "col": 31,
@@ -18666,19 +18685,19 @@
     {
       "id": "station_oddclaw_p2",
       "label": "Eastern Watch Post",
-      "col": 50,
-      "row": 25,
+      "col": 46,
+      "row": 14,
       "rotY": 0,
       "pose": "stand",
-      "toolKey": "fishing_spear",
+      "toolKey": "",
       "toolIntervalSec": 0,
       "toolAnimStyle": ""
     },
     {
       "id": "station_oddclaw_lunch",
       "label": "Lunch Break",
-      "col": 26,
-      "row": 26,
+      "col": 27,
+      "row": 27,
       "rotY": 0,
       "pose": "sit",
       "toolKey": "",
@@ -18688,8 +18707,8 @@
     {
       "id": "station_leaf_sit",
       "label": "Sitting Outside the Swamp House",
-      "col": 57,
-      "row": 26,
+      "col": 7,
+      "row": 42,
       "rotY": 0,
       "pose": "sit",
       "toolKey": "",
@@ -18699,9 +18718,9 @@
     {
       "id": "station_kaboku_avoid",
       "label": "Avoiding Kinami's Wrath",
-      "col": 54,
-      "row": 24,
-      "rotY": 180,
+      "col": 49,
+      "row": 26,
+      "rotY": 0,
       "pose": "stand",
       "toolKey": "",
       "toolIntervalSec": 0,
@@ -18732,8 +18751,8 @@
     {
       "id": "station_ginju_market_gorobi",
       "label": "Selling Produce at Market",
-      "col": 27,
-      "row": 29,
+      "col": 28,
+      "row": 30,
       "rotY": 0,
       "pose": "stand",
       "toolKey": "",
@@ -18743,9 +18762,9 @@
     {
       "id": "station_ginju_market_gikali",
       "label": "Selling Produce at Market",
-      "col": 29,
-      "row": 34,
-      "rotY": 90,
+      "col": 28,
+      "row": 32,
+      "rotY": 0,
       "pose": "stand",
       "toolKey": "",
       "toolIntervalSec": 0,
@@ -18766,15 +18785,12 @@
       "rotationDeg": 0,
       "rotation": 0,
       "doorEntrance": {
-        "bboxW": 7,
-        "bboxD": 7,
-        "cells": [
-          {
-            "x": 2,
-            "y": 3
-          }
-        ],
-        "psCells": []
+        "lx": 2,
+        "ly": 3,
+        "rawW": 7,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
       }
     },
     {
@@ -18790,15 +18806,50 @@
       "rotationDeg": 270,
       "rotation": 270,
       "doorEntrance": {
-        "bboxW": 7,
-        "bboxD": 4,
-        "cells": [
-          {
-            "x": 4,
-            "y": 2
-          }
-        ],
-        "psCells": []
+        "lx": 4,
+        "ly": 2,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 1,
+        "ody": 0
+      }
+    },
+    {
+      "id": "bldg_8r0d6",
+      "label": "Unumanuk Household",
+      "pieceFile": "config/pieces/generic-house-medium.json",
+      "gridX": 43,
+      "gridZ": 23,
+      "footprintW": 5,
+      "footprintD": 4,
+      "wbOpts": null,
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
+      }
+    },
+    {
+      "id": "bldg_3ws71",
+      "label": "Ginju Farmstead",
+      "pieceFile": "config/pieces/generic-house-medium.json",
+      "gridX": 33,
+      "gridZ": 5,
+      "footprintW": 5,
+      "footprintD": 4,
+      "wbOpts": null,
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
       }
     },
     {
@@ -18812,15 +18863,31 @@
       "wbOpts": null,
       "wbGableOpts": null,
       "doorEntrance": {
-        "bboxW": 7,
-        "bboxD": 5,
-        "cells": [
-          {
-            "x": -3,
-            "y": -2
-          }
-        ],
-        "psCells": []
+        "lx": 3,
+        "ly": 4,
+        "rawW": 7,
+        "rawD": 5,
+        "odx": 0,
+        "ody": 1
+      }
+    },
+    {
+      "id": "bldg_2ntww",
+      "label": "Smithy",
+      "pieceFile": "config/pieces/placeholder-small.json",
+      "gridX": 9,
+      "gridZ": 18,
+      "footprintW": 4,
+      "footprintD": 4,
+      "wbOpts": null,
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 1,
+        "ly": 3,
+        "rawW": 4,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
       }
     },
     {
@@ -18835,15 +18902,31 @@
       "wbGableOpts": null,
       "rotationDeg": 270,
       "doorEntrance": {
-        "bboxW": 9,
-        "bboxD": 5,
-        "cells": [
-          {
-            "x": -1,
-            "y": -2
-          }
-        ],
-        "psCells": []
+        "lx": 4,
+        "ly": 4,
+        "rawW": 9,
+        "rawD": 5,
+        "odx": 0,
+        "ody": 1
+      }
+    },
+    {
+      "id": "bldg_7kl2f",
+      "label": "Carpenter",
+      "pieceFile": "config/pieces/generic-house-medium.json",
+      "gridX": 20,
+      "gridZ": 6,
+      "footprintW": 5,
+      "footprintD": 4,
+      "wbOpts": null,
+      "wbGableOpts": null,
+      "doorEntrance": {
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
       }
     },
     {
@@ -18858,15 +18941,12 @@
       "wbGableOpts": null,
       "rotationDeg": 0,
       "doorEntrance": {
-        "bboxW": 7,
-        "bboxD": 3,
-        "cells": [
-          {
-            "x": -3,
-            "y": -4
-          }
-        ],
-        "psCells": []
+        "lx": 3,
+        "ly": 2,
+        "rawW": 7,
+        "rawD": 3,
+        "odx": 0,
+        "ody": 1
       }
     },
     {
@@ -18880,113 +18960,13 @@
       "wbOpts": null,
       "wbGableOpts": null,
       "doorEntrance": {
-        "bboxW": 7,
-        "bboxD": 4,
-        "cells": [
-          {
-            "x": 4,
-            "y": 2
-          }
-        ],
-        "psCells": []
+        "lx": 2,
+        "ly": 3,
+        "rawW": 5,
+        "rawD": 4,
+        "odx": 0,
+        "ody": 1
       }
-    },
-    {
-      "id": "bldg_6sd51",
-      "label": "Smithy",
-      "pieceFile": "config/pieces/smithy.json",
-      "gridX": 7,
-      "gridZ": 16,
-      "footprintW": 8,
-      "footprintD": 6,
-      "wbOpts": null,
-      "wbGableOpts": null,
-      "doorEntrance": {
-        "bboxW": 8,
-        "bboxD": 6,
-        "cells": [
-          {
-            "x": 5,
-            "y": 5
-          }
-        ],
-        "psCells": []
-      },
-      "rotationDeg": 0
-    },
-    {
-      "id": "bldg_kzu3x",
-      "label": "Unumanuk Household",
-      "pieceFile": "config/pieces/hobunjihouse1.json",
-      "gridX": 46,
-      "gridZ": 23,
-      "footprintW": 6,
-      "footprintD": 5,
-      "wbOpts": null,
-      "wbGableOpts": null,
-      "doorEntrance": {
-        "bboxW": 6,
-        "bboxD": 5,
-        "cells": [
-          {
-            "x": 3,
-            "y": 4
-          }
-        ],
-        "psCells": []
-      },
-      "rotationDeg": 0
-    },
-    {
-      "id": "bldg_q8i9s",
-      "label": "Ginju Farmstead",
-      "pieceFile": "config/pieces/hobunjihouse1.json",
-      "gridX": 33,
-      "gridZ": 3,
-      "footprintW": 6,
-      "footprintD": 5,
-      "wbOpts": null,
-      "wbGableOpts": null,
-      "doorEntrance": {
-        "bboxW": 6,
-        "bboxD": 5,
-        "cells": [
-          {
-            "x": 3,
-            "y": 4
-          }
-        ],
-        "psCells": []
-      },
-      "rotationDeg": 0
-    },
-    {
-      "id": "bldg_pb9bn",
-      "label": "Carpenter",
-      "pieceFile": "config/pieces/hobunjihouse1.json",
-      "gridX": 20,
-      "gridZ": 4,
-      "footprintW": 6,
-      "footprintD": 5,
-      "wbOpts": null,
-      "wbGableOpts": null,
-      "doorEntrance": {
-        "bboxW": 6,
-        "bboxD": 5,
-        "cells": [
-          {
-            "x": 3,
-            "y": 4
-          }
-        ],
-        "psCells": []
-      },
-      "rotationDeg": 0
     }
-  ],
-  "isSubmap": false,
-  "parentMapId": null,
-  "plateauGroupId": null,
-  "elevation": 0,
-  "audioIndex": ""
+  ]
 }
