@@ -19,6 +19,15 @@
 (function (global) {
   'use strict';
 
+  // House Editor's full-project export keeps the placeable document under
+  // currentPiece, while older catalog entries are already flat piece JSON.
+  // Accept both shapes at every shared building-data boundary.
+  function normalizePieceData(pieceData) {
+    return pieceData?.currentPiece && typeof pieceData.currentPiece === 'object'
+      ? pieceData.currentPiece
+      : pieceData;
+  }
+
   function rotateCell(localX, localY, width, depth, rotationDeg) {
     const rot = ((Math.round((rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
     if (rot === 90)  return { x: localY, y: width - 1 - localX };
@@ -29,6 +38,7 @@
 
   // All footprint-affecting cells (structural + extensions) for a piece.
   function footprintCells(pieceData) {
+    pieceData = normalizePieceData(pieceData);
     return []
       .concat(pieceData?.footprint?.cells || [])
       .concat(pieceData?.footprint?.extensions?.entryTunnels || [])
@@ -38,6 +48,7 @@
       .concat(pieceData?.footprint?.extensions?.railings || []);
   }
   function porchCells(pieceData) {
+    pieceData = normalizePieceData(pieceData);
     return []
       .concat(pieceData?.footprint?.extensions?.porches || [])
       .concat(pieceData?.footprint?.extensions?.porchStairs || []);
@@ -71,6 +82,7 @@
   // the same bbox so it rotates/translates identically to the geometric
   // fallback case). This is what callers should use.
   function resolveDoorEntrance(pieceData) {
+    pieceData = normalizePieceData(pieceData);
     const derived = deriveDoorLocal(pieceData);
     const authored = pieceData?.footprint?.door;
     if (derived && authored && Number.isFinite(authored.x) && Number.isFinite(authored.y)) {
@@ -132,10 +144,45 @@
     return world ? { x: world.col, y: world.row } : null;
   }
 
+  // The game loads HousePieceGen before this module, and the Map Editor loads
+  // RepoPicker before it. Wrap both existing APIs once so full House Editor
+  // project exports behave exactly like flat pieces without changing callers.
+  function installProjectExportCompatibility() {
+    const housePieceGen = global.HousePieceGen;
+    if (housePieceGen?.buildGroupFromPiece && !housePieceGen.buildGroupFromPiece.acceptsHouseEditorProject) {
+      const originalBuild = housePieceGen.buildGroupFromPiece;
+      const wrappedBuild = function (THREE, pieceData, ...args) {
+        return originalBuild.call(this, THREE, normalizePieceData(pieceData), ...args);
+      };
+      wrappedBuild.acceptsHouseEditorProject = true;
+      housePieceGen.buildGroupFromPiece = wrappedBuild;
+    }
+
+    const pickerProto = global.RepoPicker?.prototype;
+    if (pickerProto?.makePicker && !pickerProto.makePicker.acceptsHouseEditorProject) {
+      const originalMakePicker = pickerProto.makePicker;
+      const wrappedMakePicker = function (opts) {
+        if (opts?.category === 'housePieces' && typeof opts.onLoad === 'function') {
+          const originalOnLoad = opts.onLoad;
+          opts = {
+            ...opts,
+            onLoad(entry, pieceData) {
+              return originalOnLoad(entry, normalizePieceData(pieceData));
+            },
+          };
+        }
+        return originalMakePicker.call(this, opts);
+      };
+      wrappedMakePicker.acceptsHouseEditorProject = true;
+      pickerProto.makePicker = wrappedMakePicker;
+    }
+  }
+
   global.BuildingDoor = {
-    rotateCell, footprintCells, porchCells,
+    normalizePieceData, rotateCell, footprintCells, porchCells,
     deriveDoorLocal, resolveDoorEntrance, doorWorldFromBuilding, computeDefaultDoorLocal,
   };
+  installProjectExportCompatibility();
 })(typeof window !== 'undefined' ? window : this);
 
 // The map editor needs repo-index-backed destination choices, but the live
