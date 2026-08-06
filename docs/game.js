@@ -217,7 +217,7 @@
       // Pixel Probe views is currently showing (see _setDebugView below).
       const _dbgCopy = document.getElementById('debugCopyBtn');
       if (_dbgCopy) _dbgCopy.addEventListener('click', () => {
-        if (document.getElementById('debugViewProbeBtn')?.classList.contains('active')) copyPixelProbeResult();
+        if (document.getElementById('debugViewProbeBtn')?.classList.contains('active')) window.PixelProbe?.copyPixelProbeResult();
         else copyDebugLog();
       });
       // Debug log filter tabs — filtering itself lives in debug.js's
@@ -238,496 +238,8 @@
         });
       });
 
-      // ── Pixel Probe (Debug tab) ─────────────────────────────────────
-      // Diagnostic tool: arms a one-shot click/tap on the game canvas; the
-      // next click reads the raw framebuffer color there AND raycasts
-      // EVERY mesh along that screen ray (not just whichever one currently
-      // wins the pixel), so overlay/hat-xray planes show up in the list
-      // even on a frame where something else happens to be drawn on top of
-      // them — the "what's actually stacked here" question a plain
-      // screenshot can't answer on its own.
-      let _pixelProbeArmed = false;
-      const _pixelProbeRaycaster = new THREE.Raycaster();
-      function _pixelProbeMatSummary(mat) {
-        if (!mat) return '(no material)';
-        const colorHex = mat.color?.isColor ? `#${mat.color.getHexString()}` : '-';
-        return `name="${mat.name || '(unnamed)'}" type=${mat.type} color=${colorHex} map=${mat.map ? (mat.map.name || '(unnamed texture)') : 'none'} transparent=${mat.transparent} opacity=${mat.opacity} `
-          + `depthWrite=${mat.depthWrite} depthTest=${mat.depthTest} depthFunc=${mat.depthFunc} alphaTest=${mat.alphaTest ?? 0} `
-          + `stencilWrite=${!!mat.stencilWrite} stencilFunc=${mat.stencilFunc ?? '-'} stencilRef=${mat.stencilRef ?? '-'}`;
-      }
-      // Reads a material's own map texture at the raycast hit's exact UV —
-      // the "Raw color under cursor" framebuffer readback above only ever
-      // reports whatever's actually FRONTMOST at that screen pixel, which
-      // for anything not nearest-hit (a foot mesh behind foliage, say) is
-      // some other object entirely, not the one being inspected. Sampling
-      // the material's own texture data sidesteps occlusion completely:
-      // it's the color this exact mesh would draw here if nothing else
-      // were in front of it. Respects the texture's own wrap/repeat/offset
-      // and flipY so the sampled texel matches what the GPU would actually
-      // read.
-      function _pixelProbeTextureSampleAtUv(mat, uv) {
-        const tex = mat?.map;
-        if (!tex?.image || !uv) return null;
-        try {
-          const img = tex.image;
-          const w = img.width || img.naturalWidth || 0, h = img.height || img.naturalHeight || 0;
-          if (!w || !h) return null;
-          let u = uv.x * (tex.repeat?.x ?? 1) + (tex.offset?.x ?? 0);
-          let v = uv.y * (tex.repeat?.y ?? 1) + (tex.offset?.y ?? 0);
-          u = ((u % 1) + 1) % 1;
-          v = ((v % 1) + 1) % 1;
-          const flipY = tex.flipY !== false; // THREE default: row 0 of the image is v=1
-          const px = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
-          const py = Math.min(h - 1, Math.max(0, Math.floor((flipY ? 1 - v : v) * h)));
-          const canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          ctx.drawImage(img, 0, 0);
-          const d = ctx.getImageData(px, py, 1, 1).data;
-          return { rgba: [d[0], d[1], d[2], d[3]], uv: [uv.x, uv.y] };
-        } catch (e) { return null; }
-      }
-      // Walks up from a raycast hit to find which avatar (if any) owns it —
-      // the player, an NPC walker, or a companion/mount/livestock creature —
-      // and reports that owner's own current body colors alongside whatever
-      // material the probe hit. Lets a tap on a procedural foot (or any
-      // other body-color-tinted part) directly answer "does this material's
-      // resolved color actually match this character's chosen body color"
-      // without a separate headless pixel-sampling pass.
-      function _pixelProbeOwnerInfo(object) {
-        let node = object;
-        while (node) {
-          if (node === playerMesh) {
-            const appearance = _playerData?.appearance || {};
-            return { kind: 'player', label: 'player', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: appearance.bodyColors };
-          }
-          for (const w of npcWalkers) {
-            if (node === w.root) {
-              const appearance = w.rec?.appearance || {};
-              return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors };
-            }
-          }
-          for (const c of companionObjects) {
-            if (node === c.avatarRef?.group) {
-              return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
-            }
-          }
-          node = node.parent;
-        }
-        return null;
-      }
-      // bodyColors slots are almost never stored as absolute color — they're
-      // a {h,s,v} CSS-filter delta (hue-rotate deg / saturate & brightness
-      // multiplier offsets) applied on top of a per-species reference
-      // swatch (see _resolveTargetRgbColor/_dyeReferenceHexForSlot in
-      // portrait-utils.js — the same resolver the body-color tint pipeline
-      // itself uses). Printing the raw delta alone reads as nonsensical
-      // (negative "hue"/"saturation") and isn't directly comparable to a
-      // texture sample's rgba — resolve it to the actual hex here too.
-      function _pixelProbeBodyColorSummary(bodyColors, speciesId) {
-        if (!bodyColors) return '(none)';
-        const referenceHex = (typeof window._dyeReferenceHexForSlot === 'function') ? window._dyeReferenceHexForSlot('A', speciesId) : '#7dc89a';
-        return ['A', 'B', 'C'].filter(slot => bodyColors[slot]).map(slot => {
-          const c = bodyColors[slot];
-          const raw = c.hex ? c.hex : `hsv-delta(${c.h ?? '?'},${c.s ?? '?'},${c.v ?? '?'})`;
-          let resolvedHex = c.hex || null;
-          if (!resolvedHex && typeof window._resolveTargetRgbColor === 'function') {
-            const rgb = window._resolveTargetRgbColor(c, referenceHex);
-            if (Array.isArray(rgb)) resolvedHex = '#' + rgb.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
-          }
-          return `${slot}=${raw}${resolvedHex ? ` (resolved ${resolvedHex})` : ''}`;
-        }).join(' ') || '(none)';
-      }
-      // Mirrors the furniture-avatar-author tool's own Avatar-mode diagnostics
-      // panel (seatDiagnosticSnapshot/updateAvatarModeDiagnostics — "Bones"/
-      // "Runtime" readouts), using the exact numbers this run's leg chain
-      // actually solved (see procedural-leg-animation.js's applySeatedPose,
-      // which stashes them precisely for this). Only meaningful while the
-      // probed avatar is actually sitting — the tool's readout is for a
-      // seated avatar too — so callers gate this on sitInteraction being
-      // active AND the probe having actually hit the player's own avatar,
-      // and skip it entirely otherwise rather than printing stale/blank
-      // seated data for a standing character.
-      function _pixelProbeSeatedLegReadoutLines() {
-        const debug = playerLegs?.getSeatedPoseDebug?.();
-        if (!debug) return null;
-        const appearance = _playerData?.appearance || {};
-        const lines = [];
-        lines.push('=== Seated Leg Pose Readout (compare field-for-field against the furniture-avatar-author tool: load this furniture key in Avatar mode, add a seated avatar with this species/gender, read its Bones/Runtime diagnostics) ===');
-        lines.push(`Species/gender: ${appearance.speciesId || '?'} / ${appearance.gender || '?'}   Furniture: "${sitInteraction?.furnitureKey || '?'}"`);
-        lines.push(`Seat anchor: height=${(Number(sitInteraction?.seatWorldY) || 0).toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
-        for (const side of ['left', 'right']) {
-          const leg = debug[side];
-          if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
-          lines.push(`${side} hip X ${leg.hipX.toFixed(5)} · posterior height ${leg.posteriorHeight.toFixed(5)} · foot contact Y ${leg.footContactY.toFixed(5)} · full leg length ${leg.fullLegLength.toFixed(5)}`);
-          lines.push(`  fixed thigh/calf ${leg.thighLength.toFixed(5)} / ${leg.calfLength.toFixed(5)} · thigh surface gap ${leg.thighSurfaceGap.toFixed(5)} · ${leg.calfStraight ? 'calf straight (collinear with thigh)' : 'calf 90° past edge (dropped to floor)'} · knee ${leg.kneeOverSeat ? 'over seat' : 'past edge'} · knee forward offset ${leg.kneeForwardOffset.toFixed(5)} (footprint half-depth ${leg.footprintHalfDepth.toFixed(4)})`);
-        }
-        return lines;
-      }
-      // A shoulder pet visibly clipping through the player has exactly two
-      // possible mechanisms: a depthWrite/renderOrder mismatch (see
-      // updatePetLayering — its overrides only get (re)applied when the
-      // (active,pet) pair actually changes, so anything that left it out of
-      // sync would keep drawing with the wrong depthWrite/renderOrder every
-      // frame after) or a positional mismatch (the shoulderPerch/
-      // shoulderGrip anchor math in updateCompanions landing the pet mesh
-      // somewhere other than where the rig actually intends, e.g. a stale
-      // cached anchor — see playerAttachmentAnchor/creatureAttachmentAnchor).
-      // This recomputes both live and diffs them against actual live state,
-      // so a probe click can confirm or rule out each directly instead of a
-      // human cross-referencing several unrelated numbers by hand. Only
-      // meaningful when the probe actually landed on the player's own
-      // avatar or a creature currently (or, per _petLayeringPet, previously)
-      // in the shoulder-pet role — gated the same way
-      // _pixelProbeSeatedLegReadoutLines gates on sitInteraction, so an
-      // unrelated click doesn't pad the report with a "no shoulder pet"
-      // section nobody asked about.
-      function _pixelProbeShoulderPetLines(hits) {
-        const isDescendant = (obj, ancestor) => {
-          if (!ancestor) return false;
-          let n = obj;
-          while (n) { if (n === ancestor) return true; n = n.parent; }
-          return false;
-        };
-        let liveActivePet = null;
-        for (const c of companionObjects) {
-          if (c.health > 0 && c.areaId === currentArea && (c.master || player) === player && c.stableRole === 'shoulderPet') { liveActivePet = c; break; }
-        }
-        const hitObjects = hits.map(h => h.object);
-        const hitPlayer = hitObjects.some(o => isDescendant(o, playerMesh));
-        const hitTrackedPet = hitObjects.some(o => isDescendant(o, _petLayeringPet?.avatarRef?.group));
-        const hitLivePet = hitObjects.some(o => isDescendant(o, liveActivePet?.avatarRef?.group));
-        if (!hitPlayer && !hitTrackedPet && !hitLivePet) return null;
-
-        const lines = ['', '=== Shoulder-pet diagnostics ==='];
-        lines.push(`Live active shoulder pet this frame: ${liveActivePet ? `${liveActivePet.creatureKey} (id ${liveActivePet.id})` : '(none)'}`);
-        lines.push(`updatePetLayering's last-applied state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
-        if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet) {
-          lines.push(`>>> MISMATCH — updatePetLayering hasn't caught up to this frame's live shoulder-pet state. Its depthWrite/renderOrder overrides only get (re)applied when (active,pet) actually changes (see its own early-return), so the checks below may be comparing against a stale layering pass.`);
-        }
-
-        const checks = [];
-        if (_playerAvatarFrontMaterial) checks.push(['player front plane', 'depthWrite', !liveActivePet, _playerAvatarFrontMaterial.depthWrite]);
-        if (liveActivePet) {
-          for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
-            if (!mesh?.material) continue;
-            checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
-            checks.push([label, 'renderOrder', SHOULDER_PET_PLANE_RENDER_ORDER, mesh.renderOrder]);
-          }
-        }
-        const mismatches = checks.filter(([, , expected, actual]) => expected !== actual);
-        if (mismatches.length) mismatches.forEach(([label, prop, expected, actual]) => lines.push(`>>> "${label}" ${prop}=${actual}, expected ${expected} given the live shoulder-pet state above.`));
-        else if (checks.length) lines.push('depthWrite/renderOrder on the player front plane and active pet planes all match what updatePetLayering should have set.');
-
-        if (liveActivePet) {
-          const perch = playerAttachmentAnchor('shoulderPerch');
-          const grip = creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip');
-          if (perch && grip) {
-            const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
-            const invGripYaw = -gripYawRad;
-            const gx = grip.x * Math.cos(invGripYaw) + (grip.z || 0) * Math.sin(invGripYaw);
-            const gz = -grip.x * Math.sin(invGripYaw) + (grip.z || 0) * Math.cos(invGripYaw);
-            const lx = perch.x - gx, lz = (perch.z || 0) - gz;
-            const theta = playerMesh.rotation.y;
-            const dx = lx * Math.cos(theta) + lz * Math.sin(theta);
-            const dz = -lx * Math.sin(theta) + lz * Math.cos(theta);
-            const expectedX = playerMesh.position.x + dx, expectedZ = playerMesh.position.z + dz;
-            const expectedY = playerMesh.position.y + perch.y - grip.y;
-            const actual = liveActivePet.avatarRef.group.position;
-            const drift = Math.hypot(actual.x - expectedX, actual.y - expectedY, actual.z - expectedZ);
-            lines.push(`Rig-anchor expected position: (${expectedX.toFixed(4)}, ${expectedY.toFixed(4)}, ${expectedZ.toFixed(4)})   actual mesh position: (${actual.x.toFixed(4)}, ${actual.y.toFixed(4)}, ${actual.z.toFixed(4)})   drift=${drift.toFixed(4)}`);
-            if (drift > 0.01) lines.push(`>>> MISMATCH — the pet's mesh isn't where the current rig-anchor math says it should be (drift ${drift.toFixed(4)} world units). Consistent with a stale cached anchor (see playerAttachmentAnchor/creatureAttachmentAnchor) rather than this frame's actual position.`);
-          } else {
-            lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
-          }
-        }
-        return lines;
-      }
-      function _setDebugView(view) {
-        const logBtn = document.getElementById('debugViewLogBtn'), probeBtn = document.getElementById('debugViewProbeBtn');
-        const logEl = document.getElementById('debugLog'), probeEl = document.getElementById('debugProbeView');
-        const filterTabs = document.getElementById('debugFilterTabs');
-        if (!logBtn || !probeBtn || !logEl || !probeEl) return;
-        const isLog = view === 'log';
-        const style = (btn, active) => {
-          btn.classList.toggle('active', active);
-          btn.style.background = active ? 'rgba(106,167,255,.22)' : 'rgba(255,255,255,.08)';
-          btn.style.borderColor = active ? 'rgba(106,167,255,.5)' : 'rgba(255,255,255,.2)';
-          btn.style.color = active ? '#6aa7ff' : '#d1d5db';
-        };
-        style(logBtn, isLog); style(probeBtn, !isLog);
-        logEl.style.display = isLog ? '' : 'none';
-        probeEl.style.display = isLog ? 'none' : '';
-        if (filterTabs) filterTabs.style.display = isLog ? '' : 'none';
-      }
-      function disarmPixelProbe() {
-        _pixelProbeArmed = false;
-        const hint = document.getElementById('pixelProbeHint');
-        if (hint) hint.style.display = 'none';
-        renderer.domElement.removeEventListener('pointerdown', _pixelProbeHandler, { capture: true });
-      }
-      function armPixelProbe() {
-        if (_pixelProbeArmed) { disarmPixelProbe(); return; }
-        _pixelProbeArmed = true;
-        closeMenu();
-        const hint = document.getElementById('pixelProbeHint');
-        if (hint) hint.style.display = 'flex';
-        renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
-      }
-      async function _pixelProbeHandler(ev) {
-        ev.preventDefault(); ev.stopPropagation();
-        _pixelProbeArmed = false;
-        const hint = document.getElementById('pixelProbeHint');
-        if (hint) hint.innerHTML = '<span>🎯 Reading pixel...</span>';
-
-        const canvas = renderer.domElement;
-        const rect = canvas.getBoundingClientRect();
-        const clientX = ev.clientX ?? ev.touches?.[0]?.clientX ?? rect.left;
-        const clientY = ev.clientY ?? ev.touches?.[0]?.clientY ?? rect.top;
-        const cssX = clientX - rect.left, cssY = clientY - rect.top;
-        const ndcX = (cssX / rect.width) * 2 - 1;
-        const ndcY = -(cssY / rect.height) * 2 + 1;
-
-        // Raw pixel color, read straight off the framebuffer at this exact
-        // spot — WebGL readPixels origin is bottom-left, unlike DOM CSS Y.
-        const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
-        const fbX = Math.round(cssX * scaleX), fbY = Math.round(canvas.height - cssY * scaleY);
-        let pxBuf = null;
-        try {
-          const gl = renderer.getContext();
-          pxBuf = new Uint8Array(4);
-          gl.readPixels(fbX, fbY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pxBuf);
-        } catch (e) { /* readback can fail on some GPUs/contexts — still report the raycast hits below */ }
-
-        // Every mesh along this screen ray, nearest first — not just the winner.
-        _pixelProbeRaycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
-        const activeScene = getActiveScene();
-        const hits = _pixelProbeRaycaster.intersectObjects(activeScene.children, true);
-
-        // Screenshot of the exact moment of the click/tap, BEFORE any of the
-        // isolation checks below mutate visibility — lets a probe that finds
-        // "nothing wrong" numerically still be cross-checked against what
-        // was actually on screen (e.g. something visibly there that the
-        // raycast/material dump doesn't explain). Deliberately does NOT
-        // force its own renderer.render() call first — reads back whatever
-        // the browser's own normal frame loop actually last drew and
-        // displayed (relies on preserveDrawingBuffer:true on the renderer
-        // for this to be reliable; see its own comment). A manually-forced
-        // extra render here would capture a DIFFERENT render of the "same"
-        // frame instead of the one the user actually saw — confirmed live:
-        // a real OS/device screenshot showed the bug, this capture (when it
-        // forced its own render) consistently did not.
-        let screenshotDataUrl = null;
-        try {
-          const rawDataUrl = canvas.toDataURL('image/png');
-          // Mark exactly where the click/tap landed — canvas.toDataURL's
-          // pixel space is top-left-origin like any normal image (unlike
-          // WebGL readPixels' bottom-left fbX/fbY above), so the marker
-          // uses the plain CSS->canvas pixel scale, not the flipped coords.
-          const markerX = cssX * scaleX, markerY = cssY * scaleY;
-          const img = new Image();
-          await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = rawDataUrl; });
-          const markCanvas = document.createElement('canvas');
-          markCanvas.width = img.naturalWidth; markCanvas.height = img.naturalHeight;
-          const mctx = markCanvas.getContext('2d');
-          mctx.drawImage(img, 0, 0);
-          mctx.beginPath();
-          mctx.arc(markerX, markerY, 6, 0, Math.PI * 2);
-          mctx.fillStyle = 'red';
-          mctx.fill();
-          mctx.lineWidth = 2;
-          mctx.strokeStyle = 'white';
-          mctx.stroke();
-          screenshotDataUrl = markCanvas.toDataURL('image/png');
-        } catch (e) { /* toDataURL/marker drawing can fail on some contexts — numeric probe below still stands */ }
-
-        // Isolate the player's own avatar and each active creature avatar
-        // independently, and compare the NORMAL (everything shown) pixel
-        // against each isolated candidate. A flattened screenshot alone
-        // can't distinguish a legitimate single opaque color from a real
-        // 50/50 blend of two layers — they look identical once already
-        // composited into one frame — so this settles it directly: if the
-        // normal pixel doesn't cleanly match any single isolated layer, the
-        // pixel is a genuine blend, live, on this exact device.
-        let blendCheck = null;
-        if (pxBuf) {
-          try {
-            const gl3 = renderer.getContext();
-            const savedVis2 = [];
-            activeScene.traverse(o => { if (o.visible !== undefined) savedVis2.push([o, o.visible]); });
-            const sample2 = (px, py) => { const b = new Uint8Array(4); gl3.readPixels(px, py, 1, 1, gl3.RGBA, gl3.UNSIGNED_BYTE, b); return Array.from(b); };
-            const hideAll = () => { for (const [obj] of savedVis2) obj.visible = false; };
-            const restoreAll = () => { for (const [obj, vis] of savedVis2) obj.visible = vis; };
-
-            let playerAvatarGroup = null;
-            for (const child of playerMesh.children) if (child.name === 'player_avatar') { playerAvatarGroup = child; break; }
-            const activeCreatures = [...companionObjects].filter(c => c.health > 0 && c.areaId === currentArea && c.avatarRef?.group);
-
-            hideAll(); renderer.render(activeScene, camera);
-            const bg = sample2(fbX, fbY);
-
-            const candidates = [{ label: 'background/world only', color: bg }];
-            if (playerAvatarGroup) {
-              hideAll(); playerAvatarGroup.visible = true;
-              renderer.render(activeScene, camera);
-              candidates.push({ label: 'player alone', color: sample2(fbX, fbY) });
-            }
-            for (const c of activeCreatures) {
-              hideAll(); c.avatarRef.group.visible = true;
-              renderer.render(activeScene, camera);
-              candidates.push({ label: `${c.creatureKey} (${c.stableRole || 'creature'}) alone`, color: sample2(fbX, fbY) });
-            }
-
-            hideAll();
-            if (playerAvatarGroup) playerAvatarGroup.visible = true;
-            for (const c of activeCreatures) c.avatarRef.group.visible = true;
-            renderer.render(activeScene, camera);
-            const normal = sample2(fbX, fbY);
-
-            restoreAll(); renderer.render(activeScene, camera);
-
-            const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-            let bestMatch = null, bestDist = Infinity;
-            for (const cand of candidates) { const d = dist(normal, cand.color); if (d < bestDist) { bestDist = d; bestMatch = cand; } }
-            blendCheck = { normal, candidates, bestMatchLabel: bestMatch?.label, bestDist, isCleanMatch: bestDist < 8 };
-          } catch (e) { /* best-effort — the rest of the report still stands without it */ }
-        }
-
-        const lines = [];
-        lines.push('Pixel Probe report');
-        // GPU/context capabilities — a mobile WebGL context commonly only
-        // grants a 16-bit depth buffer where desktop gets 24, which is a
-        // classic source of z-fighting between close, overlapping geometry
-        // that never reproduces on a desktop/software-renderer test.
-        try {
-          const gl3 = renderer.getContext();
-          const dbg = gl3.getExtension('WEBGL_debug_renderer_info');
-          const gpu = dbg ? gl3.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '(unavailable — extension not exposed)';
-          lines.push(`GPU: ${gpu}`);
-          lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
-        } catch (e) { lines.push('GPU/context info: (read failed)'); }
-        lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
-        lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
-        lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
-        hits.slice(0, 25).forEach((hit, i) => {
-          const o = hit.object;
-          const mats = Array.isArray(o.material) ? o.material : [o.material];
-          lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)} visible=${o.visible} renderOrder=${o.renderOrder}`);
-          mats.forEach(m => {
-            if (!m) return;
-            lines.push(`     material: ${_pixelProbeMatSummary(m)}`);
-            const sample = _pixelProbeTextureSampleAtUv(m, hit.uv);
-            if (sample) lines.push(`     texture sample at this mesh's own UV (${sample.uv[0].toFixed(3)},${sample.uv[1].toFixed(3)}) — occlusion-independent: rgba(${sample.rgba.join(',')})`);
-            else if (m.map) lines.push(`     texture sample: unavailable (no UV on this hit)`);
-          });
-          const owner = _pixelProbeOwnerInfo(o);
-          if (owner) {
-            lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
-          }
-        });
-        if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
-
-        // Only when this probe actually landed on the player's own avatar
-        // AND the player is currently sitting — see
-        // _pixelProbeSeatedLegReadoutLines's own comment.
-        const probedPlayerSitting = sitInteraction && sitInteraction.phase !== 'out'
-          && hits.some(h => _pixelProbeOwnerInfo(h.object)?.kind === 'player');
-        if (probedPlayerSitting) {
-          const seatedLines = _pixelProbeSeatedLegReadoutLines();
-          if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
-        }
-
-        const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
-        if (shoulderPetLines) lines.push(...shoulderPetLines);
-
-        if (blendCheck) {
-          lines.push('');
-          lines.push('=== Blend check (isolates the player + each active creature avatar independently, live, on this device) ===');
-          lines.push(`Normal pixel (everything shown): rgba(${blendCheck.normal.join(',')})`);
-          for (const c of blendCheck.candidates) lines.push(`  ${c.label}: rgba(${c.color.join(',')})`);
-          lines.push(blendCheck.isCleanMatch
-            ? `>>> CLEAN MATCH to "${blendCheck.bestMatchLabel}" (distance ${blendCheck.bestDist.toFixed(1)}) — this pixel is a single opaque layer, NOT a blend.`
-            : `>>> NO CLEAN MATCH to any single layer (closest is "${blendCheck.bestMatchLabel}" at distance ${blendCheck.bestDist.toFixed(1)}) — this pixel does not match any one avatar alone, consistent with genuine blending between layers.`);
-        }
-
-        // Temporal flicker check — every isolation test above forces its OWN
-        // synchronous re-render, which by definition produces one clean,
-        // un-blended still frame. If the real bug is two valid renders
-        // alternating faster than the eye can resolve them individually
-        // (read by a human as translucent blending, even though no single
-        // frame actually blends anything), no still capture — a screenshot
-        // included — can ever show it; only sampling a run of REAL,
-        // untouched animation frames over time can. Critically this has to
-        // run BEFORE openMenu('debug') below: opening the menu sets
-        // paused=true, which freezes updateCompanions (so the pet's
-        // position, and this whole depth-priority system, simply stops
-        // recomputing) — capturing after that would only ever see a static
-        // scene by construction, guaranteeing a false "no flicker" result.
-        const flickerSamples = [];
-        try {
-          const glF = renderer.getContext();
-          const bufF = new Uint8Array(4);
-          // Races requestAnimationFrame against a plain timer so a tab where
-          // rAF is throttled or never fires (some headless/backgrounded
-          // contexts) can't hang this diagnostic indefinitely — it just
-          // falls back to a slower tick instead.
-          const nextTick = () => new Promise(resolve => {
-            let done = false;
-            const finish = () => { if (!done) { done = true; resolve(); } };
-            requestAnimationFrame(finish);
-            setTimeout(finish, 200);
-          });
-          const captureStart = Date.now();
-          for (let i = 0; i < 45 && !paused && (Date.now() - captureStart) < 4000; i++) {
-            await nextTick();
-            glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
-            flickerSamples.push([bufF[0], bufF[1], bufF[2], bufF[3]]);
-          }
-        } catch (e) { /* best-effort — the rest of the report still stands without it */ }
-
-        if (flickerSamples.length) {
-          const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-          const clusters = [];
-          for (const s of flickerSamples) {
-            let c = clusters.find(c => dist(c.color, s) < 10);
-            if (c) c.count++; else clusters.push({ color: s, count: 1 });
-          }
-          clusters.sort((a, b) => b.count - a.count);
-          lines.push('');
-          lines.push(`=== Temporal flicker check (${flickerSamples.length} real animation frames sampled at this exact pixel, game running normally) ===`);
-          if (clusters.length <= 1) {
-            lines.push(`>>> STABLE — every sampled frame matched the same color (rgba(${clusters[0].color.join(',')})). No flicker at this pixel over this window.`);
-          } else {
-            lines.push(`>>> FLICKERING — ${clusters.length} distinct colors alternated across ${flickerSamples.length} frames:`);
-            for (const c of clusters) lines.push(`  rgba(${c.color.join(',')}) — ${c.count}/${flickerSamples.length} frames`);
-            lines.push('This is consistent with two valid renders alternating faster than a single screenshot can show, read by the eye as translucent blending.');
-          }
-        } else {
-          lines.push('');
-          lines.push('=== Temporal flicker check: skipped (game was already paused when the probe fired) ===');
-        }
-
-        const resultEl = document.getElementById('debugProbeResult');
-        if (resultEl) resultEl.textContent = lines.join('\n');
-        const screenshotEl = document.getElementById('debugProbeScreenshot');
-        if (screenshotEl) {
-          if (screenshotDataUrl) { screenshotEl.src = screenshotDataUrl; screenshotEl.style.display = ''; }
-          else screenshotEl.style.display = 'none';
-        }
-        if (hint) hint.style.display = 'none';
-        openMenu('debug');
-        _setDebugView('probe');
-        showToast('🎯 Probe captured — see Debug tab', true);
-      }
-      async function copyPixelProbeResult() {
-        const text = document.getElementById('debugProbeResult')?.textContent || '';
-        try { await navigator.clipboard.writeText(text); showToast('Pixel probe report copied.', true); }
-        catch (e) { console.log(text); showToast('Clipboard blocked — report printed to console instead.', false); }
-      }
-      document.getElementById('debugProbeArmBtn')?.addEventListener('click', armPixelProbe);
-      document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', disarmPixelProbe);
-      document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
-      document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));
+      // Pixel Probe (Debug tab) now lives in js/pixel-probe.js
+      // (window.PixelProbe) — see window.PixelProbe.init(...) below.
 
       // Inventory category filter
       document.querySelectorAll('.inv-cat').forEach(btn => {
@@ -783,7 +295,7 @@
         toastEl.className = 'show ' + (ok ? 'ok' : 'fail');
         clearTimeout(_toastTimer);
         _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
-        if (!silent && !ok) playObjectSfx(objectSfxConfig().error);
+        if (!silent && !ok) window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().error);
       }
 
       // A location title card -- fades in near the top of the screen and
@@ -800,578 +312,25 @@
         _zoneBannerTimer = setTimeout(() => zoneBannerEl.classList.remove('show'), 4200);
       }
 
-      function gameAudioConfig() {
-        const direct = window.SCRATCHBONES_CONFIG?.game?.audio;
-        if (direct && Object.keys(direct).length) return direct;
-        return window.SCRATCHBONES_CONFIG?.game?.assets?.audio || {};
-      }
+      // gameAudioConfig() and the whole footstep/one-shot SFX layer now live
+      // in js/audio-system.js (window.AudioSystem) — see
+      // window.AudioSystem.init(...) below for the wiring.
 
-      // ── NPC Dialogue ───────────────────────────────────────────
+      // NPC dialogue CONTENT (text/token resolution, tree/pool selection,
+      // typewriter, portrait rendering, choice buttons) now lives in
+      // js/dialogue-content.js (window.DialogueContent) — see
+      // window.DialogueContent.init(...) below for the wiring.
+      // openNpcDialogue/closeNpcDialogue stay here since they own
+      // camera/staging/save-persistence, which this module doesn't touch.
       const _npcDialogueEl      = document.getElementById('npcDialogue');
       const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
-      const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
       const _arcContainerEl     = document.getElementById('arcContainer');
 
-      function npcDialogueTextConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
-      }
-
-      function npcDialogueLetterSfxConfig(rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const audioCfg = gameAudioConfig();
-        const dialogueCfg = audioCfg.dialogueLetter || {};
-        const npcOverrides = dialogueCfg.npcs || {};
-        const speciesOverrides = dialogueCfg.species || {};
-        const speciesId = rec?.appearance?.speciesId || rec?.speciesId || rec?.species || _dialogueWalker?.speciesId;
-        return {
-          ...dialogueCfg,
-          ...(speciesId && speciesOverrides[speciesId] ? speciesOverrides[speciesId] : {}),
-          ...(rec?.id && npcOverrides[rec.id] ? npcOverrides[rec.id] : {}),
-          ...(rec?.dialogueLetterSfx || {})
-        };
-      }
-
-      function npcDialogueTypewriterConfig() {
-        const cfg = npcDialogueTextConfig().typewriter || {};
-        return {
-          enabled: cfg.enabled !== false,
-          msPerChar: Math.max(1, Number(cfg.msPerChar) || 22),
-          punctuationPauseMs: Math.max(0, Number(cfg.punctuationPauseMs) || 120),
-          whitespacePauseMs: Math.max(0, Number(cfg.whitespacePauseMs) || 0)
-        };
-      }
-
-      function _paginateNpcDialogueText(text) {
-        const cfg = npcDialogueTextConfig();
-        const emptyLine = cfg.emptyLine || '...';
-        const source = String(text || '').trim();
-        if (!source) return [emptyLine];
-        const maxChars = Math.max(1, Number(cfg.maxCharsPerPage) || source.length);
-        const pages = [];
-        let current = '';
-        for (const word of source.split(/\s+/)) {
-          const next = current ? `${current} ${word}` : word;
-          if (next.length > maxChars && current) {
-            pages.push(current);
-            current = word;
-          } else {
-            current = next;
-          }
-        }
-        if (current) pages.push(current);
-        return pages.length ? pages : [emptyLine];
-      }
-
-      function _npcDialogueLines(rec) {
-        if (!rec) return _paginateNpcDialogueText('');
-        if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
-          return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
-        }
-        if (rec.bio) return _paginateNpcDialogueText(rec.bio);
-        return _paginateNpcDialogueText('');
-      }
-
-      function _getNpcDlgState(npcId) {
-        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: _npcBaseDispositions[npcId] ?? 0, memory: [], heardTrees: [], heardPoolEntries: [] });
-        return _npcDlgState.get(npcId);
-      }
-
-      // NPC relationships/memory are world-scoped per character — they stay
-      // behind in this world's member record rather than following the
-      // character to another world. Loaded into the same _npcDlgState map
-      // that already tracked visited dialogue nodes/local nicknames for the
-      // current session, so NPCs remember what's been said across sessions too.
-      function loadNpcRelationships(playerData) {
-        _npcDlgState.clear();
-        const rels = playerData?.npcRelationships || {};
-        for (const [npcId, rel] of Object.entries(rels)) {
-          _npcDlgState.set(npcId, {
-            visitedSeqSlots: { ...(rel.visitedSeqSlots || {}) },
-            localNickname:   rel.localNickname || null,
-            favor:           rel.favor ?? (_npcBaseDispositions[npcId] ?? 0),
-            memory:          [...(rel.memory || [])],
-            heardTrees:      [...(rel.heardTrees || [])],
-            heardPoolEntries:[...(rel.heardPoolEntries || [])],
-          });
-        }
-      }
-
-      function npcRelationshipsSnapshot() {
-        const out = {};
-        for (const [npcId, st] of _npcDlgState.entries()) {
-          out[npcId] = {
-            visitedSeqSlots: st.visitedSeqSlots,
-            localNickname:   st.localNickname,
-            favor:           st.favor || 0,
-            memory:          st.memory || [],
-            heardTrees:      st.heardTrees || [],
-            heardPoolEntries:st.heardPoolEntries || [],
-          };
-        }
-        return out;
-      }
-
-      // Appends a small memory entry an NPC "remembers" about this character —
-      // ready for gift/dialogue-choice hooks to call into once those systems
-      // record specific events, not just that a conversation happened.
-      function recordNpcMemory(npcId, event) {
-        if (!npcId) return;
-        const st = _getNpcDlgState(npcId);
-        st.memory.push({ event, day: calendar.day, ts: Date.now() });
-        if (st.memory.length > 50) st.memory.shift();
-      }
-
-      // No gift/relationship-building system exists yet to call this from —
-      // exposed as the entry point that one will use once built.
-      function adjustNpcFavor(npcId, amount, reason) {
-        if (!npcId) return;
-        const st = _getNpcDlgState(npcId);
-        st.favor = (st.favor || 0) + amount;
-        recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));
-      }
-
-      function _resolveTokens(text, npcRec, _depth = 0) {
-        if (!text) return '';
-        const p     = _playerData;
-        const name  = p?.nickname || 'Farmer';
-        const gen   = p?.appearance?.gender || 'male';
-        const pr1   = gen === 'female' ? 'she'     : gen === 'neutral' ? 'they'    : 'he';
-        const pr2   = gen === 'female' ? 'her'     : gen === 'neutral' ? 'them'    : 'him';
-        const pr3   = gen === 'female' ? 'her'     : gen === 'neutral' ? 'their'   : 'his';
-        const prS   = gen === 'female' ? 'herself' : gen === 'neutral' ? 'themself': 'himself';
-        const VOWELS = new Set('aeiouAEIOU');
-        let fl2v1 = '';
-        for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
-        const st    = _getNpcDlgState(npcRec?.id);
-        const local = st.localNickname || name;
-        let out = text
-          .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
-          .replace(/\{\{playerName\}\}/g,          name)
-          .replace(/\{\{playerNickname\}\}/g,      name)
-          .replace(/\{\{playerLocalNickname\}\}/g, local)
-          .replace(/\{\{playerPronoun1\}\}/g,      pr1)
-          .replace(/\{\{playerPronoun2\}\}/g,      pr2)
-          .replace(/\{\{playerPronoun3\}\}/g,      pr3)
-          .replace(/\{\{playerPronounSelf\}\}/g,   prS)
-          .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1)
-          .replace(/\{\{role\}\}/g,                npcRec?.role || '')
-          .replace(/\{\{npcSpecies\}\}/g,           npcRec?.appearance?.speciesId || npcRec?.species || '')
-          .replace(/\{\{playerSpecies\}\}/g,        p?.appearance?.speciesId || '');
-        // {{pool:<id>}} pulls a conditioned line from a phrase pool authored
-        // in the dialogue editor's Phrase Pool Manager — resolved recursively
-        // (a pool entry can itself use any token, including another pool),
-        // capped at a few levels deep so an accidental pool-references-itself
-        // loop can't hang the game.
-        if (_depth < 4) {
-          out = out.replace(/\{\{pool:([^}]+)\}\}/g, (m, poolId) => {
-            const entry = _pickPoolEntry(poolId.trim(), npcRec);
-            return entry ? _resolveTokens(entry.text, npcRec, _depth + 1) : '';
-          });
-        }
-        return out;
-      }
-
-      // A tree's (or phrase-pool entry's) conditions/excludeConditions are
-      // authored in the dialogue editor (docs/tools/dialogue-editor/) as
-      // { weekdays, seasons, weather, timesOfDay, encounter, maps, stations,
-      // playerSpecies, relationship:{min,max} } — empty arrays/null bounds
-      // mean "unrestricted" on that axis. "maps" matches currentArea
-      // directly (editor's map ids — 'farm', 'town', 'map_i_general_store',
-      // etc — are the same strings the world engine already uses).
-      // "stations" matches the walker's current schedule-target label,
-      // normalized the same way the existing General Store/Carpenter
-      // on-duty checks do (see normalizeStationLabel). The axis list,
-      // eligibility/specificity evaluation, and "most-specific-unheard-wins"
-      // selection all live in the shared docs/js/condition-registry.js
-      // module (window.ConditionRegistry) — also consumed by the Loot &
-      // Shop system and its dev tool, so this is a thin wrapper that just
-      // supplies dialogue's own world-state shape.
-
-      // World state is shared by both tree selection and phrase-pool entry
-      // resolution — "encounter" (first vs returning) is keyed off whichever
-      // NPC state is passed in, so a pool entry picked mid-conversation with
-      // a different NPC than the tree's still reads that NPC's own history.
-      function _dlgWorldState(rec) {
-        const st = _getNpcDlgState(rec?.id);
-        const target = _dialogueWalker?.currentScheduleTarget || null;
-        return {
-          weekdays:   currentWeekdayName(),
-          seasons:    currentSeason().name,
-          weather:    calendar.weather,
-          timesOfDay: fishingTimeOfDay(),
-          encounter:  (st.heardTrees || []).length ? 'returning' : 'first',
-          maps:       currentArea,
-          stations:   target ? normalizeStationLabel(target.label) : '',
-          playerSpecies: _playerData?.appearance?.speciesId || '',
-          relationship: st.favor,
-        };
-      }
-
-      function _dlgEntryEligible(entry, world) {
-        return window.ConditionRegistry.entryEligible(entry, world);
-      }
-
-      function _dlgEntrySpecificity(entry) {
-        return window.ConditionRegistry.entrySpecificity(entry);
-      }
-
-      // Shared by dialogue-tree selection and phrase-pool entry resolution:
-      // among entries whose conditions are met (and no-fly conditions
-      // aren't), the most specifically-targeted one that has never been
-      // heard before always wins — so a well-conditioned entry for "today"
-      // plays before anything generic. Once every entry that matches the
-      // exact current combination has been heard at least once, selection
-      // among the remaining eligible entries is randomized instead of
-      // repeating the same priority order every time. `entries` is any list
-      // of { id, conditions, excludeConditions, priority? }; `heard` is the
-      // array of already-heard ids to check/rank against.
-      function _pickBestEntry(entries, world, heard) {
-        return window.ConditionRegistry.pickBestEntry(entries, world, heard);
-      }
-
-      function _pickDialogueTree(rec) {
-        // A tree can tag itself visibility: 'owner' or 'farmhand' to restrict
-        // it to the world's protagonist or to non-owner members respectively;
-        // omitted/'any' (the default) is visible to everyone.
-        const all = (rec?.dialogueTrees || [])
-          .filter(t => (t.trigger || 'interact') === 'interact' && canAccessContent(t.visibility));
-        if (!all.length) return null;
-        const world = _dlgWorldState(rec);
-        const heard = _getNpcDlgState(rec?.id).heardTrees || [];
-        return _pickBestEntry(all, world, heard);
-      }
-
-      function _markDialogueTreeHeard(rec, tree) {
-        if (!rec || !tree) return;
-        const st = _getNpcDlgState(rec.id);
-        if (!st.heardTrees.includes(tree.id)) st.heardTrees.push(tree.id);
-      }
-
-      // Resolves one {{pool:<id>}} reference against this NPC's own
-      // phrasePools (pools are per-NPC, authored in the dialogue editor's
-      // Phrase Pool Manager), tracking which entries have been heard the
-      // same way dialogue trees are (see _markDialogueTreeHeard) so a pool
-      // cycles through its unheard entries before repeating.
-      function _pickPoolEntry(poolId, rec) {
-        const pool = (rec?.phrasePools || []).find(p => p.id === poolId || p.name === poolId);
-        if (!pool || !pool.entries?.length) return null;
-        const world = _dlgWorldState(rec);
-        const st    = _getNpcDlgState(rec?.id);
-        const entry = _pickBestEntry(pool.entries, world, st.heardPoolEntries || []);
-        if (entry && !st.heardPoolEntries.includes(entry.id)) st.heardPoolEntries.push(entry.id);
-        return entry;
-      }
-
-      // Shrinks a .dlg-opt-label's font-size (down from the CSS default) until its
-      // 3-line-clamped content stops overflowing the option button's allotted height.
-      function _fitDlgOptionLabel(el) {
-        const label = el.querySelector('.dlg-opt-label');
-        if (!label) return;
-        const baseSize = 11, minSize = 3;
-        let size = baseSize;
-        label.style.fontSize = size + 'px';
-        // Compare against the label's OWN (3-line-clamped) box height, not the
-        // button's — with align-items:center the label never stretches to fill
-        // the button, so checking the button's height let overflow through.
-        while (size > minSize && label.scrollHeight > label.clientHeight) {
-          size -= 1;
-          label.style.fontSize = size + 'px';
-        }
-      }
-
-      function _showDlgChoices(node) {
-        const choices = node.choices || [];
-        const optEls  = [1,2,3,4,5,6].map(i => document.getElementById(`dlgOpt${i}`));
-        optEls.forEach(el => {
-          if (!el) return;
-          const label = el.querySelector('.dlg-opt-label');
-          if (label) { label.textContent = ''; label.style.fontSize = ''; }
-          el.classList.remove('dlg-opt-visible');
-          el.onclick = null;
-        });
-        choices.slice(0, 6).forEach((c, i) => {
-          const el = optEls[i];
-          if (!el) return;
-          const label = el.querySelector('.dlg-opt-label');
-          if (label) label.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
-          el.classList.add('dlg-opt-visible');
-          el.onclick = () => {
-            if (!dialogueOpen) return;
-            let skipNav = false;
-            (c.actions || []).forEach(act => {
-              if (act.type === 'setLocalNickname') {
-                const st = _getNpcDlgState(_dlgNpcRec?.id);
-                st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
-              } else if (act.type === 'openShop') {
-                // `pool` names a WARES_POOLS entry; omitted defaults to the
-                // General Store for backward compatibility with any tree
-                // authored before pools existed (bare {type:'openShop'}).
-                const pool = WARES_POOLS[act.pool || 'generalStoreWares'];
-                if (pool) { closeNpcDialogue(); openMenu(pool.menuId); }
-                skipNav = true;
-              } else if (act.type === 'openCraftMenu') {
-                // Sloomi/Kzubug's smithing counter — craft/plate/reinforce
-                // verdigris tools from dug-up metal bars (see
-                // renderMetalCraftShopPage). Both smiths offer the identical
-                // service, so there's no per-NPC pool indirection needed.
-                closeNpcDialogue(); openMenu('metalCraftShop');
-                skipNav = true;
-              } else if (act.type === 'startChat') {
-                _beginNpcConversation(_dlgNpcRec);
-                skipNav = true;
-              } else if (act.type === 'acceptFavor') {
-                setQuestStatus(act.taskId, 'available', {});
-                showToast('📋 Favor accepted — check it from the Tasks tab.', true);
-              } else if (act.type === 'declineFavor') {
-                setQuestStatus(act.taskId, 'declined', {});
-              } else if (act.type === 'turnInTask') {
-                const res = turnInTask(act.taskId);
-                if (!res.ok) showToast(res.message, false);
-              }
-            });
-            if (!skipNav) _navigateDlgTo(c.next);
-          };
-        });
-        // Run after all options are flagged visible so each one's flex-allotted
-        // height (which depends on how many siblings are showing) is settled.
-        optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
-        const continueBtn = document.getElementById('npcDialogueContinue');
-        if (continueBtn) continueBtn.style.display = choices.length ? 'none' : '';
-      }
-
-      function _hideChoiceButtons() {
-        [1,2,3,4,5,6].forEach(i => {
-          const el = document.getElementById(`dlgOpt${i}`);
-          if (!el) return;
-          const label = el.querySelector('.dlg-opt-label');
-          if (label) { label.textContent = ''; label.style.fontSize = ''; }
-          el.classList.remove('dlg-opt-visible'); el.onclick = null;
-        });
-        const continueBtn = document.getElementById('npcDialogueContinue');
-        if (continueBtn) continueBtn.style.display = '';
-      }
-
-      function npcDialoguePortraitConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.portrait || {};
-      }
-
-      function _dialogueExpressionDurationMs(node) {
-        const holdSeconds = Number(node?.expressionHold);
-        if (Number.isFinite(holdSeconds) && holdSeconds > 0) return holdSeconds * 1000;
-        return Number(window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.durationMs) || 10000;
-      }
-
-      function _dialogueSeatId(walker = _dialogueWalker) {
-        return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
-      }
-
-      function _npcRestingExpression(rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {};
-        const fallback = String(cfg.defaultResting || 'neutral').toLowerCase();
-        const available = Array.isArray(cfg.available) ? cfg.available.map(value => String(value).toLowerCase()) : [];
-        const authored = String(rec?.restingExpression || fallback).toLowerCase();
-        return !available.length || available.includes(authored) ? authored : fallback;
-      }
-
-      function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const cfg = npcDialogueLetterSfxConfig(rec);
-        if (cfg.enabled === false || !char || /\s/.test(char)) return;
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) return;
-        const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume) || 1);
-        if (volume <= 0) return;
-        if (cfg.url) {
-          const snd = new Audio(cfg.url);
-          snd.volume = volume;
-          snd.playbackRate = Math.max(0.25, Number(cfg.playbackRate) || 1);
-          snd.play().catch(() => {});
-          return;
-        }
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = window._npcDialogueAudioCtx || (window._npcDialogueAudioCtx = new AudioCtx());
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const variance = Math.max(0, Number(cfg.frequencyVarianceHz) || 35);
-        const base = Math.max(20, Number(cfg.frequencyHz) || 520);
-        osc.type = cfg.waveform || 'square';
-        osc.frequency.value = base + (Math.random() * 2 - 1) * variance;
-        gain.gain.setValueAtTime(volume, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
-        osc.connect(gain).connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
-      }
-
-      function _stopNpcDialogueTypewriter(showFullText = false) {
-        if (_npcDialogueTypeTimer) clearTimeout(_npcDialogueTypeTimer);
-        _npcDialogueTypeTimer = null;
-        if (showFullText && _npcDialogueTypeText) _npcDialogueTextEl.textContent = _npcDialogueTypeText;
-        _npcDialogueTypeText = '';
-        _npcDialogueTypeIndex = 0;
-      }
-
-      function _setNpcDialogueText(text, node = null) {
-        const resolvedText = String(text || '');
-        _stopNpcDialogueTypewriter(false);
-        _applyNpcDialogueLinePresentation(resolvedText, node);
-        const cfg = npcDialogueTypewriterConfig();
-        if (!cfg.enabled) { _npcDialogueTextEl.textContent = resolvedText; return; }
-        _npcDialogueTypeText = resolvedText;
-        _npcDialogueTypeIndex = 0;
-        _npcDialogueTextEl.textContent = '';
-        const tick = () => {
-          if (!dialogueOpen || !_npcDialogueTypeText) return;
-          const char = _npcDialogueTypeText[_npcDialogueTypeIndex++];
-          _npcDialogueTextEl.textContent += char;
-          _playNpcDialogueLetterSfx(char);
-          if (_npcDialogueTypeIndex >= _npcDialogueTypeText.length) { _stopNpcDialogueTypewriter(false); return; }
-          const delay = /[.!?,;:]/.test(char) ? cfg.punctuationPauseMs : /\s/.test(char) ? cfg.whitespacePauseMs : cfg.msPerChar;
-          _npcDialogueTypeTimer = setTimeout(tick, delay);
-        };
-        _npcDialogueTypeTimer = setTimeout(tick, cfg.msPerChar);
-      }
-
-      function _applyNpcDialogueLinePresentation(text, node = null) {
-        if (!window.portraitBreathingComposer) return;
-        const seatId = _dialogueSeatId();
-        window.portraitBreathingComposer.setDefaultExpression(seatId, _npcRestingExpression());
-        if (node && Object.hasOwn(node, 'expression') && node.expression) {
-          const expression = String(node.expression).toLowerCase();
-          window.portraitBreathingComposer.setExpression(seatId, expression, _dialogueExpressionDurationMs(node));
-        } else {
-          window.portraitBreathingComposer.clearExpression(seatId);
-        }
-        window.portraitBreathingComposer.scheduleYapSequence(seatId, text || '', npcDialoguePortraitConfig().yap || {});
-      }
-
-      async function _renderNpcDialoguePortrait() {
-        if (!dialogueOpen || !_dialogueWalker?.profile || !window.NpcAvatarPreview) return false;
-        const renderOptions = {
-          breathingComposer: window.portraitBreathingComposer || null,
-          seatId: _dialogueSeatId(),
-        };
-        await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, _dialogueWalker.profile, renderOptions);
-        if (_dialogueWalker.avatarFrontCanvas && window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) {
-          await window.NpcAvatarPreview.renderProfileToCanvas(_dialogueWalker.avatarFrontCanvas, _dialogueWalker.profile, renderOptions);
-          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(_dialogueWalker.avatarGroup, _dialogueWalker.avatarFrontCanvas);
-        }
-        return true;
-      }
-
-      let _npcDialoguePortraitRenderPending = false;
-      let _npcDialoguePortraitLastRenderMs = 0;
-      function updateNpcDialoguePortrait(nowMs = performance.now()) {
-        if (!dialogueOpen || !_dialogueWalker?.profile || _npcDialoguePortraitRenderPending) return;
-        const fps = Math.max(1, Number(npcDialoguePortraitConfig().maxFps) || 12);
-        if (nowMs !== 0 && nowMs - _npcDialoguePortraitLastRenderMs < 1000 / fps) return;
-        _npcDialoguePortraitRenderPending = true;
-        _renderNpcDialoguePortrait()
-          .catch(err => console.warn('[npc-dialogue] portrait render failed', err))
-          .finally(() => {
-            _npcDialoguePortraitLastRenderMs = performance.now();
-            _npcDialoguePortraitRenderPending = false;
-          });
-      }
-
-      function _renderDlgNode(node) {
-        if (!node) { closeNpcDialogue(); return; }
-        _dlgNode = node;
-
-        if (node.type === 'end') { closeNpcDialogue(); return; }
-
-        if (node.type === 'sequence') { _handleSequenceNode(node); return; }
-
-        const text = _resolveTokens(node.text || '', _dlgNpcRec);
-        _setNpcDialogueText(text, node);
-        updateNpcDialoguePortrait(0);
-
-        if (node.type === 'choice') {
-          _showDlgChoices(node);
-        } else {
-          _hideChoiceButtons();
-        }
-      }
-
-      function _handleSequenceNode(seqNode) {
-        const st       = _getNpcDlgState(_dlgNpcRec?.id);
-        const visited  = st.visitedSeqSlots[seqNode.id] || [];
-        const slots    = seqNode.slots || [];
-        const nextIdx  = slots.findIndex((_, i) => !visited.includes(i));
-
-        if (nextIdx === -1) {
-          // All slots exhausted
-          _navigateDlgTo(seqNode.exhaustedNext);
-          return;
-        }
-
-        const slot = slots[nextIdx];
-        st.visitedSeqSlots[seqNode.id] = [...visited, nextIdx];
-        _dlgSeqStack.push({ seqNodeId: seqNode.id, seqNode, depthRemaining: slot.depth });
-        _navigateDlgTo(slot.nodeId);
-      }
-
-      function _navigateDlgTo(nodeId) {
-        if (!nodeId) {
-          // End of chain — pop sequence stack if any, otherwise end dialogue
-          if (_dlgSeqStack.length > 0) {
-            const frame = _dlgSeqStack.pop();
-            _navigateDlgTo(frame.seqNode.next || null);
-          } else {
-            closeNpcDialogue();
-          }
-          return;
-        }
-        const node = _dlgNodeMap?.[nodeId];
-        if (!node) { closeNpcDialogue(); return; }
-        _renderDlgNode(node);
-      }
-
-      function _advanceDlgNode() {
-        if (!_dlgNode) return;
-        if (_dlgNode.type === 'choice') return; // choices require clicking an option button
-        const next = _dlgNode.next;
-        if (_dlgSeqStack.length > 0) {
-          const frame = _dlgSeqStack[_dlgSeqStack.length - 1];
-          if (frame.depthRemaining <= 0) {
-            _dlgSeqStack.pop();
-            _navigateDlgTo(frame.seqNode.next || null);
-            return;
-          }
-          frame.depthRemaining--;
-        }
-        _navigateDlgTo(next || null);
-      }
-
-      // Starts the actual conversation content (dialogue tree, or the plain
-      // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
-      // of the merchant shop/chat choice below.
-      function _beginNpcConversation(rec) {
-        const tree = _pickDialogueTree(rec);
-        if (tree) {
-          _markDialogueTreeHeard(rec, tree);
-          _dlgTree    = tree;
-          _dlgNodeMap = Object.fromEntries((tree.nodes || []).map(n => [n.id, n]));
-          _dlgNpcRec  = rec;
-          _dlgSeqStack = [];
-          _dialogueLines   = [];
-          _dialogueLineIdx = 0;
-          _navigateDlgTo(tree.entryNode);
-        } else {
-          _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = rec;
-          _hideChoiceButtons();
-          _dialogueLines   = _npcDialogueLines(rec);
-          _dialogueLineIdx = 0;
-          _setNpcDialogueText(_dialogueLines[0]);
-          updateNpcDialoguePortrait(0);
-        }
-      }
-
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
-        recordNpcMemory(rec?.id, 'talked');
+        window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
@@ -1381,14 +340,14 @@
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
-        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = renderRelationshipHearts(rec);
+        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = window.DialogueContent?.renderRelationshipHearts(rec);
         _arcContainerEl?.classList.add('arc-hidden');
 
         if (walker.profile && window.NpcAvatarPreview) {
           const ctx = _npcPortraitCanvas.getContext('2d');
           ctx.fillStyle = '#1b3529';
           ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-          await _renderNpcDialoguePortrait();
+          await window.DialogueContent?.renderNpcDialoguePortrait();
         }
 
         _npcDialogueEl.classList.add('open');
@@ -1401,8 +360,8 @@
         const _turnInTask = rec?.id ? getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
           const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: `Ah — did you bring what I asked for?`,
             choices: [
@@ -1421,8 +380,8 @@
         // shortcut the shop fast-paths use. See maybeOfferFavor.
         const _favorTask = maybeOfferFavor(rec);
         if (_favorTask) {
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: favorAskLine(_favorTask),
             choices: [
@@ -1444,8 +403,8 @@
         // any time, with no station/idle requirement at all.
         if (isGeneralStoreNpcOnDuty(walker)) {
           const cfg = generalStoreButtonConfig();
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: cfg.shopGreeting || 'What can I do for you?',
             choices: [
@@ -1458,8 +417,8 @@
 
         if (isCarpenterNpcOnDuty(walker)) {
           const cfg = carpenterButtonConfig();
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: cfg.shopGreeting || 'What can I do for you?',
             choices: [
@@ -1476,8 +435,8 @@
         // than being station-gated. "Chat" re-enters his normal dialogue
         // tree exactly like the General Store's Chat option does.
         if (rec?.id === 'jubmir') {
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: 'What can I do for you?',
             choices: [
@@ -1488,31 +447,20 @@
           return;
         }
 
-        _beginNpcConversation(rec);
+        window.DialogueContent?.beginNpcConversation(rec);
       }
 
-      function advanceNpcDialogue() {
-        if (_npcDialogueTypeText) { _stopNpcDialogueTypewriter(true); return; }
-        // Cutscene Preview drives its own talk/choice stage sequence instead
-        // of an authored dialogueTree — see "Cutscene Preview Mode" below.
-        if (cutscenePreviewActive) { cutscenePreviewAdvance?.(); return; }
-        if (_dlgTree) { _advanceDlgNode(); return; }
-        _dialogueLineIdx++;
-        if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
-        _setNpcDialogueText(_dialogueLines[_dialogueLineIdx]);
-        updateNpcDialoguePortrait(0);
-      }
+      // advanceNpcDialogue now lives in js/dialogue-content.js
+      // (window.DialogueContent).
 
       function closeNpcDialogue() {
         dialogueOpen = false;
-        _dialogueLines = [];
-        _dialogueLineIdx = 0;
-        _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
-        _stopNpcDialogueTypewriter(false);
-        _hideChoiceButtons();
+        window.DialogueContent?.resetDialogueState();
+        window.DialogueContent?.stopNpcDialogueTypewriter(false);
+        window.DialogueContent?.hideChoiceButtons();
         npcDialogueStaging = null;
-        window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
-        window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
+        window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
+        window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
         if (_dialogueWalker) {
           if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
           _dialogueWalker.pause = 0;
@@ -1532,21 +480,8 @@
         saveMemberWorldData(); // persist visited-node/memory state mutated during the conversation
       }
 
-      function renderRelationshipHearts(rec) {
-        if (!rec?.relationship) return '';
-        const score = friendshipFavor(rec.id);
-        const clamped = Math.max(-5, Math.min(10, score));
-        const hearts = [];
-        for (let i = -5; i <= 10; i++) {
-          if (i === 0) continue;
-          if (clamped < 0) {
-            hearts.push(i < 0 && i >= clamped ? '💜' : i < 0 ? '🖤' : '🤍');
-          } else {
-            hearts.push(i <= clamped ? '❤️' : i > 0 ? '🤍' : '');
-          }
-        }
-        return hearts.filter(Boolean).join('');
-      }
+      // renderRelationshipHearts now lives in js/dialogue-content.js
+      // (window.DialogueContent).
 
       // ── Tile / crop enums (must come first — referenced by everything below) ──
       const TileType = Object.freeze({
@@ -1805,404 +740,9 @@
         stream: { topColor: '#4f9bd9', sideColor: '#356f99', label: 'stream'   },
       };
 
-      // ── Footstep SFX ──────────────────────────────────────────────────
-      // Real recordings (docs/assets/audio/sfx/footsteps), keyed by a coarse
-      // "surface" rather than raw TileType — several tile types share a
-      // footstep (e.g. grass and weeds both sound like grass underfoot).
-      // Interior floors always map to 'gravel' regardless of the
-      // (irrelevant) tile type beneath them, until interiors get their own
-      // recorded surface.
-      //
-      // Each surface's clip list normally comes from config
-      // (audio.footsteps.surfaces[key].urls, see scratchbones-config.js) —
-      // FOOTSTEP_POST_FX below only carries the oscillator+noise synth
-      // fallback tuning (filter shape/cutoff/Q, pitch, decay length) used
-      // when no urls are configured for a surface.
-      const FOOTSTEP_BASE = Object.freeze({
-        waveform: 'triangle', freq: 55, freqVarianceHz: 16, durationMs: 55, noiseMix: 0.82, volume: 0.6,
-      });
-
-      const FOOTSTEP_POST_FX = Object.freeze({
-        grass:  {},
-        gravel: { filterFreqMul: 4.6, filterQ: 2.4, durationMul: 0.6, pitchMul: 1.2, volumeMul: 0.9 },
-        water:  { filterFreqMul: 5.5, filterQ: 1.0, durationMul: 1.3, pitchMul: 1.7, volumeMul: 1.0, filterType: 'highpass' },
-      });
-
-      // How much of a ground footstep's own volume a simultaneous waterstep
-      // blends in at when the tile is fully flooded (tile.water === MAX_WATER)
-      // — scales linearly down to 0 at tile.water === 0. See playFootstepSfx.
-      const FOOTSTEP_WATER_BLEND_MAX = 0.8;
-
-      // Distance an entity must travel between alternating footfalls, in world px
-      // (TILE-scaled so the same constant works for player/creature px coords
-      // and NPC tile-unit coords once converted to px).
-      const FOOTSTEP_STRIDE_PX = TILE * 0.45;
-      // The player moves much faster (px/s) than NPCs/creatures, so the same
-      // per-distance stride would trigger footsteps far more often in real
-      // time than it does for them — use a longer player-only stride so the
-      // cadence (not the tone) matches how often NPC footsteps land.
-      const FOOTSTEP_PLAYER_STRIDE_PX = TILE * 1.35;
-      // Beyond this distance from the player, NPC/creature footsteps are inaudible.
-      const FOOTSTEP_EARSHOT_PX = TILE * 9;
-      // NPC/enemy footsteps pan hard left/right within this distance — keeps
-      // them clearly directional without needing real spatial audio.
-      const FOOTSTEP_PAN_RANGE_PX = TILE * 5;
-      // The player and whistled companion animals tread a bit more quietly
-      // than NPCs/hostiles, and aren't panned (the player is the listener;
-      // a companion is always close at hand). Raised from its original 0.35
-      // — that plus distance falloff made a companion's own footsteps nearly
-      // silent even standing right next to the player.
-      const FOOTSTEP_QUIET_SCALE = 0.7;
-
-      // Grass = grasstep. Path (and everything else that's hard-packed/
-      // exposed ground rather than turf — tilled/raised soil, dug trenches,
-      // rock, shrub, ramps) = gravelstep. Anything that actually holds
-      // standing water (river/stream/waterfall/paddy) = waterstep — this is
-      // "swimming" territory, not a moisture blend (see playFootstepSfx for
-      // the blend applied to grass/gravel ground tiles instead).
-      function footstepSurfaceKey(area, type) {
-        if (area === 'interior' || _isBuildingArea(area)) return 'gravel'; // temporary — no dedicated interior surface yet
-        switch (type) {
-          case TileType.PADDY:
-          case TileType.RIVER:
-          case TileType.STREAM:
-          case TileType.WATERFALL: return 'water';
-          case TileType.PATH:
-          case TileType.RAMP:
-          case TileType.TILLED:
-          case TileType.RAISED:
-          case TileType.TRENCH:
-          case TileType.ROCK:
-          case TileType.SHRUB:     return 'gravel';
-          default:                 return 'grass'; // GRASS, WEEDS
-        }
-      }
-
-      // Returns the tile object at a world-px coordinate within `area`'s own
-      // grid (not necessarily the player's currentArea — used for NPCs/
-      // creatures walking around in areas the player isn't currently
-      // viewing). Callers read both .type (surface) and .water (moisture
-      // blend) off the result.
-      function footstepTileAt(area, wx, wy, grid) {
-        const g = grid || npcGridForArea(area);
-        if (!g) return null;
-        const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
-        return g[row]?.[col] ?? null;
-      }
-
-      // Advances a per-entity footstep stride accumulator; returns true (and
-      // resets the remainder) exactly when a footfall should sound, so cadence
-      // naturally scales with how fast the entity is actually moving.
-      function _footstepAdvance(state, distPx, stridePx = FOOTSTEP_STRIDE_PX) {
-        if (!(distPx > 0)) return false;
-        state.footstepAccum = (state.footstepAccum || 0) + distPx;
-        if (state.footstepAccum < stridePx) return false;
-        state.footstepAccum -= stridePx;
-        state.footstepFoot = !state.footstepFoot;
-        return true;
-      }
-
-      // Routes a real footstep clip through the shared footstep AudioContext
-      // with a dulling lowpass instead of just setting .volume, so a "heavy"
-      // landing thud actually sounds tonally heavier (less high-end clack),
-      // not just louder — used by playFootstepSurface's heavy branch.
-      function playHeavyFilteredClip(snd, volume) {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (!AudioCtx) throw new Error('no AudioContext');
-          const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-          const source = ctx.createMediaElementSource(snd);
-          const lpf = ctx.createBiquadFilter();
-          lpf.type = 'lowpass';
-          lpf.frequency.value = 900; // dulls the clip's high end into a thud instead of a clack
-          lpf.Q.value = 0.7;
-          const gain = ctx.createGain();
-          gain.gain.value = Math.min(1, volume * 1.15); // filtering loses perceived loudness; compensate
-          source.connect(lpf).connect(gain).connect(ctx.destination);
-          snd.play().catch(() => {});
-        } catch (e) {
-          snd.volume = volume;
-          snd.play().catch(() => {});
-        }
-      }
-
-      // Plays one surface's footfall at `volume` — a random pick from that
-      // surface's configured clip list (audio.footsteps.surfaces[key].urls)
-      // when one exists, else the oscillator+noise synth fallback tuned by
-      // FOOTSTEP_POST_FX. `pan` only affects the synth fallback (a plain
-      // <audio> element, like every other one-shot sfx in this file, doesn't
-      // get routed through a StereoPannerNode).
-      //
-      // `heavy` is for a dodge/attack-lunge landing thud (see
-      // playHeavyLandingSfx): pitches noticeably down and, for real clips,
-      // runs through playHeavyFilteredClip's dulling lowpass so it reads as
-      // hitting the ground hard rather than an ordinary stride.
-      function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
-        if (volume <= 0.002) return;
-        const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
-        const urls = postFx.urls || (postFx.url ? [postFx.url] : null);
-        const finalVolume = Math.min(1, volume * Math.max(0, Number(postFx.volumeMul) || 1));
-
-        if (urls && urls.length) {
-          const url = urls[Math.floor(Math.random() * urls.length)];
-          const snd = new Audio(url);
-          snd.playbackRate = heavy ? (0.6 + Math.random() * 0.1) : (0.92 + Math.random() * 0.16);
-          if (heavy) playHeavyFilteredClip(snd, finalVolume);
-          else { snd.volume = finalVolume; snd.play().catch(() => {}); }
-          return;
-        }
-
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-        const now = ctx.currentTime;
-        const base = FOOTSTEP_BASE;
-        const pitchMul = (Number(postFx.pitchMul) || 1) * (heavy ? 0.55 : 1);
-        const durationS = Math.max(0.02, (Number(base.durationMs) || 55) / 1000 * (Number(postFx.durationMul) || 1) * (heavy ? 2.2 : 1));
-        const noiseMix = Math.max(0, Math.min(1, Number(base.noiseMix) ?? 0.82));
-        const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
-        const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
-
-        const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
-        if (panNode) {
-          panNode.pan.value = Math.max(-1, Math.min(1, pan));
-          panNode.connect(ctx.destination);
-        }
-        const outNode = panNode || ctx.destination;
-
-        if (noiseMix < 1) {
-          const osc = ctx.createOscillator();
-          const oscGain = ctx.createGain();
-          osc.type = base.waveform || 'triangle';
-          osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * variance;
-          oscGain.gain.setValueAtTime(finalVolume * (1 - noiseMix), now);
-          oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
-          osc.connect(oscGain).connect(outNode);
-          osc.start(now);
-          osc.stop(now + durationS);
-        }
-
-        if (noiseMix > 0) {
-          const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * durationS));
-          const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-          const data = buffer.getChannelData(0);
-          for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-          const noise = ctx.createBufferSource();
-          noise.buffer = buffer;
-          const filter = ctx.createBiquadFilter();
-          filter.type = postFx.filterType || 'bandpass';
-          filter.frequency.value = baseFreq * (Number(postFx.filterFreqMul) || 3.2) * (heavy ? 0.45 : 1);
-          filter.Q.value = Number(postFx.filterQ) || 1.6;
-          const noiseGain = ctx.createGain();
-          noiseGain.gain.setValueAtTime(finalVolume * noiseMix, now);
-          noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
-          noise.connect(filter).connect(noiseGain).connect(outNode);
-          noise.start(now);
-          noise.stop(now + durationS);
-        }
-      }
-
-      // `tile` is the grid tile the footstep lands on (see footstepTileAt) —
-      // null for NPCs/creatures whose area has no grid (shouldn't normally
-      // happen, just defends against it). `pan` is -1 (full left) .. 1 (full
-      // right); leave at 0 for the player (the listener) and companions
-      // (always close, not worth panning). `opts.heavy` — see
-      // playHeavyLandingSfx — plays both layers through playFootstepSurface's
-      // heavy (louder, pitched-down/filtered) mode instead of a plain stride.
-      //
-      // Ground surfaces (grass/gravel) layer in a second, simultaneous
-      // waterstep clip scaled by the tile's moisture (tile.water, 0..
-      // MAX_WATER) — a bone-dry tile blends none in, a fully flooded one
-      // blends it in at FOOTSTEP_WATER_BLEND_MAX (80%) of the footstep's own
-      // volume. Actual water tiles (river/stream/paddy/waterfall) already
-      // resolve straight to the 'water' surface via footstepSurfaceKey and
-      // skip this blend — they're pure waterstep, not a blend target.
-      function playFootstepSfx(area, tile, volumeScale = 1, pan = 0, opts = {}) {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) return;
-        const footstepCfg = audioCfg.footsteps || {};
-        if (footstepCfg.enabled === false) return;
-        const heavy = !!opts.heavy;
-        const surfaceKey = footstepSurfaceKey(area, tile?.type ?? null);
-        const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
-        const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume) || 1)
-          * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
-        playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
-
-        if (surfaceKey !== 'water') {
-          const wetFraction = clamp((Number(tile?.water) || 0) / MAX_WATER, 0, 1);
-          playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
-        }
-      }
-
-      // Heavy "landing thud" used when a dodge or attack lunge comes to a
-      // stop — same surface/moisture-blend as an ordinary footstep (see
-      // playFootstepSfx) but louder and run through playFootstepSurface's
-      // heavy mode so it reads as hitting the ground hard after a leap,
-      // not just another stride in the cadence. Player-only: dodges and
-      // combat lunges are a player.dodging/player.lunging-only mechanic
-      // (see performDodge/beginCombatLunge) — no pan, matching the player's
-      // own unpanned regular footsteps.
-      const HEAVY_LANDING_VOLUME_MUL = 2.0;
-      function playHeavyLandingSfx(area, tile) {
-        playFootstepSfx(area, tile, HEAVY_LANDING_VOLUME_MUL, 0, { heavy: true });
-      }
-
-      function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
-
-      // One-shot combat SFX player (weapon slash / creature bark / claw hit) —
-      // simpler than playFootstepSfx since these always have a real audio
-      // file staged (no procedural WebAudio fallback needed).
-      function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false || !cfgEntry?.url) return;
-        if (combatSfxConfig().enabled === false) return;
-        const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
-          * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
-        if (volume <= 0.002) return;
-        const snd = new Audio(cfgEntry.url);
-        snd.volume = Math.min(1, volume);
-        const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
-        snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
-        snd.play().catch(() => {});
-      }
-
-      function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
-
-      // Generic one-shot player for object/machine/UI interaction sfx (see
-      // audio.objectSfx in scratchbones-config.js and
-      // docs/assets/audio/sfx/README.md) — like playOneShotSfx, but
-      // fallback-aware: every cfgEntry names a real recording (cfgEntry.url,
-      // not committed yet — a human needs to source it) *and* a placeholder
-      // that's played instead whenever the real file is missing/fails to
-      // load — either a single generated cfgEntry.placeholderUrl (see
-      // scripts/generate-placeholder-sfx.js), or a cfgEntry.placeholderUrls
-      // array to pick a random one from (several processing sfx reuse the
-      // real grasstep/gravelstep/waterstep footstep recordings this way,
-      // pitched/volumed for the moment — a real recording doing double duty
-      // reads better than a from-scratch synth attempt). cfgEntry.pitch is
-      // an optional baseline playback-rate multiplier on top of the
-      // `pitch` param, e.g. for pitching a footstep-derived placeholder
-      // down into something heavier. Failures are remembered via the same
-      // _audioFailedUrls/markAudioUrlFailed/audioUrlFailed bookkeeping the
-      // bgm system already uses, so later calls for the same cue go
-      // straight to the placeholder instead of re-attempting (and
-      // re-404ing) the missing real file every time.
-      // A plain <audio>.volume tops out at 1.0 (its natural recorded
-      // loudness) no matter what — there's no way to make a quiet source
-      // clip louder than that through the element alone. cfgEntry.gainBoost
-      // (a multiplier > 1, e.g. 3 for "300% volume") routes playback
-      // through the shared footstep AudioContext's GainNode instead, whose
-      // gain can genuinely exceed 1.0 and amplify the source — same trick
-      // playHeavyFilteredClip uses for a heavy landing thud, minus the
-      // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
-      // is unavailable or gainBoost isn't set.
-      function playObjectAudioElement(snd, volume, gainBoost) {
-        if (!(gainBoost > 1)) {
-          snd.volume = Math.min(1, volume);
-          snd.play().catch(() => {});
-          return;
-        }
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (!AudioCtx) throw new Error('no AudioContext');
-          const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
-          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-          const source = ctx.createMediaElementSource(snd);
-          const gain = ctx.createGain();
-          gain.gain.value = Math.max(0, volume * gainBoost);
-          source.connect(gain).connect(ctx.destination);
-          snd.play().catch(() => {});
-        } catch (e) {
-          snd.volume = Math.min(1, volume);
-          snd.play().catch(() => {});
-        }
-      }
-
-      function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false || !cfgEntry) return;
-        if (objectSfxConfig().enabled === false) return;
-        const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
-          * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
-        if (volume <= 0.002) return;
-        const gainBoost = Number(cfgEntry.gainBoost) || 1;
-        const pickPlaceholder = () => (cfgEntry.placeholderUrls?.length)
-          ? cfgEntry.placeholderUrls[Math.floor(Math.random() * cfgEntry.placeholderUrls.length)]
-          : cfgEntry.placeholderUrl;
-        const hasPlaceholder = !!(cfgEntry.placeholderUrl || cfgEntry.placeholderUrls?.length);
-        const preferReal = cfgEntry.url && !audioUrlFailed(cfgEntry.url);
-        const url = preferReal ? cfgEntry.url : pickPlaceholder();
-        if (!url) return;
-        const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
-        const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
-        const snd = new Audio(url);
-        snd.playbackRate = rate;
-        if (preferReal && hasPlaceholder) {
-          snd.addEventListener('error', () => {
-            if (!isRealMediaError(snd)) return;
-            markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
-            const fallback = new Audio(pickPlaceholder());
-            fallback.playbackRate = rate;
-            playObjectAudioElement(fallback, volume, gainBoost);
-          }, { once: true });
-        }
-        playObjectAudioElement(snd, volume, gainBoost);
-      }
-
-      // Distance falloff for a creature-originated combat sound (bark/claw
-      // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
-      function playCreatureSfxAt(c, cfgEntry, pitch) {
-        if (!cfgEntry || c.areaId !== currentArea) return;
-        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
-        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-        playOneShotSfx(cfgEntry, falloff, pitch);
-      }
-
-      // Species-keyed pitch lets every creature reuse the same bark asset
-      // (only one exists today) while still sounding distinct — alpha
-      // gar-wolf pitched down, dabinggi-hound pitched up, relative to the
-      // plain gar-wolf's neutral pitch. Future creatures/attacks can add
-      // their own url+species entry without touching this function.
-      function playCreatureBark(c) {
-        const cfg = combatSfxConfig().creatureBark;
-        const speciesCfg = cfg?.species?.[c.creatureKey];
-        playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
-      }
-
-      function playCreatureClawHit(c) {
-        playCreatureSfxAt(c, combatSfxConfig().creatureClawHit, 1);
-      }
-
-      function playWeaponSlashSfx(pitch) {
-        playOneShotSfx(combatSfxConfig().weaponSlash, 1, pitch);
-      }
-
-      // Impact sound for any WEAPON hit landing (player Combo/Quick Attack/
-      // Charged Breaker/Counter Shield riposte, or a bandit's own mirror of
-      // the same abilities) -- distinct from playCreatureClawHit, which
-      // stays wildlife-bite-only. tag is the attacker's own weapon dmgType
-      // ('sharp'/'blunt', already threaded through every one of those
-      // abilities' damageCreature/damagePlayer calls as dmgOpts.tag), not
-      // the target's -- "chosen based on the attacker's weapon" per design.
-      // Takes a plain x/y/areaId instead of a creature-shaped object so it
-      // works equally for a bandit attacker (which has all three already)
-      // and the player attacker (which has no .areaId field of its own --
-      // see combat-core.js's deps.getCurrentArea()).
-      function playWeaponHitSfx(tag, x, y, areaId, pitch) {
-        if (areaId !== currentArea) return;
-        const cfgEntry = combatSfxConfig()[tag === 'blunt' ? 'weaponHitBlunt' : 'weaponHitSharp'];
-        if (!cfgEntry) return;
-        const distToPlayer = Math.hypot(x - player.x, y - player.y);
-        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-        playOneShotSfx(cfgEntry, falloff, pitch);
-      }
+      // Footstep/one-shot combat/object/creature SFX (footstepSurfaceKey,
+      // playFootstepSfx, playObjectSfx, playWeaponHitSfx, etc.) now live in
+      // js/audio-system.js (window.AudioSystem).
 
       // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
       function floorZ(type, depth = 1) {
@@ -4025,24 +2565,9 @@
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
       const companionObjects = new Set(); // Whistle-summoned companion creatures (0 or 1 active at a time).
 
-      // ── Mount ride state (V key / D-pad down — see toggleMount) ─────────
-      // 'none': no mount summoned. 'rushingIn': the mount is dashing in from
-      // off-screen toward the player. 'mountingUp': the mount has arrived and
-      // the player is lerping up onto it. 'mounted': steady-state riding —
-      // movement input steers the mount (see updateMountedMovement) instead
-      // of the player. 'dismountingDown': the player is lerping back off the
-      // mount. 'rushingOut': the (now riderless) mount is dashing away
-      // off-screen before despawning.
-      let mountRideState = 'none';
-      let mountRideEntity = null;
-      let mountAngle = 0;              // the mount's own heading; momentum-turned in updateMountedMovement
-      let mountCurrentSpeedPxS = 0;    // the mount's current forward speed (momentum — see MOUNT_TURN_RATE_MIN/MAX)
-      let mountTransitionT = 0;        // 0..1 progress through the current mountingUp/dismountingDown lerp
-      let mountTransitionFromX = 0, mountTransitionFromY = 0;
-      let mountDismountTargetX = 0, mountDismountTargetY = 0;
-      let mountRushOutAngle = 0;
-      let mountRushOutT = 0;
-      let mountRushInT = 0;
+      // Mount ride state/logic (toggleMount, updateMountRide,
+      // updateMountedMovement, etc.) lives in js/mount-system.js
+      // (window.Mounts) — see window.Mounts.init(...) below for the wiring.
       const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
       const corpseObjects = new Set();    // Creatures mid-death-lerp ('dying') or settled and lootable ('corpse').
 
@@ -4335,7 +2860,7 @@
               job = null;
               outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
               saveFarmLayout();
-              playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+              window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
             }
             const active = getActiveInventoryItem();
@@ -4348,11 +2873,11 @@
             if (isAging) {
               job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
               saveFarmLayout();
-              playObjectSfx(objectSfxConfig().processStart);
+              window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
             }
             outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
-            playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
             return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
           },
@@ -4450,7 +2975,7 @@
           light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
           targetScene.add(light);
         }
-        const sfxSource = registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, resolveFurnitureSfx(def));
+        const sfxSource = window.Music?.registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, window.Music?.resolveFurnitureSfx(def));
 
         return { mesh: group, light, sfxSource };
       }
@@ -4498,7 +3023,7 @@
             if (child.material) child.material.dispose();
           });
           if (obj.light) s.remove(obj.light);
-          unregisterFurnitureSfxSource(obj.sfxSource);
+          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
           unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         });
@@ -4581,7 +3106,7 @@
               if (child.material) child.material.dispose();
             });
             if (d.light) scene.remove(d.light);
-            unregisterFurnitureSfxSource(d.sfxSource);
+            window.Music?.unregisterFurnitureSfxSource(d.sfxSource);
             if (DECORATIVE_FURNITURE_DEFS[d.key]?.sit) worldObjects.delete(col + ',' + row);
             unregisterChairNpcStation(d.key, col, row, 'farm');
           }
@@ -4948,7 +3473,7 @@
         const outputs = getProcessingOutputs('squeezing', dewItemKey(colorKey));
         if (!outputs) return false;
         outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
-        playObjectSfx(objectSfxConfig()[PROCESSING_SFX_KEY[vat.furnitureKey]]);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[vat.furnitureKey]]);
         vat.triggerVfx && vat.triggerVfx();
         return true;
       }
@@ -5324,7 +3849,7 @@
       // beside the barn. Unassigned (stasis) livestock never spawn at all
       // (see addLivestockFromItem), so this only ever runs for housed ones.
       function _farmAnimalBarnTick(animal) {
-        const night = isNightTime();
+        const night = window.Music?.isNightTime();
         if (animal._barnHome) {
           if (!night) _farmAnimalWakeUp(animal);
           return true;
@@ -6105,7 +4630,7 @@
       }
 
       function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
-        if (sitInteraction || harvestInteraction || dialogueOpen || mountRideState !== 'none') return { ok: false, message: 'Cannot sit right now.' };
+        if (sitInteraction || harvestInteraction || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
         const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
@@ -7125,7 +5650,7 @@
         const abil = weaponAbility(action);
         if (!abil) return { hits: 0, message: '' };
         window.ResourceSystem?.spendStamina(player, abil.staminaCost, abil.name || action);
-        playWeaponSlashSfx();
+        window.AudioSystem?.playWeaponSlashSfx();
         let hits = 0;
         let lastName = '';
         const dmgOpts = action === 'slash' ? { tag: 'blunt', heavy: true } : { tag: 'sharp' };
@@ -7220,18 +5745,18 @@
       // creature movement path with a single footstep hook.
       function tickCreatureFootsteps(c, distPx) {
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
-        if (!_footstepAdvance(c, distPx)) return;
+        if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
-        if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+        if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
         // Linear, not squared — squared falloff made anything past ~30% of
         // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-        const tile = footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
+        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+        const tile = window.AudioSystem?.footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
         // Whistled companions stay quiet (like the player) and unpanned —
         // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { playFootstepSfx(c.areaId, tile, falloff * FOOTSTEP_QUIET_SCALE); return; }
-        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / FOOTSTEP_PAN_RANGE_PX));
-        playFootstepSfx(c.areaId, tile, falloff, pan);
+        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
+        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+        window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff, pan);
       }
 
       // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
@@ -7846,7 +6371,7 @@
                       // one entry.
                       if (Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) <= def.attackRangePx) {
                         damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-                        playCreatureClawHit(c);
+                        window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
                     },
@@ -7857,7 +6382,7 @@
           } else if (c.state === 'return') {
             moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.denKey && isNightTime()) {
+          } else if (c.denKey && window.Music?.isNightTime()) {
             // Denned pack, off the clock — head back to the den and settle
             // there instead of continuing to wander (see spawnPackAtDen for
             // homeX/homeY = the den's own anchor point).
@@ -8462,7 +6987,7 @@
                       onStrike: () => {
                         if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
                           damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-                          playCreatureClawHit(c);
+                          window.AudioSystem?.playCreatureClawHit(c);
                         }
                       },
                     });
@@ -8622,314 +7147,9 @@
         }
       }
 
-      // ── Mounted riding (V key / D-pad down calls a mount in or dismisses
-      // it — see the 'toggleMount' input action) ──────────────────────────
-      // A rush-in/out transition well beyond the camera's visible range, so
-      // "calling" a mount reads as it charging in from off-screen rather
-      // than just popping in nearby.
-      const MOUNT_RUSH_SPEED_PX = 900;
-      const MOUNT_SPAWN_DIST_PX = TILE * 9;
-      const MOUNT_ARRIVE_PX = TILE * 0.55;
-      const MOUNT_DESPAWN_DIST_PX = TILE * 9;
-      const MOUNT_TRANSITION_S = 0.35; // how long the rider's lerp on/off the mount takes
-      // Momentum: a stationary mount can pivot quickly, but the faster it's
-      // already moving the more sluggishly it can turn — trading maneuverability
-      // for the speed a mount gives you (see updateMountedMovement).
-      const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
-      const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
-
-      function toggleMount() {
-        if (mountRideState === 'none') beginSummonMount();
-        else if (mountRideState === 'mounted' || mountRideState === 'rushingIn') beginDismissMount();
-        // 'mountingUp'/'dismountingDown'/'rushingOut': mid-transition, ignore
-        // extra presses until it settles into a steady state.
-      }
-
-      function beginSummonMount() {
-        const activeStabled = activeMountId ? stable.find(s => s.id === activeMountId) : null;
-        if (!activeStabled || !CREATURE_DB[activeStabled.kind]) {
-          showToast('No mount set in your stable.', false);
-          return;
-        }
-        // Off-screen, in a random-ish direction behind the player rather than
-        // always dead behind, so the rush-in doesn't look identical every
-        // time — clamped well inside the active area's bounds (with a
-        // margin), since a fixed-distance point in an arbitrary direction can
-        // easily land outside a smaller map (creatureCanEnterTile rejects any
-        // move once the mount is stuck outside those bounds, freezing it at
-        // spawn forever).
-        const spawnAngle = player.angle + Math.PI + (rnd() - 0.5) * (Math.PI * 0.6);
-        const spawnMarginPx = TILE * 1.5;
-        const maxX = getActiveCols() * TILE - spawnMarginPx, maxY = getActiveRows() * TILE - spawnMarginPx;
-        const spawnX = clamp(player.x + Math.cos(spawnAngle) * MOUNT_SPAWN_DIST_PX, spawnMarginPx, maxX);
-        const spawnY = clamp(player.y + Math.sin(spawnAngle) * MOUNT_SPAWN_DIST_PX, spawnMarginPx, maxY);
-        const mount = makeCreatureEntity(activeStabled.kind, spawnX, spawnY, {
-          isCompanion: true, name: activeStabled.name, homeX: spawnX, homeY: spawnY, state: 'idle',
-          master: player, genotype: activeStabled.genotype, stableRole: 'mount',
-        });
-        if (!mount) return;
-        companionObjects.add(mount);
-        mountRideEntity = mount;
-        mountRideState = 'rushingIn';
-        mountAngle = player.angle;
-        mountCurrentSpeedPxS = 0;
-        mountRushInT = 0;
-      }
-
-      function beginDismissMount() {
-        if (!mountRideEntity) { mountRideState = 'none'; return; }
-        mountRideState = 'dismountingDown';
-        mountTransitionT = 0;
-        mountTransitionFromX = player.x; mountTransitionFromY = player.y;
-        // Dismount to the mount's side (perpendicular to its heading) rather
-        // than right in front of/behind it.
-        const sideAngle = mountAngle + Math.PI / 2;
-        mountDismountTargetX = mountRideEntity.x + Math.cos(sideAngle) * TILE * 0.6;
-        mountDismountTargetY = mountRideEntity.y + Math.sin(sideAngle) * TILE * 0.6;
-      }
-
-      function updateMountRide(dt) {
-        btnCallMount?.classList.toggle('active', mountRideState !== 'none');
-        if (mountRideState === 'none') return;
-        const m = mountRideEntity;
-        if (!m || m.health <= 0) {
-          if (m) { despawnCreature(m); companionObjects.delete(m); }
-          mountRideState = 'none'; mountRideEntity = null;
-          return;
-        }
-        // An area transition (e.g. riding through the farm's town gate) can
-        // land mid-ride-transition, not just mid-'mounted'. The 'mounted'
-        // state's own area-change handling lives in updateMountedMovement
-        // (relocateMountForAreaChange), which only runs while
-        // mountRideState === 'mounted' (see updateMovement's early return) —
-        // every other phase here used to have no equivalent at all, so
-        // m.areaId went stale the instant the area changed. That used to
-        // just despawn the mount outright below (the old
-        // `m.areaId !== currentArea` branch of this same guard). Worse:
-        // mountingUp/dismountingDown's own lerp reads mountTransitionFromX/Y
-        // and (dismountingDown only) mountDismountTargetX/Y, both captured
-        // back when the transition began, in the OLD area's coordinate
-        // space — so on whichever frame actually got there first, either
-        // the mount vanished with no animation, or (if a couple of
-        // in-between frames won that race first) the rider kept getting
-        // dragged toward those stale old-area coordinates for the rest of
-        // the lerp even though enterTown/performTravel had already moved
-        // player.x/y into the new area — surfacing as the rider ending up
-        // standing at the old area's exit coordinates, just rendered in the
-        // new area's scene. Relocating (like the 'mounted' case already
-        // does) and rebasing the in-flight lerp's endpoints against the
-        // post-relocation, already-correct positions keeps the animation
-        // continuous across the boundary instead of losing the mount or the
-        // rider's position.
-        if (m.areaId !== currentArea) {
-          relocateMountForAreaChange(m);
-          if (mountRideState === 'mountingUp' || mountRideState === 'dismountingDown') {
-            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
-          }
-          if (mountRideState === 'dismountingDown') {
-            const sideAngle = mountAngle + Math.PI / 2;
-            mountDismountTargetX = m.x + Math.cos(sideAngle) * TILE * 0.6;
-            mountDismountTargetY = m.y + Math.sin(sideAngle) * TILE * 0.6;
-          }
-        }
-
-        if (mountRideState === 'rushingIn') {
-          mountRushInT += dt;
-          const moving = moveCreatureToward(m, player.x, player.y, MOUNT_RUSH_SPEED_PX, dt);
-          const aim = Math.atan2(player.y - m.y, player.x - m.x);
-          m.facing = aim;
-          updateCreatureMesh(m, dt, aim);
-          updateCreatureAnimFrame(m, dt, moving);
-          // Falls back to a flat timeout if the mount's dash toward the
-          // player gets blocked by terrain (creatureCanEnterTile) partway —
-          // otherwise a cornered mount would never arrive at all.
-          if (Math.hypot(player.x - m.x, player.y - m.y) <= MOUNT_ARRIVE_PX || mountRushInT >= 6) {
-            mountRideState = 'mountingUp';
-            mountTransitionT = 0;
-            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
-            mountAngle = m.facing;
-          }
-          return;
-        }
-
-        if (mountRideState === 'mountingUp') {
-          mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
-          player.x = mountTransitionFromX + (m.x - mountTransitionFromX) * mountTransitionT;
-          player.y = mountTransitionFromY + (m.y - mountTransitionFromY) * mountTransitionT;
-          player.vx = 0; player.vy = 0;
-          updateCreatureMesh(m, dt, m.facing);
-          updateCreatureAnimFrame(m, dt, false);
-          if (mountTransitionT >= 1) mountRideState = 'mounted';
-          return;
-        }
-
-        if (mountRideState === 'mounted') {
-          // Position/heading itself is driven by updateMountedMovement (called
-          // from updateMovement while mounted) — this just keeps the mount's
-          // own mesh/animation in sync with wherever that left m.x/m.y/m.facing.
-          updateCreatureMesh(m, dt, m.facing);
-          return;
-        }
-
-        if (mountRideState === 'dismountingDown') {
-          mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
-          player.x = mountTransitionFromX + (mountDismountTargetX - mountTransitionFromX) * mountTransitionT;
-          player.y = mountTransitionFromY + (mountDismountTargetY - mountTransitionFromY) * mountTransitionT;
-          player.vx = 0; player.vy = 0;
-          updateCreatureMesh(m, dt, m.facing);
-          updateCreatureAnimFrame(m, dt, false);
-          if (mountTransitionT >= 1) {
-            mountRideState = 'rushingOut';
-            mountRushOutAngle = m.facing + Math.PI;
-            mountRushOutT = 0;
-          }
-          return;
-        }
-
-        if (mountRideState === 'rushingOut') {
-          mountRushOutT += dt;
-          const targetX = m.x + Math.cos(mountRushOutAngle) * TILE * 2;
-          const targetY = m.y + Math.sin(mountRushOutAngle) * TILE * 2;
-          const moving = moveCreatureToward(m, targetX, targetY, MOUNT_RUSH_SPEED_PX, dt);
-          updateCreatureMesh(m, dt, mountRushOutAngle);
-          updateCreatureAnimFrame(m, dt, moving);
-          // Falls back to a flat timeout if the dash direction happens to
-          // run straight into a wall/map edge (creatureCanEnterTile rejects
-          // any further step there) — otherwise a cornered mount would never
-          // reach MOUNT_DESPAWN_DIST_PX and would sit there forever.
-          if (Math.hypot(player.x - m.x, player.y - m.y) >= MOUNT_DESPAWN_DIST_PX || mountRushOutT >= 3) {
-            despawnCreature(m);
-            companionObjects.delete(m);
-            mountRideState = 'none';
-            mountRideEntity = null;
-          }
-          return;
-        }
-      }
-
-      // A map transition (farm↔town↔wilderness zone↔den cavern) moves the
-      // player instantly via a bunch of separate call sites (enterZone,
-      // enterBuilding/exitBuilding, warpToDenAnchor, teleportToDevArena,
-      // etc.) that only ever touch player.x/y/currentArea and the player's
-      // OWN scene graph nodes — none of them know a mount might be along for
-      // the ride, so a mount's x/y/areaId/scene are left stale in the OLD
-      // area. Rather than teach every one of those call sites about mounts,
-      // this runs once per actual mismatch (from the top of
-      // updateMountedMovement, which fires before anything glues the rider's
-      // position to the mount's) and catches the mount up to the player's
-      // already-correct new position/scene — otherwise the very next tick's
-      // `player.x = m.x` glue below would snap the rider back onto the
-      // mount's stale old-area coordinates, undoing the transition.
-      function relocateMountForAreaChange(m) {
-        const oldScene = m.scene || scene;
-        oldScene.remove(m.avatarRef.group);
-        if (m.groundShadow) oldScene.remove(m.groundShadow);
-        const newScene = getActiveScene();
-        m.scene = newScene;
-        m.areaGrid = getActiveGrid();
-        m.areaCols = getActiveCols();
-        m.areaRows = getActiveRows();
-        m.areaId = currentArea;
-        m.x = player.x; m.y = player.y;
-        m.vx = 0; m.vy = 0;
-        const col = clamp(Math.floor(m.x / TILE), 0, m.areaCols - 1);
-        const row = clamp(Math.floor(m.y / TILE), 0, m.areaRows - 1);
-        const surfY = m.areaGrid[row]?.[col] ? tileSurfaceYInArea(m.areaGrid[row][col], currentArea) : 0;
-        m.avatarRef.group.position.set(m.x / TILE, surfY + m.halfHeight * (m.scaleY ?? 1), m.y / TILE);
-        newScene.add(m.avatarRef.group);
-        if (m.groundShadow) {
-          m.groundShadow.position.set(m.x / TILE, surfY + characterGroundShadowSurfaceOffset(), m.y / TILE);
-          newScene.add(m.groundShadow);
-        }
-        // Rebuilt fresh next tick against the new scene if still applicable —
-        // cheaper and safer than trying to reparent a resource ring HUD.
-        window.ResourceRings?.disposeRingHud(m);
-      }
-
-      // Replaces updateMovement's normal on-foot movement while
-      // mountRideState === 'mounted': movement input steers the MOUNT (which
-      // turns gradually, with momentum lowering its turn rate — see
-      // MOUNT_TURN_RATE_MIN/MAX) instead of moving the player directly, and
-      // the player is glued to the mount's position. The rider's own facing
-      // stays independently controllable via right-stick/mouse-look exactly
-      // like on foot, easing back to match the mount's heading once look
-      // input goes idle (instead of easing back to the raw movement
-      // direction, since that now drives the mount, not the rider's facing).
-      function updateMountedMovement(dt) {
-        const m = mountRideEntity;
-        if (!m) { mountRideState = 'none'; return; }
-        // Entering a building/interior that doesn't support companions/mounts
-        // (see syncCompanionFromWhistle's matching area gate) would otherwise
-        // leave the mount's visuals frozen with no way to tick — force an
-        // instant dismount instead of letting the rider get stuck riding a
-        // creature that no longer exists in the scene they're in.
-        if (!(currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea))) {
-          despawnCreature(m);
-          companionObjects.delete(m);
-          mountRideState = 'none'; mountRideEntity = null;
-          return;
-        }
-        if (m.areaId !== currentArea) relocateMountForAreaChange(m);
-
-        const keyboardVector = getKeyboardVector();
-        const usingKeyboard = keyboardVector.active;
-        let ix = usingKeyboard ? keyboardVector.x : input.x;
-        let iy = usingKeyboard ? keyboardVector.y : input.y;
-        const inputLen = Math.hypot(ix, iy);
-        let inputStrength = 0;
-        if (inputLen > 0.001) {
-          inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
-          ix /= inputLen; iy /= inputLen;
-        }
-        player.inputX = ix; player.inputY = iy; player.inputStrength = inputStrength;
-
-        const topSpeed = (m.def?.mountSpeed || MOVE_SPEED) * getAlchemySpeedMul() * devGlobalSpeedMul;
-        if (inputStrength > 0.001) {
-          mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + ACCEL * dt);
-          const desiredAngle = Math.atan2(iy, ix);
-          const speedRatio = topSpeed > 0 ? clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
-          const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
-          const diff = angleDiff(desiredAngle, mountAngle);
-          mountAngle += clamp(diff, -turnRate * dt, turnRate * dt);
-        } else {
-          mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - DECEL * dt);
-        }
-
-        if (mountCurrentSpeedPxS > 0.01) {
-          const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
-          const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const nextX = clamp(desiredX, minX, maxX), nextY = clamp(desiredY, minY, maxY);
-          // A blocked axis bleeds most of the mount's speed instead of a hard
-          // stop, so clipping a corner at a gallop doesn't feel like hitting
-          // a wall outright.
-          if (canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= 0.4;
-          if (canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= 0.4;
-        }
-        m.facing = mountAngle;
-        player.x = m.x; player.y = m.y;
-        player.vx = 0; player.vy = 0; // the mount is what's moving — the rider's own velocity stays inert
-        updateCreatureAnimFrame(m, dt, mountCurrentSpeedPxS > 5);
-
-        // Facing: independent of the mount's heading via right-stick/mouse-
-        // look (identical to the on-foot system in updateMovement), easing
-        // back to match mountAngle once look input goes idle.
-        if (controllerLookActive) {
-          const diff = angleDiff(controllerLookAngle, facingAngle);
-          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
-        } else if (isDesktop && mouseLookActive) {
-          if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) mouseLookActive = false;
-          else {
-            const diff = angleDiff(mouseLookAngle, facingAngle);
-            facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
-          }
-        } else {
-          const diff = angleDiff(mountAngle, facingAngle);
-          facingAngle += diff * Math.min(1, FACING_LERP * dt);
-        }
-        player.angle = facingAngle;
-      }
+      // Mount ride logic (toggleMount, beginSummonMount/beginDismissMount,
+      // updateMountRide, relocateMountForAreaChange, updateMountedMovement)
+      // lives in js/mount-system.js (window.Mounts) — see window.Mounts.init(...) below.
 
       function clearHostileObjects() {
         hostileObjects.forEach(c => despawnCreature(c));
@@ -9411,7 +7631,7 @@
           const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
           member.nonGearInventory = { ...inventory };
           member.packClothing    = [...packClothing];
-          member.npcRelationships = npcRelationshipsSnapshot();
+          member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
           member.questProgress    = { ...questProgress };
           member.alchemyKnownEffects = serializeKnownReagentEffects();
           member.alchemyActiveEffects = serializeActiveAlchemyEffects();
@@ -9481,7 +7701,7 @@
       // counter — see _getNpcDlgState/adjustNpcFavor above. No new persisted
       // counter needed; this just adds tier thresholds on top of it.
       const FRIENDSHIP_TIER_THRESHOLDS = [0, 40, 100, 200, 350, 550];
-      function friendshipFavor(npcId) { return _getNpcDlgState(npcId).favor || 0; }
+      function friendshipFavor(npcId) { return window.DialogueContent?.getNpcDlgState(npcId).favor || 0; }
       function friendshipTier(npcId) {
         const favor = friendshipFavor(npcId);
         let tier = 0;
@@ -9713,7 +7933,7 @@
         inventory[task.itemKey] -= task.qty;
         clampInventoryStack(task.itemKey);
         inventory.gold = (inventory.gold || 0) + task.rewardGold;
-        adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+        window.DialogueContent?.adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
         setQuestStatus(taskId, 'completed', {});
         showToast(`✅ Task complete! +${task.rewardGold}g, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
         return { ok: true, message: 'Task turned in.' };
@@ -10450,7 +8670,7 @@
           return { dens: layout.dens || [], rootTotems: layout.rootTotems || [], foliagePatches: layout.foliagePatches || [], ambushStations: layout.ambushStations || [] };
         },
         getCurrentArea: () => currentArea,
-        isNightTime,
+        isNightTime: (...a) => window.Music?.isNightTime(...a),
         hostileObjects,
       };
 
@@ -11614,7 +9834,7 @@
               // swing by combo family (sweep=blunt/thrust=sharp) regardless
               // of the equipped weapon's real material.
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch);
+              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch);
             }
           },
           onComplete: () => {
@@ -11671,7 +9891,7 @@
             if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               techHit = true;
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
           onComplete: () => {
@@ -11725,7 +9945,7 @@
             if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               techHit = true;
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
           onComplete: () => {
@@ -11776,7 +9996,7 @@
             spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
             if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
               damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
+              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
             }
           },
         });
@@ -12816,7 +11036,7 @@
           if (entry.light) zScene.remove(entry.light);
         }
         entry.mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
-        if (entry.sfxSource) unregisterFurnitureSfxSource(entry.sfxSource);
+        if (entry.sfxSource) window.Music?.unregisterFurnitureSfxSource(entry.sfxSource);
       }
 
       // (Re)builds every prop for whatever camps this zone currently tracks --
@@ -13581,13 +11801,13 @@
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
       window._npcWalkers = npcWalkers;
+      // dialogueOpen/_dialogueWalker are read/written both here (camera/
+      // staging code) and by js/dialogue-content.js (via deps.getDialogueOpen/
+      // getDialogueWalker) — the dialogue-flow state that module owns
+      // exclusively (_dlgTree, _dialogueLines, the typewriter timer, etc.)
+      // lives entirely inside it now, not here.
       let dialogueOpen       = false;
-      let _dialogueLines     = [];
-      let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
-      let _npcDialogueTypeTimer = null;
-      let _npcDialogueTypeText  = '';
-      let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
@@ -13637,14 +11857,6 @@
       // refreshPlayerAvatar() alongside playerToolBaseX/Y, as playerToolBaseY + 0.19.
       let playerItemHoldY = 0.64;
 
-      // ── Dialogue tree runtime state ──────────────────────────────────
-      let _dlgTree      = null;  // active tree object
-      let _dlgNodeMap   = null;  // {id → node}
-      let _dlgNode      = null;  // current node
-      let _dlgNpcRec    = null;  // current NPC record
-      let _dlgSeqStack  = [];    // [{seqNodeId, depthRemaining}]
-      const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
-      const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
@@ -13915,744 +12127,9 @@
         return geometry;
       }
 
-      const _audioCueIndexes = new Map();
-      const _mapAudioIndexes = new Map();
-      // blockUntil: performance.now() timestamp before which updateAmbientCues
-      // won't start a new bgm/cue/combatBgm track — sets a floor so an
-      // interrupted track's fade-out (see stopAmbientCue) actually finishes
-      // fading to silence before anything new starts on top of it, instead of
-      // the two overlapping audibly for the fade's duration.
-      let _ambientCueState = { area: '', indexId: '', mode: 'bgm', nextAt: 0, currentCue: null, currentBgm: null, inCombat: false, currentCombatBgm: null, blockUntil: 0 };
-      const _furnitureSfxSources = [];
-      const _loopingBgs = new Map();
-      const _audioDebugLast = new Map();
-      const _gameAudioElements = new Set();
-      let _gameAudioUnlocked = false;
-      const _audioFailedUrls = new Set();
-      const _dailyBgmPlayed = new Set();
-      let _musicAudioCtx = null;
-      const _musicGainNodes = new Map();       // music <audio> element -> { ctx, gain, target }
-      const _musicLoudnessGain = new Map();    // resolved track url -> measured normalization multiplier
-      const _musicLoudnessPending = new Map(); // resolved track url -> in-flight analysis promise
-      const MUSIC_TARGET_RMS = 0.16;
-      const MUSIC_LOUDNESS_GAIN_MIN = 0.5;
-      const MUSIC_LOUDNESS_GAIN_MAX = 2.2;
-
-      function audioDebug(message, key = message, throttleMs = 1200, category = 'audio') {
-        const now = performance.now();
-        const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
-        if (now - last < throttleMs) return;
-        _audioDebugLast.set(key, now);
-        debugLog(message, category);
-      }
-
-      function audioTraceEnabled() {
-        return window.SCRATCHBONES_CONFIG?.game?.debug?.trace?.audio !== false;
-      }
-
-      function audioTrace(message, key = message, throttleMs = 2000, category = 'audio') {
-        if (!audioTraceEnabled()) return;
-        audioDebug(message, key, throttleMs, category);
-      }
-
-      function resolveAudioUrl(url) {
-        if (!url) return '';
-        try { return new URL(url, document.baseURI).href; }
-        catch { return url; }
-      }
-
-      function audioReadyStateLabel(snd) {
-        const labels = ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'];
-        return labels[snd?.readyState] || String(snd?.readyState ?? 'none');
-      }
-
-      function makeGameAudio(url, { loop = false, preload = 'auto' } = {}) {
-        const snd = new Audio(resolveAudioUrl(url));
-        snd.loop = !!loop;
-        snd.preload = preload;
-        snd.addEventListener('loadstart', () => audioTrace('loadstart ' + snd.src, 'media-loadstart-' + snd.src, 0), { once: true });
-        snd.addEventListener('canplaythrough', () => audioTrace('canplaythrough ' + snd.src + ' ready=' + audioReadyStateLabel(snd), 'media-canplay-' + snd.src, 0), { once: true });
-        snd.addEventListener('error', () => audioDebug('media error ' + snd.src + ' code=' + (snd.error?.code || 'none') + ' message=' + (snd.error?.message || ''), 'media-error-' + snd.src, 0));
-        _gameAudioElements.add(snd);
-        try { snd.load(); } catch {}
-        return snd;
-      }
-
-      function getMusicAudioCtx() {
-        if (_musicAudioCtx) return _musicAudioCtx;
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return null;
-        try { _musicAudioCtx = new AudioCtx(); }
-        catch (e) { audioDebug('music audio context unavailable: ' + (e?.message || e), 'music-ctx-fail', 0); _musicAudioCtx = null; }
-        return _musicAudioCtx;
-      }
-
-      // Routes a music <audio> element through a GainNode so it can be faded
-      // smoothly and boosted past the element's volume<=1 ceiling (needed to
-      // normalize quiet tracks up to the target level). Falls back to plain
-      // `snd.volume` (capped at 1, no boosting) if Web Audio is unavailable.
-      //
-      // Disabled (always returns null) as of a live debugging session: bgs
-      // tracks (birds/wind/nightbugs — see setLoopingBgs), which use plain
-      // `snd.volume` and never touch this GainNode graph, were reliably
-      // audible; bgm/cues routed through this graph were not, even while
-      // every JS-visible signal reported healthy (ctx.state === 'running',
-      // live gain at its ramped target, unmuted — see the diagnostic in
-      // gameLoop's audio tick). That combination means the graph's actual
-      // connection to ctx.destination isn't reaching real output in this
-      // environment, which nothing on the JS side can detect or recover
-      // from — so route bgm/cues through the same plain-volume path that's
-      // proven to work instead. Left in place (rather than deleted) in case
-      // a future environment's Web Audio destination behaves correctly and
-      // this is worth re-enabling; loudness-boosting quiet tracks above
-      // volume 1.0 is the one feature lost by staying on the plain path.
-      function attachMusicGain(snd) {
-        return null;
-      }
-
-      function releaseMusicGain(snd) {
-        const node = _musicGainNodes.get(snd);
-        if (node) { try { node.gain.disconnect(); } catch {} }
-        _musicGainNodes.delete(snd);
-      }
-
-      function setMusicVolumeNow(snd, value) {
-        const v = Math.max(0, value);
-        const node = _musicGainNodes.get(snd);
-        const clampedTarget = Math.max(0, Math.min(1, v));
-        if (node) {
-          node.target = v;
-          node.gain.gain.cancelScheduledValues(node.ctx.currentTime);
-          node.gain.gain.setValueAtTime(v, node.ctx.currentTime);
-          // The element's own .volume no longer affects audible output once
-          // routed through the GainNode, but unlockGameAudio()'s retry loop
-          // still reads it to tell "should be audible" apart from
-          // "intentionally silent/stopped" — keep it mirroring the target.
-          snd.volume = clampedTarget;
-        } else {
-          snd.volume = clampedTarget;
-        }
-      }
-
-      // Ramps a music element's volume to `target` over `durationMs`. Uses
-      // Web Audio gain automation when available (immune to rAF/timer jitter),
-      // and a rAF-driven fallback on `.volume` otherwise. `onDone` fires once
-      // this specific ramp completes (skipped if a later fade supersedes it).
-      function fadeMusicVolume(snd, target, durationMs, onDone) {
-        const v = Math.max(0, target);
-        const dur = Math.max(0, Number(durationMs) || 0);
-        const clampedTarget = Math.max(0, Math.min(1, v));
-        const node = _musicGainNodes.get(snd);
-        if (node) {
-          node.target = v;
-          const now = node.ctx.currentTime;
-          node.gain.gain.cancelScheduledValues(now);
-          node.gain.gain.setValueAtTime(node.gain.gain.value, now);
-          if (dur <= 0) node.gain.gain.setValueAtTime(v, now);
-          else node.gain.gain.linearRampToValueAtTime(v, now + dur / 1000);
-          // Mirror the *target* onto .volume immediately (not waiting for the
-          // ramp) — it no longer drives audible output once routed through
-          // the GainNode, but unlockGameAudio()'s retry loop reads it to know
-          // whether a paused element wants to be playing.
-          snd.volume = clampedTarget;
-          if (onDone) setTimeout(() => { if (node.target === v) onDone(); }, dur);
-          return;
-        }
-        if (dur <= 0) { snd.volume = clampedTarget; onDone?.(); return; }
-        const start = snd.volume;
-        const startTime = performance.now();
-        const token = {};
-        snd._fadeToken = token;
-        const step = now => {
-          if (snd._fadeToken !== token) return;
-          // rAF's own `now` timestamp isn't guaranteed to line up with the
-          // performance.now() captured above (some browsers snapshot it at
-          // the start of the frame, which can land a hair earlier) — an
-          // unclamped lower bound let a barely-negative t extrapolate volume
-          // to a barely-negative number on the very first frame of a fade-in
-          // from 0, and HTMLMediaElement.volume throws (IndexSizeError) on
-          // anything outside [0,1], aborting the whole ramp right there.
-          const t = Math.max(0, Math.min(1, (now - startTime) / dur));
-          snd.volume = Math.max(0, Math.min(1, start + (clampedTarget - start) * t));
-          if (t < 1) requestAnimationFrame(step);
-          else onDone?.();
-        };
-        requestAnimationFrame(step);
-      }
-
-      function computeAudioBufferRms(buffer) {
-        let sumSquares = 0, count = 0;
-        const step = Math.max(1, Math.floor(buffer.sampleRate / 4000));
-        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-          const data = buffer.getChannelData(ch);
-          for (let i = 0; i < data.length; i += step) { sumSquares += data[i] * data[i]; count++; }
-        }
-        return count ? Math.sqrt(sumSquares / count) : 0;
-      }
-
-      // Lazily measures a track's loudness via Web Audio and caches a gain
-      // multiplier that brings it to MUSIC_TARGET_RMS, so songs/cues recorded
-      // or mastered at different levels come out at a consistent perceived
-      // volume automatically, without hand-tuning each file's `volume` field.
-      function musicLoudnessGain(url) {
-        const resolved = resolveAudioUrl(url);
-        if (!resolved) return Promise.resolve(1);
-        if (_musicLoudnessGain.has(resolved)) return Promise.resolve(_musicLoudnessGain.get(resolved));
-        if (_musicLoudnessPending.has(resolved)) return _musicLoudnessPending.get(resolved);
-        const ctx = getMusicAudioCtx();
-        if (!ctx) return Promise.resolve(1);
-        const promise = fetch(resolved)
-          .then(res => res.arrayBuffer())
-          .then(buf => ctx.decodeAudioData(buf))
-          .then(audioBuf => {
-            const rms = computeAudioBufferRms(audioBuf);
-            const gain = rms > 0.0001 ? clamp(MUSIC_TARGET_RMS / rms, MUSIC_LOUDNESS_GAIN_MIN, MUSIC_LOUDNESS_GAIN_MAX) : 1;
-            _musicLoudnessGain.set(resolved, gain);
-            audioDebug('measured loudness url=' + resolved + ' rms=' + rms.toFixed(4) + ' gain=' + gain.toFixed(2), 'music-loudness-' + resolved, 0);
-            return gain;
-          })
-          .catch(e => {
-            audioDebug('loudness analysis failed url=' + resolved + ': ' + (e?.message || e), 'music-loudness-fail-' + resolved, 0);
-            _musicLoudnessGain.set(resolved, 1);
-            return 1;
-          })
-          .finally(() => _musicLoudnessPending.delete(resolved));
-        _musicLoudnessPending.set(resolved, promise);
-        return promise;
-      }
-
-      function musicFadeConfig() {
-        const audioCfg = gameAudioConfig();
-        return {
-          songFadeInMs: Math.max(0, Number(audioCfg.songFadeInMs) || 2200),
-          songFadeOutMs: Math.max(0, Number(audioCfg.songFadeOutMs) || 2600),
-          cueFadeMs: Math.max(0, Number(audioCfg.musicFadeMs) || 280),
-          interruptFadeMs: Math.max(0, Number(audioCfg.musicFadeMs) || 280)
-        };
-      }
-
-      // Plays a music track (BGM song or ambient cue) with automatic loudness
-      // normalization and a fade-in at the start / fade-out before it ends
-      // naturally. `baseVolume` is the pre-normalization target (0..1) from
-      // config; the measured loudness multiplier is layered on top once the
-      // (cached, async) analysis resolves. Returns the <audio> element, with
-      // a `_stopMusic(fadeMs)` helper attached for fading out an interruption
-      // (e.g. switching areas) instead of cutting the track off mid-note.
-      function playMusicTrack(url, baseVolume, fadeInMs, fadeOutMs) {
-        const snd = makeGameAudio(url);
-        snd._trackUrl = url; // lets area-change handling recognize "same song on both playlists" — see areaBgmIncludesTrack
-        attachMusicGain(snd);
-        setMusicVolumeNow(snd, 0);
-        let fadingOut = false;
-        const targetVolume = () => Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
-        fadeMusicVolume(snd, targetVolume(), fadeInMs);
-        musicLoudnessGain(url).then(() => {
-          if (!fadingOut && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
-        });
-        if (fadeOutMs > 0) {
-          snd.addEventListener('timeupdate', () => {
-            if (fadingOut) return;
-            const remaining = (snd.duration || 0) - snd.currentTime;
-            if (Number.isFinite(remaining) && remaining > 0 && remaining <= fadeOutMs / 1000) {
-              fadingOut = true;
-              fadeMusicVolume(snd, 0, remaining * 1000);
-            }
-          });
-        }
-        snd._stopMusic = (stopFadeMs = fadeOutMs) => new Promise(resolve => {
-          fadingOut = true;
-          fadeMusicVolume(snd, 0, stopFadeMs, () => { snd.pause(); releaseMusicGain(snd); resolve(); });
-        });
-        // Some decode failures never surface as an 'error' event: the element
-        // reports paused=false (and the gain ramp completes normally) but
-        // currentTime never advances — silently stuck forever with nothing
-        // for a caller's 'error' listener to catch. Lets callers detect that
-        // and recover instead of leaving the track stuck mute indefinitely.
-        snd._watchForStall = (timeoutMs, onStalled) => {
-          setTimeout(() => {
-            if (fadingOut || snd.paused || snd.ended) return;
-            if (snd.currentTime > 0.05) return;
-            onStalled();
-          }, timeoutMs);
-        };
-        return snd;
-      }
-
-      function markAudioUrlFailed(url, reason) {
-        const resolved = resolveAudioUrl(url);
-        if (!resolved) return;
-        _audioFailedUrls.add(resolved);
-        audioDebug('marked audio failed url=' + resolved + ' reason=' + reason, 'audio-failed-' + resolved, 0);
-      }
-
-      // MediaError.code === 1 is MEDIA_ERR_ABORTED — the browser's own fetch
-      // for this element was deliberately interrupted (e.g. the .pause()
-      // that a fade-out's _stopMusic calls mid-buffer when the player
-      // changes areas), not a sign the file itself is broken. A bgm 'error'
-      // listener that blacklisted on any error unconditionally could
-      // permanently lose a perfectly fine track like bgm_farm1.m4a for the
-      // rest of the session the first time the player left an area while it
-      // was still loading — same root cause as the AbortError carve-out on
-      // the play() rejection path below, just on the native error event.
-      function isRealMediaError(snd) {
-        return (snd?.error?.code || 0) !== 1;
-      }
-
-      function audioUrlFailed(url) {
-        const resolved = resolveAudioUrl(url);
-        return !!resolved && _audioFailedUrls.has(resolved);
-      }
-
-      function describeAudioConfigForArea(area) {
-        const audioCfg = gameAudioConfig();
-        const bgs = audioCfg.bgs || {};
-        audioTrace('config area=' + area + ' enabled=' + (audioCfg.enabled !== false) + ' bgmCount=' + ((audioCfg.areaBgm?.[area] || []).length) + ' bgs birds=' + !!bgs.birds + ' nightbugs=' + !!bgs.nightbugs + ' wind1=' + !!bgs.wind1 + ' wind2=' + !!bgs.wind2, 'audio-config-' + area, 5000);
-      }
-
-      function unlockGameAudio(reason = 'user gesture') {
-        // Resuming a suspended AudioContext must happen on every gesture, not just
-        // the first: _musicAudioCtx is created lazily (the first time music
-        // actually tries to play), which is often well after the player's
-        // first click/tap — by which point a one-shot unlock would already be
-        // spent and the newly-created context would stay suspended (silently)
-        // forever.
-        if (_musicAudioCtx?.state === 'suspended') _musicAudioCtx.resume().catch(err => audioDebug('music audio resume failed: ' + (err?.name || err), 'music-resume-fail', 0));
-        if (!_gameAudioUnlocked) {
-          _gameAudioUnlocked = true;
-          audioDebug('audio unlock from ' + reason, 'audio-unlock', 0);
-        }
-        // Retry blocked playback on every gesture, not just the first: every
-        // bgm/cue track is a freshly-created <audio> element (see
-        // playMusicTrack), so a track that starts well after the player's
-        // first click/tap can still get autoplay-blocked and needs its own
-        // later gesture to retry play() — a one-shot retry only ever catches
-        // whatever happened to be paused at that first moment.
-        for (const snd of _gameAudioElements) {
-          if (!snd || snd.volume <= 0 || !snd.paused) continue;
-          snd.play().then(() => {
-            audioTrace('unlock replay started ' + snd.src, 'unlock-play-' + snd.src, 0);
-          }).catch(err => {
-            audioDebug('unlock replay blocked/failed ' + snd.src + ': ' + (err?.name || err), 'unlock-fail-' + snd.src, 0);
-          });
-        }
-      }
-
-      document.addEventListener('pointerdown', () => unlockGameAudio('pointerdown'), { capture: true });
-      document.addEventListener('keydown', () => unlockGameAudio('keydown'), { capture: true });
-      document.addEventListener('touchstart', () => unlockGameAudio('touchstart'), { capture: true, passive: true });
-
-      // Generic UI click tick — delegated (one listener, not one per
-      // button), scoped to buttons inside #menuPanel (the tabbed
-      // Inventory/Calendar/Map/Farm/Stable/.../Settings menu shell — see
-      // index.html's mp-tab/mp-pane markup). Deliberately does NOT cover
-      // the in-game action bar, world-object interaction buttons, or NPC
-      // dialogue — those are gameplay inputs, not menu navigation, and a
-      // tick on every single one of them (dig, till, plant, talk...) was
-      // just noise that meant nothing beyond "you pressed something",
-      // which showToast's error chime already covers for the one case
-      // that actually carries information (it didn't work).
-      document.addEventListener('pointerdown', (e) => {
-        const btn = e.target?.closest?.('button');
-        if (btn?.closest('#menuPanel')) playObjectSfx(objectSfxConfig().uiClick);
-      }, { capture: true });
-
-      async function loadAudioCueIndexes() {
-        try {
-          const res = await fetch('assets/audio/music/cues/index.json');
-          if (!res.ok) return;
-          const registry = await res.json();
-          await Promise.all((registry.indexes || []).map(async entry => {
-            if (!entry?.id || !entry.file) return;
-            const r = await fetch(entry.file);
-            if (!r.ok) return;
-            const data = await r.json();
-            data.__basePath = entry.file.replace(/[^/]+$/, '');
-            _audioCueIndexes.set(entry.id, data);
-            audioDebug('loaded cue index ' + entry.id + ' (' + ((data.ambient_cues || []).length) + ' cues)', 'cue-index-' + entry.id, 0, 'cue');
-          }));
-        } catch(e) { debugLog('Audio cue index load failed: ' + e.message, 'warn'); }
-      }
-
-      function registerMapAudio(entries) {
-        for (const e of (entries || [])) {
-          const area = e.area || e.mapId;
-          if (area && e.audioIndex) _mapAudioIndexes.set(area, e.audioIndex);
-        }
-      }
-
-      function resolveAreaAudioIndex(area) {
-        if (area === 'farm' || area === 'town') return 'general';
-        if (_mapAudioIndexes.has(area)) return _mapAudioIndexes.get(area);
-        if (_isZoneArea(area)) return EXTERIOR_ZONES[area].audioIndex || '';
-        const wsMap = _workspaceMaps?.find(m => (m.id === area) || (area === 'town' && m.id === 'map_hobunji_town'));
-        return wsMap?.audioIndex || '';
-      }
-
-      function resetAmbientCueTimer(area = currentArea) {
-        _ambientCueState.area = area;
-        _ambientCueState.indexId = resolveAreaAudioIndex(area);
-        _ambientCueState.mode = 'bgm';
-        _ambientCueState.nextAt = 0;
-        audioDebug('ambient area=' + area + ' cueIndex=' + (_ambientCueState.indexId || 'none') + ' mode=bgm', 'ambient-area-' + area, 0, 'bgm');
-        describeAudioConfigForArea(area);
-      }
-
-      function stopAmbientCue() {
-        const fade = musicFadeConfig();
-        for (const key of ['currentCue', 'currentBgm']) {
-          const snd = _ambientCueState[key];
-          _ambientCueState[key] = null;
-          if (!snd) continue;
-          if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
-          else snd.pause();
-          // Hold off starting anything new until this one has actually faded
-          // out, not just been handed off — see blockUntil's declaration.
-          _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
-        }
-      }
-
-      function isNightTime() {
-        const hour = getHour();
-        return hour < 7 || hour >= 19;
-      }
-
-      function bgmDailyKey(track) {
-        return calendar.day + ':' + resolveAudioUrl(track?.url || '');
-      }
-
-      function isSunriseBgmEligible(track) {
-        if (!track?.sunriseOnly) return true;
-        const sunriseHour = Number.isFinite(Number(track.sunriseHour)) ? Number(track.sunriseHour) : MORNING_HOUR;
-        const windowHours = Math.max(0, Number(track.sunriseWindowHours) || 0);
-        const hour = getHour();
-        return hour >= sunriseHour && hour < sunriseHour + windowHours;
-      }
-
-      function isBgmTrackEligible(track) {
-        if (!track?.url) return false;
-        if (track.nightOnly && !isNightTime()) return false;
-        if (!isSunriseBgmEligible(track)) return false;
-        if (track.oncePerDay && _dailyBgmPlayed.has(bgmDailyKey(track))) return false;
-        return !audioUrlFailed(track.url);
-      }
-
-      function resolveAreaBgm(area) {
-        const sets = gameAudioConfig().areaBgm || {};
-        const all = (sets[area] || []).filter(track => track?.url);
-        const playable = all.filter(isBgmTrackEligible);
-        if (!playable.length) {
-          if (all.length) audioDebug('no eligible bgm candidates for area=' + area + '; waiting for time window or valid media', 'bgm-all-failed-' + area, 3000, 'bgm');
-          return null;
-        }
-        const preferred = playable.filter(track => !track.fallback);
-        const list = preferred.length ? preferred : playable;
-        return list[Math.floor(Math.random() * list.length)] || null;
-      }
-
-      // True if `snd`'s track appears anywhere in `area`'s configured bgm
-      // list — a "same song on both playlists" check for area-transition
-      // continuity (see updateAmbientCues), not an eligibility check (so it
-      // ignores sunriseOnly/nightOnly/oncePerDay — those gate which track
-      // gets *picked*, not whether a song already playing should keep going).
-      function areaBgmIncludesTrack(area, snd) {
-        const trackUrl = snd?._trackUrl;
-        if (!trackUrl) return false;
-        const resolved = resolveAudioUrl(trackUrl);
-        const list = gameAudioConfig().areaBgm?.[area] || [];
-        return list.some(t => t?.url && resolveAudioUrl(t.url) === resolved);
-      }
-
-      function scheduleNextCueDelay() {
-        const audioCfg = gameAudioConfig();
-        const minSec = Number(audioCfg.ambientCueMinDelaySec) || 20;
-        const maxSec = Math.max(minSec, Number(audioCfg.ambientCueMaxDelaySec) || 45);
-        _ambientCueState.nextAt = performance.now() + (minSec + Math.random() * (maxSec - minSec)) * 1000;
-      }
-
-      function updateAmbientCues() {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) { audioTrace('ambient disabled by config', 'ambient-disabled', 3000); return; }
-        if (_ambientCueState.area !== currentArea) {
-          const keepBgm = _ambientCueState.mode === 'bgm'
-            && _ambientCueState.currentBgm
-            && !_ambientCueState.currentBgm.ended
-            && areaBgmIncludesTrack(currentArea, _ambientCueState.currentBgm);
-          if (keepBgm) {
-            // The song already playing is on both areas' playlists (e.g.
-            // bgm_farm1.m4a is a fallback track shared by farm and town) —
-            // walking through a door shouldn't fade it out and re-roll a
-            // track for the new area, possibly landing on this exact song
-            // again a moment later with an audible gap in between.
-            _ambientCueState.area = currentArea;
-            _ambientCueState.indexId = resolveAreaAudioIndex(currentArea);
-            audioDebug('area changed to ' + currentArea + ' — bgm track is on both playlists, kept playing', 'ambient-area-keep-' + currentArea, 0, 'bgm');
-          } else {
-            stopAmbientCue();
-            resetAmbientCueTimer(currentArea);
-          }
-        }
-
-        const inCombat = isPlayerInCombat();
-        if (inCombat !== _ambientCueState.inCombat) {
-          _ambientCueState.inCombat = inCombat;
-          const fade = musicFadeConfig();
-          if (inCombat) {
-            // Duck exploration/dawn music for the fight. combatBgm (see
-            // scratchbones-config.js — empty until real tracks exist) takes
-            // over below; until then this just goes quiet rather than
-            // clashing with the fight. stopAmbientCue() also raises
-            // blockUntil, so the combatBgm start below waits for the fade.
-            stopAmbientCue();
-            audioDebug('combat started — ducking ambient music', 'combat-duck-' + currentArea, 0, 'bgm');
-          } else {
-            if (_ambientCueState.currentCombatBgm) {
-              const snd = _ambientCueState.currentCombatBgm;
-              _ambientCueState.currentCombatBgm = null;
-              if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
-              else snd.pause();
-              _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
-            }
-            // Try exploration music fresh rather than resuming whatever was
-            // cut off — time of day (or area) may have moved on mid-fight.
-            _ambientCueState.mode = 'bgm';
-            _ambientCueState.nextAt = performance.now();
-            audioDebug('combat ended — resuming ambient music', 'combat-unduck-' + currentArea, 0, 'bgm');
-          }
-        }
-
-        if (inCombat) {
-          const combatTracks = (audioCfg.combatBgm || []).filter(t => t?.url && !audioUrlFailed(t.url));
-          if (!_ambientCueState.currentCombatBgm && combatTracks.length && performance.now() >= _ambientCueState.blockUntil) {
-            const track = combatTracks[Math.floor(Math.random() * combatTracks.length)];
-            const fade = musicFadeConfig();
-            const vol = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
-            const snd = playMusicTrack(track.url, vol, fade.songFadeInMs, fade.songFadeOutMs);
-            const finishCombatBgm = () => {
-              if (_ambientCueState.currentCombatBgm === snd) _ambientCueState.currentCombatBgm = null;
-              releaseMusicGain(snd);
-            };
-            snd.addEventListener('ended', finishCombatBgm, { once: true });
-            snd.addEventListener('error', () => { if (isRealMediaError(snd)) markAudioUrlFailed(track.url, 'media error'); finishCombatBgm(); }, { once: true });
-            _ambientCueState.currentCombatBgm = snd;
-            snd.play().catch(err => {
-              const errName = err?.name || '';
-              if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(track.url, errName || 'play failed');
-              finishCombatBgm();
-            });
-          }
-          audioTrace('ambient suppressed (in combat) area=' + currentArea + ' combatTracks=' + combatTracks.length, 'ambient-combat-' + currentArea, 5000);
-          return;
-        }
-
-        const idx = _audioCueIndexes.get(_ambientCueState.indexId);
-        const cues = idx?.ambient_cues || [];
-        audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
-        if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return;
-        if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
-
-        if (_ambientCueState.mode === 'cue_wait') {
-          if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
-          if (!cues.length) { _ambientCueState.mode = 'bgm'; _ambientCueState.nextAt = performance.now() + 5000; return; }
-          const cue = cues[Math.floor(Math.random() * cues.length)];
-          if (!cue?.file) { scheduleNextCueDelay(); return; }
-          const fade = musicFadeConfig();
-          const cueUrl = (idx.__basePath || '') + cue.file;
-          const cueBaseVolume = Math.max(0, Math.min(1, Number(cue.volume) || Number(audioCfg.bgmVolume) || 0.7));
-          const snd = playMusicTrack(cueUrl, cueBaseVolume, fade.cueFadeMs, fade.cueFadeMs);
-          const finishCue = () => {
-            if (_ambientCueState.currentCue === snd) _ambientCueState.currentCue = null;
-            releaseMusicGain(snd);
-            _ambientCueState.mode = 'bgm';
-          };
-          snd.addEventListener('ended', finishCue, { once: true });
-          snd.addEventListener('error', () => { audioDebug('cue error ' + snd.src, 'cue-error-' + cue.id, 0, 'cue'); finishCue(); }, { once: true });
-          snd._watchForStall(6000, () => {
-            if (_ambientCueState.currentCue !== snd) return;
-            audioDebug('cue stalled (no playback progress) ' + snd.src, 'cue-stall-' + cue.id, 0, 'cue');
-            finishCue();
-          });
-          _ambientCueState.currentCue = snd;
-          audioDebug('playing cue area=' + currentArea + ' id=' + cue.id + ' url=' + snd.src + ' baseVolume=' + cueBaseVolume.toFixed(2), 'cue-play-' + cue.id, 0, 'cue');
-          snd.play().catch(err => {
-            audioDebug('cue play blocked/failed id=' + cue.id + ': ' + (err?.name || err), 'cue-fail-' + cue.id, 0, 'cue');
-            releaseMusicGain(snd);
-            _ambientCueState.currentCue = null;
-            _ambientCueState.mode = 'cue_wait';
-            _ambientCueState.nextAt = performance.now() + 3000;
-          });
-          return;
-        }
-
-        if (_ambientCueState.currentBgm && !_ambientCueState.currentBgm.ended) return;
-        _ambientCueState.currentBgm = null;
-        if (performance.now() < _ambientCueState.nextAt || performance.now() < _ambientCueState.blockUntil) return;
-        const bgmTrack = resolveAreaBgm(currentArea);
-        const bgmUrl = bgmTrack?.url || '';
-        if (!bgmUrl) {
-          // No areaBgm track configured/eligible for this area (e.g. a
-          // wilderness zone with no music of its own) — fall back to the
-          // ambient cue pool instead of parking in 'bgm' mode forever, which
-          // used to retry bgm resolution every 5s indefinitely and never
-          // give the cue system a turn even when it had cues available.
-          audioDebug('no eligible bgm for area=' + currentArea + '; falling back to ambient cues', 'bgm-missing-' + currentArea, 3000, 'bgm');
-          _ambientCueState.mode = 'cue_wait';
-          _ambientCueState.nextAt = performance.now();
-          return;
-        }
-        const fade = musicFadeConfig();
-        const bgmBaseVolume = Math.max(0, Math.min(1, Number(audioCfg.bgmVolume) || 0.48));
-        const snd = playMusicTrack(bgmUrl, bgmBaseVolume, fade.songFadeInMs, fade.songFadeOutMs);
-        const finishBgm = () => {
-          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
-          releaseMusicGain(snd);
-          _ambientCueState.mode = 'cue_wait';
-          scheduleNextCueDelay();
-        };
-        snd.addEventListener('ended', finishBgm, { once: true });
-        snd.addEventListener('error', () => {
-          audioDebug('bgm error ' + snd.src + ' code=' + (snd.error?.code || 'none'), 'bgm-error-' + bgmUrl, 0, 'bgm');
-          if (isRealMediaError(snd)) markAudioUrlFailed(bgmUrl, 'media error');
-          releaseMusicGain(snd);
-          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
-          _ambientCueState.mode = 'bgm';
-          _ambientCueState.nextAt = performance.now() + 1000;
-        }, { once: true });
-        snd._watchForStall(10000, () => {
-          if (_ambientCueState.currentBgm !== snd) return;
-          // Not marked failed (unlike the 'error' case above) — a stall can
-          // be a transient slow-load/decode hiccup rather than a permanently
-          // broken file, and blacklisting would wrongly exclude it forever.
-          // (10s rather than the cue watcher's 6s: a live session showed a
-          // bgm track's canplaythrough only landing ~4s after a 6s watchdog
-          // had already given up and paused it, which used to look like a
-          // real failure via the AbortError that pausing an in-flight
-          // play() triggers — see the play().catch() below.)
-          audioDebug('bgm stalled (no playback progress) ' + snd.src, 'bgm-stall-' + currentArea + '-' + bgmUrl, 0, 'bgm');
-          releaseMusicGain(snd);
-          _ambientCueState.currentBgm = null;
-          _ambientCueState.mode = 'bgm';
-          _ambientCueState.nextAt = performance.now() + 1000;
-          snd.pause();
-        });
-        _ambientCueState.currentBgm = snd;
-        audioDebug('playing bgm area=' + currentArea + ' url=' + snd.src + ' baseVolume=' + bgmBaseVolume.toFixed(2), 'bgm-play-' + currentArea + '-' + bgmUrl, 0, 'bgm');
-        snd.play().then(() => {
-          if (bgmTrack?.oncePerDay) {
-            _dailyBgmPlayed.add(bgmDailyKey(bgmTrack));
-            audioDebug('marked once-per-day bgm played url=' + snd.src + ' day=' + calendar.day, 'bgm-daily-' + bgmDailyKey(bgmTrack), 0, 'bgm');
-          }
-        }).catch(err => {
-          audioDebug('bgm play blocked/failed area=' + currentArea + ': ' + (err?.name || err), 'bgm-fail-' + currentArea, 0, 'bgm');
-          // NotAllowedError = autoplay policy block, AbortError = play()
-          // interrupted by a pause() call elsewhere (e.g. the stall watchdog
-          // below pausing a track that was just slow to buffer, not actually
-          // broken) — neither means the file itself is bad, so don't
-          // permanently blacklist the URL over them the way a real decode/
-          // network error warrants.
-          const errName = err?.name || '';
-          if (errName !== 'NotAllowedError' && errName !== 'AbortError') markAudioUrlFailed(bgmUrl, err?.name || err || 'play failed');
-          releaseMusicGain(snd);
-          if (_ambientCueState.currentBgm === snd) _ambientCueState.currentBgm = null;
-          _ambientCueState.mode = 'bgm';
-          _ambientCueState.nextAt = performance.now() + 1000;
-        });
-      }
-
-      function setLoopingBgs(id, url, volume) {
-        const v = Math.max(0, Math.min(1, Number(volume) || 0));
-        let snd = _loopingBgs.get(id);
-        if (!snd && url) {
-          snd = makeGameAudio(url, { loop: true });
-          _loopingBgs.set(id, snd);
-        }
-        if (!snd) return;
-        snd.volume = v;
-        audioTrace('bgs state ' + id + ' volume=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000, 'bgs');
-        if (v > 0 && snd.paused) {
-          audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 0, 'bgs');
-          snd.play().catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 0, 'bgs'));
-        }
-        if (v <= 0 && !snd.paused) {
-          audioDebug('stopping bgs ' + id, 'bgs-stop-' + id, 0, 'bgs');
-          snd.pause();
-        }
-      }
-
-      function updateExteriorBgs() {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) {
-          audioDebug('exterior bgs disabled by config', 'bgs-disabled', 1200, 'bgs');
-          setLoopingBgs('birds', '', 0);
-          setLoopingBgs('nightbugs', '', 0);
-          setLoopingBgs('wind1', '', 0);
-          setLoopingBgs('wind2', '', 0);
-          return;
-        }
-        const bgs = audioCfg.bgs || {};
-        const exterior = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
-        const rainy = calendar.isRaining;
-        const night = isNightTime();
-        audioTrace('bgs resolve area=' + currentArea + ' exterior=' + exterior + ' rainy=' + rainy + ' night=' + night + ' rainStrength=' + (calendar.rainStrength || 0), 'bgs-resolve-' + currentArea, 5000);
-        setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
-        setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night ? (bgs.nightbugsVolume ?? 0.23) : 0);
-        const wind01 = exterior ? Math.max(0, Math.min(1, (calendar.rainStrength || 0) / 3)) : 0;
-        setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65);
-        setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (exterior ? Math.max(0.15, wind01 * 0.75) : 0));
-      }
-
-      function resolveFurnitureSfx(def) {
-        if (!def) return null;
-        if (def.sfx) return def.sfx;
-        const key = def.sfxKey;
-        return key ? gameAudioConfig().furnitureSfx?.[key] : null;
-      }
-
-      function registerFurnitureSfxSource(area, x, z, sfx) {
-        if (!sfx?.url) return null;
-        const audio = makeGameAudio(sfx.url, { loop: true });
-        audio.volume = 0;
-        const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, audio };
-        _furnitureSfxSources.push(source);
-        audioDebug('registered furniture sfx area=' + area + ' url=' + audio.src + ' pos=' + x.toFixed(2) + ',' + z.toFixed(2) + ' range=' + source.range, 'furn-register-' + area + '-' + x + '-' + z, 0);
-        return source;
-      }
-
-      function unregisterFurnitureSfxSource(source) {
-        if (!source) return;
-        const i = _furnitureSfxSources.indexOf(source);
-        if (i >= 0) _furnitureSfxSources.splice(i, 1);
-        source.audio.pause();
-        source.audio.currentTime = 0;
-        _gameAudioElements.delete(source.audio);
-        audioDebug('unregistered furniture sfx area=' + source.area + ' pos=' + source.x.toFixed(2) + ',' + source.z.toFixed(2), 'furn-unregister-' + source.area + '-' + source.x + '-' + source.z, 0);
-      }
-
-      function updateFurnitureSfxSources() {
-        const audioCfg = gameAudioConfig();
-        if (audioCfg.enabled === false) {
-          for (const src of _furnitureSfxSources) {
-            src.audio.volume = 0;
-            if (!src.audio.paused) src.audio.pause();
-          }
-          return;
-        }
-        for (const src of _furnitureSfxSources) {
-          const active = src.area === currentArea;
-          const dx = player.x / TILE - src.x;
-          const dz = player.y / TILE - src.z;
-          const dist = Math.hypot(dx, dz);
-          const v = active ? src.maxVolume * Math.max(0, 1 - dist / src.range) : 0;
-          src.audio.volume = Math.max(0, Math.min(1, v));
-          if (v > 0.01 && src.audio.paused) {
-            audioDebug('starting furniture sfx area=' + src.area + ' url=' + src.audio.src + ' volume=' + src.audio.volume.toFixed(2), 'furn-start-' + src.area + '-' + src.x + '-' + src.z, 0);
-            src.audio.play().catch(err => audioDebug('furniture sfx play blocked/failed area=' + src.area + ': ' + (err?.name || err), 'furn-fail-' + src.area + '-' + src.x + '-' + src.z, 0));
-          }
-          if (v <= 0.01 && !src.audio.paused) {
-            audioDebug('stopping furniture sfx area=' + src.area + ' pos=' + src.x.toFixed(2) + ',' + src.z.toFixed(2), 'furn-stop-' + src.area + '-' + src.x + '-' + src.z, 0);
-            src.audio.pause();
-          }
-        }
-      }
+      // Background music, ambient cues, exterior/rain bgs, and furniture
+      // proximity SFX now live in js/music-system.js (window.Music) — see
+      // window.Music.init(...) below for the wiring.
 
       // Ground floor for a zone: same per-vertex seam-safe heightfield pipeline
       // as the town/farm (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo),
@@ -16164,7 +13641,7 @@
             (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
             worldNpcPaths);
           registerNpcStations(layout.npcStations, null);
-          registerMapAudio(layout.mapAudio);
+          window.Music?.registerMapAudio(layout.mapAudio);
           rebuildRouteGraphs();
         }
         // Don't fire a spot the player happens to spawn on
@@ -16931,7 +14408,7 @@
             npcSharedSchedules = json.sharedSchedules || [];
             for (const npc of dbNpcs) {
               const bd = npc.relationship?.baseDisposition;
-              if (typeof bd === 'number') _npcBaseDispositions[npc.id] = bd;
+              if (typeof bd === 'number' && window.DialogueContent) window.DialogueContent.npcBaseDispositions[npc.id] = bd;
             }
           } catch {}
         }
@@ -17099,16 +14576,16 @@
           // NPC movement path since they all funnel through moveToward().
           _tickFootsteps(distTiles) {
             if (this.area !== currentArea) return; // not in the player's current area; inaudible
-            if (!_footstepAdvance(this, distTiles * TILE)) return;
+            if (!window.AudioSystem?.footstepAdvance(this, distTiles * TILE)) return;
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
             const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
-            if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
+            if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
             // Linear, not squared — squared falloff made anything past ~30% of
         // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-            const pan = Math.max(-1, Math.min(1, (wx - player.x) / FOOTSTEP_PAN_RANGE_PX));
-            const tile = footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
-            playFootstepSfx(this.area, tile, falloff, pan);
+        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+            const pan = Math.max(-1, Math.min(1, (wx - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+            const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
+            window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
           },
           moveToward(tx, tz, dt) {
             const cfg = npcMovementConfig();
@@ -17755,7 +15232,7 @@
           p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
         worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
         registerNpcStations(layout.npcStations, 'town');
-        registerMapAudio(layout.mapAudio);
+        window.Music?.registerMapAudio(layout.mapAudio);
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
@@ -18263,7 +15740,7 @@
               _markOutline(model);
               _markFurnitureEdgeId(model);
               bScene.add(model);
-              registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
+              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
               registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId));
             } else {
               // Fallback: no procedural recipe found for this furniture key
@@ -18275,7 +15752,7 @@
               _markOutline(ph);
               _markFurnitureEdgeId(ph);
               bScene.add(ph);
-              registerFurnitureSfxSource(mapId, bx, bz, resolveFurnitureSfx(def));
+              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
             // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
             // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
@@ -18877,7 +16354,7 @@
           _markFurnitureEdgeId(group);
           scene.add(group);
           meshes.push(group);
-          registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, resolveFurnitureSfx(def));
+          window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, window.Music?.resolveFurnitureSfx(def));
         }
         debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
       }
@@ -19031,7 +16508,7 @@
             const persisted = _zoneReagentPersist.get(mapId);
             if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
-            playObjectSfx(objectSfxConfig().harvest);
+            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
             return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
           },
         };
@@ -19158,7 +16635,7 @@
         if (decorFurniture) for (const obj of decorFurniture) obj.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
         _zoneDecorFurnitureGroups.delete(mapId);
         _zoneBuildingsGlbUpgradePending.delete(mapId);
-        for (const source of _furnitureSfxSources.filter(s => s.area === mapId)) unregisterFurnitureSfxSource(source);
+        window.Music?.unregisterFurnitureSfxSourcesForArea(mapId);
         // Reagent plant meshes were children of the disposed scene above, and
         // the terrain just changed underneath any persisted placements — drop
         // all of it so ensureZoneReagents scatters fresh against the new map.
@@ -19310,7 +16787,7 @@
             const persisted = _zoneBerryPersist.get(mapId);
             if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
             refreshItemScroll();
-            playObjectSfx(objectSfxConfig().harvest);
+            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
             return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
           },
         };
@@ -20998,7 +18475,8 @@
         const list = document.getElementById('relationshipsList');
         if (!list) return;
         list.innerHTML = '';
-        const knownIds = [..._npcDlgState.keys()].filter(id => (_npcDlgState.get(id).memory || []).length > 0);
+        const dlgState = window.DialogueContent?.npcDlgState;
+        const knownIds = dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : [];
         if (!knownIds.length) {
           list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
           return;
@@ -23450,9 +20928,9 @@
 
       function tickPlayerFootsteps(prevX, prevY) {
         const dist = Math.hypot(player.x - prevX, player.y - prevY);
-        if (!_footstepAdvance(player, dist, FOOTSTEP_PLAYER_STRIDE_PX)) return;
-        const tile = footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
-        playFootstepSfx(currentArea, tile, 1);
+        if (!window.AudioSystem?.footstepAdvance(player, dist, window.AudioSystem.FOOTSTEP_PLAYER_STRIDE_PX)) return;
+        const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
+        window.AudioSystem?.playFootstepSfx(currentArea, tile, 1);
       }
 
       function updateMovement(dt) {
@@ -23460,7 +20938,7 @@
         if (harvestInteraction) { updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (fishingMinigame?.active) return;
-        if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
+        if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
         // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
@@ -23489,7 +20967,7 @@
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
-            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           return;
@@ -23520,7 +20998,7 @@
           if (isHostileInLungeCone(player.lungeHitTest)) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
-            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
             tickPlayerFootsteps(_fsPrevX, _fsPrevY);
             tickLungeTrail(_fsPrevX, _fsPrevY);
             return;
@@ -23561,7 +21039,7 @@
           if (player.lungeT <= 0) {
             player.lunging = false;
             player.lungeHopCurrent = 0;
-            playHeavyLandingSfx(currentArea, footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
           }
           tickPlayerFootsteps(_fsPrevX, _fsPrevY);
           tickLungeTrail(_fsPrevX, _fsPrevY);
@@ -24889,7 +22367,7 @@
         tile.cropAge = 0;
         tile.cropReady = false;
         tile.stress = '';
-        playObjectSfx(objectSfxConfig().harvest);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
         return { ok: true, message: msg };
       }
 
@@ -25427,7 +22905,7 @@
         const chosenId = pickWeightedAfflictionId(ids, muls);
         const color = neonAfflictionColor(chosenId) ?? 0xffffff;
 
-        const tile = footstepTileAt(areaId, wx, wy, grid);
+        const tile = window.AudioSystem?.footstepTileAt(areaId, wx, wy, grid);
         const y = tileSurfaceYInArea(tile, areaId) + characterGroundShadowSurfaceOffset() + 0.02;
         const group = new THREE.Group();
         group.position.set(wx / TILE, y, wy / TILE);
@@ -25463,7 +22941,7 @@
       function tickLungeTrailForEntity(entity, distPx, ids, muls, areaId, grid, sceneObj) {
         if (!ids || !ids.length) return;
         if (!entity._lungeTrailStride) entity._lungeTrailStride = { footstepAccum: 0, footstepFoot: false };
-        if (!_footstepAdvance(entity._lungeTrailStride, distPx, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
+        if (!window.AudioSystem?.footstepAdvance(entity._lungeTrailStride, distPx, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
         spawnLungeTrailStamp(entity.x, entity.y, areaId, grid, sceneObj, ids, muls);
       }
 
@@ -25676,7 +23154,7 @@
 
       function useActiveAction() {
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
-        if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
         // fishingMinigame?.active special-case for keyboard/controller.
@@ -25991,7 +23469,7 @@
         // pitched well below a normal gravelstep).
         if (hopIndex !== player._climbLastHopIndex) {
           player._climbLastHopIndex = hopIndex;
-          playObjectSfx(objectSfxConfig().climbStep);
+          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().climbStep);
         }
         const withinCycle = player.climbElapsed - hopIndex * cycle;
         const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
@@ -26609,7 +24087,7 @@
           { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
           anchorWorld
         );
-        playObjectSfx(objectSfxConfig().fishCast);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishCast);
         fishingOverlayEl.innerHTML = '';
         fishingEls = null;
         fishingOverlayEl.classList.add('open');
@@ -26800,7 +24278,7 @@
           fm.messageType = 'good';
           lastActionMessage = fm.message;
           awardToolUseMasteryXp('harpoon');
-          playWeaponSlashSfx();
+          window.AudioSystem?.playWeaponSlashSfx();
           beginFishCatchView(fm, stars);
           return;
         }
@@ -26809,7 +24287,7 @@
         // fishing the same cast indefinitely. Now a single escape just
         // ends the round and drops back to normal gameplay.
         fm.resolved = true;
-        playObjectSfx(objectSfxConfig().fishMiss);
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishMiss);
         showToast('The fish got away!', false);
         closeFishingMinigame();
       }
@@ -27010,7 +24488,7 @@
             fm.phaseTimer = 0;
           } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
             spawnFishingBiteSplash(fm.anchorWorld);
-            playObjectSfx(objectSfxConfig().fishBite);
+            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishBite);
             fm.phase = 'bite';
           }
           renderFishingOverlay();
@@ -27802,44 +25280,8 @@
         }
       }
 
-      // ── Layered rain audio ──────────────────────────────────────────────
-      // Weather-driven mix of three real rain recordings (gentle/mid/heavy —
-      // see audio.bgs.gentlerain/midrain/heavyrain) instead of synthesized
-      // noise. Reuses the same looping-<audio>-element plumbing as the
-      // birds/wind/nightbugs bgs layers (setLoopingBgs) rather than Web
-      // Audio buffer sources, so all three tracks live in _loopingBgs and
-      // get the same autoplay-unlock/retry handling for free.
-      //
-      // Weights form a triangular crossfade over rainStrength/3 (0..1):
-      // gentle owns low intensity, mid the middle, heavy the high end, with
-      // neighboring bands overlapping instead of hard-cutting between them.
-      function rainLayerWeights(intensity) {
-        const gentle = clamp(1 - intensity / 0.66, 0, 1);
-        const mid    = clamp(1 - Math.abs(intensity - 0.5) / 0.5, 0, 1);
-        const heavy  = clamp((intensity - 0.34) / 0.66, 0, 1);
-        return { gentle, mid, heavy };
-      }
-
-      function updateRainAudio() {
-        const audioCfg = gameAudioConfig();
-        const bgs = audioCfg.bgs || {};
-        if (audioCfg.enabled === false) {
-          setLoopingBgs('raingentle', '', 0);
-          setLoopingBgs('rainmid', '', 0);
-          setLoopingBgs('rainheavy', '', 0);
-          return;
-        }
-        const outdoors = currentArea === 'farm' || currentArea === 'town';
-        const indoors = currentArea === 'interior' || _isBuildingArea(currentArea);
-        const intensity = (outdoors && !indoors && calendar.isRaining)
-          ? Math.min(1, (calendar.rainStrength || 0) / 3)
-          : 0;
-        const weights = rainLayerWeights(intensity);
-        const master = Math.max(0, Number(audioCfg.rainVolume) || 1);
-        setLoopingBgs('raingentle', bgs.gentlerain, weights.gentle * (bgs.gentlerainVolume ?? 0.45) * master);
-        setLoopingBgs('rainmid',    bgs.midrain,    weights.mid    * (bgs.midrainVolume    ?? 0.55) * master);
-        setLoopingBgs('rainheavy',  bgs.heavyrain,  weights.heavy  * (bgs.heavyrainVolume   ?? 0.65) * master);
-      }
+      // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
+      // js/music-system.js (window.Music).
 
       function tileSpeedAt(wx, wy) {
         const aC = getActiveCols(), aR = getActiveRows();
@@ -32342,6 +29784,11 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        // Mount ride state now lives in js/mount-system.js (window.Mounts) —
+        // shadowed locally so the rest of this function (posture/rotation
+        // reads below) doesn't need to change.
+        const mountRideState = window.Mounts?.rideState ?? 'none';
+        const mountRideEntity = window.Mounts?.rideEntity ?? null;
         // Convert 2D grid coords to 3D world coords
         const wx = player.x / TILE;  // world X (col)
         const wz = player.y / TILE;  // world Z (row)
@@ -33682,7 +31129,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         }
 
         if (!gameStarted) {
-          audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
+          window.Music?.audioDebug('waiting for gameStarted before audio playback', 'audio-wait-game-started', 5000);
           renderer.render(scene, camera);
           requestAnimationFrame(gameLoop);
           return;
@@ -33700,31 +31147,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         if (fishingMinigame?.active) updateFishingMinigame(dt);
 
-        updateRainAudio();
-        updateExteriorBgs();
-        updateFurnitureSfxSources();
-        updateAmbientCues();
-        audioDebug('audio tick active area=' + currentArea + ' paused=' + paused + ' gameStarted=' + gameStarted, 'audio-tick-' + currentArea, 5000);
-        // Diagnostic for "bgm/cue reports playing but is silent": the actual
-        // audible level lives in this GainNode graph, not on the <audio>
-        // element's own .volume, so a healthy-looking playback state (no
-        // errors, paused=false) can still be inaudible if the context is
-        // stuck suspended or the gain never reached its ramped target.
-        {
-          const activeSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue;
-          const gainNode = activeSnd ? _musicGainNodes.get(activeSnd) : null;
-          audioDebug(
-            'music gain ctxState=' + (_musicAudioCtx?.state || 'none') +
-            ' hasActiveTrack=' + !!activeSnd +
-            ' liveGain=' + (gainNode ? gainNode.gain.gain.value.toFixed(3) : 'n/a') +
-            ' targetGain=' + (gainNode ? gainNode.target.toFixed(3) : 'n/a') +
-            ' sndVolume=' + (activeSnd ? activeSnd.volume.toFixed(3) : 'n/a') +
-            ' sndMuted=' + (activeSnd ? activeSnd.muted : 'n/a'),
-            'music-gain-diag',
-            5000,
-            'bgm'
-          );
-        }
+        window.Music?.updateRainAudio();
+        window.Music?.updateExteriorBgs();
+        window.Music?.updateFurnitureSfxSources();
+        window.Music?.updateAmbientCues();
+        window.Music?.logAudioTickDiagnostics();
 
         if (!paused) {
           updateCalendar(dt);
@@ -33745,7 +31172,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             // scene it was last synced into.
             syncCompanionFromWhistle();
             updateCompanions(dt);
-            updateMountRide(dt);
+            window.Mounts?.updateMountRide(dt);
             updateCompanionPerception(dt);
             updateBanditCampBanners(dt);
             updateHostileSpawning(dt);
@@ -34002,7 +31429,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         drawOverlays();
         drawLightingOverlay();
 
-        updateNpcDialoguePortrait(now);
+        window.DialogueContent?.updateNpcDialoguePortrait(now);
         updateHud();
         requestAnimationFrame(gameLoop);
       }
@@ -35932,7 +33359,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         debugLog(paused ? 'paused' : 'resumed');
       });
 
-      document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) advanceNpcDialogue(); });
+      document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) window.DialogueContent?.advanceNpcDialogue(); });
       document.getElementById('npcDialogueLeave')?.addEventListener('click', () => { if (dialogueOpen) closeNpcDialogue(); });
 
       joystickZone.addEventListener('pointerdown', handleJoystickPointerDown);
@@ -35957,10 +33384,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       });
 
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
-      // .active is kept in sync with mountRideState in updateMountRide.
+      // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
-        toggleMount();
+        window.Mounts?.toggleMount();
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate
@@ -36257,7 +33684,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performContextAction(); return; }
-        if (actionId === 'toggleMount') { toggleMount(); return; }
+        if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -36618,7 +34045,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !_pixelProbeArmed;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
       }
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
@@ -36716,7 +34143,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           // (Shift+drag, below) or spin the character's facing via mouse-
           // look (which drags a glued shoulder pet along with it), either of
           // which would shift the very thing being aimed at mid-approach.
-          if (_pixelProbeArmed) return;
+          if (window.PixelProbe?.armed) return;
           if (e.shiftKey && cameraDragAllowed()) {
             const cfg = desktopControlsConfig();
             const degPerPx = Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15;
@@ -36864,7 +34291,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         buildTransitionMarkers();
       }
       // Load town layout from workspace config (authoritative source)
-      loadAudioCueIndexes().then(() => resetAmbientCueTimer()).catch(() => resetAmbientCueTimer());
+      window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
       _loadTownFromWorkspace().catch(() => {});
       debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
 
@@ -36960,7 +34387,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
-        loadNpcRelationships(playerData);
+        window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
         maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
 
@@ -37094,6 +34521,83 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         spawnPlayerAvatar(window.__hobunjiPlayerProfile);
       }
 
+      window.DialogueContent?.init({
+        calendar,
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        getDialogueOpen: () => dialogueOpen,
+        getDialogueWalker: () => _dialogueWalker,
+        getWaresPools: () => WARES_POOLS,
+        currentWeekdayName,
+        currentSeason,
+        fishingTimeOfDay,
+        normalizeStationLabel,
+        canAccessContent,
+        setQuestStatus,
+        turnInTask,
+        showToast,
+        openMenu,
+        closeNpcDialogue,
+        getCutscenePreviewActive: () => cutscenePreviewActive,
+        getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
+      });
+
+      window.PixelProbe?.init({
+        renderer,
+        camera,
+        playerMesh,
+        companionObjects,
+        npcWalkers,
+        player,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        getPlayerLegs: () => playerLegs,
+        getPetLayeringPet: () => _petLayeringPet,
+        getPetLayeringActive: () => _petLayeringActive,
+        getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
+        getSitInteraction: () => sitInteraction,
+        getPaused: () => paused,
+        SHOULDER_PET_PLANE_RENDER_ORDER,
+        playerAttachmentAnchor,
+        creatureAttachmentAnchor,
+        openMenu,
+        closeMenu,
+        showToast,
+      });
+
+      window.Music?.init({
+        calendar,
+        player,
+        TILE,
+        clamp,
+        debugLog,
+        getCurrentArea: () => currentArea,
+        getPaused: () => paused,
+        getGameStarted: () => gameStarted,
+        getHour,
+        isPlayerInCombat,
+        MORNING_HOUR,
+        getWorkspaceMaps: () => _workspaceMaps,
+        _isZoneArea,
+        _isBuildingArea,
+        EXTERIOR_ZONES,
+      });
+
+      window.AudioSystem?.init({
+        TileType,
+        TILE,
+        MAX_WATER,
+        clamp,
+        player,
+        getCurrentArea: () => currentArea,
+        _isBuildingArea,
+        npcGridForArea,
+        isRealMediaError: (...a) => window.Music?.isRealMediaError(...a),
+        markAudioUrlFailed: (...a) => window.Music?.markAudioUrlFailed(...a),
+        audioUrlFailed: (...a) => window.Music?.audioUrlFailed(...a),
+      });
+
       window.Combat?.init({
         player,
         players,
@@ -37121,10 +34625,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         beginCombatLunge,
         setCombatSwingCone,
         spawnBurstEffect,
-        playCreatureBark,
-        playCreatureClawHit,
-        playWeaponSlashSfx,
-        playWeaponHitSfx,
+        playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
+        playCreatureClawHit: (...a) => window.AudioSystem?.playCreatureClawHit(...a),
+        playWeaponSlashSfx: (...a) => window.AudioSystem?.playWeaponSlashSfx(...a),
+        playWeaponHitSfx: (...a) => window.AudioSystem?.playWeaponHitSfx(...a),
         // Named animal attacks (e.g. Pounce) own the creature's position
         // directly for their leap instead of going through moveCreatureToward
         // — without this, that ground covered during the leap never ticked
@@ -37172,6 +34676,55 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           activeAction = toolActions.weapon[slotIndex - 1];
           useActiveAction();
         },
+      });
+
+      window.Mounts?.init({
+        player,
+        scene,
+        companionObjects,
+        getStable: () => stable,
+        CREATURE_DB,
+        input,
+        btnCallMount,
+        TILE,
+        PLAYER_RADIUS,
+        FACING_LERP,
+        MOVE_SPEED,
+        ACCEL,
+        DECEL,
+        MOUSE_IDLE_MS,
+        isDesktop,
+        rnd,
+        clamp,
+        angleDiff,
+        canPlayerOccupy,
+        getAlchemySpeedMul,
+        getKeyboardVector,
+        makeCreatureEntity,
+        despawnCreature,
+        moveCreatureToward,
+        updateCreatureMesh,
+        updateCreatureAnimFrame,
+        tileSurfaceYInArea,
+        characterGroundShadowSurfaceOffset,
+        getActiveScene,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        _isZoneArea,
+        _isCavernBuildingArea,
+        showToast,
+        getCurrentArea: () => currentArea,
+        getActiveMountId: () => activeMountId,
+        getDevGlobalSpeedMul: () => devGlobalSpeedMul,
+        getFacingAngle: () => facingAngle,
+        setFacingAngle: (v) => { facingAngle = v; },
+        getMouseLookActive: () => mouseLookActive,
+        setMouseLookActive: (v) => { mouseLookActive = v; },
+        getControllerLookActive: () => controllerLookActive,
+        getControllerLookAngle: () => controllerLookAngle,
+        getLastMouseMoveTime: () => lastMouseMoveTime,
+        getMouseLookAngle: () => mouseLookAngle,
       });
 
       // ══════════════════════════════════════════════════════════════════
@@ -37746,22 +35299,22 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           const ctx = _npcPortraitCanvas.getContext('2d');
           if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
             ctx.fillStyle = '#1b3529'; ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-            await _renderNpcDialoguePortrait();
+            await window.DialogueContent?.renderNpcDialoguePortrait();
           } else {
             ctx.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
           }
           _npcDialogueEl.classList.add('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'false');
-          _hideChoiceButtons();
-          _setNpcDialogueText(text);
+          window.DialogueContent?.hideChoiceButtons();
+          window.DialogueContent?.setNpcDialogueText(text);
         }
 
         function closeLine() {
           dialogueOpen = false;
           cutscenePreviewAdvance = null;
-          _hideChoiceButtons();
-          window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
-          window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
+          window.DialogueContent?.hideChoiceButtons();
+          window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
+          window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
           _dialogueWalker = null;
           cutscenePreviewDialogueSpeaker = null;
           _npcDialogueEl.classList.remove('open');
@@ -37780,7 +35333,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             el.classList.add('dlg-opt-visible');
             el.onclick = () => { if (!dialogueOpen) return; opt.onClick(); };
           });
-          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
+          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) window.DialogueContent?.fitDlgOptionLabel(el); });
           const continueBtn = document.getElementById('npcDialogueContinue');
           if (continueBtn) continueBtn.style.display = options.length ? 'none' : '';
         }
