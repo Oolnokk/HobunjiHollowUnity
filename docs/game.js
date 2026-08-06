@@ -4025,24 +4025,9 @@
       const animalObjects = new Set(); // Tracks all live animal world objects for update loop and reset.
       const companionObjects = new Set(); // Whistle-summoned companion creatures (0 or 1 active at a time).
 
-      // ── Mount ride state (V key / D-pad down — see toggleMount) ─────────
-      // 'none': no mount summoned. 'rushingIn': the mount is dashing in from
-      // off-screen toward the player. 'mountingUp': the mount has arrived and
-      // the player is lerping up onto it. 'mounted': steady-state riding —
-      // movement input steers the mount (see updateMountedMovement) instead
-      // of the player. 'dismountingDown': the player is lerping back off the
-      // mount. 'rushingOut': the (now riderless) mount is dashing away
-      // off-screen before despawning.
-      let mountRideState = 'none';
-      let mountRideEntity = null;
-      let mountAngle = 0;              // the mount's own heading; momentum-turned in updateMountedMovement
-      let mountCurrentSpeedPxS = 0;    // the mount's current forward speed (momentum — see MOUNT_TURN_RATE_MIN/MAX)
-      let mountTransitionT = 0;        // 0..1 progress through the current mountingUp/dismountingDown lerp
-      let mountTransitionFromX = 0, mountTransitionFromY = 0;
-      let mountDismountTargetX = 0, mountDismountTargetY = 0;
-      let mountRushOutAngle = 0;
-      let mountRushOutT = 0;
-      let mountRushInT = 0;
+      // Mount ride state/logic (toggleMount, updateMountRide,
+      // updateMountedMovement, etc.) lives in js/mount-system.js
+      // (window.Mounts) — see window.Mounts.init(...) below for the wiring.
       const hostileObjects = new Set();   // Ambient-spawned hostile creatures (Gar-wolf / Gar-wolf Alpha).
       const corpseObjects = new Set();    // Creatures mid-death-lerp ('dying') or settled and lootable ('corpse').
 
@@ -6105,7 +6090,7 @@
       }
 
       function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
-        if (sitInteraction || harvestInteraction || dialogueOpen || mountRideState !== 'none') return { ok: false, message: 'Cannot sit right now.' };
+        if (sitInteraction || harvestInteraction || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
         const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
@@ -8622,314 +8607,9 @@
         }
       }
 
-      // ── Mounted riding (V key / D-pad down calls a mount in or dismisses
-      // it — see the 'toggleMount' input action) ──────────────────────────
-      // A rush-in/out transition well beyond the camera's visible range, so
-      // "calling" a mount reads as it charging in from off-screen rather
-      // than just popping in nearby.
-      const MOUNT_RUSH_SPEED_PX = 900;
-      const MOUNT_SPAWN_DIST_PX = TILE * 9;
-      const MOUNT_ARRIVE_PX = TILE * 0.55;
-      const MOUNT_DESPAWN_DIST_PX = TILE * 9;
-      const MOUNT_TRANSITION_S = 0.35; // how long the rider's lerp on/off the mount takes
-      // Momentum: a stationary mount can pivot quickly, but the faster it's
-      // already moving the more sluggishly it can turn — trading maneuverability
-      // for the speed a mount gives you (see updateMountedMovement).
-      const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
-      const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
-
-      function toggleMount() {
-        if (mountRideState === 'none') beginSummonMount();
-        else if (mountRideState === 'mounted' || mountRideState === 'rushingIn') beginDismissMount();
-        // 'mountingUp'/'dismountingDown'/'rushingOut': mid-transition, ignore
-        // extra presses until it settles into a steady state.
-      }
-
-      function beginSummonMount() {
-        const activeStabled = activeMountId ? stable.find(s => s.id === activeMountId) : null;
-        if (!activeStabled || !CREATURE_DB[activeStabled.kind]) {
-          showToast('No mount set in your stable.', false);
-          return;
-        }
-        // Off-screen, in a random-ish direction behind the player rather than
-        // always dead behind, so the rush-in doesn't look identical every
-        // time — clamped well inside the active area's bounds (with a
-        // margin), since a fixed-distance point in an arbitrary direction can
-        // easily land outside a smaller map (creatureCanEnterTile rejects any
-        // move once the mount is stuck outside those bounds, freezing it at
-        // spawn forever).
-        const spawnAngle = player.angle + Math.PI + (rnd() - 0.5) * (Math.PI * 0.6);
-        const spawnMarginPx = TILE * 1.5;
-        const maxX = getActiveCols() * TILE - spawnMarginPx, maxY = getActiveRows() * TILE - spawnMarginPx;
-        const spawnX = clamp(player.x + Math.cos(spawnAngle) * MOUNT_SPAWN_DIST_PX, spawnMarginPx, maxX);
-        const spawnY = clamp(player.y + Math.sin(spawnAngle) * MOUNT_SPAWN_DIST_PX, spawnMarginPx, maxY);
-        const mount = makeCreatureEntity(activeStabled.kind, spawnX, spawnY, {
-          isCompanion: true, name: activeStabled.name, homeX: spawnX, homeY: spawnY, state: 'idle',
-          master: player, genotype: activeStabled.genotype, stableRole: 'mount',
-        });
-        if (!mount) return;
-        companionObjects.add(mount);
-        mountRideEntity = mount;
-        mountRideState = 'rushingIn';
-        mountAngle = player.angle;
-        mountCurrentSpeedPxS = 0;
-        mountRushInT = 0;
-      }
-
-      function beginDismissMount() {
-        if (!mountRideEntity) { mountRideState = 'none'; return; }
-        mountRideState = 'dismountingDown';
-        mountTransitionT = 0;
-        mountTransitionFromX = player.x; mountTransitionFromY = player.y;
-        // Dismount to the mount's side (perpendicular to its heading) rather
-        // than right in front of/behind it.
-        const sideAngle = mountAngle + Math.PI / 2;
-        mountDismountTargetX = mountRideEntity.x + Math.cos(sideAngle) * TILE * 0.6;
-        mountDismountTargetY = mountRideEntity.y + Math.sin(sideAngle) * TILE * 0.6;
-      }
-
-      function updateMountRide(dt) {
-        btnCallMount?.classList.toggle('active', mountRideState !== 'none');
-        if (mountRideState === 'none') return;
-        const m = mountRideEntity;
-        if (!m || m.health <= 0) {
-          if (m) { despawnCreature(m); companionObjects.delete(m); }
-          mountRideState = 'none'; mountRideEntity = null;
-          return;
-        }
-        // An area transition (e.g. riding through the farm's town gate) can
-        // land mid-ride-transition, not just mid-'mounted'. The 'mounted'
-        // state's own area-change handling lives in updateMountedMovement
-        // (relocateMountForAreaChange), which only runs while
-        // mountRideState === 'mounted' (see updateMovement's early return) —
-        // every other phase here used to have no equivalent at all, so
-        // m.areaId went stale the instant the area changed. That used to
-        // just despawn the mount outright below (the old
-        // `m.areaId !== currentArea` branch of this same guard). Worse:
-        // mountingUp/dismountingDown's own lerp reads mountTransitionFromX/Y
-        // and (dismountingDown only) mountDismountTargetX/Y, both captured
-        // back when the transition began, in the OLD area's coordinate
-        // space — so on whichever frame actually got there first, either
-        // the mount vanished with no animation, or (if a couple of
-        // in-between frames won that race first) the rider kept getting
-        // dragged toward those stale old-area coordinates for the rest of
-        // the lerp even though enterTown/performTravel had already moved
-        // player.x/y into the new area — surfacing as the rider ending up
-        // standing at the old area's exit coordinates, just rendered in the
-        // new area's scene. Relocating (like the 'mounted' case already
-        // does) and rebasing the in-flight lerp's endpoints against the
-        // post-relocation, already-correct positions keeps the animation
-        // continuous across the boundary instead of losing the mount or the
-        // rider's position.
-        if (m.areaId !== currentArea) {
-          relocateMountForAreaChange(m);
-          if (mountRideState === 'mountingUp' || mountRideState === 'dismountingDown') {
-            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
-          }
-          if (mountRideState === 'dismountingDown') {
-            const sideAngle = mountAngle + Math.PI / 2;
-            mountDismountTargetX = m.x + Math.cos(sideAngle) * TILE * 0.6;
-            mountDismountTargetY = m.y + Math.sin(sideAngle) * TILE * 0.6;
-          }
-        }
-
-        if (mountRideState === 'rushingIn') {
-          mountRushInT += dt;
-          const moving = moveCreatureToward(m, player.x, player.y, MOUNT_RUSH_SPEED_PX, dt);
-          const aim = Math.atan2(player.y - m.y, player.x - m.x);
-          m.facing = aim;
-          updateCreatureMesh(m, dt, aim);
-          updateCreatureAnimFrame(m, dt, moving);
-          // Falls back to a flat timeout if the mount's dash toward the
-          // player gets blocked by terrain (creatureCanEnterTile) partway —
-          // otherwise a cornered mount would never arrive at all.
-          if (Math.hypot(player.x - m.x, player.y - m.y) <= MOUNT_ARRIVE_PX || mountRushInT >= 6) {
-            mountRideState = 'mountingUp';
-            mountTransitionT = 0;
-            mountTransitionFromX = player.x; mountTransitionFromY = player.y;
-            mountAngle = m.facing;
-          }
-          return;
-        }
-
-        if (mountRideState === 'mountingUp') {
-          mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
-          player.x = mountTransitionFromX + (m.x - mountTransitionFromX) * mountTransitionT;
-          player.y = mountTransitionFromY + (m.y - mountTransitionFromY) * mountTransitionT;
-          player.vx = 0; player.vy = 0;
-          updateCreatureMesh(m, dt, m.facing);
-          updateCreatureAnimFrame(m, dt, false);
-          if (mountTransitionT >= 1) mountRideState = 'mounted';
-          return;
-        }
-
-        if (mountRideState === 'mounted') {
-          // Position/heading itself is driven by updateMountedMovement (called
-          // from updateMovement while mounted) — this just keeps the mount's
-          // own mesh/animation in sync with wherever that left m.x/m.y/m.facing.
-          updateCreatureMesh(m, dt, m.facing);
-          return;
-        }
-
-        if (mountRideState === 'dismountingDown') {
-          mountTransitionT = Math.min(1, mountTransitionT + dt / MOUNT_TRANSITION_S);
-          player.x = mountTransitionFromX + (mountDismountTargetX - mountTransitionFromX) * mountTransitionT;
-          player.y = mountTransitionFromY + (mountDismountTargetY - mountTransitionFromY) * mountTransitionT;
-          player.vx = 0; player.vy = 0;
-          updateCreatureMesh(m, dt, m.facing);
-          updateCreatureAnimFrame(m, dt, false);
-          if (mountTransitionT >= 1) {
-            mountRideState = 'rushingOut';
-            mountRushOutAngle = m.facing + Math.PI;
-            mountRushOutT = 0;
-          }
-          return;
-        }
-
-        if (mountRideState === 'rushingOut') {
-          mountRushOutT += dt;
-          const targetX = m.x + Math.cos(mountRushOutAngle) * TILE * 2;
-          const targetY = m.y + Math.sin(mountRushOutAngle) * TILE * 2;
-          const moving = moveCreatureToward(m, targetX, targetY, MOUNT_RUSH_SPEED_PX, dt);
-          updateCreatureMesh(m, dt, mountRushOutAngle);
-          updateCreatureAnimFrame(m, dt, moving);
-          // Falls back to a flat timeout if the dash direction happens to
-          // run straight into a wall/map edge (creatureCanEnterTile rejects
-          // any further step there) — otherwise a cornered mount would never
-          // reach MOUNT_DESPAWN_DIST_PX and would sit there forever.
-          if (Math.hypot(player.x - m.x, player.y - m.y) >= MOUNT_DESPAWN_DIST_PX || mountRushOutT >= 3) {
-            despawnCreature(m);
-            companionObjects.delete(m);
-            mountRideState = 'none';
-            mountRideEntity = null;
-          }
-          return;
-        }
-      }
-
-      // A map transition (farm↔town↔wilderness zone↔den cavern) moves the
-      // player instantly via a bunch of separate call sites (enterZone,
-      // enterBuilding/exitBuilding, warpToDenAnchor, teleportToDevArena,
-      // etc.) that only ever touch player.x/y/currentArea and the player's
-      // OWN scene graph nodes — none of them know a mount might be along for
-      // the ride, so a mount's x/y/areaId/scene are left stale in the OLD
-      // area. Rather than teach every one of those call sites about mounts,
-      // this runs once per actual mismatch (from the top of
-      // updateMountedMovement, which fires before anything glues the rider's
-      // position to the mount's) and catches the mount up to the player's
-      // already-correct new position/scene — otherwise the very next tick's
-      // `player.x = m.x` glue below would snap the rider back onto the
-      // mount's stale old-area coordinates, undoing the transition.
-      function relocateMountForAreaChange(m) {
-        const oldScene = m.scene || scene;
-        oldScene.remove(m.avatarRef.group);
-        if (m.groundShadow) oldScene.remove(m.groundShadow);
-        const newScene = getActiveScene();
-        m.scene = newScene;
-        m.areaGrid = getActiveGrid();
-        m.areaCols = getActiveCols();
-        m.areaRows = getActiveRows();
-        m.areaId = currentArea;
-        m.x = player.x; m.y = player.y;
-        m.vx = 0; m.vy = 0;
-        const col = clamp(Math.floor(m.x / TILE), 0, m.areaCols - 1);
-        const row = clamp(Math.floor(m.y / TILE), 0, m.areaRows - 1);
-        const surfY = m.areaGrid[row]?.[col] ? tileSurfaceYInArea(m.areaGrid[row][col], currentArea) : 0;
-        m.avatarRef.group.position.set(m.x / TILE, surfY + m.halfHeight * (m.scaleY ?? 1), m.y / TILE);
-        newScene.add(m.avatarRef.group);
-        if (m.groundShadow) {
-          m.groundShadow.position.set(m.x / TILE, surfY + characterGroundShadowSurfaceOffset(), m.y / TILE);
-          newScene.add(m.groundShadow);
-        }
-        // Rebuilt fresh next tick against the new scene if still applicable —
-        // cheaper and safer than trying to reparent a resource ring HUD.
-        window.ResourceRings?.disposeRingHud(m);
-      }
-
-      // Replaces updateMovement's normal on-foot movement while
-      // mountRideState === 'mounted': movement input steers the MOUNT (which
-      // turns gradually, with momentum lowering its turn rate — see
-      // MOUNT_TURN_RATE_MIN/MAX) instead of moving the player directly, and
-      // the player is glued to the mount's position. The rider's own facing
-      // stays independently controllable via right-stick/mouse-look exactly
-      // like on foot, easing back to match the mount's heading once look
-      // input goes idle (instead of easing back to the raw movement
-      // direction, since that now drives the mount, not the rider's facing).
-      function updateMountedMovement(dt) {
-        const m = mountRideEntity;
-        if (!m) { mountRideState = 'none'; return; }
-        // Entering a building/interior that doesn't support companions/mounts
-        // (see syncCompanionFromWhistle's matching area gate) would otherwise
-        // leave the mount's visuals frozen with no way to tick — force an
-        // instant dismount instead of letting the rider get stuck riding a
-        // creature that no longer exists in the scene they're in.
-        if (!(currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea))) {
-          despawnCreature(m);
-          companionObjects.delete(m);
-          mountRideState = 'none'; mountRideEntity = null;
-          return;
-        }
-        if (m.areaId !== currentArea) relocateMountForAreaChange(m);
-
-        const keyboardVector = getKeyboardVector();
-        const usingKeyboard = keyboardVector.active;
-        let ix = usingKeyboard ? keyboardVector.x : input.x;
-        let iy = usingKeyboard ? keyboardVector.y : input.y;
-        const inputLen = Math.hypot(ix, iy);
-        let inputStrength = 0;
-        if (inputLen > 0.001) {
-          inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
-          ix /= inputLen; iy /= inputLen;
-        }
-        player.inputX = ix; player.inputY = iy; player.inputStrength = inputStrength;
-
-        const topSpeed = (m.def?.mountSpeed || MOVE_SPEED) * getAlchemySpeedMul() * devGlobalSpeedMul;
-        if (inputStrength > 0.001) {
-          mountCurrentSpeedPxS = Math.min(topSpeed, mountCurrentSpeedPxS + ACCEL * dt);
-          const desiredAngle = Math.atan2(iy, ix);
-          const speedRatio = topSpeed > 0 ? clamp(mountCurrentSpeedPxS / topSpeed, 0, 1) : 0;
-          const turnRate = MOUNT_TURN_RATE_MAX - (MOUNT_TURN_RATE_MAX - MOUNT_TURN_RATE_MIN) * speedRatio;
-          const diff = angleDiff(desiredAngle, mountAngle);
-          mountAngle += clamp(diff, -turnRate * dt, turnRate * dt);
-        } else {
-          mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - DECEL * dt);
-        }
-
-        if (mountCurrentSpeedPxS > 0.01) {
-          const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
-          const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
-          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
-          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
-          const nextX = clamp(desiredX, minX, maxX), nextY = clamp(desiredY, minY, maxY);
-          // A blocked axis bleeds most of the mount's speed instead of a hard
-          // stop, so clipping a corner at a gallop doesn't feel like hitting
-          // a wall outright.
-          if (canPlayerOccupy(nextX, m.y)) m.x = nextX; else mountCurrentSpeedPxS *= 0.4;
-          if (canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= 0.4;
-        }
-        m.facing = mountAngle;
-        player.x = m.x; player.y = m.y;
-        player.vx = 0; player.vy = 0; // the mount is what's moving — the rider's own velocity stays inert
-        updateCreatureAnimFrame(m, dt, mountCurrentSpeedPxS > 5);
-
-        // Facing: independent of the mount's heading via right-stick/mouse-
-        // look (identical to the on-foot system in updateMovement), easing
-        // back to match mountAngle once look input goes idle.
-        if (controllerLookActive) {
-          const diff = angleDiff(controllerLookAngle, facingAngle);
-          facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
-        } else if (isDesktop && mouseLookActive) {
-          if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) mouseLookActive = false;
-          else {
-            const diff = angleDiff(mouseLookAngle, facingAngle);
-            facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
-          }
-        } else {
-          const diff = angleDiff(mountAngle, facingAngle);
-          facingAngle += diff * Math.min(1, FACING_LERP * dt);
-        }
-        player.angle = facingAngle;
-      }
+      // Mount ride logic (toggleMount, beginSummonMount/beginDismissMount,
+      // updateMountRide, relocateMountForAreaChange, updateMountedMovement)
+      // lives in js/mount-system.js (window.Mounts) — see window.Mounts.init(...) below.
 
       function clearHostileObjects() {
         hostileObjects.forEach(c => despawnCreature(c));
@@ -23460,7 +23140,7 @@
         if (harvestInteraction) { updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (fishingMinigame?.active) return;
-        if (mountRideState === 'mounted') { updateMountedMovement(dt); return; }
+        if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
         // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
@@ -32342,6 +32022,11 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        // Mount ride state now lives in js/mount-system.js (window.Mounts) —
+        // shadowed locally so the rest of this function (posture/rotation
+        // reads below) doesn't need to change.
+        const mountRideState = window.Mounts?.rideState ?? 'none';
+        const mountRideEntity = window.Mounts?.rideEntity ?? null;
         // Convert 2D grid coords to 3D world coords
         const wx = player.x / TILE;  // world X (col)
         const wz = player.y / TILE;  // world Z (row)
@@ -33745,7 +33430,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             // scene it was last synced into.
             syncCompanionFromWhistle();
             updateCompanions(dt);
-            updateMountRide(dt);
+            window.Mounts?.updateMountRide(dt);
             updateCompanionPerception(dt);
             updateBanditCampBanners(dt);
             updateHostileSpawning(dt);
@@ -35957,10 +35642,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       });
 
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
-      // .active is kept in sync with mountRideState in updateMountRide.
+      // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
-        toggleMount();
+        window.Mounts?.toggleMount();
       });
 
       // Swap Target button: its own dedicated drag-direction stick (separate
@@ -36257,7 +35942,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const actionSlot = /^action(\d+)$/.exec(actionId);
         if (actionSlot) { runActionButtonAtSlot(Number(actionSlot[1])); return; }
         if (actionId === 'dodge') { performContextAction(); return; }
-        if (actionId === 'toggleMount') { toggleMount(); return; }
+        if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -37172,6 +36857,55 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           activeAction = toolActions.weapon[slotIndex - 1];
           useActiveAction();
         },
+      });
+
+      window.Mounts?.init({
+        player,
+        scene,
+        companionObjects,
+        getStable: () => stable,
+        CREATURE_DB,
+        input,
+        btnCallMount,
+        TILE,
+        PLAYER_RADIUS,
+        FACING_LERP,
+        MOVE_SPEED,
+        ACCEL,
+        DECEL,
+        MOUSE_IDLE_MS,
+        isDesktop,
+        rnd,
+        clamp,
+        angleDiff,
+        canPlayerOccupy,
+        getAlchemySpeedMul,
+        getKeyboardVector,
+        makeCreatureEntity,
+        despawnCreature,
+        moveCreatureToward,
+        updateCreatureMesh,
+        updateCreatureAnimFrame,
+        tileSurfaceYInArea,
+        characterGroundShadowSurfaceOffset,
+        getActiveScene,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        _isZoneArea,
+        _isCavernBuildingArea,
+        showToast,
+        getCurrentArea: () => currentArea,
+        getActiveMountId: () => activeMountId,
+        getDevGlobalSpeedMul: () => devGlobalSpeedMul,
+        getFacingAngle: () => facingAngle,
+        setFacingAngle: (v) => { facingAngle = v; },
+        getMouseLookActive: () => mouseLookActive,
+        setMouseLookActive: (v) => { mouseLookActive = v; },
+        getControllerLookActive: () => controllerLookActive,
+        getControllerLookAngle: () => controllerLookAngle,
+        getLastMouseMoveTime: () => lastMouseMoveTime,
+        getMouseLookAngle: () => mouseLookAngle,
       });
 
       // ══════════════════════════════════════════════════════════════════
