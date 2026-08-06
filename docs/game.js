@@ -316,572 +316,21 @@
       // in js/audio-system.js (window.AudioSystem) — see
       // window.AudioSystem.init(...) below for the wiring.
 
-      // ── NPC Dialogue ───────────────────────────────────────────
+      // NPC dialogue CONTENT (text/token resolution, tree/pool selection,
+      // typewriter, portrait rendering, choice buttons) now lives in
+      // js/dialogue-content.js (window.DialogueContent) — see
+      // window.DialogueContent.init(...) below for the wiring.
+      // openNpcDialogue/closeNpcDialogue stay here since they own
+      // camera/staging/save-persistence, which this module doesn't touch.
       const _npcDialogueEl      = document.getElementById('npcDialogue');
       const _npcPortraitCanvas  = document.getElementById('npcPortraitCanvas');
       const _npcDialogueNameEl  = document.getElementById('npcDialogueName');
-      const _npcDialogueTextEl  = document.getElementById('npcDialogueText');
       const _npcDialogueHeartsEl = document.getElementById('npcDialogueHearts');
       const _arcContainerEl     = document.getElementById('arcContainer');
 
-      function npcDialogueTextConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text || {};
-      }
-
-      function npcDialogueLetterSfxConfig(rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const audioCfg = window.AudioSystem?.gameAudioConfig();
-        const dialogueCfg = audioCfg.dialogueLetter || {};
-        const npcOverrides = dialogueCfg.npcs || {};
-        const speciesOverrides = dialogueCfg.species || {};
-        const speciesId = rec?.appearance?.speciesId || rec?.speciesId || rec?.species || _dialogueWalker?.speciesId;
-        return {
-          ...dialogueCfg,
-          ...(speciesId && speciesOverrides[speciesId] ? speciesOverrides[speciesId] : {}),
-          ...(rec?.id && npcOverrides[rec.id] ? npcOverrides[rec.id] : {}),
-          ...(rec?.dialogueLetterSfx || {})
-        };
-      }
-
-      function npcDialogueTypewriterConfig() {
-        const cfg = npcDialogueTextConfig().typewriter || {};
-        return {
-          enabled: cfg.enabled !== false,
-          msPerChar: Math.max(1, Number(cfg.msPerChar) || 22),
-          punctuationPauseMs: Math.max(0, Number(cfg.punctuationPauseMs) || 120),
-          whitespacePauseMs: Math.max(0, Number(cfg.whitespacePauseMs) || 0)
-        };
-      }
-
-      function _paginateNpcDialogueText(text) {
-        const cfg = npcDialogueTextConfig();
-        const emptyLine = cfg.emptyLine || '...';
-        const source = String(text || '').trim();
-        if (!source) return [emptyLine];
-        const maxChars = Math.max(1, Number(cfg.maxCharsPerPage) || source.length);
-        const pages = [];
-        let current = '';
-        for (const word of source.split(/\s+/)) {
-          const next = current ? `${current} ${word}` : word;
-          if (next.length > maxChars && current) {
-            pages.push(current);
-            current = word;
-          } else {
-            current = next;
-          }
-        }
-        if (current) pages.push(current);
-        return pages.length ? pages : [emptyLine];
-      }
-
-      function _npcDialogueLines(rec) {
-        if (!rec) return _paginateNpcDialogueText('');
-        if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
-          return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
-        }
-        if (rec.bio) return _paginateNpcDialogueText(rec.bio);
-        return _paginateNpcDialogueText('');
-      }
-
-      function _getNpcDlgState(npcId) {
-        if (!_npcDlgState.has(npcId)) _npcDlgState.set(npcId, { visitedSeqSlots: {}, localNickname: null, favor: _npcBaseDispositions[npcId] ?? 0, memory: [], heardTrees: [], heardPoolEntries: [] });
-        return _npcDlgState.get(npcId);
-      }
-
-      // NPC relationships/memory are world-scoped per character — they stay
-      // behind in this world's member record rather than following the
-      // character to another world. Loaded into the same _npcDlgState map
-      // that already tracked visited dialogue nodes/local nicknames for the
-      // current session, so NPCs remember what's been said across sessions too.
-      function loadNpcRelationships(playerData) {
-        _npcDlgState.clear();
-        const rels = playerData?.npcRelationships || {};
-        for (const [npcId, rel] of Object.entries(rels)) {
-          _npcDlgState.set(npcId, {
-            visitedSeqSlots: { ...(rel.visitedSeqSlots || {}) },
-            localNickname:   rel.localNickname || null,
-            favor:           rel.favor ?? (_npcBaseDispositions[npcId] ?? 0),
-            memory:          [...(rel.memory || [])],
-            heardTrees:      [...(rel.heardTrees || [])],
-            heardPoolEntries:[...(rel.heardPoolEntries || [])],
-          });
-        }
-      }
-
-      function npcRelationshipsSnapshot() {
-        const out = {};
-        for (const [npcId, st] of _npcDlgState.entries()) {
-          out[npcId] = {
-            visitedSeqSlots: st.visitedSeqSlots,
-            localNickname:   st.localNickname,
-            favor:           st.favor || 0,
-            memory:          st.memory || [],
-            heardTrees:      st.heardTrees || [],
-            heardPoolEntries:st.heardPoolEntries || [],
-          };
-        }
-        return out;
-      }
-
-      // Appends a small memory entry an NPC "remembers" about this character —
-      // ready for gift/dialogue-choice hooks to call into once those systems
-      // record specific events, not just that a conversation happened.
-      function recordNpcMemory(npcId, event) {
-        if (!npcId) return;
-        const st = _getNpcDlgState(npcId);
-        st.memory.push({ event, day: calendar.day, ts: Date.now() });
-        if (st.memory.length > 50) st.memory.shift();
-      }
-
-      // No gift/relationship-building system exists yet to call this from —
-      // exposed as the entry point that one will use once built.
-      function adjustNpcFavor(npcId, amount, reason) {
-        if (!npcId) return;
-        const st = _getNpcDlgState(npcId);
-        st.favor = (st.favor || 0) + amount;
-        recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));
-      }
-
-      function _resolveTokens(text, npcRec, _depth = 0) {
-        if (!text) return '';
-        const p     = _playerData;
-        const name  = p?.nickname || 'Farmer';
-        const gen   = p?.appearance?.gender || 'male';
-        const pr1   = gen === 'female' ? 'she'     : gen === 'neutral' ? 'they'    : 'he';
-        const pr2   = gen === 'female' ? 'her'     : gen === 'neutral' ? 'them'    : 'him';
-        const pr3   = gen === 'female' ? 'her'     : gen === 'neutral' ? 'their'   : 'his';
-        const prS   = gen === 'female' ? 'herself' : gen === 'neutral' ? 'themself': 'himself';
-        const VOWELS = new Set('aeiouAEIOU');
-        let fl2v1 = '';
-        for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
-        const st    = _getNpcDlgState(npcRec?.id);
-        const local = st.localNickname || name;
-        let out = text
-          .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
-          .replace(/\{\{playerName\}\}/g,          name)
-          .replace(/\{\{playerNickname\}\}/g,      name)
-          .replace(/\{\{playerLocalNickname\}\}/g, local)
-          .replace(/\{\{playerPronoun1\}\}/g,      pr1)
-          .replace(/\{\{playerPronoun2\}\}/g,      pr2)
-          .replace(/\{\{playerPronoun3\}\}/g,      pr3)
-          .replace(/\{\{playerPronounSelf\}\}/g,   prS)
-          .replace(/\{\{playerFirstL2V1\}\}/g,     fl2v1)
-          .replace(/\{\{role\}\}/g,                npcRec?.role || '')
-          .replace(/\{\{npcSpecies\}\}/g,           npcRec?.appearance?.speciesId || npcRec?.species || '')
-          .replace(/\{\{playerSpecies\}\}/g,        p?.appearance?.speciesId || '');
-        // {{pool:<id>}} pulls a conditioned line from a phrase pool authored
-        // in the dialogue editor's Phrase Pool Manager — resolved recursively
-        // (a pool entry can itself use any token, including another pool),
-        // capped at a few levels deep so an accidental pool-references-itself
-        // loop can't hang the game.
-        if (_depth < 4) {
-          out = out.replace(/\{\{pool:([^}]+)\}\}/g, (m, poolId) => {
-            const entry = _pickPoolEntry(poolId.trim(), npcRec);
-            return entry ? _resolveTokens(entry.text, npcRec, _depth + 1) : '';
-          });
-        }
-        return out;
-      }
-
-      // A tree's (or phrase-pool entry's) conditions/excludeConditions are
-      // authored in the dialogue editor (docs/tools/dialogue-editor/) as
-      // { weekdays, seasons, weather, timesOfDay, encounter, maps, stations,
-      // playerSpecies, relationship:{min,max} } — empty arrays/null bounds
-      // mean "unrestricted" on that axis. "maps" matches currentArea
-      // directly (editor's map ids — 'farm', 'town', 'map_i_general_store',
-      // etc — are the same strings the world engine already uses).
-      // "stations" matches the walker's current schedule-target label,
-      // normalized the same way the existing General Store/Carpenter
-      // on-duty checks do (see normalizeStationLabel). The axis list,
-      // eligibility/specificity evaluation, and "most-specific-unheard-wins"
-      // selection all live in the shared docs/js/condition-registry.js
-      // module (window.ConditionRegistry) — also consumed by the Loot &
-      // Shop system and its dev tool, so this is a thin wrapper that just
-      // supplies dialogue's own world-state shape.
-
-      // World state is shared by both tree selection and phrase-pool entry
-      // resolution — "encounter" (first vs returning) is keyed off whichever
-      // NPC state is passed in, so a pool entry picked mid-conversation with
-      // a different NPC than the tree's still reads that NPC's own history.
-      function _dlgWorldState(rec) {
-        const st = _getNpcDlgState(rec?.id);
-        const target = _dialogueWalker?.currentScheduleTarget || null;
-        return {
-          weekdays:   currentWeekdayName(),
-          seasons:    currentSeason().name,
-          weather:    calendar.weather,
-          timesOfDay: fishingTimeOfDay(),
-          encounter:  (st.heardTrees || []).length ? 'returning' : 'first',
-          maps:       currentArea,
-          stations:   target ? normalizeStationLabel(target.label) : '',
-          playerSpecies: _playerData?.appearance?.speciesId || '',
-          relationship: st.favor,
-        };
-      }
-
-      function _dlgEntryEligible(entry, world) {
-        return window.ConditionRegistry.entryEligible(entry, world);
-      }
-
-      function _dlgEntrySpecificity(entry) {
-        return window.ConditionRegistry.entrySpecificity(entry);
-      }
-
-      // Shared by dialogue-tree selection and phrase-pool entry resolution:
-      // among entries whose conditions are met (and no-fly conditions
-      // aren't), the most specifically-targeted one that has never been
-      // heard before always wins — so a well-conditioned entry for "today"
-      // plays before anything generic. Once every entry that matches the
-      // exact current combination has been heard at least once, selection
-      // among the remaining eligible entries is randomized instead of
-      // repeating the same priority order every time. `entries` is any list
-      // of { id, conditions, excludeConditions, priority? }; `heard` is the
-      // array of already-heard ids to check/rank against.
-      function _pickBestEntry(entries, world, heard) {
-        return window.ConditionRegistry.pickBestEntry(entries, world, heard);
-      }
-
-      function _pickDialogueTree(rec) {
-        // A tree can tag itself visibility: 'owner' or 'farmhand' to restrict
-        // it to the world's protagonist or to non-owner members respectively;
-        // omitted/'any' (the default) is visible to everyone.
-        const all = (rec?.dialogueTrees || [])
-          .filter(t => (t.trigger || 'interact') === 'interact' && canAccessContent(t.visibility));
-        if (!all.length) return null;
-        const world = _dlgWorldState(rec);
-        const heard = _getNpcDlgState(rec?.id).heardTrees || [];
-        return _pickBestEntry(all, world, heard);
-      }
-
-      function _markDialogueTreeHeard(rec, tree) {
-        if (!rec || !tree) return;
-        const st = _getNpcDlgState(rec.id);
-        if (!st.heardTrees.includes(tree.id)) st.heardTrees.push(tree.id);
-      }
-
-      // Resolves one {{pool:<id>}} reference against this NPC's own
-      // phrasePools (pools are per-NPC, authored in the dialogue editor's
-      // Phrase Pool Manager), tracking which entries have been heard the
-      // same way dialogue trees are (see _markDialogueTreeHeard) so a pool
-      // cycles through its unheard entries before repeating.
-      function _pickPoolEntry(poolId, rec) {
-        const pool = (rec?.phrasePools || []).find(p => p.id === poolId || p.name === poolId);
-        if (!pool || !pool.entries?.length) return null;
-        const world = _dlgWorldState(rec);
-        const st    = _getNpcDlgState(rec?.id);
-        const entry = _pickBestEntry(pool.entries, world, st.heardPoolEntries || []);
-        if (entry && !st.heardPoolEntries.includes(entry.id)) st.heardPoolEntries.push(entry.id);
-        return entry;
-      }
-
-      // Shrinks a .dlg-opt-label's font-size (down from the CSS default) until its
-      // 3-line-clamped content stops overflowing the option button's allotted height.
-      function _fitDlgOptionLabel(el) {
-        const label = el.querySelector('.dlg-opt-label');
-        if (!label) return;
-        const baseSize = 11, minSize = 3;
-        let size = baseSize;
-        label.style.fontSize = size + 'px';
-        // Compare against the label's OWN (3-line-clamped) box height, not the
-        // button's — with align-items:center the label never stretches to fill
-        // the button, so checking the button's height let overflow through.
-        while (size > minSize && label.scrollHeight > label.clientHeight) {
-          size -= 1;
-          label.style.fontSize = size + 'px';
-        }
-      }
-
-      function _showDlgChoices(node) {
-        const choices = node.choices || [];
-        const optEls  = [1,2,3,4,5,6].map(i => document.getElementById(`dlgOpt${i}`));
-        optEls.forEach(el => {
-          if (!el) return;
-          const label = el.querySelector('.dlg-opt-label');
-          if (label) { label.textContent = ''; label.style.fontSize = ''; }
-          el.classList.remove('dlg-opt-visible');
-          el.onclick = null;
-        });
-        choices.slice(0, 6).forEach((c, i) => {
-          const el = optEls[i];
-          if (!el) return;
-          const label = el.querySelector('.dlg-opt-label');
-          if (label) label.textContent = _resolveTokens(c.label || '', _dlgNpcRec);
-          el.classList.add('dlg-opt-visible');
-          el.onclick = () => {
-            if (!dialogueOpen) return;
-            let skipNav = false;
-            (c.actions || []).forEach(act => {
-              if (act.type === 'setLocalNickname') {
-                const st = _getNpcDlgState(_dlgNpcRec?.id);
-                st.localNickname = _resolveTokens(act.value || '', _dlgNpcRec) || null;
-              } else if (act.type === 'openShop') {
-                // `pool` names a WARES_POOLS entry; omitted defaults to the
-                // General Store for backward compatibility with any tree
-                // authored before pools existed (bare {type:'openShop'}).
-                const pool = WARES_POOLS[act.pool || 'generalStoreWares'];
-                if (pool) { closeNpcDialogue(); openMenu(pool.menuId); }
-                skipNav = true;
-              } else if (act.type === 'openCraftMenu') {
-                // Sloomi/Kzubug's smithing counter — craft/plate/reinforce
-                // verdigris tools from dug-up metal bars (see
-                // renderMetalCraftShopPage). Both smiths offer the identical
-                // service, so there's no per-NPC pool indirection needed.
-                closeNpcDialogue(); openMenu('metalCraftShop');
-                skipNav = true;
-              } else if (act.type === 'startChat') {
-                _beginNpcConversation(_dlgNpcRec);
-                skipNav = true;
-              } else if (act.type === 'acceptFavor') {
-                setQuestStatus(act.taskId, 'available', {});
-                showToast('📋 Favor accepted — check it from the Tasks tab.', true);
-              } else if (act.type === 'declineFavor') {
-                setQuestStatus(act.taskId, 'declined', {});
-              } else if (act.type === 'turnInTask') {
-                const res = turnInTask(act.taskId);
-                if (!res.ok) showToast(res.message, false);
-              }
-            });
-            if (!skipNav) _navigateDlgTo(c.next);
-          };
-        });
-        // Run after all options are flagged visible so each one's flex-allotted
-        // height (which depends on how many siblings are showing) is settled.
-        optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
-        const continueBtn = document.getElementById('npcDialogueContinue');
-        if (continueBtn) continueBtn.style.display = choices.length ? 'none' : '';
-      }
-
-      function _hideChoiceButtons() {
-        [1,2,3,4,5,6].forEach(i => {
-          const el = document.getElementById(`dlgOpt${i}`);
-          if (!el) return;
-          const label = el.querySelector('.dlg-opt-label');
-          if (label) { label.textContent = ''; label.style.fontSize = ''; }
-          el.classList.remove('dlg-opt-visible'); el.onclick = null;
-        });
-        const continueBtn = document.getElementById('npcDialogueContinue');
-        if (continueBtn) continueBtn.style.display = '';
-      }
-
-      function npcDialoguePortraitConfig() {
-        return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.portrait || {};
-      }
-
-      function _dialogueExpressionDurationMs(node) {
-        const holdSeconds = Number(node?.expressionHold);
-        if (Number.isFinite(holdSeconds) && holdSeconds > 0) return holdSeconds * 1000;
-        return Number(window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions?.durationMs) || 10000;
-      }
-
-      function _dialogueSeatId(walker = _dialogueWalker) {
-        return walker?.rec?.id || walker?.rec?.name || 'npcDialogue';
-      }
-
-      function _npcRestingExpression(rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.expressions || {};
-        const fallback = String(cfg.defaultResting || 'neutral').toLowerCase();
-        const available = Array.isArray(cfg.available) ? cfg.available.map(value => String(value).toLowerCase()) : [];
-        const authored = String(rec?.restingExpression || fallback).toLowerCase();
-        return !available.length || available.includes(authored) ? authored : fallback;
-      }
-
-      function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || _dialogueWalker?.rec) {
-        const cfg = npcDialogueLetterSfxConfig(rec);
-        if (cfg.enabled === false || !char || /\s/.test(char)) return;
-        const audioCfg = window.AudioSystem?.gameAudioConfig();
-        if (audioCfg.enabled === false) return;
-        const volume = Math.max(0, Math.min(1, Number(cfg.volume) || 0.18)) * Math.max(0, Number(audioCfg.sfxVolume) || 1);
-        if (volume <= 0) return;
-        if (cfg.url) {
-          const snd = new Audio(cfg.url);
-          snd.volume = volume;
-          snd.playbackRate = Math.max(0.25, Number(cfg.playbackRate) || 1);
-          snd.play().catch(() => {});
-          return;
-        }
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = window._npcDialogueAudioCtx || (window._npcDialogueAudioCtx = new AudioCtx());
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const variance = Math.max(0, Number(cfg.frequencyVarianceHz) || 35);
-        const base = Math.max(20, Number(cfg.frequencyHz) || 520);
-        osc.type = cfg.waveform || 'square';
-        osc.frequency.value = base + (Math.random() * 2 - 1) * variance;
-        gain.gain.setValueAtTime(volume, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
-        osc.connect(gain).connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
-      }
-
-      function _stopNpcDialogueTypewriter(showFullText = false) {
-        if (_npcDialogueTypeTimer) clearTimeout(_npcDialogueTypeTimer);
-        _npcDialogueTypeTimer = null;
-        if (showFullText && _npcDialogueTypeText) _npcDialogueTextEl.textContent = _npcDialogueTypeText;
-        _npcDialogueTypeText = '';
-        _npcDialogueTypeIndex = 0;
-      }
-
-      function _setNpcDialogueText(text, node = null) {
-        const resolvedText = String(text || '');
-        _stopNpcDialogueTypewriter(false);
-        _applyNpcDialogueLinePresentation(resolvedText, node);
-        const cfg = npcDialogueTypewriterConfig();
-        if (!cfg.enabled) { _npcDialogueTextEl.textContent = resolvedText; return; }
-        _npcDialogueTypeText = resolvedText;
-        _npcDialogueTypeIndex = 0;
-        _npcDialogueTextEl.textContent = '';
-        const tick = () => {
-          if (!dialogueOpen || !_npcDialogueTypeText) return;
-          const char = _npcDialogueTypeText[_npcDialogueTypeIndex++];
-          _npcDialogueTextEl.textContent += char;
-          _playNpcDialogueLetterSfx(char);
-          if (_npcDialogueTypeIndex >= _npcDialogueTypeText.length) { _stopNpcDialogueTypewriter(false); return; }
-          const delay = /[.!?,;:]/.test(char) ? cfg.punctuationPauseMs : /\s/.test(char) ? cfg.whitespacePauseMs : cfg.msPerChar;
-          _npcDialogueTypeTimer = setTimeout(tick, delay);
-        };
-        _npcDialogueTypeTimer = setTimeout(tick, cfg.msPerChar);
-      }
-
-      function _applyNpcDialogueLinePresentation(text, node = null) {
-        if (!window.portraitBreathingComposer) return;
-        const seatId = _dialogueSeatId();
-        window.portraitBreathingComposer.setDefaultExpression(seatId, _npcRestingExpression());
-        if (node && Object.hasOwn(node, 'expression') && node.expression) {
-          const expression = String(node.expression).toLowerCase();
-          window.portraitBreathingComposer.setExpression(seatId, expression, _dialogueExpressionDurationMs(node));
-        } else {
-          window.portraitBreathingComposer.clearExpression(seatId);
-        }
-        window.portraitBreathingComposer.scheduleYapSequence(seatId, text || '', npcDialoguePortraitConfig().yap || {});
-      }
-
-      async function _renderNpcDialoguePortrait() {
-        if (!dialogueOpen || !_dialogueWalker?.profile || !window.NpcAvatarPreview) return false;
-        const renderOptions = {
-          breathingComposer: window.portraitBreathingComposer || null,
-          seatId: _dialogueSeatId(),
-        };
-        await window.NpcAvatarPreview.renderProfileToCanvas(_npcPortraitCanvas, _dialogueWalker.profile, renderOptions);
-        if (_dialogueWalker.avatarFrontCanvas && window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) {
-          await window.NpcAvatarPreview.renderProfileToCanvas(_dialogueWalker.avatarFrontCanvas, _dialogueWalker.profile, renderOptions);
-          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(_dialogueWalker.avatarGroup, _dialogueWalker.avatarFrontCanvas);
-        }
-        return true;
-      }
-
-      let _npcDialoguePortraitRenderPending = false;
-      let _npcDialoguePortraitLastRenderMs = 0;
-      function updateNpcDialoguePortrait(nowMs = performance.now()) {
-        if (!dialogueOpen || !_dialogueWalker?.profile || _npcDialoguePortraitRenderPending) return;
-        const fps = Math.max(1, Number(npcDialoguePortraitConfig().maxFps) || 12);
-        if (nowMs !== 0 && nowMs - _npcDialoguePortraitLastRenderMs < 1000 / fps) return;
-        _npcDialoguePortraitRenderPending = true;
-        _renderNpcDialoguePortrait()
-          .catch(err => console.warn('[npc-dialogue] portrait render failed', err))
-          .finally(() => {
-            _npcDialoguePortraitLastRenderMs = performance.now();
-            _npcDialoguePortraitRenderPending = false;
-          });
-      }
-
-      function _renderDlgNode(node) {
-        if (!node) { closeNpcDialogue(); return; }
-        _dlgNode = node;
-
-        if (node.type === 'end') { closeNpcDialogue(); return; }
-
-        if (node.type === 'sequence') { _handleSequenceNode(node); return; }
-
-        const text = _resolveTokens(node.text || '', _dlgNpcRec);
-        _setNpcDialogueText(text, node);
-        updateNpcDialoguePortrait(0);
-
-        if (node.type === 'choice') {
-          _showDlgChoices(node);
-        } else {
-          _hideChoiceButtons();
-        }
-      }
-
-      function _handleSequenceNode(seqNode) {
-        const st       = _getNpcDlgState(_dlgNpcRec?.id);
-        const visited  = st.visitedSeqSlots[seqNode.id] || [];
-        const slots    = seqNode.slots || [];
-        const nextIdx  = slots.findIndex((_, i) => !visited.includes(i));
-
-        if (nextIdx === -1) {
-          // All slots exhausted
-          _navigateDlgTo(seqNode.exhaustedNext);
-          return;
-        }
-
-        const slot = slots[nextIdx];
-        st.visitedSeqSlots[seqNode.id] = [...visited, nextIdx];
-        _dlgSeqStack.push({ seqNodeId: seqNode.id, seqNode, depthRemaining: slot.depth });
-        _navigateDlgTo(slot.nodeId);
-      }
-
-      function _navigateDlgTo(nodeId) {
-        if (!nodeId) {
-          // End of chain — pop sequence stack if any, otherwise end dialogue
-          if (_dlgSeqStack.length > 0) {
-            const frame = _dlgSeqStack.pop();
-            _navigateDlgTo(frame.seqNode.next || null);
-          } else {
-            closeNpcDialogue();
-          }
-          return;
-        }
-        const node = _dlgNodeMap?.[nodeId];
-        if (!node) { closeNpcDialogue(); return; }
-        _renderDlgNode(node);
-      }
-
-      function _advanceDlgNode() {
-        if (!_dlgNode) return;
-        if (_dlgNode.type === 'choice') return; // choices require clicking an option button
-        const next = _dlgNode.next;
-        if (_dlgSeqStack.length > 0) {
-          const frame = _dlgSeqStack[_dlgSeqStack.length - 1];
-          if (frame.depthRemaining <= 0) {
-            _dlgSeqStack.pop();
-            _navigateDlgTo(frame.seqNode.next || null);
-            return;
-          }
-          frame.depthRemaining--;
-        }
-        _navigateDlgTo(next || null);
-      }
-
-      // Starts the actual conversation content (dialogue tree, or the plain
-      // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
-      // of the merchant shop/chat choice below.
-      function _beginNpcConversation(rec) {
-        const tree = _pickDialogueTree(rec);
-        if (tree) {
-          _markDialogueTreeHeard(rec, tree);
-          _dlgTree    = tree;
-          _dlgNodeMap = Object.fromEntries((tree.nodes || []).map(n => [n.id, n]));
-          _dlgNpcRec  = rec;
-          _dlgSeqStack = [];
-          _dialogueLines   = [];
-          _dialogueLineIdx = 0;
-          _navigateDlgTo(tree.entryNode);
-        } else {
-          _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = rec;
-          _hideChoiceButtons();
-          _dialogueLines   = _npcDialogueLines(rec);
-          _dialogueLineIdx = 0;
-          _setNpcDialogueText(_dialogueLines[0]);
-          updateNpcDialoguePortrait(0);
-        }
-      }
-
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
-        recordNpcMemory(rec?.id, 'talked');
+        window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
@@ -891,14 +340,14 @@
         updateDialogueZoomIndicator();
         walker.pause = Infinity;
         _npcDialogueNameEl.textContent = rec?.name || 'Stranger';
-        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = renderRelationshipHearts(rec);
+        if (_npcDialogueHeartsEl) _npcDialogueHeartsEl.textContent = window.DialogueContent?.renderRelationshipHearts(rec);
         _arcContainerEl?.classList.add('arc-hidden');
 
         if (walker.profile && window.NpcAvatarPreview) {
           const ctx = _npcPortraitCanvas.getContext('2d');
           ctx.fillStyle = '#1b3529';
           ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-          await _renderNpcDialoguePortrait();
+          await window.DialogueContent?.renderNpcDialoguePortrait();
         }
 
         _npcDialogueEl.classList.add('open');
@@ -911,8 +360,8 @@
         const _turnInTask = rec?.id ? getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
           const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: `Ah — did you bring what I asked for?`,
             choices: [
@@ -931,8 +380,8 @@
         // shortcut the shop fast-paths use. See maybeOfferFavor.
         const _favorTask = maybeOfferFavor(rec);
         if (_favorTask) {
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: favorAskLine(_favorTask),
             choices: [
@@ -954,8 +403,8 @@
         // any time, with no station/idle requirement at all.
         if (isGeneralStoreNpcOnDuty(walker)) {
           const cfg = generalStoreButtonConfig();
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: cfg.shopGreeting || 'What can I do for you?',
             choices: [
@@ -968,8 +417,8 @@
 
         if (isCarpenterNpcOnDuty(walker)) {
           const cfg = carpenterButtonConfig();
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: cfg.shopGreeting || 'What can I do for you?',
             choices: [
@@ -986,8 +435,8 @@
         // than being station-gated. "Chat" re-enters his normal dialogue
         // tree exactly like the General Store's Chat option does.
         if (rec?.id === 'jubmir') {
-          _dlgNpcRec = rec; _dlgTree = null; _dlgNodeMap = null; _dlgSeqStack = [];
-          _renderDlgNode({
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
             type: 'choice',
             text: 'What can I do for you?',
             choices: [
@@ -998,31 +447,20 @@
           return;
         }
 
-        _beginNpcConversation(rec);
+        window.DialogueContent?.beginNpcConversation(rec);
       }
 
-      function advanceNpcDialogue() {
-        if (_npcDialogueTypeText) { _stopNpcDialogueTypewriter(true); return; }
-        // Cutscene Preview drives its own talk/choice stage sequence instead
-        // of an authored dialogueTree — see "Cutscene Preview Mode" below.
-        if (cutscenePreviewActive) { cutscenePreviewAdvance?.(); return; }
-        if (_dlgTree) { _advanceDlgNode(); return; }
-        _dialogueLineIdx++;
-        if (_dialogueLineIdx >= _dialogueLines.length) { closeNpcDialogue(); return; }
-        _setNpcDialogueText(_dialogueLines[_dialogueLineIdx]);
-        updateNpcDialoguePortrait(0);
-      }
+      // advanceNpcDialogue now lives in js/dialogue-content.js
+      // (window.DialogueContent).
 
       function closeNpcDialogue() {
         dialogueOpen = false;
-        _dialogueLines = [];
-        _dialogueLineIdx = 0;
-        _dlgTree = null; _dlgNodeMap = null; _dlgNode = null; _dlgNpcRec = null; _dlgSeqStack = [];
-        _stopNpcDialogueTypewriter(false);
-        _hideChoiceButtons();
+        window.DialogueContent?.resetDialogueState();
+        window.DialogueContent?.stopNpcDialogueTypewriter(false);
+        window.DialogueContent?.hideChoiceButtons();
         npcDialogueStaging = null;
-        window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
-        window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
+        window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
+        window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
         if (_dialogueWalker) {
           if (_dialogueWalker.neckJoint) _dialogueWalker.neckJoint.rotation.y = 0;
           _dialogueWalker.pause = 0;
@@ -1042,21 +480,8 @@
         saveMemberWorldData(); // persist visited-node/memory state mutated during the conversation
       }
 
-      function renderRelationshipHearts(rec) {
-        if (!rec?.relationship) return '';
-        const score = friendshipFavor(rec.id);
-        const clamped = Math.max(-5, Math.min(10, score));
-        const hearts = [];
-        for (let i = -5; i <= 10; i++) {
-          if (i === 0) continue;
-          if (clamped < 0) {
-            hearts.push(i < 0 && i >= clamped ? '💜' : i < 0 ? '🖤' : '🤍');
-          } else {
-            hearts.push(i <= clamped ? '❤️' : i > 0 ? '🤍' : '');
-          }
-        }
-        return hearts.filter(Boolean).join('');
-      }
+      // renderRelationshipHearts now lives in js/dialogue-content.js
+      // (window.DialogueContent).
 
       // ── Tile / crop enums (must come first — referenced by everything below) ──
       const TileType = Object.freeze({
@@ -8206,7 +7631,7 @@
           const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
           member.nonGearInventory = { ...inventory };
           member.packClothing    = [...packClothing];
-          member.npcRelationships = npcRelationshipsSnapshot();
+          member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
           member.questProgress    = { ...questProgress };
           member.alchemyKnownEffects = serializeKnownReagentEffects();
           member.alchemyActiveEffects = serializeActiveAlchemyEffects();
@@ -8276,7 +7701,7 @@
       // counter — see _getNpcDlgState/adjustNpcFavor above. No new persisted
       // counter needed; this just adds tier thresholds on top of it.
       const FRIENDSHIP_TIER_THRESHOLDS = [0, 40, 100, 200, 350, 550];
-      function friendshipFavor(npcId) { return _getNpcDlgState(npcId).favor || 0; }
+      function friendshipFavor(npcId) { return window.DialogueContent?.getNpcDlgState(npcId).favor || 0; }
       function friendshipTier(npcId) {
         const favor = friendshipFavor(npcId);
         let tier = 0;
@@ -8508,7 +7933,7 @@
         inventory[task.itemKey] -= task.qty;
         clampInventoryStack(task.itemKey);
         inventory.gold = (inventory.gold || 0) + task.rewardGold;
-        adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
+        window.DialogueContent?.adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
         setQuestStatus(taskId, 'completed', {});
         showToast(`✅ Task complete! +${task.rewardGold}g, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
         return { ok: true, message: 'Task turned in.' };
@@ -12376,13 +11801,13 @@
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
       window._npcWalkers = npcWalkers;
+      // dialogueOpen/_dialogueWalker are read/written both here (camera/
+      // staging code) and by js/dialogue-content.js (via deps.getDialogueOpen/
+      // getDialogueWalker) — the dialogue-flow state that module owns
+      // exclusively (_dlgTree, _dialogueLines, the typewriter timer, etc.)
+      // lives entirely inside it now, not here.
       let dialogueOpen       = false;
-      let _dialogueLines     = [];
-      let _dialogueLineIdx   = 0;
       let _dialogueWalker    = null;
-      let _npcDialogueTypeTimer = null;
-      let _npcDialogueTypeText  = '';
-      let _npcDialogueTypeIndex = 0;
       let _playerData        = null;  // set from hobunjiPlayerReady event
       let playerAvatarRefreshGeneration = 0; // Guards async avatar rebuilds from attaching stale planes.
       // The base attach point updateToolMesh hangs tools/weapons from. X is the avatar's
@@ -12432,14 +11857,6 @@
       // refreshPlayerAvatar() alongside playerToolBaseX/Y, as playerToolBaseY + 0.19.
       let playerItemHoldY = 0.64;
 
-      // ── Dialogue tree runtime state ──────────────────────────────────
-      let _dlgTree      = null;  // active tree object
-      let _dlgNodeMap   = null;  // {id → node}
-      let _dlgNode      = null;  // current node
-      let _dlgNpcRec    = null;  // current NPC record
-      let _dlgSeqStack  = [];    // [{seqNodeId, depthRemaining}]
-      const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
-      const _npcBaseDispositions = {}; // npcId → baseDisposition from NPC database config
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
@@ -14991,7 +14408,7 @@
             npcSharedSchedules = json.sharedSchedules || [];
             for (const npc of dbNpcs) {
               const bd = npc.relationship?.baseDisposition;
-              if (typeof bd === 'number') _npcBaseDispositions[npc.id] = bd;
+              if (typeof bd === 'number' && window.DialogueContent) window.DialogueContent.npcBaseDispositions[npc.id] = bd;
             }
           } catch {}
         }
@@ -19058,7 +18475,8 @@
         const list = document.getElementById('relationshipsList');
         if (!list) return;
         list.innerHTML = '';
-        const knownIds = [..._npcDlgState.keys()].filter(id => (_npcDlgState.get(id).memory || []).length > 0);
+        const dlgState = window.DialogueContent?.npcDlgState;
+        const knownIds = dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : [];
         if (!knownIds.length) {
           list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
           return;
@@ -23736,7 +23154,7 @@
 
       function useActiveAction() {
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
-        if (dialogueOpen) { advanceNpcDialogue(); return; }
+        if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
         // fishingMinigame?.active special-case for keyboard/controller.
@@ -32011,7 +31429,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         drawOverlays();
         drawLightingOverlay();
 
-        updateNpcDialoguePortrait(now);
+        window.DialogueContent?.updateNpcDialoguePortrait(now);
         updateHud();
         requestAnimationFrame(gameLoop);
       }
@@ -33941,7 +33359,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         debugLog(paused ? 'paused' : 'resumed');
       });
 
-      document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) advanceNpcDialogue(); });
+      document.getElementById('npcDialogueContinue')?.addEventListener('click', () => { if (dialogueOpen) window.DialogueContent?.advanceNpcDialogue(); });
       document.getElementById('npcDialogueLeave')?.addEventListener('click', () => { if (dialogueOpen) closeNpcDialogue(); });
 
       joystickZone.addEventListener('pointerdown', handleJoystickPointerDown);
@@ -34969,7 +34387,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.
-        loadNpcRelationships(playerData);
+        window.DialogueContent?.loadNpcRelationships(playerData);
         questProgress = { ...(playerData.questProgress || {}) };
         maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
 
@@ -35102,6 +34520,27 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         _playerData = window.__hobunjiPlayerProfile;
         spawnPlayerAvatar(window.__hobunjiPlayerProfile);
       }
+
+      window.DialogueContent?.init({
+        calendar,
+        getCurrentArea: () => currentArea,
+        getPlayerData: () => _playerData,
+        getDialogueOpen: () => dialogueOpen,
+        getDialogueWalker: () => _dialogueWalker,
+        getWaresPools: () => WARES_POOLS,
+        currentWeekdayName,
+        currentSeason,
+        fishingTimeOfDay,
+        normalizeStationLabel,
+        canAccessContent,
+        setQuestStatus,
+        turnInTask,
+        showToast,
+        openMenu,
+        closeNpcDialogue,
+        getCutscenePreviewActive: () => cutscenePreviewActive,
+        getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
+      });
 
       window.PixelProbe?.init({
         renderer,
@@ -35860,22 +35299,22 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           const ctx = _npcPortraitCanvas.getContext('2d');
           if (_dialogueWalker?.profile && window.NpcAvatarPreview) {
             ctx.fillStyle = '#1b3529'; ctx.fillRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
-            await _renderNpcDialoguePortrait();
+            await window.DialogueContent?.renderNpcDialoguePortrait();
           } else {
             ctx.clearRect(0, 0, _npcPortraitCanvas.width, _npcPortraitCanvas.height);
           }
           _npcDialogueEl.classList.add('open');
           _npcDialogueEl.setAttribute('aria-hidden', 'false');
-          _hideChoiceButtons();
-          _setNpcDialogueText(text);
+          window.DialogueContent?.hideChoiceButtons();
+          window.DialogueContent?.setNpcDialogueText(text);
         }
 
         function closeLine() {
           dialogueOpen = false;
           cutscenePreviewAdvance = null;
-          _hideChoiceButtons();
-          window.portraitBreathingComposer?.clearExpression(_dialogueSeatId());
-          window.portraitBreathingComposer?.setDefaultExpression(_dialogueSeatId(), null);
+          window.DialogueContent?.hideChoiceButtons();
+          window.portraitBreathingComposer?.clearExpression(window.DialogueContent?.dialogueSeatId());
+          window.portraitBreathingComposer?.setDefaultExpression(window.DialogueContent?.dialogueSeatId(), null);
           _dialogueWalker = null;
           cutscenePreviewDialogueSpeaker = null;
           _npcDialogueEl.classList.remove('open');
@@ -35894,7 +35333,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             el.classList.add('dlg-opt-visible');
             el.onclick = () => { if (!dialogueOpen) return; opt.onClick(); };
           });
-          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) _fitDlgOptionLabel(el); });
+          optEls.forEach(el => { if (el && el.classList.contains('dlg-opt-visible')) window.DialogueContent?.fitDlgOptionLabel(el); });
           const continueBtn = document.getElementById('npcDialogueContinue');
           if (continueBtn) continueBtn.style.display = options.length ? 'none' : '';
         }
