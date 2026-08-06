@@ -1219,6 +1219,11 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260806a"></script>
+  <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
+       load before game.js, which calls window.Fishing.init(...) during its
+       own setup. game.js's own tool-swing code reads window.Fishing.state/
+       .readyPose directly. -->
+  <script src="js/fishing-minigame.js?v=20260806a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
