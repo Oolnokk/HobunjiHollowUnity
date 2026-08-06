@@ -1199,6 +1199,9 @@
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20260806a"></script>
+  <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
+       which calls window.AudioSystem.init(...) during its own setup. -->
+  <script src="js/audio-system.js?v=20260806a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
