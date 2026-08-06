@@ -1202,6 +1202,12 @@
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20260806a"></script>
+  <!-- Background music/ambient cues/bgs/furniture-proximity SFX
+       (window.Music) — wires its own DOM audio-unlock listeners at load
+       time, and must load before game.js, which calls
+       window.Music.init(...) during its own setup. Depends on
+       window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
+  <script src="js/music-system.js?v=20260806a"></script>
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
