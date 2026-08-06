@@ -1,19 +1,5 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    @font-face {
-      font-family: 'KhymeryyanRomanLetters+Numbers';
-      src: url('assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');
-      font-weight: normal;
-      font-style: normal;
-      font-display: swap;
-      /* This font's cap-height/x-height run small relative to its em box
-         compared to the DM Mono/Pixelify Sans fallbacks it replaced, so it
-         reads noticeably smaller at the same font-size — size-adjust scales
-         its rendered glyphs up to compensate, in one place, instead of
-         touching every font-size declared across the HUD. */
-      size-adjust: 115%;
-    }
-
     :root {
       --bg: #17251e;
       --glass: rgba(8, 18, 13, 0.82);
@@ -1833,6 +1819,17 @@
       text-transform: uppercase; letter-spacing: 0.04em;
       line-height: 1; pointer-events: none;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+    }
+    .ies-mastery {
+      width: calc(100% - 4px); height: max(3px, calc(0.13 * var(--inv-row)));
+      flex-shrink: 0; border-radius: 999px; overflow: hidden;
+      background: rgba(0,0,0,0.48); border: 1px solid rgba(255,255,255,0.14);
+      pointer-events: none;
+    }
+    .ies-mastery-fill {
+      display: block; width: var(--mastery-progress); height: 100%;
+      border-radius: inherit; background: linear-gradient(90deg, #b98a42, var(--accent));
+      box-shadow: 0 0 4px rgba(249,226,138,0.5);
     }
     .ies-unequip {
       position: absolute; top: 1px; right: 2px;
