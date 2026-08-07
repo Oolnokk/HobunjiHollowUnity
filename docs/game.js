@@ -6246,6 +6246,10 @@
       // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
       // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
       const _zoneDecorFurnitureGroups = new Map();
+      // mapId set while window.TownZoneBuildings.spawnZoneBuildings(mapId)'s
+      // GLB upgrade is in flight — stays in game.js (not module-private)
+      // since _disposeZoneScene also needs to clear a torn-down zone's entry.
+      const _zoneBuildingsGlbUpgradePending = new Set();
       // mapId → [THREE.Mesh, ...] (animated waterfall curtain meshes) — see
       // buildWaterfallCurtainMeshes/updateZoneWaterMeshes. Mirrors
       // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
@@ -6749,8 +6753,8 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
         _zoneScenes.set(mapId, info);
-        _spawnZoneBuildings(mapId);
-        _spawnZoneDecorFurniture(mapId);
+        window.TownZoneBuildings.spawnZoneBuildings(mapId);
+        window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
         // Any NPC whose schedule targeted this zone before its (expensive,
         // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
@@ -9488,8 +9492,8 @@
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
-          _townBuildingDefs = _detectTownBuildings();
-          _spawnTownBuildings();
+          _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
+          window.TownZoneBuildings.spawnTownBuildings();
         }
       }
 
@@ -10325,290 +10329,11 @@
         window.BanditCamps?.markZoneEntered(mapId);
       }
 
-      // ── Town building detection ──────────────────────────────────────
-      // Reads explicit building entries from the town layout (placed by map editor).
-      function _detectTownBuildings() {
-        const buildings = _townZone?.buildings || [];
-        debugLog('_detectTownBuildings: ' + buildings.length + ' placed buildings');
-        return buildings;
-      }
-
-      // Loads a docs/assets/textures/*.png as a shared, tiling MeshLambertMaterial
-      // for HousePieceGen.buildGroupFromPiece's tagged faces (BOARD_TAGS/STONE_TAGS/
-      // 'canvas' — see HousePieceGen.js). Starts as a flat fallback color so meshes
-      // render immediately; once the texture loads it replaces the color in place
-      // on the same material object, so every mesh already built with it updates
-      // automatically. tileSize is world units per texture repeat — HousePieceGen.js
-      // reads it back off mat.userData.uvTileSize to scale each face's UVs so the
-      // texture stretches proportionally to real face size instead of smearing a
-      // whole image across every face regardless of size.
-      function loadHousePieceFaceTexture(path, fallbackColor, tileSize) {
-        const mat = new THREE.MeshLambertMaterial({ color: fallbackColor, side: THREE.DoubleSide });
-        mat.userData.uvTileSize = tileSize;
-        new THREE.TextureLoader().load(path, (tex) => {
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
-        }, undefined, () => {});
-        return mat;
-      }
-
-      // Spawns Highland house pieces for all placed town buildings.
-      // Fetches each building's piece JSON then calls HousePieceGen.buildGroupFromPiece(),
-      // which reads piece.base.faces directly (same geometry as the house editor preview)
-      // plus WallBuilder bricks on wall/gable faces.
-      let _townBuildingsGlbUpgradePending = false;
-      // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
-      function _spawnTownBuildings() {
-        if (!townScene || !_townBuildingDefs.length) return;
-        if (typeof HousePieceGen === 'undefined') {
-          debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
-          return;
-        }
-
-        // Dispose previous groups
-        for (const entry of _townBuildingGroups) {
-          townScene.remove(entry.group);
-          entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-        }
-        _townBuildingGroups = [];
-
-        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
-                              preScale: [1, 1, 0.6],
-                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-
-        // Preload tagged-face textures (shared across all buildings) — boards.png
-        // for porch/stair/railing faces, carved_smooth.png for stone-tagged
-        // (chimney) faces, canvas.png for canvas-tagged (tent) faces.
-        const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-        const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
-        const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
-
-        // Async-load all piece files in parallel, then build scene
-        Promise.all(_townBuildingDefs.map(bldg => {
-          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
-          return fetch(bldg.pieceFile)
-            .then(r => r.json())
-            .then(piece => ({ bldg, piece }))
-            .catch(e => { debugLog('Piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
-        })).then(results => {
-          if (!townScene) return;
-          const TROWS_ENT = _townZone?.rows || 50;
-          const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-          const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
-
-          for (const { bldg, piece } of results) {
-            const wbOpts      = bldg.wbOpts      || _wbDefaults;
-            const wbGableOpts = bldg.wbGableOpts || undefined;
-
-            let g = new THREE.Group();
-            if (piece) {
-              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
-                wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                rotationDeg: bldg.rotationDeg || 0,
-              });
-            }
-            townScene.add(g);
-            _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-
-            // Entrance ring: single-source door geometry from js/building-door.js
-            // (shared with the Map Editor's Building inspector, and with House
-            // Piece Author for the door preview) — resolves the piece's
-            // authored footprint.door point, or the old porch/south-edge
-            // heuristic for pieces nobody has placed a door on yet.
-            const rotDeg = bldg.rotationDeg || bldg.rotation || 0;
-            const doorEnt = BuildingDoor.resolveDoorEntrance(piece);
-            const hasBldgCells = !!doorEnt;
-            let wBMinC, wBMaxC, wBMinR, wBMaxR, eCol, eRow;
-            if (hasBldgCells) {
-              const door = BuildingDoor.doorWorldFromBuilding(doorEnt, bldg.gridX, bldg.gridZ, rotDeg, TROWS_ENT - 1);
-              eCol = door.col; eRow = door.row;
-              wBMinC = door.bbox.minC; wBMaxC = door.bbox.maxC; wBMinR = door.bbox.minR; wBMaxR = door.bbox.maxR;
-            } else {
-              // Piece never loaded (fetch failure etc.) — fall back to the
-              // building instance's own footprintW/footprintD hints so the
-              // town still gets *a* door instead of erroring out.
-              wBMinC = bldg.gridX; wBMaxC = bldg.gridX + (bldg.footprintW ?? 1) - 1;
-              wBMinR = bldg.gridZ; wBMaxR = bldg.gridZ + (bldg.footprintD ?? 1) - 1;
-              eCol = Math.floor((bldg.gridX * 2 + (bldg.footprintW ?? 1) + 1) / 2);
-              eRow = Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
-            }
-            const eid = 'bldg_entrance_' + bldg.id;
-            // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
-            const hasWorkspaceEntry = worldTownTransitions.some(t =>
-              t.target === 'building' &&
-              Number.isFinite(t.col) && Number.isFinite(t.row) &&
-              t.col >= wBMinC && t.col <= wBMaxC &&
-              t.row >= wBMinR && t.row <= wBMaxR);
-            const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
-            if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
-              worldTownTransitions.push({
-                id: eid, area: 'town', col: eCol, row: eRow,
-                target: 'interior',
-                targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
-              });
-              const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
-              ring.rotation.x = -Math.PI / 2;
-              ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
-              townScene.add(ring);
-            }
-          }
-
-          debugLog('_spawnTownBuildings: built ' + _townBuildingGroups.length + ' buildings from piece JSON');
-
-          // Upgrade to real bricks + shingle GLB once assets are ready
-          if (!_townBuildingsGlbUpgradePending) {
-            _townBuildingsGlbUpgradePending = true;
-            Promise.all([
-              houseWallBuilder.loadDefaultGlb(),
-              HousePieceGen.loadShingleGlb('assets/models/'),
-            ]).then(() => {
-              _townBuildingsGlbUpgradePending = false;
-              if (!townScene) return;
-              debugLog('Town buildings: upgrading to real bricks + shingle GLB');
-              const prev = _townBuildingGroups.slice();
-              _townBuildingGroups = [];
-              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
-                townScene.remove(group);
-                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-                if (!piece) continue;
-                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
-                  wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                  rotationDeg: bldg.rotationDeg || 0,
-                });
-                townScene.add(g);
-                _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-              }
-            }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
-          }
-        });
-      }
-
-      // Mirrors _spawnTownBuildings for an exterior zone map (Northern Cliffs,
-      // its plateau-tier sub-maps, etc.) — buildings placed there get the same
-      // piece-JSON geometry, but lifted to their anchor tile's plateau tier
-      // (zoneData.buildings[].elevTier, resolved in the mergeZoneTiles loop
-      // above) via HousePieceGen's elevationY option, instead of always
-      // sitting at world Y 0 the way town buildings do today.
-      let _zoneBuildingsGlbUpgradePending = new Set();
-      function _spawnZoneBuildings(mapId) {
-        const zoneData = _zoneLayouts.get(mapId);
-        const buildingDefs = zoneData?.buildings || [];
-        if (!buildingDefs.length) return;
-        if (typeof HousePieceGen === 'undefined') {
-          debugLog('HousePieceGen not loaded — skipping zone buildings', 'warn');
-          return;
-        }
-        if (_zoneBuildingGroups.has(mapId)) return; // already spawned for this zone scene
-
-        const groups = [];
-        _zoneBuildingGroups.set(mapId, groups);
-
-        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
-                              preScale: [1, 1, 0.6],
-                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-        const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-        const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
-        const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
-
-        Promise.all(buildingDefs.map(bldg => {
-          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
-          return fetch(bldg.pieceFile)
-            .then(r => r.json())
-            .then(piece => ({ bldg, piece }))
-            .catch(e => { debugLog('Zone piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
-        })).then(results => {
-          const scene = _zoneScenes.get(mapId)?.scene;
-          if (!scene) return;
-
-          for (const { bldg, piece } of results) {
-            const wbOpts      = bldg.wbOpts      || _wbDefaults;
-            const wbGableOpts = bldg.wbGableOpts || undefined;
-            const elevationY  = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
-
-            let g = new THREE.Group();
-            if (piece) {
-              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
-                wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                rotationDeg: bldg.rotationDeg || 0, elevationY,
-              });
-            }
-            scene.add(g);
-            groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-          }
-
-          debugLog(`_spawnZoneBuildings(${mapId}): built ${groups.length} buildings from piece JSON`);
-
-          if (!_zoneBuildingsGlbUpgradePending.has(mapId)) {
-            _zoneBuildingsGlbUpgradePending.add(mapId);
-            Promise.all([
-              houseWallBuilder.loadDefaultGlb(),
-              HousePieceGen.loadShingleGlb('assets/models/'),
-            ]).then(() => {
-              _zoneBuildingsGlbUpgradePending.delete(mapId);
-              const scene2 = _zoneScenes.get(mapId)?.scene;
-              if (!scene2) return;
-              debugLog(`Zone buildings (${mapId}): upgrading to real bricks + shingle GLB`);
-              const prev = groups.slice();
-              groups.length = 0;
-              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
-                scene2.remove(group);
-                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-                if (!piece) continue;
-                const elevationY = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
-                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
-                  wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                  rotationDeg: bldg.rotationDeg || 0, elevationY,
-                });
-                scene2.add(g);
-                groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-              }
-            }).catch(e => debugLog('Zone building GLB error: ' + e, 'warn'));
-          }
-        });
-      }
-
-      function _spawnZoneDecorFurniture(mapId) {
-        const zoneData = _zoneLayouts.get(mapId);
-        const decorDefs = zoneData?.decor || [];
-        const furnitureDefs = zoneData?.furniture || [];
-        if (!decorDefs.length && !furnitureDefs.length) return;
-        if (typeof window.ProceduralFurniture === 'undefined') {
-          debugLog('ProceduralFurniture not loaded — skipping zone decor/furniture', 'warn');
-          return;
-        }
-        if (_zoneDecorFurnitureGroups.has(mapId)) return; // already spawned for this zone scene
-        const scene = _zoneScenes.get(mapId)?.scene;
-        if (!scene) return;
-
-        const meshes = [];
-        _zoneDecorFurnitureGroups.set(mapId, meshes);
-
-        for (const d of decorDefs) {
-          const result = makeDecorativeFurnitureMesh(d.col, d.row, d.key, scene, mapId);
-          if (!result) continue;
-          const y = NORMAL_TOP + (d.elevTier || 0) * PLATEAU_UNIT;
-          result.mesh.position.y += y;
-          if (result.light) result.light.position.y += y;
-          meshes.push(result.mesh);
-        }
-        for (const f of furnitureDefs) {
-          const def = PROCESSING_FURNITURE_DEFS[f.key];
-          if (!def) continue;
-          const group = buildFurnitureVisual(f.key, def.color || 0x888888);
-          const y = NORMAL_TOP + (f.elevTier || 0) * PLATEAU_UNIT;
-          group.position.set(f.col + 0.5, y, f.row + 0.5);
-          _markOutline(group);
-          _markFurnitureEdgeId(group);
-          scene.add(group);
-          meshes.push(group);
-          window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, window.Music?.resolveFurnitureSfx(def));
-        }
-        debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
-      }
+      // Town/zone building mesh spawning (detectTownBuildings/
+      // spawnTownBuildings/spawnZoneBuildings) and decorative furniture/
+      // prop spawning (spawnZoneDecorFurniture) now live in
+      // js/town-zone-buildings.js (window.TownZoneBuildings) — see its
+      // init(deps) call below for the shared game.js state it's threaded.
 
       // ── Alchemy: reagent plant scatter (per wilderness zone) ─────────
       function _seedFromString(str) {
@@ -11006,8 +10731,8 @@
         }
 
         // Generate 3D buildings from rock-tile clusters
-        _townBuildingDefs = _detectTownBuildings();
-        _spawnTownBuildings();
+        _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
+        window.TownZoneBuildings.spawnTownBuildings();
 
         debugLog('buildTownScene complete');
       }
@@ -25292,6 +25017,33 @@
         esc,
       });
 
+      window.TownZoneBuildings?.init({
+        getTownZone: () => _townZone,
+        debugLog,
+        getTownScene: () => townScene,
+        getTownBuildingDefs: () => _townBuildingDefs,
+        getTownBuildingGroups: () => _townBuildingGroups,
+        setTownBuildingGroups: (v) => { _townBuildingGroups = v; },
+        getWorldTownTransitions: () => worldTownTransitions,
+        houseWallBuilder,
+        INTERIOR_COLS,
+        INTERIOR_ROWS,
+        tileSurfaceY,
+        TileType,
+        zoneLayouts: _zoneLayouts,
+        zoneBuildingGroups: _zoneBuildingGroups,
+        zoneBuildingsGlbUpgradePending: _zoneBuildingsGlbUpgradePending,
+        zoneScenes: _zoneScenes,
+        zoneDecorFurnitureGroups: _zoneDecorFurnitureGroups,
+        makeDecorativeFurnitureMesh,
+        PROCESSING_FURNITURE_DEFS,
+        buildFurnitureVisual,
+        markOutline: _markOutline,
+        markFurnitureEdgeId: _markFurnitureEdgeId,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+      });
+
       window.WildlifeSpawn?.init({
         TILE,
         TileType,
@@ -25613,7 +25365,7 @@
         debugLog,
         hasFarmPermission,
         inventory,
-        loadHousePieceFaceTexture,
+        loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
         markTileDirty,
         openMenu,
         recomputeWater,

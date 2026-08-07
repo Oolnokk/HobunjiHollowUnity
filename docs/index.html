@@ -267,6 +267,15 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
   <script src="js/wildlife-spawn.js?v=20260807a"></script>
+  <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
+       (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
+       WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
+       call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.TownZoneBuildings.init(...) during its own setup (and
+       reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
+       window.FarmBuildings' own init deps, at that same call-time point). -->
+  <script src="js/town-zone-buildings.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
