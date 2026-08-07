@@ -5566,7 +5566,7 @@
           member.questProgress    = { ...questProgress };
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
-          member.alchemyReagentState = serializeZoneReagentState();
+          member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
           member.felledTreeState = serializeZoneFelledTreeState();
@@ -11074,7 +11074,7 @@
         if (!zdef && !_zoneLayouts.has(mapId)) return;
         const zi = buildZoneScene(mapId);
         if (!zi) return;
-        ensureZoneReagents(mapId);
+        window.ReagentPlants.ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
         const fromScene = getActiveScene();
@@ -11438,29 +11438,6 @@
         return mat;
       }
 
-      // A single reagent plant: a small two-blade cross (mirrors the
-      // "cross of quads" billboard-grass look) at 150% of a normal grass
-      // blade's size, standing alone as an individually pickable sprite
-      // instead of being folded into a shared InstancedMesh tuft.
-      function buildReagentPlantMesh(reagentKey) {
-        const def = window.AlchemySystem.REAGENT_DEFS[reagentKey];
-        if (!def) return null;
-        const mat = getReagentPlantMaterial(def.color);
-        if (!mat) return null;
-        const group = new THREE.Group();
-        const sizeMul = 1.5; // 150% size, per the placeholder-billboard spec
-        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
-        for (const rot of [0, Math.PI / 2]) {
-          const blade = new THREE.Mesh(_grassBladeGeo, mat);
-          blade.rotation.y = rot;
-          blade.scale.set(w, h, 1);
-          group.add(blade);
-        }
-        group.userData.isBillboard = true;
-        group.userData.reagentKey = reagentKey;
-        return group;
-      }
-
       // Finds up to `count` distinct flat, empty (col,row) tiles in a
       // wilderness zone for reagent placement. Uses the same tile-level
       // exclusion checklist as findZonePlacementFootprint's single-spot
@@ -11503,125 +11480,6 @@
           [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
         }
         return candidates.slice(0, count);
-      }
-
-      // Picks fresh (col,row,reagentKey) placements for one zone — deterministic
-      // per (zone, day) so re-entering the same zone on the same day doesn't
-      // reshuffle plants that just haven't been picked yet.
-      function scatterReagentsForZone(mapId) {
-        const pool = window.AlchemySystem.reagentsForZone(mapId);
-        if (!pool.length) return [];
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return [];
-        const targetCount = Math.max(6, Math.min(40, Math.round((zi.cols * zi.rows) / 45)));
-        const rng = _mbRng(_seedFromString(mapId + ':' + calendar.day));
-        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng);
-        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
-      }
-
-      // Builds a worldObjects-shaped pickable for one reagent plant, matching
-      // the { getButtons(), onAction() } shape getWorldObjectAt's callers expect.
-      function makeReagentPlantObject(mapId, col, row, reagentKey, mesh) {
-        const def = window.AlchemySystem.REAGENT_DEFS[reagentKey];
-        return {
-          id: 'reagent_' + mapId + '_' + col + '_' + row, type: 'reagent_plant',
-          col, row, mesh, reagentKey,
-          label: def.icon + ' ' + def.label,
-          getButtons() {
-            return [{ icon: def.icon, label: 'Pick ' + def.label, action: 'obj_pick_reagent', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
-            inventory[reagentKey] = Math.min(99, (inventory[reagentKey] || 0) + 1);
-            _zoneScenes.get(mapId)?.scene.remove(mesh);
-            const objs = _zoneReagentObjects.get(mapId);
-            objs?.delete(col + ',' + row);
-            const groups = _zoneReagentMeshGroups.get(mapId);
-            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-            // Drop it from the persisted placement list too, so a reload
-            // before the next daily respawn doesn't bring it back.
-            const persisted = _zoneReagentPersist.get(mapId);
-            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
-            refreshItemScroll();
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-            return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
-          },
-        };
-      }
-
-      // Removes every currently-built reagent plant mesh/object for a zone
-      // without regenerating placement data — used both before a fresh
-      // scatter (ensureZoneReagents) and by the daily respawn to eagerly
-      // clear zones the player isn't currently standing in.
-      function clearZoneReagentMeshes(mapId) {
-        const scene = _zoneScenes.get(mapId)?.scene;
-        const groups = _zoneReagentMeshGroups.get(mapId);
-        if (scene && groups) groups.forEach(g => scene.remove(g));
-        _zoneReagentMeshGroups.delete(mapId);
-        _zoneReagentObjects.delete(mapId);
-      }
-
-      // Makes sure a zone's reagent plants are up to date for *today* —
-      // reuses today's persisted placements (see _zoneReagentPersist) if any
-      // exist, scattering fresh ones only the first time a zone is touched
-      // on a given day. Called on every enterZone so a zone that was already
-      // built (cached scene) still picks up a day's worth of staleness, or a
-      // reload's restored placements, on re-entry.
-      function ensureZoneReagents(mapId) {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        if (!window.AlchemySystem.reagentsForZone(mapId).length) return;
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        let persisted = _zoneReagentPersist.get(mapId);
-        if (persisted?.day === calendar.day) {
-          if (_zoneReagentMeshGroups.has(mapId)) return; // already built for today
-        } else {
-          persisted = { day: calendar.day, placements: scatterReagentsForZone(mapId) };
-          _zoneReagentPersist.set(mapId, persisted);
-        }
-        clearZoneReagentMeshes(mapId);
-        const groups = [];
-        const objMap = new Map();
-        for (const { col, row, key } of persisted.placements) {
-          const mesh = buildReagentPlantMesh(key);
-          if (!mesh) continue;
-          const tile = zi.grid[row]?.[col];
-          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
-          zi.scene.add(mesh);
-          groups.push(mesh);
-          objMap.set(col + ',' + row, makeReagentPlantObject(mapId, col, row, key, mesh));
-        }
-        _zoneReagentMeshGroups.set(mapId, groups);
-        _zoneReagentObjects.set(mapId, objMap);
-        debugLog(`ensureZoneReagents(${mapId}): built ${groups.length} reagent plants for day ${calendar.day}`);
-      }
-
-      // Daily reset: clears every zone's reagent plants (freeing their
-      // meshes right away) and drops all four zones' persisted placements so
-      // the next visit to each scatters a fresh set — see ensureZoneReagents.
-      // Mirrors how den wildlife lazily repopulates only the zone currently
-      // being entered rather than eagerly rebuilding all four every day.
-      function respawnAllZoneReagents() {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
-          clearZoneReagentMeshes(mapId);
-          _zoneReagentPersist.delete(mapId);
-        }
-        if (_isZoneArea(currentArea)) ensureZoneReagents(currentArea);
-      }
-
-      // Save/restore _zoneReagentPersist as a plain object — see
-      // saveMemberWorldData/spawnPlayerAvatar.
-      function serializeZoneReagentState() {
-        const out = {};
-        _zoneReagentPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
-        return out;
-      }
-      function restoreZoneReagentState(saved) {
-        _zoneReagentPersist.clear();
-        Object.entries(saved || {}).forEach(([mapId, v]) => {
-          if (v && Array.isArray(v.placements)) _zoneReagentPersist.set(mapId, { day: v.day, placements: v.placements });
-        });
       }
 
       // Save/restore _zoneFelledTreePersist as a plain object — see
@@ -24568,7 +24426,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // into — see ensureCurrentZoneDenPacks, which does the actual
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
-        respawnAllZoneReagents();
+        window.ReagentPlants.respawnAllZoneReagents();
         window.WildBerries.respawnAll();
         window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
@@ -24592,7 +24450,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         window.ProceduralTasks.maybeRefreshBoardTask();
         checkTothalShift();
         pendingDenRespawn.clear();
-        respawnAllZoneReagents();
+        window.ReagentPlants.respawnAllZoneReagents();
         window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
         tickMinedRockRegrowth();
@@ -27417,6 +27275,26 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         saveGearInventory,
       });
 
+      window.ReagentPlants?.init({
+        calendar,
+        inventory,
+        debugLog,
+        refreshItemScroll,
+        tileSurfaceYInArea,
+        NORMAL_TOP,
+        _mbRng,
+        _seedFromString,
+        findZoneFlatEmptyTiles,
+        getReagentPlantMaterial,
+        _grassBladeGeo,
+        _zoneScenes,
+        _zoneReagentObjects,
+        _zoneReagentMeshGroups,
+        _zoneReagentPersist,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+      });
+
       window.DewVats?.init({
         COLS,
         ROWS,
@@ -27824,7 +27702,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // world-scoped per character, same as the fields just above.
         window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
-        restoreZoneReagentState(playerData.alchemyReagentState);
+        window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
