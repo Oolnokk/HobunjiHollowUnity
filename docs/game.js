@@ -150,7 +150,7 @@
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
         if (targetPanel === 'jubmirShop') renderJubmirShopPage();
         if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
-        if (targetPanel === 'alchemy') renderAlchemyPanel();
+        if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
         if (targetPanel === 'tasks') renderTasksPanel();
         if (targetPanel === 'relationships') renderRelationshipsPanel();
         auditInventorySizing();
@@ -191,7 +191,7 @@
         if (id === 'carpenterShop') renderCarpenterShopPage();
         if (id === 'jubmirShop') renderJubmirShopPage();
         if (id === 'metalCraftShop') renderMetalCraftShopPage();
-        if (id === 'alchemy') renderAlchemyPanel();
+        if (id === 'alchemy') window.AlchemySystem.renderPanel();
         if (id === 'tasks') renderTasksPanel();
         if (id === 'relationships') renderRelationshipsPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
@@ -357,7 +357,7 @@
         // favor ask): if this NPC posted/asked a quest that's now sitting
         // ready in the player's log, offer to hand it over right here rather
         // than piling a new favor ask on top of an already-completed one.
-        const _turnInTask = rec?.id ? getTurnInReadyTaskForNpc(rec.id) : null;
+        const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
           const _turnInDef = ITEM_DEFS[_turnInTask.itemKey];
           window.DialogueContent?.beginSyntheticChoice(rec);
@@ -378,12 +378,12 @@
         // tree) whenever the NPC currently has, or freshly rolls, a favor to
         // ask — gated by friendship tier. Same synthetic choice-node
         // shortcut the shop fast-paths use. See maybeOfferFavor.
-        const _favorTask = maybeOfferFavor(rec);
+        const _favorTask = window.ProceduralTasks.maybeOfferFavor(rec);
         if (_favorTask) {
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
-            text: favorAskLine(_favorTask),
+            text: window.ProceduralTasks.favorAskLine(_favorTask),
             choices: [
               { label: "I'll help.", actions: [{ type: 'acceptFavor', taskId: _favorTask.id }] },
               { label: 'Not right now.', actions: [{ type: 'declineFavor', taskId: _favorTask.id }] },
@@ -2150,249 +2150,6 @@
         category,
       }));
 
-      // ── Alchemy: effects, reagents & active buffs ───────────────────
-      // Standard Elder-Scrolls-style setup: every reagent carries up to 3
-      // named boon/bane effects, but only effects[0] is known to the player
-      // from the start. Brewing 2-3 reagents at an Alchemy Table applies
-      // whichever effects appear on 2+ of the chosen reagents (see
-      // computeBrewEffects) and reveals ("discovers") those effects on every
-      // reagent that has them. Magnitude/duration are deliberately generic
-      // placeholders for most effects — only 'speed' is wired to an actual
-      // stat (see getAlchemySpeedMul) since the rest of the mechanical
-      // design is still open; every effect at least shows up as a named,
-      // timed buff/debuff icon in the on-screen buff bar once applied.
-      const ALCHEMY_EFFECT_DEFS = {
-        strength:   { label: 'Strength',   icon: '💪', kind: 'boon', durationS: 90, desc: 'Something in you feels sturdier.' },
-        fortitude:  { label: 'Fortitude',  icon: '🛡️', kind: 'boon', durationS: 90, desc: 'You feel harder to knock down.' },
-        vigor:      { label: 'Vigor',      icon: '⚡', kind: 'boon', durationS: 90, desc: 'Energy hums through your limbs.' },
-        speed:      { label: 'Speed',      icon: '🏃', kind: 'boon', durationS: 60, desc: 'Your steps come lighter and faster.', speedMul: 1.35 },
-        perception: { label: 'Perception', icon: '👁️', kind: 'boon', durationS: 90, desc: 'The world looks sharper somehow.' },
-        clarity:    { label: 'Clarity',    icon: '🧠', kind: 'boon', durationS: 90, desc: 'Your thoughts feel clean and ordered.' },
-        stupor:     { label: 'Stupor',     icon: '😵', kind: 'bane', durationS: 60, desc: 'Your head is thick and slow.' },
-        weakness:   { label: 'Weakness',   icon: '🦴', kind: 'bane', durationS: 60, desc: 'Your limbs feel drained of power.' },
-        frailty:    { label: 'Frailty',    icon: '💔', kind: 'bane', durationS: 60, desc: 'You feel brittle, easily hurt.' },
-        clumsiness: { label: 'Clumsiness', icon: '🤕', kind: 'bane', durationS: 60, desc: 'Your hands and feet won\'t cooperate.' },
-        nausea:     { label: 'Nausea',     icon: '🤢', kind: 'bane', durationS: 60, desc: 'Your stomach churns unpleasantly.' },
-        dread:      { label: 'Dread',      icon: '😱', kind: 'bane', durationS: 60, desc: 'A cold unease settles over you.' },
-      };
-
-      // Reagent plants foraged from the four wilderness zones. `color` tints
-      // the plant's billboard sprite — see buildReagentPlantMesh — as a
-      // placeholder stand-in until each reagent gets its own model.
-      const ALCHEMY_REAGENT_DEFS = {
-        frostcapMoss:      { label: 'Frostcap Moss',      icon: '🥶', zone: 'map_northern_cliffs',       color: 0x9fd8e6, sellPrice: 3, effects: ['fortitude', 'weakness', 'stupor'] },
-        graniteThistle:    { label: 'Granite Thistle',    icon: '🌵', zone: 'map_northern_cliffs',       color: 0x8a8a78, sellPrice: 3, effects: ['strength', 'frailty', 'clumsiness'] },
-        palehartLichen:    { label: 'Palehart Lichen',    icon: '🍂', zone: 'map_northern_cliffs',       color: 0xc9c2a0, sellPrice: 3, effects: ['perception', 'dread', 'weakness'] },
-        cinderveinBramble: { label: 'Cindervein Bramble', icon: '🌿', zone: 'map_northern_cliffs',       color: 0xb5493a, sellPrice: 3, effects: ['vigor', 'nausea', 'strength'] },
-        shalefrondFern:    { label: 'Shalefrond Fern',    icon: '🌾', zone: 'map_northern_cliffs',       color: 0x6f8f7a, sellPrice: 3, effects: ['clarity', 'stupor', 'fortitude'] },
-
-        mistpetalBloom:    { label: 'Mistpetal Bloom',    icon: '🌸', zone: 'map_southern_cloud_forest', color: 0xd7b7e8, sellPrice: 3, effects: ['clarity', 'dread', 'perception'] },
-        duskcapMushroom:   { label: 'Duskcap Mushroom',   icon: '🍄', zone: 'map_southern_cloud_forest', color: 0x5a4a78, sellPrice: 3, effects: ['vigor', 'stupor', 'nausea'] },
-        silverfernFrond:   { label: 'Silverfern Frond',   icon: '🌿', zone: 'map_southern_cloud_forest', color: 0xc8d8c0, sellPrice: 3, effects: ['perception', 'weakness', 'clarity'] },
-        cloudberryVine:    { label: 'Cloudberry Vine',    icon: '🫐', zone: 'map_southern_cloud_forest', color: 0x8ec6e0, sellPrice: 3, effects: ['speed', 'clumsiness', 'vigor'] },
-        hazewortSprig:     { label: 'Hazewort Sprig',     icon: '🌱', zone: 'map_southern_cloud_forest', color: 0xa0b090, sellPrice: 3, effects: ['fortitude', 'dread', 'speed'] },
-
-        windrootBulb:      { label: 'Windroot Bulb',      icon: '🧅', zone: 'map_western_slope',         color: 0xe8d27a, sellPrice: 3, effects: ['speed', 'weakness', 'vigor'] },
-        goldbrushWeed:     { label: 'Goldbrush Weed',     icon: '🌾', zone: 'map_western_slope',         color: 0xdba936, sellPrice: 3, effects: ['strength', 'clumsiness', 'fortitude'] },
-        larkspurTuft:      { label: 'Larkspur Tuft',      icon: '💐', zone: 'map_western_slope',         color: 0x7fb0e0, sellPrice: 3, effects: ['perception', 'stupor', 'speed'] },
-        sunbarleyHead:     { label: 'Sunbarley Head',     icon: '🌾', zone: 'map_western_slope',         color: 0xe0c95f, sellPrice: 3, effects: ['vigor', 'nausea', 'strength'] },
-        thistledownCap:    { label: 'Thistledown Cap',    icon: '🌼', zone: 'map_western_slope',         color: 0xeee4c0, sellPrice: 3, effects: ['clarity', 'frailty', 'perception'] },
-
-        bogwortLeaf:       { label: 'Bogwort Leaf',       icon: '🍃', zone: 'map_eastern_mire',          color: 0x4a6b3a, sellPrice: 3, effects: ['fortitude', 'nausea', 'strength'] },
-        mireLotusBud:      { label: 'Mire Lotus Bud',     icon: '🪷', zone: 'map_eastern_mire',          color: 0xc06090, sellPrice: 3, effects: ['clarity', 'dread', 'weakness'] },
-        sporeclusterCap:   { label: 'Sporecluster Cap',   icon: '🍄', zone: 'map_eastern_mire',          color: 0x6a5a3a, sellPrice: 3, effects: ['stupor', 'vigor', 'frailty'] },
-        weepingReed:       { label: 'Weeping Reed',       icon: '🌾', zone: 'map_eastern_mire',          color: 0x3a5a4a, sellPrice: 3, effects: ['speed', 'weakness', 'clumsiness'] },
-        muckmelonRind:     { label: 'Muckmelon Rind',     icon: '🍈', zone: 'map_eastern_mire',          color: 0x8a9a3a, sellPrice: 3, effects: ['strength', 'nausea', 'fortitude'] },
-      };
-
-      function alchemyReagentsForZone(mapId) {
-        return Object.keys(ALCHEMY_REAGENT_DEFS).filter(k => ALCHEMY_REAGENT_DEFS[k].zone === mapId);
-      }
-
-      // Which of a reagent's effects[] indices the player has learned so
-      // far. Index 0 is always known; 1/2 are revealed the first time a
-      // brew mixes that reagent with another sharing the effect.
-      const knownReagentEffects = {}; // reagentKey -> Set(effectIndex)
-      function isReagentEffectKnown(reagentKey, idx) {
-        if (idx === 0) return true;
-        return knownReagentEffects[reagentKey]?.has(idx) || false;
-      }
-      function discoverReagentEffect(reagentKey, idx) {
-        if (idx === 0) return;
-        if (!knownReagentEffects[reagentKey]) knownReagentEffects[reagentKey] = new Set();
-        knownReagentEffects[reagentKey].add(idx);
-      }
-
-      // Sets aren't JSON-serializable, so save/restore go through plain
-      // arrays — see saveMemberWorldData/spawnPlayerAvatar.
-      function serializeKnownReagentEffects() {
-        const out = {};
-        Object.entries(knownReagentEffects).forEach(([key, set]) => { if (set.size) out[key] = [...set]; });
-        return out;
-      }
-      function restoreKnownReagentEffects(saved) {
-        Object.keys(knownReagentEffects).forEach(k => delete knownReagentEffects[k]);
-        Object.entries(saved || {}).forEach(([key, idxs]) => {
-          if (Array.isArray(idxs) && idxs.length) knownReagentEffects[key] = new Set(idxs);
-        });
-      }
-
-      // Effects shared by 2+ of the given reagent keys — the classic ES rule
-      // for what a brewed mixture actually does.
-      function computeBrewEffects(reagentKeys) {
-        const counts = {};
-        for (const rk of reagentKeys) {
-          const def = ALCHEMY_REAGENT_DEFS[rk];
-          if (!def) continue;
-          def.effects.forEach(eff => { counts[eff] = (counts[eff] || 0) + 1; });
-        }
-        return Object.keys(counts).filter(eff => counts[eff] >= 2);
-      }
-
-      // ── Potions (brewed, storable, drinkable from the bag anywhere) ──
-      // A potion's item key is a deterministic sort of its effect list, so
-      // the same combination of shared effects always stacks into the same
-      // item, and — since effect ids never contain '_' — the key alone is
-      // enough to recover which effects it grants after a reload, with no
-      // separate persisted registry needed (see getPotionEffectsFromKey,
-      // called for every saved inventory key in spawnPlayerAvatar).
-      const ALCHEMY_POTION_ITEMS = {}; // itemKey -> effects[], rebuilt from the key as needed
-      function potionItemKeyForEffects(effects) {
-        return 'potion_' + [...effects].sort().join('_');
-      }
-      function getPotionEffectsFromKey(key) {
-        if (!key.startsWith('potion_')) return null;
-        const effects = key.slice('potion_'.length).split('_');
-        return effects.length && effects.every(e => ALCHEMY_EFFECT_DEFS[e]) ? effects : null;
-      }
-      // Averages the 0xRRGGBB colors of the reagents that went into a brew —
-      // the same THREE-style hex ints ALCHEMY_REAGENT_DEFS/getReagentPlantMaterial
-      // already use — into one procedural potion color. Reagent keys missing a
-      // color (shouldn't happen; every ALCHEMY_REAGENT_DEFS entry has one) are
-      // skipped rather than treated as black, so one bad lookup can't wash the
-      // mix toward zero.
-      function mixReagentColors(reagentKeys) {
-        let r = 0, g = 0, b = 0, n = 0;
-        (reagentKeys || []).forEach(k => {
-          const c = ALCHEMY_REAGENT_DEFS[k]?.color;
-          if (c == null) return;
-          r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; n++;
-        });
-        if (!n) return 0x8a5fb0; // generic potion purple — only hit if reagentKeys was empty/unresolvable
-        return (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
-      }
-
-      // reagentKeys (optional): the actual ingredients brewed this time, used
-      // to procedurally mix a color via mixReagentColors — see brewPotion.
-      // Since the item key is purely the sorted effect list (so different
-      // reagent combos sharing an effect set stack as the same item — see the
-      // comment above ALCHEMY_POTION_ITEMS), the color is fixed at whichever
-      // combo first created that effect-key item, same as its name/desc.
-      function ensurePotionItemDef(effects, reagentKeys) {
-        const key = potionItemKeyForEffects(effects);
-        ALCHEMY_POTION_ITEMS[key] = effects;
-        if (!ITEM_DEFS[key]) {
-          const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label);
-          const anyBane = effects.some(e => ALCHEMY_EFFECT_DEFS[e].kind === 'bane');
-          const color = mixReagentColors(reagentKeys);
-          ITEM_DEFS[key] = {
-            icon: '🧪',
-            label: 'Potion of ' + names.join(' & '),
-            cat: 'processed',
-            sellPrice: 0,
-            tags: ['Potion', 'Alchemy', ...(anyBane ? ['Mixed'] : [])],
-            desc: 'A brewed potion. Drink it (from the Inventory panel, anywhere) to gain: ' + names.join(', ') + '.',
-            color,
-            spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed',
-          };
-        }
-        return key;
-      }
-
-      // Consumes 1 potion and applies every effect it carries — see
-      // selectInventoryItem's Drink button, the only place this is called
-      // from, so it works from the Inventory panel regardless of location.
-      function drinkPotion(key) {
-        const effects = ALCHEMY_POTION_ITEMS[key] || getPotionEffectsFromKey(key);
-        if (!effects || (inventory[key] || 0) < 1) return { ok: false, message: 'No potion to drink.' };
-        inventory[key]--;
-        clampInventoryStack(key);
-        effects.forEach(eff => applyAlchemyEffect(eff));
-        const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
-        return { ok: true, message: '🧪 Drank a potion: ' + names + '.' };
-      }
-
-      // ── Active buffs/debuffs (on-screen icon strip) ──────────────────
-      let activeAlchemyEffects = []; // [{ key, label, icon, kind, durationS, expiresAt }]
-
-      function applyAlchemyEffect(effectKey) {
-        const def = ALCHEMY_EFFECT_DEFS[effectKey];
-        if (!def) return;
-        const expiresAt = performance.now() / 1000 + def.durationS;
-        const existing = activeAlchemyEffects.find(e => e.key === effectKey);
-        if (existing) existing.expiresAt = expiresAt; // refresh duration instead of stacking a duplicate icon
-        else activeAlchemyEffects.push({ key: effectKey, label: def.label, icon: def.icon, kind: def.kind, durationS: def.durationS, expiresAt });
-        refreshBuffBar();
-      }
-
-      function getAlchemySpeedMul() {
-        const speedEff = activeAlchemyEffects.find(e => e.key === 'speed');
-        return speedEff ? (ALCHEMY_EFFECT_DEFS.speed.speedMul || 1) : 1;
-      }
-
-      // expiresAt is measured against performance.now(), which resets to 0
-      // every page load — save/restore go through remaining seconds instead.
-      function serializeActiveAlchemyEffects() {
-        const now = performance.now() / 1000;
-        return activeAlchemyEffects
-          .map(e => ({ key: e.key, remainingS: e.expiresAt - now }))
-          .filter(e => e.remainingS > 0);
-      }
-      function restoreActiveAlchemyEffects(saved) {
-        activeAlchemyEffects = [];
-        const now = performance.now() / 1000;
-        (saved || []).forEach(({ key, remainingS }) => {
-          const def = ALCHEMY_EFFECT_DEFS[key];
-          if (!def || !(remainingS > 0)) return;
-          activeAlchemyEffects.push({ key, label: def.label, icon: def.icon, kind: def.kind, durationS: def.durationS, expiresAt: now + remainingS });
-        });
-        refreshBuffBar();
-      }
-
-      function updateAlchemyEffects() {
-        if (!activeAlchemyEffects.length) return;
-        const now = performance.now() / 1000;
-        const before = activeAlchemyEffects.length;
-        activeAlchemyEffects = activeAlchemyEffects.filter(e => e.expiresAt > now);
-        refreshBuffBar(before !== activeAlchemyEffects.length);
-      }
-
-      // Rebuilds the buff bar's DOM only when the active effect *set*
-      // changes; every other call just updates each icon's countdown fill.
-      let _lastBuffBarKey = '';
-      function refreshBuffBar() {
-        const bar = document.getElementById('buffBar');
-        if (!bar) return;
-        const key = activeAlchemyEffects.map(e => e.key).join(',');
-        if (key !== _lastBuffBarKey) {
-          _lastBuffBarKey = key;
-          bar.innerHTML = activeAlchemyEffects.map(e => `
-            <div class="buff-icon ${e.kind}" data-buff="${e.key}" title="${e.label}">
-              <span class="buff-icon-glyph">${e.icon}</span>
-              <div class="buff-icon-track"><div class="buff-icon-fill" data-fill="${e.key}"></div></div>
-            </div>
-          `).join('');
-        }
-        bar.style.display = activeAlchemyEffects.length ? 'flex' : 'none';
-        const now = performance.now() / 1000;
-        activeAlchemyEffects.forEach(e => {
-          const fill = bar.querySelector(`.buff-icon-fill[data-fill="${e.key}"]`);
-          if (!fill) return;
-          const remain = Math.max(0, e.expiresAt - now);
-          fill.style.width = Math.max(0, Math.min(100, (remain / e.durationS) * 100)) + '%';
-        });
-      }
-
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
         { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
@@ -2452,54 +2209,6 @@
         // tab using wood, stone, and the blueprint.
       ];
 
-      // ── Dye catalog (see docs/config/scratchbones-config.js game.dyes) ──
-      // Single source of truth for every clothing dye color in the game —
-      // character creation's Collections tab, the redye system, the General
-      // Store's daily clothing stock, and treasure-chest loot all draw from
-      // this same catalog so a given dye always looks the same (exact hex,
-      // not an approximate CSS filter) no matter where it came from.
-      function getDyeCatalog() {
-        return window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
-      }
-      function getDyeById(dyeId) {
-        return getDyeCatalog().find(d => d.id === dyeId) || null;
-      }
-      // Trims a catalog entry down to the {h,s,v,hex,dyeId,label} shape
-      // clothing items store on colorA/colorB (see makeClothingItem in
-      // onboarding.js and makeClothingGearEntry above).
-      function dyeToClothingColor(dye) {
-        if (!dye) return null;
-        return { ...(dye.color || {}), hex: dye.hex, dyeId: dye.id, label: dye.label };
-      }
-      function ensureDyeCollection() {
-        if (!gearInventory) return;
-        if (!Array.isArray(gearInventory.dyeCollection)) {
-          gearInventory.dyeCollection = [...(window.SCRATCHBONES_CONFIG?.game?.dyes?.starterDyeIds || [])];
-        }
-      }
-      function ownsDye(dyeId) {
-        return Array.isArray(gearInventory?.dyeCollection) && gearInventory.dyeCollection.includes(dyeId);
-      }
-      function unlockDye(dyeId) {
-        ensureDyeCollection();
-        if (gearInventory.dyeCollection.includes(dyeId)) return false;
-        gearInventory.dyeCollection.push(dyeId);
-        saveGearInventory();
-        return true;
-      }
-      function ownedDyesByHue() {
-        const groups = new Map();
-        for (const dye of getDyeCatalog()) {
-          if (!ownsDye(dye.id)) continue;
-          const groupKey = dye.neutral ? 'neutral' : dye.hueFamilyId;
-          const groupLabel = dye.neutral ? 'Neutral' : dye.hueFamily;
-          if (!groups.has(groupKey)) groups.set(groupKey, { id: groupKey, label: groupLabel, dyes: [] });
-          groups.get(groupKey).dyes.push(dye);
-        }
-        for (const group of groups.values()) group.dyes.sort((a, b) => a.sortOrder - b.sortOrder);
-        return [...groups.values()];
-      }
-
       // Synchronous startup default — overwritten from docs/config/shops/
       // shop-stock.json's generalStoreWares.clothingRotation once it loads.
       let STORE_CLOTHING_PIECES = [
@@ -2516,7 +2225,7 @@
 
       function generateDailyClothingStock(day) {
         const stock = [];
-        const catalog = getDyeCatalog();
+        const catalog = window.DyeSystem.getCatalog();
         // Condition-eligible candidates only (e.g. a season-gated piece) —
         // falls back to the full list if conditions would otherwise empty
         // it out entirely, so a misconfigured pool never bricks the shop.
@@ -2534,8 +2243,8 @@
             slot:       piece.category,
             label:      dyeLbl + ' ' + piece.label,
             baseLabel:  piece.label,
-            colorA:     dyeToClothingColor(dyeA),
-            colorB:     dyeToClothingColor(dyeB),
+            colorA:     window.DyeSystem.toClothingColor(dyeA),
+            colorB:     window.DyeSystem.toClothingColor(dyeB),
             price:      piece.price,
             sellPrice:  Math.floor(piece.price * 0.4),
             sprite:     clothingSpriteForCosmetic(piece.id),
@@ -2569,183 +2278,6 @@
       // Preload uumkao'ii sprite; animals check this before spawning.
       let uumkaoiiSpriteImage = null;
       { const _img = new Image(); _img.onload = () => { uumkaoiiSpriteImage = _img; }; _img.src = "assets/creaturesprites/uumkao'ii.png"; }
-
-      // ── Sell Crate ────────────────────────────────────────────────
-      function makeSellCrate(col, row) {
-        const bin = Object.fromEntries(Object.keys(BASE_PRICES).map(key => [key, 0]));
-        let lastSellHour = getHour();
-
-        const mat  = new THREE.MeshLambertMaterial({ color: 0xe06820 });
-        const geo  = new THREE.BoxGeometry(0.7, 0.55, 0.7);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
-        mesh.position.set(col + 0.5, tileSurfaceY(TileType.GRASS) + 0.28, row + 0.5);
-        scene.add(mesh);
-
-        // Lid — slightly lighter, floats above when contents > 0
-        const lidMat  = new THREE.MeshLambertMaterial({ color: 0xf08830 });
-        const lidGeo  = new THREE.BoxGeometry(0.72, 0.08, 0.72);
-        const lid     = new THREE.Mesh(lidGeo, lidMat);
-        lid.castShadow = true;
-        scene.add(lid);
-
-        function totalItems() {
-          return Object.values(bin).reduce((s, v) => s + v, 0);
-        }
-        function contentsStr() {
-          const parts = Object.entries(bin)
-            .filter(([,v]) => v > 0)
-            .map(([k,v]) => (itemIconForKey(k) + '×' + v));
-          return parts.length ? parts.join(' ') : 'Empty';
-        }
-
-        return {
-          id: 'sell_crate', type: 'sell_crate', col, row, mesh, lid, contentsStr,
-          label: '🟧 Shipping Box',
-          getButtons(reticle) {
-            const item = getActiveInventoryItem();
-            const btns = [];
-            // Deposit button for any sellable item in scroll
-            if (item && BASE_PRICES[item.key] !== undefined) {
-              const count = inventory[item.key] || 0;
-              btns.push({
-                icon: item.icon,
-                label: count > 0 ? 'Ship ' + item.icon : 'None',
-                action: 'obj_deposit',
-                style: 'primary',
-                allowed: count > 0,
-              });
-            }
-            // Deposit all
-            const total = totalItems();
-            btns.push({ icon: '📦', label: total > 0 ? 'Open Box' : 'Shipping', action: 'obj_open_shipping', style: total > 0 ? 'secondary' : 'primary', allowed: true });
-            return btns;
-          },
-          onAction(action) {
-            if (action === 'obj_deposit') {
-              const item = getActiveInventoryItem();
-              if (!item || BASE_PRICES[item.key] === undefined) return { ok: false, message: 'Cannot deposit that.' };
-              const qty = inventory[item.key] || 0;
-              if (qty < 1) return { ok: false, message: 'No ' + item.label + ' to deposit.' };
-              inventory[item.key]--;
-              clampInventoryStack(item.key);
-              bin[item.key] = (bin[item.key] || 0) + 1;
-              return { ok: true, message: 'Deposited ' + item.icon + ' into sell crate.' };
-            }
-            if (action === 'obj_show_bin' || action === 'obj_open_shipping') {
-              openMenu('shipping');
-              return { ok: true, message: contentsStr() };
-            }
-            return { ok: false, message: 'Unknown action.' };
-          },
-          getContents() {
-            return bin;
-          },
-          getTotalItems() {
-            return totalItems();
-          },
-          depositItem(key, qty) {
-            if (BASE_PRICES[key] === undefined) return 0;
-            const moved = Math.max(0, Math.min(qty, inventory[key] || 0));
-            if (moved < 1) return 0;
-            inventory[key] -= moved;
-            bin[key] = (bin[key] || 0) + moved;
-            return moved;
-          },
-          withdrawItem(key, qty) {
-            // Self-guarded (not just at the transferShippingAmount() UI call site)
-            // so any future caller of this object's API can't bypass the farm's
-            // storage-withdraw permission.
-            if (!hasFarmPermission('storage')) return 0;
-            const moved = Math.max(0, Math.min(qty, bin[key] || 0));
-            if (moved < 1) return 0;
-            bin[key] -= moved;
-            inventory[key] = Math.min(99, (inventory[key] || 0) + moved);
-            return moved;
-          },
-          tick(gameHour) {
-            // Sell everything every SELL_INTERVAL_HOURS
-            if (gameHour - lastSellHour >= SELL_INTERVAL_HOURS && totalItems() > 0) {
-              let earned = 0;
-              const parts = [];
-              for (const [k, v] of Object.entries(bin)) {
-                if (v > 0) {
-                  earned += v * (BASE_PRICES[k] || 0);
-                  parts.push((itemIconForKey(k) || k) + '×' + v);
-                  bin[k] = 0;
-                }
-              }
-              inventory.gold += earned;
-              lastSellHour = gameHour;
-              const line = 'Day ' + calendar.day + ' — ' + parts.join(' ') + ' = ' + earned + 'g';
-              deliveryLog.unshift({ type: 'sale', text: line });
-              if (deliveryLog.length > 12) deliveryLog.pop();
-              showToast('🟧 Sold! +' + earned + 'g', true);
-              if (menuOpen) { buildInventoryGrid(); buildShippingTransferUI(); }
-              saveMemberWorldData();
-            }
-            // Animate lid
-            const h = tileSurfaceY(TileType.GRASS) + 0.56 + (totalItems() > 0 ? 0.06 : 0);
-            lid.position.set(col + 0.5, h, row + 0.5);
-          },
-          reset() {
-            Object.keys(bin).forEach(k => { bin[k] = 0; });
-            lastSellHour = MORNING_HOUR;
-          },
-        };
-      }
-
-      // ── Supply Box ────────────────────────────────────────────────
-      function makeSupplyBox(col, row) {
-        const mat  = new THREE.MeshLambertMaterial({ color: 0x2060c0 });
-        const geo  = new THREE.BoxGeometry(0.7, 0.55, 0.7);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
-        mesh.position.set(col + 0.5, tileSurfaceY(TileType.GRASS) + 0.28, row + 0.5);
-        scene.add(mesh);
-
-        const lidMat = new THREE.MeshLambertMaterial({ color: 0x4080e0 });
-        const lid    = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.72), lidMat);
-        lid.position.set(col + 0.5, tileSurfaceY(TileType.GRASS) + 0.56, row + 0.5);
-        scene.add(lid);
-
-        // qty selections per catalog item
-        const qtys = {};
-        SUPPLY_CATALOG.forEach(it => { qtys[it.key] = 0; });
-
-        return {
-          id: 'supply_box', type: 'supply_box', col, row, mesh, lid,
-          label: '📦 Supply Box',
-          getButtons() {
-            return [
-              { icon: '📦', label: 'Order', action: 'obj_open_shop', style: 'primary', allowed: true },
-            ];
-          },
-          onAction(action) {
-            if (action === 'obj_open_shop') {
-              openMenu('supplies');
-              return { ok: true, message: 'Opened supply ordering.' };
-            }
-            if (action.startsWith('obj_buy_')) {
-              const key = action.slice(8);
-              const item = SUPPLY_CATALOG.find(it => it.key === key);
-              if (!item) return { ok: false, message: 'Unknown item.' };
-              if (item.comingSoon) return { ok: false, message: item.name + ' purchases are coming soon.' };
-              const qty = qtys[key] || 0;
-              if (qty < 1) return { ok: false, message: 'Select a quantity first.' };
-              const cost = item.price * qty;
-              if (inventory.gold < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
-              inventory.gold -= cost;
-              pendingOrders.push({ key, qty, arrivalDay: calendar.day + 1, item });
-              qtys[key] = 0;
-              return { ok: true, message: 'Ordered ' + qty + '× ' + item.name + ' for ' + cost + 'g. Arrives tomorrow.' };
-            }
-            return { ok: false, message: 'Unknown action.' };
-          },
-          getQtys() { return qtys; },
-          reset() { Object.keys(qtys).forEach(k => { qtys[k] = 0; }); },
-        };
-      }
 
       // ── Food processing furniture ───────────────────────────────────
       function getFurnitureDefByItemKey(itemKey) {
@@ -3070,7 +2602,7 @@
           tile.type = typeMap[farmEditBrush] ?? TileType.GRASS;
           if (tile.type === TileType.TRENCH) tile.depth = 1;
           tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
+          if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         } else if (farmEditBrushType === 'crop') {
           if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
@@ -3106,7 +2638,7 @@
             unregisterChairNpcStation(d.key, col, row, 'farm');
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
+          if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         }
       }
@@ -3119,7 +2651,7 @@
           worldObjects.delete(old.col + ',' + old.row);
           if (old.mesh) scene.remove(old.mesh);
           if (old.lid)  scene.remove(old.lid);
-          const nc = makeSellCrate(col, row);
+          const nc = window.FarmCrates.makeSellCrate(col, row);
           shippingBoxObject = nc; worldObjects.set(col + ',' + row, nc);
           saveFarmLayout(); showToast('Shipping box moved.', true);
         } else if (objectType === 'supplyBox' && supplyBoxObject) {
@@ -3127,7 +2659,7 @@
           worldObjects.delete(old.col + ',' + old.row);
           if (old.mesh) scene.remove(old.mesh);
           if (old.lid)  scene.remove(old.lid);
-          const nb = makeSupplyBox(col, row);
+          const nb = window.FarmCrates.makeSupplyBox(col, row);
           supplyBoxObject = nb; worldObjects.set(col + ',' + row, nb);
           saveFarmLayout(); showToast('Supply box moved.', true);
         }
@@ -3212,7 +2744,7 @@
           if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
             worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
             shippingBoxObject.reset && shippingBoxObject.reset();
-            const nc = makeSellCrate(c, r); shippingBoxObject = nc; worldObjects.set(c + ',' + r, nc);
+            const nc = window.FarmCrates.makeSellCrate(c, r); shippingBoxObject = nc; worldObjects.set(c + ',' + r, nc);
           }
         }
         if (layout.objects?.supplyBox) {
@@ -3220,7 +2752,7 @@
           if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
             worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
             supplyBoxObject.reset && supplyBoxObject.reset();
-            const nb = makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
+            const nb = window.FarmCrates.makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
           }
         }
         (layout.furniture || []).forEach(({ key, col, row, job }) => {
@@ -3245,232 +2777,15 @@
         (layout.buildings || []).forEach(saved => {
           if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
           if (farmBuildings.some(b => b.id === saved.id)) return;
-          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || BARN_FOOTPRINT_W, h: saved.h || BARN_FOOTPRINT_D, stage: saved.stage || 'foundation' };
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
           farmBuildings.push(entry);
-          spawnBarnEntry(entry);
+          window.FarmBuildings.spawnEntry(entry);
         });
         // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
         // which always runs first (see the two call sites) — this just builds
         // the meshes for whatever dew piles are already sitting in the grid,
         // same two-phase split as furniture (data now, objects/meshes here).
-        rebuildDewPileMeshesFromGrid();
-      }
-
-      // ── Uumkao'ii dew piles ──────────────────────────────────────────
-      // A dew pile is tile data (grid[r][c].dewPile = a color string like
-      // 'blue'), the same way a crop is tile data — not a worldObjects
-      // entry — because it needs to participate in the shovel dig/fill/raise
-      // gate (canUseAction/applyAction) exactly like WEEDS/SHRUB/ROCK
-      // already do, and there's no existing precedent for worldObjects
-      // gating tile-mutation tools (see the digging-system research this
-      // was built from). dewPileMeshes tracks the purely-visual billboard
-      // per tile in parallel, the same "tile data now, mesh separately"
-      // split saveFarmLayout/applyFarmLayoutObjects already use for crops
-      // vs. their procedural meshes.
-      const dewPileMeshes = new Map(); // "col,row" -> THREE.Group
-
-      function canPlaceDewPileAt(col, row) {
-        const tile = grid[row]?.[col];
-        if (!tile || tile.dewPile || tile.crop) return false;
-        if (![TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
-        if (getWorldObjectAt(col, row)) return false;
-        if (isHouseFootprint(col, row)) return false;
-        return true;
-      }
-
-      // Tinted-and-faded cheese.png canvas for a given dew color, cached by
-      // color so multiple piles sharing a color (the common case — every
-      // uumkao'ii on a farm today drops the same UUMKAOII_DEFAULT_DEW_COLOR)
-      // only pay the load/recolor cost once. Recolored via
-      // CreatureGeneticsRender's own shade-fill tint (the same technique
-      // that colors gar-wolf/dabinggi-hound fur patterns), not
-      // SpriteRecolor's HSV replace, per spec — then every non-outline
-      // pixel is faded to 20% opacity (80% transparency) so it reads as a
-      // glassy dew droplet rather than a flat opaque sticker, while the
-      // outline ink itself (recolorPixels' own near-black protection
-      // threshold) stays fully opaque so the shape still reads clearly.
-      const _dewSpriteTintCache = new Map(); // colorHex(number) -> Promise<{canvas, bottomRatio}>
-      function _tintedDewSpriteCanvas(colorHex) {
-        if (_dewSpriteTintCache.has(colorHex)) return _dewSpriteTintCache.get(colorHex);
-        const promise = new Promise((resolve, reject) => {
-          if (!window.CreatureGeneticsRender) { reject(new Error('CreatureGeneticsRender unavailable')); return; }
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            const c = document.createElement('canvas');
-            c.width = img.naturalWidth; c.height = img.naturalHeight;
-            const ctx = c.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(img, 0, 0);
-            const imgData = ctx.getImageData(0, 0, c.width, c.height);
-            const px = imgData.data;
-            const rgb = window.CreatureGeneticsRender.hexToRgb('#' + colorHex.toString(16).padStart(6, '0'));
-            window.CreatureGeneticsRender.recolorPixels(px, rgb, null);
-            for (let i = 0; i < px.length; i += 4) {
-              if (px[i + 3] === 0) continue;
-              const lum = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
-              if (lum <= 0.08) continue; // outline ink stays fully opaque
-              px[i + 3] = Math.round(px[i + 3] * 0.2);
-            }
-            ctx.putImageData(imgData, 0, 0);
-            const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
-            const bottomRatio = bounds ? (bounds.bottom + 1) / img.naturalHeight : 1;
-            resolve({ canvas: c, bottomRatio });
-          };
-          img.onerror = () => reject(new Error('Failed to load cheese.png'));
-          img.src = 'assets/objectsprites/cheese.png';
-        });
-        _dewSpriteTintCache.set(colorHex, promise);
-        return promise;
-      }
-
-      // Rendered as a single upright plane (front-facing convention, like a
-      // character/NPC — cheese.png is a single icon-style sprite, not a
-      // side-view creature profile) rather than the animal system's crossed
-      // front/back planes, camera-relative dead-zone rotated the same way
-      // (perpClamp/cameraRelativePerps) since it's static — never moving, so
-      // there's no "oscillate while moving" case to handle, just settle
-      // broadside and freeze like an idle character. Grounded so the
-      // sprite's own lowest opaque pixel (not the raw image rectangle's
-      // bottom edge) sits exactly on the tile surface, the same
-      // opaque-bounds-scan technique creature planes use.
-      function spawnDewPileMesh(col, row, colorKey) {
-        const key = col + ',' + row;
-        removeDewPileMesh(col, row);
-        const group = new THREE.Group();
-        group.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
-        group.userData.perpState = {};
-        scene.add(group);
-        dewPileMeshes.set(key, group);
-        const colorHex = ITEM_DEFS[dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
-        _tintedDewSpriteCanvas(colorHex).then(({ canvas, bottomRatio }) => {
-          if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
-          const tex = new THREE.CanvasTexture(canvas);
-          tex.colorSpace = THREE.SRGBColorSpace;
-          const targetH = 0.7; // large enough to read clearly on a tile
-          const targetW = targetH * (canvas.width / canvas.height);
-          const geo = new THREE.PlaneGeometry(targetW, targetH);
-          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide, depthWrite: false });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.y = targetH / 2 + creaturePlaneGroundOffset(targetH, bottomRatio);
-          group.add(mesh);
-        }).catch(() => {});
-      }
-
-      // Called every frame (farm only — dew piles only ever exist there) to
-      // keep every standing dew sprite broadside to the camera within its
-      // own dead-zone-freeze state, exactly like an idle character.
-      function updateDewPileMeshRotations(dt) {
-        for (const group of dewPileMeshes.values()) {
-          const lookTarget = nearestAngleAmong(group.rotation.y, cameraRelativePerps());
-          const { effectiveTarget, snapTo } = perpClamp(group.userData.perpState, lookTarget, cameraRelativePerps());
-          if (snapTo !== null) group.rotation.y = effectiveTarget;
-          else group.rotation.y += angleDiff(effectiveTarget, group.rotation.y) * 0.18;
-        }
-      }
-
-      function removeDewPileMesh(col, row) {
-        const key = col + ',' + row;
-        const group = dewPileMeshes.get(key);
-        if (!group) return;
-        scene.remove(group);
-        group.traverse(child => {
-          if (child.geometry) child.geometry.dispose();
-          if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
-        });
-        dewPileMeshes.delete(key);
-      }
-
-      function rebuildDewPileMeshesFromGrid() {
-        [...dewPileMeshes.keys()].forEach(key => {
-          const [c, r] = key.split(',').map(Number);
-          removeDewPileMesh(c, r);
-        });
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (grid[r]?.[c]?.dewPile) spawnDewPileMesh(c, r, grid[r][c].dewPile);
-          }
-        }
-      }
-
-      // Places a persistent dew pile on an open tile — see makeUumkaoiiAnimal's
-      // tick(), which calls this on the tile a farm uumkao'ii just vacated
-      // once its dew cooldown is ready. Returns false (no state change) if
-      // the tile isn't a valid spot, so the caller can leave dewReady set
-      // and simply retry on a later successful move.
-      function dropDewPile(col, row, colorKey) {
-        if (!canPlaceDewPileAt(col, row)) return false;
-        grid[row][col].dewPile = colorKey;
-        spawnDewPileMesh(col, row, colorKey);
-        saveFarmLayout();
-        return true;
-      }
-
-      // Used when a dew cooldown lands while the player isn't on the farm to
-      // see the animal wander and drop it naturally (see tickLivestockResources)
-      // — picks blindly rather than tracking actual open tiles since the farm
-      // grid is small and open ground is the common case; a few missed rolls
-      // on a crowded farm just cost a handful of cheap canPlaceDewPileAt checks.
-      function dropDewPileOnRandomOpenTile(colorKey, maxAttempts = 60) {
-        for (let i = 0; i < maxAttempts; i++) {
-          const col = Math.floor(rnd() * COLS);
-          const row = Math.floor(rnd() * ROWS);
-          if (dropDewPile(col, row, colorKey)) return true;
-        }
-        return false;
-      }
-
-      // ── Livestock-to-vat assignment (small livestock working a squeezer) ──
-      // Assigning a housed uumkao'ii to a specific placed squeezing vat
-      // redirects its dew straight into squeezed milk/curds every cooldown
-      // cycle (see tickLivestockResources) instead of dropping a pile that
-      // has to be dug up — the vat processes it automatically. Only one
-      // livestock per vat, only kinds with a squeezable resource (uumkao'ii
-      // dew today), and only while housed (barnId set), same requirement as
-      // every other livestock resource.
-      function vatCanAcceptLivestock(kind) {
-        return kind === 'uumkaoii'; // the only kind with a squeezable resource today
-      }
-      function findVatById(vatId) {
-        for (const obj of processingFurnitureObjects) if (obj.id === vatId) return obj;
-        return null;
-      }
-      function assignLivestockToVat(livestockId, vatId) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
-        if (!vatCanAcceptLivestock(rec.kind)) return { ok: false, message: `${rec.name} has nothing a vat can process.` };
-        const vat = findVatById(vatId);
-        if (!vat || PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
-        if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
-        rec.assignedVatId = vatId;
-        _saveWorldLivestock(list);
-        return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
-      }
-      function unassignLivestockFromVat(livestockId) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        rec.assignedVatId = null;
-        _saveWorldLivestock(list);
-        return { ok: true, message: `${rec.name} unassigned from its vat.` };
-      }
-      // Runs the squeezing recipe for a raw dew color directly into inventory
-      // (bypassing the dig-up-a-pile step) and plays the vat's own processing
-      // VFX burst. Returns false (no state change) if the vat no longer
-      // exists — tickLivestockResources clears the stale assignment in that
-      // case and falls back to the ordinary pile-drop.
-      function autoSqueezeDewAtVat(vatId, colorKey) {
-        const vat = findVatById(vatId);
-        if (!vat) return false;
-        const outputs = getProcessingOutputs('squeezing', dewItemKey(colorKey));
-        if (!outputs) return false;
-        outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[vat.furnitureKey]]);
-        vat.triggerVfx && vat.triggerVfx();
-        return true;
+        window.DewVats.rebuildMeshesFromGrid();
       }
 
       // Livestock genetics & breeding (fur-color math, pattern layers,
@@ -3478,450 +2793,22 @@
       // js/creature-genetics.js (window.CreatureGenetics) -- see
       // window.CreatureGenetics.init(...) below for the wiring.
 
-      // ── Animal system ─────────────────────────────────────────────
-      function canSpawnAnimalAt(col, row) {
-        const tile = grid[row]?.[col];
-        if (!tile || getWorldObjectAt(col, row)) return false;
-        if (tile.crop || isSolid(tile.type) || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
-        return true;
-      }
-
-      // ── Barn day/night + resource collection, shared by every farm-
-      // livestock factory (makeUumkaoiiAnimal, makePatternLivestockAnimal).
-      // At night, an animal assigned to a barn walks toward it and "goes
-      // inside" (hidden + its tile freed) until morning, when it re-emerges
-      // beside the barn. Unassigned (stasis) livestock never spawn at all
-      // (see addLivestockFromItem), so this only ever runs for housed ones.
-      function _farmAnimalBarnTick(animal) {
-        const night = window.Music?.isNightTime();
-        if (animal._barnHome) {
-          if (!night) _farmAnimalWakeUp(animal);
-          return true;
-        }
-        const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
-        const barn = rec?.barnId ? farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn') : null;
-        if (!night || !barn) return false; // no barn, or daytime — fall through to normal wander
-        _farmAnimalStepTowardBarn(animal, barn);
-        return true;
-      }
-
-      // Takes exactly one greedy tile-hop toward (targetCol,targetRow) —
-      // shared by barn-homing (_farmAnimalStepTowardBarn) and daytime
-      // station-wander (_farmAnimalWanderTick) so there's one place that
-      // knows how to move an animal one tile, instead of two hand-copies.
-      // Prefers the diagonal-ish direction first, then straightens out along
-      // whichever single axis still has distance left, then (if fully
-      // blocked) tries every other cardinal direction rather than giving up
-      // immediately — onStep, if given, runs after a successful hop with the
-      // tile the animal just left (uumkao'ii's dew-pile drop uses this).
-      // Returns true if it actually moved, false if every direction was
-      // blocked (caller decides what "stuck" means for it).
-      function _farmAnimalStepToward(animal, targetCol, targetRow, onStep, isBlocked) {
-        const dc = Math.sign(targetCol - animal.col), dr = Math.sign(targetRow - animal.row);
-        const dirs = [{ dc, dr }, { dc, dr: 0 }, { dc: 0, dr }, { dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }]
-          .filter(d => d.dc || d.dr);
-        for (const d of dirs) {
-          const nc = animal.col + d.dc, nr = animal.row + d.dr;
-          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-          if (!canSpawnAnimalAt(nc, nr)) continue;
-          if (isBlocked?.(nc, nr)) continue;
-          const oldCol = animal.col, oldRow = animal.row;
-          worldObjects.delete(animal.col + ',' + animal.row);
-          animal.col = nc; animal.row = nr; animal.targetCol = nc; animal.targetRow = nr;
-          worldObjects.set(nc + ',' + nr, animal);
-          animal.targetRot = -Math.atan2(d.dr, d.dc) + Math.PI / 2;
-          onStep?.(oldCol, oldRow);
-          return true;
-        }
-        return false;
-      }
-
-      // A barn's rendered structure (roof eaves, foundation slab) visually
-      // extends past its own reserved w×h footprint tiles, so a wandering
-      // animal standing on the tile immediately outside that footprint can
-      // still end up rendered behind/underneath the barn from the camera —
-      // effectively invisible despite never having stepped onto an occupied
-      // tile. This is the same 1-tile "personal space" ring the night
-      // barn-homing walk already uses to decide when it's close enough to
-      // go inside (see _farmAnimalStepTowardBarn's own touchingBarn check
-      // below) — station-wander reuses it too (see FARM_ANIMAL_WANDER_*
-      // below) so daytime wandering can never park an animal somewhere that
-      // visual overlap could hide it.
-      function _tileTouchesAnyBarn(col, row) {
-        for (const barn of farmBuildings) {
-          if (col >= barn.col - 1 && col <= barn.col + barn.w && row >= barn.row - 1 && row <= barn.row + barn.h) return true;
-        }
-        return false;
-      }
-
-      function _farmAnimalStepTowardBarn(animal, barn) {
-        const cx = barn.col + barn.w / 2, cz = barn.row + barn.h / 2;
-        const touchingBarn = animal.col >= barn.col - 1 && animal.col <= barn.col + barn.w
-          && animal.row >= barn.row - 1 && animal.row <= barn.row + barn.h;
-        if (touchingBarn) {
-          worldObjects.delete(animal.col + ',' + animal.row);
-          animal.avatarRef.group.visible = false;
-          animal._barnHome = true;
-          return;
-        }
-        _farmAnimalStepToward(animal, Math.round(cx - 0.5), Math.round(cz - 0.5));
-      }
-
-      // ── Daytime station wander ───────────────────────────────────────────
-      // Replaces the old "re-roll a brand new random direction almost every
-      // tick" wander (which produced visible jitter/reversal, since a fresh
-      // decision could interrupt a hop that hadn't even finished lerping
-      // yet — see update()'s wx/wz lerp toward targetCol/targetRow), with
-      // something closer to NPC scheduling: pick one random nearby tile as
-      // a "station", walk there one tile at a time (never starting the next
-      // hop until the previous one has visually finished), rest there for a
-      // random duration, then pick a new station and repeat. Bounded to a
-      // radius around the animal's own spawn tile (its "pen", even though
-      // there's no literal fence data) rather than its current position, so
-      // repeated station-hops can't slowly drift it across the whole farm.
-      const FARM_ANIMAL_WANDER_RADIUS_TILES = 4;
-      const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
-      const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
-
-      function _farmAnimalPickWanderTarget(animal) {
-        for (let attempt = 0; attempt < 8; attempt++) {
-          const dc = Math.round((rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
-          const dr = Math.round((rnd() * 2 - 1) * FARM_ANIMAL_WANDER_RADIUS_TILES);
-          if (!dc && !dr) continue;
-          const nc = animal.homeCol + dc, nr = animal.homeRow + dr;
-          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-          if (!canSpawnAnimalAt(nc, nr) || _tileTouchesAnyBarn(nc, nr)) continue;
-          animal.wanderTargetCol = nc;
-          animal.wanderTargetRow = nr;
-          return;
-        }
-        // Pen's momentarily crowded/blocked in every sampled spot — try
-        // again shortly instead of re-rolling every single tick.
-        animal.wanderWaitT = 0.5 + rnd() * 0.5;
-      }
-
-      function _farmAnimalWanderTick(animal, dt, onStep) {
-        if (animal.wanderWaitT > 0) { animal.wanderWaitT -= dt; return; }
-        if (animal.wanderTargetCol == null) { _farmAnimalPickWanderTarget(animal); return; }
-        if (animal.col === animal.wanderTargetCol && animal.row === animal.wanderTargetRow) {
-          // Reached the station tile — rest here before picking a new one.
-          animal.wanderTargetCol = null;
-          animal.wanderTargetRow = null;
-          animal.wanderWaitT = FARM_ANIMAL_WANDER_WAIT_MIN_SEC
-            + rnd() * (FARM_ANIMAL_WANDER_WAIT_MAX_SEC - FARM_ANIMAL_WANDER_WAIT_MIN_SEC);
-          return;
-        }
-        // Only take the next hop once the previous one has actually finished
-        // lerping into place (same arrival epsilon update() uses for its own
-        // idle-facing check) — this, not a throttle/chance roll, is what
-        // stops a new decision from ever interrupting a hop mid-stride.
-        const arrived = Math.abs(animal.wx - (animal.targetCol + 0.5)) < 0.04
-          && Math.abs(animal.wz - (animal.targetRow + 0.5)) < 0.04;
-        if (!arrived) return;
-        if (!_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn)) {
-          // Blocked in every direction — give up on this station and rest
-          // briefly before trying a new one, rather than spinning in place.
-          animal.wanderTargetCol = null;
-          animal.wanderTargetRow = null;
-          animal.wanderWaitT = 0.5 + rnd() * 0.5;
-        }
-      }
-
-      function _farmAnimalWakeUp(animal) {
-        const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
-        const barn = rec?.barnId ? farmBuildings.find(b => b.id === rec.barnId && b.kind === 'barn') : null;
-        const spot = (barn && findOpenTileNearBarn(barn)) || (canSpawnAnimalAt(animal.col, animal.row) ? { col: animal.col, row: animal.row } : null);
-        if (!spot) return; // no room to emerge yet — stay home another tick
-        animal.col = spot.col; animal.row = spot.row; animal.targetCol = spot.col; animal.targetRow = spot.row;
-        animal.wx = spot.col + 0.5; animal.wz = spot.row + 0.5;
-        // Re-centers the station-wander pen on wherever it actually emerges
-        // beside its barn each morning, not its original (possibly far-off)
-        // spawn tile, and drops any stale station target/rest timer left
-        // over from before it went inside for the night.
-        animal.homeCol = spot.col; animal.homeRow = spot.row;
-        animal.wanderTargetCol = null; animal.wanderTargetRow = null; animal.wanderWaitT = 0;
-        worldObjects.set(spot.col + ',' + spot.row, animal);
-        animal.avatarRef.group.visible = true;
-        animal._barnHome = false;
-      }
-
-      function _farmAnimalGetButtons(animal, label, icon) {
-        const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
-        const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
-        if (rec?.resourceReady && resDef) {
-          const itemLabel = ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
-          const verb = LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
-          return [{ icon: ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true }];
-        }
-        return [{ icon, label, action: 'obj_' + animal.id, style: 'secondary', allowed: false }];
-      }
-
-      function _farmAnimalOnAction(animal, action, fallbackMessage) {
-        if (action === 'obj_collect_' + animal.id) {
-          const rec = _loadWorldLivestock().find(l => l.id === animal.livestockId);
-          const resDef = rec ? LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
-          if (resDef?.interactive) { beginHarvestInteraction(animal); return { ok: true }; }
-          return collectLivestockResource(animal.livestockId);
-        }
-        return { ok: false, message: fallbackMessage };
-      }
-
-      function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
-        const ANIMAL_W = 1.275;
-        const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
-        const halfH = ANIMAL_H / 2;
-
-        const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
-          modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
-          name: 'uumkaoii_' + col + '_' + row,
-        });
-        avatarRef.frontPlane = avatarRef.group.children[0] || null;
-        avatarRef.backPlane  = avatarRef.group.children[1] || null;
-
-        const initSurfY = tileSurfaceY(grid[row][col].type);
-        avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
-        avatarRef.group.rotation.y = Math.PI / 2; // start facing east
-        _markPngPlane(avatarRef.group);
-        scene.add(avatarRef.group);
-        // Ground-anchor the visible art on its own real opaque bottom pixel
-        // (see makeCreatureEntity/creaturePlaneGroundOffset) instead of the
-        // raw sprite rectangle's edge, without moving the prism itself --
-        // shoulderGrip/saddle attachment anchors are authored relative to
-        // the prism's own frame, so leaving it untouched (only the plane
-        // meshes shift within it) keeps them landing on the exact same
-        // pixels regardless of this correction.
-        resolveCreatureGroundAnchorRatio(spriteUrl, (bottomRatio) => {
-          const offsetY = creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
-          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
-          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
-        });
-
-        // Composites the always-on fur+plates layers onto the plain base —
-        // see CreatureGeneticsRender.SPECIES.uumkaoii and makeDefaultGenotype's
-        // uumkaoii branch. Mirrors makePatternLivestockAnimal's one-shot
-        // idle-only composite below (a farm animal never runs, so there's no
-        // per-frame retry loop to wire up the way the wild/companion
-        // CREATURE_DB path needs via updateCreatureAnimFrame).
-        if (genotype && window.CreatureGeneticsRender) {
-          window.CreatureGeneticsRender.composeFrame('uumkaoii', 'idle', genotype).then(canvas => {
-            if (!canvas) return;
-            const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
-            const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
-            backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-            for (const child of avatarRef.group.children) {
-              if (!child.material) continue;
-              if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-              else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-            }
-          }).catch(() => {});
-        }
-
-        const animal = {
-          id: 'uumkaoii_' + col + '_' + row + '_' + (performance.now() | 0),
-          livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
-          type: 'animal', animalKey: 'uumkaoii', genotype,
-          col, row, targetCol: col, targetRow: row,
-          homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
-          wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
-          wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-          halfHeight: halfH, avatarRef,
-          groupRot: Math.PI / 2, targetRot: Math.PI / 2,
-          perpState: {},
-
-          getButtons() {
-            return _farmAnimalGetButtons(this, "Uumkao’ii", '\u{1F986}');
-          },
-          onAction(action) {
-            return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
-          },
-          tick(dt) {
-            if (this._harvestFrozen) return;
-            if (_farmAnimalBarnTick(this)) return;
-            // Drops a persistent dew pile on whichever tile a station-wander
-            // hop happens to leave next, once this uumkao'ii's dew cooldown
-            // has reset (see dropDewPile) — opportunistic rather than urgent,
-            // since the wander cycle already produces hops regularly enough.
-            _farmAnimalWanderTick(this, dt || 0, (oldCol, oldRow) => {
-              const livestockList = _loadWorldLivestock();
-              const rec = livestockList.find(l => l.id === this.livestockId);
-              if (rec?.dewReady && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
-                rec.dewReady = false;
-                rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-                rec.dewReadyStaleDays = 0;
-                _saveWorldLivestock(livestockList);
-              }
-            });
-          },
-          update(dt) {
-            const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
-            const tile = grid[this.targetRow]?.[this.targetCol];
-            const ty = tile ? tileSurfaceY(tile.type) + this.halfHeight : this.wy;
-            const sp = Math.min(1, dt * 4);
-            this.wx += (tx - this.wx) * sp;
-            this.wz += (tz - this.wz) * sp;
-            this.wy += (ty - this.wy) * sp;
-            this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
-            this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
-
-            // Once it's settled at its target tile (not mid-hop), an animal has no
-            // specific direction to look — let it rest broadside to the camera.
-            const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-            const lookTarget = idle ? nearestAngleAmong(this.groupRot, cameraRelativePerps()) : this.targetRot;
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, lookTarget, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
-            if (snapTo !== null) this.groupRot = effectiveTarget;
-            else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
-            this.avatarRef.group.rotation.y = this.groupRot;
-          },
-          reset() {
-            scene.remove(avatarRef.group);
-            avatarRef.dispose();
-          },
-        };
-        return animal;
-      }
-
-      // Farm-display width per pattern-layer livestock species — deliberately
-      // its own scale from CREATURE_DB's wild-creature modelWidth (a farm
-      // pen animal reads better a bit smaller/denser than its full-size wild
-      // counterpart), so it can't just read CREATURE_DB[kind].modelWidth
-      // directly. A kind missing here falls back to dabinggi-hound's 1.7
-      // rather than silently mis-sizing — add an entry for any new
-      // pattern-layer species instead of expanding a size ternary.
-      const LIVESTOCK_ANIMAL_WIDTH = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
-
-      // Pattern-layer species (gar-wolf, dabinggi-hound) as placeable farm
-      // livestock — same tile-hopping wander/no-combat shape as
-      // makeUumkaoiiAnimal, but with its genotype actually rendered via
-      // creature-genetics-render.js's recolor+composite pipeline (falls
-      // back to the plain uncolored sprite, already loaded synchronously
-      // below, until that async compose resolves).
-      function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
-        const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
-        const ANIMAL_H = ANIMAL_W * (CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
-        const halfH = ANIMAL_H / 2;
-        const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
-
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
-          modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
-          name: kind.replace(/-/g, '_') + '_' + col + '_' + row,
-        });
-        avatarRef.frontPlane = avatarRef.group.children[0] || null;
-        avatarRef.backPlane  = avatarRef.group.children[1] || null;
-
-        const initSurfY = tileSurfaceY(grid[row][col].type);
-        avatarRef.group.position.set(col + 0.5, initSurfY + halfH, row + 0.5);
-        avatarRef.group.rotation.y = Math.PI / 2; // start facing east
-        _markPngPlane(avatarRef.group);
-        scene.add(avatarRef.group);
-        // Ground-anchor on the sprite's own real opaque bottom pixel (see
-        // makeCreatureEntity/creaturePlaneGroundOffset) rather than the raw
-        // sprite rectangle's edge, without moving the prism itself -- a
-        // genotype recolor (composed further below) only changes color, not
-        // the base silhouette, so scanning baseUrl stays correct regardless
-        // of genotype, and leaving the prism untouched keeps this species'
-        // shoulderGrip/saddle attachment anchors (authored relative to the
-        // prism, and shared with the wild/companion creature path for the
-        // same kind) landing on the exact same pixels as before.
-        resolveCreatureGroundAnchorRatio(baseUrl, (bottomRatio) => {
-          const offsetY = creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
-          if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
-          if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
-        });
-
-        if (genotype && window.CreatureGeneticsRender) {
-          window.CreatureGeneticsRender.composeFrame(kind, 'idle', genotype).then(canvas => {
-            if (!canvas) return;
-            const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
-            const backTex = new THREE.CanvasTexture(canvas); backTex.colorSpace = THREE.SRGBColorSpace;
-            backTex.wrapS = THREE.RepeatWrapping; backTex.repeat.set(-1, 1); backTex.offset.set(1, 0);
-            for (const child of avatarRef.group.children) {
-              if (!child.material) continue;
-              if (child.name.endsWith('_front_plane')) { child.material.map = frontTex; child.material.needsUpdate = true; }
-              else if (child.name.endsWith('_back_plane')) { child.material.map = backTex; child.material.needsUpdate = true; }
-            }
-          }).catch(() => {});
-        }
-
-        const animal = {
-          id: kind + '_' + col + '_' + row + '_' + (performance.now() | 0),
-          livestockId: livestockId || ('livestock_' + Math.random().toString(36).slice(2, 10)),
-          type: 'animal', animalKey: kind, genotype,
-          col, row, targetCol: col, targetRow: row,
-          homeCol: col, homeRow: row, // station-wander pen center — see _farmAnimalWanderTick
-          wanderTargetCol: null, wanderTargetRow: null, wanderWaitT: 0,
-          wx: col + 0.5, wz: row + 0.5, wy: initSurfY + halfH,
-          halfHeight: halfH, avatarRef,
-          groupRot: Math.PI / 2, targetRot: Math.PI / 2,
-          perpState: {},
-
-          getButtons() {
-            return _farmAnimalGetButtons(this, label, icon);
-          },
-          onAction(action) {
-            return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
-          },
-          tick(dt) {
-            if (this._harvestFrozen) return;
-            if (_farmAnimalBarnTick(this)) return;
-            _farmAnimalWanderTick(this, dt || 0);
-          },
-          update(dt) {
-            const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
-            const tile = grid[this.targetRow]?.[this.targetCol];
-            const ty = tile ? tileSurfaceY(tile.type) + this.halfHeight : this.wy;
-            const sp = Math.min(1, dt * 4);
-            this.wx += (tx - this.wx) * sp;
-            this.wz += (tz - this.wz) * sp;
-            this.wy += (ty - this.wy) * sp;
-            this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
-            this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
-
-            const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
-            const lookTarget = idle ? nearestAngleAmong(this.groupRot, cameraRelativePerps()) : this.targetRot;
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, lookTarget, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
-            if (snapTo !== null) this.groupRot = effectiveTarget;
-            else this.groupRot += angleDiff(effectiveTarget, this.groupRot) * 0.18;
-            this.avatarRef.group.rotation.y = this.groupRot;
-          },
-          reset() {
-            scene.remove(avatarRef.group);
-            avatarRef.dispose();
-          },
-        };
-        return animal;
-      }
-      function makeGarWolfAnimal(col, row, livestockId, genotype) {
-        return makePatternLivestockAnimal('gar-wolf', 'Gar-wolf', '🐺', col, row, livestockId, genotype);
-      }
-      function makeDabinggiHoundAnimal(col, row, livestockId, genotype) {
-        return makePatternLivestockAnimal('dabinggi-hound', 'Dabinggi-hound', '🐕', col, row, livestockId, genotype);
-      }
-      function makeGrehlrAnimal(col, row, livestockId, genotype) {
-        return makePatternLivestockAnimal('grehlr', 'Grehlr', '🐾', col, row, livestockId, genotype);
-      }
-      function makeDrenkirraAnimal(col, row, livestockId, genotype) {
-        return makePatternLivestockAnimal('drenkirra', 'Drenkirra', '🪿', col, row, livestockId, genotype);
-      }
-
-      // Livestock kind → factory, so restoring saved livestock on world load
-      // can dispatch by kind without hardcoding uumkao'ii — the array this
-      // reads is meant to grow into other livestock types later.
-      const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal };
-
       // item key -> livestock kind, for the Farm tab's "Add Livestock" flow.
-      // Grows alongside LIVESTOCK_FACTORIES as more species ship. Both new
-      // Den-Mother nest rewards (see updateNestInteraction) piggyback on this
-      // exact mechanism per the design intent — "the existing livestock
-      // items, just renamed" — rather than inventing a separate egg/baby
-      // item system. All three farm-deployable species (uumkao'ii, gar-wolf,
-      // dabinggi-hound) have a LIVESTOCK_FACTORIES entry and go through the
-      // exact same addLivestockFromItem → stasis → assignLivestockToBarn →
+      // Grows alongside js/farm-animals.js's LIVESTOCK_FACTORIES as more
+      // species ship. Both new Den-Mother nest rewards (see
+      // updateNestInteraction) piggyback on this exact mechanism per the
+      // design intent — "the existing livestock items, just renamed" —
+      // rather than inventing a separate egg/baby item system. All three
+      // farm-deployable species (uumkao'ii, gar-wolf, dabinggi-hound) have
+      // a LIVESTOCK_FACTORIES entry and go through the exact same
+      // window.FarmAnimals.addFromItem → stasis → assignToBarn →
       // wander/day-night-barn path — there's nothing uumkao'ii-specific
       // about any of it. dabinggiHoundEgg has no Den-Mother source (dabinggi-
       // hound isn't a hostile wild-pack species, so it has no "-den-mother"
       // CREATURE_DB entry — see DEN_MOTHER_ITEM_KEYS below) — its only
       // source is Jubmir's daily trader stock (see _loadJubmirStock).
+      // Kept here (not in js/farm-animals.js) since it's also read by the
+      // Inventory panel outside that module.
       const LIVESTOCK_ITEM_KINDS = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {};
 
       // Den-Mother CREATURE_DB key -> which item her nest hands out — read
@@ -3931,300 +2818,10 @@
       // uumkaoii-wild-den-mother: false), which is exactly the kind of
       // coincidence that silently breaks the moment a third Den-Mother
       // species ships sharing a liveBirth value with one of these two.
+      // Kept here rather than js/farm-animals.js since it's wild
+      // den-mother nest logic, not livestock.
       const DEN_MOTHER_DEFS = window.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers || {};
       const DEN_MOTHER_ITEM_KEYS = Object.fromEntries(Object.values(DEN_MOTHER_DEFS).map(def => [def.creatureKey, def.nestItemKey]));
-
-      // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
-      // that item — populated when a Den-Mother's nest grants an egg/baby
-      // (see updateNestInteraction), so the resulting livestock/companion
-      // shares its pack's exact genes instead of rolling a fresh random one.
-      // Not persisted: this only bridges "just took it from the nest" to
-      // "added it to the farm/stable this same session" — a stack of eggs
-      // carried across a save/reload falls back to a fresh roll, same as any
-      // item whose instance-level data isn't part of the save format.
-      const _pendingLivestockGenotypes = {};
-      function _queueLivestockItemGenotype(itemKey, genotype) {
-        if (!genotype) return;
-        (_pendingLivestockGenotypes[itemKey] || (_pendingLivestockGenotypes[itemKey] = [])).push(genotype);
-        window.__farmLog?.(`[genotype] queued a carried genotype for ${itemKey} (${_pendingLivestockGenotypes[itemKey].length} pending)`, 'wildlife');
-      }
-      function _consumeLivestockItemGenotype(itemKey) {
-        const genotype = _pendingLivestockGenotypes[itemKey]?.shift() || null;
-        window.__farmLog?.(`[genotype] addLivestockFromItem/addToStable(${itemKey}): ${genotype ? 'used a carried genotype from the nest queue' : 'no carried genotype pending — rolling a fresh one'}`, 'wildlife');
-        return genotype;
-      }
-
-      // Adds a creature from an undeployed crate item to the farm's
-      // livestock — the only way to do so now (see the Farm tab's Livestock
-      // panel). Previously this fired directly off "using" the item on a
-      // targeted tile with no ownership check; it's now gated behind the
-      // 'livestock' farmhand permission like every other farm-alteration
-      // action, and always picks its own open tile rather than a reticle
-      // target, since it's invoked from the menu rather than the world.
-      // Adding livestock no longer spawns it directly — with barns in the
-      // picture, a released creature starts unassigned ("stasis": no world
-      // presence, resource cooldown paused) until assigned to a built barn
-      // with an open slot from the Farm tab's Livestock panel (see
-      // assignLivestockToBarn), which is what actually spawns it.
-      function addLivestockFromItem(itemKey) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can add livestock." };
-        const kind = LIVESTOCK_ITEM_KINDS[itemKey];
-        if (!kind) return { ok: false, message: 'That item cannot be added to the farm.' };
-        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
-        const genotype = _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind);
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
-        // Livestock belongs to the world, not this character — persisted
-        // separately from saveMemberWorldData() so it stays behind for
-        // anyone who plays this world, not just whoever added it.
-        const livestock = _loadWorldLivestock();
-        const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
-        livestock.push({
-          id, kind, barnId: null, releasedAt: Date.now(),
-          name: window.CreatureGenetics.defaultLivestockName(kind), genotype,
-          daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
-          ...(kind === 'uumkaoii' ? { dewColor: UUMKAOII_DEFAULT_DEW_COLOR, dewDaysUntil: UUMKAOII_DEW_COOLDOWN_DAYS, dewReady: false } : {}),
-        });
-        _saveWorldLivestock(livestock);
-        return { ok: true, message: `🦆 ${window.CreatureGenetics.defaultLivestockName(kind)} is waiting in stasis — assign it to a barn from the Farm tab to bring it out.` };
-      }
-
-      // Assigns unhoused (or re-homes already-housed) livestock to a built
-      // barn with an open slot — this is what actually spawns it into the
-      // world; see addLivestockFromItem/demolishBarn/unassignLivestockFromBarn
-      // for the other transitions in/out of stasis.
-      function assignLivestockToBarn(livestockId, barnId) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-        const barn = farmBuildings.find(b => b.id === barnId && b.kind === 'barn' && b.stage === 'built');
-        if (!barn) return { ok: false, message: 'That barn is not built yet.' };
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        if (rec.barnId === barnId) return { ok: true, message: `${rec.name} is already housed there.` };
-        const tier = BARN_TIERS[barn.tier];
-        const occupants = list.filter(l => l.barnId === barnId).length;
-        if (occupants >= tier.slots) return { ok: false, message: `${tier.label} is full (${tier.slots} slots).` };
-        const wasAssigned = !!rec.barnId;
-        rec.barnId = barnId;
-        if (rec.daysUntilResource == null) rec.daysUntilResource = LIVESTOCK_RESOURCE_DEFS[rec.kind]?.cooldownDays ?? null;
-        if (rec.kind === 'uumkaoii' && rec.dewDaysUntil == null) {
-          rec.dewColor = rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR;
-          rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-          rec.dewReady = false;
-        }
-        _saveWorldLivestock(list);
-        if (!wasAssigned) {
-          const spot = findOpenTileNearBarn(barn);
-          if (spot) {
-            const factory = LIVESTOCK_FACTORIES[rec.kind];
-            const animal = factory ? factory(spot.col, spot.row, rec.id, rec.genotype) : null;
-            if (animal) { worldObjects.set(spot.col + ',' + spot.row, animal); animalObjects.add(animal); }
-          }
-        }
-        return { ok: true, message: `${rec.name} assigned to the ${tier.label}.` };
-      }
-
-      // Sends a housed animal back to stasis — despawns it if currently in
-      // the world, pauses its resource cooldown, but keeps the record (and
-      // its genotype/name) so re-assigning it later just picks up again.
-      function unassignLivestockFromBarn(livestockId) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        rec.barnId = null;
-        rec.assignedVatId = null; // can't work a vat while unhoused — same gate as dew/egg cooldowns
-        _saveWorldLivestock(list);
-        const animal = [...animalObjects].find(a => a.livestockId === livestockId);
-        if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
-        return { ok: true, message: `${rec.name} moved to stasis.` };
-      }
-
-      // Gives the ready resource item and resets the cooldown — called from
-      // the animal's own "Collect" action button (see _farmAnimalOnAction).
-      function collectLivestockResource(livestockId) {
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        const resDef = LIVESTOCK_RESOURCE_DEFS[rec.kind];
-        if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
-        inventory[resDef.itemKey] = Math.min(99, (inventory[resDef.itemKey] || 0) + 1);
-        rec.resourceReady = false;
-        rec.daysUntilResource = resDef.cooldownDays;
-        _saveWorldLivestock(list);
-        return { ok: true, message: `Collected 1 ${ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
-      }
-
-      // Advances every housed animal's resource cooldown by one day — called
-      // from advanceDay()/sleepInBed() alongside tickCropDay(). Unassigned
-      // (stasis) livestock simply aren't touched here, which is the "cooldown
-      // paused" behavior — no separate bookkeeping needed.
-      function tickLivestockResources() {
-        const list = _loadWorldLivestock();
-        let changed = false;
-        list.forEach(l => {
-          const resDef = LIVESTOCK_RESOURCE_DEFS[l.kind];
-          if (resDef && l.barnId && !l.resourceReady) {
-            if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
-            l.daysUntilResource--;
-            if (l.daysUntilResource <= 0) l.resourceReady = true;
-            changed = true;
-          }
-          // Uumkao'ii dew cooldown — separate from the egg resource above;
-          // see UUMKAOII_DEW_COOLDOWN_DAYS.
-          if (l.kind === 'uumkaoii' && l.barnId) {
-            if (!l.dewReady) {
-              if (l.dewDaysUntil == null) l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-              l.dewDaysUntil--;
-              if (l.dewDaysUntil <= 0) { l.dewReady = true; l.dewReadyStaleDays = 0; }
-              changed = true;
-            }
-            if (l.dewReady) {
-              // Assigned-to-a-vat takes priority over dropping a pile at all:
-              // the dew goes straight into squeezed milk/curds instead of
-              // needing to be dug up first. See autoSqueezeDewAtVat — falls
-              // through to the ordinary pile-drop behavior below if the vat
-              // was since demolished (also clears the stale assignment so
-              // it doesn't keep trying every day).
-              if (l.assignedVatId) {
-                if (autoSqueezeDewAtVat(l.assignedVatId, l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
-                  l.dewReady = false;
-                  l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-                  changed = true;
-                  return;
-                }
-                l.assignedVatId = null;
-              }
-              // The pile ideally appears from inside the live uumkao'ii's own
-              // tick() (see makeUumkaoiiAnimal) as it wanders — but that only
-              // runs while the player is actually on the farm AND the animal
-              // isn't mid barn-homing/asleep (_farmAnimalBarnTick short-
-              // circuits wandering entirely at night), so waiting on it
-              // indefinitely can leave dewReady stuck true forever if that
-              // alignment never happens to occur — this was reported as
-              // "never found one" despite the mechanic otherwise working.
-              // First tick it's ready: give the live wander-hop a chance to
-              // produce the nicer "dropped at its feet" flourish, same as
-              // before, but ONLY when actually on the farm to see it — off-
-              // farm still resolves immediately like it always has. Every
-              // subsequent tick it's STILL unresolved (l.dewReadyStaleDays
-              // counts real advanceDay/sleepInBed calls, not frames), force
-              // the same random-open-tile placement regardless of area
-              // instead of leaving it stuck another indefinite stretch.
-              if (l.dewReadyStaleDays == null) l.dewReadyStaleDays = 0;
-              const forceDrop = currentArea !== 'farm' || l.dewReadyStaleDays >= 1;
-              if (forceDrop && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
-                l.dewReady = false;
-                l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
-                l.dewReadyStaleDays = 0;
-              } else {
-                l.dewReadyStaleDays++;
-              }
-              changed = true;
-            }
-          }
-        });
-        if (changed) _saveWorldLivestock(list);
-      }
-
-      // ── Livestock harvest interaction (milking/venom/stink-oil extraction) ──
-      // Modeled on the NPC dialogue system's own player-staging
-      // (updateNpcDialogueStaging/faceNpcDialogueParticipants): while the
-      // interaction runs, updateMovement is fully replaced by
-      // updateHarvestInteraction (see the dialogueOpen-style gate there),
-      // which quick-lerps (not snaps — see HARVEST_TRANSITION_S) the player
-      // into the authored handler position relative to the animal, holds
-      // there for the interaction's duration, grants the resource, then
-      // lerps back to wherever the player started. The animal itself is
-      // frozen in place for the whole thing (`_harvestFrozen`, checked at
-      // the top of both farm-animal tick()s) so it can't wander out from
-      // under the player mid-interaction.
-      let harvestInteraction = null;
-      const HARVEST_TRANSITION_S = 0.35; // matches MOUNT_TRANSITION_S's quick-lerp feel
-      const HARVEST_ACTIVE_DURATION_S = 2; // matches the authored milking/stink-oil templates' own duration
-
-      // Player stand-spot offset (tile units, in the animal's own unrotated
-      // local frame — rotated by the animal's current groupRot into world
-      // space), extracted from the animation-author tool's authored
-      // two-actor templates: gar-wolf/dabinggi-hound from
-      // AUTHORED_MILKING_TEMPLATE's farmerBaseTransform+
-      // animalAnchorTransform (dabinggi-hound additionally offset by
-      // venomExtractionHandlerDelta, since venom reuses the milking track —
-      // see applyVenomExtractionPreset), grehlr from
-      // AUTHORED_STINK_OIL_GREHLR_TEMPLATE_V1524's handler.baseTransform.
-      // Only the ground-plane (x/z) position is representable here — the
-      // templates' full 3D handler rotation (a crouched/kneeling pose) has
-      // no equivalent on a flat 2.5D billboard character, so the player
-      // instead just faces the animal directly once in position.
-      const HARVEST_HANDLER_OFFSET = {
-        'gar-wolf': { x: -0.243, z: 0.249 },
-        'dabinggi-hound': { x: -0.493, z: 0.429 },
-        'grehlr': { x: 0.064, z: -0.86 },
-      };
-
-      function beginHarvestInteraction(animal) {
-        if (harvestInteraction || !animal) return;
-        const offset = HARVEST_HANDLER_OFFSET[animal.animalKey];
-        if (!offset) { collectLivestockResource(animal.livestockId); return; } // no authored spot — just collect instantly
-        const theta = animal.groupRot;
-        const dx = offset.x * Math.cos(theta) + offset.z * Math.sin(theta);
-        const dz = -offset.x * Math.sin(theta) + offset.z * Math.cos(theta);
-        const animalPxX = animal.wx * TILE, animalPxY = animal.wz * TILE;
-        const targetX = animalPxX + dx * TILE, targetY = animalPxY + dz * TILE;
-        const targetAngle = Math.atan2(animalPxY - targetY, animalPxX - targetX);
-        animal._harvestFrozen = true;
-        harvestInteraction = {
-          animal, livestockId: animal.livestockId,
-          phase: 'in', t: 0,
-          startX: player.x, startY: player.y, startAngle: facingAngle,
-          targetX, targetY, targetAngle,
-          prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
-        };
-        // Auto-zooms onto the animal the same way opening NPC dialogue swaps
-        // in its own tighter camera mode (see openNpcDialogue) — no separate
-        // tween function needed, the existing per-frame follow-lerp in the
-        // main loop (updateCameraPosition's camLerp) eases the camera into
-        // the new mode's framing smoothly over the 'in' transition below.
-        activeCameraMode = 'harvestInteraction';
-        activeCameraTarget = animal.avatarRef?.group || null;
-      }
-
-      function updateHarvestInteraction(dt) {
-        const h = harvestInteraction;
-        if (!h) return;
-        player.vx = 0; player.vy = 0;
-        if (h.phase === 'active') {
-          facingAngle = h.targetAngle; player.angle = facingAngle;
-          h.t += dt;
-          if (h.t >= HARVEST_ACTIVE_DURATION_S) {
-            const result = collectLivestockResource(h.livestockId);
-            if (result?.message) showToast(result.message, !!result.ok);
-            h.phase = 'out'; h.t = 0;
-          }
-          return;
-        }
-        h.t = Math.min(1, h.t + dt / HARVEST_TRANSITION_S);
-        const e = h.t;
-        const [fromX, fromY, fromAngle, toX, toY, toAngle] = h.phase === 'in'
-          ? [h.startX, h.startY, h.startAngle, h.targetX, h.targetY, h.targetAngle]
-          : [h.targetX, h.targetY, h.targetAngle, h.startX, h.startY, h.startAngle];
-        player.x = fromX + (toX - fromX) * e;
-        player.y = fromY + (toY - fromY) * e;
-        facingAngle = fromAngle + angleDiff(toAngle, fromAngle) * e;
-        player.angle = facingAngle;
-        if (e >= 1) {
-          if (h.phase === 'in') { h.phase = 'active'; h.t = 0; }
-          else {
-            if (h.animal) h.animal._harvestFrozen = false;
-            // Mirrors closeNpcDialogue's own restore of activeCameraMode/
-            // activeCameraTarget — the per-frame camLerp eases the camera
-            // back out to wherever it was before the interaction zoomed in.
-            activeCameraMode = h.prevCameraMode ?? (cameraConfig().defaultMode || 'default');
-            activeCameraTarget = h.prevCameraTarget ?? null;
-            harvestInteraction = null;
-          }
-        }
-      }
 
       // ── Chair sitting (docs/config/furniture-authored seat anchors) ──
       // Same lerp-in/lerp-out shape as beginHarvestInteraction, but
@@ -4274,7 +2871,7 @@
       }
 
       function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
-        if (sitInteraction || harvestInteraction || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
+        if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
         const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
@@ -4400,144 +2997,6 @@
         };
       }
 
-      // Adds a creature from an item straight into the character's personal
-      // stable — no farm/ownership involved at all (any character, anywhere,
-      // can do this with their own bag item), unlike addLivestockFromItem()
-      // above. A stabled animal is untradeable and can never be placed on any
-      // farm; it becomes a nameable, eventually-levelable companion instead.
-      function addToStable(itemKey) {
-        const kind = LIVESTOCK_ITEM_KINDS[itemKey];
-        if (!kind) return { ok: false, message: 'That item cannot be added to a stable.' };
-        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
-        const entry = {
-          id: 'stable_' + Math.random().toString(36).slice(2, 10),
-          kind, name: window.CreatureGenetics.defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind),
-          aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
-        };
-        stable.push(entry);
-        _autoAssignStableRole(entry);
-        saveStable();
-        return { ok: true, message: `${entry.name} added to your stable!`, entry };
-      }
-
-      // Recreates every animal this world's owner (or any farmhand) has ever
-      // released, from the world's own saved livestock list — called once
-      // per world load, after furniture placement so canSpawnAnimalAt's
-      // occupancy check sees the final tile state.
-      function respawnWorldLivestock() {
-        for (const entry of _loadWorldLivestock()) {
-          const factory = LIVESTOCK_FACTORIES[entry.kind];
-          if (!factory) continue;
-          // Entries saved before barns existed have no 'barnId' property at
-          // all (vs. the new stasis default of an explicit null) — treat
-          // those as already-free-roaming and keep spawning them at their
-          // saved spot, same as always. New-format entries only spawn when
-          // actually housed in a still-existing, built barn.
-          const isLegacyRoaming = !('barnId' in entry);
-          let col = entry.col, row = entry.row;
-          if (!isLegacyRoaming) {
-            if (!entry.barnId) continue; // stasis — no world presence
-            const barn = farmBuildings.find(b => b.id === entry.barnId && b.kind === 'barn' && b.stage === 'built');
-            if (!barn) continue; // barn demolished/not yet built — stays in stasis until reassigned
-            const spot = findOpenTileNearBarn(barn);
-            if (!spot) continue;
-            col = spot.col; row = spot.row;
-          } else if (!canSpawnAnimalAt(col, row)) {
-            continue;
-          }
-          const animal = factory(col, row, entry.id, entry.genotype);
-          if (!animal) continue;
-          worldObjects.set(col + ',' + row, animal);
-          animalObjects.add(animal);
-        }
-      }
-
-      // Gestation length for a set breeding pair, in in-game days — resolved
-      // by tickLivestockBreeding() on the same day-tick crops use.
-      const LIVESTOCK_GESTATION_DAYS = 3;
-
-      // Resolves every breeding pair whose gestation has elapsed: crosses
-      // the parents' genotypes (crossOffspring), spawns the offspring on an
-      // open tile, and appends it to world.livestock. Pairs are consumed on
-      // resolution — a farmhand must re-pair to breed again. Called from
-      // advanceDay()/sleepInBed() alongside tickCropDay().
-      // A breeding-pair parent ref is { source: 'world'|'stable', id, characterId? }
-      // — 'world' points into this farm's own livestock, 'stable' points into
-      // a specific character's personal stable (characterId required so the
-      // pair still resolves correctly even if a *different* character is the
-      // one currently playing when gestation completes).
-      function refsEqual(a, b) {
-        return !!a && !!b && a.source === b.source && a.id === b.id;
-      }
-      function _currentCharacterId() {
-        return (window.__hobunjiPlayerProfile || _playerData)?.characterId || null;
-      }
-      function _loadCharacterStable(characterId) {
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.characters || []).find(c => c.id === characterId)?.stable ?? [];
-        } catch { return []; }
-      }
-      function resolveBreedingParent(ref, worldLivestock) {
-        if (!ref) return null;
-        if (ref.source === 'stable') return _loadCharacterStable(ref.characterId).find(s => s.id === ref.id) || null;
-        return worldLivestock.find(l => l.id === ref.id) || null;
-      }
-
-      function tickLivestockBreeding() {
-        const pairs = _loadWorldBreedingPairs();
-        if (!pairs.length) return;
-        const livestock = _loadWorldLivestock();
-        const remainingPairs = [];
-        let changed = false;
-        for (const pair of pairs) {
-          if (calendar.day < pair.readyDay) { remainingPairs.push(pair); continue; }
-          const parentA = resolveBreedingParent(pair.parentA, livestock);
-          const parentB = resolveBreedingParent(pair.parentB, livestock);
-          changed = true;
-          if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
-          const kind = parentA.kind;
-          const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind);
-          // Newborns start in stasis just like a freshly-released crate
-          // animal — the owner assigns them to a barn from the Farm tab
-          // when there's room, same as any other unhoused livestock.
-          livestock.push({
-            id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, releasedAt: Date.now(),
-            name: window.CreatureGenetics.defaultLivestockName(kind), genotype: childGenotype,
-            daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
-          });
-          showToast(`🐣 A new ${window.CreatureGenetics.defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
-        }
-        if (changed) {
-          _saveWorldLivestock(livestock);
-          _saveWorldBreedingPairs(remainingPairs);
-        }
-      }
-
-      function clearAnimalObjects() {
-        animalObjects.forEach(obj => {
-          worldObjects.delete(obj.col + ',' + obj.row);
-          obj.reset && obj.reset();
-        });
-        animalObjects.clear();
-      }
-
-      function updateAnimalMeshes(dt) {
-        // .tick() drives wander/barn-homing steps (throttled internally via
-        // each animal's own tickCounter); .update(dt) is the continuous
-        // position/rotation lerp toward wherever tick() last moved it.
-        // One _loadWorldLivestock() read for the whole frame (see
-        // _worldLivestockFrameCache) rather than one per animal per tick --
-        // in-place mutations (e.g. a dew drop resetting rec.dewReady) stay
-        // visible to every other animal in this same pass since it's the
-        // same array reference, and _saveWorldLivestock still persists it
-        // for real, so this is purely a read-dedup, not a staleness risk.
-        _worldLivestockFrameCache = _loadWorldLivestock();
-        for (const animal of animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
-        _worldLivestockFrameCache = null;
-      }
 
       // ── Companion & hostile creatures (Whistle system + Combat system) ───────
       // Continuous pixel-space movement (unlike the tile-hopping uumkao'ii
@@ -4833,179 +3292,6 @@
         window.ResourceRings?.disposeRingHud(c);
       }
 
-      // ── Death ragdoll → lootable corpse ─────────────────────────────
-      //
-      // A lethally-hit creature no longer just vanishes: it tumbles from
-      // where it died to a nearby tile roughly away from the killing blow,
-      // settles lying flat on that tile, and stays there as a lootable
-      // corpse (see getCorpseObjectAt) until the player butchers it —
-      // that's the only thing that actually despawns the sprite.
-      const DEATH_LERP_DURATION_S = 2.2;
-      const DEATH_TUMBLE_TILES_MIN = 1.1;
-      const DEATH_TUMBLE_TILES_MAX = 2.6;
-      const DEATH_AIM_CONE_RAD = 50 * Math.PI / 180;
-      const DEATH_HOP_HEIGHT_PX = TILE * 1.1 / 3;
-      const DEATH_FLIP_SEGMENTS = 5;
-      const DEATH_FLIP_AXES = ['x', 'y', 'z'];
-
-      // Ease-in-out (slow at each end, fast through the middle) applied
-      // within a single flip segment — gives every flip a "slo-mo" hang at
-      // its start/end instead of spinning at a constant rate.
-      function deathFlipSegmentEase(x) { return x * x * (3 - 2 * x); }
-
-      // Walks outward from the creature's own tile within a cone around
-      // awayAngle (the direction the killing blow traveled), looking for a
-      // tile the corpse can actually rest on — falls back to its own tile
-      // if nothing nearby is valid (map edge, water, cliff face, ...).
-      function findDeathRestTile(c, awayAngle) {
-        const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
-        for (let attempt = 0; attempt < 12; attempt++) {
-          const ang = awayAngle + (Math.random() * 2 - 1) * DEATH_AIM_CONE_RAD;
-          const distTiles = DEATH_TUMBLE_TILES_MIN + Math.random() * (DEATH_TUMBLE_TILES_MAX - DEATH_TUMBLE_TILES_MIN);
-          const col = clamp(Math.round(startCol + Math.cos(ang) * distTiles), 0, (c.areaCols || COLS) - 1);
-          const row = clamp(Math.round(startRow + Math.sin(ang) * distTiles), 0, (c.areaRows || ROWS) - 1);
-          const cx = (col + 0.5) * TILE, cy = (row + 0.5) * TILE;
-          if (canOccupyAt(cx, cy, TILE * 0.3)) return { x: cx, y: cy, col, row };
-        }
-        return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
-      }
-
-      function beginCreatureDeath(c, fromX, fromY) {
-        // A corpse doesn't get further updateCreatureMesh() calls to keep
-        // its resource ring synced/rebuilt, so drop it now rather than
-        // leaving a stale 0-health ring hovering over the corpse forever.
-        window.ResourceRings?.disposeRingHud(c);
-        // A bandit's weapon lives in its own world-space toolHolder (see
-        // updateBanditToolMesh), not parented under the avatar the tumble
-        // below animates -- hide it now rather than leaving it floating in
-        // place, disconnected from the corpse, once the fall starts.
-        if (c._banditToolHolder) c._banditToolHolder.visible = false;
-        if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
-        const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
-        const rest = findDeathRestTile(c, awayAngle);
-        c.state = 'dying';
-        c.deathT = 0;
-        c.deathDurationS = DEATH_LERP_DURATION_S;
-        c.deathStartX = c.x; c.deathStartY = c.y;
-        c.deathTargetX = rest.x; c.deathTargetY = rest.y;
-        c.corpseCol = rest.col; c.corpseRow = rest.row;
-        c.deathHopHeightPx = DEATH_HOP_HEIGHT_PX * (0.7 + Math.random() * 0.6);
-        // The avatar's flat cutout plane has its face-normal along the
-        // group's own local X axis at rest (see buildAnimalPlaneAvatarModel:
-        // frontPlane.rotation.y = +PI/2, backPlane.rotation.y = -PI/2 — a
-        // standing side-view cutout, not a volumetric cross). Rotating the
-        // GROUP about its local Z axis by exactly +PI/2 is what tips that
-        // face-normal from horizontal up to vertical (+Y) — i.e. actually
-        // lying flat, face-up, not just spinning in place. Y (yaw/compass
-        // heading) and X (a small final roll) can be anything — neither
-        // affects flatness.
-        c.deathRestRotZ = Math.PI / 2;
-        c.deathRestRotX = (Math.random() * 2 - 1) * 0.22;
-        c.deathRestRotY = Math.random() * Math.PI * 2;
-        // A dramatic mid-air ragdoll: DEATH_FLIP_SEGMENTS separate flips,
-        // each one full turn (so it can never leave a residual tilt behind)
-        // about a randomly picked axis in a randomly picked direction — a
-        // forward somersault, then maybe a cartwheel, then a twist, etc.
-        // Because every segment is exactly ±1 full turn, the axis that
-        // governs flatness (z) always ends up an integer number of full
-        // turns past its target regardless of how the 5 picks landed, so it
-        // still always settles into the same clean flat pose.
-        c.deathFlipSegAxis = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => DEATH_FLIP_AXES[Math.floor(Math.random() * DEATH_FLIP_AXES.length)]);
-        c.deathFlipSegDir  = Array.from({ length: DEATH_FLIP_SEGMENTS }, () => (Math.random() < 0.5 ? -1 : 1));
-        c.deathFlipPrefix = { x: [0], y: [0], z: [0] };
-        for (let i = 0; i < DEATH_FLIP_SEGMENTS; i++) {
-          for (const axis of DEATH_FLIP_AXES) {
-            const add = c.deathFlipSegAxis[i] === axis ? c.deathFlipSegDir[i] : 0;
-            c.deathFlipPrefix[axis].push(c.deathFlipPrefix[axis][i] + add);
-          }
-        }
-        c.scaleY = 1;
-        c.avatarRef.group.scale.y = 1;
-        // Snap the cutout's two planes back to the exact pose they were
-        // built with, undoing any camera-relative deadzone drift
-        // (updateCreatureMesh's pngRot/perpState smoothing) frozen in at the
-        // moment of death — otherwise the corpse lands a few degrees off
-        // "flat" instead of showing its clean flat face.
-        if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
-        if (c.avatarRef.backPlane)  c.avatarRef.backPlane.rotation.y  = -Math.PI / 2;
-        // legsPivot carries no extra ±PI/2 twist (see updateCreatureMesh), so
-        // its own matching "rest" value is plain 0, not PI/2 -- planeDelta 0
-        // means pngRot === groupRot, the same nominal-facing convention the
-        // planes' own PI/2 rest implicitly encodes once combined with their
-        // baked mesh orientation.
-        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
-        corpseObjects.add(c);
-      }
-
-      // Turns accumulated for one axis by time-progress t: whole turns from
-      // every completed segment assigned to that axis, plus the current
-      // segment's own partial turn (eased) if it happens to be the one
-      // actively spinning that axis right now.
-      function deathSpinTurnsForAxis(c, seg, segEase, axis) {
-        let turns = c.deathFlipPrefix[axis][seg];
-        if (c.deathFlipSegAxis[seg] === axis) turns += c.deathFlipSegDir[seg] * segEase;
-        return turns;
-      }
-
-      // Drives every 'dying' corpse's flight from where it died to its
-      // resting tile: position eases (fast launch, soft landing) along a
-      // shallow hop arc, while rotation.x/y/z ease toward their final pose
-      // (Z fixed at lying-flat, X/Y free) with DEATH_FLIP_SEGMENTS full
-      // mid-air flips — each on its own randomly-picked axis — layered on
-      // top so the tumble shifts axes as it goes but still always lands
-      // exactly on the flat pose.
-      function updateCorpses(dt) {
-        for (const c of corpseObjects) {
-          if (c.state !== 'dying' || c.areaId !== currentArea) continue;
-          c.deathT = Math.min(c.deathDurationS, c.deathT + dt);
-          const t = c.deathT / c.deathDurationS;
-          const ease = 1 - Math.pow(1 - t, 3);
-          c.x = c.deathStartX + (c.deathTargetX - c.deathStartX) * ease;
-          c.y = c.deathStartY + (c.deathTargetY - c.deathStartY) * ease;
-          const hop = Math.sin(Math.PI * t) * c.deathHopHeightPx;
-
-          const grp = c.avatarRef.group;
-          const g = c.areaGrid || grid;
-          const col = clamp(Math.floor(c.x / TILE), 0, (c.areaCols || COLS) - 1);
-          const row = clamp(Math.floor(c.y / TILE), 0, (c.areaRows || ROWS) - 1);
-          const surfY = g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0;
-          const restHeight = c.halfHeight * 0.12;
-
-          grp.position.x = c.x / TILE;
-          grp.position.z = c.y / TILE;
-          grp.position.y = surfY + restHeight + (c.halfHeight - restHeight) * (1 - ease) + hop;
-          // Stays flat on the ground under the tumble instead of following
-          // the body's hop arc — same as a real jump shadow.
-          if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
-
-          let seg = Math.floor(t * DEATH_FLIP_SEGMENTS);
-          let segT = t * DEATH_FLIP_SEGMENTS - seg;
-          if (seg >= DEATH_FLIP_SEGMENTS) { seg = DEATH_FLIP_SEGMENTS - 1; segT = 1; }
-          const segEase = deathFlipSegmentEase(segT);
-          const turnsX = deathSpinTurnsForAxis(c, seg, segEase, 'x');
-          const turnsY = deathSpinTurnsForAxis(c, seg, segEase, 'y');
-          const turnsZ = deathSpinTurnsForAxis(c, seg, segEase, 'z');
-
-          // Z is the axis that actually tips the cutout's flat face from
-          // vertical to lying-flat-face-up (see beginCreatureDeath) — X/Y
-          // are free cosmetic spin that never affects whether it lands flat.
-          grp.rotation.z = c.deathRestRotZ * ease + turnsZ * Math.PI * 2;
-          grp.rotation.x = c.deathRestRotX * ease + turnsX * Math.PI * 2;
-          grp.rotation.y = c.groupRot + (c.deathRestRotY - c.groupRot) * ease + turnsY * Math.PI * 2;
-          // updateCreatureMesh stops running the instant death begins (see
-          // its own comment above), so a bandit's legs would otherwise freeze
-          // mid-stride through the whole ragdoll tumble -- ease them to a
-          // neutral planted pose instead, same suppressed path mounting uses.
-          if (c.avatarRef.legs) c.avatarRef.legs.update(dt, 0, true);
-
-          if (t >= 1) {
-            c.state = 'corpse';
-            grp.position.set(c.deathTargetX / TILE, surfY + restHeight, c.deathTargetY / TILE);
-            grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
-          }
-        }
-      }
-
       // ── Loot & Shop config (docs/config/loot/loot-pools.json,
       // docs/config/shops/shop-stock.json) ────────────────────────────
       // Single source of truth for every drop table and shop's stock,
@@ -5187,7 +3473,7 @@
           // Prowess — spent on ability-upgrade choices (see combat-
           // progression.js). Not awarded for a downed companion.
           if (!c.isCompanion) awardMotesOfProwess(MOTES_PER_KILL);
-          beginCreatureDeath(c, fromX, fromY);
+          window.CreatureDeath.begin(c, fromX, fromY);
           return;
         }
         // Every attack staggers its target — outright cancels whatever the
@@ -6651,7 +4937,7 @@
             // master — "leading you to it". Only wilderness zones carry
             // buried treasure (see _zoneTreasureObjects), so elsewhere this
             // is always a no-op and behavior is unchanged.
-            const treasureHint = _isZoneArea(currentArea) ? nearestBuriedTreasurePixelPos(currentArea, master.x, master.y) : null;
+            const treasureHint = _isZoneArea(currentArea) ? window.WildTreasure.nearestBuriedPixelPos(currentArea, master.x, master.y) : null;
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
               if (!c._treasureHintAnnounced) {
                 c._treasureHintAnnounced = true;
@@ -6989,8 +5275,9 @@
       // ── Breeding pairs (world-scoped, same rationale as livestock) ─────
       // [{ id, parentA, parentB, startedDay, readyDay }] — parentA/B are
       // { source: 'world'|'stable', id, characterId? } refs (see
-      // resolveBreedingParent). Resolved by tickLivestockBreeding() on the
-      // day-tick, same cadence as crop growth.
+      // js/farm-animals.js's resolveBreedingParent). Resolved by
+      // window.FarmAnimals.tickBreeding() on the day-tick, same cadence as
+      // crop growth.
       function _loadWorldBreedingPairs() {
         const worldId = _tothalWorldId();
         if (!worldId) return [];
@@ -7098,7 +5385,7 @@
         if (gold < entry.price) { showToast('Not enough gold.', false); return; }
         inventory.gold = gold - entry.price;
         inventory.dabinggiHoundEgg = Math.min(9, (inventory.dabinggiHoundEgg || 0) + 1);
-        _queueLivestockItemGenotype('dabinggiHoundEgg', stock.genotype);
+        window.FarmAnimals.queueItemGenotype('dabinggiHoundEgg', stock.genotype);
         stock.purchased = true;
         _saveJubmirStock(stock);
         showToast(`Bought a ${entry.name} from Jubmir!`, true);
@@ -7277,11 +5564,11 @@
           member.packClothing    = [...packClothing];
           member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
           member.questProgress    = { ...questProgress };
-          member.alchemyKnownEffects = serializeKnownReagentEffects();
-          member.alchemyActiveEffects = serializeActiveAlchemyEffects();
-          member.alchemyReagentState = serializeZoneReagentState();
-          member.wildBerryState = serializeZoneBerryState();
-          member.zoneTreasureState = serializeZoneTreasureState();
+          member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
+          member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
+          member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
+          member.wildBerryState = window.WildBerries.serializeState();
+          member.zoneTreasureState = window.WildTreasure.serializeState();
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
@@ -7320,272 +5607,6 @@
         if (status === 'completed' && !st.completedAt) st.completedAt = Date.now();
         saveMemberWorldData();
       }
-
-      // ── Procedural tasks: bulletin board + trusted-NPC favors ─────────
-      // Every generated task rides the questProgress scaffold above (no new
-      // save fields): questProgress[taskId].progress holds the full task
-      // descriptor { kind:'board'|'favor', npcId, npcName, domain, itemKey,
-      // qty, rewardGold, rewardFriendship, tier, postedDay }. Every task —
-      // board or favor — always has a real npcId; you turn it in to that
-      // NPC specifically, which is what pays out both the gold and the
-      // friendship. .status is:
-      //   'posted'    — a board notice, freshly rolled, sitting on the
-      //                 board, not yet taken into the player's own log
-      //                 (board-only; never used for favors).
-      //   'offered'   — a favor just asked in dialogue, awaiting accept/decline
-      //                 (favor-only; never used for board tasks).
-      //   'available' — in the player's own quest log (board: taken off the
-      //                 board; favor: accepted) and turn-in-ready once the
-      //                 player has the items — no completion deadline.
-      //   'declined'  — a favor turned down (only blocks re-asking same day).
-      //   'completed' — turned in.
-      const TASK_DOMAINS = ['farming', 'fishing', 'combat', 'alchemy'];
-
-      // Friendship tiers ride the existing (previously unused) per-NPC favor
-      // counter — see _getNpcDlgState/adjustNpcFavor above. No new persisted
-      // counter needed; this just adds tier thresholds on top of it.
-      const FRIENDSHIP_TIER_THRESHOLDS = [0, 40, 100, 200, 350, 550];
-      function friendshipFavor(npcId) { return window.DialogueContent?.getNpcDlgState(npcId).favor || 0; }
-      function friendshipTier(npcId) {
-        const favor = friendshipFavor(npcId);
-        let tier = 0;
-        for (let i = 0; i < FRIENDSHIP_TIER_THRESHOLDS.length; i++) if (favor >= FRIENDSHIP_TIER_THRESHOLDS[i]) tier = i;
-        return tier;
-      }
-      function friendshipTierProgress(npcId) {
-        const favor = friendshipFavor(npcId);
-        const tier = friendshipTier(npcId);
-        const next = FRIENDSHIP_TIER_THRESHOLDS[tier + 1];
-        return { tier, favor, next: next ?? null };
-      }
-
-      // Chance a trusted NPC asks a favor of you when you talk to them, and
-      // how much gold/friendship a favor pays out vs. a board request posted
-      // by some NPC — both climb with friendship tier, per the design brief.
-      const FAVOR_CHANCE_BY_TIER       = [0, 0.12, 0.20, 0.30, 0.42, 0.55];
-      const TASK_QTY_BY_TIER           = [1, 2, 2, 3, 4, 5];
-      const TASK_REWARD_MULT           = { board: 1.3, favor: 1.6 };
-      const TASK_FRIENDSHIP_REWARD     = { board: [8, 10, 12, 15, 18, 22], favor: [18, 25, 35, 48, 65, 85] };
-
-      // role (free-text NPC job, e.g. "carpenter / roofing family
-      // connection", "great fae / fishing solution") → which item pool their
-      // own favors skew toward at low friendship. Matched by substring since
-      // authored roles are prose, not an enum; anything unmatched falls back
-      // to 'farming', the most generic domain.
-      function npcSkillDomain(role) {
-        const r = (role || '').toLowerCase();
-        if (/fish/.test(r)) return 'fishing';
-        if (/alchem|potion/.test(r)) return 'alchemy';
-        if (/hunt|watch|war|smith|mining|bonehewer/.test(r)) return 'combat';
-        return 'farming';
-      }
-
-      // Only villagers — anyone with a stationary home or business in one of
-      // the real town buildings — can give tasks (board or favor), plus Pahu
-      // and Leaf as a named exception (they live in the swamp house, outside
-      // town, but are otherwise settled residents). `homeId`/`workBuildingId`
-      // are authored-but-previously-unread NPC-database fields; everyone
-      // else (wilderness dwellers, Great Fae, deceased/banished lore-only
-      // entries, unbuilt placeholder roles) is excluded.
-      const QUEST_ELIGIBLE_TOWN_HOME_IDS = new Set([
-        'general_store', 'potion_shop', 'unumanuk_household', 'ginju_farmstead',
-        'inn', 'smithy', 'temple', 'carpenters',
-      ]);
-      const QUEST_ELIGIBLE_EXTRA_NPC_IDS = new Set(['pahu', 'leaf']);
-      function isQuestEligibleNpc(rec) {
-        if (!rec?.id) return false;
-        if (QUEST_ELIGIBLE_EXTRA_NPC_IDS.has(rec.id)) return true;
-        return QUEST_ELIGIBLE_TOWN_HOME_IDS.has(rec.homeId) || QUEST_ELIGIBLE_TOWN_HOME_IDS.has(rec.workBuildingId);
-      }
-
-      // Deliverable item pools per domain — farming is a static list (raw
-      // crops + Uumkao'ii dew); fishing/combat/alchemy are derived live from
-      // their own existing catalogs (FISH_DEFS, CREATURE_DB loot,
-      // ALCHEMY_REAGENT_DEFS) instead of being duplicated here.
-      const TASK_FARMING_ITEM_POOL = [
-        'needlegrain', 'heftroot', 'garlink', 'ongyums',
-        'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries',
-        'blackMustard', 'greenMustard',
-        'yellowDew', 'greenDew', 'blueDew', 'orangeDew', 'redDew', 'purpleDew', 'whiteDew',
-      ];
-      function taskItemPoolFor(domain) {
-        if (domain === 'fishing') return Object.values(FISH_DEFS).flat().map(f => f.key);
-        if (domain === 'combat') return [...new Set(Object.values(CREATURE_DB).flatMap(c => (_lootPools[c.lootPool]?.entries || []).map(e => e.itemKey).filter(Boolean)))];
-        if (domain === 'alchemy') return Object.keys(ALCHEMY_REAGENT_DEFS);
-        return TASK_FARMING_ITEM_POOL;
-      }
-
-      // Picks one item from a domain's pool, biased toward cheaper items at
-      // low tiers and opening up to the whole pool (including the priciest)
-      // by the top tier — sellPrice is the one value/rarity signal shared
-      // across every domain's catalog.
-      function pickTaskItem(domain, tier) {
-        const pool = taskItemPoolFor(domain);
-        if (!pool || !pool.length) return null;
-        const priced = pool.map(key => ({ key, price: ITEM_DEFS[key]?.sellPrice || 3 })).sort((a, b) => a.price - b.price);
-        const reach = Math.min(1, (tier + 2) / (FRIENDSHIP_TIER_THRESHOLDS.length + 1));
-        const maxIdx = Math.max(0, Math.min(priced.length - 1, Math.ceil(priced.length * reach) - 1));
-        return priced[Math.floor(Math.random() * (maxIdx + 1))].key;
-      }
-
-      // The only currently-live numeric skill signals in the game: per-tool
-      // mastery (see awardToolUseMasteryXp) for farming/fishing/combat, and
-      // discovered alchemy-reagent-effect count as a rough alchemy proxy
-      // (there's no dedicated alchemy mastery counter yet). skillLevels from
-      // onboarding.js is a dormant, never-incremented stub — deliberately
-      // not used here.
-      function getPlayerSkillLevels() {
-        const alchemyDiscoveries = Object.values(knownReagentEffects).reduce((n, s) => n + s.size, 0);
-        return {
-          farming: toolMasteryLevel(equipmentSlots.hoe),
-          fishing: toolMasteryLevel(equipmentSlots.harpoon),
-          combat:  toolMasteryLevel(equipmentSlots.weapon),
-          alchemy: Math.min(5, Math.floor(alchemyDiscoveries / 4)),
-        };
-      }
-      function getPlayerHighestSkillDomain() {
-        const levels = getPlayerSkillLevels();
-        let best = 'farming', bestLevel = -1;
-        for (const d of TASK_DOMAINS) { if (levels[d] > bestLevel) { bestLevel = levels[d]; best = d; } }
-        return best;
-      }
-
-      function _makeTaskId() { return 'task_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-
-      // Generates and persists one task, always attributed to a real NPC
-      // (`npcRec` — {id, name, role}; required for both kinds, since every
-      // task, board or favor, has a specific quest giver you turn it in to).
-      // Domain skew is the design brief's core rule: low friendship pulls
-      // toward the NPC's own skillset (npcSkillDomain), high friendship pulls
-      // toward the player's own best skill — blended by a tier-weighted coin
-      // flip rather than a hard cutoff, so it shifts gradually.
-      function generateTask(kind, npcRec, tier) {
-        if (!npcRec?.id) return null;
-        const npcDomain = npcSkillDomain(npcRec.role);
-        const playerDomain = getPlayerHighestSkillDomain();
-        const playerWeight = tier / (FRIENDSHIP_TIER_THRESHOLDS.length - 1); // 0 at tier 0 → 1 at max tier
-        const domain = Math.random() < playerWeight ? playerDomain : npcDomain;
-        const itemKey = pickTaskItem(domain, tier);
-        if (!itemKey) return null;
-        const def = ITEM_DEFS[itemKey];
-        const qty = TASK_QTY_BY_TIER[tier] + (Math.random() < 0.4 ? 1 : 0);
-        const rewardGold = Math.max(1, Math.round(qty * (def?.sellPrice || 5) * TASK_REWARD_MULT[kind]));
-        const rewardFriendship = TASK_FRIENDSHIP_REWARD[kind][tier];
-        const id = _makeTaskId();
-        const task = {
-          kind, npcId: npcRec.id, npcName: npcRec.name || 'A neighbor',
-          domain, itemKey, qty, rewardGold, rewardFriendship, tier, postedDay: calendar.day,
-        };
-        setQuestStatus(id, kind === 'favor' ? 'offered' : 'posted', task);
-        return { id, ...task };
-      }
-
-      // Finds an existing task tied to one NPC, optionally restricted to
-      // today's postings (used so a declined favor isn't re-asked the same
-      // day, but can be asked again on a later visit).
-      function findNpcTask(npcId, statuses, todayOnly) {
-        for (const [id, st] of Object.entries(questProgress)) {
-          if (st.progress?.npcId !== npcId || st.progress?.kind !== 'favor') continue;
-          if (!statuses.includes(st.status)) continue;
-          if (todayOnly && st.progress.postedDay !== calendar.day) continue;
-          return { id, ...st.progress, status: st.status };
-        }
-        return null;
-      }
-
-      // Called from openNpcDialogue for every NPC with an id — returns the
-      // favor to offer this conversation (freshly rolled, or one already
-      // asked-but-not-yet-answered), or null if none should be offered.
-      function maybeOfferFavor(npcRec) {
-        const npcId = npcRec?.id;
-        if (!npcId || !isQuestEligibleNpc(npcRec)) return null;
-        const stillOffered = findNpcTask(npcId, ['offered']);
-        if (stillOffered) return stillOffered;
-        if (findNpcTask(npcId, ['available'])) return null; // already holding one from them
-        if (findNpcTask(npcId, ['declined'], true)) return null; // already said no today
-        const tier = friendshipTier(npcId);
-        if (Math.random() > FAVOR_CHANCE_BY_TIER[tier]) return null;
-        return generateTask('favor', npcRec, tier);
-      }
-
-      function favorAskLine(task) {
-        const itemLabel = ITEM_DEFS[task.itemKey]?.label || task.itemKey;
-        return `Actually — since I trust you, could you bring me ${task.qty}× ${itemLabel}? I'd make it well worth your while.`;
-      }
-
-      // The single currently-posted (not yet taken) board notice, or null.
-      // Board tasks are deliberately not tied to any one player's
-      // friendship — a flat mid-range tier keeps the board offering
-      // reasonable variety for everyone regardless of who they've
-      // befriended; only the *NPC picked to post it* is random.
-      function getCurrentBoardPosting() {
-        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'board' && st.status === 'posted');
-        entries.sort((a, b) => (b[1].progress.postedDay || 0) - (a[1].progress.postedDay || 0));
-        return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
-      }
-
-      // Rolls a fresh board notice once per day (called from the day-rollover
-      // hooks and once on world load) — whatever was posted yesterday and
-      // never taken is simply superseded, not carried over; the board always
-      // shows *today's* notice. A notice the player already took (status
-      // flipped to 'available') is safe from this — it's in their own log
-      // now and this function never touches it.
-      function maybeRefreshBoardTask() {
-        const current = getCurrentBoardPosting();
-        if (current && current.postedDay === calendar.day) return; // already refreshed today
-        const candidates = npcWalkers.map(w => w.rec).filter(r => r?.id && r?.name && isQuestEligibleNpc(r));
-        if (!candidates.length) return; // no eligible NPCs spawned yet — try again on the next call
-        const npcRec = candidates[Math.floor(Math.random() * candidates.length)];
-        const tier = Math.min(FRIENDSHIP_TIER_THRESHOLDS.length - 1, 1 + Math.floor(Math.random() * 3));
-        generateTask('board', npcRec, tier);
-      }
-
-      // Moves today's board notice into the player's own quest log —
-      // "accepting" a board task, the board equivalent of a favor's accept
-      // choice. Once taken it has no completion deadline and survives the
-      // board's next daily refresh untouched.
-      function takeBoardTask(taskId) {
-        const st = questProgress[taskId];
-        if (!st || st.status !== 'posted') return { ok: false, message: 'That notice is no longer available.' };
-        setQuestStatus(taskId, 'available', {});
-        showToast(`📋 Took on ${st.progress.npcName}'s request.`, true);
-        return { ok: true, message: 'Task added to your log.' };
-      }
-
-      // The first quest log entry (board or favor) attributed to this NPC
-      // that the player currently has everything for — what powers the
-      // in-dialogue turn-in offer (see openNpcDialogue).
-      function getTurnInReadyTaskForNpc(npcId) {
-        for (const [id, st] of Object.entries(questProgress)) {
-          if (st.progress?.npcId !== npcId || st.status !== 'available') continue;
-          if ((inventory[st.progress.itemKey] || 0) < st.progress.qty) continue;
-          return { id, ...st.progress };
-        }
-        return null;
-      }
-
-      // Turning a task in only ever happens by talking to the specific NPC
-      // who posted/asked it — see openNpcDialogue's turn-in offer and the
-      // 'turnInTask' dialogue-choice action.
-      function turnInTask(taskId) {
-        const st = questProgress[taskId];
-        const task = st?.progress;
-        if (!task?.itemKey || st.status !== 'available') return { ok: false, message: 'That task is not ready to turn in.' };
-        if ((inventory[task.itemKey] || 0) < task.qty) {
-          return { ok: false, message: `You need ${task.qty}× ${ITEM_DEFS[task.itemKey]?.label || task.itemKey}.` };
-        }
-        inventory[task.itemKey] -= task.qty;
-        clampInventoryStack(task.itemKey);
-        inventory.gold = (inventory.gold || 0) + task.rewardGold;
-        window.DialogueContent?.adjustNpcFavor(task.npcId, task.rewardFriendship, 'task_' + task.kind);
-        setQuestStatus(taskId, 'completed', {});
-        showToast(`✅ Task complete! +${task.rewardGold}g, +${task.rewardFriendship} friendship with ${task.npcName}.`, true);
-        return { ok: true, message: 'Task turned in.' };
-      }
-
-      // Bounty board (hunt a named bandit captain, destroy his camp) now
-      // lives in js/bounty-board.js (window.BountyBoard) -- see
-      // window.BountyBoard.init(...) below for the wiring.
 
       let _tothalShiftInFlight = false;
       // Set while a shift is running so enterZone() can wait for it instead
@@ -8260,8 +6281,8 @@
         getCavernFloor: (mapId) => generateCavernFloor(mapId),
         exitBuilding: () => exitBuilding(),
         toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
-        addLivestockFromItem: (itemKey) => addLivestockFromItem(itemKey),
-        addToStable: (itemKey) => addToStable(itemKey),
+        addLivestockFromItem: (itemKey) => window.FarmAnimals.addFromItem(itemKey),
+        addToStable: (itemKey) => window.FarmAnimals.addToStable(itemKey),
         getWorldLivestock: () => _loadWorldLivestock(),
         getStable: () => stable,
         animalObjects,
@@ -8974,7 +6995,7 @@
           },
           onAction(action) {
             if (action !== 'obj_bulletin') return { ok: false, message: 'Unknown action.' };
-            maybeRefreshBoardTask();
+            window.ProceduralTasks.maybeRefreshBoardTask();
             openMenu('tasks');
             return { ok: true, message: 'Read the notice board.' };
           },
@@ -13053,9 +11074,9 @@
         if (!zdef && !_zoneLayouts.has(mapId)) return;
         const zi = buildZoneScene(mapId);
         if (!zi) return;
-        ensureZoneReagents(mapId);
-        ensureZoneBerries(mapId); // after reagents, so it can see today's reagent tiles and avoid them
-        ensureZoneTreasure(mapId); // after both, so it can avoid their tiles too
+        window.ReagentPlants.ensureZoneReagents(mapId);
+        window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
+        window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
@@ -13417,29 +11438,6 @@
         return mat;
       }
 
-      // A single reagent plant: a small two-blade cross (mirrors the
-      // "cross of quads" billboard-grass look) at 150% of a normal grass
-      // blade's size, standing alone as an individually pickable sprite
-      // instead of being folded into a shared InstancedMesh tuft.
-      function buildReagentPlantMesh(reagentKey) {
-        const def = ALCHEMY_REAGENT_DEFS[reagentKey];
-        if (!def) return null;
-        const mat = getReagentPlantMaterial(def.color);
-        if (!mat) return null;
-        const group = new THREE.Group();
-        const sizeMul = 1.5; // 150% size, per the placeholder-billboard spec
-        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
-        for (const rot of [0, Math.PI / 2]) {
-          const blade = new THREE.Mesh(_grassBladeGeo, mat);
-          blade.rotation.y = rot;
-          blade.scale.set(w, h, 1);
-          group.add(blade);
-        }
-        group.userData.isBillboard = true;
-        group.userData.reagentKey = reagentKey;
-        return group;
-      }
-
       // Finds up to `count` distinct flat, empty (col,row) tiles in a
       // wilderness zone for reagent placement. Uses the same tile-level
       // exclusion checklist as findZonePlacementFootprint's single-spot
@@ -13482,125 +11480,6 @@
           [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
         }
         return candidates.slice(0, count);
-      }
-
-      // Picks fresh (col,row,reagentKey) placements for one zone — deterministic
-      // per (zone, day) so re-entering the same zone on the same day doesn't
-      // reshuffle plants that just haven't been picked yet.
-      function scatterReagentsForZone(mapId) {
-        const pool = alchemyReagentsForZone(mapId);
-        if (!pool.length) return [];
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return [];
-        const targetCount = Math.max(6, Math.min(40, Math.round((zi.cols * zi.rows) / 45)));
-        const rng = _mbRng(_seedFromString(mapId + ':' + calendar.day));
-        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng);
-        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
-      }
-
-      // Builds a worldObjects-shaped pickable for one reagent plant, matching
-      // the { getButtons(), onAction() } shape getWorldObjectAt's callers expect.
-      function makeReagentPlantObject(mapId, col, row, reagentKey, mesh) {
-        const def = ALCHEMY_REAGENT_DEFS[reagentKey];
-        return {
-          id: 'reagent_' + mapId + '_' + col + '_' + row, type: 'reagent_plant',
-          col, row, mesh, reagentKey,
-          label: def.icon + ' ' + def.label,
-          getButtons() {
-            return [{ icon: def.icon, label: 'Pick ' + def.label, action: 'obj_pick_reagent', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
-            inventory[reagentKey] = Math.min(99, (inventory[reagentKey] || 0) + 1);
-            _zoneScenes.get(mapId)?.scene.remove(mesh);
-            const objs = _zoneReagentObjects.get(mapId);
-            objs?.delete(col + ',' + row);
-            const groups = _zoneReagentMeshGroups.get(mapId);
-            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-            // Drop it from the persisted placement list too, so a reload
-            // before the next daily respawn doesn't bring it back.
-            const persisted = _zoneReagentPersist.get(mapId);
-            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
-            refreshItemScroll();
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-            return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
-          },
-        };
-      }
-
-      // Removes every currently-built reagent plant mesh/object for a zone
-      // without regenerating placement data — used both before a fresh
-      // scatter (ensureZoneReagents) and by the daily respawn to eagerly
-      // clear zones the player isn't currently standing in.
-      function clearZoneReagentMeshes(mapId) {
-        const scene = _zoneScenes.get(mapId)?.scene;
-        const groups = _zoneReagentMeshGroups.get(mapId);
-        if (scene && groups) groups.forEach(g => scene.remove(g));
-        _zoneReagentMeshGroups.delete(mapId);
-        _zoneReagentObjects.delete(mapId);
-      }
-
-      // Makes sure a zone's reagent plants are up to date for *today* —
-      // reuses today's persisted placements (see _zoneReagentPersist) if any
-      // exist, scattering fresh ones only the first time a zone is touched
-      // on a given day. Called on every enterZone so a zone that was already
-      // built (cached scene) still picks up a day's worth of staleness, or a
-      // reload's restored placements, on re-entry.
-      function ensureZoneReagents(mapId) {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        if (!alchemyReagentsForZone(mapId).length) return;
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        let persisted = _zoneReagentPersist.get(mapId);
-        if (persisted?.day === calendar.day) {
-          if (_zoneReagentMeshGroups.has(mapId)) return; // already built for today
-        } else {
-          persisted = { day: calendar.day, placements: scatterReagentsForZone(mapId) };
-          _zoneReagentPersist.set(mapId, persisted);
-        }
-        clearZoneReagentMeshes(mapId);
-        const groups = [];
-        const objMap = new Map();
-        for (const { col, row, key } of persisted.placements) {
-          const mesh = buildReagentPlantMesh(key);
-          if (!mesh) continue;
-          const tile = zi.grid[row]?.[col];
-          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
-          zi.scene.add(mesh);
-          groups.push(mesh);
-          objMap.set(col + ',' + row, makeReagentPlantObject(mapId, col, row, key, mesh));
-        }
-        _zoneReagentMeshGroups.set(mapId, groups);
-        _zoneReagentObjects.set(mapId, objMap);
-        debugLog(`ensureZoneReagents(${mapId}): built ${groups.length} reagent plants for day ${calendar.day}`);
-      }
-
-      // Daily reset: clears every zone's reagent plants (freeing their
-      // meshes right away) and drops all four zones' persisted placements so
-      // the next visit to each scatters a fresh set — see ensureZoneReagents.
-      // Mirrors how den wildlife lazily repopulates only the zone currently
-      // being entered rather than eagerly rebuilding all four every day.
-      function respawnAllZoneReagents() {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
-          clearZoneReagentMeshes(mapId);
-          _zoneReagentPersist.delete(mapId);
-        }
-        if (_isZoneArea(currentArea)) ensureZoneReagents(currentArea);
-      }
-
-      // Save/restore _zoneReagentPersist as a plain object — see
-      // saveMemberWorldData/spawnPlayerAvatar.
-      function serializeZoneReagentState() {
-        const out = {};
-        _zoneReagentPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
-        return out;
-      }
-      function restoreZoneReagentState(saved) {
-        _zoneReagentPersist.clear();
-        Object.entries(saved || {}).forEach(([mapId, v]) => {
-          if (v && Array.isArray(v.placements)) _zoneReagentPersist.set(mapId, { day: v.day, placements: v.placements });
-        });
       }
 
       // Save/restore _zoneFelledTreePersist as a plain object — see
@@ -13713,474 +11592,7 @@
         rebuildZoneMesaMeshes(mapId);
         // A dig/fill/raise here may have just turned a buried chest's tile
         // into (or out of) a real trench — see syncZoneTreasureInteractivity.
-        syncZoneTreasureInteractivity(mapId);
-      }
-
-      // ── Wild berry bushes (wilderness-zone counterpart of purchasable
-      // berry seeds — see STARTING_INVENTORY/SUPPLY_CATALOG) ──────────────
-      // All 5 berry varieties, split across the 4 wilderness zones. Mirrors
-      // the reagent-plant scatter system above function-for-function; see
-      // its comments for the shared mechanics (deterministic per zone+day,
-      // daily respawn, persisted placements). Colors reuse BERRY_COLORS
-      // (already defined for the jam/wine sprite recolor pipeline).
-      const WILD_BERRY_ZONES = {
-        redberries:    'map_northern_cliffs',       // canon per redDew's "Red Berry Bushes" flavor tag
-        blueberries:   'map_southern_cloud_forest',
-        yellowberries: 'map_western_slope',
-        whiteberries:  'map_western_slope',
-        blackberries:  'map_eastern_mire',
-      };
-      const WILD_BERRY_SEED_CHANCE = 0.2; // "small chance to give seeds when harvested"
-      function wildBerriesForZone(mapId) {
-        return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
-      }
-
-      function buildBerryBushMesh(berryKey) {
-        const color = BERRY_COLORS[berryKey];
-        if (color == null) return null;
-        const mat = getReagentPlantMaterial(color); // shared shader/cache — see getReagentPlantMaterial
-        if (!mat) return null;
-        const group = new THREE.Group();
-        // A bit bigger and a 4-blade cross (vs. reagents' 2) so a bush reads
-        // fuller/rounder than a single reagent plant at a glance.
-        const sizeMul = 2.0;
-        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
-        for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
-          const blade = new THREE.Mesh(_grassBladeGeo, mat);
-          blade.rotation.y = rot;
-          blade.scale.set(w, h, 1);
-          group.add(blade);
-        }
-        group.userData.isBillboard = true;
-        group.userData.berryKey = berryKey;
-        return group;
-      }
-
-      // Same deterministic per-(zone,day) scatter as scatterReagentsForZone,
-      // but seeded independently ('berries' in the seed string) and excluding
-      // that same day's reagent-plant tiles so the two systems never overlap
-      // a spot — see findZoneFlatEmptyTiles's optional extraOccupied param.
-      function scatterBerriesForZone(mapId) {
-        const pool = wildBerriesForZone(mapId);
-        if (!pool.length) return [];
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return [];
-        const targetCount = Math.max(4, Math.min(24, Math.round((zi.cols * zi.rows) / 70)));
-        const rng = _mbRng(_seedFromString(mapId + ':berries:' + calendar.day));
-        const reagentPlacements = _zoneReagentPersist.get(mapId)?.placements || [];
-        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, reagentPlacements);
-        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
-      }
-
-      // Builds a worldObjects-shaped pickable for one wild berry bush.
-      // Always grants the fruit; WILD_BERRY_SEED_CHANCE also grants a seed —
-      // the only way to get berry seeds, since they're no longer purchasable.
-      function makeBerryBushObject(mapId, col, row, berryKey, mesh) {
-        const data = cropData[berryKey];
-        const fruitDef = ITEM_DEFS[berryKey];
-        return {
-          id: 'berrybush_' + mapId + '_' + col + '_' + row, type: 'berry_bush',
-          col, row, mesh, berryKey,
-          label: data.emoji + ' Wild ' + (fruitDef?.label || berryKey),
-          getButtons() {
-            return [{ icon: data.emoji, label: 'Pick ' + (fruitDef?.label || berryKey), action: 'obj_pick_berry', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
-            inventory[berryKey] = Math.min(99, (inventory[berryKey] || 0) + 1);
-            let seedMsg = '';
-            if (Math.random() < WILD_BERRY_SEED_CHANCE) {
-              inventory[data.seedKey] = Math.min(99, (inventory[data.seedKey] || 0) + 1);
-              seedMsg = ' and found a seed!';
-            }
-            _zoneScenes.get(mapId)?.scene.remove(mesh);
-            const objs = _zoneBerryObjects.get(mapId);
-            objs?.delete(col + ',' + row);
-            const groups = _zoneBerryMeshGroups.get(mapId);
-            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-            const persisted = _zoneBerryPersist.get(mapId);
-            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
-            refreshItemScroll();
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-            return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
-          },
-        };
-      }
-
-      function clearZoneBerryMeshes(mapId) {
-        const scene = _zoneScenes.get(mapId)?.scene;
-        const groups = _zoneBerryMeshGroups.get(mapId);
-        if (scene && groups) groups.forEach(g => scene.remove(g));
-        _zoneBerryMeshGroups.delete(mapId);
-        _zoneBerryObjects.delete(mapId);
-      }
-
-      // Called right after ensureZoneReagents(mapId) on every zone entry, so
-      // scatterBerriesForZone can see that same day's already-placed reagent
-      // spots and avoid them.
-      function ensureZoneBerries(mapId) {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        if (!wildBerriesForZone(mapId).length) return;
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        let persisted = _zoneBerryPersist.get(mapId);
-        if (persisted?.day === calendar.day) {
-          if (_zoneBerryMeshGroups.has(mapId)) return; // already built for today
-        } else {
-          persisted = { day: calendar.day, placements: scatterBerriesForZone(mapId) };
-          _zoneBerryPersist.set(mapId, persisted);
-        }
-        clearZoneBerryMeshes(mapId);
-        const groups = [];
-        const objMap = new Map();
-        for (const { col, row, key } of persisted.placements) {
-          const mesh = buildBerryBushMesh(key);
-          if (!mesh) continue;
-          const tile = zi.grid[row]?.[col];
-          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
-          zi.scene.add(mesh);
-          groups.push(mesh);
-          objMap.set(col + ',' + row, makeBerryBushObject(mapId, col, row, key, mesh));
-        }
-        _zoneBerryMeshGroups.set(mapId, groups);
-        _zoneBerryObjects.set(mapId, objMap);
-        debugLog(`ensureZoneBerries(${mapId}): built ${groups.length} berry bushes for day ${calendar.day}`);
-      }
-
-      function respawnAllZoneBerries() {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
-          clearZoneBerryMeshes(mapId);
-          _zoneBerryPersist.delete(mapId);
-        }
-        if (_isZoneArea(currentArea)) ensureZoneBerries(currentArea);
-      }
-
-      function serializeZoneBerryState() {
-        const out = {};
-        _zoneBerryPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
-        return out;
-      }
-      function restoreZoneBerryState(saved) {
-        _zoneBerryPersist.clear();
-        Object.entries(saved || {}).forEach(([mapId, v]) => {
-          if (v && Array.isArray(v.placements)) _zoneBerryPersist.set(mapId, { day: v.day, placements: v.placements });
-        });
-      }
-
-      // ── Buried wilderness treasure (dig sites → chests) ─────────────────
-      // A companion (see updateCompanions' treasure-hint branch) periodically
-      // bounces toward the nearest buried digsite instead of idly wandering —
-      // "leading you to it", Fable 2 dog-style. Digging one up with a shovel
-      // or pick equipped turns it into an openable chest holding a few metal
-      // bars (see METAL_DEFS/VERDIGRIS_METAL_KEYS). Deliberately rarer than
-      // reagents/berries — scattered per week (see treasureWeekIndex), not
-      // per day, and only 1-2 per zone.
-      function treasureWeekIndex() {
-        return Math.floor((calendar.day - 1) / 7);
-      }
-
-      // Weighted toward common low-tier bars with a rare shot at a
-      // higher-tier one — Math.pow(rnd(),2.2) biases the roll toward 0
-      // (weakest) before scaling across the hierarchy.
-      function rollTreasureMetalKeys() {
-        const count = 1 + Math.floor(rnd() * 3); // 1-3 bars
-        const keys = [];
-        for (let i = 0; i < count; i++) {
-          const idx = Math.min(VERDIGRIS_METAL_KEYS.length - 1, Math.floor(Math.pow(rnd(), 2.2) * VERDIGRIS_METAL_KEYS.length));
-          keys.push(VERDIGRIS_METAL_KEYS[idx]);
-        }
-        return keys;
-      }
-
-      // A chest's full loot bundle: metal bars and dye items always, plus a
-      // chance each of gold, a random alchemy potion, and a random dyed
-      // clothing piece — the same clothing-piece/dye generators the General
-      // Store's daily stock rolls from (see generateDailyClothingStock), just
-      // freely randomized instead of seeded by day.
-      // Looks up one named entry from the treasureChest loot pool (docs/
-      // config/loot/loot-pools.json) by id — used instead of rollLootPool's
-      // generic itemKey-roll path since a chest's bundle isn't a flat
-      // {itemKey:qty} map (see the bundle shape below), just its per-roll
-      // chance/range/conditions.
-      function _treasureChestEntry(id) {
-        return (_lootPools.treasureChest?.entries || []).find(e => e.id === id) || null;
-      }
-      // True if `id`'s entry (a) has no conditions or matches the current
-      // ambient world state, and (b) passes its own chance roll (falling
-      // back to `fallbackChance` if the entry is missing/chance is unset —
-      // this is what keeps the "always" rolls (metal bars, mystery dye)
-      // always-on by default while still letting the Loot & Shop Editor
-      // dial them down).
-      function _rollTreasureChance(id, fallbackChance) {
-        const entry = _treasureChestEntry(id);
-        if (entry && !window.ConditionRegistry.entryEligible(entry, _lootShopWorldState())) return false;
-        const chance = entry?.chance != null ? entry.chance : fallbackChance;
-        return rnd() < chance;
-      }
-
-      function rollTreasureLootBundle() {
-        const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, clothing: null };
-        if (_rollTreasureChance('metalBars', 1)) bundle.metalKeys = rollTreasureMetalKeys();
-        if (_rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = rollTreasureDyeItemKeys();
-        if (_rollTreasureChance('gold', 0.7)) {
-          const entry = _treasureChestEntry('gold');
-          const min = entry?.min ?? 10, max = entry?.max ?? 42, step = entry?.step ?? 8;
-          const steps = Math.floor((max - min) / step) + 1;
-          bundle.gold = min + Math.floor(rnd() * steps) * step;
-        }
-        if (_rollTreasureChance('potion', 0.35)) {
-          const effectKeys = Object.keys(ALCHEMY_EFFECT_DEFS);
-          const boonKeys = effectKeys.filter(k => ALCHEMY_EFFECT_DEFS[k].kind === 'boon');
-          const pickEffect = () => {
-            const pool = rnd() < 0.75 && boonKeys.length ? boonKeys : effectKeys;
-            return pool[Math.floor(rnd() * pool.length)];
-          };
-          const effects = [pickEffect() ?? effectKeys[0]];
-          if (rnd() < 0.4) {
-            const second = pickEffect();
-            if (second && !effects.includes(second)) effects.push(second);
-          }
-          const reagentKeys = Object.keys(ALCHEMY_REAGENT_DEFS).sort(() => rnd() - 0.5).slice(0, 2);
-          bundle.potionKey = ensurePotionItemDef(effects, reagentKeys);
-        }
-        if (_rollTreasureChance('clothing', 0.25)) {
-          const catalog = getDyeCatalog();
-          const piece = STORE_CLOTHING_PIECES[Math.floor(rnd() * STORE_CLOTHING_PIECES.length)];
-          const dyeA  = catalog[Math.floor(rnd() * catalog.length)];
-          const dyeB  = piece.usesB ? catalog[Math.floor(rnd() * catalog.length)] : null;
-          const dyeLbl = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
-          bundle.clothing = {
-            uid: 'citem_chest_' + Date.now() + '_' + Math.floor(rnd() * 1e6),
-            cosmeticId: piece.id, slot: piece.category, label: dyeLbl + ' ' + piece.label, baseLabel: piece.label,
-            colorA: dyeToClothingColor(dyeA), colorB: dyeToClothingColor(dyeB), price: piece.price, sellPrice: Math.floor(piece.price * 0.4),
-            sprite: clothingSpriteForCosmetic(piece.id),
-          };
-        }
-        return bundle;
-      }
-
-      // Every chest guarantees at least one Mystery Dye item, averaging 1-3 —
-      // dye items are meant to be common treasure filler, unlike the rarer
-      // gold/potion/clothing rolls above which can come up empty.
-      function rollTreasureDyeItemKeys() {
-        const poolKeys = Object.keys(MYSTERY_DYE_ITEM_KEY_BY_POOL);
-        if (!poolKeys.length) return [];
-        const count = 1 + Math.floor(rnd() * 3); // 1-3, uniform
-        const keys = [];
-        for (let i = 0; i < count; i++) {
-          keys.push(MYSTERY_DYE_ITEM_KEY_BY_POOL[poolKeys[Math.floor(rnd() * poolKeys.length)]]);
-        }
-        return keys;
-      }
-
-      function scatterTreasureForZone(mapId) {
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return [];
-        const targetCount = 1 + Math.floor((zi.cols * zi.rows) / 3200); // rare — usually 1-2 per zone
-        const rng = _mbRng(_seedFromString(mapId + ':treasure:' + treasureWeekIndex()));
-        const avoid = [...(_zoneReagentPersist.get(mapId)?.placements || []), ...(_zoneBerryPersist.get(mapId)?.placements || [])];
-        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
-        return spots.map(({ col, row }) => ({ col, row, found: false, loot: rollTreasureLootBundle() }));
-      }
-
-      // Simple wood-and-band chest silhouette — same box+lid shape as
-      // makeSellCrate/makeSupplyBox, just its own wood/gold coloring.
-      function buildTreasureChestMesh() {
-        const group = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), new THREE.MeshLambertMaterial({ color: 0x6b4a2b }));
-        body.position.y = 0.21;
-        body.castShadow = true;
-        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), new THREE.MeshLambertMaterial({ color: 0xcaa233 }));
-        lid.position.y = 0.445;
-        lid.castShadow = true;
-        group.add(body, lid);
-        return group;
-      }
-
-      // Trench-floor world Y for a tile, for whatever plateau tier it sits
-      // on — the same sunken height a real dug trench's own floor renders
-      // at (see TRENCH_TOP/DEPRESSION_TOP) — computed regardless of that
-      // tile's CURRENT type, so a chest can sit there genuinely buried
-      // before it's ever dug.
-      function treasureChestBuriedY(mapId, col, row) {
-        const tile = _zoneScenes.get(mapId)?.grid[row]?.[col];
-        const tierY = (tile?.elevTier || 0) * PLATEAU_UNIT;
-        return NORMAL_TOP + TRENCH_TOP + tierY;
-      }
-
-      // A chest is a real world object (getButtons()/onAction()) from the
-      // moment its zone is built, sitting at trench-floor depth — but
-      // getButtons() only ever offers "Open" once this exact tile is
-      // currently a real dug trench, so it can't be cheesed by standing
-      // over undisturbed ground, and re-burying it (filling the trench back
-      // in before opening) hides the option again.
-      function makeTreasureChestObject(mapId, col, row, placement, mesh) {
-        return {
-          id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
-          col, row, mesh,
-          label: '🗝️ Buried Chest',
-          getButtons() {
-            const tile = _zoneScenes.get(mapId)?.grid[row]?.[col];
-            if (tile?.type !== TileType.TRENCH) {
-              return [{ icon: '🗝️', label: "Buried — dig a trench here to reach it", action: 'obj_open_treasure_chest', style: 'secondary', allowed: false }];
-            }
-            return [{ icon: '🗝️', label: 'Open the buried chest', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
-            const tile = _zoneScenes.get(mapId)?.grid[row]?.[col];
-            if (tile?.type !== TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
-            const { loot } = placement;
-            const parts = [];
-            for (const metalKey of loot.metalKeys) {
-              const key = metalBarItemKey(metalKey);
-              inventory[key] = Math.min(99, (inventory[key] || 0) + 1);
-              parts.push((ITEM_DEFS[key]?.icon || '🔶') + ' ' + METAL_DEFS[metalKey].label + ' Bar');
-            }
-            for (const dyeItemKey of (loot.dyeItemKeys || [])) {
-              inventory[dyeItemKey] = Math.min(99, (inventory[dyeItemKey] || 0) + 1);
-              parts.push((ITEM_DEFS[dyeItemKey]?.icon || '🎨') + ' ' + (ITEM_DEFS[dyeItemKey]?.label || 'Mystery Dye'));
-            }
-            if (loot.gold > 0) {
-              inventory.gold = (inventory.gold || 0) + loot.gold;
-              parts.push('💰' + loot.gold + 'g');
-            }
-            if (loot.potionKey) {
-              inventory[loot.potionKey] = Math.min(99, (inventory[loot.potionKey] || 0) + 1);
-              parts.push((ITEM_DEFS[loot.potionKey]?.icon || '🧪') + ' ' + (ITEM_DEFS[loot.potionKey]?.label || 'Potion'));
-            }
-            if (loot.clothing) {
-              packClothing.push({ ...loot.clothing });
-              parts.push('👘 ' + loot.clothing.label);
-            }
-            placement.found = true;
-            _zoneScenes.get(mapId)?.scene.remove(mesh);
-            const groups = _zoneTreasureMeshGroups.get(mapId);
-            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-            _zoneTreasureObjects.get(mapId)?.delete(col + ',' + row);
-            const persisted = _zoneTreasurePersist.get(mapId);
-            if (persisted) persisted.placements = persisted.placements.filter(p => p !== placement);
-            refreshItemScroll();
-            buildInventoryGrid();
-            buildPackClothingSection();
-            return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
-          },
-        };
-      }
-
-      function clearZoneTreasureMeshes(mapId) {
-        const scene = _zoneScenes.get(mapId)?.scene;
-        const groups = _zoneTreasureMeshGroups.get(mapId);
-        if (scene && groups) groups.forEach(g => scene.remove(g));
-        _zoneTreasureMeshGroups.delete(mapId);
-        _zoneTreasureObjects.delete(mapId);
-      }
-
-      // Registers/unregisters a zone's buried chests as getWorldObjectAt
-      // objects to match each one's tile's CURRENT type — called after
-      // ensureZoneTreasure and after every refreshZoneGroundVisuals (i.e.
-      // any dig/fill/raise/till/smooth in this zone). A chest is only ever
-      // registered while its tile is a real dug trench; the moment a tile
-      // ISN'T one (never dug yet, or filled back in), it's unregistered —
-      // getWorldObjectAt then returns null there, same as any other patch of
-      // ground. This is deliberate: registering it unconditionally (even
-      // with an always-disabled "buried" button) would make it the ONLY
-      // thing the action bar shows at that tile, permanently pre-empting
-      // the normal dig/fill/till prompt a player needs to actually reach
-      // it — see the controller-priority bug this fixes. The chest's mesh
-      // (placement._mesh) is untouched either way — it's still buried
-      // beneath the ground and reappears once dug without rebuilding
-      // anything, exactly like before.
-      function syncZoneTreasureInteractivity(mapId) {
-        const persisted = _zoneTreasurePersist.get(mapId);
-        const zi = _zoneScenes.get(mapId);
-        if (!persisted || !zi) return;
-        let objMap = _zoneTreasureObjects.get(mapId);
-        if (!objMap) { objMap = new Map(); _zoneTreasureObjects.set(mapId, objMap); }
-        for (const placement of persisted.placements) {
-          if (placement.found || !placement._mesh) continue;
-          const key = placement.col + ',' + placement.row;
-          const isDug = zi.grid[placement.row]?.[placement.col]?.type === TileType.TRENCH;
-          if (isDug && !objMap.has(key)) {
-            objMap.set(key, makeTreasureChestObject(mapId, placement.col, placement.row, placement, placement._mesh));
-          } else if (!isDug && objMap.has(key)) {
-            objMap.delete(key);
-          }
-        }
-      }
-
-      // Called alongside ensureZoneReagents/ensureZoneBerries on every zone
-      // entry — rescatters only once a new week starts (see
-      // treasureWeekIndex); otherwise just rebuilds whatever this week's
-      // not-yet-found placements still are, each buried at its own
-      // trench-floor depth (see treasureChestBuriedY).
-      function ensureZoneTreasure(mapId) {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        let persisted = _zoneTreasurePersist.get(mapId);
-        if (persisted?.week === treasureWeekIndex()) {
-          if (_zoneTreasureMeshGroups.has(mapId)) return; // already built for this week
-        } else {
-          persisted = { week: treasureWeekIndex(), placements: scatterTreasureForZone(mapId) };
-          _zoneTreasurePersist.set(mapId, persisted);
-        }
-        clearZoneTreasureMeshes(mapId);
-        const groups = [];
-        _zoneTreasureObjects.set(mapId, new Map());
-        for (const placement of persisted.placements) {
-          if (placement.found) continue;
-          const { col, row } = placement;
-          const mesh = buildTreasureChestMesh();
-          mesh.position.set(col + 0.5, treasureChestBuriedY(mapId, col, row), row + 0.5);
-          zi.scene.add(mesh);
-          groups.push(mesh);
-          // Tracked on the placement (not just built here) so
-          // syncZoneTreasureInteractivity can reach it later without
-          // rebuilding — the mesh itself never moves or gets swapped.
-          placement._mesh = mesh;
-        }
-        _zoneTreasureMeshGroups.set(mapId, groups);
-        // Only registers a chest as an interactable getWorldObjectAt object
-        // for tiles that are ALREADY a dug trench (mid-session state, e.g.
-        // re-entering a zone after digging one up earlier) — see below for
-        // why this matters (it's what lets ordinary terrain dig/fill/till
-        // stay reachable at a still-buried tile instead of a permanently
-        // disabled chest button preempting them).
-        syncZoneTreasureInteractivity(mapId);
-        debugLog(`ensureZoneTreasure(${mapId}): built ${groups.length} buried chest(s) for week ${treasureWeekIndex()}`);
-      }
-
-      // Nearest still-buried chest in a zone (its tile isn't a dug trench
-      // yet), in the same pixel-space coordinates as creature x/y — used by
-      // updateCompanions' treasure-hint branch and updateTreasureSparkles.
-      function nearestBuriedTreasurePixelPos(mapId, fromX, fromY) {
-        const objs = _zoneTreasureObjects.get(mapId);
-        if (!objs) return null;
-        let best = null, bestDist = Infinity;
-        for (const obj of objs.values()) {
-          const tile = _zoneScenes.get(mapId)?.grid[obj.row]?.[obj.col];
-          if (tile?.type === TileType.TRENCH) continue; // already dug — no longer "buried"
-          const x = (obj.col + 0.5) * TILE, y = (obj.row + 0.5) * TILE;
-          const d = Math.hypot(x - fromX, y - fromY);
-          if (d < bestDist) { bestDist = d; best = { x, y, dist: d }; }
-        }
-        return best;
-      }
-
-      // Only rescatters zones whose week has actually gone stale (unlike
-      // reagents/berries, treasure isn't meant to reroll every day) — see
-      // advanceDay.
-      function respawnAllZoneTreasure() {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
-          const persisted = _zoneTreasurePersist.get(mapId);
-          if (persisted && persisted.week === treasureWeekIndex()) continue; // not stale yet
-          clearZoneTreasureMeshes(mapId);
-          _zoneTreasurePersist.delete(mapId);
-        }
-        if (_isZoneArea(currentArea)) ensureZoneTreasure(currentArea);
+        window.WildTreasure.syncZoneInteractivity(mapId);
       }
 
       // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
@@ -14228,60 +11640,6 @@
           if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
           else _zoneMinedRockPersist.delete(mapId);
           if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
-        }
-      }
-
-      function serializeZoneTreasureState() {
-        const out = {};
-        _zoneTreasurePersist.forEach((v, mapId) => { out[mapId] = { week: v.week, placements: v.placements }; });
-        return out;
-      }
-      function restoreZoneTreasureState(saved) {
-        _zoneTreasurePersist.clear();
-        Object.entries(saved || {}).forEach(([mapId, v]) => {
-          if (v && Array.isArray(v.placements)) _zoneTreasurePersist.set(mapId, { week: v.week, placements: v.placements });
-        });
-      }
-
-      // Rising sparkle hint for a still-buried chest within a few tiles of
-      // the player — the only surface sign one exists at all, since the
-      // chest itself is genuinely hidden under the ground mesh until dug
-      // (see treasureChestBuriedY). Reuses the action-particle overlay
-      // system (see spawnActionParticles/updateActionParticles/
-      // drawActionParticles) rather than a real 3D emitter, so it renders
-      // through the very terrain that's hiding the chest, the way a
-      // stylized "something's glowing down there" effect should.
-      let _treasureSparkleTimer = 0;
-      const TREASURE_SPARKLE_RANGE_PX = TILE * 3; // "within a few tiles"
-      function updateTreasureSparkles(dt) {
-        if (!_isZoneArea(currentArea)) return;
-        _treasureSparkleTimer -= dt;
-        if (_treasureSparkleTimer > 0) return;
-        _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
-        const objs = _zoneTreasureObjects.get(currentArea);
-        if (!objs) return;
-        for (const obj of objs.values()) {
-          const tile = _zoneScenes.get(currentArea)?.grid[obj.row]?.[obj.col];
-          if (tile?.type === TileType.TRENCH) continue; // already dug — no hint needed
-          const cx = obj.col + 0.5, cz = obj.row + 0.5;
-          const dPx = Math.hypot(cx * TILE - player.x, cz * TILE - player.y);
-          if (dPx > TREASURE_SPARKLE_RANGE_PX) continue;
-          const tierY = (tile?.elevTier || 0) * PLATEAU_UNIT;
-          if (actionParticles.length >= ACTION_FX_LIMIT) actionParticles.shift();
-          actionParticles.push({
-            x: cx + (Math.random() - 0.5) * 0.4,
-            y: NORMAL_TOP + tierY + 0.05,
-            z: cz + (Math.random() - 0.5) * 0.4,
-            vx: (Math.random() - 0.5) * 0.12,
-            vy: 0.45 + Math.random() * 0.3,
-            vz: (Math.random() - 0.5) * 0.12,
-            age: 0,
-            maxAge: 1.0 + Math.random() * 0.4,
-            size: 8 + Math.random() * 6,
-            emoji: '✨',
-            color: '#ffe27a',
-            gravity: -0.25, // decelerates the rise gently rather than arcing back down
-          });
         }
       }
 
@@ -14631,13 +11989,6 @@
         if (_shopStock.generalStoreWares?.clothingRotation?.slots) GENERAL_STORE_CLOTHING_SLOTS = _shopStock.generalStoreWares.clothingRotation.slots;
         if (_shopStock.carpenterBarnPlans?.tiers) { BARN_TIERS = _shopStock.carpenterBarnPlans.tiers; _registerBarnPlanItemDefs(); }
       }
-      // Every tier builds the same highland structure (config/pieces/stable.json)
-      // once complete — there's no wood/stone system yet to justify authoring
-      // three differently-sized piece files, so tiers differ only in slot
-      // capacity and price, not in footprint or visual size.
-      const BARN_PIECE_FILE  = 'config/pieces/stable.json';
-      const BARN_FOOTPRINT_W = 7;
-      const BARN_FOOTPRINT_D = 3;
       let farmBuildings = []; // barns placed on this farm — persisted via saveFarmLayout
 
       // Per-species farm-resource output: item produced + how many in-game
@@ -14666,289 +12017,11 @@
       const UUMKAOII_DEW_COOLDOWN_DAYS = 2;
       const UUMKAOII_DEFAULT_DEW_COLOR = 'blue';
 
-      // Tile types a farm building can never be placed/moved onto — trenches
-      // and any worked/flooded soil. Rock/shrub/weeds are deliberately absent
-      // here: those get bulldozed by clearFarmBuildingFootprint() instead of
-      // blocking placement.
-      const FARM_BUILDING_BLOCKED_TILE_TYPES = new Set([
-        TileType.TRENCH, TileType.TILLED, TileType.RAISED, TileType.PADDY,
-        TileType.RIVER, TileType.STREAM, TileType.WATERFALL, TileType.RAMP,
-      ]);
-
-      function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
-        return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
-      }
-
-      // Shared validity check for moving/placing any farm building (house or
-      // barn): in bounds, no trench/tilled/raised/paddy/water tile or crop,
-      // no other world object (furniture, crates, animals — anything already
-      // occupying worldObjects) in the footprint, and no overlap with the
-      // house or any other farm building. `excludeId` lets the building
-      // being moved ignore its own current footprint/occupancy.
-      function canPlaceFarmBuilding(col, row, w, h, excludeId) {
-        if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
-        if (col < 0 || row < 0 || col + w > COLS || row + h > ROWS) return false;
-        for (let r = row; r < row + h; r++) {
-          for (let c = col; c < col + w; c++) {
-            const tile = grid[r]?.[c];
-            if (!tile || FARM_BUILDING_BLOCKED_TILE_TYPES.has(tile.type) || tile.crop) return false;
-            const obj = worldObjects.get(c + ',' + r);
-            if (obj && obj.id !== excludeId) return false;
-          }
-        }
-        if (excludeId !== 'highland_house' && rectsOverlap(col, row, w, h, houseCol, houseRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D)) return false;
-        for (const b of farmBuildings) {
-          if (b.id === excludeId) continue;
-          if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
-        }
-        return true;
-      }
-
-      // Bulldozes rock/shrub/weeds under a just-placed-or-moved building's
-      // footprint back to plain grass — the "clears rocks and trees" half of
-      // the Farm tab's move/place flow.
-      function clearFarmBuildingFootprint(col, row, w, h) {
-        for (let r = row; r < row + h; r++) {
-          for (let c = col; c < col + w; c++) {
-            const tile = grid[r]?.[c];
-            if (tile && (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS)) {
-              tile.type = TileType.GRASS;
-              markTileDirty(c, r);
-            }
-          }
-        }
-        recomputeWater(false);
-      }
-
-      // Fetches & caches stable.json once — every barn (any tier) reuses it.
-      let _barnPiecePromise = null;
-      function loadBarnPiece() {
-        if (!_barnPiecePromise) {
-          _barnPiecePromise = fetch(BARN_PIECE_FILE).then(r => r.json())
-            .catch(e => { debugLog('Barn piece load error: ' + e, 'warn'); return null; });
-        }
-        return _barnPiecePromise;
-      }
-
-      const _barnWbDefaults = { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6],
-                                 brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-      let _barnBoardsMat = null, _barnStoneMat = null, _barnCanvasMat = null;
-      function _barnFaceMats() {
-        if (!_barnBoardsMat) {
-          _barnBoardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-          _barnStoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
-          _barnCanvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
-        }
-        return { matBoards: _barnBoardsMat, matStone: _barnStoneMat, matCanvas: _barnCanvasMat };
-      }
-
-      function buildBarnFoundationMesh(col, row, w, h) {
-        const mat  = new THREE.MeshLambertMaterial({ color: 0x8a7a63 });
-        const geo  = new THREE.BoxGeometry(w * 0.94, 0.14, h * 0.94);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(col + w / 2, 0.07, row + h / 2);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-        return mesh;
-      }
-
-      function disposeBarnMesh(mesh) {
-        if (!mesh) return;
-        scene.remove(mesh);
-        mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-      }
-
-      // Swaps a foundation's placeholder slab for the real highland
-      // structure once construction completes — async since the piece JSON
-      // is fetched lazily. Bails out quietly if the barn was demolished (or
-      // reverted) while the fetch was in flight.
-      function buildBarnStructureMesh(entry) {
-        if (typeof HousePieceGen === 'undefined') { debugLog('HousePieceGen not loaded — barn shown as foundation slab', 'warn'); return; }
-        loadBarnPiece().then(piece => {
-          if (!piece || entry.stage !== 'built' || !farmBuildings.includes(entry)) return;
-          disposeBarnMesh(entry._mesh);
-          entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, entry.col, entry.row, {
-            wallBuilder: houseWallBuilder, wbUsePlaceholder: true, wbOpts: _barnWbDefaults,
-            ..._barnFaceMats(),
-          });
-          scene.add(entry._mesh);
-        });
-      }
-
-      function barnLabel(entry) { return BARN_TIERS[entry.tier]?.label || 'Barn'; }
-
-      function registerBarnFootprint(entry) {
-        for (let r = entry.row; r < entry.row + entry.h; r++) {
-          for (let c = entry.col; c < entry.col + entry.w; c++) worldObjects.set(c + ',' + r, entry._worldObj);
-        }
-      }
-      function unregisterBarnFootprint(entry) {
-        for (let r = entry.row; r < entry.row + entry.h; r++) {
-          for (let c = entry.col; c < entry.col + entry.w; c++) {
-            if (worldObjects.get(c + ',' + r) === entry._worldObj) worldObjects.delete(c + ',' + r);
-          }
-        }
-      }
-
-      function makeBarnWorldObject(entry) {
-        return {
-          id: entry.id, type: 'barn', kind: 'barn',
-          get col() { return entry.col; }, get row() { return entry.row; },
-          get label() { return '🏚 ' + barnLabel(entry); },
-          getButtons() {
-            if (entry.stage === 'foundation') {
-              return [
-                { icon: '🔨', label: 'Build ' + barnLabel(entry), action: 'obj_barn_build_' + entry.id, style: 'primary', allowed: hasFarmPermission('alterFarm') },
-                { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: hasFarmPermission('alterFarm') },
-              ];
-            }
-            const tier = BARN_TIERS[entry.tier];
-            const occupants = _loadWorldLivestock().filter(l => l.barnId === entry.id).length;
-            return [
-              { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'primary', allowed: hasFarmPermission('livestock') },
-              { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: hasFarmPermission('alterFarm') },
-            ];
-          },
-          onAction(action) {
-            if (action === 'obj_barn_build_' + entry.id) {
-              if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-              if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
-              entry.stage = 'built';
-              disposeBarnMesh(entry._mesh); entry._mesh = null;
-              buildBarnStructureMesh(entry);
-              saveFarmLayout();
-              return { ok: true, message: `🔨 ${barnLabel(entry)} construction complete!` };
-            }
-            if (action === 'obj_barn_demolish_' + entry.id) {
-              if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-              return demolishBarn(entry.id);
-            }
-            if (action === 'obj_barn_manage_' + entry.id) {
-              if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-              _farmLivestockFocusBarnId = entry.id;
-              openMenu('farm');
-              return { ok: true, message: 'Opened the Farm tab’s Livestock panel.' };
-            }
-            return { ok: false, message: 'Unknown barn action.' };
-          },
-          reset() { disposeBarnMesh(entry._mesh); entry._mesh = null; },
-        };
-      }
-
-      function spawnBarnEntry(entry) {
-        entry._worldObj = makeBarnWorldObject(entry);
-        entry._mesh = entry.stage === 'built' ? null : buildBarnFoundationMesh(entry.col, entry.row, entry.w, entry.h);
-        if (entry.stage === 'built') buildBarnStructureMesh(entry);
-        registerBarnFootprint(entry);
-      }
-
-      function placeBarnPlan(tier, col, row) {
-        if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can build here." };
-        const tierDef = BARN_TIERS[tier];
-        if (!tierDef) return { ok: false, message: 'Unknown barn plan.' };
-        if ((inventory[tierDef.planItem] || 0) < 1) return { ok: false, message: `No ${tierDef.label} plan in your bag.` };
-        if (!canPlaceFarmBuilding(col, row, BARN_FOOTPRINT_W, BARN_FOOTPRINT_D)) {
-          return { ok: false, message: 'Cannot build here — needs clear, untilled, un-trenched ground.' };
-        }
-        inventory[tierDef.planItem]--;
-        clampInventoryStack(tierDef.planItem);
-        const entry = {
-          id: 'barn_' + Math.random().toString(36).slice(2, 10),
-          kind: 'barn', tier, col, row, w: BARN_FOOTPRINT_W, h: BARN_FOOTPRINT_D, stage: 'foundation',
-        };
-        farmBuildings.push(entry);
-        spawnBarnEntry(entry);
-        clearFarmBuildingFootprint(col, row, entry.w, entry.h);
-        saveFarmLayout();
-        saveMemberWorldData();
-        return { ok: true, message: `Placed a ${tierDef.label} foundation. Interact with it to build.` };
-      }
-
-      // Removes a barn, refunding whatever materials it cost — currently
-      // none, since there's no wood/stone system yet to have spent any; this
-      // is where a future materials-cost system would credit the refund.
-      // Any livestock housed here return to stasis rather than vanishing.
-      function demolishBarn(id) {
-        const entry = farmBuildings.find(b => b.id === id);
-        if (!entry) return { ok: false, message: 'Barn not found.' };
-        const livestock = _loadWorldLivestock();
-        livestock.forEach(l => {
-          if (l.barnId !== id) return;
-          l.barnId = null;
-          const animal = [...animalObjects].find(a => a.livestockId === l.id);
-          if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
-        });
-        _saveWorldLivestock(livestock);
-        unregisterBarnFootprint(entry);
-        disposeBarnMesh(entry._mesh);
-        farmBuildings = farmBuildings.filter(b => b.id !== id);
-        saveFarmLayout();
-        saveMemberWorldData();
-        return { ok: true, message: 'Barn demolished — its livestock are back in stasis.' };
-      }
-
-      // Moves the house or a barn to a new farm-grid top-left. `id` is
-      // either 'highland_house' or a barn's own id.
-      function moveFarmBuilding(id, newCol, newRow) {
-        if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move buildings." };
-        if (id === 'highland_house') {
-          if (!canPlaceFarmBuilding(newCol, newRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D, 'highland_house')) {
-            return { ok: false, message: 'Cannot move the house there — needs clear, untilled, un-trenched ground.' };
-          }
-          repositionHouse(newCol, newRow);
-          clearFarmBuildingFootprint(newCol, newRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D);
-          saveFarmLayout();
-          saveMemberWorldData();
-          return { ok: true, message: 'Moved the house.' };
-        }
-        const entry = farmBuildings.find(b => b.id === id);
-        if (!entry) return { ok: false, message: 'Building not found.' };
-        if (!canPlaceFarmBuilding(newCol, newRow, entry.w, entry.h, entry.id)) {
-          return { ok: false, message: 'Cannot move there — needs clear, untilled, un-trenched ground.' };
-        }
-        unregisterBarnFootprint(entry);
-        entry.col = newCol; entry.row = newRow;
-        registerBarnFootprint(entry);
-        if (entry.stage === 'foundation' && entry._mesh) {
-          entry._mesh.position.set(newCol + entry.w / 2, 0.07, newRow + entry.h / 2);
-        } else if (entry.stage === 'built') {
-          disposeBarnMesh(entry._mesh); entry._mesh = null;
-          buildBarnStructureMesh(entry);
-        }
-        clearFarmBuildingFootprint(newCol, newRow, entry.w, entry.h);
-        saveFarmLayout();
-        saveMemberWorldData();
-        return { ok: true, message: `Moved the ${barnLabel(entry)}.` };
-      }
-
-      function clearFarmBuildings() {
-        farmBuildings.forEach(entry => { unregisterBarnFootprint(entry); disposeBarnMesh(entry._mesh); });
-        farmBuildings = [];
-      }
-
-      // Ring-search outward from a barn's footprint for the nearest free
-      // tile — livestock spawn/emerge just outside their own barn rather
-      // than anywhere on the farm.
-      function findOpenTileNearBarn(barn) {
-        for (let ring = 1; ring <= 8; ring++) {
-          const rMin = barn.row - ring, rMax = barn.row + barn.h + ring - 1;
-          const cMin = barn.col - ring, cMax = barn.col + barn.w + ring - 1;
-          for (let r = rMin; r <= rMax; r++) {
-            for (let c = cMin; c <= cMax; c++) {
-              const onRing = r === rMin || r === rMax || c === cMin || c === cMax;
-              if (!onRing || c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
-              if (canSpawnAnimalAt(c, r)) return { col: c, row: r };
-            }
-          }
-        }
-        return null;
-      }
 
       // ── Register world objects ─────────────────────────────────────
       function initWorldObjects() {
-        const sc = makeSellCrate(2, ROWS - 3);
-        const sb = makeSupplyBox(4, ROWS - 3);
+        const sc = window.FarmCrates.makeSellCrate(2, ROWS - 3);
+        const sb = window.FarmCrates.makeSupplyBox(4, ROWS - 3);
         shippingBoxObject = sc;
         supplyBoxObject = sb;
         worldObjects.set(sc.col + ',' + sc.row, sc);
@@ -15273,108 +12346,9 @@
         }
       }
 
-      // ── Alchemy panel render ─────────────────────────────────────────
-      const ALCHEMY_MAX_REAGENTS = 3;
-      let alchemySelectedReagents = []; // up to ALCHEMY_MAX_REAGENTS reagent keys, chosen from inventory
-
-      function toggleAlchemyReagent(key) {
-        const i = alchemySelectedReagents.indexOf(key);
-        if (i >= 0) alchemySelectedReagents.splice(i, 1);
-        else if (alchemySelectedReagents.length < ALCHEMY_MAX_REAGENTS) alchemySelectedReagents.push(key);
-        renderAlchemyPanel();
-      }
-
-      // Consumes the selected reagents and, if they share any effects (see
-      // computeBrewEffects), credits 1 storable Potion item carrying those
-      // effects — drunk later from the Inventory panel (see
-      // selectInventoryItem's Drink button), anywhere, not just at the table.
-      function brewPotion() {
-        const keys = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
-        if (keys.length < 2) return { ok: false, message: 'Select at least 2 reagents.' };
-        const effects = computeBrewEffects(keys);
-        if (!effects.length) return { ok: false, message: 'No shared properties — the mixture does nothing.' };
-        for (const rk of keys) {
-          const def = ALCHEMY_REAGENT_DEFS[rk];
-          def.effects.forEach((eff, idx) => { if (effects.includes(eff)) discoverReagentEffect(rk, idx); });
-        }
-        keys.forEach(k => { inventory[k]--; clampInventoryStack(k); });
-        const potionKey = ensurePotionItemDef(effects, keys);
-        inventory[potionKey] = Math.min(99, (inventory[potionKey] || 0) + 1);
-        alchemySelectedReagents = [];
-        refreshItemScroll();
-        const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
-        return { ok: true, message: '⚗️ Brewed a Potion of ' + names + '. Drink it from your bag any time.' };
-      }
-
-      window._doBrewPotion = function () {
-        const result = brewPotion();
-        showToast(result.message, result.ok !== false);
-        renderAlchemyPanel();
-        if (result.ok !== false) saveMemberWorldData();
-      };
-
-      function renderAlchemyPanel() {
-        const list = document.getElementById('alchemyReagentList');
-        const selectedEl = document.getElementById('alchemySelectedStrip');
-        const previewEl = document.getElementById('alchemyEffectPreview');
-        if (!list) return;
-        alchemySelectedReagents = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
-        const heldReagents = Object.keys(ALCHEMY_REAGENT_DEFS).filter(k => (inventory[k] || 0) > 0);
-        list.innerHTML = '';
-        if (!heldReagents.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">🌿</span><span class="dr-name">No reagents in your bag yet — forage them across the wilderness zones.</span><span class="dr-eta">—</span></div>';
-        }
-        heldReagents.forEach(key => {
-          const def = ALCHEMY_REAGENT_DEFS[key];
-          const selected = alchemySelectedReagents.includes(key);
-          const effectsHtml = def.effects.map((eff, idx) => isReagentEffectKnown(key, idx)
-            ? `<span class="alch-effect ${ALCHEMY_EFFECT_DEFS[eff].kind}">${ALCHEMY_EFFECT_DEFS[eff].icon} ${ALCHEMY_EFFECT_DEFS[eff].label}</span>`
-            : `<span class="alch-effect unknown">❓ ?</span>`).join('');
-          const row = document.createElement('div');
-          row.className = 'shop-row alch-reagent-row' + (selected ? ' selected' : '');
-          row.innerHTML = `
-            <div class="sh-icon">${def.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${def.label} <span class="alch-count">×${inventory[key]}</span></div>
-              <div class="alch-effects">${effectsHtml}</div>
-            </div>
-            <button class="shop-buy-btn" data-act="toggle">${selected ? 'Selected' : 'Select'}</button>
-          `;
-          row.querySelector('[data-act="toggle"]')?.addEventListener('click', () => toggleAlchemyReagent(key));
-          list.appendChild(row);
-        });
-
-        if (selectedEl) {
-          selectedEl.innerHTML = alchemySelectedReagents.length
-            ? alchemySelectedReagents.map(k => `<span class="alch-selected-chip">${ALCHEMY_REAGENT_DEFS[k].icon} ${ALCHEMY_REAGENT_DEFS[k].label}</span>`).join('')
-            : '<span class="alch-empty-hint">Select 2–3 reagents to test for a reaction.</span>';
-        }
-        if (previewEl) {
-          const effects = computeBrewEffects(alchemySelectedReagents);
-          if (alchemySelectedReagents.length < 2) {
-            previewEl.innerHTML = '';
-          } else if (!effects.length) {
-            previewEl.innerHTML = '<div class="alch-empty-hint">No shared properties detected.</div>';
-          } else {
-            previewEl.innerHTML = effects.map(eff => {
-              const known = alchemySelectedReagents.some(k => {
-                const idx = ALCHEMY_REAGENT_DEFS[k].effects.indexOf(eff);
-                return idx >= 0 && isReagentEffectKnown(k, idx);
-              });
-              const def = ALCHEMY_EFFECT_DEFS[eff];
-              return known
-                ? `<span class="alch-effect ${def.kind}">${def.icon} ${def.label}</span>`
-                : `<span class="alch-effect unknown">❓ Unknown reaction</span>`;
-            }).join('');
-          }
-        }
-        const brewBtn = document.getElementById('alchemyBrewBtn');
-        if (brewBtn) brewBtn.disabled = alchemySelectedReagents.length < 2;
-      }
-
       // ── Tasks panel (board requests + accepted NPC favors) ───────────
       function renderTasksPanel() {
-        maybeRefreshBoardTask();
+        window.ProceduralTasks.maybeRefreshBoardTask();
         window.BountyBoard.maybeRefreshPosting();
 
         // Today's board notice — not yet in the player's log. Taking it is
@@ -15383,7 +12357,7 @@
         const postingEl = document.getElementById('tasksBoardPosting');
         if (postingEl) {
           postingEl.innerHTML = '';
-          const posting = getCurrentBoardPosting();
+          const posting = window.ProceduralTasks.getCurrentBoardPosting();
           if (posting) {
             const def = ITEM_DEFS[posting.itemKey];
             const row = document.createElement('div');
@@ -15397,7 +12371,7 @@
               <button class="shop-buy-btn" data-take="${posting.id}">Take Quest</button>
             `;
             row.querySelector('[data-take]')?.addEventListener('click', () => {
-              takeBoardTask(posting.id);
+              window.ProceduralTasks.takeBoardTask(posting.id);
               renderTasksPanel();
             });
             postingEl.appendChild(row);
@@ -15496,7 +12470,7 @@
           return;
         }
         knownIds
-          .map(npcId => ({ npcId, rec: npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...friendshipTierProgress(npcId) }))
+          .map(npcId => ({ npcId, rec: npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...window.ProceduralTasks.friendshipTierProgress(npcId) }))
           .sort((a, b) => b.favor - a.favor)
           .forEach(({ npcId, rec, tier, favor, next }) => {
             const name = rec?.name || npcId;
@@ -16122,10 +13096,10 @@
       function useMysteryDye(key) {
         const pool = MYSTERY_DYE_POOL_BY_ITEM_KEY[key];
         if (!pool || (inventory[key] || 0) < 1) return { ok: false, message: 'Nothing to use.' };
-        const candidates = getDyeCatalog().filter(d => !d.neutral && pool.hueFamilies.includes(d.hueFamily) && !ownsDye(d.id));
+        const candidates = window.DyeSystem.getCatalog().filter(d => !d.neutral && pool.hueFamilies.includes(d.hueFamily) && !window.DyeSystem.owns(d.id));
         if (!candidates.length) return { ok: false, message: `You already own every dye ${pool.label} can grant.` };
         const dye = candidates[Math.floor(Math.random() * candidates.length)];
-        unlockDye(dye.id);
+        window.DyeSystem.unlock(dye.id);
         inventory[key]--;
         clampInventoryStack(key);
         return { ok: true, message: `Unlocked ${dye.label} for your dye collection!` };
@@ -16214,7 +13188,7 @@
         }
       });
 
-      Object.entries(ALCHEMY_REAGENT_DEFS).forEach(([key, def]) => {
+      Object.entries(window.AlchemySystem.REAGENT_DEFS).forEach(([key, def]) => {
         if (!inventoryItems.some(item => item.key === key)) {
           inventoryItems.push({ key, icon: def.icon, label: def.label.toUpperCase(), max: 99 });
         }
@@ -16222,7 +13196,7 @@
           ITEM_DEFS[key] = {
             icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
             tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
-            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${ALCHEMY_EFFECT_DEFS[def.effects[0]].label}.`,
+            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${window.AlchemySystem.EFFECT_DEFS[def.effects[0]].label}.`,
           };
         }
       });
@@ -16639,9 +13613,9 @@
           // Potions are drinkable from right here — the Inventory panel is
           // reachable from anywhere, so this is the "consume anywhere" path
           // (as opposed to brewing, which still needs the Alchemy Table).
-          if ((ALCHEMY_POTION_ITEMS[key] || getPotionEffectsFromKey(key)) && count > 0) {
+          if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
             mkBtn('🧪 Drink', 'equip', () => {
-              const result = drinkPotion(key);
+              const result = window.AlchemySystem.drinkPotion(key);
               showToast(result.message, result.ok !== false);
               if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
             });
@@ -16682,7 +13656,7 @@
           // happens from the Farm tab, not here.
           if (LIVESTOCK_ITEM_KINDS[key] && count > 0) {
             mkBtn('Add to Stable', 'equip', () => {
-              const result = addToStable(key);
+              const result = window.FarmAnimals.addToStable(key);
               showToast(result.message, result.ok);
               if (result.ok) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); }
             });
@@ -17332,7 +14306,7 @@
       }
 
       function openRedyePanel(slot, item) {
-        ensureDyeCollection();
+        window.DyeSystem.ensureCollection();
         const panel = document.getElementById('dyePanel');
         const titleEl = document.getElementById('dyePanelTitle');
         const subslotsEl = document.getElementById('dyePanelSubslots');
@@ -17354,10 +14328,10 @@
         const isWorn = () => gearInventory?.clothing?.[slot]?.uid === item.uid;
 
         function applyPreview() {
-          const dyeA = pendingDyeIdA ? getDyeById(pendingDyeIdA) : null;
-          const dyeB = hasSecondary && pendingDyeIdB ? getDyeById(pendingDyeIdB) : null;
-          if (dyeA) item.colorA = dyeToClothingColor(dyeA);
-          if (hasSecondary && dyeB) item.colorB = dyeToClothingColor(dyeB);
+          const dyeA = pendingDyeIdA ? window.DyeSystem.getById(pendingDyeIdA) : null;
+          const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
+          if (dyeA) item.colorA = window.DyeSystem.toClothingColor(dyeA);
+          if (hasSecondary && dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
           const dyeLbl = hasSecondary && dyeB ? ((dyeA || {}).label + ' & ' + dyeB.label) : (dyeA || {}).label;
           previewEl.innerHTML = '';
           if (dyeA) {
@@ -17395,7 +14369,7 @@
 
         function renderGroups() {
           groupsEl.innerHTML = '';
-          const groups = ownedDyesByHue();
+          const groups = window.DyeSystem.ownedByHue();
           if (!groups.length) {
             groupsEl.innerHTML = '<div class="dye-panel-empty">No dyes collected yet.</div>';
             return;
@@ -17439,8 +14413,8 @@
         document.getElementById('dyePanelClose').onclick = () => { revert(); closeRedyePanel(); };
         document.getElementById('dyePanelApply').onclick = () => {
           if (!pendingDyeIdA) { showToast('Pick a dye first.', false); return; }
-          const dyeA = getDyeById(pendingDyeIdA);
-          const dyeB = hasSecondary && pendingDyeIdB ? getDyeById(pendingDyeIdB) : null;
+          const dyeA = window.DyeSystem.getById(pendingDyeIdA);
+          const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
           const dyeLbl = hasSecondary && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
           item.label = dyeLbl + ' ' + (item.baseLabel || originalLabel);
           saveGearInventory();
@@ -17949,7 +14923,7 @@
 
       function updateMovement(dt) {
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
-        if (harvestInteraction) { updateHarvestInteraction(dt); return; }
+        if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
@@ -18108,7 +15082,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * devGlobalSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -18403,7 +15377,7 @@
         if (addLivestockBtn) addLivestockBtn.onclick = () => {
           const key = Object.keys(LIVESTOCK_ITEM_KINDS).find(k => (inventory[k] || 0) > 0);
           if (!key) { showToast('No livestock crates in your bag.', false); return; }
-          const result = addLivestockFromItem(key);
+          const result = window.FarmAnimals.addFromItem(key);
           showToast(result.message, result.ok);
           if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); buildInventoryGrid(); refreshActionBar(); }
         };
@@ -18515,7 +15489,7 @@
             const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
             const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
             const mode = _farmPlacementMode;
-            const result = mode.type === 'move' ? moveFarmBuilding(mode.buildingId, col, row) : placeBarnPlan(mode.tier, col, row);
+            const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row) : window.FarmBuildings.placePlan(mode.tier, col, row);
             showToast(result.message, result.ok);
             if (result.ok) _farmPlacementMode = null;
             renderFarmPanel();
@@ -18595,7 +15569,7 @@
       function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
         const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
         const value = hasGenotype ? window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind) : null;
-        const pending = pairs.some(p => refsEqual(p.parentA, ref) || refsEqual(p.parentB, ref));
+        const pending = pairs.some(p => window.FarmAnimals.refsEqual(p.parentA, ref) || window.FarmAnimals.refsEqual(p.parentB, ref));
         const pickKey = `${ref.source}:${ref.id}`;
         const row = document.createElement('div');
         row.className = 'farm-row';
@@ -18682,7 +15656,7 @@
             btn.className = 'settings-small-btn';
             btn.textContent = 'Unassign';
             btn.addEventListener('click', () => {
-              const result = unassignLivestockFromVat(worker.id);
+              const result = window.DewVats.unassignFromVat(worker.id);
               showToast(result.message, result.ok);
               renderFarmProcessors(); renderFarmLivestock();
             });
@@ -18731,7 +15705,7 @@
             });
             housingSelect.value = entry.barnId || '';
             housingSelect.addEventListener('change', () => {
-              const result = housingSelect.value ? assignLivestockToBarn(entry.id, housingSelect.value) : unassignLivestockFromBarn(entry.id);
+              const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
               showToast(result.message, result.ok);
               renderFarmLivestock(); renderFarmGridGlance();
             });
@@ -18746,7 +15720,7 @@
             // with a squeezable resource (uumkao'ii dew today, see
             // vatCanAcceptLivestock), and only once it's actually housed
             // (same gate as the dew/egg cooldowns themselves).
-            if (entry.barnId && vatCanAcceptLivestock(entry.kind)) {
+            if (entry.barnId && window.DewVats.vatCanAccept(entry.kind)) {
               const vats = [...processingFurnitureObjects].filter(o => PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
               const vatSelect = document.createElement('select');
               vatSelect.className = 'settings-select farm-barn-select';
@@ -18764,7 +15738,7 @@
               });
               vatSelect.value = entry.assignedVatId || '';
               vatSelect.addEventListener('change', () => {
-                const result = vatSelect.value ? assignLivestockToVat(entry.id, vatSelect.value) : unassignLivestockFromVat(entry.id);
+                const result = vatSelect.value ? window.DewVats.assignToVat(entry.id, vatSelect.value) : window.DewVats.unassignFromVat(entry.id);
                 showToast(result.message, result.ok);
                 renderFarmLivestock(); renderFarmProcessors();
               });
@@ -18829,7 +15803,7 @@
         // Your own stable, offered as breeding-pair candidates on this farm —
         // untradeable, so no rename/Sell controls here (see the Stable tab).
         if (canManage && stable.length) {
-          const charId = _currentCharacterId();
+          const charId = window.FarmAnimals.currentCharacterId();
           const header = document.createElement('div');
           header.className = 'farm-note';
           header.style.marginTop = '4px';
@@ -18877,11 +15851,11 @@
       }
 
       function setBreedingPair(refA, refB) {
-        if (!hasFarmPermission('livestock') || !refA || !refB || refsEqual(refA, refB)) return;
+        if (!hasFarmPermission('livestock') || !refA || !refB || window.FarmAnimals.refsEqual(refA, refB)) return;
         const pairs = _loadWorldBreedingPairs();
-        pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: calendar.day, readyDay: calendar.day + LIVESTOCK_GESTATION_DAYS });
+        pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: calendar.day, readyDay: calendar.day + window.FarmAnimals.GESTATION_DAYS });
         _saveWorldBreedingPairs(pairs);
-        showToast(`Breeding pair set — check back in ${LIVESTOCK_GESTATION_DAYS} days.`, true);
+        showToast(`Breeding pair set — check back in ${window.FarmAnimals.GESTATION_DAYS} days.`, true);
       }
 
       // ── Farm livestock <-> personal stable transfers ────────────────────
@@ -18897,7 +15871,7 @@
         const [entry] = livestock.splice(idx, 1);
         _saveWorldLivestock(livestock);
         const ref = { source: 'world', id };
-        _saveWorldBreedingPairs(_loadWorldBreedingPairs().filter(p => !refsEqual(p.parentA, ref) && !refsEqual(p.parentB, ref)));
+        _saveWorldBreedingPairs(_loadWorldBreedingPairs().filter(p => !window.FarmAnimals.refsEqual(p.parentA, ref) && !window.FarmAnimals.refsEqual(p.parentB, ref)));
         removeLiveAnimalEntity(id);
         return entry;
       }
@@ -20046,7 +17020,7 @@
           if (action === 'dig' && tile.dewPile) {
             const colorKey = tile.dewPile;
             tile.dewPile = null;
-            removeDewPileMesh(col, row);
+            window.DewVats.removeMesh(col, row);
             const dewKey = dewItemKey(colorKey);
             inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
             awardToolUseMasteryXp('shovel');
@@ -20306,7 +17280,7 @@
       // navigation are always open to any farmhand. Returns null when the
       // action isn't farm-alteration at all (weapon swings, obj_
       // interactions, etc.). Adding livestock isn't a tile action at all
-      // anymore — see addLivestockFromItem(), invoked from the Farm tab.
+      // anymore — see window.FarmAnimals.addFromItem(), invoked from the Farm tab.
       function farmActionPermissionCategory(tool, action) {
         if (action.startsWith('place_')) {
           // placeDecorativeFurniture() also accepts area:'interior' pieces
@@ -25648,7 +22622,7 @@
         // these: the player stays the anchor and keeps walking normally
         // underneath it (see updateCompanions' shoulderPet branch), so legs
         // simply keep animating off the player's own real velocity as usual.
-        const legsSuppressed = mountRideState !== 'none' || !!harvestInteraction;
+        const legsSuppressed = mountRideState !== 'none' || window.FarmAnimals.isHarvesting();
         // Bent-knee seated pose (see procedural-leg-animation.js's own
         // applySeatedPose/solveSeatedLegSurfaceFlush) while actually seated
         // in a chair — a faithful port of the furniture-avatar-author
@@ -26810,7 +23784,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           _nestTakeHudEl?.classList.remove('visible');
           nest.remaining--;
           inventory[nest.itemKey] = Math.min(99, (inventory[nest.itemKey] || 0) + 1);
-          _queueLivestockItemGenotype(nest.itemKey, nest.genotype);
+          window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
           clampInventoryStack(nest.itemKey);
           buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
           saveMemberWorldData();
@@ -26876,7 +23850,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           updateMovement(dt);
           updateZoneFogAroundPlayer();
           updatePlayerVitals(dt);
-          updateAlchemyEffects();
+          window.AlchemySystem.update();
           window.BountyBoard.updateTracking(dt);
 
           if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
@@ -26893,13 +23867,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             window.BanditCamps.updateCampBanners(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
-            updateCorpses(dt);
+            window.CreatureDeath.updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
             // Ordinary building interiors (house/shop) intentionally have no
             // companions or wild spawns — only Den-Mother mini-bosses still
             // need to chase/attack/return there.
             updateHostiles(dt);
-            updateCorpses(dt);
+            window.CreatureDeath.updateCorpses(dt);
           }
 
           if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
@@ -26923,10 +23897,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             updateRipples(dt);
             updateLightningFlash(dt);
           }
-          if (currentArea === 'farm') updateDewPileMeshRotations(dt);
+          if (currentArea === 'farm') window.DewVats.updateMeshRotations(dt);
           if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
           updateActionParticles(dt);
-          updateTreasureSparkles(dt);
+          window.WildTreasure.updateSparkles(dt);
           window.Fishing?.updateFx(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
@@ -26998,7 +23972,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();
-          updateAnimalMeshes(dt);
+          window.FarmAnimals.updateAnimalMeshes(dt);
           updateThreeLighting();
 
           // Wind animation on vegetation
@@ -27443,18 +24417,18 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         calendar.day += 1;
         chooseWeatherForDay();
         tickCropDay();
-        tickLivestockBreeding();
-        tickLivestockResources();
-        maybeRefreshBoardTask();
+        window.FarmAnimals.tickBreeding();
+        window.FarmAnimals.tickResources();
+        window.ProceduralTasks.maybeRefreshBoardTask();
         lastActionMessage = `Day ${calendar.day} begins: ${calendar.weather}.`;
         checkTothalShift();
         // Any den wiped out since it started waiting can now be moved back
         // into — see ensureCurrentZoneDenPacks, which does the actual
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
-        respawnAllZoneReagents();
-        respawnAllZoneBerries();
-        respawnAllZoneTreasure();
+        window.ReagentPlants.respawnAllZoneReagents();
+        window.WildBerries.respawnAll();
+        window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
         tickMinedRockRegrowth();
         _saveWorldCalendar();
@@ -27471,13 +24445,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         calendar.time01 = 0; // wake at MORNING_HOUR
         chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
-        tickLivestockBreeding();
-        tickLivestockResources();
-        maybeRefreshBoardTask();
+        window.FarmAnimals.tickBreeding();
+        window.FarmAnimals.tickResources();
+        window.ProceduralTasks.maybeRefreshBoardTask();
         checkTothalShift();
         pendingDenRespawn.clear();
-        respawnAllZoneReagents();
-        respawnAllZoneTreasure();
+        window.ReagentPlants.respawnAllZoneReagents();
+        window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
         tickMinedRockRegrowth();
         player.health  = player.maxHealth;
@@ -28998,8 +25972,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
-        clearFarmBuildings(); // re-added from layout below, same as furniture/decor — the house/farm structures survive a reset, only day/weather/inventory/livestock do not
-        clearAnimalObjects();
+        window.FarmBuildings.clearAll(); // re-added from layout below, same as furniture/decor — the house/farm structures survive a reset, only day/weather/inventory/livestock do not
+        window.FarmAnimals.clearAnimalObjects();
         _saveWorldLivestock([]); // full farm reset also clears released animals from the world file
         clearHostileObjects();
         despawnCompanions();
@@ -29053,9 +26027,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
-              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || BARN_FOOTPRINT_W, h: saved.h || BARN_FOOTPRINT_D, stage: saved.stage || 'foundation' };
+              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
               farmBuildings.push(entry);
-              spawnBarnEntry(entry);
+              window.FarmBuildings.spawnEntry(entry);
             });
           }
         } catch {}
@@ -29942,9 +26916,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
         loadWorldLivestock: () => _loadWorldLivestock(),
         saveWorldLivestock: (list) => _saveWorldLivestock(list),
-        assignVat: assignLivestockToVat,
-        unassignVat: unassignLivestockFromVat,
-        tickLivestock: tickLivestockResources,
+        assignVat: window.DewVats.assignToVat,
+        unassignVat: window.DewVats.unassignFromVat,
+        tickLivestock: window.FarmAnimals.tickResources,
         getInventory: () => ({ ...inventory }),
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
@@ -29992,250 +26966,6 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
       window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); _saveWorldCalendar(); } catch {} });
-      fitToAspect();
-      resizeCanvas();
-      refreshActionBar();
-      refreshItemScroll();
-      try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
-      // Apply saved object positions and furniture after world objects are created
-      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
-      // Transition spots + shared NPC routes from the map editor
-      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
-      // Ensure a farm→town transition always exists even without map editor data
-      if (!worldTransitions.some(t => t.target === 'town')) {
-        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
-        buildTransitionMarkers();
-      }
-      // Load town layout from workspace config (authoritative source)
-      window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
-      _loadTownFromWorkspace().catch(() => {});
-      debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
-
-      // ── Onboarding gate ────────────────────────────────────────────
-      let gameStarted = false;
-
-      async function spawnPlayerAvatar(playerData) {
-        // Restore this world's saved date/time/weather (see
-        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
-        // calendar.day — checkTothalShift() below derives the current
-        // Tothal year from it, so this has to land first or the shift check
-        // runs against the just-reset "Day 1" default instead of wherever
-        // the world actually left off.
-        const _savedCalendar = _loadWorldCalendar();
-        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
-
-        // Fire-and-forget: the Tothal Shift at world start (or on any missed
-        // year since last played) can take a few seconds across all four
-        // zones, but nothing here needs to block on it — a zone only needs
-        // to be reshaped by the time the player actually walks into it.
-        checkTothalShift();
-
-        // The module-level init above loaded the farm layout (tiles/crops and
-        // furniture/crate positions) under the legacy unnamespaced key, since
-        // worldId wasn't known yet at that point. Now that playerData.worldId
-        // is known, redo just that part against the correctly-namespaced
-        // per-world key so separate worlds never bleed into each other's farm
-        // (mirrors doReset()'s regenerate-then-apply pattern below). Transitions/
-        // routes/NPC schedules are shared authored map content, not per-world
-        // state, so initWorldTravel() is deliberately NOT redone here — it
-        // already ran once at module init, and spawnScheduledNpcs() isn't
-        // idempotent (it appends to npcWalkers with no clear step), so calling
-        // it again would spawn every scheduled NPC a second time.
-        clearPlacedProcessingFurniture();
-        clearInteriorFurniture();
-        clearFarmBuildings();
-        // Module init may have moved the house per the legacy-key layout —
-        // put it back to its hard default before applying (or not finding)
-        // this world's own saved position, same rationale as the sell
-        // crate/supply box reset immediately below.
-        if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) repositionHouse(HOUSE_COL, HOUSE_ROW);
-        worldObjects.forEach(o => o.reset && o.reset());
-        grid = createInitialGrid();
-        // Module init already may have moved the shipping/supply crates per the
-        // legacy-key layout — put them back to their hard defaults before
-        // applying (or not finding) this world's own saved positions, so a
-        // brand-new world can't inherit another world's crate placement.
-        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
-        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
-        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
-          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
-          const nc = makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
-          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
-        }
-        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
-          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
-          const nb = makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
-          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
-        }
-        const _worldLayout = loadFarmLayout();
-        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
-        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
-        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
-        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
-        // player has no bed item in inventory yet to buy+place one themselves.
-        // Gated on this world having no saved layout at all, so it never
-        // re-appears for a returning player, including one who moved or
-        // removed their starter bed (farmLayoutKey() is per-world, so this
-        // check has to happen here — after playerData.worldId is known —
-        // rather than at module init, where it would save under the wrong,
-        // not-yet-namespaced key and then get cleared right back out by this
-        // same per-world reload).
-        if (!_worldLayout) {
-          try {
-            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
-            if (starterBed) {
-              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
-              saveFarmLayout();
-            }
-          } catch (e) { console.error('starter bed seed:', e); }
-        }
-        respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
-        recomputeWater(false);
-
-        // Non-gear inventory (resources) and pack clothing are world-scoped
-        // per character — they stay behind in this world's member record
-        // rather than following the character to another world.
-        Object.keys(inventory).forEach(key => { delete inventory[key]; });
-        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
-          ? { ...playerData.nonGearInventory }
-          : { ...STARTING_INVENTORY });
-        packClothing = [...(playerData.packClothing || [])];
-
-        // NPC relationships/memory and quest progress are likewise world-scoped
-        // per character.
-        window.DialogueContent?.loadNpcRelationships(playerData);
-        questProgress = { ...(playerData.questProgress || {}) };
-        maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
-
-        // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
-        // today's (not-yet-picked) wilderness reagent placements — all
-        // world-scoped per character, same as the fields just above.
-        restoreKnownReagentEffects(playerData.alchemyKnownEffects);
-        restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
-        restoreZoneReagentState(playerData.alchemyReagentState);
-        restoreZoneBerryState(playerData.wildBerryState);
-        restoreZoneTreasureState(playerData.zoneTreasureState);
-        restoreZoneFelledTreeState(playerData.felledTreeState);
-        restoreZoneMinedRockState(playerData.minedRockState);
-        // Potion items just restored into `inventory` above have no ITEM_DEFS
-        // entry yet this page load (ITEM_DEFS starts empty of them every
-        // session, unlike the static reagent/furniture/fish tables) — rebuild
-        // each one's display/Drink metadata straight from its key, which
-        // deterministically encodes its effects (see ensurePotionItemDef).
-        Object.keys(inventory).forEach(key => {
-          const effects = getPotionEffectsFromKey(key);
-          if (effects) ensurePotionItemDef(effects);
-        });
-
-        gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
-          ? playerData.gearInventory
-          : makeDefaultGear();
-        if (!gearInventory.tools)    gearInventory.tools    = {};
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
-        if (!gearInventory.charms)   gearInventory.charms   = [];
-        if (!gearInventory.whistles || !gearInventory.whistles.length) {
-          gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
-        }
-        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
-        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
-        ensureGearClothingCollection();
-        ensureDyeCollection();
-
-        // Personal stable — same lazy-seed pattern as the whistles block just
-        // above: a character with no stable yet gets the starter dabinggi-hound
-        // (matching gearInventory.whistles' starter whistle) so "the dabinggi
-        // hound you start with is stored in the stable" holds for old saves too.
-        stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
-        activeCompanionId = playerData.activeCompanionId ?? null;
-        activeMountId = playerData.activeMountId ?? null;
-        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
-        if (!stable.length) {
-          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
-          stable.push(starter);
-          activeCompanionId = starter.id;
-        }
-        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
-        // Backfill genotype-less stable entries from older saves (e.g. a
-        // starter Bingo saved before pattern genes existed) so they render
-        // real genes instead of the plain uncolored sprite forever. Also
-        // backfills a missing Size (genotype.sizeClass) on entries saved
-        // before the stable's mount/companion/shoulder-pet system existed.
-        for (const entry of stable) {
-          if (!entry.genotype && (window.CreatureGenetics.PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
-            entry.genotype = window.CreatureGenetics.makeDefaultGenotype(entry.kind);
-          }
-          if (entry.genotype && !entry.genotype.sizeClass) {
-            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
-          }
-        }
-        saveStable();
-        // Restore whichever literal tool/weapon/whistle instance was equipped
-        // in each slot last session (see saveEquipmentSlots) — skips any slot
-        // whose saved item no longer exists in this character's gearInventory
-        // (sold/lost since, or a save from before this field existed), which
-        // then falls through to the starter-gear defaults just below.
-        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
-          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
-            if (!itemId || !(slot in equipmentSlots)) continue;
-            const stillOwned = slot === 'whistle'
-              ? gearInventory.whistles.some(w => w.id === itemId)
-              : !!gearInventory.tools[itemId];
-            if (stillOwned) equipmentSlots[slot] = itemId;
-          }
-        }
-        // Set default equipment slot assignments
-        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
-        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
-        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
-        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
-        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
-        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
-        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
-        // A cutscene preview's ephemeral profile can inherit gearInventory
-        // (and an already-equipped whistle) straight from the real local
-        // save via docs/index.html's onboarding-profile handoff, and the
-        // line above auto-equips the starter whistle for any profile that
-        // has none — either way, an uninvited companion animal would spawn
-        // and compete for camera framing in a scene the Director never
-        // authored one for. A scene's own creature actors are unaffected;
-        // this only clears the real player's own companion slot.
-        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
-        rebuildToolMeshes();
-        // Restore the tool actually held last session (see saveEquipmentSlots)
-        // — silent so returning to a save doesn't pop a "X selected" toast.
-        if (playerData.activeTool && toolActions[playerData.activeTool]) {
-          setActiveTool(playerData.activeTool, { silent: true });
-        } else {
-          refreshWeaponSwitchBtn();
-          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
-          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
-        }
-        buildEquipmentSlots();
-        try {
-          await window.NpcAvatarPreview.ensurePortraitCosmetics({
-            assetBase: './assets/',
-            configBase: './config/',
-          });
-
-          await refreshPlayerAvatar();
-          debugLog('PNG plane avatar attached to player_root');
-        } catch (err) {
-          console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
-        }
-        gameStarted = true;
-      }
-
-      document.addEventListener('hobunjiPlayerReady', (e) => {
-        _playerData = e.detail;
-        spawnPlayerAvatar(e.detail);
-      }, { once: true });
-
-      // If init() already fired synchronously (returning player with localStorage profile),
-      // __hobunjiPlayerProfile is set before this listener registered — catch that case.
-      if (window.__hobunjiPlayerProfile) {
-        _playerData = window.__hobunjiPlayerProfile;
-        spawnPlayerAvatar(window.__hobunjiPlayerProfile);
-      }
 
       window.DialogueContent?.init({
         calendar,
@@ -30250,7 +26980,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         normalizeStationLabel,
         canAccessContent,
         setQuestStatus,
-        turnInTask,
+        turnInTask: window.ProceduralTasks.turnInTask,
         showToast,
         openMenu,
         closeNpcDialogue,
@@ -30414,7 +27144,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         clamp,
         angleDiff,
         canPlayerOccupy,
-        getAlchemySpeedMul,
+        getAlchemySpeedMul: window.AlchemySystem.getSpeedMul,
         getKeyboardVector,
         makeCreatureEntity,
         despawnCreature,
@@ -30531,6 +27261,276 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       window.CreatureGenetics?.init({ clamp, CREATURE_DB });
 
+      window.AlchemySystem?.init({
+        ITEM_DEFS,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll,
+        showToast,
+        saveMemberWorldData,
+      });
+
+      window.DyeSystem?.init({
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+      });
+
+      window.ReagentPlants?.init({
+        calendar,
+        inventory,
+        debugLog,
+        refreshItemScroll,
+        tileSurfaceYInArea,
+        NORMAL_TOP,
+        _mbRng,
+        _seedFromString,
+        findZoneFlatEmptyTiles,
+        getReagentPlantMaterial,
+        _grassBladeGeo,
+        _zoneScenes,
+        _zoneReagentObjects,
+        _zoneReagentMeshGroups,
+        _zoneReagentPersist,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+      });
+
+      window.DewVats?.init({
+        COLS,
+        ROWS,
+        TileType,
+        ITEM_DEFS,
+        inventory,
+        processingFurnitureObjects,
+        PROCESSING_FURNITURE_DEFS,
+        PROCESSING_SFX_KEY,
+        getGrid: () => grid,
+        getScene: getActiveScene,
+        getWorldObjectAt,
+        isHouseFootprint,
+        tileSurfaceY,
+        creaturePlaneGroundOffset,
+        nearestAngleAmong,
+        cameraRelativePerps,
+        perpClamp,
+        angleDiff,
+        dewItemKey,
+        ensureProcessedItemDef,
+        getProcessingOutputs,
+        hasFarmPermission,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        saveFarmLayout,
+        rnd,
+      });
+
+      window.WildBerries?.init({
+        BERRY_COLORS,
+        ITEM_DEFS,
+        NORMAL_TOP,
+        cropData,
+        inventory,
+        _grassBladeGeo,
+        _zoneScenes,
+        _zoneBerryMeshGroups,
+        _zoneBerryObjects,
+        _zoneBerryPersist,
+        _zoneReagentPersist,
+        calendar,
+        debugLog,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        _mbRng,
+        _seedFromString,
+        findZoneFlatEmptyTiles,
+        getReagentPlantMaterial,
+        refreshItemScroll,
+        tileSurfaceYInArea,
+      });
+
+      window.WildTreasure?.init({
+        calendar,
+        rnd,
+        VERDIGRIS_METAL_KEYS,
+        getLootPools: () => _lootPools,
+        lootShopWorldState: _lootShopWorldState,
+        MYSTERY_DYE_ITEM_KEY_BY_POOL,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+        clothingSpriteForCosmetic,
+        _zoneScenes,
+        _mbRng,
+        _seedFromString,
+        _zoneReagentPersist,
+        _zoneBerryPersist,
+        findZoneFlatEmptyTiles,
+        PLATEAU_UNIT,
+        NORMAL_TOP,
+        TRENCH_TOP,
+        TileType,
+        metalBarItemKey,
+        inventory,
+        ITEM_DEFS,
+        METAL_DEFS,
+        getPackClothing: () => packClothing,
+        _zoneTreasureMeshGroups,
+        _zoneTreasureObjects,
+        _zoneTreasurePersist,
+        refreshItemScroll,
+        buildInventoryGrid,
+        buildPackClothingSection,
+        debugLog,
+        isZoneArea: _isZoneArea,
+        getCurrentArea: () => currentArea,
+        TILE,
+        player,
+        actionParticles,
+        ACTION_FX_LIMIT,
+      });
+
+      window.FarmAnimals?.init({
+        COLS,
+        ROWS,
+        TILE,
+        TileType,
+        CREATURE_DB,
+        CREATURE_PERP_DEAD_RAD,
+        ITEM_DEFS,
+        LIVESTOCK_RESOURCE_DEFS,
+        LIVESTOCK_RESOURCE_VERB,
+        LIVESTOCK_ITEM_KINDS,
+        UUMKAOII_DEFAULT_DEW_COLOR,
+        UUMKAOII_DEW_COOLDOWN_DAYS,
+        animalObjects,
+        calendar,
+        inventory,
+        player,
+        scene,
+        worldObjects,
+        angleDiff,
+        cameraConfig,
+        cameraRelativeCreaturePerps,
+        cameraRelativePerps,
+        clampInventoryStack,
+        companionAiTypeForKind,
+        creaturePlaneGroundOffset,
+        findOpenTileNearBarn: window.FarmBuildings.findOpenTileNear,
+        getWorldObjectAt,
+        hasFarmPermission,
+        isSolid,
+        nearestAngleAmong,
+        perpClamp,
+        resolveCreatureGroundAnchorRatio,
+        rnd,
+        saveStable,
+        showToast,
+        tileSurfaceY,
+        _autoAssignStableRole,
+        _markPngPlane,
+        _loadWorldBreedingPairs,
+        _saveWorldBreedingPairs,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        getBarnTiers: () => BARN_TIERS,
+        getPlayerData: () => _playerData,
+        getGrid: () => grid,
+        getFarmBuildings: () => farmBuildings,
+        getStable: () => stable,
+        getCurrentArea: () => currentArea,
+        getFacingAngle: () => facingAngle,
+        setFacingAngle: (v) => { facingAngle = v; },
+        getCameraMode: () => activeCameraMode,
+        setCameraMode: (v) => { activeCameraMode = v; },
+        getCameraTarget: () => activeCameraTarget,
+        setCameraTarget: (v) => { activeCameraTarget = v; },
+        setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },
+      });
+
+      window.FarmBuildings?.init({
+        COLS,
+        ROWS,
+        TileType,
+        HOUSE_FOOTPRINT_W,
+        HOUSE_FOOTPRINT_D,
+        animalObjects,
+        clampInventoryStack,
+        debugLog,
+        hasFarmPermission,
+        inventory,
+        loadHousePieceFaceTexture,
+        markTileDirty,
+        openMenu,
+        recomputeWater,
+        repositionHouse,
+        saveFarmLayout,
+        saveMemberWorldData,
+        scene,
+        worldObjects,
+        houseWallBuilder,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        getBarnTiers: () => BARN_TIERS,
+        getGrid: () => grid,
+        getHouseCol: () => houseCol,
+        getHouseRow: () => houseRow,
+        getFarmBuildings: () => farmBuildings,
+        setFarmBuildings: (v) => { farmBuildings = v; },
+        setFarmLivestockFocusBarnId: (v) => { _farmLivestockFocusBarnId = v; },
+      });
+
+      window.CreatureDeath?.init({
+        TILE,
+        COLS,
+        ROWS,
+        clamp,
+        canOccupyAt,
+        characterGroundShadowSurfaceOffset,
+        tileSurfaceYInArea,
+        corpseObjects,
+        getCurrentArea: () => currentArea,
+        getGrid: () => grid,
+      });
+
+      window.FarmCrates?.init({
+        BASE_PRICES,
+        MORNING_HOUR,
+        SELL_INTERVAL_HOURS,
+        SUPPLY_CATALOG,
+        TileType,
+        inventory,
+        calendar,
+        clampInventoryStack,
+        getActiveInventoryItem,
+        itemIconForKey,
+        getHour,
+        hasFarmPermission,
+        openMenu,
+        showToast,
+        saveMemberWorldData,
+        buildInventoryGrid,
+        buildShippingTransferUI,
+        tileSurfaceY,
+        scene,
+        getDeliveryLog: () => deliveryLog,
+        getPendingOrders: () => pendingOrders,
+        getMenuOpen: () => menuOpen,
+      });
+
+      window.ProceduralTasks?.init({
+        FISH_DEFS,
+        CREATURE_DB,
+        getLootPools: () => _lootPools,
+        ITEM_DEFS,
+        toolMasteryLevel,
+        equipmentSlots,
+        calendar,
+        setQuestStatus,
+        getQuestProgress: () => questProgress,
+        npcWalkers,
+        inventory,
+        clampInventoryStack,
+        showToast,
+      });
+
       window.BountyBoard?.init({
         getQuestProgress: () => questProgress,
         setQuestStatus,
@@ -30538,7 +27538,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         inventory,
         calendar,
         WMAP_ZONE_LABELS,
-        makeTaskId: _makeTaskId,
+        makeTaskId: window.ProceduralTasks.makeTaskId,
       });
 
       window.BanditCamps?.init({
@@ -30572,8 +27572,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         saveMemberWorldData,
         despawnCreature,
         buildPackClothingSection,
-        getDyeCatalog,
-        dyeToClothingColor,
+        getDyeCatalog: window.DyeSystem.getCatalog,
+        dyeToClothingColor: window.DyeSystem.toClothingColor,
         clothingSpriteForCosmetic,
         DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
@@ -30582,6 +27582,251 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getPackClothing: () => packClothing,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
       });
+      fitToAspect();
+      resizeCanvas();
+      refreshActionBar();
+      refreshItemScroll();
+      try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
+      // Apply saved object positions and furniture after world objects are created
+      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      // Transition spots + shared NPC routes from the map editor
+      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      // Ensure a farm→town transition always exists even without map editor data
+      if (!worldTransitions.some(t => t.target === 'town')) {
+        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
+        buildTransitionMarkers();
+      }
+      // Load town layout from workspace config (authoritative source)
+      window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
+      _loadTownFromWorkspace().catch(() => {});
+      debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
+
+      // ── Onboarding gate ────────────────────────────────────────────
+      let gameStarted = false;
+
+      async function spawnPlayerAvatar(playerData) {
+        // Restore this world's saved date/time/weather (see
+        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
+        // calendar.day — checkTothalShift() below derives the current
+        // Tothal year from it, so this has to land first or the shift check
+        // runs against the just-reset "Day 1" default instead of wherever
+        // the world actually left off.
+        const _savedCalendar = _loadWorldCalendar();
+        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+
+        // Fire-and-forget: the Tothal Shift at world start (or on any missed
+        // year since last played) can take a few seconds across all four
+        // zones, but nothing here needs to block on it — a zone only needs
+        // to be reshaped by the time the player actually walks into it.
+        checkTothalShift();
+
+        // The module-level init above loaded the farm layout (tiles/crops and
+        // furniture/crate positions) under the legacy unnamespaced key, since
+        // worldId wasn't known yet at that point. Now that playerData.worldId
+        // is known, redo just that part against the correctly-namespaced
+        // per-world key so separate worlds never bleed into each other's farm
+        // (mirrors doReset()'s regenerate-then-apply pattern below). Transitions/
+        // routes/NPC schedules are shared authored map content, not per-world
+        // state, so initWorldTravel() is deliberately NOT redone here — it
+        // already ran once at module init, and spawnScheduledNpcs() isn't
+        // idempotent (it appends to npcWalkers with no clear step), so calling
+        // it again would spawn every scheduled NPC a second time.
+        clearPlacedProcessingFurniture();
+        clearInteriorFurniture();
+        window.FarmBuildings.clearAll();
+        // Module init may have moved the house per the legacy-key layout —
+        // put it back to its hard default before applying (or not finding)
+        // this world's own saved position, same rationale as the sell
+        // crate/supply box reset immediately below.
+        if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) repositionHouse(HOUSE_COL, HOUSE_ROW);
+        worldObjects.forEach(o => o.reset && o.reset());
+        grid = createInitialGrid();
+        // Module init already may have moved the shipping/supply crates per the
+        // legacy-key layout — put them back to their hard defaults before
+        // applying (or not finding) this world's own saved positions, so a
+        // brand-new world can't inherit another world's crate placement.
+        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
+        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
+        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
+          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          const nc = window.FarmCrates.makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
+          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
+        }
+        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
+          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          const nb = window.FarmCrates.makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
+          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
+        }
+        const _worldLayout = loadFarmLayout();
+        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
+        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
+        // player has no bed item in inventory yet to buy+place one themselves.
+        // Gated on this world having no saved layout at all, so it never
+        // re-appears for a returning player, including one who moved or
+        // removed their starter bed (farmLayoutKey() is per-world, so this
+        // check has to happen here — after playerData.worldId is known —
+        // rather than at module init, where it would save under the wrong,
+        // not-yet-namespaced key and then get cleared right back out by this
+        // same per-world reload).
+        if (!_worldLayout) {
+          try {
+            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
+            if (starterBed) {
+              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
+              saveFarmLayout();
+            }
+          } catch (e) { console.error('starter bed seed:', e); }
+        }
+        window.FarmAnimals.respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
+        recomputeWater(false);
+
+        // Non-gear inventory (resources) and pack clothing are world-scoped
+        // per character — they stay behind in this world's member record
+        // rather than following the character to another world.
+        Object.keys(inventory).forEach(key => { delete inventory[key]; });
+        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
+          ? { ...playerData.nonGearInventory }
+          : { ...STARTING_INVENTORY });
+        packClothing = [...(playerData.packClothing || [])];
+
+        // NPC relationships/memory and quest progress are likewise world-scoped
+        // per character.
+        window.DialogueContent?.loadNpcRelationships(playerData);
+        questProgress = { ...(playerData.questProgress || {}) };
+        window.ProceduralTasks.maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
+
+        // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
+        // today's (not-yet-picked) wilderness reagent placements — all
+        // world-scoped per character, same as the fields just above.
+        window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
+        window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
+        window.WildBerries.restoreState(playerData.wildBerryState);
+        window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        restoreZoneFelledTreeState(playerData.felledTreeState);
+        restoreZoneMinedRockState(playerData.minedRockState);
+        // Potion items just restored into `inventory` above have no ITEM_DEFS
+        // entry yet this page load (ITEM_DEFS starts empty of them every
+        // session, unlike the static reagent/furniture/fish tables) — rebuild
+        // each one's display/Drink metadata straight from its key, which
+        // deterministically encodes its effects (see ensurePotionItemDef).
+        Object.keys(inventory).forEach(key => {
+          const effects = window.AlchemySystem.getPotionEffectsFromKey(key);
+          if (effects) window.AlchemySystem.ensurePotionItemDef(effects);
+        });
+
+        gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
+          ? playerData.gearInventory
+          : makeDefaultGear();
+        if (!gearInventory.tools)    gearInventory.tools    = {};
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        if (!gearInventory.charms)   gearInventory.charms   = [];
+        if (!gearInventory.whistles || !gearInventory.whistles.length) {
+          gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
+        }
+        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
+        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
+        ensureGearClothingCollection();
+        window.DyeSystem.ensureCollection();
+
+        // Personal stable — same lazy-seed pattern as the whistles block just
+        // above: a character with no stable yet gets the starter dabinggi-hound
+        // (matching gearInventory.whistles' starter whistle) so "the dabinggi
+        // hound you start with is stored in the stable" holds for old saves too.
+        stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
+        activeCompanionId = playerData.activeCompanionId ?? null;
+        activeMountId = playerData.activeMountId ?? null;
+        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
+        if (!stable.length) {
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          stable.push(starter);
+          activeCompanionId = starter.id;
+        }
+        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // Backfill genotype-less stable entries from older saves (e.g. a
+        // starter Bingo saved before pattern genes existed) so they render
+        // real genes instead of the plain uncolored sprite forever. Also
+        // backfills a missing Size (genotype.sizeClass) on entries saved
+        // before the stable's mount/companion/shoulder-pet system existed.
+        for (const entry of stable) {
+          if (!entry.genotype && (window.CreatureGenetics.PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
+            entry.genotype = window.CreatureGenetics.makeDefaultGenotype(entry.kind);
+          }
+          if (entry.genotype && !entry.genotype.sizeClass) {
+            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
+          }
+        }
+        saveStable();
+        // Restore whichever literal tool/weapon/whistle instance was equipped
+        // in each slot last session (see saveEquipmentSlots) — skips any slot
+        // whose saved item no longer exists in this character's gearInventory
+        // (sold/lost since, or a save from before this field existed), which
+        // then falls through to the starter-gear defaults just below.
+        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
+          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
+            if (!itemId || !(slot in equipmentSlots)) continue;
+            const stillOwned = slot === 'whistle'
+              ? gearInventory.whistles.some(w => w.id === itemId)
+              : !!gearInventory.tools[itemId];
+            if (stillOwned) equipmentSlots[slot] = itemId;
+          }
+        }
+        // Set default equipment slot assignments
+        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
+        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
+        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
+        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
+        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
+        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        // A cutscene preview's ephemeral profile can inherit gearInventory
+        // (and an already-equipped whistle) straight from the real local
+        // save via docs/index.html's onboarding-profile handoff, and the
+        // line above auto-equips the starter whistle for any profile that
+        // has none — either way, an uninvited companion animal would spawn
+        // and compete for camera framing in a scene the Director never
+        // authored one for. A scene's own creature actors are unaffected;
+        // this only clears the real player's own companion slot.
+        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
+        rebuildToolMeshes();
+        // Restore the tool actually held last session (see saveEquipmentSlots)
+        // — silent so returning to a save doesn't pop a "X selected" toast.
+        if (playerData.activeTool && toolActions[playerData.activeTool]) {
+          setActiveTool(playerData.activeTool, { silent: true });
+        } else {
+          refreshWeaponSwitchBtn();
+          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        }
+        buildEquipmentSlots();
+        try {
+          await window.NpcAvatarPreview.ensurePortraitCosmetics({
+            assetBase: './assets/',
+            configBase: './config/',
+          });
+
+          await refreshPlayerAvatar();
+          debugLog('PNG plane avatar attached to player_root');
+        } catch (err) {
+          console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        gameStarted = true;
+      }
+
+      document.addEventListener('hobunjiPlayerReady', (e) => {
+        _playerData = e.detail;
+        spawnPlayerAvatar(e.detail);
+      }, { once: true });
+
+      // If init() already fired synchronously (returning player with localStorage profile),
+      // __hobunjiPlayerProfile is set before this listener registered — catch that case.
+      if (window.__hobunjiPlayerProfile) {
+        _playerData = window.__hobunjiPlayerProfile;
+        spawnPlayerAvatar(window.__hobunjiPlayerProfile);
+      }
+
 
       // ══════════════════════════════════════════════════════════════════
       //  Cutscene Preview Mode

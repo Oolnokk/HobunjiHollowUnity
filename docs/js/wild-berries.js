@@ -1,0 +1,177 @@
+(() => {
+  'use strict';
+
+  // Wild berry bushes — the wilderness-zone counterpart of purchasable
+  // berry seeds. All 5 berry varieties, split across the 4 wilderness
+  // zones. Mirrors game.js's reagent-plant scatter system function-for-
+  // function (deterministic per zone+day, daily respawn, persisted
+  // placements) — see that system's comments for the shared mechanics.
+  // Colors reuse BERRY_COLORS (already defined for the jam/wine sprite
+  // recolor pipeline).
+  //
+  // Extracted out of game.js following the same window.<Namespace> +
+  // init(deps) pattern already used by js/dew-vats.js and
+  // js/dye-system.js. The reagent-plant scatter system this mirrors
+  // stays in game.js — findZoneFlatEmptyTiles/getReagentPlantMaterial
+  // are shared helpers read through deps rather than duplicated here.
+  // currentArea is reassigned on every zone transition, so it's threaded
+  // through as a getter rather than a captured reference, same reasoning
+  // as js/dye-system.js's gearInventory getter.
+  let deps = null;
+  function init(injectedDeps) { deps = injectedDeps; }
+
+  const WILD_BERRY_ZONES = {
+    redberries:    'map_northern_cliffs',       // canon per redDew's "Red Berry Bushes" flavor tag
+    blueberries:   'map_southern_cloud_forest',
+    yellowberries: 'map_western_slope',
+    whiteberries:  'map_western_slope',
+    blackberries:  'map_eastern_mire',
+  };
+  const WILD_BERRY_SEED_CHANCE = 0.2; // "small chance to give seeds when harvested"
+  function forZone(mapId) {
+    return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
+  }
+
+  function _buildBerryBushMesh(berryKey) {
+    const color = deps.BERRY_COLORS[berryKey];
+    if (color == null) return null;
+    const mat = deps.getReagentPlantMaterial(color); // shared shader/cache — see game.js's getReagentPlantMaterial
+    if (!mat) return null;
+    const group = new THREE.Group();
+    // A bit bigger and a 4-blade cross (vs. reagents' 2) so a bush reads
+    // fuller/rounder than a single reagent plant at a glance.
+    const sizeMul = 2.0;
+    const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
+    for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+      const blade = new THREE.Mesh(deps._grassBladeGeo, mat);
+      blade.rotation.y = rot;
+      blade.scale.set(w, h, 1);
+      group.add(blade);
+    }
+    group.userData.isBillboard = true;
+    group.userData.berryKey = berryKey;
+    return group;
+  }
+
+  // Same deterministic per-(zone,day) scatter as game.js's
+  // scatterReagentsForZone, but seeded independently ('berries' in the
+  // seed string) and excluding that same day's reagent-plant tiles so
+  // the two systems never overlap a spot — see findZoneFlatEmptyTiles's
+  // optional extraOccupied param.
+  function _scatterBerriesForZone(mapId) {
+    const pool = forZone(mapId);
+    if (!pool.length) return [];
+    const zi = deps._zoneScenes.get(mapId);
+    if (!zi) return [];
+    const targetCount = Math.max(4, Math.min(24, Math.round((zi.cols * zi.rows) / 70)));
+    const rng = deps._mbRng(deps._seedFromString(mapId + ':berries:' + deps.calendar.day));
+    const reagentPlacements = deps._zoneReagentPersist.get(mapId)?.placements || [];
+    const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, reagentPlacements);
+    return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
+  }
+
+  // Builds a worldObjects-shaped pickable for one wild berry bush.
+  // Always grants the fruit; WILD_BERRY_SEED_CHANCE also grants a seed —
+  // the only way to get berry seeds, since they're no longer purchasable.
+  function _makeBerryBushObject(mapId, col, row, berryKey, mesh) {
+    const data = deps.cropData[berryKey];
+    const fruitDef = deps.ITEM_DEFS[berryKey];
+    return {
+      id: 'berrybush_' + mapId + '_' + col + '_' + row, type: 'berry_bush',
+      col, row, mesh, berryKey,
+      label: data.emoji + ' Wild ' + (fruitDef?.label || berryKey),
+      getButtons() {
+        return [{ icon: data.emoji, label: 'Pick ' + (fruitDef?.label || berryKey), action: 'obj_pick_berry', style: 'primary', allowed: true }];
+      },
+      onAction(action) {
+        if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
+        deps.inventory[berryKey] = Math.min(99, (deps.inventory[berryKey] || 0) + 1);
+        let seedMsg = '';
+        if (Math.random() < WILD_BERRY_SEED_CHANCE) {
+          deps.inventory[data.seedKey] = Math.min(99, (deps.inventory[data.seedKey] || 0) + 1);
+          seedMsg = ' and found a seed!';
+        }
+        deps._zoneScenes.get(mapId)?.scene.remove(mesh);
+        const objs = deps._zoneBerryObjects.get(mapId);
+        objs?.delete(col + ',' + row);
+        const groups = deps._zoneBerryMeshGroups.get(mapId);
+        if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
+        const persisted = deps._zoneBerryPersist.get(mapId);
+        if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
+        deps.refreshItemScroll();
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+        return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
+      },
+    };
+  }
+
+  function _clearZoneBerryMeshes(mapId) {
+    const scene = deps._zoneScenes.get(mapId)?.scene;
+    const groups = deps._zoneBerryMeshGroups.get(mapId);
+    if (scene && groups) groups.forEach(g => scene.remove(g));
+    deps._zoneBerryMeshGroups.delete(mapId);
+    deps._zoneBerryObjects.delete(mapId);
+  }
+
+  // Called right after game.js's ensureZoneReagents(mapId) on every zone
+  // entry, so _scatterBerriesForZone can see that same day's already-
+  // placed reagent spots and avoid them.
+  function ensureZone(mapId) {
+    if (typeof WildernessMapGenerator === 'undefined') return;
+    if (!forZone(mapId).length) return;
+    const zi = deps._zoneScenes.get(mapId);
+    if (!zi) return;
+    let persisted = deps._zoneBerryPersist.get(mapId);
+    if (persisted?.day === deps.calendar.day) {
+      if (deps._zoneBerryMeshGroups.has(mapId)) return; // already built for today
+    } else {
+      persisted = { day: deps.calendar.day, placements: _scatterBerriesForZone(mapId) };
+      deps._zoneBerryPersist.set(mapId, persisted);
+    }
+    _clearZoneBerryMeshes(mapId);
+    const groups = [];
+    const objMap = new Map();
+    for (const { col, row, key } of persisted.placements) {
+      const mesh = _buildBerryBushMesh(key);
+      if (!mesh) continue;
+      const tile = zi.grid[row]?.[col];
+      mesh.position.set(col + 0.5, tile ? deps.tileSurfaceYInArea(tile, mapId) : deps.NORMAL_TOP, row + 0.5);
+      zi.scene.add(mesh);
+      groups.push(mesh);
+      objMap.set(col + ',' + row, _makeBerryBushObject(mapId, col, row, key, mesh));
+    }
+    deps._zoneBerryMeshGroups.set(mapId, groups);
+    deps._zoneBerryObjects.set(mapId, objMap);
+    deps.debugLog(`ensureZoneBerries(${mapId}): built ${groups.length} berry bushes for day ${deps.calendar.day}`);
+  }
+
+  function respawnAll() {
+    if (typeof WildernessMapGenerator === 'undefined') return;
+    for (const mapId of WildernessMapGenerator.zoneMapIds()) {
+      _clearZoneBerryMeshes(mapId);
+      deps._zoneBerryPersist.delete(mapId);
+    }
+    if (deps.isZoneArea(deps.getCurrentArea())) ensureZone(deps.getCurrentArea());
+  }
+
+  function serializeState() {
+    const out = {};
+    deps._zoneBerryPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
+    return out;
+  }
+  function restoreState(saved) {
+    deps._zoneBerryPersist.clear();
+    Object.entries(saved || {}).forEach(([mapId, v]) => {
+      if (v && Array.isArray(v.placements)) deps._zoneBerryPersist.set(mapId, { day: v.day, placements: v.placements });
+    });
+  }
+
+  window.WildBerries = {
+    init,
+    forZone,
+    ensureZone,
+    respawnAll,
+    serializeState,
+    restoreState,
+  };
+})();
