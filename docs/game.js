@@ -2279,183 +2279,6 @@
       let uumkaoiiSpriteImage = null;
       { const _img = new Image(); _img.onload = () => { uumkaoiiSpriteImage = _img; }; _img.src = "assets/creaturesprites/uumkao'ii.png"; }
 
-      // ── Sell Crate ────────────────────────────────────────────────
-      function makeSellCrate(col, row) {
-        const bin = Object.fromEntries(Object.keys(BASE_PRICES).map(key => [key, 0]));
-        let lastSellHour = getHour();
-
-        const mat  = new THREE.MeshLambertMaterial({ color: 0xe06820 });
-        const geo  = new THREE.BoxGeometry(0.7, 0.55, 0.7);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
-        mesh.position.set(col + 0.5, tileSurfaceY(TileType.GRASS) + 0.28, row + 0.5);
-        scene.add(mesh);
-
-        // Lid — slightly lighter, floats above when contents > 0
-        const lidMat  = new THREE.MeshLambertMaterial({ color: 0xf08830 });
-        const lidGeo  = new THREE.BoxGeometry(0.72, 0.08, 0.72);
-        const lid     = new THREE.Mesh(lidGeo, lidMat);
-        lid.castShadow = true;
-        scene.add(lid);
-
-        function totalItems() {
-          return Object.values(bin).reduce((s, v) => s + v, 0);
-        }
-        function contentsStr() {
-          const parts = Object.entries(bin)
-            .filter(([,v]) => v > 0)
-            .map(([k,v]) => (itemIconForKey(k) + '×' + v));
-          return parts.length ? parts.join(' ') : 'Empty';
-        }
-
-        return {
-          id: 'sell_crate', type: 'sell_crate', col, row, mesh, lid, contentsStr,
-          label: '🟧 Shipping Box',
-          getButtons(reticle) {
-            const item = getActiveInventoryItem();
-            const btns = [];
-            // Deposit button for any sellable item in scroll
-            if (item && BASE_PRICES[item.key] !== undefined) {
-              const count = inventory[item.key] || 0;
-              btns.push({
-                icon: item.icon,
-                label: count > 0 ? 'Ship ' + item.icon : 'None',
-                action: 'obj_deposit',
-                style: 'primary',
-                allowed: count > 0,
-              });
-            }
-            // Deposit all
-            const total = totalItems();
-            btns.push({ icon: '📦', label: total > 0 ? 'Open Box' : 'Shipping', action: 'obj_open_shipping', style: total > 0 ? 'secondary' : 'primary', allowed: true });
-            return btns;
-          },
-          onAction(action) {
-            if (action === 'obj_deposit') {
-              const item = getActiveInventoryItem();
-              if (!item || BASE_PRICES[item.key] === undefined) return { ok: false, message: 'Cannot deposit that.' };
-              const qty = inventory[item.key] || 0;
-              if (qty < 1) return { ok: false, message: 'No ' + item.label + ' to deposit.' };
-              inventory[item.key]--;
-              clampInventoryStack(item.key);
-              bin[item.key] = (bin[item.key] || 0) + 1;
-              return { ok: true, message: 'Deposited ' + item.icon + ' into sell crate.' };
-            }
-            if (action === 'obj_show_bin' || action === 'obj_open_shipping') {
-              openMenu('shipping');
-              return { ok: true, message: contentsStr() };
-            }
-            return { ok: false, message: 'Unknown action.' };
-          },
-          getContents() {
-            return bin;
-          },
-          getTotalItems() {
-            return totalItems();
-          },
-          depositItem(key, qty) {
-            if (BASE_PRICES[key] === undefined) return 0;
-            const moved = Math.max(0, Math.min(qty, inventory[key] || 0));
-            if (moved < 1) return 0;
-            inventory[key] -= moved;
-            bin[key] = (bin[key] || 0) + moved;
-            return moved;
-          },
-          withdrawItem(key, qty) {
-            // Self-guarded (not just at the transferShippingAmount() UI call site)
-            // so any future caller of this object's API can't bypass the farm's
-            // storage-withdraw permission.
-            if (!hasFarmPermission('storage')) return 0;
-            const moved = Math.max(0, Math.min(qty, bin[key] || 0));
-            if (moved < 1) return 0;
-            bin[key] -= moved;
-            inventory[key] = Math.min(99, (inventory[key] || 0) + moved);
-            return moved;
-          },
-          tick(gameHour) {
-            // Sell everything every SELL_INTERVAL_HOURS
-            if (gameHour - lastSellHour >= SELL_INTERVAL_HOURS && totalItems() > 0) {
-              let earned = 0;
-              const parts = [];
-              for (const [k, v] of Object.entries(bin)) {
-                if (v > 0) {
-                  earned += v * (BASE_PRICES[k] || 0);
-                  parts.push((itemIconForKey(k) || k) + '×' + v);
-                  bin[k] = 0;
-                }
-              }
-              inventory.gold += earned;
-              lastSellHour = gameHour;
-              const line = 'Day ' + calendar.day + ' — ' + parts.join(' ') + ' = ' + earned + 'g';
-              deliveryLog.unshift({ type: 'sale', text: line });
-              if (deliveryLog.length > 12) deliveryLog.pop();
-              showToast('🟧 Sold! +' + earned + 'g', true);
-              if (menuOpen) { buildInventoryGrid(); buildShippingTransferUI(); }
-              saveMemberWorldData();
-            }
-            // Animate lid
-            const h = tileSurfaceY(TileType.GRASS) + 0.56 + (totalItems() > 0 ? 0.06 : 0);
-            lid.position.set(col + 0.5, h, row + 0.5);
-          },
-          reset() {
-            Object.keys(bin).forEach(k => { bin[k] = 0; });
-            lastSellHour = MORNING_HOUR;
-          },
-        };
-      }
-
-      // ── Supply Box ────────────────────────────────────────────────
-      function makeSupplyBox(col, row) {
-        const mat  = new THREE.MeshLambertMaterial({ color: 0x2060c0 });
-        const geo  = new THREE.BoxGeometry(0.7, 0.55, 0.7);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
-        mesh.position.set(col + 0.5, tileSurfaceY(TileType.GRASS) + 0.28, row + 0.5);
-        scene.add(mesh);
-
-        const lidMat = new THREE.MeshLambertMaterial({ color: 0x4080e0 });
-        const lid    = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.72), lidMat);
-        lid.position.set(col + 0.5, tileSurfaceY(TileType.GRASS) + 0.56, row + 0.5);
-        scene.add(lid);
-
-        // qty selections per catalog item
-        const qtys = {};
-        SUPPLY_CATALOG.forEach(it => { qtys[it.key] = 0; });
-
-        return {
-          id: 'supply_box', type: 'supply_box', col, row, mesh, lid,
-          label: '📦 Supply Box',
-          getButtons() {
-            return [
-              { icon: '📦', label: 'Order', action: 'obj_open_shop', style: 'primary', allowed: true },
-            ];
-          },
-          onAction(action) {
-            if (action === 'obj_open_shop') {
-              openMenu('supplies');
-              return { ok: true, message: 'Opened supply ordering.' };
-            }
-            if (action.startsWith('obj_buy_')) {
-              const key = action.slice(8);
-              const item = SUPPLY_CATALOG.find(it => it.key === key);
-              if (!item) return { ok: false, message: 'Unknown item.' };
-              if (item.comingSoon) return { ok: false, message: item.name + ' purchases are coming soon.' };
-              const qty = qtys[key] || 0;
-              if (qty < 1) return { ok: false, message: 'Select a quantity first.' };
-              const cost = item.price * qty;
-              if (inventory.gold < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
-              inventory.gold -= cost;
-              pendingOrders.push({ key, qty, arrivalDay: calendar.day + 1, item });
-              qtys[key] = 0;
-              return { ok: true, message: 'Ordered ' + qty + '× ' + item.name + ' for ' + cost + 'g. Arrives tomorrow.' };
-            }
-            return { ok: false, message: 'Unknown action.' };
-          },
-          getQtys() { return qtys; },
-          reset() { Object.keys(qtys).forEach(k => { qtys[k] = 0; }); },
-        };
-      }
-
       // ── Food processing furniture ───────────────────────────────────
       function getFurnitureDefByItemKey(itemKey) {
         return Object.values(PROCESSING_FURNITURE_DEFS).find(def => def.itemKey === itemKey) || null;
@@ -2828,7 +2651,7 @@
           worldObjects.delete(old.col + ',' + old.row);
           if (old.mesh) scene.remove(old.mesh);
           if (old.lid)  scene.remove(old.lid);
-          const nc = makeSellCrate(col, row);
+          const nc = window.FarmCrates.makeSellCrate(col, row);
           shippingBoxObject = nc; worldObjects.set(col + ',' + row, nc);
           saveFarmLayout(); showToast('Shipping box moved.', true);
         } else if (objectType === 'supplyBox' && supplyBoxObject) {
@@ -2836,7 +2659,7 @@
           worldObjects.delete(old.col + ',' + old.row);
           if (old.mesh) scene.remove(old.mesh);
           if (old.lid)  scene.remove(old.lid);
-          const nb = makeSupplyBox(col, row);
+          const nb = window.FarmCrates.makeSupplyBox(col, row);
           supplyBoxObject = nb; worldObjects.set(col + ',' + row, nb);
           saveFarmLayout(); showToast('Supply box moved.', true);
         }
@@ -2921,7 +2744,7 @@
           if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
             worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
             shippingBoxObject.reset && shippingBoxObject.reset();
-            const nc = makeSellCrate(c, r); shippingBoxObject = nc; worldObjects.set(c + ',' + r, nc);
+            const nc = window.FarmCrates.makeSellCrate(c, r); shippingBoxObject = nc; worldObjects.set(c + ',' + r, nc);
           }
         }
         if (layout.objects?.supplyBox) {
@@ -2929,7 +2752,7 @@
           if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
             worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
             supplyBoxObject.reset && supplyBoxObject.reset();
-            const nb = makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
+            const nb = window.FarmCrates.makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
           }
         }
         (layout.furniture || []).forEach(({ key, col, row, job }) => {
@@ -12605,8 +12428,8 @@
 
       // ── Register world objects ─────────────────────────────────────
       function initWorldObjects() {
-        const sc = makeSellCrate(2, ROWS - 3);
-        const sb = makeSupplyBox(4, ROWS - 3);
+        const sc = window.FarmCrates.makeSellCrate(2, ROWS - 3);
+        const sb = window.FarmCrates.makeSupplyBox(4, ROWS - 3);
         shippingBoxObject = sc;
         supplyBoxObject = sb;
         worldObjects.set(sc.col + ',' + sc.row, sc);
@@ -27551,250 +27374,6 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
       window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); _saveWorldCalendar(); } catch {} });
-      fitToAspect();
-      resizeCanvas();
-      refreshActionBar();
-      refreshItemScroll();
-      try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
-      // Apply saved object positions and furniture after world objects are created
-      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
-      // Transition spots + shared NPC routes from the map editor
-      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
-      // Ensure a farm→town transition always exists even without map editor data
-      if (!worldTransitions.some(t => t.target === 'town')) {
-        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
-        buildTransitionMarkers();
-      }
-      // Load town layout from workspace config (authoritative source)
-      window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
-      _loadTownFromWorkspace().catch(() => {});
-      debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
-
-      // ── Onboarding gate ────────────────────────────────────────────
-      let gameStarted = false;
-
-      async function spawnPlayerAvatar(playerData) {
-        // Restore this world's saved date/time/weather (see
-        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
-        // calendar.day — checkTothalShift() below derives the current
-        // Tothal year from it, so this has to land first or the shift check
-        // runs against the just-reset "Day 1" default instead of wherever
-        // the world actually left off.
-        const _savedCalendar = _loadWorldCalendar();
-        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
-
-        // Fire-and-forget: the Tothal Shift at world start (or on any missed
-        // year since last played) can take a few seconds across all four
-        // zones, but nothing here needs to block on it — a zone only needs
-        // to be reshaped by the time the player actually walks into it.
-        checkTothalShift();
-
-        // The module-level init above loaded the farm layout (tiles/crops and
-        // furniture/crate positions) under the legacy unnamespaced key, since
-        // worldId wasn't known yet at that point. Now that playerData.worldId
-        // is known, redo just that part against the correctly-namespaced
-        // per-world key so separate worlds never bleed into each other's farm
-        // (mirrors doReset()'s regenerate-then-apply pattern below). Transitions/
-        // routes/NPC schedules are shared authored map content, not per-world
-        // state, so initWorldTravel() is deliberately NOT redone here — it
-        // already ran once at module init, and spawnScheduledNpcs() isn't
-        // idempotent (it appends to npcWalkers with no clear step), so calling
-        // it again would spawn every scheduled NPC a second time.
-        clearPlacedProcessingFurniture();
-        clearInteriorFurniture();
-        window.FarmBuildings.clearAll();
-        // Module init may have moved the house per the legacy-key layout —
-        // put it back to its hard default before applying (or not finding)
-        // this world's own saved position, same rationale as the sell
-        // crate/supply box reset immediately below.
-        if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) repositionHouse(HOUSE_COL, HOUSE_ROW);
-        worldObjects.forEach(o => o.reset && o.reset());
-        grid = createInitialGrid();
-        // Module init already may have moved the shipping/supply crates per the
-        // legacy-key layout — put them back to their hard defaults before
-        // applying (or not finding) this world's own saved positions, so a
-        // brand-new world can't inherit another world's crate placement.
-        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
-        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
-        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
-          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
-          const nc = makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
-          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
-        }
-        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
-          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
-          const nb = makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
-          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
-        }
-        const _worldLayout = loadFarmLayout();
-        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
-        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
-        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
-        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
-        // player has no bed item in inventory yet to buy+place one themselves.
-        // Gated on this world having no saved layout at all, so it never
-        // re-appears for a returning player, including one who moved or
-        // removed their starter bed (farmLayoutKey() is per-world, so this
-        // check has to happen here — after playerData.worldId is known —
-        // rather than at module init, where it would save under the wrong,
-        // not-yet-namespaced key and then get cleared right back out by this
-        // same per-world reload).
-        if (!_worldLayout) {
-          try {
-            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
-            if (starterBed) {
-              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
-              saveFarmLayout();
-            }
-          } catch (e) { console.error('starter bed seed:', e); }
-        }
-        window.FarmAnimals.respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
-        recomputeWater(false);
-
-        // Non-gear inventory (resources) and pack clothing are world-scoped
-        // per character — they stay behind in this world's member record
-        // rather than following the character to another world.
-        Object.keys(inventory).forEach(key => { delete inventory[key]; });
-        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
-          ? { ...playerData.nonGearInventory }
-          : { ...STARTING_INVENTORY });
-        packClothing = [...(playerData.packClothing || [])];
-
-        // NPC relationships/memory and quest progress are likewise world-scoped
-        // per character.
-        window.DialogueContent?.loadNpcRelationships(playerData);
-        questProgress = { ...(playerData.questProgress || {}) };
-        maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
-
-        // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
-        // today's (not-yet-picked) wilderness reagent placements — all
-        // world-scoped per character, same as the fields just above.
-        window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
-        window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
-        restoreZoneReagentState(playerData.alchemyReagentState);
-        window.WildBerries.restoreState(playerData.wildBerryState);
-        window.WildTreasure.restoreState(playerData.zoneTreasureState);
-        restoreZoneFelledTreeState(playerData.felledTreeState);
-        restoreZoneMinedRockState(playerData.minedRockState);
-        // Potion items just restored into `inventory` above have no ITEM_DEFS
-        // entry yet this page load (ITEM_DEFS starts empty of them every
-        // session, unlike the static reagent/furniture/fish tables) — rebuild
-        // each one's display/Drink metadata straight from its key, which
-        // deterministically encodes its effects (see ensurePotionItemDef).
-        Object.keys(inventory).forEach(key => {
-          const effects = window.AlchemySystem.getPotionEffectsFromKey(key);
-          if (effects) window.AlchemySystem.ensurePotionItemDef(effects);
-        });
-
-        gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
-          ? playerData.gearInventory
-          : makeDefaultGear();
-        if (!gearInventory.tools)    gearInventory.tools    = {};
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
-        if (!gearInventory.charms)   gearInventory.charms   = [];
-        if (!gearInventory.whistles || !gearInventory.whistles.length) {
-          gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
-        }
-        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
-        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
-        ensureGearClothingCollection();
-        window.DyeSystem.ensureCollection();
-
-        // Personal stable — same lazy-seed pattern as the whistles block just
-        // above: a character with no stable yet gets the starter dabinggi-hound
-        // (matching gearInventory.whistles' starter whistle) so "the dabinggi
-        // hound you start with is stored in the stable" holds for old saves too.
-        stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
-        activeCompanionId = playerData.activeCompanionId ?? null;
-        activeMountId = playerData.activeMountId ?? null;
-        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
-        if (!stable.length) {
-          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
-          stable.push(starter);
-          activeCompanionId = starter.id;
-        }
-        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
-        // Backfill genotype-less stable entries from older saves (e.g. a
-        // starter Bingo saved before pattern genes existed) so they render
-        // real genes instead of the plain uncolored sprite forever. Also
-        // backfills a missing Size (genotype.sizeClass) on entries saved
-        // before the stable's mount/companion/shoulder-pet system existed.
-        for (const entry of stable) {
-          if (!entry.genotype && (window.CreatureGenetics.PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
-            entry.genotype = window.CreatureGenetics.makeDefaultGenotype(entry.kind);
-          }
-          if (entry.genotype && !entry.genotype.sizeClass) {
-            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
-          }
-        }
-        saveStable();
-        // Restore whichever literal tool/weapon/whistle instance was equipped
-        // in each slot last session (see saveEquipmentSlots) — skips any slot
-        // whose saved item no longer exists in this character's gearInventory
-        // (sold/lost since, or a save from before this field existed), which
-        // then falls through to the starter-gear defaults just below.
-        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
-          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
-            if (!itemId || !(slot in equipmentSlots)) continue;
-            const stillOwned = slot === 'whistle'
-              ? gearInventory.whistles.some(w => w.id === itemId)
-              : !!gearInventory.tools[itemId];
-            if (stillOwned) equipmentSlots[slot] = itemId;
-          }
-        }
-        // Set default equipment slot assignments
-        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
-        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
-        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
-        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
-        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
-        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
-        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
-        // A cutscene preview's ephemeral profile can inherit gearInventory
-        // (and an already-equipped whistle) straight from the real local
-        // save via docs/index.html's onboarding-profile handoff, and the
-        // line above auto-equips the starter whistle for any profile that
-        // has none — either way, an uninvited companion animal would spawn
-        // and compete for camera framing in a scene the Director never
-        // authored one for. A scene's own creature actors are unaffected;
-        // this only clears the real player's own companion slot.
-        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
-        rebuildToolMeshes();
-        // Restore the tool actually held last session (see saveEquipmentSlots)
-        // — silent so returning to a save doesn't pop a "X selected" toast.
-        if (playerData.activeTool && toolActions[playerData.activeTool]) {
-          setActiveTool(playerData.activeTool, { silent: true });
-        } else {
-          refreshWeaponSwitchBtn();
-          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
-          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
-        }
-        buildEquipmentSlots();
-        try {
-          await window.NpcAvatarPreview.ensurePortraitCosmetics({
-            assetBase: './assets/',
-            configBase: './config/',
-          });
-
-          await refreshPlayerAvatar();
-          debugLog('PNG plane avatar attached to player_root');
-        } catch (err) {
-          console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
-        }
-        gameStarted = true;
-      }
-
-      document.addEventListener('hobunjiPlayerReady', (e) => {
-        _playerData = e.detail;
-        spawnPlayerAvatar(e.detail);
-      }, { once: true });
-
-      // If init() already fired synchronously (returning player with localStorage profile),
-      // __hobunjiPlayerProfile is set before this listener registered — catch that case.
-      if (window.__hobunjiPlayerProfile) {
-        _playerData = window.__hobunjiPlayerProfile;
-        spawnPlayerAvatar(window.__hobunjiPlayerProfile);
-      }
 
       window.DialogueContent?.init({
         calendar,
@@ -28299,6 +27878,31 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getGrid: () => grid,
       });
 
+      window.FarmCrates?.init({
+        BASE_PRICES,
+        MORNING_HOUR,
+        SELL_INTERVAL_HOURS,
+        SUPPLY_CATALOG,
+        TileType,
+        inventory,
+        calendar,
+        clampInventoryStack,
+        getActiveInventoryItem,
+        itemIconForKey,
+        getHour,
+        hasFarmPermission,
+        openMenu,
+        showToast,
+        saveMemberWorldData,
+        buildInventoryGrid,
+        buildShippingTransferUI,
+        tileSurfaceY,
+        scene,
+        getDeliveryLog: () => deliveryLog,
+        getPendingOrders: () => pendingOrders,
+        getMenuOpen: () => menuOpen,
+      });
+
       window.BountyBoard?.init({
         getQuestProgress: () => questProgress,
         setQuestStatus,
@@ -28350,6 +27954,251 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getPackClothing: () => packClothing,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
       });
+      fitToAspect();
+      resizeCanvas();
+      refreshActionBar();
+      refreshItemScroll();
+      try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
+      // Apply saved object positions and furniture after world objects are created
+      try { applyFarmLayoutObjects(loadFarmLayout()); } catch(e) { console.error('applyFarmLayoutObjects:', e); }
+      // Transition spots + shared NPC routes from the map editor
+      try { initWorldTravel(loadFarmLayout()); } catch(e) { console.error('initWorldTravel:', e); }
+      // Ensure a farm→town transition always exists even without map editor data
+      if (!worldTransitions.some(t => t.target === 'town')) {
+        worldTransitions.push({ id: 'sp_farm_to_town', label: 'To Town', area: 'farm', col: 17, row: 0, target: 'town', targetCol: 20, targetRow: 48 });
+        buildTransitionMarkers();
+      }
+      // Load town layout from workspace config (authoritative source)
+      window.Music?.loadAudioCueIndexes().then(() => window.Music?.resetAmbientCueTimer()).catch(() => window.Music?.resetAmbientCueTimer());
+      _loadTownFromWorkspace().catch(() => {});
+      debugLog('canvas resized, split wide-screen layout active, controls bound, animation loop requested');
+
+      // ── Onboarding gate ────────────────────────────────────────────
+      let gameStarted = false;
+
+      async function spawnPlayerAvatar(playerData) {
+        // Restore this world's saved date/time/weather (see
+        // _loadWorldCalendar/_saveWorldCalendar) before anything reads
+        // calendar.day — checkTothalShift() below derives the current
+        // Tothal year from it, so this has to land first or the shift check
+        // runs against the just-reset "Day 1" default instead of wherever
+        // the world actually left off.
+        const _savedCalendar = _loadWorldCalendar();
+        if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+
+        // Fire-and-forget: the Tothal Shift at world start (or on any missed
+        // year since last played) can take a few seconds across all four
+        // zones, but nothing here needs to block on it — a zone only needs
+        // to be reshaped by the time the player actually walks into it.
+        checkTothalShift();
+
+        // The module-level init above loaded the farm layout (tiles/crops and
+        // furniture/crate positions) under the legacy unnamespaced key, since
+        // worldId wasn't known yet at that point. Now that playerData.worldId
+        // is known, redo just that part against the correctly-namespaced
+        // per-world key so separate worlds never bleed into each other's farm
+        // (mirrors doReset()'s regenerate-then-apply pattern below). Transitions/
+        // routes/NPC schedules are shared authored map content, not per-world
+        // state, so initWorldTravel() is deliberately NOT redone here — it
+        // already ran once at module init, and spawnScheduledNpcs() isn't
+        // idempotent (it appends to npcWalkers with no clear step), so calling
+        // it again would spawn every scheduled NPC a second time.
+        clearPlacedProcessingFurniture();
+        clearInteriorFurniture();
+        window.FarmBuildings.clearAll();
+        // Module init may have moved the house per the legacy-key layout —
+        // put it back to its hard default before applying (or not finding)
+        // this world's own saved position, same rationale as the sell
+        // crate/supply box reset immediately below.
+        if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) repositionHouse(HOUSE_COL, HOUSE_ROW);
+        worldObjects.forEach(o => o.reset && o.reset());
+        grid = createInitialGrid();
+        // Module init already may have moved the shipping/supply crates per the
+        // legacy-key layout — put them back to their hard defaults before
+        // applying (or not finding) this world's own saved positions, so a
+        // brand-new world can't inherit another world's crate placement.
+        const DEFAULT_SELL_CRATE_COL = 2, DEFAULT_SELL_CRATE_ROW = ROWS - 3;
+        const DEFAULT_SUPPLY_BOX_COL = 4, DEFAULT_SUPPLY_BOX_ROW = ROWS - 3;
+        if (shippingBoxObject && (shippingBoxObject.col !== DEFAULT_SELL_CRATE_COL || shippingBoxObject.row !== DEFAULT_SELL_CRATE_ROW)) {
+          worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          const nc = window.FarmCrates.makeSellCrate(DEFAULT_SELL_CRATE_COL, DEFAULT_SELL_CRATE_ROW);
+          shippingBoxObject = nc; worldObjects.set(nc.col + ',' + nc.row, nc);
+        }
+        if (supplyBoxObject && (supplyBoxObject.col !== DEFAULT_SUPPLY_BOX_COL || supplyBoxObject.row !== DEFAULT_SUPPLY_BOX_ROW)) {
+          worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          const nb = window.FarmCrates.makeSupplyBox(DEFAULT_SUPPLY_BOX_COL, DEFAULT_SUPPLY_BOX_ROW);
+          supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
+        }
+        const _worldLayout = loadFarmLayout();
+        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
+        applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
+        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
+        // player has no bed item in inventory yet to buy+place one themselves.
+        // Gated on this world having no saved layout at all, so it never
+        // re-appears for a returning player, including one who moved or
+        // removed their starter bed (farmLayoutKey() is per-world, so this
+        // check has to happen here — after playerData.worldId is known —
+        // rather than at module init, where it would save under the wrong,
+        // not-yet-namespaced key and then get cleared right back out by this
+        // same per-world reload).
+        if (!_worldLayout) {
+          try {
+            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
+            if (starterBed) {
+              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
+              saveFarmLayout();
+            }
+          } catch (e) { console.error('starter bed seed:', e); }
+        }
+        window.FarmAnimals.respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
+        recomputeWater(false);
+
+        // Non-gear inventory (resources) and pack clothing are world-scoped
+        // per character — they stay behind in this world's member record
+        // rather than following the character to another world.
+        Object.keys(inventory).forEach(key => { delete inventory[key]; });
+        Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
+          ? { ...playerData.nonGearInventory }
+          : { ...STARTING_INVENTORY });
+        packClothing = [...(playerData.packClothing || [])];
+
+        // NPC relationships/memory and quest progress are likewise world-scoped
+        // per character.
+        window.DialogueContent?.loadNpcRelationships(playerData);
+        questProgress = { ...(playerData.questProgress || {}) };
+        maybeRefreshBoardTask(); // makes sure a board task exists even before the first day rollover
+
+        // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
+        // today's (not-yet-picked) wilderness reagent placements — all
+        // world-scoped per character, same as the fields just above.
+        window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
+        restoreZoneReagentState(playerData.alchemyReagentState);
+        window.WildBerries.restoreState(playerData.wildBerryState);
+        window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        restoreZoneFelledTreeState(playerData.felledTreeState);
+        restoreZoneMinedRockState(playerData.minedRockState);
+        // Potion items just restored into `inventory` above have no ITEM_DEFS
+        // entry yet this page load (ITEM_DEFS starts empty of them every
+        // session, unlike the static reagent/furniture/fish tables) — rebuild
+        // each one's display/Drink metadata straight from its key, which
+        // deterministically encodes its effects (see ensurePotionItemDef).
+        Object.keys(inventory).forEach(key => {
+          const effects = window.AlchemySystem.getPotionEffectsFromKey(key);
+          if (effects) window.AlchemySystem.ensurePotionItemDef(effects);
+        });
+
+        gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
+          ? playerData.gearInventory
+          : makeDefaultGear();
+        if (!gearInventory.tools)    gearInventory.tools    = {};
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
+        if (!gearInventory.charms)   gearInventory.charms   = [];
+        if (!gearInventory.whistles || !gearInventory.whistles.length) {
+          gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
+        }
+        if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
+        if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
+        ensureGearClothingCollection();
+        window.DyeSystem.ensureCollection();
+
+        // Personal stable — same lazy-seed pattern as the whistles block just
+        // above: a character with no stable yet gets the starter dabinggi-hound
+        // (matching gearInventory.whistles' starter whistle) so "the dabinggi
+        // hound you start with is stored in the stable" holds for old saves too.
+        stable = Array.isArray(playerData.stable) ? playerData.stable.map(s => ({ ...s })) : [];
+        activeCompanionId = playerData.activeCompanionId ?? null;
+        activeMountId = playerData.activeMountId ?? null;
+        activeShoulderPetId = playerData.activeShoulderPetId ?? null;
+        if (!stable.length) {
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          stable.push(starter);
+          activeCompanionId = starter.id;
+        }
+        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // Backfill genotype-less stable entries from older saves (e.g. a
+        // starter Bingo saved before pattern genes existed) so they render
+        // real genes instead of the plain uncolored sprite forever. Also
+        // backfills a missing Size (genotype.sizeClass) on entries saved
+        // before the stable's mount/companion/shoulder-pet system existed.
+        for (const entry of stable) {
+          if (!entry.genotype && (window.CreatureGenetics.PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
+            entry.genotype = window.CreatureGenetics.makeDefaultGenotype(entry.kind);
+          }
+          if (entry.genotype && !entry.genotype.sizeClass) {
+            entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
+          }
+        }
+        saveStable();
+        // Restore whichever literal tool/weapon/whistle instance was equipped
+        // in each slot last session (see saveEquipmentSlots) — skips any slot
+        // whose saved item no longer exists in this character's gearInventory
+        // (sold/lost since, or a save from before this field existed), which
+        // then falls through to the starter-gear defaults just below.
+        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
+          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
+            if (!itemId || !(slot in equipmentSlots)) continue;
+            const stillOwned = slot === 'whistle'
+              ? gearInventory.whistles.some(w => w.id === itemId)
+              : !!gearInventory.tools[itemId];
+            if (stillOwned) equipmentSlots[slot] = itemId;
+          }
+        }
+        // Set default equipment slot assignments
+        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
+        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
+        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
+        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
+        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
+        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        // A cutscene preview's ephemeral profile can inherit gearInventory
+        // (and an already-equipped whistle) straight from the real local
+        // save via docs/index.html's onboarding-profile handoff, and the
+        // line above auto-equips the starter whistle for any profile that
+        // has none — either way, an uninvited companion animal would spawn
+        // and compete for camera framing in a scene the Director never
+        // authored one for. A scene's own creature actors are unaffected;
+        // this only clears the real player's own companion slot.
+        if (window.__hobunjiCutscenePreview) equipmentSlots.whistle = null;
+        rebuildToolMeshes();
+        // Restore the tool actually held last session (see saveEquipmentSlots)
+        // — silent so returning to a save doesn't pop a "X selected" toast.
+        if (playerData.activeTool && toolActions[playerData.activeTool]) {
+          setActiveTool(playerData.activeTool, { silent: true });
+        } else {
+          refreshWeaponSwitchBtn();
+          Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
+          if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
+        }
+        buildEquipmentSlots();
+        try {
+          await window.NpcAvatarPreview.ensurePortraitCosmetics({
+            assetBase: './assets/',
+            configBase: './config/',
+          });
+
+          await refreshPlayerAvatar();
+          debugLog('PNG plane avatar attached to player_root');
+        } catch (err) {
+          console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
+        }
+        gameStarted = true;
+      }
+
+      document.addEventListener('hobunjiPlayerReady', (e) => {
+        _playerData = e.detail;
+        spawnPlayerAvatar(e.detail);
+      }, { once: true });
+
+      // If init() already fired synchronously (returning player with localStorage profile),
+      // __hobunjiPlayerProfile is set before this listener registered — catch that case.
+      if (window.__hobunjiPlayerProfile) {
+        _playerData = window.__hobunjiPlayerProfile;
+        spawnPlayerAvatar(window.__hobunjiPlayerProfile);
+      }
+
 
       // ══════════════════════════════════════════════════════════════════
       //  Cutscene Preview Mode

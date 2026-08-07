@@ -171,6 +171,12 @@
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
   <script src="js/creature-death.js?v=20260807a"></script>
+  <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.FarmCrates.init(...) during its
+       own setup. -->
+  <script src="js/farm-crates.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
