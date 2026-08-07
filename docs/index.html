@@ -144,6 +144,13 @@
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
   <script src="js/wild-berries.js?v=20260807a"></script>
+  <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
+       aside from deps injected via init(), and reads window.AlchemySystem/
+       window.DyeSystem at roll time (both already global by then), so
+       load order relative to the other systems above doesn't matter;
+       must load before game.js, which calls window.WildTreasure.init(...)
+       during its own setup. -->
+  <script src="js/wild-treasure.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

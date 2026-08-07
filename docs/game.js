@@ -6143,7 +6143,7 @@
             // master — "leading you to it". Only wilderness zones carry
             // buried treasure (see _zoneTreasureObjects), so elsewhere this
             // is always a no-op and behavior is unchanged.
-            const treasureHint = _isZoneArea(currentArea) ? nearestBuriedTreasurePixelPos(currentArea, master.x, master.y) : null;
+            const treasureHint = _isZoneArea(currentArea) ? window.WildTreasure.nearestBuriedPixelPos(currentArea, master.x, master.y) : null;
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
               if (!c._treasureHintAnnounced) {
                 c._treasureHintAnnounced = true;
@@ -6773,7 +6773,7 @@
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = serializeZoneReagentState();
           member.wildBerryState = window.WildBerries.serializeState();
-          member.zoneTreasureState = serializeZoneTreasureState();
+          member.zoneTreasureState = window.WildTreasure.serializeState();
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
@@ -12547,7 +12547,7 @@
         if (!zi) return;
         ensureZoneReagents(mapId);
         window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
-        ensureZoneTreasure(mapId); // after both, so it can avoid their tiles too
+        window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
         currentArea = mapId;
@@ -13205,322 +13205,7 @@
         rebuildZoneMesaMeshes(mapId);
         // A dig/fill/raise here may have just turned a buried chest's tile
         // into (or out of) a real trench — see syncZoneTreasureInteractivity.
-        syncZoneTreasureInteractivity(mapId);
-      }
-
-      // ── Buried wilderness treasure (dig sites → chests) ─────────────────
-      // A companion (see updateCompanions' treasure-hint branch) periodically
-      // bounces toward the nearest buried digsite instead of idly wandering —
-      // "leading you to it", Fable 2 dog-style. Digging one up with a shovel
-      // or pick equipped turns it into an openable chest holding a few metal
-      // bars (see METAL_DEFS/VERDIGRIS_METAL_KEYS). Deliberately rarer than
-      // reagents/berries — scattered per week (see treasureWeekIndex), not
-      // per day, and only 1-2 per zone.
-      function treasureWeekIndex() {
-        return Math.floor((calendar.day - 1) / 7);
-      }
-
-      // Weighted toward common low-tier bars with a rare shot at a
-      // higher-tier one — Math.pow(rnd(),2.2) biases the roll toward 0
-      // (weakest) before scaling across the hierarchy.
-      function rollTreasureMetalKeys() {
-        const count = 1 + Math.floor(rnd() * 3); // 1-3 bars
-        const keys = [];
-        for (let i = 0; i < count; i++) {
-          const idx = Math.min(VERDIGRIS_METAL_KEYS.length - 1, Math.floor(Math.pow(rnd(), 2.2) * VERDIGRIS_METAL_KEYS.length));
-          keys.push(VERDIGRIS_METAL_KEYS[idx]);
-        }
-        return keys;
-      }
-
-      // A chest's full loot bundle: metal bars and dye items always, plus a
-      // chance each of gold, a random alchemy potion, and a random dyed
-      // clothing piece — the same clothing-piece/dye generators the General
-      // Store's daily stock rolls from (see generateDailyClothingStock), just
-      // freely randomized instead of seeded by day.
-      // Looks up one named entry from the treasureChest loot pool (docs/
-      // config/loot/loot-pools.json) by id — used instead of rollLootPool's
-      // generic itemKey-roll path since a chest's bundle isn't a flat
-      // {itemKey:qty} map (see the bundle shape below), just its per-roll
-      // chance/range/conditions.
-      function _treasureChestEntry(id) {
-        return (_lootPools.treasureChest?.entries || []).find(e => e.id === id) || null;
-      }
-      // True if `id`'s entry (a) has no conditions or matches the current
-      // ambient world state, and (b) passes its own chance roll (falling
-      // back to `fallbackChance` if the entry is missing/chance is unset —
-      // this is what keeps the "always" rolls (metal bars, mystery dye)
-      // always-on by default while still letting the Loot & Shop Editor
-      // dial them down).
-      function _rollTreasureChance(id, fallbackChance) {
-        const entry = _treasureChestEntry(id);
-        if (entry && !window.ConditionRegistry.entryEligible(entry, _lootShopWorldState())) return false;
-        const chance = entry?.chance != null ? entry.chance : fallbackChance;
-        return rnd() < chance;
-      }
-
-      function rollTreasureLootBundle() {
-        const bundle = { metalKeys: [], dyeItemKeys: [], gold: 0, potionKey: null, clothing: null };
-        if (_rollTreasureChance('metalBars', 1)) bundle.metalKeys = rollTreasureMetalKeys();
-        if (_rollTreasureChance('mysteryDye', 1)) bundle.dyeItemKeys = rollTreasureDyeItemKeys();
-        if (_rollTreasureChance('gold', 0.7)) {
-          const entry = _treasureChestEntry('gold');
-          const min = entry?.min ?? 10, max = entry?.max ?? 42, step = entry?.step ?? 8;
-          const steps = Math.floor((max - min) / step) + 1;
-          bundle.gold = min + Math.floor(rnd() * steps) * step;
-        }
-        if (_rollTreasureChance('potion', 0.35)) {
-          const effectKeys = Object.keys(window.AlchemySystem.EFFECT_DEFS);
-          const boonKeys = effectKeys.filter(k => window.AlchemySystem.EFFECT_DEFS[k].kind === 'boon');
-          const pickEffect = () => {
-            const pool = rnd() < 0.75 && boonKeys.length ? boonKeys : effectKeys;
-            return pool[Math.floor(rnd() * pool.length)];
-          };
-          const effects = [pickEffect() ?? effectKeys[0]];
-          if (rnd() < 0.4) {
-            const second = pickEffect();
-            if (second && !effects.includes(second)) effects.push(second);
-          }
-          const reagentKeys = Object.keys(window.AlchemySystem.REAGENT_DEFS).sort(() => rnd() - 0.5).slice(0, 2);
-          bundle.potionKey = window.AlchemySystem.ensurePotionItemDef(effects, reagentKeys);
-        }
-        if (_rollTreasureChance('clothing', 0.25)) {
-          const catalog = window.DyeSystem.getCatalog();
-          const piece = STORE_CLOTHING_PIECES[Math.floor(rnd() * STORE_CLOTHING_PIECES.length)];
-          const dyeA  = catalog[Math.floor(rnd() * catalog.length)];
-          const dyeB  = piece.usesB ? catalog[Math.floor(rnd() * catalog.length)] : null;
-          const dyeLbl = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
-          bundle.clothing = {
-            uid: 'citem_chest_' + Date.now() + '_' + Math.floor(rnd() * 1e6),
-            cosmeticId: piece.id, slot: piece.category, label: dyeLbl + ' ' + piece.label, baseLabel: piece.label,
-            colorA: window.DyeSystem.toClothingColor(dyeA), colorB: window.DyeSystem.toClothingColor(dyeB), price: piece.price, sellPrice: Math.floor(piece.price * 0.4),
-            sprite: clothingSpriteForCosmetic(piece.id),
-          };
-        }
-        return bundle;
-      }
-
-      // Every chest guarantees at least one Mystery Dye item, averaging 1-3 —
-      // dye items are meant to be common treasure filler, unlike the rarer
-      // gold/potion/clothing rolls above which can come up empty.
-      function rollTreasureDyeItemKeys() {
-        const poolKeys = Object.keys(MYSTERY_DYE_ITEM_KEY_BY_POOL);
-        if (!poolKeys.length) return [];
-        const count = 1 + Math.floor(rnd() * 3); // 1-3, uniform
-        const keys = [];
-        for (let i = 0; i < count; i++) {
-          keys.push(MYSTERY_DYE_ITEM_KEY_BY_POOL[poolKeys[Math.floor(rnd() * poolKeys.length)]]);
-        }
-        return keys;
-      }
-
-      function scatterTreasureForZone(mapId) {
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return [];
-        const targetCount = 1 + Math.floor((zi.cols * zi.rows) / 3200); // rare — usually 1-2 per zone
-        const rng = _mbRng(_seedFromString(mapId + ':treasure:' + treasureWeekIndex()));
-        const avoid = [...(_zoneReagentPersist.get(mapId)?.placements || []), ...(_zoneBerryPersist.get(mapId)?.placements || [])];
-        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
-        return spots.map(({ col, row }) => ({ col, row, found: false, loot: rollTreasureLootBundle() }));
-      }
-
-      // Simple wood-and-band chest silhouette — same box+lid shape as
-      // makeSellCrate/makeSupplyBox, just its own wood/gold coloring.
-      function buildTreasureChestMesh() {
-        const group = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.42, 0.44), new THREE.MeshLambertMaterial({ color: 0x6b4a2b }));
-        body.position.y = 0.21;
-        body.castShadow = true;
-        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.46), new THREE.MeshLambertMaterial({ color: 0xcaa233 }));
-        lid.position.y = 0.445;
-        lid.castShadow = true;
-        group.add(body, lid);
-        return group;
-      }
-
-      // Trench-floor world Y for a tile, for whatever plateau tier it sits
-      // on — the same sunken height a real dug trench's own floor renders
-      // at (see TRENCH_TOP/DEPRESSION_TOP) — computed regardless of that
-      // tile's CURRENT type, so a chest can sit there genuinely buried
-      // before it's ever dug.
-      function treasureChestBuriedY(mapId, col, row) {
-        const tile = _zoneScenes.get(mapId)?.grid[row]?.[col];
-        const tierY = (tile?.elevTier || 0) * PLATEAU_UNIT;
-        return NORMAL_TOP + TRENCH_TOP + tierY;
-      }
-
-      // A chest is a real world object (getButtons()/onAction()) from the
-      // moment its zone is built, sitting at trench-floor depth — but
-      // getButtons() only ever offers "Open" once this exact tile is
-      // currently a real dug trench, so it can't be cheesed by standing
-      // over undisturbed ground, and re-burying it (filling the trench back
-      // in before opening) hides the option again.
-      function makeTreasureChestObject(mapId, col, row, placement, mesh) {
-        return {
-          id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
-          col, row, mesh,
-          label: '🗝️ Buried Chest',
-          getButtons() {
-            const tile = _zoneScenes.get(mapId)?.grid[row]?.[col];
-            if (tile?.type !== TileType.TRENCH) {
-              return [{ icon: '🗝️', label: "Buried — dig a trench here to reach it", action: 'obj_open_treasure_chest', style: 'secondary', allowed: false }];
-            }
-            return [{ icon: '🗝️', label: 'Open the buried chest', action: 'obj_open_treasure_chest', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
-            const tile = _zoneScenes.get(mapId)?.grid[row]?.[col];
-            if (tile?.type !== TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
-            const { loot } = placement;
-            const parts = [];
-            for (const metalKey of loot.metalKeys) {
-              const key = metalBarItemKey(metalKey);
-              inventory[key] = Math.min(99, (inventory[key] || 0) + 1);
-              parts.push((ITEM_DEFS[key]?.icon || '🔶') + ' ' + METAL_DEFS[metalKey].label + ' Bar');
-            }
-            for (const dyeItemKey of (loot.dyeItemKeys || [])) {
-              inventory[dyeItemKey] = Math.min(99, (inventory[dyeItemKey] || 0) + 1);
-              parts.push((ITEM_DEFS[dyeItemKey]?.icon || '🎨') + ' ' + (ITEM_DEFS[dyeItemKey]?.label || 'Mystery Dye'));
-            }
-            if (loot.gold > 0) {
-              inventory.gold = (inventory.gold || 0) + loot.gold;
-              parts.push('💰' + loot.gold + 'g');
-            }
-            if (loot.potionKey) {
-              inventory[loot.potionKey] = Math.min(99, (inventory[loot.potionKey] || 0) + 1);
-              parts.push((ITEM_DEFS[loot.potionKey]?.icon || '🧪') + ' ' + (ITEM_DEFS[loot.potionKey]?.label || 'Potion'));
-            }
-            if (loot.clothing) {
-              packClothing.push({ ...loot.clothing });
-              parts.push('👘 ' + loot.clothing.label);
-            }
-            placement.found = true;
-            _zoneScenes.get(mapId)?.scene.remove(mesh);
-            const groups = _zoneTreasureMeshGroups.get(mapId);
-            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-            _zoneTreasureObjects.get(mapId)?.delete(col + ',' + row);
-            const persisted = _zoneTreasurePersist.get(mapId);
-            if (persisted) persisted.placements = persisted.placements.filter(p => p !== placement);
-            refreshItemScroll();
-            buildInventoryGrid();
-            buildPackClothingSection();
-            return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
-          },
-        };
-      }
-
-      function clearZoneTreasureMeshes(mapId) {
-        const scene = _zoneScenes.get(mapId)?.scene;
-        const groups = _zoneTreasureMeshGroups.get(mapId);
-        if (scene && groups) groups.forEach(g => scene.remove(g));
-        _zoneTreasureMeshGroups.delete(mapId);
-        _zoneTreasureObjects.delete(mapId);
-      }
-
-      // Registers/unregisters a zone's buried chests as getWorldObjectAt
-      // objects to match each one's tile's CURRENT type — called after
-      // ensureZoneTreasure and after every refreshZoneGroundVisuals (i.e.
-      // any dig/fill/raise/till/smooth in this zone). A chest is only ever
-      // registered while its tile is a real dug trench; the moment a tile
-      // ISN'T one (never dug yet, or filled back in), it's unregistered —
-      // getWorldObjectAt then returns null there, same as any other patch of
-      // ground. This is deliberate: registering it unconditionally (even
-      // with an always-disabled "buried" button) would make it the ONLY
-      // thing the action bar shows at that tile, permanently pre-empting
-      // the normal dig/fill/till prompt a player needs to actually reach
-      // it — see the controller-priority bug this fixes. The chest's mesh
-      // (placement._mesh) is untouched either way — it's still buried
-      // beneath the ground and reappears once dug without rebuilding
-      // anything, exactly like before.
-      function syncZoneTreasureInteractivity(mapId) {
-        const persisted = _zoneTreasurePersist.get(mapId);
-        const zi = _zoneScenes.get(mapId);
-        if (!persisted || !zi) return;
-        let objMap = _zoneTreasureObjects.get(mapId);
-        if (!objMap) { objMap = new Map(); _zoneTreasureObjects.set(mapId, objMap); }
-        for (const placement of persisted.placements) {
-          if (placement.found || !placement._mesh) continue;
-          const key = placement.col + ',' + placement.row;
-          const isDug = zi.grid[placement.row]?.[placement.col]?.type === TileType.TRENCH;
-          if (isDug && !objMap.has(key)) {
-            objMap.set(key, makeTreasureChestObject(mapId, placement.col, placement.row, placement, placement._mesh));
-          } else if (!isDug && objMap.has(key)) {
-            objMap.delete(key);
-          }
-        }
-      }
-
-      // Called alongside ensureZoneReagents/ensureZoneBerries on every zone
-      // entry — rescatters only once a new week starts (see
-      // treasureWeekIndex); otherwise just rebuilds whatever this week's
-      // not-yet-found placements still are, each buried at its own
-      // trench-floor depth (see treasureChestBuriedY).
-      function ensureZoneTreasure(mapId) {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        let persisted = _zoneTreasurePersist.get(mapId);
-        if (persisted?.week === treasureWeekIndex()) {
-          if (_zoneTreasureMeshGroups.has(mapId)) return; // already built for this week
-        } else {
-          persisted = { week: treasureWeekIndex(), placements: scatterTreasureForZone(mapId) };
-          _zoneTreasurePersist.set(mapId, persisted);
-        }
-        clearZoneTreasureMeshes(mapId);
-        const groups = [];
-        _zoneTreasureObjects.set(mapId, new Map());
-        for (const placement of persisted.placements) {
-          if (placement.found) continue;
-          const { col, row } = placement;
-          const mesh = buildTreasureChestMesh();
-          mesh.position.set(col + 0.5, treasureChestBuriedY(mapId, col, row), row + 0.5);
-          zi.scene.add(mesh);
-          groups.push(mesh);
-          // Tracked on the placement (not just built here) so
-          // syncZoneTreasureInteractivity can reach it later without
-          // rebuilding — the mesh itself never moves or gets swapped.
-          placement._mesh = mesh;
-        }
-        _zoneTreasureMeshGroups.set(mapId, groups);
-        // Only registers a chest as an interactable getWorldObjectAt object
-        // for tiles that are ALREADY a dug trench (mid-session state, e.g.
-        // re-entering a zone after digging one up earlier) — see below for
-        // why this matters (it's what lets ordinary terrain dig/fill/till
-        // stay reachable at a still-buried tile instead of a permanently
-        // disabled chest button preempting them).
-        syncZoneTreasureInteractivity(mapId);
-        debugLog(`ensureZoneTreasure(${mapId}): built ${groups.length} buried chest(s) for week ${treasureWeekIndex()}`);
-      }
-
-      // Nearest still-buried chest in a zone (its tile isn't a dug trench
-      // yet), in the same pixel-space coordinates as creature x/y — used by
-      // updateCompanions' treasure-hint branch and updateTreasureSparkles.
-      function nearestBuriedTreasurePixelPos(mapId, fromX, fromY) {
-        const objs = _zoneTreasureObjects.get(mapId);
-        if (!objs) return null;
-        let best = null, bestDist = Infinity;
-        for (const obj of objs.values()) {
-          const tile = _zoneScenes.get(mapId)?.grid[obj.row]?.[obj.col];
-          if (tile?.type === TileType.TRENCH) continue; // already dug — no longer "buried"
-          const x = (obj.col + 0.5) * TILE, y = (obj.row + 0.5) * TILE;
-          const d = Math.hypot(x - fromX, y - fromY);
-          if (d < bestDist) { bestDist = d; best = { x, y, dist: d }; }
-        }
-        return best;
-      }
-
-      // Only rescatters zones whose week has actually gone stale (unlike
-      // reagents/berries, treasure isn't meant to reroll every day) — see
-      // advanceDay.
-      function respawnAllZoneTreasure() {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
-          const persisted = _zoneTreasurePersist.get(mapId);
-          if (persisted && persisted.week === treasureWeekIndex()) continue; // not stale yet
-          clearZoneTreasureMeshes(mapId);
-          _zoneTreasurePersist.delete(mapId);
-        }
-        if (_isZoneArea(currentArea)) ensureZoneTreasure(currentArea);
+        window.WildTreasure.syncZoneInteractivity(mapId);
       }
 
       // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
@@ -13568,60 +13253,6 @@
           if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
           else _zoneMinedRockPersist.delete(mapId);
           if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
-        }
-      }
-
-      function serializeZoneTreasureState() {
-        const out = {};
-        _zoneTreasurePersist.forEach((v, mapId) => { out[mapId] = { week: v.week, placements: v.placements }; });
-        return out;
-      }
-      function restoreZoneTreasureState(saved) {
-        _zoneTreasurePersist.clear();
-        Object.entries(saved || {}).forEach(([mapId, v]) => {
-          if (v && Array.isArray(v.placements)) _zoneTreasurePersist.set(mapId, { week: v.week, placements: v.placements });
-        });
-      }
-
-      // Rising sparkle hint for a still-buried chest within a few tiles of
-      // the player — the only surface sign one exists at all, since the
-      // chest itself is genuinely hidden under the ground mesh until dug
-      // (see treasureChestBuriedY). Reuses the action-particle overlay
-      // system (see spawnActionParticles/updateActionParticles/
-      // drawActionParticles) rather than a real 3D emitter, so it renders
-      // through the very terrain that's hiding the chest, the way a
-      // stylized "something's glowing down there" effect should.
-      let _treasureSparkleTimer = 0;
-      const TREASURE_SPARKLE_RANGE_PX = TILE * 3; // "within a few tiles"
-      function updateTreasureSparkles(dt) {
-        if (!_isZoneArea(currentArea)) return;
-        _treasureSparkleTimer -= dt;
-        if (_treasureSparkleTimer > 0) return;
-        _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
-        const objs = _zoneTreasureObjects.get(currentArea);
-        if (!objs) return;
-        for (const obj of objs.values()) {
-          const tile = _zoneScenes.get(currentArea)?.grid[obj.row]?.[obj.col];
-          if (tile?.type === TileType.TRENCH) continue; // already dug — no hint needed
-          const cx = obj.col + 0.5, cz = obj.row + 0.5;
-          const dPx = Math.hypot(cx * TILE - player.x, cz * TILE - player.y);
-          if (dPx > TREASURE_SPARKLE_RANGE_PX) continue;
-          const tierY = (tile?.elevTier || 0) * PLATEAU_UNIT;
-          if (actionParticles.length >= ACTION_FX_LIMIT) actionParticles.shift();
-          actionParticles.push({
-            x: cx + (Math.random() - 0.5) * 0.4,
-            y: NORMAL_TOP + tierY + 0.05,
-            z: cz + (Math.random() - 0.5) * 0.4,
-            vx: (Math.random() - 0.5) * 0.12,
-            vy: 0.45 + Math.random() * 0.3,
-            vz: (Math.random() - 0.5) * 0.12,
-            age: 0,
-            maxAge: 1.0 + Math.random() * 0.4,
-            size: 8 + Math.random() * 6,
-            emoji: '✨',
-            color: '#ffe27a',
-            gravity: -0.25, // decelerates the rise gently rather than arcing back down
-          });
         }
       }
 
@@ -26167,7 +25798,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (currentArea === 'farm') window.DewVats.updateMeshRotations(dt);
           if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
           updateActionParticles(dt);
-          updateTreasureSparkles(dt);
+          window.WildTreasure.updateSparkles(dt);
           window.Fishing?.updateFx(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
@@ -26695,7 +26326,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
         window.WildBerries.respawnAll();
-        respawnAllZoneTreasure();
+        window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
         tickMinedRockRegrowth();
         _saveWorldCalendar();
@@ -26718,7 +26349,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         checkTothalShift();
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
-        respawnAllZoneTreasure();
+        window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
         tickMinedRockRegrowth();
         player.health  = player.maxHealth;
@@ -29355,7 +28986,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
-        restoreZoneTreasureState(playerData.zoneTreasureState);
+        window.WildTreasure.restoreState(playerData.zoneTreasureState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
@@ -29837,6 +29468,45 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getReagentPlantMaterial,
         refreshItemScroll,
         tileSurfaceYInArea,
+      });
+
+      window.WildTreasure?.init({
+        calendar,
+        rnd,
+        VERDIGRIS_METAL_KEYS,
+        getLootPools: () => _lootPools,
+        lootShopWorldState: _lootShopWorldState,
+        MYSTERY_DYE_ITEM_KEY_BY_POOL,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+        clothingSpriteForCosmetic,
+        _zoneScenes,
+        _mbRng,
+        _seedFromString,
+        _zoneReagentPersist,
+        _zoneBerryPersist,
+        findZoneFlatEmptyTiles,
+        PLATEAU_UNIT,
+        NORMAL_TOP,
+        TRENCH_TOP,
+        TileType,
+        metalBarItemKey,
+        inventory,
+        ITEM_DEFS,
+        METAL_DEFS,
+        getPackClothing: () => packClothing,
+        _zoneTreasureMeshGroups,
+        _zoneTreasureObjects,
+        _zoneTreasurePersist,
+        refreshItemScroll,
+        buildInventoryGrid,
+        buildPackClothingSection,
+        debugLog,
+        isZoneArea: _isZoneArea,
+        getCurrentArea: () => currentArea,
+        TILE,
+        player,
+        actionParticles,
+        ACTION_FX_LIMIT,
       });
 
       window.BountyBoard?.init({
