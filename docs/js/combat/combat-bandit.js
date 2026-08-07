@@ -1820,6 +1820,10 @@
     loadGangConfig: loadBanditGangConfig,
     loadCampLocaleDefs: loadBanditCampLocaleDefs,
     makeEntity: makeBanditEntity,
+    // Rolls a name the same way a fresh gang member's roster does (see
+    // rollBanditRoster) — used standalone by game.js's generateBountyTask
+    // when no live camp exists yet to adopt a captain's real identity from.
+    randomName: _banditName,
     updateCombatAI: updateBanditCombatAI,
     updateToolMesh: updateBanditToolMesh,
     updateTrailArc: updateBanditTrailArc,

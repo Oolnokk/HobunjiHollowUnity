@@ -7653,7 +7653,7 @@
           const zoneIds = Object.keys(WMAP_ZONE_LABELS).filter(z => !_zoneHasAnyBounty(z));
           if (!zoneIds.length) return null;
           const zoneId = zoneIds[Math.floor(Math.random() * zoneIds.length)];
-          target = { zoneId, tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length), captainName: _banditName('captain') };
+          target = { zoneId, tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length), captainName: window.BanditCombat.randomName('captain') };
         }
         const id = _makeTaskId();
         const task = {
