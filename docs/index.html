@@ -343,6 +343,15 @@
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
   <script src="js/equipment-panel.js?v=20260807a"></script>
+  <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
+       scene-graph generation, no other window.* system reads; must load
+       before game.js, which calls window.BorderTerrain.init(...) and then
+       window.BorderTerrain.buildBorderTerrain() immediately afterward
+       during its own farm-setup sequence (well before the other
+       window.*?.init(...) calls near the bottom of game.js run), and later
+       calls window.BorderTerrain.buildTownBorderTerrain() when the town
+       scene is built. -->
+  <script src="js/border-terrain.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
