@@ -2779,7 +2779,7 @@
           tile.type = typeMap[farmEditBrush] ?? TileType.GRASS;
           if (tile.type === TileType.TRENCH) tile.depth = 1;
           tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
+          if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         } else if (farmEditBrushType === 'crop') {
           if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
@@ -2815,7 +2815,7 @@
             unregisterChairNpcStation(d.key, col, row, 'farm');
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
-          if (tile.dewPile) { tile.dewPile = null; removeDewPileMesh(col, row); }
+          if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
           markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
         }
       }
@@ -2962,224 +2962,7 @@
         // which always runs first (see the two call sites) — this just builds
         // the meshes for whatever dew piles are already sitting in the grid,
         // same two-phase split as furniture (data now, objects/meshes here).
-        rebuildDewPileMeshesFromGrid();
-      }
-
-      // ── Uumkao'ii dew piles ──────────────────────────────────────────
-      // A dew pile is tile data (grid[r][c].dewPile = a color string like
-      // 'blue'), the same way a crop is tile data — not a worldObjects
-      // entry — because it needs to participate in the shovel dig/fill/raise
-      // gate (canUseAction/applyAction) exactly like WEEDS/SHRUB/ROCK
-      // already do, and there's no existing precedent for worldObjects
-      // gating tile-mutation tools (see the digging-system research this
-      // was built from). dewPileMeshes tracks the purely-visual billboard
-      // per tile in parallel, the same "tile data now, mesh separately"
-      // split saveFarmLayout/applyFarmLayoutObjects already use for crops
-      // vs. their procedural meshes.
-      const dewPileMeshes = new Map(); // "col,row" -> THREE.Group
-
-      function canPlaceDewPileAt(col, row) {
-        const tile = grid[row]?.[col];
-        if (!tile || tile.dewPile || tile.crop) return false;
-        if (![TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
-        if (getWorldObjectAt(col, row)) return false;
-        if (isHouseFootprint(col, row)) return false;
-        return true;
-      }
-
-      // Tinted-and-faded cheese.png canvas for a given dew color, cached by
-      // color so multiple piles sharing a color (the common case — every
-      // uumkao'ii on a farm today drops the same UUMKAOII_DEFAULT_DEW_COLOR)
-      // only pay the load/recolor cost once. Recolored via
-      // CreatureGeneticsRender's own shade-fill tint (the same technique
-      // that colors gar-wolf/dabinggi-hound fur patterns), not
-      // SpriteRecolor's HSV replace, per spec — then every non-outline
-      // pixel is faded to 20% opacity (80% transparency) so it reads as a
-      // glassy dew droplet rather than a flat opaque sticker, while the
-      // outline ink itself (recolorPixels' own near-black protection
-      // threshold) stays fully opaque so the shape still reads clearly.
-      const _dewSpriteTintCache = new Map(); // colorHex(number) -> Promise<{canvas, bottomRatio}>
-      function _tintedDewSpriteCanvas(colorHex) {
-        if (_dewSpriteTintCache.has(colorHex)) return _dewSpriteTintCache.get(colorHex);
-        const promise = new Promise((resolve, reject) => {
-          if (!window.CreatureGeneticsRender) { reject(new Error('CreatureGeneticsRender unavailable')); return; }
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            const c = document.createElement('canvas');
-            c.width = img.naturalWidth; c.height = img.naturalHeight;
-            const ctx = c.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(img, 0, 0);
-            const imgData = ctx.getImageData(0, 0, c.width, c.height);
-            const px = imgData.data;
-            const rgb = window.CreatureGeneticsRender.hexToRgb('#' + colorHex.toString(16).padStart(6, '0'));
-            window.CreatureGeneticsRender.recolorPixels(px, rgb, null);
-            for (let i = 0; i < px.length; i += 4) {
-              if (px[i + 3] === 0) continue;
-              const lum = (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) / 255;
-              if (lum <= 0.08) continue; // outline ink stays fully opaque
-              px[i + 3] = Math.round(px[i + 3] * 0.2);
-            }
-            ctx.putImageData(imgData, 0, 0);
-            const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
-            const bottomRatio = bounds ? (bounds.bottom + 1) / img.naturalHeight : 1;
-            resolve({ canvas: c, bottomRatio });
-          };
-          img.onerror = () => reject(new Error('Failed to load cheese.png'));
-          img.src = 'assets/objectsprites/cheese.png';
-        });
-        _dewSpriteTintCache.set(colorHex, promise);
-        return promise;
-      }
-
-      // Rendered as a single upright plane (front-facing convention, like a
-      // character/NPC — cheese.png is a single icon-style sprite, not a
-      // side-view creature profile) rather than the animal system's crossed
-      // front/back planes, camera-relative dead-zone rotated the same way
-      // (perpClamp/cameraRelativePerps) since it's static — never moving, so
-      // there's no "oscillate while moving" case to handle, just settle
-      // broadside and freeze like an idle character. Grounded so the
-      // sprite's own lowest opaque pixel (not the raw image rectangle's
-      // bottom edge) sits exactly on the tile surface, the same
-      // opaque-bounds-scan technique creature planes use.
-      function spawnDewPileMesh(col, row, colorKey) {
-        const key = col + ',' + row;
-        removeDewPileMesh(col, row);
-        const group = new THREE.Group();
-        group.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
-        group.userData.perpState = {};
-        scene.add(group);
-        dewPileMeshes.set(key, group);
-        const colorHex = ITEM_DEFS[dewItemKey(colorKey)]?.spriteColor ?? 0x3F8FE0;
-        _tintedDewSpriteCanvas(colorHex).then(({ canvas, bottomRatio }) => {
-          if (dewPileMeshes.get(key) !== group) return; // tile changed/pile dug up while this was loading
-          const tex = new THREE.CanvasTexture(canvas);
-          tex.colorSpace = THREE.SRGBColorSpace;
-          const targetH = 0.7; // large enough to read clearly on a tile
-          const targetW = targetH * (canvas.width / canvas.height);
-          const geo = new THREE.PlaneGeometry(targetW, targetH);
-          const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide, depthWrite: false });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.y = targetH / 2 + creaturePlaneGroundOffset(targetH, bottomRatio);
-          group.add(mesh);
-        }).catch(() => {});
-      }
-
-      // Called every frame (farm only — dew piles only ever exist there) to
-      // keep every standing dew sprite broadside to the camera within its
-      // own dead-zone-freeze state, exactly like an idle character.
-      function updateDewPileMeshRotations(dt) {
-        for (const group of dewPileMeshes.values()) {
-          const lookTarget = nearestAngleAmong(group.rotation.y, cameraRelativePerps());
-          const { effectiveTarget, snapTo } = perpClamp(group.userData.perpState, lookTarget, cameraRelativePerps());
-          if (snapTo !== null) group.rotation.y = effectiveTarget;
-          else group.rotation.y += angleDiff(effectiveTarget, group.rotation.y) * 0.18;
-        }
-      }
-
-      function removeDewPileMesh(col, row) {
-        const key = col + ',' + row;
-        const group = dewPileMeshes.get(key);
-        if (!group) return;
-        scene.remove(group);
-        group.traverse(child => {
-          if (child.geometry) child.geometry.dispose();
-          if (child.material) { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
-        });
-        dewPileMeshes.delete(key);
-      }
-
-      function rebuildDewPileMeshesFromGrid() {
-        [...dewPileMeshes.keys()].forEach(key => {
-          const [c, r] = key.split(',').map(Number);
-          removeDewPileMesh(c, r);
-        });
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (grid[r]?.[c]?.dewPile) spawnDewPileMesh(c, r, grid[r][c].dewPile);
-          }
-        }
-      }
-
-      // Places a persistent dew pile on an open tile — see makeUumkaoiiAnimal's
-      // tick(), which calls this on the tile a farm uumkao'ii just vacated
-      // once its dew cooldown is ready. Returns false (no state change) if
-      // the tile isn't a valid spot, so the caller can leave dewReady set
-      // and simply retry on a later successful move.
-      function dropDewPile(col, row, colorKey) {
-        if (!canPlaceDewPileAt(col, row)) return false;
-        grid[row][col].dewPile = colorKey;
-        spawnDewPileMesh(col, row, colorKey);
-        saveFarmLayout();
-        return true;
-      }
-
-      // Used when a dew cooldown lands while the player isn't on the farm to
-      // see the animal wander and drop it naturally (see tickLivestockResources)
-      // — picks blindly rather than tracking actual open tiles since the farm
-      // grid is small and open ground is the common case; a few missed rolls
-      // on a crowded farm just cost a handful of cheap canPlaceDewPileAt checks.
-      function dropDewPileOnRandomOpenTile(colorKey, maxAttempts = 60) {
-        for (let i = 0; i < maxAttempts; i++) {
-          const col = Math.floor(rnd() * COLS);
-          const row = Math.floor(rnd() * ROWS);
-          if (dropDewPile(col, row, colorKey)) return true;
-        }
-        return false;
-      }
-
-      // ── Livestock-to-vat assignment (small livestock working a squeezer) ──
-      // Assigning a housed uumkao'ii to a specific placed squeezing vat
-      // redirects its dew straight into squeezed milk/curds every cooldown
-      // cycle (see tickLivestockResources) instead of dropping a pile that
-      // has to be dug up — the vat processes it automatically. Only one
-      // livestock per vat, only kinds with a squeezable resource (uumkao'ii
-      // dew today), and only while housed (barnId set), same requirement as
-      // every other livestock resource.
-      function vatCanAcceptLivestock(kind) {
-        return kind === 'uumkaoii'; // the only kind with a squeezable resource today
-      }
-      function findVatById(vatId) {
-        for (const obj of processingFurnitureObjects) if (obj.id === vatId) return obj;
-        return null;
-      }
-      function assignLivestockToVat(livestockId, vatId) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
-        if (!vatCanAcceptLivestock(rec.kind)) return { ok: false, message: `${rec.name} has nothing a vat can process.` };
-        const vat = findVatById(vatId);
-        if (!vat || PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
-        if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
-        rec.assignedVatId = vatId;
-        _saveWorldLivestock(list);
-        return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
-      }
-      function unassignLivestockFromVat(livestockId) {
-        if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-        const list = _loadWorldLivestock();
-        const rec = list.find(l => l.id === livestockId);
-        if (!rec) return { ok: false, message: 'Livestock not found.' };
-        rec.assignedVatId = null;
-        _saveWorldLivestock(list);
-        return { ok: true, message: `${rec.name} unassigned from its vat.` };
-      }
-      // Runs the squeezing recipe for a raw dew color directly into inventory
-      // (bypassing the dig-up-a-pile step) and plays the vat's own processing
-      // VFX burst. Returns false (no state change) if the vat no longer
-      // exists — tickLivestockResources clears the stale assignment in that
-      // case and falls back to the ordinary pile-drop.
-      function autoSqueezeDewAtVat(vatId, colorKey) {
-        const vat = findVatById(vatId);
-        if (!vat) return false;
-        const outputs = getProcessingOutputs('squeezing', dewItemKey(colorKey));
-        if (!outputs) return false;
-        outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[vat.furnitureKey]]);
-        vat.triggerVfx && vat.triggerVfx();
-        return true;
+        window.DewVats.rebuildMeshesFromGrid();
       }
 
       // Livestock genetics & breeding (fur-color math, pattern layers,
@@ -3454,7 +3237,7 @@
             _farmAnimalWanderTick(this, dt || 0, (oldCol, oldRow) => {
               const livestockList = _loadWorldLivestock();
               const rec = livestockList.find(l => l.id === this.livestockId);
-              if (rec?.dewReady && dropDewPile(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+              if (rec?.dewReady && window.DewVats.drop(oldCol, oldRow, rec.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 rec.dewReady = false;
                 rec.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
                 rec.dewReadyStaleDays = 0;
@@ -3796,7 +3579,7 @@
               // was since demolished (also clears the stale assignment so
               // it doesn't keep trying every day).
               if (l.assignedVatId) {
-                if (autoSqueezeDewAtVat(l.assignedVatId, l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+                if (window.DewVats.autoSqueezeAtVat(l.assignedVatId, l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                   l.dewReady = false;
                   l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
                   changed = true;
@@ -3822,7 +3605,7 @@
               // instead of leaving it stuck another indefinite stretch.
               if (l.dewReadyStaleDays == null) l.dewReadyStaleDays = 0;
               const forceDrop = currentArea !== 'farm' || l.dewReadyStaleDays >= 1;
-              if (forceDrop && dropDewPileOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
+              if (forceDrop && window.DewVats.dropOnRandomOpenTile(l.dewColor || UUMKAOII_DEFAULT_DEW_COLOR)) {
                 l.dewReady = false;
                 l.dewDaysUntil = UUMKAOII_DEW_COOLDOWN_DAYS;
                 l.dewReadyStaleDays = 0;
@@ -18292,7 +18075,7 @@
             btn.className = 'settings-small-btn';
             btn.textContent = 'Unassign';
             btn.addEventListener('click', () => {
-              const result = unassignLivestockFromVat(worker.id);
+              const result = window.DewVats.unassignFromVat(worker.id);
               showToast(result.message, result.ok);
               renderFarmProcessors(); renderFarmLivestock();
             });
@@ -18356,7 +18139,7 @@
             // with a squeezable resource (uumkao'ii dew today, see
             // vatCanAcceptLivestock), and only once it's actually housed
             // (same gate as the dew/egg cooldowns themselves).
-            if (entry.barnId && vatCanAcceptLivestock(entry.kind)) {
+            if (entry.barnId && window.DewVats.vatCanAccept(entry.kind)) {
               const vats = [...processingFurnitureObjects].filter(o => PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
               const vatSelect = document.createElement('select');
               vatSelect.className = 'settings-select farm-barn-select';
@@ -18374,7 +18157,7 @@
               });
               vatSelect.value = entry.assignedVatId || '';
               vatSelect.addEventListener('change', () => {
-                const result = vatSelect.value ? assignLivestockToVat(entry.id, vatSelect.value) : unassignLivestockFromVat(entry.id);
+                const result = vatSelect.value ? window.DewVats.assignToVat(entry.id, vatSelect.value) : window.DewVats.unassignFromVat(entry.id);
                 showToast(result.message, result.ok);
                 renderFarmLivestock(); renderFarmProcessors();
               });
@@ -19656,7 +19439,7 @@
           if (action === 'dig' && tile.dewPile) {
             const colorKey = tile.dewPile;
             tile.dewPile = null;
-            removeDewPileMesh(col, row);
+            window.DewVats.removeMesh(col, row);
             const dewKey = dewItemKey(colorKey);
             inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
             awardToolUseMasteryXp('shovel');
@@ -26533,7 +26316,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             updateRipples(dt);
             updateLightningFlash(dt);
           }
-          if (currentArea === 'farm') updateDewPileMeshRotations(dt);
+          if (currentArea === 'farm') window.DewVats.updateMeshRotations(dt);
           if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
           updateActionParticles(dt);
           updateTreasureSparkles(dt);
@@ -29552,8 +29335,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
         loadWorldLivestock: () => _loadWorldLivestock(),
         saveWorldLivestock: (list) => _saveWorldLivestock(list),
-        assignVat: assignLivestockToVat,
-        unassignVat: unassignLivestockFromVat,
+        assignVat: window.DewVats.assignToVat,
+        unassignVat: window.DewVats.unassignFromVat,
         tickLivestock: tickLivestockResources,
         getInventory: () => ({ ...inventory }),
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
@@ -30153,6 +29936,35 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       window.DyeSystem?.init({
         getGearInventory: () => gearInventory,
         saveGearInventory,
+      });
+
+      window.DewVats?.init({
+        COLS,
+        ROWS,
+        TileType,
+        ITEM_DEFS,
+        inventory,
+        processingFurnitureObjects,
+        PROCESSING_FURNITURE_DEFS,
+        PROCESSING_SFX_KEY,
+        getGrid: () => grid,
+        getScene: getActiveScene,
+        getWorldObjectAt,
+        isHouseFootprint,
+        tileSurfaceY,
+        creaturePlaneGroundOffset,
+        nearestAngleAmong,
+        cameraRelativePerps,
+        perpClamp,
+        angleDiff,
+        dewItemKey,
+        ensureProcessedItemDef,
+        getProcessingOutputs,
+        hasFarmPermission,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        saveFarmLayout,
+        rnd,
       });
 
       window.BountyBoard?.init({
