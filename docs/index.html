@@ -139,6 +139,11 @@
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
   <script src="js/dew-vats.js?v=20260807a"></script>
+  <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
+       deps injected via init(), so load order relative to the other
+       systems above doesn't matter; must load before game.js, which
+       calls window.WildBerries.init(...) during its own setup. -->
+  <script src="js/wild-berries.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

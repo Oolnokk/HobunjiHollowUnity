@@ -6772,7 +6772,7 @@
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = serializeZoneReagentState();
-          member.wildBerryState = serializeZoneBerryState();
+          member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = serializeZoneTreasureState();
           member.felledTreeState = serializeZoneFelledTreeState();
           member.minedRockState = serializeZoneMinedRockState();
@@ -12546,7 +12546,7 @@
         const zi = buildZoneScene(mapId);
         if (!zi) return;
         ensureZoneReagents(mapId);
-        ensureZoneBerries(mapId); // after reagents, so it can see today's reagent tiles and avoid them
+        window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
         ensureZoneTreasure(mapId); // after both, so it can avoid their tiles too
         const fromScene = getActiveScene();
         _currentBuildingMapId = null;
@@ -13206,158 +13206,6 @@
         // A dig/fill/raise here may have just turned a buried chest's tile
         // into (or out of) a real trench — see syncZoneTreasureInteractivity.
         syncZoneTreasureInteractivity(mapId);
-      }
-
-      // ── Wild berry bushes (wilderness-zone counterpart of purchasable
-      // berry seeds — see STARTING_INVENTORY/SUPPLY_CATALOG) ──────────────
-      // All 5 berry varieties, split across the 4 wilderness zones. Mirrors
-      // the reagent-plant scatter system above function-for-function; see
-      // its comments for the shared mechanics (deterministic per zone+day,
-      // daily respawn, persisted placements). Colors reuse BERRY_COLORS
-      // (already defined for the jam/wine sprite recolor pipeline).
-      const WILD_BERRY_ZONES = {
-        redberries:    'map_northern_cliffs',       // canon per redDew's "Red Berry Bushes" flavor tag
-        blueberries:   'map_southern_cloud_forest',
-        yellowberries: 'map_western_slope',
-        whiteberries:  'map_western_slope',
-        blackberries:  'map_eastern_mire',
-      };
-      const WILD_BERRY_SEED_CHANCE = 0.2; // "small chance to give seeds when harvested"
-      function wildBerriesForZone(mapId) {
-        return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
-      }
-
-      function buildBerryBushMesh(berryKey) {
-        const color = BERRY_COLORS[berryKey];
-        if (color == null) return null;
-        const mat = getReagentPlantMaterial(color); // shared shader/cache — see getReagentPlantMaterial
-        if (!mat) return null;
-        const group = new THREE.Group();
-        // A bit bigger and a 4-blade cross (vs. reagents' 2) so a bush reads
-        // fuller/rounder than a single reagent plant at a glance.
-        const sizeMul = 2.0;
-        const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
-        for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
-          const blade = new THREE.Mesh(_grassBladeGeo, mat);
-          blade.rotation.y = rot;
-          blade.scale.set(w, h, 1);
-          group.add(blade);
-        }
-        group.userData.isBillboard = true;
-        group.userData.berryKey = berryKey;
-        return group;
-      }
-
-      // Same deterministic per-(zone,day) scatter as scatterReagentsForZone,
-      // but seeded independently ('berries' in the seed string) and excluding
-      // that same day's reagent-plant tiles so the two systems never overlap
-      // a spot — see findZoneFlatEmptyTiles's optional extraOccupied param.
-      function scatterBerriesForZone(mapId) {
-        const pool = wildBerriesForZone(mapId);
-        if (!pool.length) return [];
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return [];
-        const targetCount = Math.max(4, Math.min(24, Math.round((zi.cols * zi.rows) / 70)));
-        const rng = _mbRng(_seedFromString(mapId + ':berries:' + calendar.day));
-        const reagentPlacements = _zoneReagentPersist.get(mapId)?.placements || [];
-        const spots = findZoneFlatEmptyTiles(mapId, targetCount, rng, reagentPlacements);
-        return spots.map(({ col, row }) => ({ col, row, key: pool[Math.floor(rng() * pool.length)] }));
-      }
-
-      // Builds a worldObjects-shaped pickable for one wild berry bush.
-      // Always grants the fruit; WILD_BERRY_SEED_CHANCE also grants a seed —
-      // the only way to get berry seeds, since they're no longer purchasable.
-      function makeBerryBushObject(mapId, col, row, berryKey, mesh) {
-        const data = cropData[berryKey];
-        const fruitDef = ITEM_DEFS[berryKey];
-        return {
-          id: 'berrybush_' + mapId + '_' + col + '_' + row, type: 'berry_bush',
-          col, row, mesh, berryKey,
-          label: data.emoji + ' Wild ' + (fruitDef?.label || berryKey),
-          getButtons() {
-            return [{ icon: data.emoji, label: 'Pick ' + (fruitDef?.label || berryKey), action: 'obj_pick_berry', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
-            inventory[berryKey] = Math.min(99, (inventory[berryKey] || 0) + 1);
-            let seedMsg = '';
-            if (Math.random() < WILD_BERRY_SEED_CHANCE) {
-              inventory[data.seedKey] = Math.min(99, (inventory[data.seedKey] || 0) + 1);
-              seedMsg = ' and found a seed!';
-            }
-            _zoneScenes.get(mapId)?.scene.remove(mesh);
-            const objs = _zoneBerryObjects.get(mapId);
-            objs?.delete(col + ',' + row);
-            const groups = _zoneBerryMeshGroups.get(mapId);
-            if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-            const persisted = _zoneBerryPersist.get(mapId);
-            if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
-            refreshItemScroll();
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-            return { ok: true, message: 'Picked ' + (fruitDef?.label || berryKey) + seedMsg };
-          },
-        };
-      }
-
-      function clearZoneBerryMeshes(mapId) {
-        const scene = _zoneScenes.get(mapId)?.scene;
-        const groups = _zoneBerryMeshGroups.get(mapId);
-        if (scene && groups) groups.forEach(g => scene.remove(g));
-        _zoneBerryMeshGroups.delete(mapId);
-        _zoneBerryObjects.delete(mapId);
-      }
-
-      // Called right after ensureZoneReagents(mapId) on every zone entry, so
-      // scatterBerriesForZone can see that same day's already-placed reagent
-      // spots and avoid them.
-      function ensureZoneBerries(mapId) {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        if (!wildBerriesForZone(mapId).length) return;
-        const zi = _zoneScenes.get(mapId);
-        if (!zi) return;
-        let persisted = _zoneBerryPersist.get(mapId);
-        if (persisted?.day === calendar.day) {
-          if (_zoneBerryMeshGroups.has(mapId)) return; // already built for today
-        } else {
-          persisted = { day: calendar.day, placements: scatterBerriesForZone(mapId) };
-          _zoneBerryPersist.set(mapId, persisted);
-        }
-        clearZoneBerryMeshes(mapId);
-        const groups = [];
-        const objMap = new Map();
-        for (const { col, row, key } of persisted.placements) {
-          const mesh = buildBerryBushMesh(key);
-          if (!mesh) continue;
-          const tile = zi.grid[row]?.[col];
-          mesh.position.set(col + 0.5, tile ? tileSurfaceYInArea(tile, mapId) : NORMAL_TOP, row + 0.5);
-          zi.scene.add(mesh);
-          groups.push(mesh);
-          objMap.set(col + ',' + row, makeBerryBushObject(mapId, col, row, key, mesh));
-        }
-        _zoneBerryMeshGroups.set(mapId, groups);
-        _zoneBerryObjects.set(mapId, objMap);
-        debugLog(`ensureZoneBerries(${mapId}): built ${groups.length} berry bushes for day ${calendar.day}`);
-      }
-
-      function respawnAllZoneBerries() {
-        if (typeof WildernessMapGenerator === 'undefined') return;
-        for (const mapId of WildernessMapGenerator.zoneMapIds()) {
-          clearZoneBerryMeshes(mapId);
-          _zoneBerryPersist.delete(mapId);
-        }
-        if (_isZoneArea(currentArea)) ensureZoneBerries(currentArea);
-      }
-
-      function serializeZoneBerryState() {
-        const out = {};
-        _zoneBerryPersist.forEach((v, mapId) => { out[mapId] = { day: v.day, placements: v.placements }; });
-        return out;
-      }
-      function restoreZoneBerryState(saved) {
-        _zoneBerryPersist.clear();
-        Object.entries(saved || {}).forEach(([mapId, v]) => {
-          if (v && Array.isArray(v.placements)) _zoneBerryPersist.set(mapId, { day: v.day, placements: v.placements });
-        });
       }
 
       // ── Buried wilderness treasure (dig sites → chests) ─────────────────
@@ -26846,7 +26694,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // (lazy, current-zone-only) spawning once this fires.
         pendingDenRespawn.clear();
         respawnAllZoneReagents();
-        respawnAllZoneBerries();
+        window.WildBerries.respawnAll();
         respawnAllZoneTreasure();
         tickFelledTreeRegrowth();
         tickMinedRockRegrowth();
@@ -29506,7 +29354,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
-        restoreZoneBerryState(playerData.wildBerryState);
+        window.WildBerries.restoreState(playerData.wildBerryState);
         restoreZoneTreasureState(playerData.zoneTreasureState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
@@ -29965,6 +29813,30 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         saveWorldLivestock: _saveWorldLivestock,
         saveFarmLayout,
         rnd,
+      });
+
+      window.WildBerries?.init({
+        BERRY_COLORS,
+        ITEM_DEFS,
+        NORMAL_TOP,
+        cropData,
+        inventory,
+        _grassBladeGeo,
+        _zoneScenes,
+        _zoneBerryMeshGroups,
+        _zoneBerryObjects,
+        _zoneBerryPersist,
+        _zoneReagentPersist,
+        calendar,
+        debugLog,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        _mbRng,
+        _seedFromString,
+        findZoneFlatEmptyTiles,
+        getReagentPlantMaterial,
+        refreshItemScroll,
+        tileSurfaceYInArea,
       });
 
       window.BountyBoard?.init({
