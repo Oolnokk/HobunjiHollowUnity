@@ -329,6 +329,11 @@
        this one renders once at boot rather than lazily on first tab
        open). -->
   <script src="js/input-settings-panel.js?v=20260807a"></script>
+  <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
+       — pure DOM/state, no other window.* system reads; load order relative
+       to the other systems above doesn't matter; must load before game.js,
+       which calls window.CraftingPanel.init(...) during its own setup. -->
+  <script src="js/crafting-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

@@ -143,7 +143,7 @@
         switchMenuPanel(targetPanel);
         buildInventoryGrid();
         buildEquipmentSlots();
-        if (targetPanel === 'crafting') renderCraftingPanel();
+        if (targetPanel === 'crafting') window.CraftingPanel.render();
         if (targetPanel === 'shipping') window.ShippingPanel.build();
         if (targetPanel === 'supplies') window.SupplyPage.render();
         if (targetPanel === 'generalStore') window.GeneralStore.render();
@@ -180,7 +180,7 @@
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
-        if (id === 'crafting') renderCraftingPanel();
+        if (id === 'crafting') window.CraftingPanel.render();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
         if (id === 'map') window.WildernessMap.renderMapPanel();
         if (id === 'farm') window.FarmPanel.render();
@@ -11216,90 +11216,8 @@
       // (window.CarpenterShop) page renders now live in js/general-store.js
       // and js/carpenter-shop.js — call via .render() on each.
 
-      // ── Crafting panel (Inventory's Crafting tab) ─────────────────────
-      // Turns an owned furniture blueprint into the finished furniture item
-      // using wood (any log — pine or shadewood) and stone gathered with
-      // the axe and pick — see FURNITURE_BLUEPRINT_CATALOG/
-      // buyFurnitureBlueprint. Reachable from anywhere, not gated to
-      // standing at the carpenter's shop, same as any other Inventory tab.
-      let craftingActiveCategory = 'all';
-
-      function ownedWoodCount() {
-        return (inventory.pineLog || 0) + (inventory.shadewoodLog || 0);
-      }
-      function consumeWood(amount) {
-        let remaining = amount;
-        for (const key of ['pineLog', 'shadewoodLog']) {
-          if (remaining <= 0) break;
-          const have = inventory[key] || 0;
-          const take = Math.min(have, remaining);
-          inventory[key] = have - take;
-          clampInventoryStack(key);
-          remaining -= take;
-        }
-      }
-
-      function bindCraftingTabs() {
-        document.querySelectorAll('.crafting-cat-tab').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.craftingCat === craftingActiveCategory);
-          btn.onclick = () => {
-            craftingActiveCategory = btn.dataset.craftingCat || 'all';
-            renderCraftingPanel();
-          };
-        });
-      }
-
-      function craftFurnitureFromBlueprint(blueprintKey) {
-        const bp = FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-        if (!bp) return;
-        if ((inventory[bp.key] || 0) < 1) { showToast('No blueprint to build from.', false); return; }
-        if (ownedWoodCount() < bp.craftCost.wood) { showToast(`Not enough wood — need ${bp.craftCost.wood} (Pine/Shadewood Log).`, false); return; }
-        if ((inventory.stone || 0) < bp.craftCost.stone) { showToast(`Not enough stone — need ${bp.craftCost.stone}.`, false); return; }
-        inventory[bp.key] -= 1;
-        clampInventoryStack(bp.key);
-        consumeWood(bp.craftCost.wood);
-        inventory.stone -= bp.craftCost.stone;
-        clampInventoryStack('stone');
-        inventory[bp.furnitureKey] = Math.min(99, (inventory[bp.furnitureKey] || 0) + 1);
-        showToast(`Built a ${bp.name}!`, true);
-        renderCraftingPanel();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderCraftingPanel() {
-        bindCraftingTabs();
-        const list = document.getElementById('craftingList');
-        if (!list) return;
-        list.innerHTML = '';
-        const visible = FURNITURE_BLUEPRINT_CATALOG.filter(bp => craftingActiveCategory === 'all' || bp.category === craftingActiveCategory);
-        const owned = visible.filter(bp => (inventory[bp.key] || 0) > 0);
-        if (!owned.length) {
-          const empty = document.createElement('div');
-          empty.className = 'ii-empty';
-          empty.textContent = "No blueprints yet — buy one from the carpenter's shop.";
-          list.appendChild(empty);
-          return;
-        }
-        const haveWood = ownedWoodCount();
-        const haveStone = inventory.stone || 0;
-        owned.forEach(bp => {
-          const ownedCount = inventory[bp.key] || 0;
-          const canBuild = haveWood >= bp.craftCost.wood && haveStone >= bp.craftCost.stone;
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${bp.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(bp.name)}</div>
-              <div class="sh-desc">Needs ${bp.craftCost.wood} Wood (have ${haveWood}) + ${bp.craftCost.stone} Stone (have ${haveStone}) — Blueprints owned: ${ownedCount}</div>
-            </div>
-            <button class="shop-buy-btn" data-bp="${bp.key}" ${canBuild ? '' : 'disabled'}>Build</button>
-          `;
-          row.querySelector('[data-bp]')?.addEventListener('click', () => craftFurnitureFromBlueprint(bp.key));
-          list.appendChild(row);
-        });
-      }
+      // Crafting tab (Inventory panel's Crafting sub-tab) now lives in
+      // js/crafting-panel.js — call via window.CraftingPanel.render().
 
       // Sloomi/Kzubug's smithing counter (craft/plate/reinforce verdigris
       // tools) now lives in js/metal-craft-shop.js — call via
@@ -23162,6 +23080,16 @@
         buildInventoryGrid,
         refreshItemScroll,
         saveMemberWorldData,
+      });
+
+      window.CraftingPanel?.init({
+        inventory,
+        clampInventoryStack,
+        FURNITURE_BLUEPRINT_CATALOG,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        esc,
       });
 
       window.DevSpawner?.init({
