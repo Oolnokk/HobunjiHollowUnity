@@ -158,6 +158,13 @@
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-animals.js?v=20260807a"></script>
+  <!-- Farm buildings: barn placement/construction/demolition
+       (window.FarmBuildings) — self-contained aside from deps injected
+       via init(), and reads window.FarmAnimals at call time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.FarmBuildings.init(...) during its own setup. -->
+  <script src="js/farm-buildings.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

@@ -2954,9 +2954,9 @@
         (layout.buildings || []).forEach(saved => {
           if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
           if (farmBuildings.some(b => b.id === saved.id)) return;
-          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || BARN_FOOTPRINT_W, h: saved.h || BARN_FOOTPRINT_D, stage: saved.stage || 'foundation' };
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
           farmBuildings.push(entry);
-          spawnBarnEntry(entry);
+          window.FarmBuildings.spawnEntry(entry);
         });
         // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
         // which always runs first (see the two call sites) — this just builds
@@ -12747,13 +12747,6 @@
         if (_shopStock.generalStoreWares?.clothingRotation?.slots) GENERAL_STORE_CLOTHING_SLOTS = _shopStock.generalStoreWares.clothingRotation.slots;
         if (_shopStock.carpenterBarnPlans?.tiers) { BARN_TIERS = _shopStock.carpenterBarnPlans.tiers; _registerBarnPlanItemDefs(); }
       }
-      // Every tier builds the same highland structure (config/pieces/stable.json)
-      // once complete — there's no wood/stone system yet to justify authoring
-      // three differently-sized piece files, so tiers differ only in slot
-      // capacity and price, not in footprint or visual size.
-      const BARN_PIECE_FILE  = 'config/pieces/stable.json';
-      const BARN_FOOTPRINT_W = 7;
-      const BARN_FOOTPRINT_D = 3;
       let farmBuildings = []; // barns placed on this farm — persisted via saveFarmLayout
 
       // Per-species farm-resource output: item produced + how many in-game
@@ -12782,284 +12775,6 @@
       const UUMKAOII_DEW_COOLDOWN_DAYS = 2;
       const UUMKAOII_DEFAULT_DEW_COLOR = 'blue';
 
-      // Tile types a farm building can never be placed/moved onto — trenches
-      // and any worked/flooded soil. Rock/shrub/weeds are deliberately absent
-      // here: those get bulldozed by clearFarmBuildingFootprint() instead of
-      // blocking placement.
-      const FARM_BUILDING_BLOCKED_TILE_TYPES = new Set([
-        TileType.TRENCH, TileType.TILLED, TileType.RAISED, TileType.PADDY,
-        TileType.RIVER, TileType.STREAM, TileType.WATERFALL, TileType.RAMP,
-      ]);
-
-      function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
-        return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
-      }
-
-      // Shared validity check for moving/placing any farm building (house or
-      // barn): in bounds, no trench/tilled/raised/paddy/water tile or crop,
-      // no other world object (furniture, crates, animals — anything already
-      // occupying worldObjects) in the footprint, and no overlap with the
-      // house or any other farm building. `excludeId` lets the building
-      // being moved ignore its own current footprint/occupancy.
-      function canPlaceFarmBuilding(col, row, w, h, excludeId) {
-        if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
-        if (col < 0 || row < 0 || col + w > COLS || row + h > ROWS) return false;
-        for (let r = row; r < row + h; r++) {
-          for (let c = col; c < col + w; c++) {
-            const tile = grid[r]?.[c];
-            if (!tile || FARM_BUILDING_BLOCKED_TILE_TYPES.has(tile.type) || tile.crop) return false;
-            const obj = worldObjects.get(c + ',' + r);
-            if (obj && obj.id !== excludeId) return false;
-          }
-        }
-        if (excludeId !== 'highland_house' && rectsOverlap(col, row, w, h, houseCol, houseRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D)) return false;
-        for (const b of farmBuildings) {
-          if (b.id === excludeId) continue;
-          if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
-        }
-        return true;
-      }
-
-      // Bulldozes rock/shrub/weeds under a just-placed-or-moved building's
-      // footprint back to plain grass — the "clears rocks and trees" half of
-      // the Farm tab's move/place flow.
-      function clearFarmBuildingFootprint(col, row, w, h) {
-        for (let r = row; r < row + h; r++) {
-          for (let c = col; c < col + w; c++) {
-            const tile = grid[r]?.[c];
-            if (tile && (tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS)) {
-              tile.type = TileType.GRASS;
-              markTileDirty(c, r);
-            }
-          }
-        }
-        recomputeWater(false);
-      }
-
-      // Fetches & caches stable.json once — every barn (any tier) reuses it.
-      let _barnPiecePromise = null;
-      function loadBarnPiece() {
-        if (!_barnPiecePromise) {
-          _barnPiecePromise = fetch(BARN_PIECE_FILE).then(r => r.json())
-            .catch(e => { debugLog('Barn piece load error: ' + e, 'warn'); return null; });
-        }
-        return _barnPiecePromise;
-      }
-
-      const _barnWbDefaults = { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6],
-                                 brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-      let _barnBoardsMat = null, _barnStoneMat = null, _barnCanvasMat = null;
-      function _barnFaceMats() {
-        if (!_barnBoardsMat) {
-          _barnBoardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-          _barnStoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
-          _barnCanvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
-        }
-        return { matBoards: _barnBoardsMat, matStone: _barnStoneMat, matCanvas: _barnCanvasMat };
-      }
-
-      function buildBarnFoundationMesh(col, row, w, h) {
-        const mat  = new THREE.MeshLambertMaterial({ color: 0x8a7a63 });
-        const geo  = new THREE.BoxGeometry(w * 0.94, 0.14, h * 0.94);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(col + w / 2, 0.07, row + h / 2);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-        return mesh;
-      }
-
-      function disposeBarnMesh(mesh) {
-        if (!mesh) return;
-        scene.remove(mesh);
-        mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-      }
-
-      // Swaps a foundation's placeholder slab for the real highland
-      // structure once construction completes — async since the piece JSON
-      // is fetched lazily. Bails out quietly if the barn was demolished (or
-      // reverted) while the fetch was in flight.
-      function buildBarnStructureMesh(entry) {
-        if (typeof HousePieceGen === 'undefined') { debugLog('HousePieceGen not loaded — barn shown as foundation slab', 'warn'); return; }
-        loadBarnPiece().then(piece => {
-          if (!piece || entry.stage !== 'built' || !farmBuildings.includes(entry)) return;
-          disposeBarnMesh(entry._mesh);
-          entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, entry.col, entry.row, {
-            wallBuilder: houseWallBuilder, wbUsePlaceholder: true, wbOpts: _barnWbDefaults,
-            ..._barnFaceMats(),
-          });
-          scene.add(entry._mesh);
-        });
-      }
-
-      function barnLabel(entry) { return BARN_TIERS[entry.tier]?.label || 'Barn'; }
-
-      function registerBarnFootprint(entry) {
-        for (let r = entry.row; r < entry.row + entry.h; r++) {
-          for (let c = entry.col; c < entry.col + entry.w; c++) worldObjects.set(c + ',' + r, entry._worldObj);
-        }
-      }
-      function unregisterBarnFootprint(entry) {
-        for (let r = entry.row; r < entry.row + entry.h; r++) {
-          for (let c = entry.col; c < entry.col + entry.w; c++) {
-            if (worldObjects.get(c + ',' + r) === entry._worldObj) worldObjects.delete(c + ',' + r);
-          }
-        }
-      }
-
-      function makeBarnWorldObject(entry) {
-        return {
-          id: entry.id, type: 'barn', kind: 'barn',
-          get col() { return entry.col; }, get row() { return entry.row; },
-          get label() { return '🏚 ' + barnLabel(entry); },
-          getButtons() {
-            if (entry.stage === 'foundation') {
-              return [
-                { icon: '🔨', label: 'Build ' + barnLabel(entry), action: 'obj_barn_build_' + entry.id, style: 'primary', allowed: hasFarmPermission('alterFarm') },
-                { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: hasFarmPermission('alterFarm') },
-              ];
-            }
-            const tier = BARN_TIERS[entry.tier];
-            const occupants = _loadWorldLivestock().filter(l => l.barnId === entry.id).length;
-            return [
-              { icon: '🐐', label: `Manage Livestock (${occupants}/${tier.slots})`, action: 'obj_barn_manage_' + entry.id, style: 'primary', allowed: hasFarmPermission('livestock') },
-              { icon: '💥', label: 'Demolish', action: 'obj_barn_demolish_' + entry.id, style: 'secondary', allowed: hasFarmPermission('alterFarm') },
-            ];
-          },
-          onAction(action) {
-            if (action === 'obj_barn_build_' + entry.id) {
-              if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-              if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
-              entry.stage = 'built';
-              disposeBarnMesh(entry._mesh); entry._mesh = null;
-              buildBarnStructureMesh(entry);
-              saveFarmLayout();
-              return { ok: true, message: `🔨 ${barnLabel(entry)} construction complete!` };
-            }
-            if (action === 'obj_barn_demolish_' + entry.id) {
-              if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-              return demolishBarn(entry.id);
-            }
-            if (action === 'obj_barn_manage_' + entry.id) {
-              if (!hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
-              _farmLivestockFocusBarnId = entry.id;
-              openMenu('farm');
-              return { ok: true, message: 'Opened the Farm tab’s Livestock panel.' };
-            }
-            return { ok: false, message: 'Unknown barn action.' };
-          },
-          reset() { disposeBarnMesh(entry._mesh); entry._mesh = null; },
-        };
-      }
-
-      function spawnBarnEntry(entry) {
-        entry._worldObj = makeBarnWorldObject(entry);
-        entry._mesh = entry.stage === 'built' ? null : buildBarnFoundationMesh(entry.col, entry.row, entry.w, entry.h);
-        if (entry.stage === 'built') buildBarnStructureMesh(entry);
-        registerBarnFootprint(entry);
-      }
-
-      function placeBarnPlan(tier, col, row) {
-        if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can build here." };
-        const tierDef = BARN_TIERS[tier];
-        if (!tierDef) return { ok: false, message: 'Unknown barn plan.' };
-        if ((inventory[tierDef.planItem] || 0) < 1) return { ok: false, message: `No ${tierDef.label} plan in your bag.` };
-        if (!canPlaceFarmBuilding(col, row, BARN_FOOTPRINT_W, BARN_FOOTPRINT_D)) {
-          return { ok: false, message: 'Cannot build here — needs clear, untilled, un-trenched ground.' };
-        }
-        inventory[tierDef.planItem]--;
-        clampInventoryStack(tierDef.planItem);
-        const entry = {
-          id: 'barn_' + Math.random().toString(36).slice(2, 10),
-          kind: 'barn', tier, col, row, w: BARN_FOOTPRINT_W, h: BARN_FOOTPRINT_D, stage: 'foundation',
-        };
-        farmBuildings.push(entry);
-        spawnBarnEntry(entry);
-        clearFarmBuildingFootprint(col, row, entry.w, entry.h);
-        saveFarmLayout();
-        saveMemberWorldData();
-        return { ok: true, message: `Placed a ${tierDef.label} foundation. Interact with it to build.` };
-      }
-
-      // Removes a barn, refunding whatever materials it cost — currently
-      // none, since there's no wood/stone system yet to have spent any; this
-      // is where a future materials-cost system would credit the refund.
-      // Any livestock housed here return to stasis rather than vanishing.
-      function demolishBarn(id) {
-        const entry = farmBuildings.find(b => b.id === id);
-        if (!entry) return { ok: false, message: 'Barn not found.' };
-        const livestock = _loadWorldLivestock();
-        livestock.forEach(l => {
-          if (l.barnId !== id) return;
-          l.barnId = null;
-          const animal = [...animalObjects].find(a => a.livestockId === l.id);
-          if (animal) { worldObjects.delete(animal.col + ',' + animal.row); animalObjects.delete(animal); animal.reset && animal.reset(); }
-        });
-        _saveWorldLivestock(livestock);
-        unregisterBarnFootprint(entry);
-        disposeBarnMesh(entry._mesh);
-        farmBuildings = farmBuildings.filter(b => b.id !== id);
-        saveFarmLayout();
-        saveMemberWorldData();
-        return { ok: true, message: 'Barn demolished — its livestock are back in stasis.' };
-      }
-
-      // Moves the house or a barn to a new farm-grid top-left. `id` is
-      // either 'highland_house' or a barn's own id.
-      function moveFarmBuilding(id, newCol, newRow) {
-        if (!hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move buildings." };
-        if (id === 'highland_house') {
-          if (!canPlaceFarmBuilding(newCol, newRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D, 'highland_house')) {
-            return { ok: false, message: 'Cannot move the house there — needs clear, untilled, un-trenched ground.' };
-          }
-          repositionHouse(newCol, newRow);
-          clearFarmBuildingFootprint(newCol, newRow, HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D);
-          saveFarmLayout();
-          saveMemberWorldData();
-          return { ok: true, message: 'Moved the house.' };
-        }
-        const entry = farmBuildings.find(b => b.id === id);
-        if (!entry) return { ok: false, message: 'Building not found.' };
-        if (!canPlaceFarmBuilding(newCol, newRow, entry.w, entry.h, entry.id)) {
-          return { ok: false, message: 'Cannot move there — needs clear, untilled, un-trenched ground.' };
-        }
-        unregisterBarnFootprint(entry);
-        entry.col = newCol; entry.row = newRow;
-        registerBarnFootprint(entry);
-        if (entry.stage === 'foundation' && entry._mesh) {
-          entry._mesh.position.set(newCol + entry.w / 2, 0.07, newRow + entry.h / 2);
-        } else if (entry.stage === 'built') {
-          disposeBarnMesh(entry._mesh); entry._mesh = null;
-          buildBarnStructureMesh(entry);
-        }
-        clearFarmBuildingFootprint(newCol, newRow, entry.w, entry.h);
-        saveFarmLayout();
-        saveMemberWorldData();
-        return { ok: true, message: `Moved the ${barnLabel(entry)}.` };
-      }
-
-      function clearFarmBuildings() {
-        farmBuildings.forEach(entry => { unregisterBarnFootprint(entry); disposeBarnMesh(entry._mesh); });
-        farmBuildings = [];
-      }
-
-      // Ring-search outward from a barn's footprint for the nearest free
-      // tile — livestock spawn/emerge just outside their own barn rather
-      // than anywhere on the farm.
-      function findOpenTileNearBarn(barn) {
-        for (let ring = 1; ring <= 8; ring++) {
-          const rMin = barn.row - ring, rMax = barn.row + barn.h + ring - 1;
-          const cMin = barn.col - ring, cMax = barn.col + barn.w + ring - 1;
-          for (let r = rMin; r <= rMax; r++) {
-            for (let c = cMin; c <= cMax; c++) {
-              const onRing = r === rMin || r === rMax || c === cMin || c === cMax;
-              if (!onRing || c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
-              if (window.FarmAnimals.canSpawnAt(c, r)) return { col: c, row: r };
-            }
-          }
-        }
-        return null;
-      }
 
       // ── Register world objects ─────────────────────────────────────
       function initWorldObjects() {
@@ -16532,7 +16247,7 @@
             const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
             const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
             const mode = _farmPlacementMode;
-            const result = mode.type === 'move' ? moveFarmBuilding(mode.buildingId, col, row) : placeBarnPlan(mode.tier, col, row);
+            const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row) : window.FarmBuildings.placePlan(mode.tier, col, row);
             showToast(result.message, result.ok);
             if (result.ok) _farmPlacementMode = null;
             renderFarmPanel();
@@ -27015,7 +26730,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         Object.assign(inventory, { ...STARTING_INVENTORY });
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
-        clearFarmBuildings(); // re-added from layout below, same as furniture/decor — the house/farm structures survive a reset, only day/weather/inventory/livestock do not
+        window.FarmBuildings.clearAll(); // re-added from layout below, same as furniture/decor — the house/farm structures survive a reset, only day/weather/inventory/livestock do not
         window.FarmAnimals.clearAnimalObjects();
         _saveWorldLivestock([]); // full farm reset also clears released animals from the world file
         clearHostileObjects();
@@ -27070,9 +26785,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
-              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || BARN_FOOTPRINT_W, h: saved.h || BARN_FOOTPRINT_D, stage: saved.stage || 'foundation' };
+              const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation' };
               farmBuildings.push(entry);
-              spawnBarnEntry(entry);
+              window.FarmBuildings.spawnEntry(entry);
             });
           }
         } catch {}
@@ -28060,7 +27775,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // it again would spawn every scheduled NPC a second time.
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
-        clearFarmBuildings();
+        window.FarmBuildings.clearAll();
         // Module init may have moved the house per the legacy-key layout —
         // put it back to its hard default before applying (or not finding)
         // this world's own saved position, same rationale as the sell
@@ -28680,7 +28395,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         clampInventoryStack,
         companionAiTypeForKind,
         creaturePlaneGroundOffset,
-        findOpenTileNearBarn,
+        findOpenTileNearBarn: window.FarmBuildings.findOpenTileNear,
         getWorldObjectAt,
         hasFarmPermission,
         isSolid,
@@ -28710,6 +28425,38 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
         setWorldLivestockFrameCache: (v) => { _worldLivestockFrameCache = v; },
+      });
+
+      window.FarmBuildings?.init({
+        COLS,
+        ROWS,
+        TileType,
+        HOUSE_FOOTPRINT_W,
+        HOUSE_FOOTPRINT_D,
+        animalObjects,
+        clampInventoryStack,
+        debugLog,
+        hasFarmPermission,
+        inventory,
+        loadHousePieceFaceTexture,
+        markTileDirty,
+        openMenu,
+        recomputeWater,
+        repositionHouse,
+        saveFarmLayout,
+        saveMemberWorldData,
+        scene,
+        worldObjects,
+        houseWallBuilder,
+        loadWorldLivestock: _loadWorldLivestock,
+        saveWorldLivestock: _saveWorldLivestock,
+        getBarnTiers: () => BARN_TIERS,
+        getGrid: () => grid,
+        getHouseCol: () => houseCol,
+        getHouseRow: () => houseRow,
+        getFarmBuildings: () => farmBuildings,
+        setFarmBuildings: (v) => { farmBuildings = v; },
+        setFarmLivestockFocusBarnId: (v) => { _farmLivestockFocusBarnId = v; },
       });
 
       window.BountyBoard?.init({
