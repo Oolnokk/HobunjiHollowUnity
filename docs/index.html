@@ -240,6 +240,26 @@
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
   <script src="js/perp-rotation.js?v=20260807a"></script>
+  <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
+       aside from deps injected via init(), and reads window.DyeSystem/
+       window.ConditionRegistry at render time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.GeneralStore.init(...)
+       during its own setup. -->
+  <script src="js/general-store.js?v=20260807a"></script>
+  <!-- Carpenter's shop: barn plans + furniture blueprints
+       (window.CarpenterShop) — self-contained aside from deps injected via
+       init(), and reads window.ConditionRegistry at render time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.CarpenterShop.init(...) during its own setup. -->
+  <script src="js/carpenter-shop.js?v=20260807a"></script>
+  <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.MetalCraftShop.init(...) during
+       its own setup. -->
+  <script src="js/metal-craft-shop.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

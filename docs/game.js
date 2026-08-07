@@ -146,10 +146,10 @@
         if (targetPanel === 'crafting') renderCraftingPanel();
         if (targetPanel === 'shipping') buildShippingTransferUI();
         if (targetPanel === 'supplies') renderSupplyPage();
-        if (targetPanel === 'generalStore') renderGeneralStorePage();
-        if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
+        if (targetPanel === 'generalStore') window.GeneralStore.render();
+        if (targetPanel === 'carpenterShop') window.CarpenterShop.render();
         if (targetPanel === 'jubmirShop') window.JubmirShop.render();
-        if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
+        if (targetPanel === 'metalCraftShop') window.MetalCraftShop.render();
         if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
         if (targetPanel === 'tasks') renderTasksPanel();
         if (targetPanel === 'relationships') window.RelationshipsPanel.render();
@@ -187,10 +187,10 @@
         if (id === 'stable') renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
-        if (id === 'generalStore') renderGeneralStorePage();
-        if (id === 'carpenterShop') renderCarpenterShopPage();
+        if (id === 'generalStore') window.GeneralStore.render();
+        if (id === 'carpenterShop') window.CarpenterShop.render();
         if (id === 'jubmirShop') window.JubmirShop.render();
-        if (id === 'metalCraftShop') renderMetalCraftShopPage();
+        if (id === 'metalCraftShop') window.MetalCraftShop.render();
         if (id === 'alchemy') window.AlchemySystem.renderPanel();
         if (id === 'tasks') renderTasksPanel();
         if (id === 'relationships') window.RelationshipsPanel.render();
@@ -2192,35 +2192,8 @@
       ];
       let GENERAL_STORE_CLOTHING_SLOTS = 4;
 
-      function generateDailyClothingStock(day) {
-        const stock = [];
-        const catalog = window.DyeSystem.getCatalog();
-        // Condition-eligible candidates only (e.g. a season-gated piece) —
-        // falls back to the full list if conditions would otherwise empty
-        // it out entirely, so a misconfigured pool never bricks the shop.
-        const world = _lootShopWorldState();
-        const eligible = STORE_CLOTHING_PIECES.filter(p => window.ConditionRegistry.entryEligible(p, world));
-        const pieces = eligible.length ? eligible : STORE_CLOTHING_PIECES;
-        for (let i = 0; i < GENERAL_STORE_CLOTHING_SLOTS; i++) {
-          const piece   = pieces[Math.floor(seededRandom(day * 97 + i * 31) * pieces.length)];
-          const dyeA    = catalog[Math.floor(seededRandom(day * 53 + i * 71 + 13) * catalog.length)];
-          const dyeB    = piece.usesB ? catalog[Math.floor(seededRandom(day * 113 + i * 43 + 7) * catalog.length)] : null;
-          const dyeLbl  = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
-          stock.push({
-            uid:        'citem_gs_' + day + '_' + i,
-            cosmeticId: piece.id,
-            slot:       piece.category,
-            label:      dyeLbl + ' ' + piece.label,
-            baseLabel:  piece.label,
-            colorA:     window.DyeSystem.toClothingColor(dyeA),
-            colorB:     window.DyeSystem.toClothingColor(dyeB),
-            price:      piece.price,
-            sellPrice:  Math.floor(piece.price * 0.4),
-            sprite:     clothingSpriteForCosmetic(piece.id),
-          });
-        }
-        return stock;
-      }
+      // Daily General Store clothing rack (generateDailyClothingStock) now
+      // lives in js/general-store.js alongside the rest of that shop.
 
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
@@ -11835,7 +11808,6 @@
       }
 
       let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
-      let generalStoreActiveCategory = 'goods'; // Mirrors supply-shop tabs for the General Store's goods/clothing split.
 
       function getSupplyItemCategory(item) {
         // Used by the supply ordering pane; avoids hard-coding future catalog rows into the UI.
@@ -12039,183 +12011,9 @@
       // ── Market page render ─────────────────────────────────────────
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
 
-      // ── General Store page render ───────────────────────────────────
-      function getGeneralStoreCategoryLabel(category) {
-        return ({ all: 'All', goods: 'Goods', clothing: 'Clothing' })[category] || 'General Store';
-      }
-
-      function bindGeneralStoreTabs() {
-        document.querySelectorAll('.general-store-tab').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.generalStoreCat === generalStoreActiveCategory);
-          btn.onclick = () => {
-            generalStoreActiveCategory = btn.dataset.generalStoreCat || 'goods';
-            renderGeneralStorePage();
-          };
-        });
-      }
-
-      function buyGeneralStoreItem(item) {
-        const gold = inventory.gold || 0;
-        if (gold < item.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - item.price;
-        if (item.gives) {
-          Object.entries(item.gives).forEach(([k, v]) => {
-            inventory[k] = Math.min(99, (inventory[k] || 0) + v);
-          });
-        }
-        showToast('Bought ' + item.name + '!', true);
-        renderGeneralStorePage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderGeneralStoreGoods(list) {
-        const world = _lootShopWorldState();
-        GENERAL_STORE_CATALOG.filter(item => window.ConditionRegistry.entryEligible(item, world)).forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${item.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${item.name}</div>
-              <div class="sh-desc">${item.desc}</div>
-              <div class="sh-price">${item.price}g each</div>
-            </div>
-            <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
-          `;
-          row.querySelector('[data-key]')?.addEventListener('click', () => buyGeneralStoreItem(item));
-          list.appendChild(row);
-        });
-      }
-
-      function renderGeneralStoreClothing(list) {
-        const clothHdrEl = document.createElement('div');
-        clothHdrEl.className = 'shop-section-label';
-        clothHdrEl.textContent = '🧥 Today\'s Clothing  (rerolls each day)';
-        list.appendChild(clothHdrEl);
-
-        generateDailyClothingStock(calendar.day).forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">👘</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(item.label)}</div>
-              <div class="sh-desc">${item.slot.charAt(0).toUpperCase() + item.slot.slice(1)} — goes to pack inventory</div>
-              <div class="sh-price">${item.price}g each</div>
-            </div>
-            <button class="shop-buy-btn gs-cloth-buy">Buy</button>
-          `;
-          row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
-            if ((inventory.gold || 0) < item.price) { showToast('Not enough gold.', false); return; }
-            inventory.gold = (inventory.gold || 0) - item.price;
-            packClothing.push({ ...item });
-            showToast('Bought ' + item.label + '!', true);
-            renderGeneralStorePage(); buildInventoryGrid(); buildPackClothingSection();
-            saveMemberWorldData();
-          });
-          list.appendChild(row);
-        });
-      }
-
-      function renderGeneralStorePage() {
-        bindGeneralStoreTabs();
-        const sectionTitle = document.getElementById('generalStoreSectionTitle');
-        if (sectionTitle) sectionTitle.textContent = 'Funji & Son\'s General Store — ' + getGeneralStoreCategoryLabel(generalStoreActiveCategory);
-        const list   = document.getElementById('generalStoreList');
-        const goldEl = document.getElementById('gsGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        if (!list) return;
-        list.innerHTML = '';
-        if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list);
-        if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
-      }
-
-      // ── Carpenter's shop page — sells barn plans (see BARN_TIERS). Same
-      // shape as the General Store's goods list, just its own catalog.
-      function buyBarnPlan(tier) {
-        const tierDef = BARN_TIERS[tier];
-        if (!tierDef) return;
-        const gold = inventory.gold || 0;
-        if (gold < tierDef.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - tierDef.price;
-        inventory[tierDef.planItem] = Math.min(9, (inventory[tierDef.planItem] || 0) + 1);
-        showToast(`Bought a ${tierDef.label} plan!`, true);
-        renderCarpenterShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      // Furniture blueprints — see FURNITURE_BLUEPRINT_CATALOG. Bought here
-      // instead of the finished piece (no more direct General Store/mail-
-      // order furniture purchase); build the actual furniture from an owned
-      // blueprint plus wood/stone at the Inventory's Crafting tab (see
-      // renderCraftingPanel/craftFurnitureFromBlueprint).
-      function buyFurnitureBlueprint(blueprintKey) {
-        const bp = FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-        if (!bp) return;
-        const gold = inventory.gold || 0;
-        if (gold < bp.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - bp.price;
-        inventory[bp.key] = Math.min(9, (inventory[bp.key] || 0) + 1);
-        showToast(`Bought a ${bp.name} blueprint!`, true);
-        renderCarpenterShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderCarpenterShopPage() {
-        const goldEl = document.getElementById('cpGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        const list = document.getElementById('carpenterShopList');
-        if (!list) return;
-        list.innerHTML = '';
-        const world = _lootShopWorldState();
-
-        const planHdr = document.createElement('div');
-        planHdr.className = 'shop-section-label';
-        planHdr.textContent = '🏚 Barn Plans';
-        list.appendChild(planHdr);
-
-        Object.entries(BARN_TIERS).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world)).forEach(([tier, def]) => {
-          const owned = inventory[def.planItem] || 0;
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">🏚</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(def.label)} Plan</div>
-              <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}</div>
-              <div class="sh-price">${def.price}g each</div>
-            </div>
-            <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
-          `;
-          row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
-          list.appendChild(row);
-        });
-
-        const bpHdr = document.createElement('div');
-        bpHdr.className = 'shop-section-label';
-        bpHdr.textContent = '📜 Furniture Blueprints';
-        list.appendChild(bpHdr);
-
-        FURNITURE_BLUEPRINT_CATALOG.filter(bp => window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
-          const owned = inventory[bp.key] || 0;
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${bp.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(bp.name)} Blueprint</div>
-              <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab. Owned: ${owned}</div>
-              <div class="sh-price">${bp.price}g each</div>
-            </div>
-            <button class="shop-buy-btn" data-bp="${bp.key}">Buy</button>
-          `;
-          row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
-          list.appendChild(row);
-        });
-      }
+      // General Store (window.GeneralStore) and Carpenter's Shop
+      // (window.CarpenterShop) page renders now live in js/general-store.js
+      // and js/carpenter-shop.js — call via .render() on each.
 
       // ── Crafting panel (Inventory's Crafting tab) ─────────────────────
       // Turns an owned furniture blueprint into the finished furniture item
@@ -12302,193 +12100,9 @@
         });
       }
 
-      // ── Sloomi/Kzubug's smithing counter ────────────────────────────────
-      // Craft a new verdigris tool from dug-up metal bars (see
-      // METAL_DEFS/VERDIGRIS_METAL_KEYS/craftedToolItemKey), then plate,
-      // clear plating, or reinforce any owned crafted tool. Both smiths
-      // offer this identical service — see the 'openCraftMenu' dialogue
-      // action and each NPC's dialogueTrees entry.
-      let metalCraftActiveShape = UNLOCKED_TOOL_SHAPES[0];
-      const CRAFT_BAR_COST    = 3;  // bars of the chosen metal, for a new tool or a reinforcement
-      const CRAFT_LABOR_GOLD  = 15; // gold labor fee, same for crafting new or reinforcing
-      const PLATE_BAR_COST    = 1;  // bars of the plating metal (cosmetic or resistant)
-      const PLATE_LABOR_GOLD  = 8;
-
-      function craftMetalTool(shapeKey, metalKey) {
-        const barKey = metalBarItemKey(metalKey);
-        if ((inventory[barKey] || 0) < CRAFT_BAR_COST) { showToast(`Not enough ${METAL_DEFS[metalKey].label} bars.`, false); return; }
-        if ((inventory.gold || 0) < CRAFT_LABOR_GOLD) { showToast("Not enough gold for the smith's labor.", false); return; }
-        inventory[barKey] -= CRAFT_BAR_COST;
-        clampInventoryStack(barKey);
-        inventory.gold -= CRAFT_LABOR_GOLD;
-        const itemKey = craftedToolItemKey(shapeKey, metalKey);
-        if (!gearInventory.tools) gearInventory.tools = {};
-        gearInventory.tools[itemKey] = true;
-        saveGearInventory();
-        showToast(`Smithed a ${TOOL_ITEM_DEFS[itemKey].label}!`, true);
-        renderMetalCraftShopPage();
-        buildInventoryGrid();
-        buildEquipmentSlots();
-        saveMemberWorldData();
-      }
-
-      // choice: 'clear' | 'resistant' | 'cosmetic:<metalKey>' — see the
-      // <select> built in renderMetalCraftShopPage.
-      function applyMetalToolPlating(itemKey, choice) {
-        const def = TOOL_ITEM_DEFS[itemKey];
-        if (!gearInventory?.tools?.[itemKey] || !def?.metalKey) return;
-        if (choice === 'clear') {
-          const plating = toolPlating(itemKey);
-          if (!plating) { showToast('No plating to clear.', false); return; }
-          const refundMetal = plating.mode === 'cosmetic' ? plating.metalKey : def.metalKey;
-          inventory[metalBarItemKey(refundMetal)] = Math.min(99, (inventory[metalBarItemKey(refundMetal)] || 0) + PLATE_BAR_COST);
-          clearToolPlating(itemKey);
-          showToast('Cleared plating — back to live verdigris, materials returned.', true);
-        } else if (choice === 'resistant' || choice.startsWith('cosmetic:')) {
-          const metalKey = choice === 'resistant' ? def.metalKey : choice.slice('cosmetic:'.length);
-          const metal = METAL_DEFS[metalKey];
-          if (!metal) return;
-          const barKey = metalBarItemKey(metalKey);
-          if ((inventory[barKey] || 0) < PLATE_BAR_COST) { showToast(`Not enough ${metal.label} bars.`, false); return; }
-          if ((inventory.gold || 0) < PLATE_LABOR_GOLD) { showToast('Not enough gold.', false); return; }
-          inventory[barKey] -= PLATE_BAR_COST;
-          clampInventoryStack(barKey);
-          inventory.gold -= PLATE_LABOR_GOLD;
-          setToolPlating(itemKey, choice === 'resistant' ? 'resistant' : 'cosmetic', metalKey);
-          showToast(choice === 'resistant' ? 'Applied a verdigris-resistant coat.' : `Plated with ${metal.label}.`, true);
-        } else {
-          return;
-        }
-        refreshMetalToolWorldTexture(itemKey);
-        renderMetalCraftShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      // Same cost as smithing a whole new tool — see task spec. Keeps the
-      // tool's own base-metal identity (itemKey never changes, so its
-      // mastery/verdigris/plating all keep tracking exactly as before);
-      // only its effective damage/efficacy borrows metalKey's tier (see
-      // toolEffectiveMetalKey/toolMetalMultiplier).
-      function reinforceMetalTool(itemKey, metalKey) {
-        const def = TOOL_ITEM_DEFS[itemKey];
-        const metal = METAL_DEFS[metalKey];
-        if (!def?.metalKey || !metal) return;
-        const currentTier = METAL_DEFS[toolEffectiveMetalKey(itemKey)]?.tier || 0;
-        if (metal.tier <= currentTier) { showToast("That metal isn't stronger than what this tool already fights with.", false); return; }
-        const barKey = metalBarItemKey(metalKey);
-        if ((inventory[barKey] || 0) < CRAFT_BAR_COST) { showToast(`Not enough ${metal.label} bars.`, false); return; }
-        if ((inventory.gold || 0) < CRAFT_LABOR_GOLD) { showToast("Not enough gold for the smith's labor.", false); return; }
-        inventory[barKey] -= CRAFT_BAR_COST;
-        clampInventoryStack(barKey);
-        inventory.gold -= CRAFT_LABOR_GOLD;
-        setToolReinforcement(itemKey, metalKey);
-        showToast(`${def.label} reinforced with ${metal.label}!`, true);
-        renderMetalCraftShopPage();
-        saveMemberWorldData();
-      }
-
-      function renderMetalCraftShopPage() {
-        const goldEl = document.getElementById('mcGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        const list = document.getElementById('metalCraftShopList');
-        if (!list) return;
-        list.innerHTML = '';
-
-        const craftHdr = document.createElement('div');
-        craftHdr.className = 'shop-section-label';
-        craftHdr.textContent = `🔨 Craft a New Tool  (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)`;
-        list.appendChild(craftHdr);
-
-        const shapeTabs = document.createElement('div');
-        shapeTabs.className = 'supply-tabs';
-        UNLOCKED_TOOL_SHAPES.forEach(shapeKey => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'supply-tab' + (shapeKey === metalCraftActiveShape ? ' active' : '');
-          btn.textContent = TOOL_SHAPE_DEFS[shapeKey].label;
-          btn.onclick = () => { metalCraftActiveShape = shapeKey; renderMetalCraftShopPage(); };
-          shapeTabs.appendChild(btn);
-        });
-        list.appendChild(shapeTabs);
-
-        VERDIGRIS_METAL_KEYS.forEach(metalKey => {
-          const metal = METAL_DEFS[metalKey];
-          const owned = inventory[metalBarItemKey(metalKey)] || 0;
-          const itemKey = craftedToolItemKey(metalCraftActiveShape, metalKey);
-          const alreadyOwned = !!gearInventory?.tools?.[itemKey];
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">🔶</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(metal.label)} ${esc(TOOL_SHAPE_DEFS[metalCraftActiveShape].label)} (tier ${metal.tier})</div>
-              <div class="sh-desc">Bars owned: ${owned}${alreadyOwned ? ' — already smithed' : ''}</div>
-              <div class="sh-price">${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g</div>
-            </div>
-            <button class="shop-buy-btn" data-metal="${metalKey}" ${alreadyOwned ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
-          `;
-          row.querySelector('[data-metal]')?.addEventListener('click', () => craftMetalTool(metalCraftActiveShape, metalKey));
-          list.appendChild(row);
-        });
-
-        const ownedCrafted = Object.keys(gearInventory?.tools || {}).filter(key => TOOL_ITEM_DEFS[key]?.metalKey);
-        if (ownedCrafted.length) {
-          const plateHdr = document.createElement('div');
-          plateHdr.className = 'shop-section-label';
-          plateHdr.textContent = '✨ Plate, Clear, or Reinforce';
-          list.appendChild(plateHdr);
-
-          ownedCrafted.forEach(itemKey => {
-            const def = TOOL_ITEM_DEFS[itemKey];
-            const verdigrisPct = Math.round(toolVerdigrisFraction(itemKey) * 100);
-            const plating = toolPlating(itemKey);
-            const effectiveMetal = toolEffectiveMetalKey(itemKey);
-            const reinforced = toolReinforcementMetal(itemKey);
-            const platingText = plating
-              ? (plating.mode === 'cosmetic' ? `Plated: ${METAL_DEFS[plating.metalKey]?.label}` : 'Verdigris-resistant coat')
-              : `Live verdigris: ${verdigrisPct}%`;
-            const plateOptions = [
-              `<option value="clear">— live verdigris (clear plating) —</option>`,
-              `<option value="resistant">Verdigris-resistant coat (${esc(METAL_DEFS[def.metalKey].label)})</option>`,
-              // Cosmetic plating is specifically a non-verdigris metal's
-              // clean color (see spec) — a verdigris metal already shows
-              // its own live oxidation, so "resistant" (above) is the
-              // same-metal option instead.
-              ...Object.keys(METAL_DEFS).filter(k => METAL_DEFS[k].tier == null && (inventory[metalBarItemKey(k)] || 0) > 0)
-                .map(k => `<option value="cosmetic:${k}">Cosmetic: ${esc(METAL_DEFS[k].label)}</option>`),
-            ].join('');
-            const reinforceOptions = VERDIGRIS_METAL_KEYS
-              .filter(k => METAL_DEFS[k].tier > (METAL_DEFS[effectiveMetal]?.tier || 0) && (inventory[metalBarItemKey(k)] || 0) >= CRAFT_BAR_COST)
-              .map(k => `<option value="${k}">${esc(METAL_DEFS[k].label)} (tier ${METAL_DEFS[k].tier})</option>`).join('');
-            const row = document.createElement('div');
-            row.className = 'shop-row mc-tool-row';
-            row.innerHTML = `
-              <div class="sh-icon">${def.icon}</div>
-              <div class="sh-info">
-                <div class="sh-name">${esc(def.label)}${reinforced ? ' (reinforced: ' + esc(METAL_DEFS[reinforced].label) + ')' : ''}</div>
-                <div class="sh-desc">${esc(platingText)} — Mastery ${toolMasteryLevel(itemKey)}/5</div>
-                <div class="mc-tool-controls">
-                  <select class="mc-plate-select">${plateOptions}</select>
-                  <button class="shop-buy-btn mc-plate-btn">Apply</button>
-                </div>
-                ${reinforceOptions ? `<div class="mc-tool-controls">
-                  <select class="mc-reinforce-select">${reinforceOptions}</select>
-                  <button class="shop-buy-btn mc-reinforce-btn">Reinforce (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)</button>
-                </div>` : ''}
-              </div>
-            `;
-            row.querySelector('.mc-plate-btn')?.addEventListener('click', () => {
-              applyMetalToolPlating(itemKey, row.querySelector('.mc-plate-select').value);
-            });
-            row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => {
-              const sel = row.querySelector('.mc-reinforce-select');
-              if (sel) reinforceMetalTool(itemKey, sel.value);
-            });
-            list.appendChild(row);
-          });
-        }
-      }
+      // Sloomi/Kzubug's smithing counter (craft/plate/reinforce verdigris
+      // tools) now lives in js/metal-craft-shop.js — call via
+      // window.MetalCraftShop.render().
 
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
@@ -25979,6 +25593,62 @@
 
       window.PerpRotation?.init({
         angleDiff,
+      });
+
+      window.GeneralStore?.init({
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
+        lootShopWorldState: _lootShopWorldState,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+        getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
+        calendar,
+        esc,
+        getPackClothing: () => packClothing,
+        buildPackClothingSection,
+        seededRandom,
+        clothingSpriteForCosmetic,
+      });
+
+      window.CarpenterShop?.init({
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getBarnTiers: () => BARN_TIERS,
+        FURNITURE_BLUEPRINT_CATALOG,
+        lootShopWorldState: _lootShopWorldState,
+        esc,
+      });
+
+      window.MetalCraftShop?.init({
+        inventory,
+        showToast,
+        clampInventoryStack,
+        buildInventoryGrid,
+        buildEquipmentSlots,
+        saveMemberWorldData,
+        esc,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        metalBarItemKey,
+        craftedToolItemKey,
+        toolPlating,
+        clearToolPlating,
+        setToolPlating,
+        toolReinforcementMetal,
+        setToolReinforcement,
+        toolEffectiveMetalKey,
+        toolVerdigrisFraction,
+        toolMasteryLevel,
+        refreshMetalToolWorldTexture,
+        METAL_DEFS,
+        TOOL_ITEM_DEFS,
+        VERDIGRIS_METAL_KEYS,
+        UNLOCKED_TOOL_SHAPES,
+        TOOL_SHAPE_DEFS,
       });
 
       window.WildernessMap?.init({
