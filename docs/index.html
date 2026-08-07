@@ -189,6 +189,151 @@
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
   <script src="js/reagent-plants.js?v=20260807a"></script>
+  <!-- Jubmir the traveling trader: daily one-off egg stock (window.JubmirShop)
+       — self-contained aside from deps injected via init(), and reads
+       window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
+       call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.JubmirShop.init(...) during its own setup. -->
+  <script src="js/jubmir-shop.js?v=20260807a"></script>
+  <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
+       seasons) and the Calendar tab UI (window.CalendarSystem) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load before
+       game.js, which calls window.CalendarSystem.init(...) during its own
+       setup. -->
+  <script src="js/calendar-system.js?v=20260807a"></script>
+  <!-- Relationships menu tab render (window.RelationshipsPanel) —
+       self-contained aside from deps injected via init(), and reads
+       window.DialogueContent/window.ProceduralTasks at render time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.RelationshipsPanel.init(...) during its own setup. -->
+  <script src="js/relationships-panel.js?v=20260807a"></script>
+  <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
+       (window.DebugHitboxes) — self-contained aside from deps injected via
+       init(), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.DebugHitboxes.init(...) during its own setup. -->
+  <script src="js/debug-hitboxes.js?v=20260807a"></script>
+  <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
+       Arena (window.BanditCombatLog) — reads window.BanditCombat/
+       window.BanditCamps/window.Combat at capture time (already global by
+       then), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.BanditCombatLog.init(...) during its own setup. -->
+  <script src="js/bandit-combat-log.js?v=20260807a"></script>
+  <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
+       aside from deps injected via init(), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.ClimbSystem.init(...) during its own setup. -->
+  <script src="js/climb-system.js?v=20260807a"></script>
+  <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
+       (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
+       at draw time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.WildernessMap.init(...) during its own setup. -->
+  <script src="js/wilderness-map.js?v=20260807a"></script>
+  <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
+       avatars (window.PerpRotation) — self-contained aside from deps
+       injected via init(), so load order relative to the other systems
+       above doesn't matter; must load before game.js, which calls
+       window.PerpRotation.init(...) during its own setup. -->
+  <script src="js/perp-rotation.js?v=20260807a"></script>
+  <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
+       aside from deps injected via init(), and reads window.DyeSystem/
+       window.ConditionRegistry at render time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.GeneralStore.init(...)
+       during its own setup. -->
+  <script src="js/general-store.js?v=20260807a"></script>
+  <!-- Carpenter's shop: barn plans + furniture blueprints
+       (window.CarpenterShop) — self-contained aside from deps injected via
+       init(), and reads window.ConditionRegistry at render time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.CarpenterShop.init(...) during its own setup. -->
+  <script src="js/carpenter-shop.js?v=20260807a"></script>
+  <!-- Sloomi/Kzubug's smithing counter (window.MetalCraftShop) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.MetalCraftShop.init(...) during
+       its own setup. -->
+  <script src="js/metal-craft-shop.js?v=20260807a"></script>
+  <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
+       wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
+       window.BanditCamps/window.CreatureGenetics/window.CreatureGeneticsRender
+       at call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.WildlifeSpawn.init(...) during its own setup. -->
+  <script src="js/wildlife-spawn.js?v=20260807a"></script>
+  <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
+       (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
+       WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
+       call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.TownZoneBuildings.init(...) during its own setup (and
+       reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
+       window.FarmBuildings' own init deps, at that same call-time point). -->
+  <script src="js/town-zone-buildings.js?v=20260807a"></script>
+  <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
+       panel (window.DevSpawner) — reads window.CreatureGenetics/
+       window.CreatureGeneticsRender/window.BanditCombat/
+       window.FoliageGenerator at call time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.DevSpawner.init(...) during
+       its own setup, and reads window.DevSpawner.DEV_ARENA_ZONE_ID/
+       .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
+       window.BanditCamps at that same call-time point. -->
+  <script src="js/dev-spawner.js?v=20260807a"></script>
+  <!-- Weather rolling, day/night + weather lighting overlay, and trench
+       water particle/paddy ripple FX (window.WeatherFX) — reads
+       window.CalendarSystem at call time (already global by then), so load
+       order relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.WeatherFX.init(...) during its
+       own setup. -->
+  <script src="js/weather-fx.js?v=20260807a"></script>
+  <!-- Farm tab hub (header, grid glance, buildings list, processor status
+       tiles, livestock roster + breeding, farm<->stable transfers, storage,
+       farmhands) and the Stable tab (window.FarmPanel) — reads
+       window.FarmAnimals/window.CreatureGenetics/window.DewVats/
+       window.FarmBuildings/window.__hobunjiAddFarmhand/
+       window.__hobunjiRemoveFarmhand at call time (already global by then),
+       so load order relative to the other systems above doesn't matter;
+       must load before game.js, which calls window.FarmPanel.init(...)
+       during its own setup. -->
+  <script src="js/farm-panel.js?v=20260807a"></script>
+  <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
+       whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
+       debug panel (window.WildlifeDebugPanel) — all read
+       window.ProceduralTasks/window.BountyBoard/window.WildlifeSpawn/
+       window.CreatureGenetics at call time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls each module's init(...) during its
+       own setup. -->
+  <script src="js/tasks-panel.js?v=20260807a"></script>
+  <script src="js/supply-page.js?v=20260807a"></script>
+  <script src="js/whistle-equip.js?v=20260807a"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260807a"></script>
+  <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
+       ShippingPanel) — pure DOM/state, no other window.* system reads;
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.ShippingPanel.init(...)
+       during its own setup, and also wires boot-time shipping-tab button
+       listeners through window.ShippingPanel.* directly. -->
+  <script src="js/shipping-panel.js?v=20260807a"></script>
+  <!-- Settings tab's input-binding rows (window.InputSettingsPanel) — pure
+       DOM/state, no other window.* system reads; must load before game.js,
+       which calls window.InputSettingsPanel.init(...) and an immediate
+       render() during its own boot sequence (unlike its sibling panels,
+       this one renders once at boot rather than lazily on first tab
+       open). -->
+  <script src="js/input-settings-panel.js?v=20260807a"></script>
+  <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
+       — pure DOM/state, no other window.* system reads; load order relative
+       to the other systems above doesn't matter; must load before game.js,
+       which calls window.CraftingPanel.init(...) during its own setup. -->
+  <script src="js/crafting-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -252,7 +397,7 @@
 
   <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
        farm editor pencil, shown only while standing in the Testing Arena -->
-  <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window._devSpawner?.toggle()" style="display:none;">🐾</button>
+  <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window.DevSpawner?.toggle()" style="display:none;">🐾</button>
 
   <!-- Farm Editor Panel -->
   <div id="farmEditorPanel" style="display:none;" aria-label="Farm editor">
@@ -318,7 +463,7 @@
   <div id="devSpawnPanel" style="display:none;" aria-label="Creature spawn menu">
     <div class="fed-header">
       <span>🐾 Creature Spawner</span>
-      <button class="fed-close" onclick="window._devSpawner?.toggle()" title="Close spawn menu">✕</button>
+      <button class="fed-close" onclick="window.DevSpawner?.toggle()" title="Close spawn menu">✕</button>
     </div>
     <div class="fed-scroll">
       <div class="fed-section">

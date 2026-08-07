@@ -143,16 +143,16 @@
         switchMenuPanel(targetPanel);
         buildInventoryGrid();
         buildEquipmentSlots();
-        if (targetPanel === 'crafting') renderCraftingPanel();
-        if (targetPanel === 'shipping') buildShippingTransferUI();
-        if (targetPanel === 'supplies') renderSupplyPage();
-        if (targetPanel === 'generalStore') renderGeneralStorePage();
-        if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
-        if (targetPanel === 'jubmirShop') renderJubmirShopPage();
-        if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
+        if (targetPanel === 'crafting') window.CraftingPanel.render();
+        if (targetPanel === 'shipping') window.ShippingPanel.build();
+        if (targetPanel === 'supplies') window.SupplyPage.render();
+        if (targetPanel === 'generalStore') window.GeneralStore.render();
+        if (targetPanel === 'carpenterShop') window.CarpenterShop.render();
+        if (targetPanel === 'jubmirShop') window.JubmirShop.render();
+        if (targetPanel === 'metalCraftShop') window.MetalCraftShop.render();
         if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
-        if (targetPanel === 'tasks') renderTasksPanel();
-        if (targetPanel === 'relationships') renderRelationshipsPanel();
+        if (targetPanel === 'tasks') window.TasksPanel.render();
+        if (targetPanel === 'relationships') window.RelationshipsPanel.render();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -180,22 +180,22 @@
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
-        if (id === 'crafting') renderCraftingPanel();
-        if (id === 'calendar') renderCalendarPanel();
-        if (id === 'map') renderWildernessMapPanel();
-        if (id === 'farm') renderFarmPanel();
-        if (id === 'stable') renderStablePanel();
-        if (id === 'shipping') buildShippingTransferUI();
-        if (id === 'supplies') renderSupplyPage();
-        if (id === 'generalStore') renderGeneralStorePage();
-        if (id === 'carpenterShop') renderCarpenterShopPage();
-        if (id === 'jubmirShop') renderJubmirShopPage();
-        if (id === 'metalCraftShop') renderMetalCraftShopPage();
+        if (id === 'crafting') window.CraftingPanel.render();
+        if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
+        if (id === 'map') window.WildernessMap.renderMapPanel();
+        if (id === 'farm') window.FarmPanel.render();
+        if (id === 'stable') window.FarmPanel.renderStablePanel();
+        if (id === 'shipping') window.ShippingPanel.build();
+        if (id === 'supplies') window.SupplyPage.render();
+        if (id === 'generalStore') window.GeneralStore.render();
+        if (id === 'carpenterShop') window.CarpenterShop.render();
+        if (id === 'jubmirShop') window.JubmirShop.render();
+        if (id === 'metalCraftShop') window.MetalCraftShop.render();
         if (id === 'alchemy') window.AlchemySystem.renderPanel();
-        if (id === 'tasks') renderTasksPanel();
-        if (id === 'relationships') renderRelationshipsPanel();
+        if (id === 'tasks') window.TasksPanel.render();
+        if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') renderWildlifeDebugPanel();
+        if (id === 'wildlife') window.WildlifeDebugPanel.render();
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -255,25 +255,24 @@
       document.querySelectorAll('.ship-cat').forEach(btn => {
         btn.addEventListener('click', () => {
           const side = btn.dataset.side;
-          if (side === 'left') shippingActiveCat.left = btn.dataset.cat;
-          if (side === 'right') shippingActiveCat.right = btn.dataset.cat;
+          window.ShippingPanel.setActiveCat(side, btn.dataset.cat);
           document.querySelectorAll(`.ship-cat[data-side="${side}"]`).forEach(b =>
-            b.classList.toggle('active', b.dataset.cat === (side === 'left' ? shippingActiveCat.left : shippingActiveCat.right)));
-          buildShippingTransferUI();
+            b.classList.toggle('active', b.dataset.cat === window.ShippingPanel.getActiveCat(side)));
+          window.ShippingPanel.build();
         });
       });
       const shipCloseBtn = document.getElementById('shipCloseBtn');
       if (shipCloseBtn) shipCloseBtn.addEventListener('click', closeMenu);
       const shipAmtMinus = document.getElementById('shipAmtMinus');
       const shipAmtPlus  = document.getElementById('shipAmtPlus');
-      if (shipAmtMinus) shipAmtMinus.addEventListener('click', () => bumpShippingAmount(-1));
-      if (shipAmtPlus)  shipAmtPlus.addEventListener('click',  () => bumpShippingAmount(1));
+      if (shipAmtMinus) shipAmtMinus.addEventListener('click', () => window.ShippingPanel.bumpAmount(-1));
+      if (shipAmtPlus)  shipAmtPlus.addEventListener('click',  () => window.ShippingPanel.bumpAmount(1));
       const shipTransferOne = document.getElementById('shipTransferOne');
       const shipTransferHalf = document.getElementById('shipTransferHalf');
       const shipTransferStack = document.getElementById('shipTransferStack');
-      if (shipTransferOne) shipTransferOne.addEventListener('click', () => transferShippingAmount(1));
-      if (shipTransferHalf) shipTransferHalf.addEventListener('click', () => transferShippingAmount('half'));
-      if (shipTransferStack) shipTransferStack.addEventListener('click', () => transferShippingAmount('stack'));
+      if (shipTransferOne) shipTransferOne.addEventListener('click', () => window.ShippingPanel.transferAmount(1));
+      if (shipTransferHalf) shipTransferHalf.addEventListener('click', () => window.ShippingPanel.transferAmount('half'));
+      if (shipTransferStack) shipTransferStack.addEventListener('click', () => window.ShippingPanel.transferAmount('stack'));
 
       // ── Legend + old legend toggle removed — handled by menu now
       // ── Toast ──────────────────────────────────────────────
@@ -544,22 +543,11 @@
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
-      // ── Khymeryyan civil calendar ──
-      // Universal calendar used across Tanka: 7-day weeks, 48 weeks/year (336
-      // days), 12 months of 28 days (= exactly 4 weeks) each. calendar.day is
-      // an ever-incrementing absolute day count from world start (day 1);
-      // year/month/week/day-of-year are all derived from it via modulo.
-      const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // calendar.day 1 falls on Anan
-      const DAYS_PER_WEEK  = WEEKDAY_NAMES.length; // 7
-      const WEEKS_PER_YEAR = 48;
-      const YEAR_LENGTH_DAYS = DAYS_PER_WEEK * WEEKS_PER_YEAR; // 336
-      const DAYS_PER_MONTH = 28; // exactly 4 weeks
-      const MONTH_NAMES = [
-        'Waxingheat', 'Highheat', 'Waningheat',       // Summer
-        'Firstfall', 'Secondfall', 'Thirdfall',       // Fall
-        'Shallowfrost', 'Deepfrost', 'Pouringfrost',  // Winter
-        'Firstrise', 'Secondrise', 'Thirdrise',       // Spring
-      ]; // universal civil months — decoupled from Tanka's regional tropical seasons
+      // Khymeryyan civil calendar (week/month/year names + lengths) now
+      // lives in js/calendar-system.js (window.CalendarSystem) — MORNING_HOUR/
+      // NIGHT_HOUR above stay here since the day/weather tick and lighting
+      // code also read them, and are threaded into CalendarSystem.init(...)
+      // below as deps.
 
       // ── Highland House — adjust these to fit the GLB and position it on the farm ──
       // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
@@ -642,34 +630,14 @@
       const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
 
       // ── Game data ──
-      // Regional seasons: Northwestern Tanka. The civil calendar above is
-      // universal, but lived seasons are regional — this location reads its
-      // weather off week-of-year bands (Stormtide/Deadgrass/Longpour, plus a
-      // short Coldmuck slush-cover/wind-hinge season with occasional pituraq
-      // micro-winter squalls at the Longpour→Stormtide turn) rather than the
-      // calendar month. Deliberately unbalanced 4/2/4/2 months (not the
-      // "pure" 5/1/5/1 the doc's week math would give) — Secondfall was
-      // pulled into Deadgrass and Secondrise into Coldmuck for pacing, so
-      // neither short season is a single awkward month.
-      // Every transition falls mid-month (week 2 of a 4-week month) rather
-      // than on a month boundary, so a player looking at the Calendar tab
-      // sees the season already starting to turn partway through the
-      // currently-open month page instead of the change only showing up
-      // once they flip to the next one. Stormtide's band therefore wraps
-      // the year boundary (weeks 47-48, then 1-14) — seasonForDay()/
-      // weekOfSeason() below handle startWeek > endWeek as a wraparound,
-      // same convention isNowWithinNpcRuleWindow() uses for overnight
-      // schedule rules.
-      // grassColor/grassDensity drive the ground tile material and the grass
-      // billboard tufts (see applySeasonalGrassAppearance()) — vibrant/full
-      // for the wet seasons, sparse and off-hue for Deadgrass (dead, dry) and
-      // Coldmuck (slush-covered, dormant).
-      const seasons = [
-        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 47, endWeek: 14, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
-        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 15, endWeek: 22, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
-        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 23, endWeek: 38, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
-        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
-      ];
+      // Regional seasons (Stormtide/Deadgrass/Longpour/Coldmuck) also moved
+      // into js/calendar-system.js alongside the calendar derivations —
+      // access via window.CalendarSystem.currentSeason()/seasonForDay(day).
+      // season.grassColor/grassDensity still drive the ground tile material
+      // and grass billboard tufts here (see applySeasonalGrassAppearance()),
+      // and season.rainChance/stormChance still drive the weather roll
+      // (see chooseWeatherForDay()) — both read the season object returned
+      // by those CalendarSystem calls rather than the raw table.
       // Deadgrass rolls as low as a 6% rain chance per day and runs 8
       // weeks (56 days) straight, long enough in real time to read as "it
       // never rains anymore." chooseWeatherForDay()'s pity timer guarantees a
@@ -2223,35 +2191,8 @@
       ];
       let GENERAL_STORE_CLOTHING_SLOTS = 4;
 
-      function generateDailyClothingStock(day) {
-        const stock = [];
-        const catalog = window.DyeSystem.getCatalog();
-        // Condition-eligible candidates only (e.g. a season-gated piece) —
-        // falls back to the full list if conditions would otherwise empty
-        // it out entirely, so a misconfigured pool never bricks the shop.
-        const world = _lootShopWorldState();
-        const eligible = STORE_CLOTHING_PIECES.filter(p => window.ConditionRegistry.entryEligible(p, world));
-        const pieces = eligible.length ? eligible : STORE_CLOTHING_PIECES;
-        for (let i = 0; i < GENERAL_STORE_CLOTHING_SLOTS; i++) {
-          const piece   = pieces[Math.floor(seededRandom(day * 97 + i * 31) * pieces.length)];
-          const dyeA    = catalog[Math.floor(seededRandom(day * 53 + i * 71 + 13) * catalog.length)];
-          const dyeB    = piece.usesB ? catalog[Math.floor(seededRandom(day * 113 + i * 43 + 7) * catalog.length)] : null;
-          const dyeLbl  = piece.usesB && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
-          stock.push({
-            uid:        'citem_gs_' + day + '_' + i,
-            cosmeticId: piece.id,
-            slot:       piece.category,
-            label:      dyeLbl + ' ' + piece.label,
-            baseLabel:  piece.label,
-            colorA:     window.DyeSystem.toClothingColor(dyeA),
-            colorB:     window.DyeSystem.toClothingColor(dyeB),
-            price:      piece.price,
-            sellPrice:  Math.floor(piece.price * 0.4),
-            sprite:     clothingSpriteForCosmetic(piece.id),
-          });
-        }
-        return stock;
-      }
+      // Daily General Store clothing rack (generateDailyClothingStock) now
+      // lives in js/general-store.js alongside the rest of that shop.
 
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
@@ -3330,8 +3271,8 @@
       // concept here, so those axes are simply never supplied/checked.
       function _lootShopWorldState() {
         return {
-          weekdays: currentWeekdayName(),
-          seasons: currentSeason().name,
+          weekdays: window.CalendarSystem.currentWeekdayName(),
+          seasons: window.CalendarSystem.currentSeason().name,
           weather: calendar.weather,
           timesOfDay: window.Fishing.timeOfDay(),
           maps: currentArea,
@@ -3831,17 +3772,17 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
-        if (CREATURE_PLANE_ROT_MODE === 'snap') {
+        if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          const { target: pngTarget, snap } = creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
-        } else if (CREATURE_PLANE_ROT_MODE === 'sway') {
+        } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          const pngTarget = window.PerpRotation.creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else { // 'halt'
-          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
           if (pngSnapTo !== null) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         }
@@ -4226,7 +4167,7 @@
                 const triggerRangePx = def.attackRangePx || TILE * 0.85;
                 if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
                   c.attackCooldownT = def.attackCooldownS || 1.0;
-                  applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                  window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
                 }
               }
             }
@@ -4332,7 +4273,7 @@
             // spawnPackAtDen), otherwise travels to its assigned grazing tile
             // and settles there. Falls back to plain wander with neither
             // assigned (legacy zones without generator data).
-            const nowHours = (calendar.day - 1) * 24 + getHour();
+            const nowHours = (calendar.day - 1) * 24 + window.CalendarSystem.getHour();
             if (c.nextDrinkHour == null) c.nextDrinkHour = nowHours + rnd() * WILDLIFE_DRINK_INTERVAL_HOURS;
             const wantsDrink = c.waterTile && nowHours >= c.nextDrinkHour;
             if (wantsDrink) {
@@ -5039,7 +4980,7 @@
         if (cutscenePreviewActive) return;
 
         for (const role of ['companion', 'shoulderPet']) {
-          const activeId = activeStableIdForRole(role);
+          const activeId = window.FarmPanel.activeStableIdForRole(role);
           // The stable is the primary source of truth for "what's my active
           // X" — only species with a matching CREATURE_DB entry (and
           // therefore a companion AI type) can actually be summoned; a
@@ -5112,21 +5053,8 @@
       };
 
       // ── Locales (docs/tools/locale-editor/, docs/config/locales/) ──────────
-      // Leaf & Pahu's House ("Little Swamp House" above) has a fixed,
-      // non-relocating anchor via TOTHAL_PRESERVED_TRANSITIONS -- a real
-      // building interior is meant to be authored at that same fixed spot
-      // later, so its position never changes and the wilderness map (see the
-      // map UI) can just list it here as a constant. Everything else --
-      // the Researcher's Tent and the Great Fey shrines -- gets stamped
-      // fresh into the regenerated wilderness by the generator itself (see
-      // stampLocales in wilderness-map-generator.js): their location
-      // genuinely reshuffles with the rest of the terrain on every Tothal
-      // Shift, which is why the map only shows their *current* position once
-      // you've found them before (or always, for the Tent -- see its
-      // alwaysVisibleOnMap placement flag).
-      const FIXED_LOCALE_LANDMARKS = [
-        { localeId: 'locale_leaf_pahu_house', name: "Leaf & Pahu's House", category: 'dwelling', zoneId: 'map_eastern_mire', col: 34, row: 29 },
-      ];
+      // FIXED_LOCALE_LANDMARKS (Leaf & Pahu's House's fixed map anchor) now
+      // lives in js/wilderness-map.js alongside the rest of the map system.
 
       // Fetched once per page load and cached -- the locale JSON files rarely
       // change mid-session, and every Tothal Shift needs the same list.
@@ -5171,7 +5099,7 @@
       }
 
       function currentTothalYear() {
-        return yearNumber(calendar.day);
+        return window.CalendarSystem.yearNumber(calendar.day);
       }
 
       function _tothalWorldId() {
@@ -5324,99 +5252,9 @@
         } catch {}
       }
 
-      // ── Jubmir's daily trader stock (world-scoped — one shared egg per
-      // day, same as a real traveling trader visiting the whole village) ──
-      // { day, genotype, purchased }. Rerolled the first time anyone opens
-      // his shop on a new calendar.day; "purchased" makes that day's single
-      // egg unavailable to everyone until the next reroll, rather than each
-      // character getting their own independent copy.
-      function _loadJubmirStock() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return null;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.jubmirStock ?? null;
-        } catch { return null; }
-      }
-
-      function _saveJubmirStock(stock) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.jubmirStock = stock;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      // Jubmir sells exactly one goods entry today (a dabinggi-hound egg),
-      // sourced from docs/config/shops/shop-stock.json's jubmirWares.goods —
-      // the hardcoded fallback matches that file's default entry in case the
-      // config hasn't loaded yet. restockDays/maxPerRestock are only
-      // implemented for the "1 per day" case today (see getJubmirStock's
-      // day-reset check) — a future entry wanting a longer cycle or more
-      // than one unit per restock would need that check generalized.
-      function _jubmirEggEntry() {
-        return (_shopStock.jubmirWares?.goods || []).find(e => e.key === 'dabinggiHoundEgg') || {
-          key: 'dabinggiHoundEgg', icon: '🥚', name: 'Dabinggi-hound Egg',
-          desc: 'A rare, non-native find. One only, restocked daily.',
-          price: 200, givesGenotype: 'dabinggi-hound', restockDays: 1, maxPerRestock: 1,
-        };
-      }
-
-      // Returns today's stock, rolling a fresh dabinggi-hound egg genotype
-      // the first time it's checked on a new day.
-      function getJubmirStock() {
-        let stock = _loadJubmirStock();
-        if (!stock || stock.day !== calendar.day) {
-          stock = { day: calendar.day, genotype: window.CreatureGenetics.makeDefaultGenotype(_jubmirEggEntry().givesGenotype), purchased: false };
-          _saveJubmirStock(stock);
-        }
-        return stock;
-      }
-
-      function buyJubmirEgg() {
-        const stock = getJubmirStock();
-        const entry = _jubmirEggEntry();
-        if (stock.purchased) { showToast("Jubmir's sold out for today — check back tomorrow.", false); return; }
-        const gold = inventory.gold || 0;
-        if (gold < entry.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - entry.price;
-        inventory.dabinggiHoundEgg = Math.min(9, (inventory.dabinggiHoundEgg || 0) + 1);
-        window.FarmAnimals.queueItemGenotype('dabinggiHoundEgg', stock.genotype);
-        stock.purchased = true;
-        _saveJubmirStock(stock);
-        showToast(`Bought a ${entry.name} from Jubmir!`, true);
-        renderJubmirShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderJubmirShopPage() {
-        const goldEl = document.getElementById('jmGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        const list = document.getElementById('jubmirShopList');
-        if (!list) return;
-        list.innerHTML = '';
-        const entry = _jubmirEggEntry();
-        if (!window.ConditionRegistry.entryEligible(entry, _lootShopWorldState())) return;
-        const stock = getJubmirStock();
-        const row = document.createElement('div');
-        row.className = 'shop-row';
-        row.innerHTML = `
-          <div class="sh-icon">${entry.icon}</div>
-          <div class="sh-info">
-            <div class="sh-name">${esc(entry.name)}</div>
-            <div class="sh-desc">${stock.purchased ? "Sold out — Jubmir will have another tomorrow." : entry.desc}</div>
-            <div class="sh-price">${entry.price}g</div>
-          </div>
-          <button class="shop-buy-btn" ${stock.purchased ? 'disabled' : ''}>${stock.purchased ? 'Sold Out' : 'Buy'}</button>
-        `;
-        if (!stock.purchased) row.querySelector('button')?.addEventListener('click', buyJubmirEgg);
-        list.appendChild(row);
-      }
+      // Jubmir's daily trader stock/shop page now lives in
+      // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
+      // below for the shared game.js state it's threaded.
 
       // ── Farm name (reuses world.label, the same field set at world
       // creation in onboarding.js) ────────────────────────────────────────
@@ -5793,7 +5631,7 @@
             const denTransitions = (workspace.animalDens || [])
               .filter(den => den.mouthAnchor)
               .map(den => {
-                const cavernMapId = denCavernMapId(zoneId, den.id);
+                const cavernMapId = window.WildlifeSpawn.denCavernMapId(zoneId, den.id);
                 const { exitCol, exitRow } = generateCavernFloor(cavernMapId);
                 return {
                   id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
@@ -5818,7 +5656,7 @@
             // A reshaped zone's dens are all new — forget any leftover pack/
             // respawn bookkeeping from the previous layout's den ids (see
             // ensureZoneDenPacks/spawnPackAtDen).
-            forgetZoneDenState(zoneId);
+            window.WildlifeSpawn.forgetZoneDenState(zoneId);
             window.BanditCamps.forgetZoneState(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
@@ -5872,310 +5710,18 @@
       }
       window.forceTothalShift = () => checkTothalShift(true);
 
-      // ── Wilderness map: fog-of-war + locale discovery ──────────────────
-      // Two kinds of state, deliberately kept separate:
-      //  - Per-zone fog (what terrain you've walked near) is bulky, cheap to
-      //    regenerate, and meaningless once a Tothal Shift reshapes that
-      //    zone's terrain -- stored outside hobunjiSaveMeta, tagged with the
-      //    Tothal year it was revealed under, and thrown away/rebuilt blank
-      //    the moment that tag goes stale.
-      //  - Discovered locales (have you ever found Leaf & Pahu's House, the
-      //    Researcher's Tent, or a Great Fey shrine) is small and meant to
-      //    last forever -- stored in hobunjiSaveMeta like the rest of the
-      //    world's permanent state (see _saveTothalYear et al. above), and
-      //    updated (never cleared) every time you rediscover one after a
-      //    shift has moved it.
-      const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
-      const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
-
-      function _fogStorageKey(worldId, zoneId) { return `hobunji_zone_fog_v1_${worldId}_${zoneId}`; }
-
-      function _bitsToBase64(bytes) {
-        let bin = '';
-        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        return btoa(bin);
-      }
-      function _base64ToBits(b64, minBytes) {
-        const bin = atob(b64);
-        const bytes = new Uint8Array(Math.max(bin.length, minBytes));
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        return bytes;
-      }
-
-      function _loadZoneFog(zoneId) {
-        const layout = _zoneLayouts.get(zoneId);
-        if (!layout) return null;
-        const year = currentTothalYear();
-        const cached = _fogCache.get(zoneId);
-        if (cached && cached.year === year && cached.cols === layout.cols && cached.rows === layout.rows) return cached;
-        const worldId = _tothalWorldId() || 'default';
-        let entry = null;
-        try {
-          const raw = localStorage.getItem(_fogStorageKey(worldId, zoneId));
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.year === year && parsed.cols === layout.cols && parsed.rows === layout.rows) {
-              entry = { year, cols: parsed.cols, rows: parsed.rows, bits: _base64ToBits(parsed.bits, Math.ceil(parsed.cols * parsed.rows / 8)) };
-            }
-          }
-        } catch {}
-        if (!entry) entry = { year, cols: layout.cols, rows: layout.rows, bits: new Uint8Array(Math.ceil(layout.cols * layout.rows / 8)) };
-        _fogCache.set(zoneId, entry);
-        return entry;
-      }
-
-      function _saveZoneFog(zoneId) {
-        const entry = _fogCache.get(zoneId);
-        if (!entry) return;
-        const worldId = _tothalWorldId() || 'default';
-        try {
-          localStorage.setItem(_fogStorageKey(worldId, zoneId), JSON.stringify({ year: entry.year, cols: entry.cols, rows: entry.rows, bits: _bitsToBase64(entry.bits) }));
-        } catch {}
-      }
-
-      function _fogIsRevealed(entry, c, r) {
-        if (!entry || c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
-        const idx = r * entry.cols + c;
-        return (entry.bits[idx >> 3] & (1 << (idx & 7))) !== 0;
-      }
-      function _fogReveal(entry, c, r) {
-        if (c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
-        const idx = r * entry.cols + c;
-        const byte = idx >> 3, bit = 1 << (idx & 7);
-        if (entry.bits[byte] & bit) return false;
-        entry.bits[byte] |= bit;
-        return true;
-      }
-
-      // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
-      function _loadDiscoveredLocales() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return {};
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {};
-        } catch { return {}; }
-      }
-      function _saveDiscoveredLocales(discovered) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.discoveredLocales = discovered;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      // All currently-placed locale instances this session, fixed + randomly
-      // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible }].
-      function _allLocaleInstances() {
-        const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true, alwaysVisible: false }));
-        for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
-          const layout = _zoneLayouts.get(zoneId);
-          for (const inst of (layout?.localeInstances || [])) {
-            out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !!inst.alwaysVisible });
-          }
-        }
-        return out;
-      }
-
-      // Called whenever fog newly reveals ground in `zoneId` -- checks every
-      // locale instance currently placed there against the just-revealed
-      // radius and flags it discovered forever. Discovery only ever records
-      // *that* a locale was found, never *where* -- the map always draws
-      // discovered locales from _allLocaleInstances()'s live current
-      // placement, so "current location... if you've discovered them
-      // before" holds even after a later Tothal Shift moves it, with no
-      // need to physically revisit it again first.
-      function _checkLocaleDiscovery(zoneId, pc, pr) {
-        const discovered = _loadDiscoveredLocales();
-        let changed = false;
-        for (const inst of _allLocaleInstances()) {
-          if (inst.zoneId !== zoneId || discovered[inst.localeId]) continue;
-          const dist = Math.hypot(inst.col - pc, inst.row - pr);
-          if (dist > FOG_REVEAL_RADIUS) continue;
-          discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: currentTothalYear() };
-          changed = true;
-          showToast(`Discovered: ${inst.name}`, true);
-        }
-        if (changed) _saveDiscoveredLocales(discovered);
-      }
-
-      let _lastFogRevealTile = null;
-      function updateZoneFogAroundPlayer() {
-        if (!_isZoneArea(currentArea)) return;
-        const zoneId = currentArea;
-        const entry = _loadZoneFog(zoneId);
-        if (!entry) return;
-        const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
-        if (_lastFogRevealTile && _lastFogRevealTile.zoneId === zoneId && _lastFogRevealTile.c === pc && _lastFogRevealTile.r === pr) return;
-        _lastFogRevealTile = { zoneId, c: pc, r: pr };
-        let changed = false;
-        const R = FOG_REVEAL_RADIUS, R2 = R * R;
-        for (let dr = -R; dr <= R; dr++) {
-          for (let dc = -R; dc <= R; dc++) {
-            if (dc * dc + dr * dr > R2) continue;
-            if (_fogReveal(entry, pc + dc, pr + dr)) changed = true;
-          }
-        }
-        if (changed) { _saveZoneFog(zoneId); }
-        _checkLocaleDiscovery(zoneId, pc, pr);
-      }
-
-      // ── Wilderness map rendering (shared by the minimap widget and the
-      // full-screen Map pane) ─────────────────────────────────────────────
+      // Wilderness fog-of-war, discovered-locale tracking, and map
+      // rendering (minimap widget + full-screen Map panel) now live in
+      // js/wilderness-map.js (window.WildernessMap) — see its init(deps)
+      // call below for the shared game.js state it's threaded. Kept here
+      // (not moved into that module) since the Tasks panel and
+      // window.BountyBoard also read it.
       const WMAP_ZONE_LABELS = {
         map_northern_cliffs: 'Northern Cliffs',
         map_southern_cloud_forest: 'Southern Cloud Forest',
         map_western_slope: 'Western Slope',
         map_eastern_mire: 'Eastern Mire',
       };
-      const WMAP_TERRAIN_COLORS = {
-        grass: '#2f6b3a', weeds: '#3f7a3f', shrub: '#265a30', path: '#b8956a',
-        rock: '#6b6f76', river: '#2f6fb8', stream: '#4f9bd9', waterfall: '#bfe9f7',
-        tilled: '#5a4327', raised: '#7a6248', trench: '#2a1f16', paddy: '#33628a', ramp: '#8f8460',
-      };
-      const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
-
-      function _drawWildernessMapOnCanvas(canvas, zoneId, opts = {}) {
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width, h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#05070a';
-        ctx.fillRect(0, 0, w, h);
-        const layout = zoneId ? _zoneLayouts.get(zoneId) : null;
-        if (!layout) {
-          ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.font = '13px system-ui';
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText('Not yet explored', w / 2, h / 2);
-          return;
-        }
-        const cols = layout.cols, rows = layout.rows;
-        const scaleX = w / cols, scaleY = h / rows;
-        const entry = _loadZoneFog(zoneId);
-        const cw = Math.ceil(scaleX), ch = Math.ceil(scaleY);
-        for (const tile of layout.tiles) {
-          if (!_fogIsRevealed(entry, tile.c, tile.r)) continue;
-          ctx.fillStyle = WMAP_TERRAIN_COLORS[tile.type] || WMAP_TERRAIN_COLORS.grass;
-          ctx.fillRect(Math.floor(tile.c * scaleX), Math.floor(tile.r * scaleY), cw, ch);
-        }
-        const markerR = Math.max(3, Math.min(scaleX, scaleY) * 1.4);
-        const discovered = _loadDiscoveredLocales();
-        for (const inst of _allLocaleInstances()) {
-          if (inst.zoneId !== zoneId) continue;
-          if (!inst.alwaysVisible && !discovered[inst.localeId]) continue;
-          const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, markerR, 0, Math.PI * 2);
-          ctx.fillStyle = WMAP_LOCALE_COLORS[inst.category] || WMAP_LOCALE_COLORS.misc;
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
-        }
-        // Threats a companion's Perception has sensed nearby (see
-        // updateCompanionPerception) — a distinct red danger marker rather
-        // than a WMAP_LOCALE_COLORS dot, since this is a temporary alert
-        // tied to an active, uncleared threat, not a permanently-remembered
-        // point of interest. Disappears the moment the threat is actually
-        // cleared, at which point it's pruned from _perceivedThreats itself.
-        const threatMarkerR = Math.max(4, markerR * 1.2);
-        for (const info of window.BanditCamps.perceivedThreats.values()) {
-          if (info.zoneId !== zoneId) continue;
-          const mx = info.col * scaleX, my = info.row * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, threatMarkerR, 0, Math.PI * 2);
-          ctx.fillStyle = '#c0392b';
-          ctx.fill();
-          ctx.strokeStyle = '#2a0d0a'; ctx.lineWidth = 1.5; ctx.stroke();
-          ctx.fillStyle = '#fff2d0';
-          ctx.font = `bold ${Math.max(7, Math.round(threatMarkerR * 1.1))}px system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText('!', mx, my + 0.5);
-        }
-        // An accepted bounty's target camp, once its actual location is
-        // known (see updateBountyTracking) -- a gold skull marker so it
-        // reads as "wanted target" rather than the red !  of a sensed
-        // threat or an ordinary discovered-locale dot. Stays up until the
-        // camp is confirmed destroyed, at which point the bounty completes
-        // and this is pruned from _bountyMarkers itself.
-        const bountyMarkerR = Math.max(4, markerR * 1.25);
-        for (const info of window.BountyBoard.markers.values()) {
-          if (info.zoneId !== zoneId) continue;
-          const mx = info.col * scaleX, my = info.row * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, bountyMarkerR, 0, Math.PI * 2);
-          ctx.fillStyle = '#e0b23c';
-          ctx.fill();
-          ctx.strokeStyle = '#4a3308'; ctx.lineWidth = 1.5; ctx.stroke();
-          ctx.fillStyle = '#2a1c05';
-          ctx.font = `bold ${Math.max(7, Math.round(bountyMarkerR * 1.1))}px system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText('☠', mx, my + 0.5);
-        }
-        // Garanki Gabu's live position, drawn as his own portrait (the same
-        // baked head-with-cosmetics canvas his world model and dialogue
-        // portrait use — see makeNpcWalker's avatarFrontCanvas) instead of a
-        // plain dot, so he reads as a person to go find rather than another
-        // static map marker. Tracks whichever zone he's actually in right
-        // now, independent of which zone tab the player happens to be
-        // standing in or viewing.
-        const garanki = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
-        if (garanki && garanki.area === zoneId && garanki.avatarFrontCanvas) {
-          const gx = garanki.root.position.x * scaleX, gy = garanki.root.position.z * scaleY;
-          const gr = Math.max(4, markerR * 1.3);
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-          ctx.closePath();
-          ctx.clip();
-          ctx.drawImage(garanki.avatarFrontCanvas, gx - gr, gy - gr, gr * 2, gr * 2);
-          ctx.restore();
-          ctx.beginPath();
-          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-          ctx.strokeStyle = '#f0d060'; ctx.lineWidth = 1.5; ctx.stroke();
-        }
-        if (opts.showPlayer) {
-          const mx = (player.x / TILE) * scaleX, my = (player.y / TILE) * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, Math.max(3, markerR * 0.8), 0, Math.PI * 2);
-          ctx.fillStyle = '#f9e28a';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
-        }
-      }
-
-      function renderWildernessMinimap() {
-        const widget = document.getElementById('minimapWidget');
-        const canvas = document.getElementById('minimapCanvas');
-        if (!widget || !canvas) return;
-        if (!_isZoneArea(currentArea)) { widget.classList.remove('show'); return; }
-        widget.classList.add('show');
-        _drawWildernessMapOnCanvas(canvas, currentArea, { showPlayer: true });
-      }
-
-      let _wmapActiveZone = null;
-      function renderWildernessMapPanel() {
-        const tabsEl = document.getElementById('wmapZoneTabs');
-        const canvas = document.getElementById('wildernessMapCanvas');
-        if (!tabsEl || !canvas) return;
-        const zoneIds = (typeof WildernessMapGenerator !== 'undefined') ? WildernessMapGenerator.zoneMapIds() : [];
-        if (!zoneIds.length) { tabsEl.innerHTML = ''; _drawWildernessMapOnCanvas(canvas, null); return; }
-        if (!_wmapActiveZone || !zoneIds.includes(_wmapActiveZone)) {
-          _wmapActiveZone = _isZoneArea(currentArea) ? currentArea : zoneIds[0];
-        }
-        tabsEl.innerHTML = '';
-        for (const zoneId of zoneIds) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'wmap-zone-tab' + (zoneId === _wmapActiveZone ? ' active' : '');
-          btn.textContent = WMAP_ZONE_LABELS[zoneId] || zoneId;
-          btn.addEventListener('click', () => { _wmapActiveZone = zoneId; renderWildernessMapPanel(); });
-          tabsEl.appendChild(btn);
-        }
-        _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
-      }
 
       // Devtools/QA hook for the cliff-climbing feature — mirrors
       // window.forceTothalShift's role of poking otherwise-input-driven
@@ -6218,8 +5764,8 @@
 
       window.__climbDebug = {
         getPlayer: () => player,
-        getClimbTarget,
-        startClimb,
+        getClimbTarget: window.ClimbSystem.getClimbTarget,
+        startClimb: window.ClimbSystem.startClimb,
         getActiveGrid,
         getCurrentArea: () => currentArea,
         enterZone,
@@ -6286,7 +5832,7 @@
         getWorldLivestock: () => _loadWorldLivestock(),
         getStable: () => stable,
         animalObjects,
-        getDenGenotypes: () => _denGenotypes,
+        getDenGenotypes: () => window.WildlifeSpawn.getDenGenotypes(),
         genotypeSignature: (kind, genotype) => window.CreatureGeneticsRender?.genotypeSignature(kind, genotype),
         setInventory: (key, n) => { inventory[key] = n; },
         getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
@@ -6297,348 +5843,18 @@
         getGenotypeReadyFrames: (c) => c._genotypeReadyFrames ? [...c._genotypeReadyFrames] : [],
       };
 
-      // Ambient hostile spawning — wild animal dens (see WildernessMapGenerator's
-      // placeAnimalDens/workspace.animalDens, threaded into _zoneLayouts as
-      // `dens` by performTothalShift) each hold one pack. A den's pack stays
-      // put — no ambient scatter-spawning — until every member of it is
-      // dead; the den then sits empty until the next in-game day, when a
-      // fresh pack (species re-rolled from the zone's packSpecies pool, not
-      // necessarily the one that died) moves in. See advanceDay().
-      const DEN_PACK_SIZE_MIN = 2;
-      const DEN_PACK_SIZE_MAX = 4;
-      const DEN_CHECK_INTERVAL_S = 2;
-      // Idle-state wander range while denned packs are active (isNightTime()
-      // false, see updateHostiles) — well beyond the tight loiter radius
-      // everything else uses, so packs actually roam by day instead of
-      // pacing right next to the den.
-      const DEN_PACK_WANDER_RADIUS_PX = TILE * 6;
-      // How close a denned creature has to get to homeX/homeY before it's
-      // considered "back" and stops closing the rest of the way in — same
-      // idea as the 'return' state's TILE*0.6 threshold.
-      const DEN_SETTLE_RADIUS_PX = TILE * 0.6;
-      let denCheckTimer = 0;
-
-      // Wildlife schedule AI (den = home, foliage patches = feeding/patrol
-      // grounds) — see applyWildlifeSkirmishDamage/assignWildlifeStation
-      // and updateHostiles' 'fleeing-low-health'/'patrol-chase'/
-      // 'at-station-grazing'/'patrolling' states.
-      const WILDLIFE_FLEE_HP_THRESHOLD = 0.3; // health ratio that forces a losing animal to disengage and run home
-      const WILDLIFE_HP_FLOOR_FRACTION = 0.12; // wildlife-vs-wildlife skirmishes can never reduce health below this fraction — nothing dies from them
+      // Ambient wildlife den spawning, per-den shared genotype rolls, and
+      // wildlife-vs-wildlife skirmish damage now live in
+      // js/wildlife-spawn.js (window.WildlifeSpawn) — see its init(deps)
+      // call below for the shared game.js state it's threaded. The
+      // constants below stay here (not moved into that module) since
+      // game.js's own updateHostiles AI loop reads them directly.
+      const DEN_PACK_WANDER_RADIUS_PX = TILE * 6; // idle-state wander range while denned packs are active (isNightTime() false, see updateHostiles) — well beyond the tight loiter radius everything else uses, so packs actually roam by day instead of pacing right next to the den.
+      const DEN_SETTLE_RADIUS_PX = TILE * 0.6; // how close a denned creature has to get to homeX/homeY before it's considered "back" — same idea as the 'return' state's TILE*0.6 threshold.
       const WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS = 6000; // grace period after reaching home before a fled animal can be re-aggro'd/re-picked as prey
       const PATROL_SIGHT_RANGE_PX = TILE * 3.5; // how close a grazing herbivore has to wander for a patrolling predator to notice it
       const WILDLIFE_DRINK_INTERVAL_HOURS = 5; // how often (in continuous game hours) a herbivore needs to break off grazing to visit water
       const WILDLIFE_DRINK_DURATION_S = 4; // real seconds spent drinking once at the water's edge, before resuming its schedule
-
-      // Non-lethal analogue of damageCreature, used only for predator-vs-prey
-      // wildlife skirmishes (see the 'patrol-chase' state) — player and
-      // companion combat still go through damageCreature directly and stay
-      // lethal. Clamps damage so health can never drop below
-      // WILDLIFE_HP_FLOOR_FRACTION, and forces the target into
-      // 'fleeing-low-health' once it's hurt enough, even if it was already
-      // below threshold before this hit.
-      function applyWildlifeSkirmishDamage(attacker, target, amount) {
-        const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
-        const clamped = Math.max(0, Math.min(amount, target.health - floor));
-        if (clamped > 0) damageCreature(target, clamped, attacker.x, attacker.y, HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
-        if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
-          target.state = 'fleeing-low-health';
-          target.targetCreature = null;
-        }
-      }
-
-      // The foliage patch (see workspace.foliagePatches) nearest a den's home
-      // point — geographic proximity, not zone-wide random pick, so a pack
-      // doesn't get assigned a patrol route clear across the map. preferRich
-      // only matters for predators (see assignWildlifeStation): a predator
-      // needs a *rich* patch (the only ones with a nearby-cover point set —
-      // see workspace.ambushStations — to patrol), a herbivore will graze at
-      // any patch.
-      function nearestFoliagePatch(zoneData, homeX, homeY, { preferRich = false } = {}) {
-        const patches = zoneData?.foliagePatches;
-        if (!patches || !patches.length) return null;
-        const homeCol = homeX / TILE, homeRow = homeY / TILE;
-        const scored = patches.map(p => ({ p, d: Math.hypot(p.centroid.x - homeCol, p.centroid.y - homeRow) })).sort((a, b) => a.d - b.d);
-        if (preferRich) {
-          const rich = scored.find(s => s.p.rich);
-          if (rich) return rich.p;
-          return null; // no rich patch anywhere in the zone — this predator gets no patrol route, falls back to plain wander
-        }
-        return scored[0].p;
-      }
-
-      // Nearest river/stream tile to a home point, scanning the zone's own
-      // exported tile list (zoneData.tiles — the same data buildZoneScene
-      // folds into zGrid) rather than requiring a live 2D grid, since this
-      // runs once at spawn time (see assignWildlifeStation) before the
-      // creature necessarily has one. Null if the zone has no water at all.
-      function nearestWaterTile(zoneData, homeX, homeY) {
-        const tiles = zoneData?.tiles;
-        if (!tiles || !tiles.length) return null;
-        const homeCol = homeX / TILE, homeRow = homeY / TILE;
-        let best = null, bestD = Infinity;
-        for (const t of tiles) {
-          if (t.type !== TileType.RIVER && t.type !== TileType.STREAM) continue;
-          const d = Math.hypot(t.c - homeCol, t.r - homeRow);
-          if (d < bestD) { bestD = d; best = { x: t.c, y: t.r }; }
-        }
-        return best;
-      }
-
-      // Assigns a herbivore's grazing tile or a predator's patrol route,
-      // mutating the opts object makeCreatureEntity is about to be called
-      // with (see spawnPackAtDen) — a creature with neither field set just
-      // falls back to plain wandering (legacy zones without generator data,
-      // or no rich patch found).
-      function assignWildlifeStation(opts, zoneData, homeX, homeY, isHerbivore) {
-        if (isHerbivore) {
-          // Assigned independently of grazing-patch availability — a
-          // herbivore still needs to know where to drink even if (rarely) no
-          // foliage patch was found nearby (see updateHostiles' drink check).
-          const water = nearestWaterTile(zoneData, homeX, homeY);
-          if (water) opts.waterTile = water;
-          const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: false });
-          if (!patch) return;
-          const tile = patch.tiles[Math.floor(rnd() * patch.tiles.length)];
-          opts.grazingTile = { x: tile.x, y: tile.y };
-          opts.grazingPatchId = patch.id;
-        } else {
-          const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: true });
-          if (!patch) return;
-          // The full nearby-cover point set (see workspace.ambushStations —
-          // wilderness-map-generator.js still names it after the stationary
-          // "ambush" behavior this used to drive) becomes the patrol route,
-          // walked in a loop rather than camped at as one fixed spot.
-          const group = (zoneData.ambushStations || []).find(g => g.patchId === patch.id);
-          if (!group?.points?.length) return;
-          opts.patrolPoints = group.points.map(pt => ({ x: pt.x, y: pt.y }));
-          opts.patrolIndex = Math.floor(rnd() * opts.patrolPoints.length);
-          opts.linkedPatchId = patch.id;
-        }
-      }
-
-      // Set on entering a wilderness zone (see enterZone); cleared the next
-      // time updateHostileSpawning's den-check actually runs for that same
-      // zone, at which point it logs the living-animal count so entering a
-      // zone reliably reports whether wildlife is actually spawning there —
-      // logging immediately in enterZone itself would usually just show 0,
-      // since den spawning is lazy/timer-gated rather than synchronous.
-      let _zoneEntryAnimalLogPending = null;
-
-      // denKey → true once that den has ever had a pack spawned (so a fresh
-      // zone's dens seed immediately, while a den that's merely between
-      // packs waits for pendingDenRespawn to clear on the next day instead).
-      const denEverSpawned = new Set();
-      // denKey → alive/dead as of the last check — lets ensureCurrentZoneDenPacks
-      // tell "just now wiped" (alive → dead transition: start waiting for the
-      // next day) apart from "already known empty and the day has since
-      // turned over" (spawn a fresh pack right now).
-      const denLastKnownAlive = new Map();
-      // denKey → true while a den is empty and deliberately waiting for the
-      // next day (advanceDay() clears these) rather than instantly refilling.
-      const pendingDenRespawn = new Set();
-
-      function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
-      // cavernMapId -> the zone it belongs to — zoneId/denId can't be
-      // reliably parsed back out of "map_i_den_<zoneId>_<denId>" (both
-      // halves can themselves contain underscores), so this side table is
-      // populated wherever a cavern id is minted (denCavernMapId) instead.
-      // Used by teleportToRandomDen to work from inside a den too.
-      const _denCavernZoneOf = new Map();
-      // Same id shape performTothalShift's denTransitions and
-      // synthesizeCavernMapData both already use for the den's cavern —
-      // reused as the shared lookup key so a den's exterior pack, its
-      // Den-Mother, and its nest rewards all resolve the same genotype
-      // without needing to parse zoneId/denId back out of the mapId string.
-      function denCavernMapId(zoneId, denId) {
-        const id = `map_i_den_${zoneId}_${denId}`;
-        _denCavernZoneOf.set(id, zoneId);
-        return id;
-      }
-      // Which shared-genotype "family" a CREATURE_DB key rolls/renders as —
-      // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
-      // shaped genotype (base+pattern layers), uumkaoii-wild/uumkaoii-wild-
-      // den-mother share a uumkaoii-shaped one (fur+plates). Derived from
-      // window.CreatureGenetics.SPECIES_ALIAS + CreatureGeneticsRender.SPECIES — the exact
-      // same "which real species does this variant's genotype render
-      // against" resolution updateCreatureAnimFrame/spawnDevArenaCreature
-      // already do — rather than a second, separate hardcoded name-prefix
-      // check that has to be kept in sync by hand and silently doesn't
-      // recognize any future species until someone remembers to add its
-      // prefix here too. Returns null for any species with no gene system.
-      function _denGenotypeFamily(kind) {
-        const resolved = window.CreatureGenetics.SPECIES_ALIAS[kind] || kind;
-        return window.CreatureGeneticsRender?.SPECIES?.[resolved] ? resolved : null;
-      }
-      // (cavernMapId, family) -> shared genotype — one roll per den PER
-      // FAMILY, reused by every same-family pack member, the Den-Mother, and
-      // any eggs/babies taken from its nest, using the exact same odds as a
-      // farm-bought crate (see makeDefaultGenotype). Keyed by family, not
-      // just cavernMapId: a den's exterior population (predator pack vs.
-      // herbivore herd, re-rolled each cycle) and its Den-Mother species
-      // (pickDenMotherKind, a separate deterministic-per-den roll) are
-      // chosen independently, so the SAME den can have a gar-wolf-family
-      // occupant and a uumkaoii-family occupant at once — sharing one plain
-      // cavernMapId key would mean whichever family asked first clobbers
-      // the cache with its own shape, and the other family's genotype reads
-      // would silently come back with none of the fields it expects.
-      const _denGenotypes = new Map(); // key: `${cavernMapId}|${family}`
-      function getOrMakeDenGenotype(cavernMapId, family) {
-        const key = `${cavernMapId}|${family}`;
-        if (!_denGenotypes.has(key)) {
-          _denGenotypes.set(key, window.CreatureGenetics.makeDefaultGenotype(family));
-          window.__farmLog?.(`[genotype] rolled new ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
-        } else {
-          window.__farmLog?.(`[genotype] reused cached ${family} family genotype for den ${cavernMapId}`, 'wildlife');
-        }
-        return _denGenotypes.get(key);
-      }
-
-      // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
-      // therefore den ids) just got regenerated (see performTothalShift) —
-      // otherwise stale keys from the previous layout's dens would linger
-      // forever and any of this zone's dens that happen to reuse an id
-      // could resume mid-"waiting for next day" instead of seeding fresh.
-      function forgetZoneDenState(zoneId) {
-        const prefix = `${zoneId}:`;
-        for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
-        for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
-        for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
-        // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
-        // generation, so a fresh Tothal Shift very likely reuses an old
-        // den's exact id — without this, that den's cavern would keep
-        // returning its stale cached scene/nest/genotype from before the
-        // shift (see loadBuildingScene's _buildingScenes.has() early-return
-        // and getOrMakeDenGenotype's cache-forever lookup) instead of
-        // rolling a fresh one for the new pack that just spawned there.
-        const cavernPrefix = `map_i_den_${zoneId}_`;
-        for (const key of [..._denGenotypes.keys()]) if (key.startsWith(cavernPrefix)) _denGenotypes.delete(key);
-        for (const key of [..._denNests.keys()]) if (key.startsWith(cavernPrefix)) _denNests.delete(key);
-        for (const key of [..._buildingScenes.keys()]) if (key.startsWith(cavernPrefix)) _buildingScenes.delete(key);
-      }
-
-      function isDenPackAlive(denKey) {
-        for (const c of hostileObjects) if (c.denKey === denKey && c.health > 0) return true;
-        return false;
-      }
-
-      function spawnPackAtDen(zoneId, den, denKey) {
-        const zdef = EXTERIOR_ZONES[zoneId];
-        // A den's population type (predator pack vs. herbivore herd) is
-        // decided fresh each spawn cycle rather than fixed per den — simplest
-        // v1 (see the wildlife-schedule-AI plan's Feature 4 notes). Falls
-        // back to whichever pool the zone actually has if only one exists.
-        const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
-        const useHerd = hasHerd && (!hasPack || rnd() < 0.5);
-        const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
-        if (!pool || !pool.length) {
-          window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
-          return;
-        }
-        const speciesKey = pool[Math.floor(rnd() * pool.length)];
-        // Every same-family member of this pack (e.g. gar-wolf + alpha, or
-        // the whole uumkaoii-wild herd) shares one rolled-once "family"
-        // genotype — see getOrMakeDenGenotype.
-        const denFamily = _denGenotypeFamily(speciesKey);
-        const denGenotype = denFamily ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id), denFamily) : null;
-        // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
-        // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
-        const homeX = (den.x + (den.w || 1) * 0.5) * TILE, homeY = (den.y + (den.h || 1) * 0.5) * TILE;
-        const count = DEN_PACK_SIZE_MIN + Math.floor(rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
-        const zoneData = _zoneLayouts.get(zoneId);
-        let spawned = 0;
-        for (let i = 0; i < count; i++) {
-          const angle = rnd() * Math.PI * 2;
-          const dist = TILE * (0.8 + rnd() * 1.6);
-          const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
-          const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
-          assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
-          const creature = makeCreatureEntity(speciesKey, x, y, opts);
-          if (creature) { hostileObjects.add(creature); spawned++; }
-          else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
-        }
-        if (spawned > 0 && zoneId === currentArea) {
-          showToast(`${CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
-        } else if (spawned === 0) {
-          window.__farmLog?.(`[wildlife] ${denKey}: pack spawn for "${speciesKey}" placed 0/${count} creatures (fallback: den left empty).`, 'wildlife');
-        }
-      }
-
-      // Spawning only positions/heights correctly for the currently active
-      // area (makeCreatureEntity resolves ground height against `currentArea`
-      // regardless of which scene it's told to target), so dens in a zone
-      // the player isn't currently in just wait — a wipe there still marks
-      // pendingDenRespawn immediately, and the very next visit (or the rest
-      // of this visit, once the day turns over) lazily seeds it correctly.
-      const _loggedMissingDenZones = new Set();
-      function ensureCurrentZoneDenPacks() {
-        const layout = _zoneLayouts.get(currentArea);
-        const dens = layout?.dens;
-        if (!dens || !dens.length) {
-          // A zone configured with a packSpecies pool is expected to have
-          // den data (see performTothalShift's `dens: workspace.animalDens`)
-          // — if it doesn't, something upstream (generation, or a stale/
-          // authored-only layout — see the other _zoneLayouts.set call site)
-          // silently produced none. Only log once per zone per session so
-          // this doesn't spam every DEN_CHECK_INTERVAL_S.
-          const zdef = EXTERIOR_ZONES[currentArea];
-          if ((zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
-            _loggedMissingDenZones.add(currentArea);
-            window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
-          }
-          return;
-        }
-        for (const den of dens) {
-          const key = denKeyFor(currentArea, den);
-          const alive = isDenPackAlive(key);
-
-          if (alive) { denLastKnownAlive.set(key, true); continue; }
-
-          if (!denEverSpawned.has(key)) {
-            // Never populated (fresh zone/den) — seed immediately, no wait.
-            denEverSpawned.add(key);
-            denLastKnownAlive.set(key, false);
-            spawnPackAtDen(currentArea, den, key);
-            continue;
-          }
-
-          if (denLastKnownAlive.get(key) !== false) {
-            // Alive as of the last check (or never checked while alive) and
-            // empty now — just got wiped. Start waiting for the next day
-            // instead of refilling on the spot.
-            denLastKnownAlive.set(key, false);
-            pendingDenRespawn.add(key);
-            continue;
-          }
-
-          if (pendingDenRespawn.has(key)) continue; // still waiting for the next day
-
-          // Already known empty, and no longer pending — the day turned
-          // over since this den was wiped (see advanceDay()). Move in a
-          // fresh pack now, species re-rolled from the zone's pool.
-          spawnPackAtDen(currentArea, den, key);
-        }
-      }
-
-      function updateHostileSpawning(dt) {
-        // Ambient wildlife spawning has no business intruding on an
-        // authored cutscene once this scene finally lives on a real
-        // wilderness zone map — the combat card's own wolves are added to
-        // hostileObjects explicitly (see runCombat).
-        if (cutscenePreviewActive) return;
-        if (!_isZoneArea(currentArea)) return;
-        denCheckTimer -= dt;
-        if (denCheckTimer > 0) return;
-        denCheckTimer = DEN_CHECK_INTERVAL_S;
-        if (!buildZoneScene(currentArea)) return;
-        ensureCurrentZoneDenPacks();
-        window.BanditCamps.ensureCurrentZoneCamps();
-        if (_zoneEntryAnimalLogPending === currentArea) {
-          _zoneEntryAnimalLogPending = null;
-          let alive = 0;
-          for (const c of hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
-          window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
-        }
-      }
 
 
       // Bandit Gangs (config/locale loading, roster/avatar generation,
@@ -6763,8 +5979,8 @@
       function performContextAction() {
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
-        const climb = getClimbTarget();
-        if (climb) { startClimb(climb); return; }
+        const climb = window.ClimbSystem.getClimbTarget();
+        if (climb) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -7029,6 +6245,10 @@
       // mapId → [THREE.Object3D, ...] (meshes + point lights) — decor/processing
       // furniture props spawned for a zone map; see _spawnZoneDecorFurniture.
       const _zoneDecorFurnitureGroups = new Map();
+      // mapId set while window.TownZoneBuildings.spawnZoneBuildings(mapId)'s
+      // GLB upgrade is in flight — stays in game.js (not module-private)
+      // since _disposeZoneScene also needs to clear a torn-down zone's entry.
+      const _zoneBuildingsGlbUpgradePending = new Set();
       // mapId → [THREE.Mesh, ...] (animated waterfall curtain meshes) — see
       // buildWaterfallCurtainMeshes/updateZoneWaterMeshes. Mirrors
       // _townRiverWaterMeshes but per zone map, since a zone's water tiles never
@@ -7532,8 +6752,8 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
         _zoneScenes.set(mapId, info);
-        _spawnZoneBuildings(mapId);
-        _spawnZoneDecorFurniture(mapId);
+        window.TownZoneBuildings.spawnZoneBuildings(mapId);
+        window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
         // Any NPC whose schedule targeted this zone before its (expensive,
         // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
@@ -9172,7 +8392,7 @@
       }
 
       function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
-      function currentGameMinutes() { return Math.round(getHour() * 60); }
+      function currentGameMinutes() { return Math.round(window.CalendarSystem.getHour() * 60); }
       function isNowWithinNpcRuleWindow(now, start, end) {
         if (start === null || end === null) return false;
         if (start <= end) return now >= start && now < end;
@@ -9279,8 +8499,8 @@
       // A rule may restrict itself to one or more weekdays via "day" (single
       // name) or "days" (array); rules with neither run every day, same as before.
       function isNpcRuleActiveOnDay(rule) {
-        if (rule.day) return rule.day === currentWeekdayName();
-        if (rule.days) return rule.days.includes(currentWeekdayName());
+        if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
+        if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
         return true;
       }
 
@@ -9334,7 +8554,7 @@
         for (const shared of npcSharedSchedules) {
           if (!shared || shared.contentIncomplete) continue;
           const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
-          if (currentWeekdayName() !== shared.day) continue;
+          if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
           if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
           if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
           if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
@@ -9636,7 +8856,7 @@
             root.position.z += dz / d * movedTiles;
             this._tickFootsteps(movedTiles);
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, cameraRelativePerps());
+            const { effectiveTarget, snapTo } = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativePerps());
             if (snapTo !== null) this.rot = effectiveTarget;
             else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
             root.rotation.y = this.rot;
@@ -10271,8 +9491,8 @@
         rebuildRouteGraphs();
         // If town scene was already built before this layout arrived, spawn buildings now
         if (_townSceneBuilt && townScene) {
-          _townBuildingDefs = _detectTownBuildings();
-          _spawnTownBuildings();
+          _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
+          window.TownZoneBuildings.spawnTownBuildings();
         }
       }
 
@@ -10587,7 +9807,7 @@
       // Drenkirra in the southern cloud forest all the way through the den.
       function pickDenMotherKind(mapId) {
         const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
-        const zoneId = _denCavernZoneOf.get(mapId);
+        const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId);
         const zoneDef = EXTERIOR_ZONES[zoneId];
         const nativeSpecies = [...(zoneDef?.packSpecies || []), ...(zoneDef?.herbivoreSpecies || [])];
         const kinds = nativeSpecies.map(kind => DEN_MOTHER_DEFS[kind]?.creatureKey).filter(Boolean);
@@ -10820,8 +10040,8 @@
             // since the Den-Mother's species is picked independently of
             // whatever the exterior pack currently is (see
             // pickDenMotherKind) — they can genuinely differ.
-            const motherFamily = _denGenotypeFamily(motherKey);
-            const denGenotype = motherFamily ? getOrMakeDenGenotype(mapId, motherFamily) : null;
+            const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
+            const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
             if (motherDef) {
               const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
               const mother = makeCreatureEntity(motherKey, homeX, homeY, {
@@ -11101,298 +10321,18 @@
         // Fire the den-check on the very next frame instead of waiting up to
         // DEN_CHECK_INTERVAL_S — see _zoneEntryAnimalLogPending above — so
         // wildlife populates promptly on arrival and the log reflects it.
-        denCheckTimer = 0;
-        _zoneEntryAnimalLogPending = mapId;
+        window.WildlifeSpawn.onZoneEntered(mapId);
         // A cleared bandit camp only ever re-rolls somewhere else BETWEEN
         // visits, never under the player's feet — this is the one moment
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
         window.BanditCamps?.markZoneEntered(mapId);
       }
 
-      // ── Town building detection ──────────────────────────────────────
-      // Reads explicit building entries from the town layout (placed by map editor).
-      function _detectTownBuildings() {
-        const buildings = _townZone?.buildings || [];
-        debugLog('_detectTownBuildings: ' + buildings.length + ' placed buildings');
-        return buildings;
-      }
-
-      // Loads a docs/assets/textures/*.png as a shared, tiling MeshLambertMaterial
-      // for HousePieceGen.buildGroupFromPiece's tagged faces (BOARD_TAGS/STONE_TAGS/
-      // 'canvas' — see HousePieceGen.js). Starts as a flat fallback color so meshes
-      // render immediately; once the texture loads it replaces the color in place
-      // on the same material object, so every mesh already built with it updates
-      // automatically. tileSize is world units per texture repeat — HousePieceGen.js
-      // reads it back off mat.userData.uvTileSize to scale each face's UVs so the
-      // texture stretches proportionally to real face size instead of smearing a
-      // whole image across every face regardless of size.
-      function loadHousePieceFaceTexture(path, fallbackColor, tileSize) {
-        const mat = new THREE.MeshLambertMaterial({ color: fallbackColor, side: THREE.DoubleSide });
-        mat.userData.uvTileSize = tileSize;
-        new THREE.TextureLoader().load(path, (tex) => {
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
-        }, undefined, () => {});
-        return mat;
-      }
-
-      // Spawns Highland house pieces for all placed town buildings.
-      // Fetches each building's piece JSON then calls HousePieceGen.buildGroupFromPiece(),
-      // which reads piece.base.faces directly (same geometry as the house editor preview)
-      // plus WallBuilder bricks on wall/gable faces.
-      let _townBuildingsGlbUpgradePending = false;
-      // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
-      function _spawnTownBuildings() {
-        if (!townScene || !_townBuildingDefs.length) return;
-        if (typeof HousePieceGen === 'undefined') {
-          debugLog('HousePieceGen not loaded — skipping town buildings', 'warn');
-          return;
-        }
-
-        // Dispose previous groups
-        for (const entry of _townBuildingGroups) {
-          townScene.remove(entry.group);
-          entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-        }
-        _townBuildingGroups = [];
-
-        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
-                              preScale: [1, 1, 0.6],
-                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-
-        // Preload tagged-face textures (shared across all buildings) — boards.png
-        // for porch/stair/railing faces, carved_smooth.png for stone-tagged
-        // (chimney) faces, canvas.png for canvas-tagged (tent) faces.
-        const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-        const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
-        const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
-
-        // Async-load all piece files in parallel, then build scene
-        Promise.all(_townBuildingDefs.map(bldg => {
-          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
-          return fetch(bldg.pieceFile)
-            .then(r => r.json())
-            .then(piece => ({ bldg, piece }))
-            .catch(e => { debugLog('Piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
-        })).then(results => {
-          if (!townScene) return;
-          const TROWS_ENT = _townZone?.rows || 50;
-          const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
-          const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
-
-          for (const { bldg, piece } of results) {
-            const wbOpts      = bldg.wbOpts      || _wbDefaults;
-            const wbGableOpts = bldg.wbGableOpts || undefined;
-
-            let g = new THREE.Group();
-            if (piece) {
-              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
-                wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                rotationDeg: bldg.rotationDeg || 0,
-              });
-            }
-            townScene.add(g);
-            _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-
-            // Entrance ring: single-source door geometry from js/building-door.js
-            // (shared with the Map Editor's Building inspector, and with House
-            // Piece Author for the door preview) — resolves the piece's
-            // authored footprint.door point, or the old porch/south-edge
-            // heuristic for pieces nobody has placed a door on yet.
-            const rotDeg = bldg.rotationDeg || bldg.rotation || 0;
-            const doorEnt = BuildingDoor.resolveDoorEntrance(piece);
-            const hasBldgCells = !!doorEnt;
-            let wBMinC, wBMaxC, wBMinR, wBMaxR, eCol, eRow;
-            if (hasBldgCells) {
-              const door = BuildingDoor.doorWorldFromBuilding(doorEnt, bldg.gridX, bldg.gridZ, rotDeg, TROWS_ENT - 1);
-              eCol = door.col; eRow = door.row;
-              wBMinC = door.bbox.minC; wBMaxC = door.bbox.maxC; wBMinR = door.bbox.minR; wBMaxR = door.bbox.maxR;
-            } else {
-              // Piece never loaded (fetch failure etc.) — fall back to the
-              // building instance's own footprintW/footprintD hints so the
-              // town still gets *a* door instead of erroring out.
-              wBMinC = bldg.gridX; wBMaxC = bldg.gridX + (bldg.footprintW ?? 1) - 1;
-              wBMinR = bldg.gridZ; wBMaxR = bldg.gridZ + (bldg.footprintD ?? 1) - 1;
-              eCol = Math.floor((bldg.gridX * 2 + (bldg.footprintW ?? 1) + 1) / 2);
-              eRow = Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
-            }
-            const eid = 'bldg_entrance_' + bldg.id;
-            // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
-            const hasWorkspaceEntry = worldTownTransitions.some(t =>
-              t.target === 'building' &&
-              Number.isFinite(t.col) && Number.isFinite(t.row) &&
-              t.col >= wBMinC && t.col <= wBMaxC &&
-              t.row >= wBMinR && t.row <= wBMaxR);
-            const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
-            if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
-              worldTownTransitions.push({
-                id: eid, area: 'town', col: eCol, row: eRow,
-                target: 'interior',
-                targetCol: Math.floor(INTERIOR_COLS / 2), targetRow: INTERIOR_ROWS - 2,
-              });
-              const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
-              ring.rotation.x = -Math.PI / 2;
-              ring.position.set(eCol + 0.5, tileSurfaceY(TileType.GRASS) + 0.02, eRow + 0.5);
-              townScene.add(ring);
-            }
-          }
-
-          debugLog('_spawnTownBuildings: built ' + _townBuildingGroups.length + ' buildings from piece JSON');
-
-          // Upgrade to real bricks + shingle GLB once assets are ready
-          if (!_townBuildingsGlbUpgradePending) {
-            _townBuildingsGlbUpgradePending = true;
-            Promise.all([
-              houseWallBuilder.loadDefaultGlb(),
-              HousePieceGen.loadShingleGlb('assets/models/'),
-            ]).then(() => {
-              _townBuildingsGlbUpgradePending = false;
-              if (!townScene) return;
-              debugLog('Town buildings: upgrading to real bricks + shingle GLB');
-              const prev = _townBuildingGroups.slice();
-              _townBuildingGroups = [];
-              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
-                townScene.remove(group);
-                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-                if (!piece) continue;
-                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
-                  wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                  rotationDeg: bldg.rotationDeg || 0,
-                });
-                townScene.add(g);
-                _townBuildingGroups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-              }
-            }).catch(e => debugLog('Town building GLB error: ' + e, 'warn'));
-          }
-        });
-      }
-
-      // Mirrors _spawnTownBuildings for an exterior zone map (Northern Cliffs,
-      // its plateau-tier sub-maps, etc.) — buildings placed there get the same
-      // piece-JSON geometry, but lifted to their anchor tile's plateau tier
-      // (zoneData.buildings[].elevTier, resolved in the mergeZoneTiles loop
-      // above) via HousePieceGen's elevationY option, instead of always
-      // sitting at world Y 0 the way town buildings do today.
-      let _zoneBuildingsGlbUpgradePending = new Set();
-      function _spawnZoneBuildings(mapId) {
-        const zoneData = _zoneLayouts.get(mapId);
-        const buildingDefs = zoneData?.buildings || [];
-        if (!buildingDefs.length) return;
-        if (typeof HousePieceGen === 'undefined') {
-          debugLog('HousePieceGen not loaded — skipping zone buildings', 'warn');
-          return;
-        }
-        if (_zoneBuildingGroups.has(mapId)) return; // already spawned for this zone scene
-
-        const groups = [];
-        _zoneBuildingGroups.set(mapId, groups);
-
-        const _wbDefaults = { unitMult: 0.4375, rockScale: 1.5,
-                              preScale: [1, 1, 0.6],
-                              brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
-        const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-        const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
-        const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
-
-        Promise.all(buildingDefs.map(bldg => {
-          if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
-          return fetch(bldg.pieceFile)
-            .then(r => r.json())
-            .then(piece => ({ bldg, piece }))
-            .catch(e => { debugLog('Zone piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
-        })).then(results => {
-          const scene = _zoneScenes.get(mapId)?.scene;
-          if (!scene) return;
-
-          for (const { bldg, piece } of results) {
-            const wbOpts      = bldg.wbOpts      || _wbDefaults;
-            const wbGableOpts = bldg.wbGableOpts || undefined;
-            const elevationY  = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
-
-            let g = new THREE.Group();
-            if (piece) {
-              g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                wallBuilder: houseWallBuilder, wbUsePlaceholder: true,
-                wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                rotationDeg: bldg.rotationDeg || 0, elevationY,
-              });
-            }
-            scene.add(g);
-            groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-          }
-
-          debugLog(`_spawnZoneBuildings(${mapId}): built ${groups.length} buildings from piece JSON`);
-
-          if (!_zoneBuildingsGlbUpgradePending.has(mapId)) {
-            _zoneBuildingsGlbUpgradePending.add(mapId);
-            Promise.all([
-              houseWallBuilder.loadDefaultGlb(),
-              HousePieceGen.loadShingleGlb('assets/models/'),
-            ]).then(() => {
-              _zoneBuildingsGlbUpgradePending.delete(mapId);
-              const scene2 = _zoneScenes.get(mapId)?.scene;
-              if (!scene2) return;
-              debugLog(`Zone buildings (${mapId}): upgrading to real bricks + shingle GLB`);
-              const prev = groups.slice();
-              groups.length = 0;
-              for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
-                scene2.remove(group);
-                group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-                if (!piece) continue;
-                const elevationY = NORMAL_TOP + (bldg.elevTier || 0) * PLATEAU_UNIT;
-                const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-                  wallBuilder: houseWallBuilder, wbUsePlaceholder: false,
-                  wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-                  rotationDeg: bldg.rotationDeg || 0, elevationY,
-                });
-                scene2.add(g);
-                groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
-              }
-            }).catch(e => debugLog('Zone building GLB error: ' + e, 'warn'));
-          }
-        });
-      }
-
-      function _spawnZoneDecorFurniture(mapId) {
-        const zoneData = _zoneLayouts.get(mapId);
-        const decorDefs = zoneData?.decor || [];
-        const furnitureDefs = zoneData?.furniture || [];
-        if (!decorDefs.length && !furnitureDefs.length) return;
-        if (typeof window.ProceduralFurniture === 'undefined') {
-          debugLog('ProceduralFurniture not loaded — skipping zone decor/furniture', 'warn');
-          return;
-        }
-        if (_zoneDecorFurnitureGroups.has(mapId)) return; // already spawned for this zone scene
-        const scene = _zoneScenes.get(mapId)?.scene;
-        if (!scene) return;
-
-        const meshes = [];
-        _zoneDecorFurnitureGroups.set(mapId, meshes);
-
-        for (const d of decorDefs) {
-          const result = makeDecorativeFurnitureMesh(d.col, d.row, d.key, scene, mapId);
-          if (!result) continue;
-          const y = NORMAL_TOP + (d.elevTier || 0) * PLATEAU_UNIT;
-          result.mesh.position.y += y;
-          if (result.light) result.light.position.y += y;
-          meshes.push(result.mesh);
-        }
-        for (const f of furnitureDefs) {
-          const def = PROCESSING_FURNITURE_DEFS[f.key];
-          if (!def) continue;
-          const group = buildFurnitureVisual(f.key, def.color || 0x888888);
-          const y = NORMAL_TOP + (f.elevTier || 0) * PLATEAU_UNIT;
-          group.position.set(f.col + 0.5, y, f.row + 0.5);
-          _markOutline(group);
-          _markFurnitureEdgeId(group);
-          scene.add(group);
-          meshes.push(group);
-          window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5, f.row + 0.5, window.Music?.resolveFurnitureSfx(def));
-        }
-        debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
-      }
+      // Town/zone building mesh spawning (detectTownBuildings/
+      // spawnTownBuildings/spawnZoneBuildings) and decorative furniture/
+      // prop spawning (spawnZoneDecorFurniture) now live in
+      // js/town-zone-buildings.js (window.TownZoneBuildings) — see its
+      // init(deps) call below for the shared game.js state it's threaded.
 
       // ── Alchemy: reagent plant scatter (per wilderness zone) ─────────
       function _seedFromString(str) {
@@ -11790,8 +10730,8 @@
         }
 
         // Generate 3D buildings from rock-tile clusters
-        _townBuildingDefs = _detectTownBuildings();
-        _spawnTownBuildings();
+        _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
+        window.TownZoneBuildings.spawnTownBuildings();
 
         debugLog('buildTownScene complete');
       }
@@ -11979,8 +10919,8 @@
       // GENERAL_STORE_CLOTHING_SLOTS/BARN_TIERS wholesale once it resolves —
       // called from loadLootShopConfig() above. Jubmir's stock isn't a
       // simple catalog swap (it also drives genotype generation/one-shot
-      // purchase state), so getJubmirStock/buyJubmirEgg/renderJubmirShopPage
-      // read _shopStock.jubmirWares directly instead of a mirrored variable.
+      // purchase state), so window.JubmirShop reads _shopStock.jubmirWares
+      // (via deps.getShopStock()) directly instead of a mirrored variable.
       function _applyLoadedShopStock() {
         WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
           [id, { label: shop.label, menuId: shop.menuId }]));
@@ -12251,696 +11191,37 @@
           showToast('📦 ' + o.qty + '× ' + item.name + ' delivered!', true);
         }
         deliveryLog = deliveryLog.slice(0, 12);
-        if (menuOpen) renderSupplyPage();
+        if (menuOpen) window.SupplyPage.render();
         // Tick sell crate clock
-        worldObjects.forEach(o => o.tick && o.tick(getHour()));
+        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
       }
 
       function tickWorldObjects() {
-        worldObjects.forEach(o => o.tick && o.tick(getHour()));
+        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
       }
 
-      let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
-      let generalStoreActiveCategory = 'goods'; // Mirrors supply-shop tabs for the General Store's goods/clothing split.
+      // Supplies tab (Supply Box ordering + pending deliveries/sale log)
+      // now lives in js/supply-page.js — call via window.SupplyPage.render().
 
-      function getSupplyItemCategory(item) {
-        // Used by the supply ordering pane; avoids hard-coding future catalog rows into the UI.
-        if (item.category) return item.category;
-        if (item.comingSoon) return 'livestock';
-        if (/Seed$|Seeds$/.test(item.key) || item.key === 'mulchBag') return 'seeds';
-        return 'all';
-      }
-
-      function getSupplyCategoryLabel(category) {
-        return ({ all: 'All', seeds: 'Seeds', furniture: 'Furniture', livestock: 'Livestock' })[category] || 'Supply';
-      }
-
-      function bindSupplyTabs() {
-        document.querySelectorAll('[data-supply-cat]').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.supplyCat === supplyActiveCategory);
-          btn.onclick = () => {
-            supplyActiveCategory = btn.dataset.supplyCat || 'seeds';
-            renderSupplyPage();
-          };
-        });
-      }
-
-      function renderSupplyPage() {
-        bindSupplyTabs();
-        const sectionTitle = document.getElementById('supplySectionTitle');
-        if (sectionTitle) sectionTitle.textContent = 'Supply Shop — ' + getSupplyCategoryLabel(supplyActiveCategory);
-        const list = document.getElementById('supplyShopList');
-        const deliveries = document.getElementById('supplyDeliveryList');
-        const goldEl = document.getElementById('supplyGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        if (!list) return;
-        const qtys = supplyBoxObject && supplyBoxObject.getQtys ? supplyBoxObject.getQtys() : {};
-        list.innerHTML = '';
-        const visibleSupplyItems = SUPPLY_CATALOG.filter(item => supplyActiveCategory === 'all' || getSupplyItemCategory(item) === supplyActiveCategory);
-        visibleSupplyItems.forEach(item => {
-          const qty = qtys[item.key] || 0;
-          const row = document.createElement('div');
-          row.className = 'shop-row' + (item.comingSoon ? ' coming-soon' : '');
-          row.innerHTML = `
-            <div class="sh-icon">${item.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${item.name}</div>
-              <div class="sh-desc">${item.desc}</div>
-              <div class="sh-price">${item.comingSoon ? 'Livestock system not active yet' : item.price + 'g per order'}</div>
-            </div>
-            <div class="shop-qty-ctrl">
-              <button class="shop-qty-btn" data-act="minus" ${item.comingSoon ? 'disabled' : ''}>−</button>
-              <span class="shop-qty-val">${item.comingSoon ? '—' : qty}</span>
-              <button class="shop-qty-btn" data-act="plus" ${item.comingSoon ? 'disabled' : ''}>+</button>
-            </div>
-            <button class="shop-buy-btn" data-act="buy" ${item.comingSoon ? 'disabled' : ''}>${item.comingSoon ? 'Soon' : 'Order'}</button>
-          `;
-          row.querySelector('[data-act="minus"]')?.addEventListener('click', () => {
-            qtys[item.key] = Math.max(0, (qtys[item.key] || 0) - 1);
-            renderSupplyPage();
-          });
-          row.querySelector('[data-act="plus"]')?.addEventListener('click', () => {
-            qtys[item.key] = Math.min(99, (qtys[item.key] || 0) + 1);
-            renderSupplyPage();
-          });
-          row.querySelector('[data-act="buy"]')?.addEventListener('click', () => {
-            const result = supplyBoxObject ? supplyBoxObject.onAction('obj_buy_' + item.key) : { ok: false, message: 'No supply box linked.' };
-            showToast(result.message, result.ok !== false);
-            renderSupplyPage();
-            buildInventoryGrid();
-            if (result.ok !== false) saveMemberWorldData();
-          });
-          list.appendChild(row);
-        });
-        if (visibleSupplyItems.length === 0) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📭</span><span class="dr-name">No entries in this supply category yet.</span><span class="dr-eta">—</span></div>';
-        }
-        if (deliveries) {
-          if (pendingOrders.length === 0 && deliveryLog.length === 0) {
-            deliveries.innerHTML = '<div class="delivery-row"><span class="dr-icon">📭</span><span class="dr-name">No pending deliveries or recent sales.</span><span class="dr-eta">—</span></div>';
-          } else {
-            const pending = pendingOrders.map(order => `<div class="delivery-row"><span class="dr-icon">${order.item.icon}</span><span class="dr-name">${order.qty}× ${order.item.name}</span><span class="dr-eta">Day ${order.arrivalDay}</span></div>`).join('');
-            const history = deliveryLog.map(line => `<div class="delivery-row received"><span class="dr-icon">${line.type === 'sale' ? '🟧' : '📦'}</span><span class="dr-name">${line.text}</span><span class="dr-eta">Done</span></div>`).join('');
-            deliveries.innerHTML = pending + history;
-          }
-        }
-      }
-
-      // ── Tasks panel (board requests + accepted NPC favors) ───────────
-      function renderTasksPanel() {
-        window.ProceduralTasks.maybeRefreshBoardTask();
-        window.BountyBoard.maybeRefreshPosting();
-
-        // Today's board notice — not yet in the player's log. Taking it is
-        // the only action this panel offers; turning a task in (board or
-        // favor) always happens by talking to the NPC who posted/asked it.
-        const postingEl = document.getElementById('tasksBoardPosting');
-        if (postingEl) {
-          postingEl.innerHTML = '';
-          const posting = window.ProceduralTasks.getCurrentBoardPosting();
-          if (posting) {
-            const def = ITEM_DEFS[posting.itemKey];
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.innerHTML = `
-              <div class="sh-icon">📋</div>
-              <div class="sh-info">
-                <div class="sh-name">${esc(posting.npcName)} wants ${esc(def?.label || posting.itemKey)} ×${posting.qty}</div>
-                <div class="sh-desc">Reward: ${posting.rewardGold}g + ${posting.rewardFriendship} friendship with ${esc(posting.npcName)} — turn in to them once you have it.</div>
-              </div>
-              <button class="shop-buy-btn" data-take="${posting.id}">Take Quest</button>
-            `;
-            row.querySelector('[data-take]')?.addEventListener('click', () => {
-              window.ProceduralTasks.takeBoardTask(posting.id);
-              renderTasksPanel();
-            });
-            postingEl.appendChild(row);
-          } else {
-            postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">Nothing posted right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
-          }
-        }
-
-        // Wanted poster for a bandit captain — separate from the board
-        // notice above (its own slot, its own refresh rule: see
-        // maybeRefreshBountyPosting). Accepting marks that captain's camp
-        // on the map the moment it's known (see updateBountyTracking) and
-        // pays out automatically once the camp is destroyed — no NPC
-        // turn-in, unlike board/favor tasks.
-        const bountyEl = document.getElementById('tasksBountyPosting');
-        if (bountyEl) {
-          bountyEl.innerHTML = '';
-          const posting = window.BountyBoard.getCurrentPosting();
-          if (posting) {
-            const rank = window.BountyBoard.RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
-            const zoneLabel = WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.innerHTML = `
-              <div class="sh-icon">🎯</div>
-              <div class="sh-info">
-                <div class="sh-name">Wanted: ${esc(posting.captainName)} — ${esc(rank)}</div>
-                <div class="sh-desc">Last seen in the ${esc(zoneLabel)}. Destroy his camp for ${posting.rewardGold}g.</div>
-              </div>
-              <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
-            `;
-            row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
-              window.BountyBoard.take(posting.id);
-              renderTasksPanel();
-            });
-            bountyEl.appendChild(row);
-          } else {
-            bountyEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">🎯</span><span class="dr-name">No bounties posted right now.</span><span class="dr-eta">—</span></div>';
-          }
-        }
-
-        // The player's actual quest log — everything accepted, board,
-        // favor, or an active bounty, with no completion deadline. Read-
-        // only: no turn-in button here on purpose (see above) -- a bounty
-        // resolves itself via updateBountyTracking, not this panel.
-        const list = document.getElementById('tasksList');
-        if (!list) return;
-        list.innerHTML = '';
-        const active = Object.entries(questProgress)
-          .filter(([, st]) => st.status === 'available' && ['board', 'favor', 'bounty'].includes(st.progress?.kind))
-          .map(([id, st]) => ({ id, ...st.progress }))
-          .sort((a, b) => (a.kind === 'board' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'board' ? 0 : b.kind === 'favor' ? 1 : 2));
-        if (!active.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
-          return;
-        }
-        active.forEach(task => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          if (task.kind === 'bounty') {
-            const rank = window.BountyBoard.RANK_LABELS[task.tier] || `Tier ${task.tier}`;
-            const zoneLabel = WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
-            const marked = window.BountyBoard.markers.has(task.id);
-            row.innerHTML = `
-              <div class="sh-icon">🎯</div>
-              <div class="sh-info">
-                <div class="sh-name">Bounty: ${esc(task.captainName)} — ${esc(rank)}</div>
-                <div class="sh-desc">${esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : 'Still tracking him down...'} Reward: ${task.rewardGold}g on his camp\'s destruction.</div>
-              </div>
-            `;
-          } else {
-            const def = ITEM_DEFS[task.itemKey];
-            const have = inventory[task.itemKey] || 0;
-            const source = task.kind === 'board' ? `${esc(task.npcName)}'s board request` : `${esc(task.npcName)}'s favor`;
-            row.innerHTML = `
-              <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
-              <div class="sh-info">
-                <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
-                <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${esc(task.npcName)}.</div>
-              </div>
-            `;
-          }
-          list.appendChild(row);
-        });
-      }
-
+      // Tasks tab (board requests + accepted NPC favors + active bounty) now
+      // lives in js/tasks-panel.js — call via window.TasksPanel.render().
       // ── Relationships panel (friendship tier per NPC talked to) ──────
-      function renderRelationshipsPanel() {
-        const list = document.getElementById('relationshipsList');
-        if (!list) return;
-        list.innerHTML = '';
-        const dlgState = window.DialogueContent?.npcDlgState;
-        const knownIds = dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : [];
-        if (!knownIds.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
-          return;
-        }
-        knownIds
-          .map(npcId => ({ npcId, rec: npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...window.ProceduralTasks.friendshipTierProgress(npcId) }))
-          .sort((a, b) => b.favor - a.favor)
-          .forEach(({ npcId, rec, tier, favor, next }) => {
-            const name = rec?.name || npcId;
-            const progressNote = next != null ? `${next - favor} favor to Tier ${tier + 1}` : 'max tier';
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.innerHTML = `
-              <div class="sh-icon">💬</div>
-              <div class="sh-info">
-                <div class="sh-name">${esc(name)} — Friendship Tier ${tier}</div>
-                <div class="sh-desc">${favor} favor (${progressNote})</div>
-              </div>
-            `;
-            list.appendChild(row);
-          });
-      }
+      // Relationships tab render now lives in js/relationships-panel.js —
+      // call via window.RelationshipsPanel.render().
 
       // ── Market page render ─────────────────────────────────────────
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
 
-      // ── General Store page render ───────────────────────────────────
-      function getGeneralStoreCategoryLabel(category) {
-        return ({ all: 'All', goods: 'Goods', clothing: 'Clothing' })[category] || 'General Store';
-      }
+      // General Store (window.GeneralStore) and Carpenter's Shop
+      // (window.CarpenterShop) page renders now live in js/general-store.js
+      // and js/carpenter-shop.js — call via .render() on each.
 
-      function bindGeneralStoreTabs() {
-        document.querySelectorAll('.general-store-tab').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.generalStoreCat === generalStoreActiveCategory);
-          btn.onclick = () => {
-            generalStoreActiveCategory = btn.dataset.generalStoreCat || 'goods';
-            renderGeneralStorePage();
-          };
-        });
-      }
+      // Crafting tab (Inventory panel's Crafting sub-tab) now lives in
+      // js/crafting-panel.js — call via window.CraftingPanel.render().
 
-      function buyGeneralStoreItem(item) {
-        const gold = inventory.gold || 0;
-        if (gold < item.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - item.price;
-        if (item.gives) {
-          Object.entries(item.gives).forEach(([k, v]) => {
-            inventory[k] = Math.min(99, (inventory[k] || 0) + v);
-          });
-        }
-        showToast('Bought ' + item.name + '!', true);
-        renderGeneralStorePage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderGeneralStoreGoods(list) {
-        const world = _lootShopWorldState();
-        GENERAL_STORE_CATALOG.filter(item => window.ConditionRegistry.entryEligible(item, world)).forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${item.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${item.name}</div>
-              <div class="sh-desc">${item.desc}</div>
-              <div class="sh-price">${item.price}g each</div>
-            </div>
-            <button class="shop-buy-btn" data-key="${item.key}">Buy</button>
-          `;
-          row.querySelector('[data-key]')?.addEventListener('click', () => buyGeneralStoreItem(item));
-          list.appendChild(row);
-        });
-      }
-
-      function renderGeneralStoreClothing(list) {
-        const clothHdrEl = document.createElement('div');
-        clothHdrEl.className = 'shop-section-label';
-        clothHdrEl.textContent = '🧥 Today\'s Clothing  (rerolls each day)';
-        list.appendChild(clothHdrEl);
-
-        generateDailyClothingStock(calendar.day).forEach(item => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">👘</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(item.label)}</div>
-              <div class="sh-desc">${item.slot.charAt(0).toUpperCase() + item.slot.slice(1)} — goes to pack inventory</div>
-              <div class="sh-price">${item.price}g each</div>
-            </div>
-            <button class="shop-buy-btn gs-cloth-buy">Buy</button>
-          `;
-          row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
-            if ((inventory.gold || 0) < item.price) { showToast('Not enough gold.', false); return; }
-            inventory.gold = (inventory.gold || 0) - item.price;
-            packClothing.push({ ...item });
-            showToast('Bought ' + item.label + '!', true);
-            renderGeneralStorePage(); buildInventoryGrid(); buildPackClothingSection();
-            saveMemberWorldData();
-          });
-          list.appendChild(row);
-        });
-      }
-
-      function renderGeneralStorePage() {
-        bindGeneralStoreTabs();
-        const sectionTitle = document.getElementById('generalStoreSectionTitle');
-        if (sectionTitle) sectionTitle.textContent = 'Funji & Son\'s General Store — ' + getGeneralStoreCategoryLabel(generalStoreActiveCategory);
-        const list   = document.getElementById('generalStoreList');
-        const goldEl = document.getElementById('gsGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        if (!list) return;
-        list.innerHTML = '';
-        if (generalStoreActiveCategory === 'goods' || generalStoreActiveCategory === 'all') renderGeneralStoreGoods(list);
-        if (generalStoreActiveCategory === 'clothing' || generalStoreActiveCategory === 'all') renderGeneralStoreClothing(list);
-      }
-
-      // ── Carpenter's shop page — sells barn plans (see BARN_TIERS). Same
-      // shape as the General Store's goods list, just its own catalog.
-      function buyBarnPlan(tier) {
-        const tierDef = BARN_TIERS[tier];
-        if (!tierDef) return;
-        const gold = inventory.gold || 0;
-        if (gold < tierDef.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - tierDef.price;
-        inventory[tierDef.planItem] = Math.min(9, (inventory[tierDef.planItem] || 0) + 1);
-        showToast(`Bought a ${tierDef.label} plan!`, true);
-        renderCarpenterShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      // Furniture blueprints — see FURNITURE_BLUEPRINT_CATALOG. Bought here
-      // instead of the finished piece (no more direct General Store/mail-
-      // order furniture purchase); build the actual furniture from an owned
-      // blueprint plus wood/stone at the Inventory's Crafting tab (see
-      // renderCraftingPanel/craftFurnitureFromBlueprint).
-      function buyFurnitureBlueprint(blueprintKey) {
-        const bp = FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-        if (!bp) return;
-        const gold = inventory.gold || 0;
-        if (gold < bp.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - bp.price;
-        inventory[bp.key] = Math.min(9, (inventory[bp.key] || 0) + 1);
-        showToast(`Bought a ${bp.name} blueprint!`, true);
-        renderCarpenterShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderCarpenterShopPage() {
-        const goldEl = document.getElementById('cpGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        const list = document.getElementById('carpenterShopList');
-        if (!list) return;
-        list.innerHTML = '';
-        const world = _lootShopWorldState();
-
-        const planHdr = document.createElement('div');
-        planHdr.className = 'shop-section-label';
-        planHdr.textContent = '🏚 Barn Plans';
-        list.appendChild(planHdr);
-
-        Object.entries(BARN_TIERS).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world)).forEach(([tier, def]) => {
-          const owned = inventory[def.planItem] || 0;
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">🏚</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(def.label)} Plan</div>
-              <div class="sh-desc">Houses up to ${def.slots} livestock. Owned: ${owned}</div>
-              <div class="sh-price">${def.price}g each</div>
-            </div>
-            <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
-          `;
-          row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
-          list.appendChild(row);
-        });
-
-        const bpHdr = document.createElement('div');
-        bpHdr.className = 'shop-section-label';
-        bpHdr.textContent = '📜 Furniture Blueprints';
-        list.appendChild(bpHdr);
-
-        FURNITURE_BLUEPRINT_CATALOG.filter(bp => window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
-          const owned = inventory[bp.key] || 0;
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${bp.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(bp.name)} Blueprint</div>
-              <div class="sh-desc">Build with ${bp.craftCost.wood} Wood + ${bp.craftCost.stone} Stone in the Crafting tab. Owned: ${owned}</div>
-              <div class="sh-price">${bp.price}g each</div>
-            </div>
-            <button class="shop-buy-btn" data-bp="${bp.key}">Buy</button>
-          `;
-          row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
-          list.appendChild(row);
-        });
-      }
-
-      // ── Crafting panel (Inventory's Crafting tab) ─────────────────────
-      // Turns an owned furniture blueprint into the finished furniture item
-      // using wood (any log — pine or shadewood) and stone gathered with
-      // the axe and pick — see FURNITURE_BLUEPRINT_CATALOG/
-      // buyFurnitureBlueprint. Reachable from anywhere, not gated to
-      // standing at the carpenter's shop, same as any other Inventory tab.
-      let craftingActiveCategory = 'all';
-
-      function ownedWoodCount() {
-        return (inventory.pineLog || 0) + (inventory.shadewoodLog || 0);
-      }
-      function consumeWood(amount) {
-        let remaining = amount;
-        for (const key of ['pineLog', 'shadewoodLog']) {
-          if (remaining <= 0) break;
-          const have = inventory[key] || 0;
-          const take = Math.min(have, remaining);
-          inventory[key] = have - take;
-          clampInventoryStack(key);
-          remaining -= take;
-        }
-      }
-
-      function bindCraftingTabs() {
-        document.querySelectorAll('.crafting-cat-tab').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.craftingCat === craftingActiveCategory);
-          btn.onclick = () => {
-            craftingActiveCategory = btn.dataset.craftingCat || 'all';
-            renderCraftingPanel();
-          };
-        });
-      }
-
-      function craftFurnitureFromBlueprint(blueprintKey) {
-        const bp = FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey);
-        if (!bp) return;
-        if ((inventory[bp.key] || 0) < 1) { showToast('No blueprint to build from.', false); return; }
-        if (ownedWoodCount() < bp.craftCost.wood) { showToast(`Not enough wood — need ${bp.craftCost.wood} (Pine/Shadewood Log).`, false); return; }
-        if ((inventory.stone || 0) < bp.craftCost.stone) { showToast(`Not enough stone — need ${bp.craftCost.stone}.`, false); return; }
-        inventory[bp.key] -= 1;
-        clampInventoryStack(bp.key);
-        consumeWood(bp.craftCost.wood);
-        inventory.stone -= bp.craftCost.stone;
-        clampInventoryStack('stone');
-        inventory[bp.furnitureKey] = Math.min(99, (inventory[bp.furnitureKey] || 0) + 1);
-        showToast(`Built a ${bp.name}!`, true);
-        renderCraftingPanel();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderCraftingPanel() {
-        bindCraftingTabs();
-        const list = document.getElementById('craftingList');
-        if (!list) return;
-        list.innerHTML = '';
-        const visible = FURNITURE_BLUEPRINT_CATALOG.filter(bp => craftingActiveCategory === 'all' || bp.category === craftingActiveCategory);
-        const owned = visible.filter(bp => (inventory[bp.key] || 0) > 0);
-        if (!owned.length) {
-          const empty = document.createElement('div');
-          empty.className = 'ii-empty';
-          empty.textContent = "No blueprints yet — buy one from the carpenter's shop.";
-          list.appendChild(empty);
-          return;
-        }
-        const haveWood = ownedWoodCount();
-        const haveStone = inventory.stone || 0;
-        owned.forEach(bp => {
-          const ownedCount = inventory[bp.key] || 0;
-          const canBuild = haveWood >= bp.craftCost.wood && haveStone >= bp.craftCost.stone;
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">${bp.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(bp.name)}</div>
-              <div class="sh-desc">Needs ${bp.craftCost.wood} Wood (have ${haveWood}) + ${bp.craftCost.stone} Stone (have ${haveStone}) — Blueprints owned: ${ownedCount}</div>
-            </div>
-            <button class="shop-buy-btn" data-bp="${bp.key}" ${canBuild ? '' : 'disabled'}>Build</button>
-          `;
-          row.querySelector('[data-bp]')?.addEventListener('click', () => craftFurnitureFromBlueprint(bp.key));
-          list.appendChild(row);
-        });
-      }
-
-      // ── Sloomi/Kzubug's smithing counter ────────────────────────────────
-      // Craft a new verdigris tool from dug-up metal bars (see
-      // METAL_DEFS/VERDIGRIS_METAL_KEYS/craftedToolItemKey), then plate,
-      // clear plating, or reinforce any owned crafted tool. Both smiths
-      // offer this identical service — see the 'openCraftMenu' dialogue
-      // action and each NPC's dialogueTrees entry.
-      let metalCraftActiveShape = UNLOCKED_TOOL_SHAPES[0];
-      const CRAFT_BAR_COST    = 3;  // bars of the chosen metal, for a new tool or a reinforcement
-      const CRAFT_LABOR_GOLD  = 15; // gold labor fee, same for crafting new or reinforcing
-      const PLATE_BAR_COST    = 1;  // bars of the plating metal (cosmetic or resistant)
-      const PLATE_LABOR_GOLD  = 8;
-
-      function craftMetalTool(shapeKey, metalKey) {
-        const barKey = metalBarItemKey(metalKey);
-        if ((inventory[barKey] || 0) < CRAFT_BAR_COST) { showToast(`Not enough ${METAL_DEFS[metalKey].label} bars.`, false); return; }
-        if ((inventory.gold || 0) < CRAFT_LABOR_GOLD) { showToast("Not enough gold for the smith's labor.", false); return; }
-        inventory[barKey] -= CRAFT_BAR_COST;
-        clampInventoryStack(barKey);
-        inventory.gold -= CRAFT_LABOR_GOLD;
-        const itemKey = craftedToolItemKey(shapeKey, metalKey);
-        if (!gearInventory.tools) gearInventory.tools = {};
-        gearInventory.tools[itemKey] = true;
-        saveGearInventory();
-        showToast(`Smithed a ${TOOL_ITEM_DEFS[itemKey].label}!`, true);
-        renderMetalCraftShopPage();
-        buildInventoryGrid();
-        buildEquipmentSlots();
-        saveMemberWorldData();
-      }
-
-      // choice: 'clear' | 'resistant' | 'cosmetic:<metalKey>' — see the
-      // <select> built in renderMetalCraftShopPage.
-      function applyMetalToolPlating(itemKey, choice) {
-        const def = TOOL_ITEM_DEFS[itemKey];
-        if (!gearInventory?.tools?.[itemKey] || !def?.metalKey) return;
-        if (choice === 'clear') {
-          const plating = toolPlating(itemKey);
-          if (!plating) { showToast('No plating to clear.', false); return; }
-          const refundMetal = plating.mode === 'cosmetic' ? plating.metalKey : def.metalKey;
-          inventory[metalBarItemKey(refundMetal)] = Math.min(99, (inventory[metalBarItemKey(refundMetal)] || 0) + PLATE_BAR_COST);
-          clearToolPlating(itemKey);
-          showToast('Cleared plating — back to live verdigris, materials returned.', true);
-        } else if (choice === 'resistant' || choice.startsWith('cosmetic:')) {
-          const metalKey = choice === 'resistant' ? def.metalKey : choice.slice('cosmetic:'.length);
-          const metal = METAL_DEFS[metalKey];
-          if (!metal) return;
-          const barKey = metalBarItemKey(metalKey);
-          if ((inventory[barKey] || 0) < PLATE_BAR_COST) { showToast(`Not enough ${metal.label} bars.`, false); return; }
-          if ((inventory.gold || 0) < PLATE_LABOR_GOLD) { showToast('Not enough gold.', false); return; }
-          inventory[barKey] -= PLATE_BAR_COST;
-          clampInventoryStack(barKey);
-          inventory.gold -= PLATE_LABOR_GOLD;
-          setToolPlating(itemKey, choice === 'resistant' ? 'resistant' : 'cosmetic', metalKey);
-          showToast(choice === 'resistant' ? 'Applied a verdigris-resistant coat.' : `Plated with ${metal.label}.`, true);
-        } else {
-          return;
-        }
-        refreshMetalToolWorldTexture(itemKey);
-        renderMetalCraftShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      // Same cost as smithing a whole new tool — see task spec. Keeps the
-      // tool's own base-metal identity (itemKey never changes, so its
-      // mastery/verdigris/plating all keep tracking exactly as before);
-      // only its effective damage/efficacy borrows metalKey's tier (see
-      // toolEffectiveMetalKey/toolMetalMultiplier).
-      function reinforceMetalTool(itemKey, metalKey) {
-        const def = TOOL_ITEM_DEFS[itemKey];
-        const metal = METAL_DEFS[metalKey];
-        if (!def?.metalKey || !metal) return;
-        const currentTier = METAL_DEFS[toolEffectiveMetalKey(itemKey)]?.tier || 0;
-        if (metal.tier <= currentTier) { showToast("That metal isn't stronger than what this tool already fights with.", false); return; }
-        const barKey = metalBarItemKey(metalKey);
-        if ((inventory[barKey] || 0) < CRAFT_BAR_COST) { showToast(`Not enough ${metal.label} bars.`, false); return; }
-        if ((inventory.gold || 0) < CRAFT_LABOR_GOLD) { showToast("Not enough gold for the smith's labor.", false); return; }
-        inventory[barKey] -= CRAFT_BAR_COST;
-        clampInventoryStack(barKey);
-        inventory.gold -= CRAFT_LABOR_GOLD;
-        setToolReinforcement(itemKey, metalKey);
-        showToast(`${def.label} reinforced with ${metal.label}!`, true);
-        renderMetalCraftShopPage();
-        saveMemberWorldData();
-      }
-
-      function renderMetalCraftShopPage() {
-        const goldEl = document.getElementById('mcGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        const list = document.getElementById('metalCraftShopList');
-        if (!list) return;
-        list.innerHTML = '';
-
-        const craftHdr = document.createElement('div');
-        craftHdr.className = 'shop-section-label';
-        craftHdr.textContent = `🔨 Craft a New Tool  (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)`;
-        list.appendChild(craftHdr);
-
-        const shapeTabs = document.createElement('div');
-        shapeTabs.className = 'supply-tabs';
-        UNLOCKED_TOOL_SHAPES.forEach(shapeKey => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'supply-tab' + (shapeKey === metalCraftActiveShape ? ' active' : '');
-          btn.textContent = TOOL_SHAPE_DEFS[shapeKey].label;
-          btn.onclick = () => { metalCraftActiveShape = shapeKey; renderMetalCraftShopPage(); };
-          shapeTabs.appendChild(btn);
-        });
-        list.appendChild(shapeTabs);
-
-        VERDIGRIS_METAL_KEYS.forEach(metalKey => {
-          const metal = METAL_DEFS[metalKey];
-          const owned = inventory[metalBarItemKey(metalKey)] || 0;
-          const itemKey = craftedToolItemKey(metalCraftActiveShape, metalKey);
-          const alreadyOwned = !!gearInventory?.tools?.[itemKey];
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          row.innerHTML = `
-            <div class="sh-icon">🔶</div>
-            <div class="sh-info">
-              <div class="sh-name">${esc(metal.label)} ${esc(TOOL_SHAPE_DEFS[metalCraftActiveShape].label)} (tier ${metal.tier})</div>
-              <div class="sh-desc">Bars owned: ${owned}${alreadyOwned ? ' — already smithed' : ''}</div>
-              <div class="sh-price">${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g</div>
-            </div>
-            <button class="shop-buy-btn" data-metal="${metalKey}" ${alreadyOwned ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
-          `;
-          row.querySelector('[data-metal]')?.addEventListener('click', () => craftMetalTool(metalCraftActiveShape, metalKey));
-          list.appendChild(row);
-        });
-
-        const ownedCrafted = Object.keys(gearInventory?.tools || {}).filter(key => TOOL_ITEM_DEFS[key]?.metalKey);
-        if (ownedCrafted.length) {
-          const plateHdr = document.createElement('div');
-          plateHdr.className = 'shop-section-label';
-          plateHdr.textContent = '✨ Plate, Clear, or Reinforce';
-          list.appendChild(plateHdr);
-
-          ownedCrafted.forEach(itemKey => {
-            const def = TOOL_ITEM_DEFS[itemKey];
-            const verdigrisPct = Math.round(toolVerdigrisFraction(itemKey) * 100);
-            const plating = toolPlating(itemKey);
-            const effectiveMetal = toolEffectiveMetalKey(itemKey);
-            const reinforced = toolReinforcementMetal(itemKey);
-            const platingText = plating
-              ? (plating.mode === 'cosmetic' ? `Plated: ${METAL_DEFS[plating.metalKey]?.label}` : 'Verdigris-resistant coat')
-              : `Live verdigris: ${verdigrisPct}%`;
-            const plateOptions = [
-              `<option value="clear">— live verdigris (clear plating) —</option>`,
-              `<option value="resistant">Verdigris-resistant coat (${esc(METAL_DEFS[def.metalKey].label)})</option>`,
-              // Cosmetic plating is specifically a non-verdigris metal's
-              // clean color (see spec) — a verdigris metal already shows
-              // its own live oxidation, so "resistant" (above) is the
-              // same-metal option instead.
-              ...Object.keys(METAL_DEFS).filter(k => METAL_DEFS[k].tier == null && (inventory[metalBarItemKey(k)] || 0) > 0)
-                .map(k => `<option value="cosmetic:${k}">Cosmetic: ${esc(METAL_DEFS[k].label)}</option>`),
-            ].join('');
-            const reinforceOptions = VERDIGRIS_METAL_KEYS
-              .filter(k => METAL_DEFS[k].tier > (METAL_DEFS[effectiveMetal]?.tier || 0) && (inventory[metalBarItemKey(k)] || 0) >= CRAFT_BAR_COST)
-              .map(k => `<option value="${k}">${esc(METAL_DEFS[k].label)} (tier ${METAL_DEFS[k].tier})</option>`).join('');
-            const row = document.createElement('div');
-            row.className = 'shop-row mc-tool-row';
-            row.innerHTML = `
-              <div class="sh-icon">${def.icon}</div>
-              <div class="sh-info">
-                <div class="sh-name">${esc(def.label)}${reinforced ? ' (reinforced: ' + esc(METAL_DEFS[reinforced].label) + ')' : ''}</div>
-                <div class="sh-desc">${esc(platingText)} — Mastery ${toolMasteryLevel(itemKey)}/5</div>
-                <div class="mc-tool-controls">
-                  <select class="mc-plate-select">${plateOptions}</select>
-                  <button class="shop-buy-btn mc-plate-btn">Apply</button>
-                </div>
-                ${reinforceOptions ? `<div class="mc-tool-controls">
-                  <select class="mc-reinforce-select">${reinforceOptions}</select>
-                  <button class="shop-buy-btn mc-reinforce-btn">Reinforce (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)</button>
-                </div>` : ''}
-              </div>
-            `;
-            row.querySelector('.mc-plate-btn')?.addEventListener('click', () => {
-              applyMetalToolPlating(itemKey, row.querySelector('.mc-plate-select').value);
-            });
-            row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => {
-              const sel = row.querySelector('.mc-reinforce-select');
-              if (sel) reinforceMetalTool(itemKey, sel.value);
-            });
-            list.appendChild(row);
-          });
-        }
-      }
+      // Sloomi/Kzubug's smithing counter (craft/plate/reinforce verdigris
+      // tools) now lives in js/metal-craft-shop.js — call via
+      // window.MetalCraftShop.render().
 
             // Item scroll — ordered list of scrollable inventory slots
       const inventoryItems = [
@@ -13364,148 +11645,8 @@
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
       }
 
-      let shippingSelected = { side: 'left', key: null }; // Used by the Shipping pane transfer controls.
-      let shippingAmount = 1; // Used by the Shipping pane stepper and transfer buttons.
-      const shippingActiveCat = { left: 'all', right: 'all' }; // Used by the Shipping pane category filters.
-
-      function getShippingBoxContents() {
-        return shippingBoxObject && shippingBoxObject.getContents ? shippingBoxObject.getContents() : {};
-      }
-
-      function getShippingKeys(side) {
-        const source = side === 'right' ? getShippingBoxContents() : inventory;
-        return Object.keys(ITEM_DEFS).filter(key => {
-          const def = ITEM_DEFS[key];
-          const cat = shippingActiveCat[side];
-          if (cat !== 'all' && def.cat !== cat) return false;
-          return (source[key] || 0) > 0;
-        });
-      }
-
-      function getShippingCount(side, key) {
-        return side === 'right' ? (getShippingBoxContents()[key] || 0) : (inventory[key] || 0);
-      }
-
-      function canShipKey(key) {
-        return BASE_PRICES[key] !== undefined;
-      }
-
-      function selectShippingItem(side, key) {
-        shippingSelected = { side, key };
-        shippingAmount = Math.max(1, Math.min(shippingAmount, getShippingCount(side, key) || 1));
-        buildShippingTransferUI();
-      }
-
-      function bumpShippingAmount(delta) {
-        const key = shippingSelected.key;
-        if (!key) return;
-        const max = Math.max(1, getShippingCount(shippingSelected.side, key));
-        shippingAmount = Math.max(1, Math.min(max, shippingAmount + delta));
-        buildShippingTransferUI();
-      }
-
-      function transferShippingAmount(mode) {
-        const key = shippingSelected.key;
-        if (!key || !shippingBoxObject) return;
-        const count = getShippingCount(shippingSelected.side, key);
-        if (count < 1) return;
-        let qty = shippingAmount;
-        if (mode === 'half') qty = Math.max(1, Math.floor(count / 2));
-        if (mode === 'stack') qty = count;
-        qty = Math.max(1, Math.min(qty, count));
-
-        let moved = 0;
-        if (shippingSelected.side === 'left') {
-          if (!canShipKey(key)) { showToast('That item cannot be shipped.', false); return; }
-          moved = shippingBoxObject.depositItem(key, qty);
-          if (moved > 0) showToast(`📦 Shipped ${moved}× ${ITEM_DEFS[key].label}`, true);
-        } else {
-          // Taking items back OUT of storage is owner/granted-farmhand only —
-          // depositing into it is always allowed.
-          if (!hasFarmPermission('storage')) {
-            showToast("Only the farm's owner (or a granted farmhand) can take from storage.", false);
-            return;
-          }
-          moved = shippingBoxObject.withdrawItem(key, qty);
-          if (moved > 0) showToast(`↩ Took back ${moved}× ${ITEM_DEFS[key].label}`, true);
-        }
-        if (moved < 1) return;
-        clampInventoryStack(key);
-        const remaining = getShippingCount(shippingSelected.side, key);
-        if (remaining < 1) shippingSelected.key = null;
-        shippingAmount = 1;
-        buildInventoryGrid();
-        buildShippingTransferUI();
-        refreshItemScroll();
-        saveMemberWorldData();
-      }
-
-      function renderShippingGrid(side) {
-        const grid = document.getElementById(side === 'left' ? 'shipLeftGrid' : 'shipRightGrid');
-        if (!grid) return;
-        grid.innerHTML = '';
-        const keys = getShippingKeys(side);
-        keys.forEach(key => {
-          const def = ITEM_DEFS[key];
-          const count = getShippingCount(side, key);
-          const blocked = side === 'left' && !canShipKey(key);
-          const slot = document.createElement('button');
-          slot.className = 'ship-slot' + (shippingSelected.side === side && shippingSelected.key === key ? ' selected' : '') + (blocked ? ' blocked' : '');
-          slot.dataset.side = side;
-          slot.dataset.key = key;
-          slot.innerHTML = `<span class="ship-slot-icon">${def.icon}</span><span class="ship-slot-count">×${count}</span>${side === 'right' ? '<span class="ship-slot-pending">BOX</span>' : ''}`;
-          slot.addEventListener('click', () => selectShippingItem(side, key));
-          grid.appendChild(slot);
-        });
-        if (keys.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'ship-footer';
-          empty.textContent = side === 'right' ? 'Shipping box is empty.' : 'No items in this filter.';
-          grid.appendChild(empty);
-        }
-      }
-
-      function buildShippingTransferUI() {
-        if (!document.getElementById('mpShipping')) return;
-        renderShippingGrid('left');
-        renderShippingGrid('right');
-
-        const leftStacks = Object.keys(ITEM_DEFS).filter(k => (inventory[k] || 0) > 0).length;
-        const boxTotal = shippingBoxObject && shippingBoxObject.getTotalItems ? shippingBoxObject.getTotalItems() : 0;
-        const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-        setText('shipLeftCap', `${leftStacks} stacks`);
-        setText('shipRightCap', boxTotal > 0 ? `${boxTotal} queued` : 'Empty');
-
-        const key = shippingSelected.key;
-        const def = key ? ITEM_DEFS[key] : null;
-        const count = key ? getShippingCount(shippingSelected.side, key) : 0;
-        const max = Math.max(1, count);
-        shippingAmount = Math.max(1, Math.min(shippingAmount, max));
-        const blocked = key && shippingSelected.side === 'left' && !canShipKey(key);
-        const direction = !key ? '↔' : (shippingSelected.side === 'left' ? '→ Box' : '← Bag');
-
-        setText('shipPreviewIcon', def ? def.icon : '📦');
-        setText('shipPreviewName', def ? `${def.label} ×${count}` : 'Select item');
-        setText('shipDirection', blocked ? 'Blocked' : direction);
-        setText('shipAmount', String(shippingAmount));
-        setText('shipLeftFooter', shippingSelected.side === 'left' && def ? `${def.label} ×${count}` : 'Select a player item.');
-        setText('shipRightFooter', shippingSelected.side === 'right' && def ? `${def.label} ×${count}` : 'Select a boxed item to take it back before sale.');
-        setText('shipDetailIcon', def ? def.icon : '📦');
-        setText('shipDetailName', def ? def.label : 'Shipping Box Transfer');
-        setText('shipDetailValue', def && canShipKey(key) ? `${BASE_PRICES[key]}g each` : (def ? 'Not sellable' : '—'));
-        setText('shipDetailDesc', def ? `${def.desc}${blocked ? ' This item stays in your bag because the shipping box only accepts sellable goods.' : ''}` : 'Move sellable crops and materials from the player bag into the shipping box. Select items already in the box to pull them back out before the timed sale.');
-        const tags = document.getElementById('shipDetailTags');
-        if (tags) tags.innerHTML = def ? def.tags.map(t => `<span class="ship-tag">${t}</span>`).join('') : '<span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Instant transfer</span>';
-
-        const hasTransfer = !!key && count > 0 && !blocked;
-        ['shipAmtMinus','shipAmtPlus','shipTransferOne','shipTransferHalf','shipTransferStack'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.disabled = !hasTransfer;
-        });
-        setText('shipTransferOne', shippingSelected.side === 'left' ? 'Ship 1' : 'Take 1');
-        setText('shipTransferHalf', shippingSelected.side === 'left' ? 'Ship Half' : 'Take Half');
-        setText('shipTransferStack', shippingSelected.side === 'left' ? 'Ship Stack' : 'Take Stack');
-      }
+      // Shipping tab (player bag <-> shipping-box transfer UI) now lives
+      // in js/shipping-panel.js — call via window.ShippingPanel.build().
 
       function clearInventoryDetail(message = '← Select an item') {
         invSelectedKey = null;
@@ -14580,59 +12721,11 @@
           empty.textContent = 'No collected clothing in gear.';
           sec.appendChild(empty);
         }
-        buildWhistleEquipUI();
+        window.WhistleEquip.build();
       }
 
-      function equipWhistle(whistleId) {
-        setEquipmentSlot('whistle', whistleId);
-        buildWhistleEquipUI();
-      }
-
-      function unequipWhistle() {
-        setEquipmentSlot('whistle', null);
-        buildWhistleEquipUI();
-      }
-
-      function buildWhistleEquipUI() {
-        const sec = document.getElementById('invWhistleSection');
-        if (!sec) return;
-        sec.innerHTML = '';
-        const whistles = gearInventory?.whistles || [];
-        if (!whistles.length) {
-          const empty = document.createElement('div');
-          empty.className = 'inv-gear-extra-empty';
-          empty.textContent = 'No whistles in gear.';
-          sec.appendChild(empty);
-          return;
-        }
-        const row = document.createElement('div');
-        row.className = 'inv-equip-row';
-        for (const whistle of whistles) {
-          const def = CREATURE_DB[whistle.creatureKey];
-          const equipped = equipmentSlots.whistle === whistle.id;
-          const cell = document.createElement('div');
-          cell.className = 'inv-equip-slot occupied' + (equipped ? ' active-slot' : '');
-          cell.setAttribute('title', `${whistle.name} (${def?.label || whistle.creatureKey})` + (equipped ? ' — equipped' : ' — click to equip'));
-          if (def?.sprites?.idle) {
-            const img = document.createElement('img');
-            img.src = def.sprites.idle; img.className = 'ies-sprite'; img.alt = whistle.name;
-            cell.appendChild(img);
-          }
-          if (equipped) {
-            const unBtn = document.createElement('button');
-            unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unequip ' + whistle.name;
-            unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipWhistle(); });
-            cell.appendChild(unBtn);
-          }
-          const lbl = document.createElement('span');
-          lbl.className = 'ies-label';
-          lbl.textContent = whistle.name;
-          cell.appendChild(lbl);
-          cell.addEventListener('click', () => equipWhistle(whistle.id));
-          row.appendChild(cell);
-        }
-        sec.appendChild(row);
-      }
+      // equipWhistle/unequipWhistle/buildWhistleEquipUI now live in
+      // js/whistle-equip.js — call via window.WhistleEquip.build().
 
       let activeItemIndex = 0;
       // Declared before createInitialGrid() because recomputeWater() (called
@@ -14835,23 +12928,19 @@
         return null;
       }
 
-      // Water particle system: bubbles / foam on flowing trenches
-      const waterParticles = [];
-      const MAX_PARTICLES = 120;
-      // Ripple rings: { x, y, age, maxAge, radius }
-      const ripples = [];
+      // Water particle system (bubbles/foam) and ripple rings now live as
+      // private state in js/weather-fx.js.
       // Tool-use feedback particles; rendered in drawActionParticles() as screen-space overlays.
       const actionParticles = [];
       // Tool-use tile flashes; rendered in drawActionTileEffects() to identify the affected tile.
       const actionTileEffects = [];
       // Machete slash trails; rendered in drawWeaponTrailEffects() to show the actual cone hit area.
       const weaponTrailEffects = [];
-      // Lightning flash state for storms
+      // Lightning flash alpha — stays here (not moved into js/weather-fx.js
+      // with the rest of the lightning state) since drawOverlays() reads it
+      // directly; js/weather-fx.js's updateLightningFlash reads/writes it
+      // via the getLightningAlpha/setLightningAlpha deps.
       let lightningAlpha = 0;
-      let lightningTimer = 6 + Math.random() * 8;
-      let lightningStrikesRemaining = 0;
-      let lightningGapTimer = 0;
-      let lightningDecayRate = 0;
 
       function createInitialGrid() {
         const nextGrid = Array.from({ length: ROWS }, (_, row) => (
@@ -14938,7 +13027,7 @@
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
         if (player.climbing) {
-          updateClimb(dt);
+          window.ClimbSystem.updateClimb(dt);
           return;
         }
 
@@ -15179,7 +13268,7 @@
               facingAngle += diff * Math.min(1, FACING_LERP * dt);
             } else if (cardinalHoldTimer > 0) {
               cardinalHoldTimer -= dt;
-              const card = nearestCardinalAngle(lastMoveAngle);
+              const card = window.PerpRotation.nearestCardinalAngle(lastMoveAngle);
               const diff = angleDiff(card, facingAngle);
               facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
             }
@@ -15251,978 +13340,25 @@
         return { x, y, active: x !== 0 || y !== 0 };
       }
 
-      function getHour() {
-        return MORNING_HOUR + calendar.time01 * (NIGHT_HOUR - MORNING_HOUR);
-      }
+      // Calendar day/week/month/year derivations (getHour, dayOfYear,
+      // yearNumber, monthIndex, seasonForDay, currentSeason,
+      // currentWeekdayName, formatCalendarDate, etc.) now live in
+      // js/calendar-system.js — call via window.CalendarSystem.*.
 
-      // ── Calendar derivations ──
-      // calendar.day is an ever-incrementing absolute day count from world
-      // start (day 1). Everything else — year, month, week-of-year, weekday,
-      // and the regional season — is derived from it via modulo, and every
-      // helper below takes an optional absolute day (defaulting to
-      // calendar.day) so the Calendar tab can compute dates other than today.
-      function dayOfYear(day = calendar.day) {
-        return ((day - 1) % YEAR_LENGTH_DAYS) + 1; // 1..336
-      }
-      function yearNumber(day = calendar.day) {
-        return Math.floor((day - 1) / YEAR_LENGTH_DAYS) + 1;
-      }
-      function weekOfYear(day = calendar.day) {
-        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_WEEK) + 1; // 1..48
-      }
-      function monthIndex(day = calendar.day) {
-        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_MONTH); // 0..11
-      }
-      function monthNumber(day = calendar.day) {
-        return monthIndex(day) + 1; // 1..12
-      }
-      function monthName(day = calendar.day) {
-        return MONTH_NAMES[monthIndex(day)];
-      }
-      function dayOfMonth(day = calendar.day) {
-        return ((dayOfYear(day) - 1) % DAYS_PER_MONTH) + 1; // 1..28
-      }
-      // startWeek > endWeek means the season wraps the year boundary (see
-      // Stormtide, weeks 47-48 then 1-14) — same "overnight window"
-      // convention as isNowWithinNpcRuleWindow().
-      function seasonForDay(day = calendar.day) {
-        const wk = weekOfYear(day);
-        return seasons.find(s => s.startWeek <= s.endWeek
-          ? (wk >= s.startWeek && wk <= s.endWeek)
-          : (wk >= s.startWeek || wk <= s.endWeek)
-        ) || seasons[seasons.length - 1];
-      }
-      function currentSeason() {
-        return seasonForDay(calendar.day);
-      }
-      function weekOfSeason(day = calendar.day) {
-        const wk = weekOfYear(day);
-        const season = seasonForDay(day);
-        if (season.startWeek <= season.endWeek) return wk - season.startWeek + 1;
-        return wk >= season.startWeek ? wk - season.startWeek + 1 : wk + (WEEKS_PER_YEAR - season.startWeek + 1);
-      }
+      // Farm tab hub (header, grid glance, buildings list, processor status
+      // tiles, livestock roster + breeding, farm<->stable transfers, storage,
+      // farmhands) and the Stable tab now live in js/farm-panel.js — call via
+      // window.FarmPanel.*.
 
-      function weekdayIndexForCalendarDay(day) {
-        return ((day - 1) % DAYS_PER_WEEK + DAYS_PER_WEEK) % DAYS_PER_WEEK;
-      }
-      function weekdayNameForDay(day = calendar.day) {
-        return WEEKDAY_NAMES[weekdayIndexForCalendarDay(day)];
-      }
-      function currentWeekdayIndex() {
-        return weekdayIndexForCalendarDay(calendar.day);
-      }
-      function currentWeekdayName() {
-        return weekdayNameForDay(calendar.day);
-      }
-      function ordinalSuffix(n) {
-        const v = n % 100;
-        if (v >= 11 && v <= 13) return 'th';
-        switch (n % 10) {
-          case 1: return 'st';
-          case 2: return 'nd';
-          case 3: return 'rd';
-          default: return 'th';
-        }
-      }
-      // HUD-friendly short date, e.g. "Anan, 1/1, 1st week of Storm"
-      function formatCalendarDate(day = calendar.day) {
-        const dom = dayOfMonth(day), wk = weekOfSeason(day);
-        return `${weekdayNameForDay(day)}, ${dom}/${monthNumber(day)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
-      }
-      // Full date for the Calendar tab header, e.g. "Anan, Waxingheat 1st, 1st week of Storm"
-      function formatCalendarDateFull(day = calendar.day) {
-        const dom = dayOfMonth(day), wk = weekOfSeason(day);
-        return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
-      }
-
-      // Absolute day of a month's first day. Months are exactly 4 weeks
-      // (28 days), so every month starts on Anan — no partial first/last
-      // week to special-case, unlike a real Gregorian month grid.
-      function absDayForMonthStart(year, monthIdx0) {
-        return (year - 1) * YEAR_LENGTH_DAYS + monthIdx0 * DAYS_PER_MONTH + 1;
-      }
-
-      let calViewYear = 1, calViewMonthIndex = 0;
-
-      // ── Farm tab: the farm's identity/progression hub ──────────────────
-      // Reads `grid`/`worldObjects`/`animalObjects` directly (not through
-      // getActiveGrid()/getWorldObjectAt(), which are area-gated) since
-      // those bare module variables are always the farm's own state
-      // regardless of which area the player currently stands in.
-      // Keyed by `${source}:${id}` so a world-livestock id and a stable id
-      // never collide. Values are the ref objects setBreedingPair() expects.
-      let farmPairPicks = new Map();
-
-      // Farm tab "move/place" state — armed by a button in renderFarmBuildings(),
-      // consumed by the farmGlanceCanvas click handler set up in
-      // renderFarmGridGlance(). null when nothing is being moved/placed.
-      let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'place', tier }
       // Set by a barn's in-world "Manage Livestock" button (see
       // makeBarnWorldObject) to jump straight to the Farm tab; currently just
       // opens the tab (the livestock list itself has no per-barn grouping to
       // scroll to yet), kept as a hook for a future focused view.
       let _farmLivestockFocusBarnId = null;
 
-      function renderFarmPanel() {
-        if (!document.getElementById('mpFarm')) return;
-        renderFarmHeader();
-        renderFarmGridGlance();
-        renderFarmBuildings();
-        renderFarmProcessors();
-        renderFarmLivestock();
-        renderFarmStoragePane();
-        renderFarmhandsSection();
-
-        const addLivestockBtn = document.getElementById('farmAddLivestockBtn');
-        if (addLivestockBtn) addLivestockBtn.onclick = () => {
-          const key = Object.keys(LIVESTOCK_ITEM_KINDS).find(k => (inventory[k] || 0) > 0);
-          if (!key) { showToast('No livestock crates in your bag.', false); return; }
-          const result = window.FarmAnimals.addFromItem(key);
-          showToast(result.message, result.ok);
-          if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); buildInventoryGrid(); refreshActionBar(); }
-        };
-        const pairBtn = document.getElementById('farmPairBtn');
-        if (pairBtn) pairBtn.onclick = () => {
-          const [a, b] = [...farmPairPicks.values()];
-          if (a && b) setBreedingPair(a, b);
-          farmPairPicks.clear();
-          renderFarmLivestock();
-        };
-        const addFarmhandBtn = document.getElementById('farmAddFarmhandBtn');
-        if (addFarmhandBtn) addFarmhandBtn.onclick = () => {
-          const id = document.getElementById('farmAddFarmhandSelect')?.value;
-          if (!id) return;
-          window.__hobunjiAddFarmhand(id, {});
-          renderFarmhandsSection();
-        };
-      }
-
-      function renderFarmHeader() {
-        const input = document.getElementById('farmNameInput');
-        const saveBtn = document.getElementById('farmNameSaveBtn');
-        const ownerSpan = document.getElementById('farmOwnerName');
-        const owner = isFarmOwner();
-        if (input) { input.value = getFarmName(); input.disabled = !owner; }
-        if (saveBtn) {
-          saveBtn.hidden = !owner;
-          saveBtn.onclick = () => { setFarmName(input.value); renderFarmHeader(); showToast('Farm renamed.', true); };
-        }
-        if (ownerSpan) ownerSpan.textContent = getFarmOwnerName();
-      }
-
-      const FARM_GLANCE_TILE_COLORS = {
-        [TileType.GRASS]: '#3c6e3f', [TileType.WEEDS]: '#4f5c2e', [TileType.TILLED]: '#6b4a30',
-        [TileType.TRENCH]: '#25445c', [TileType.RAISED]: '#8a6a3d', [TileType.PADDY]: '#2f6a63',
-        [TileType.ROCK]: '#6b6b6f', [TileType.SHRUB]: '#2e4a2c', [TileType.PATH]: '#8f8672',
-        [TileType.RIVER]: '#2c6fa8', [TileType.STREAM]: '#3a83bd', [TileType.RAMP]: '#7a7a68', [TileType.WATERFALL]: '#4ea0d6',
-      };
-      const FARM_GLANCE_PX = 10;
-
-      // Read-only top-down status glance — modeled on the map-editor's
-      // canvas2d cell-fill approach, but simplified: no camera controls, no
-      // editing, just "what does the farm look like right now."
-      function renderFarmGridGlance() {
-        const canvas = document.getElementById('farmGlanceCanvas');
-        if (!canvas) return;
-        canvas.width = COLS * FARM_GLANCE_PX;
-        canvas.height = ROWS * FARM_GLANCE_PX;
-        const ctx = canvas.getContext('2d');
-        const PX = FARM_GLANCE_PX;
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            const tile = grid[r]?.[c];
-            ctx.fillStyle = tile ? (FARM_GLANCE_TILE_COLORS[tile.type] || '#3c6e3f') : '#1a1a1a';
-            ctx.fillRect(c * PX, r * PX, PX, PX);
-            if (tile?.crop) {
-              ctx.fillStyle = tile.cropReady ? '#f9e28a' : '#8fd66b';
-              ctx.fillRect(c * PX + 2, r * PX + 2, PX - 4, PX - 4);
-            }
-            if (isHouseFootprint(c, r)) {
-              ctx.fillStyle = 'rgba(120,90,60,0.9)';
-              ctx.fillRect(c * PX, r * PX, PX, PX);
-            }
-          }
-        }
-        // Buildings / furniture / crates — everything occupying a farm tile
-        // that isn't an animal (animals get their own marker below).
-        // Processing furniture gets its actual status color (see
-        // farmProcessorStatus, shared with the Processors tile grid below)
-        // instead of the flat generic marker every other object still uses.
-        const _glanceLivestock = processingFurnitureObjects.size ? _loadWorldLivestock() : null;
-        worldObjects.forEach((obj, key) => {
-          if (!obj || obj.type === 'animal') return;
-          const [c, r] = key.split(',').map(Number);
-          ctx.fillStyle = obj.type === 'processing_furniture' ? FARM_PROCESSOR_STATUS_COLORS[farmProcessorStatus(obj, _glanceLivestock).status] : 'rgba(200,80,60,0.9)';
-          ctx.fillRect(c * PX, r * PX, PX, PX);
-        });
-        // Livestock
-        animalObjects.forEach(a => {
-          ctx.fillStyle = '#ffd27a';
-          ctx.beginPath();
-          ctx.arc(a.col * PX + PX / 2, a.row * PX + PX / 2, PX * 0.35, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        const legend = document.getElementById('farmGridLegend');
-        if (legend && !legend.dataset.built) {
-          legend.dataset.built = '1';
-          legend.innerHTML = [
-            ['#3c6e3f', 'Grass'], ['#6b4a30', 'Tilled'], ['#25445c', 'Trench'],
-            ['#8fd66b', 'Growing crop'], ['#f9e28a', 'Ready crop'],
-            ['rgba(200,80,60,0.9)', 'Building/decor'], ['#6b6b6f', 'Rock/obstruction'],
-            ['#ffd27a', 'Livestock'],
-            [FARM_PROCESSOR_STATUS_COLORS.idle, 'Processor: idle'],
-            [FARM_PROCESSOR_STATUS_COLORS.working, 'Processor: working'],
-            [FARM_PROCESSOR_STATUS_COLORS.ready, 'Processor: ready'],
-            [FARM_PROCESSOR_STATUS_COLORS.livestock, 'Processor: livestock-worked'],
-          ].map(([color, label]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('');
-        }
-
-        // Click-to-move/place — only active while _farmPlacementMode is armed
-        // (see renderFarmBuildings()'s Move/Place buttons). Bound once; reads
-        // _farmPlacementMode fresh on every click rather than being rebuilt.
-        if (!canvas.dataset.clickBound) {
-          canvas.dataset.clickBound = '1';
-          canvas.addEventListener('click', (e) => {
-            if (!_farmPlacementMode || !hasFarmPermission('alterFarm')) return;
-            const rect = canvas.getBoundingClientRect();
-            const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
-            const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
-            const mode = _farmPlacementMode;
-            const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row) : window.FarmBuildings.placePlan(mode.tier, col, row);
-            showToast(result.message, result.ok);
-            if (result.ok) _farmPlacementMode = null;
-            renderFarmPanel();
-          });
-        }
-        canvas.style.cursor = _farmPlacementMode ? 'crosshair' : '';
-      }
-
-      // "Buildings" section of the Farm tab: lists the house + every barn
-      // with a Move button (owner/alterFarm-gated), and any owned-but-
-      // unplaced barn plans with a Place button. Both arm _farmPlacementMode
-      // and wait for a click on the glance canvas above (see
-      // renderFarmGridGlance()'s click handler).
-      function renderFarmBuildings() {
-        const list = document.getElementById('farmBuildingsList');
-        const note = document.getElementById('farmBuildingsNote');
-        const cancelBtn = document.getElementById('farmCancelPlacementBtn');
-        if (!list) return;
-        const canAlter = hasFarmPermission('alterFarm');
-        list.innerHTML = '';
-
-        if (note) {
-          note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can move or build here."
-            : _farmPlacementMode
-              ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.' : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
-              : 'Move the house or a barn, or place an owned barn plan, by clicking the map above.';
-        }
-        if (cancelBtn) {
-          cancelBtn.hidden = !_farmPlacementMode;
-          cancelBtn.onclick = () => { _farmPlacementMode = null; renderFarmBuildings(); };
-        }
-
-        const addRow = (label, w, h, onMove) => {
-          const row = document.createElement('div');
-          row.className = 'farm-row';
-          row.innerHTML = `<span class="farm-row-name">${esc(label)}</span><span class="farm-note">${w}×${h}</span>`;
-          if (canAlter && onMove) {
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Move';
-            btn.addEventListener('click', onMove);
-            row.appendChild(btn);
-          }
-          list.appendChild(row);
-        };
-
-        addRow('🏠 Highland House', HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D,
-          () => { _farmPlacementMode = { type: 'move', buildingId: 'highland_house' }; renderFarmBuildings(); });
-
-        farmBuildings.filter(b => b.kind === 'barn').forEach(b => {
-          const tier = BARN_TIERS[b.tier];
-          addRow(`🏚 ${tier.label}${b.stage === 'foundation' ? ' (foundation)' : ''}`, b.w, b.h,
-            () => { _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
-        });
-
-        if (canAlter) {
-          Object.entries(BARN_TIERS).forEach(([tier, def]) => {
-            const owned = inventory[def.planItem] || 0;
-            if (owned < 1) return;
-            const row = document.createElement('div');
-            row.className = 'farm-row';
-            row.innerHTML = `<span class="farm-row-name">📜 ${esc(def.label)} Plan</span><span class="farm-note">${owned} owned</span>`;
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Place';
-            btn.addEventListener('click', () => { _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
-            row.appendChild(btn);
-            list.appendChild(row);
-          });
-        }
-      }
-
-      // Builds one pickable livestock/stable row. `ref` identifies it for
-      // breeding-pair selection. `onRename`/`onSell` are omitted (null) for
-      // stable entries — untradeable, and renamed from the Stable tab instead;
-      // this is a breeding-only view of the stable.
-      function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
-        const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
-        const value = hasGenotype ? window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind) : null;
-        const pending = pairs.some(p => window.FarmAnimals.refsEqual(p.parentA, ref) || window.FarmAnimals.refsEqual(p.parentB, ref));
-        const pickKey = `${ref.source}:${ref.id}`;
-        const row = document.createElement('div');
-        row.className = 'farm-row';
-        row.innerHTML =
-          (canManage ? `<input type="checkbox" class="farm-pick" ${farmPairPicks.has(pickKey) ? 'checked' : ''} ${pending ? 'disabled' : ''}>` : '') +
-          `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span>` +
-          (onRename
-            ? `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
-            : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}</span>`) +
-          _livestockSwatchesHtml(entry.genotype, entry.kind) +
-          `<span class="farm-row-value${value ? ' tier-' + esc(value.tier) : ''}">${value ? `${value.amount}g · ${esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
-          (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
-        if (canManage) {
-          if (onRename) row.querySelector('.farm-row-name').addEventListener('change', e => onRename(e.target.value));
-          row.querySelector('.farm-pick').addEventListener('change', e => {
-            if (e.target.checked) {
-              farmPairPicks.set(pickKey, ref);
-              if (farmPairPicks.size > 2) farmPairPicks.delete(farmPairPicks.keys().next().value);
-            } else farmPairPicks.delete(pickKey);
-            renderFarmLivestock();
-          });
-        }
-        if (onSell) row.querySelector('.farm-sell-btn').addEventListener('click', onSell);
-        return row;
-      }
-
-      // ── Farm tab: processing-station status tiles ──────────────────
-      // Color-coded by the same job state makeProcessingFurniture already
-      // tracks — no separate status system, this just reads getJob()/
-      // AGING_METHODS the same way its own getButtons() does, plus whether
-      // a squeezing vat has livestock assigned (see assignLivestockToVat).
-      const FARM_PROCESSOR_STATUS_COLORS = {
-        idle: '#8f8878', working: '#c9a227', ready: '#5fbf6b', livestock: '#4a90d9',
-      };
-      // Shared by the Processors tile grid and the Layout glance canvas
-      // marker — one status computation, read from the same job state
-      // makeProcessingFurniture's own getButtons() already uses.
-      function farmProcessorStatus(obj, livestock) {
-        const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
-        if (!def) return { status: 'idle', label: 'Idle' };
-        const isAging = AGING_METHODS.has(def.method);
-        const job = obj.getJob ? obj.getJob() : null;
-        const list = livestock || (def.method === 'squeezing' ? _loadWorldLivestock() : null);
-        const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id) : null;
-        if (isAging && job) {
-          const daysLeft = Math.max(0, job.readyDay - calendar.day);
-          return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };
-        }
-        if (worker) return { status: 'livestock', label: `Worked by ${worker.name}`, worker };
-        return { status: 'idle', label: 'Idle' };
-      }
-      function renderFarmProcessors() {
-        const grid = document.getElementById('farmProcessorsGrid');
-        const note = document.getElementById('farmProcessorsNote');
-        if (!grid) return;
-        const processors = [...processingFurnitureObjects];
-        if (note) note.textContent = processors.length ? '' : 'No processing stations placed yet.';
-        const livestock = _loadWorldLivestock();
-        grid.innerHTML = '';
-        processors.forEach(obj => {
-          const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
-          if (!def) return;
-          const { status, label, worker } = farmProcessorStatus(obj, livestock);
-          const tile = document.createElement('div');
-          tile.className = 'farm-processor-tile';
-          tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
-          tile.innerHTML = `
-            <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
-            <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
-          `;
-          if (status === 'ready' && hasFarmPermission('alterFarm')) {
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Collect';
-            btn.addEventListener('click', () => {
-              const result = obj.onAction('obj_process_' + obj.furnitureKey);
-              showToast(result.message, result.ok);
-              renderFarmProcessors(); renderFarmGridGlance();
-            });
-            tile.appendChild(btn);
-          }
-          if (worker && hasFarmPermission('livestock')) {
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Unassign';
-            btn.addEventListener('click', () => {
-              const result = window.DewVats.unassignFromVat(worker.id);
-              showToast(result.message, result.ok);
-              renderFarmProcessors(); renderFarmLivestock();
-            });
-            tile.appendChild(btn);
-          }
-          grid.appendChild(tile);
-        });
-      }
-
-      function renderFarmLivestock() {
-        const list = document.getElementById('farmLivestockList');
-        if (!list) return;
-        const livestock = _loadWorldLivestock();
-        const pairs = _loadWorldBreedingPairs();
-        const canManage = hasFarmPermission('livestock');
-
-        const owner = isFarmOwner();
-        list.innerHTML = '';
-        if (!livestock.length) list.appendChild(Object.assign(document.createElement('div'), { className: 'farm-note', textContent: 'No livestock on the farm yet.' }));
-        livestock.forEach(entry => {
-          const row = _buildStablePickRow(
-            entry, { source: 'world', id: entry.id }, pairs, canManage,
-            name => renameLivestock(entry.id, name), () => sellLivestock(entry.id)
-          );
-
-          // Ownership-transfer / marketplace row — owner gets move/stable-able/
-          // offer-for-sale controls; a visiting farmhand gets Buy (if priced)
-          // and Take to Stable (if the owner flagged this one stable-able).
-          const extra = document.createElement('div');
-          extra.className = 'farm-row-extra';
-          if (canManage) {
-            const housingSelect = document.createElement('select');
-            housingSelect.className = 'settings-select farm-barn-select';
-            housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
-            const stasisOpt = document.createElement('option');
-            stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
-            housingSelect.appendChild(stasisOpt);
-            farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
-              const tier = BARN_TIERS[b.tier];
-              const occupants = livestock.filter(l => l.barnId === b.id).length;
-              const opt = document.createElement('option');
-              opt.value = b.id;
-              opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
-              opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
-              housingSelect.appendChild(opt);
-            });
-            housingSelect.value = entry.barnId || '';
-            housingSelect.addEventListener('change', () => {
-              const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
-              showToast(result.message, result.ok);
-              renderFarmLivestock(); renderFarmGridGlance();
-            });
-            extra.appendChild(housingSelect);
-            if (entry.resourceReady) {
-              const readyBadge = document.createElement('span');
-              readyBadge.className = 'farm-note';
-              readyBadge.textContent = '✅ Ready to collect — visit it on the farm';
-              extra.appendChild(readyBadge);
-            }
-            // Squeezing-vat assignment — only meaningful for a housed kind
-            // with a squeezable resource (uumkao'ii dew today, see
-            // vatCanAcceptLivestock), and only once it's actually housed
-            // (same gate as the dew/egg cooldowns themselves).
-            if (entry.barnId && window.DewVats.vatCanAccept(entry.kind)) {
-              const vats = [...processingFurnitureObjects].filter(o => PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
-              const vatSelect = document.createElement('select');
-              vatSelect.className = 'settings-select farm-barn-select';
-              vatSelect.title = 'Assign to a placed squeezing vat — its dew is squeezed into milk/curds automatically each cooldown instead of dropping a pile to dig up.';
-              const noneOpt = document.createElement('option');
-              noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
-              vatSelect.appendChild(noneOpt);
-              vats.forEach(v => {
-                const takenBy = livestock.find(l => l.assignedVatId === v.id);
-                const opt = document.createElement('option');
-                opt.value = v.id;
-                opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');
-                opt.disabled = !!(takenBy && takenBy.id !== entry.id);
-                vatSelect.appendChild(opt);
-              });
-              vatSelect.value = entry.assignedVatId || '';
-              vatSelect.addEventListener('change', () => {
-                const result = vatSelect.value ? window.DewVats.assignToVat(entry.id, vatSelect.value) : window.DewVats.unassignFromVat(entry.id);
-                showToast(result.message, result.ok);
-                renderFarmLivestock(); renderFarmProcessors();
-              });
-              extra.appendChild(vatSelect);
-            }
-          }
-          if (owner) {
-            const moveBtn = document.createElement('button');
-            moveBtn.className = 'settings-small-btn';
-            moveBtn.textContent = '→ My Stable';
-            moveBtn.title = 'Move into your personal stable (untradeable, leaves this farm)';
-            moveBtn.addEventListener('click', () => moveLivestockToStable(entry.id));
-            extra.appendChild(moveBtn);
-
-            const stableableLabel = document.createElement('label');
-            stableableLabel.className = 'farm-stableable-toggle';
-            stableableLabel.innerHTML = `<input type="checkbox" ${entry.stableable ? 'checked' : ''}> Stable-able`;
-            stableableLabel.querySelector('input').addEventListener('change', e => setLivestockStableable(entry.id, e.target.checked));
-            extra.appendChild(stableableLabel);
-
-            if (entry.forSale) {
-              const cancelBtn = document.createElement('button');
-              cancelBtn.className = 'settings-small-btn';
-              cancelBtn.textContent = `For Sale: ${entry.forSale.price}g (Cancel)`;
-              cancelBtn.addEventListener('click', () => setLivestockForSale(entry.id, null));
-              extra.appendChild(cancelBtn);
-            } else {
-              const priceInput = document.createElement('input');
-              priceInput.type = 'number'; priceInput.min = '1'; priceInput.placeholder = 'Price';
-              priceInput.className = 'farm-price-input';
-              const offerBtn = document.createElement('button');
-              offerBtn.className = 'settings-small-btn';
-              offerBtn.textContent = 'Offer for Sale';
-              offerBtn.addEventListener('click', () => {
-                const price = Math.max(1, Math.round(Number(priceInput.value) || 0));
-                if (!price) { showToast('Enter a price first.', false); return; }
-                setLivestockForSale(entry.id, price);
-              });
-              extra.appendChild(priceInput);
-              extra.appendChild(offerBtn);
-            }
-          } else {
-            if (entry.forSale) {
-              const buyBtn = document.createElement('button');
-              buyBtn.className = 'settings-small-btn';
-              buyBtn.textContent = `Buy for ${entry.forSale.price}g`;
-              buyBtn.addEventListener('click', () => buyLivestock(entry.id));
-              extra.appendChild(buyBtn);
-            }
-            if (entry.stableable) {
-              const takeBtn = document.createElement('button');
-              takeBtn.className = 'settings-small-btn';
-              takeBtn.textContent = 'Take to My Stable';
-              takeBtn.addEventListener('click', () => takeStableableLivestock(entry.id));
-              extra.appendChild(takeBtn);
-            }
-          }
-          if (extra.children.length) row.appendChild(extra);
-          list.appendChild(row);
-        });
-
-        // Your own stable, offered as breeding-pair candidates on this farm —
-        // untradeable, so no rename/Sell controls here (see the Stable tab).
-        if (canManage && stable.length) {
-          const charId = window.FarmAnimals.currentCharacterId();
-          const header = document.createElement('div');
-          header.className = 'farm-note';
-          header.style.marginTop = '4px';
-          header.textContent = 'Your stable (breeding only — untradeable):';
-          list.appendChild(header);
-          stable.forEach(entry => {
-            list.appendChild(_buildStablePickRow(
-              entry, { source: 'stable', id: entry.id, characterId: charId }, pairs, canManage, null, null
-            ));
-          });
-        }
-
-        const addBtn = document.getElementById('farmAddLivestockBtn');
-        if (addBtn) addBtn.disabled = !canManage;
-        const pairBtn = document.getElementById('farmPairBtn');
-        if (pairBtn) {
-          pairBtn.disabled = !canManage || farmPairPicks.size !== 2;
-          pairBtn.textContent = farmPairPicks.size === 2 ? 'Set Breeding Pair' : 'Set Breeding Pair (select 2)';
-        }
-        const note = document.getElementById('farmBreedingPairsNote');
-        if (note) note.textContent = pairs.length ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} currently breeding.` : '';
-      }
-
-      function renameLivestock(id, name) {
-        if (!hasFarmPermission('livestock')) return;
-        const trimmed = String(name || '').trim().slice(0, 30);
-        if (!trimmed) return;
-        const livestock = _loadWorldLivestock();
-        const entry = livestock.find(l => l.id === id);
-        if (!entry) return;
-        entry.name = trimmed;
-        _saveWorldLivestock(livestock);
-      }
-
-      function sellLivestock(id) {
-        if (!hasFarmPermission('livestock')) return;
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        const value = window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind);
-        inventory.gold = (inventory.gold || 0) + value.amount;
-        saveMemberWorldData();
-        showToast(`Sold ${entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      function setBreedingPair(refA, refB) {
-        if (!hasFarmPermission('livestock') || !refA || !refB || window.FarmAnimals.refsEqual(refA, refB)) return;
-        const pairs = _loadWorldBreedingPairs();
-        pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: calendar.day, readyDay: calendar.day + window.FarmAnimals.GESTATION_DAYS });
-        _saveWorldBreedingPairs(pairs);
-        showToast(`Breeding pair set — check back in ${window.FarmAnimals.GESTATION_DAYS} days.`, true);
-      }
-
-      // ── Farm livestock <-> personal stable transfers ────────────────────
-      // Three ways a farm animal leaves world.livestock and becomes a
-      // personal, untradeable stable companion: the owner moves their own
-      // animal directly, a visiting farmhand buys one the owner priced for
-      // sale, or a visiting farmhand takes one the owner flagged stable-able
-      // (free). All three converge on the same removal + stabling shape.
-      function _removeWorldLivestockAndCleanup(id) {
-        const livestock = _loadWorldLivestock();
-        const idx = livestock.findIndex(l => l.id === id);
-        if (idx < 0) return null;
-        const [entry] = livestock.splice(idx, 1);
-        _saveWorldLivestock(livestock);
-        const ref = { source: 'world', id };
-        _saveWorldBreedingPairs(_loadWorldBreedingPairs().filter(p => !window.FarmAnimals.refsEqual(p.parentA, ref) && !window.FarmAnimals.refsEqual(p.parentB, ref)));
-        removeLiveAnimalEntity(id);
-        return entry;
-      }
-      function removeLiveAnimalEntity(livestockId) {
-        const animal = [...animalObjects].find(a => a.livestockId === livestockId);
-        if (animal) {
-          worldObjects.delete(animal.col + ',' + animal.row);
-          animal.reset && animal.reset();
-          animalObjects.delete(animal);
-        }
-      }
-      function _stableEntryFromLivestock(entry) {
-        return {
-          id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
-          genotype: entry.genotype, aiType: companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
-        };
-      }
-      function _addToOwnStable(stabledEntry) {
-        stable.push(stabledEntry);
-        _autoAssignStableRole(stabledEntry);
-        saveStable();
-      }
-
-      function moveLivestockToStable(id) {
-        if (!isFarmOwner()) return;
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        _addToOwnStable(_stableEntryFromLivestock(entry));
-        showToast(`${entry.name} moved to your stable.`, true);
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      function setLivestockStableable(id, val) {
-        if (!isFarmOwner()) return;
-        const livestock = _loadWorldLivestock();
-        const entry = livestock.find(l => l.id === id);
-        if (!entry) return;
-        entry.stableable = !!val;
-        _saveWorldLivestock(livestock);
-        renderFarmLivestock();
-      }
-
-      function setLivestockForSale(id, price) {
-        if (!isFarmOwner()) return;
-        const livestock = _loadWorldLivestock();
-        const entry = livestock.find(l => l.id === id);
-        if (!entry) return;
-        entry.forSale = price ? { price } : null;
-        _saveWorldLivestock(livestock);
-        showToast(price ? `${entry.name} offered for sale at ${price}g.` : `${entry.name} no longer for sale.`, true);
-        renderFarmLivestock();
-      }
-
-      // Credits gold straight into the owner's per-world save data, even
-      // though they aren't the one currently playing — everything lives in
-      // one shared local save file, so this is the closest local simulation
-      // of a real sale completing (see saveMemberWorldData's shape).
-      function creditOwnerGold(amount) {
-        const worldId = _tothalWorldId();
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          const ownerId = world.ownerCharacterId;
-          if (!world.members) world.members = {};
-          if (!world.members[ownerId]) world.members[ownerId] = defaultWorldMemberState();
-          const memberInv = world.members[ownerId].nonGearInventory || (world.members[ownerId].nonGearInventory = {});
-          memberInv.gold = (memberInv.gold || 0) + amount;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      function buyLivestock(id) {
-        const livestock = _loadWorldLivestock();
-        const target = livestock.find(l => l.id === id);
-        if (!target?.forSale) return;
-        const price = target.forSale.price;
-        if ((inventory.gold || 0) < price) { showToast(`Not enough gold (need ${price}g).`, false); return; }
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        inventory.gold -= price;
-        creditOwnerGold(price);
-        _addToOwnStable(_stableEntryFromLivestock(entry));
-        saveMemberWorldData();
-        showToast(`Bought ${entry.name} for ${price}g!`, true);
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      // Free transfer of an owner-flagged "stable-able" animal into a
-      // farmhand's own stable — gated purely by that per-animal flag rather
-      // than the general 'livestock' permission, since the owner already
-      // opted this specific animal in.
-      function takeStableableLivestock(id) {
-        const livestock = _loadWorldLivestock();
-        const target = livestock.find(l => l.id === id);
-        if (!target?.stableable) return;
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        _addToOwnStable(_stableEntryFromLivestock(entry));
-        showToast(`${entry.name} moved to your stable.`, true);
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      function renderFarmStoragePane() {
-        const locked = document.getElementById('farmStorageLocked');
-        const body = document.getElementById('farmStorageBody');
-        const canAccess = hasFarmPermission('storage');
-        if (locked) locked.hidden = canAccess;
-        if (body) body.hidden = !canAccess;
-        if (!canAccess) return;
-
-        const store = _loadWorldStorage();
-        const bagList = document.getElementById('farmStorageBagList');
-        if (bagList) {
-          const keys = Object.keys(inventory).filter(k => k !== 'gold' && ITEM_DEFS[k] && (inventory[k] || 0) > 0);
-          bagList.innerHTML = keys.length ? '' : '<div class="farm-note">Bag is empty.</div>';
-          keys.forEach(k => {
-            const def = ITEM_DEFS[k];
-            const row = document.createElement('div');
-            row.className = 'farm-storage-row';
-            row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${esc(def.label)} ×${inventory[k]}</span><button class="settings-small-btn">Store</button>`;
-            row.querySelector('button').addEventListener('click', () => depositToFarmStorage(k, 1));
-            bagList.appendChild(row);
-          });
-        }
-        const boxList = document.getElementById('farmStorageBoxList');
-        if (boxList) {
-          const keys = Object.keys(store).filter(k => (store[k] || 0) > 0);
-          boxList.innerHTML = keys.length ? '' : '<div class="farm-note">Storage is empty.</div>';
-          keys.forEach(k => {
-            const def = ITEM_DEFS[k] || { icon: '📦', label: k };
-            const row = document.createElement('div');
-            row.className = 'farm-storage-row';
-            row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${esc(def.label)} ×${store[k]}</span><button class="settings-small-btn">Take</button>`;
-            row.querySelector('button').addEventListener('click', () => withdrawFromFarmStorage(k, 1));
-            boxList.appendChild(row);
-          });
-        }
-      }
-
-      function depositToFarmStorage(key, amount) {
-        if (!hasFarmPermission('storage')) return;
-        const n = Math.min(amount, inventory[key] || 0);
-        if (n <= 0) return;
-        inventory[key] -= n;
-        clampInventoryStack(key);
-        const store = _loadWorldStorage();
-        store[key] = (store[key] || 0) + n;
-        _saveWorldStorage(store);
-        saveMemberWorldData();
-        renderFarmStoragePane(); buildInventoryGrid(); refreshActionBar();
-      }
-
-      function withdrawFromFarmStorage(key, amount) {
-        if (!hasFarmPermission('storage')) return;
-        const store = _loadWorldStorage();
-        const n = Math.min(amount, store[key] || 0);
-        if (n <= 0) return;
-        store[key] -= n;
-        if (store[key] <= 0) delete store[key];
-        _saveWorldStorage(store);
-        inventory[key] = (inventory[key] || 0) + n;
-        saveMemberWorldData();
-        renderFarmStoragePane(); buildInventoryGrid(); refreshActionBar();
-      }
-
-      const FARMHAND_PERM_LABELS = { storage: 'Storage', plant: 'Plant', harvest: 'Harvest', placeFurniture: 'Furniture', alterFarm: 'Till/Dig', livestock: 'Livestock' };
-
-      // Owner-only: manage farmhand grants. Reads hobunjiSaveMeta directly
-      // (like _loadWorldLivestock() etc.) since farmhands/characters live
-      // there, not on any live in-memory state.
-      function renderFarmhandsSection() {
-        const section = document.getElementById('farmhandsSection');
-        if (!section) return;
-        const owner = isFarmOwner();
-        section.hidden = !owner;
-        if (!owner) return;
-
-        let meta = null;
-        try { meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); } catch {}
-        const world = (meta?.worlds || []).find(w => w.id === _tothalWorldId());
-        if (!world) return;
-
-        const list = document.getElementById('farmhandsList');
-        if (list) {
-          const farmhands = world.farmhands || [];
-          list.innerHTML = farmhands.length ? '' : '<div class="farm-note">No farmhands yet.</div>';
-          farmhands.forEach(fh => {
-            const char = (meta.characters || []).find(c => c.id === fh.characterId);
-            const wrap = document.createElement('div');
-            wrap.className = 'farm-row';
-            wrap.style.flexWrap = 'wrap';
-            wrap.innerHTML = `<span class="farm-row-value" style="flex:1 0 100%;font-size:12px;color:var(--text)">${esc(char?.nickname || 'Unknown')}</span>`;
-            Object.entries(FARMHAND_PERM_LABELS).forEach(([key, label]) => {
-              const cell = document.createElement('div');
-              cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px';
-              cell.innerHTML =
-                `<label class="settings-toggle" style="width:auto"><input type="checkbox" ${fh.permissions?.[key] ? 'checked' : ''}><span class="toggle-slider"></span></label>` +
-                `<span style="font-size:9px;color:var(--muted)">${esc(label)}</span>`;
-              cell.querySelector('input').addEventListener('change', e => window.__hobunjiAddFarmhand(fh.characterId, { [key]: e.target.checked }));
-              wrap.appendChild(cell);
-            });
-            const removeBtn = document.createElement('button');
-            removeBtn.className = 'settings-small-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => { window.__hobunjiRemoveFarmhand(fh.characterId); renderFarmhandsSection(); });
-            wrap.appendChild(removeBtn);
-            list.appendChild(wrap);
-          });
-        }
-
-        const select = document.getElementById('farmAddFarmhandSelect');
-        if (select) {
-          const existingIds = new Set((world.farmhands || []).map(f => f.characterId));
-          const candidates = (meta.characters || []).filter(c => c.id !== world.ownerCharacterId && !existingIds.has(c.id));
-          select.innerHTML = candidates.length
-            ? candidates.map(c => `<option value="${esc(c.id)}">${esc(c.nickname || 'Unnamed')}</option>`).join('')
-            : '<option value="">No other characters</option>';
-          select.disabled = !candidates.length;
-        }
-      }
-
-      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿' };
-
-      // Which of the stable's 3 equip slots a given stable-entry role occupies,
-      // and the icon/label its row button shows — see stableEntryRole.
-      const STABLE_ROLE_META = {
-        mount: { icon: '🐴', label: 'Mount' },
-        companion: { icon: '🐕', label: 'Companion' },
-        shoulderPet: { icon: '🐿️', label: 'Shoulder pet' },
-      };
-      function activeStableIdForRole(role) {
-        return role === 'mount' ? activeMountId : role === 'shoulderPet' ? activeShoulderPetId : activeCompanionId;
-      }
-      function setActiveStableIdForRole(role, id) {
-        if (role === 'mount') activeMountId = id;
-        else if (role === 'shoulderPet') activeShoulderPetId = id;
-        else activeCompanionId = id;
-      }
-
-      // Small color-swatch HTML shared by every livestock/stable row —
-      // Uumkao'ii shows its two permanent regions; pattern-layer species
-      // (gar-wolf/dabinggi-hound) show base color + first enabled pattern's
-      // color (there's only ever one shared pattern color per specimen).
-      function _livestockSwatchesHtml(genotype, kind) {
-        if (!genotype) return '';
-        if (genotype.fur || genotype.plates) {
-          return (genotype.fur ? `<span class="farm-swatch" style="background:${esc(genotype.fur.color)}" title="Fur color"></span>` : '') +
-                 (genotype.plates ? `<span class="farm-swatch" style="background:${esc(genotype.plates.color)}" title="Plate color"></span>` : '');
-        }
-        const patterns = window.CreatureGenetics.PATTERN_DEFS[kind];
-        if (patterns && genotype.base) {
-          const enabledId = patterns.find(id => genotype[id]?.enabled);
-          return `<span class="farm-swatch" style="background:${esc(genotype.base.color)}" title="Base color"></span>` +
-                 (enabledId ? `<span class="farm-swatch" style="background:${esc(genotype[enabledId].color)}" title="Pattern color"></span>` : '');
-        }
-        return '';
-      }
-
-      // Your personal companion collection — character-scoped, untradeable,
-      // never tied to any farm. Rename, set the active occupant of whichever
-      // of the 3 equip slots (mount/companion/shoulder pet) its Size makes it
-      // eligible for (spawned via syncCompanionFromWhistle/updateCompanions
-      // like the starter dabinggi-hound always has been), and see the level
-      // stub for later.
-      function renderStablePanel() {
-        const list = document.getElementById('stableList');
-        if (!list) return;
-        list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
-        stable.forEach(entry => {
-          const role = window.CreatureGenetics.stableEntryRole(entry);
-          const roleMeta = STABLE_ROLE_META[role];
-          const isActive = entry.id === activeStableIdForRole(role);
-          const row = document.createElement('div');
-          row.className = 'farm-row';
-          row.innerHTML =
-            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${roleMeta.label.toLowerCase()}` : `Set as ${roleMeta.label.toLowerCase()}`}">${roleMeta.icon}</button>` +
-            `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
-            `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" maxlength="30">` +
-            _livestockSwatchesHtml(entry.genotype, entry.kind) +
-            `<span class="farm-row-value">${esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
-          row.querySelector('.farm-companion-btn').addEventListener('click', () => {
-            setActiveStableIdForRole(role, isActive ? null : entry.id);
-            saveStable();
-            renderStablePanel();
-          });
-          row.querySelector('.farm-row-name').addEventListener('change', e => {
-            const trimmed = e.target.value.trim().slice(0, 30);
-            if (!trimmed) return;
-            entry.name = trimmed;
-            saveStable();
-          });
-          list.appendChild(row);
-        });
-      }
-
-      function renderCalendarPanel() {
-        if (!calToday) return;
-        calViewYear = yearNumber(calendar.day);
-        calViewMonthIndex = monthIndex(calendar.day);
-        calToday.textContent = formatCalendarDateFull(calendar.day);
-        renderCalendarMonthView();
-      }
-
-      // Redraws the currently-navigated month (calViewYear/calViewMonthIndex)
-      // as 4 week rows — the core gameplay unit — each its own tight
-      // container: a season+week label on the left, its 7 days packed
-      // together on the right, with only today's cell picked out in a
-      // different color.
-      function renderCalendarMonthView() {
-        const monthStartDay = absDayForMonthStart(calViewYear, calViewMonthIndex);
-        calMonthTitle.textContent = `${MONTH_NAMES[calViewMonthIndex]} — Year ${calViewYear}`;
-        calPrevMonth.disabled = (calViewYear === 1 && calViewMonthIndex === 0);
-
-        calWeeks.innerHTML = '';
-        for (let w = 0; w < DAYS_PER_MONTH / DAYS_PER_WEEK; w++) {
-          const weekStartDay = monthStartDay + w * DAYS_PER_WEEK;
-          const season = seasonForDay(weekStartDay);
-          const row = document.createElement('div');
-          row.className = 'cal-week-row';
-          const label = document.createElement('div');
-          label.className = 'cal-week-label';
-          label.innerHTML = `${season.emoji} ${season.name}<br>Week ${weekOfSeason(weekStartDay)}`;
-          row.appendChild(label);
-          const daysWrap = document.createElement('div');
-          daysWrap.className = 'cal-week-days';
-          for (let i = 0; i < DAYS_PER_WEEK; i++) {
-            const d = weekStartDay + i;
-            const cell = document.createElement('button');
-            cell.type = 'button';
-            cell.className = 'cal-day-btn' + (d === calendar.day ? ' today' : '');
-            cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}</span>`;
-            daysWrap.appendChild(cell);
-          }
-          row.appendChild(daysWrap);
-          calWeeks.appendChild(row);
-        }
-      }
-
-      calPrevMonth.addEventListener('click', () => {
-        if (calViewYear === 1 && calViewMonthIndex === 0) return;
-        if (calViewMonthIndex === 0) { calViewYear--; calViewMonthIndex = 11; }
-        else calViewMonthIndex--;
-        renderCalendarMonthView();
-      });
-      calNextMonth.addEventListener('click', () => {
-        if (calViewMonthIndex === 11) { calViewYear++; calViewMonthIndex = 0; }
-        else calViewMonthIndex++;
-        renderCalendarMonthView();
-      });
+      // Calendar tab render (renderCalendarPanel/renderCalendarMonthView)
+      // and its prev/next month nav buttons now live in
+      // js/calendar-system.js — call via window.CalendarSystem.renderCalendarPanel().
 
       // A 'copse'-sourced SHRUB tile in Northern Cliffs or the Southern Cloud
       // Forest renders as a real tree (crowned pine / shadewood — see
@@ -17153,8 +14289,8 @@
         }
         if (activeAction === 'climb') {
           if (player.climbing) return;
-          const climb = getClimbTarget();
-          if (climb) startClimb(climb); else showToast('Nothing to climb here.', false);
+          const climb = window.ClimbSystem.getClimbTarget();
+          if (climb) window.ClimbSystem.startClimb(climb); else showToast('Nothing to climb here.', false);
           return;
         }
         if (activeTool === 'shovel') {
@@ -17381,104 +14517,8 @@
         return { x: 0, y: Math.sign(y), name: y > 0 ? 'south' : 'north' };
       }
 
-      // Cliff climbing: the player must be facing straight into a plateau's
-      // auto-reserved incline wall (see mergeZoneTiles) from solid ground,
-      // with an actual walkable tile at a different elevation tier on the far
-      // side — otherwise there's nothing to climb. Works either direction
-      // (climbing up onto a plateau or back down off one uses the same check).
-      const CLIMB_MAX_WALL_TILES = 4;
-      function getClimbTarget() {
-        if (!_isZoneArea(currentArea)) return null;
-        const dir = facingCardinal(player.angle);
-        const grid = getActiveGrid();
-        const aC = getActiveCols(), aR = getActiveRows();
-        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
-        const startTile = grid[startRow]?.[startCol];
-        if (!startTile || startTile.incline) return null;
-        const startElevTier = startTile.elevTier || 0;
-        let col = startCol, row = startRow, wallTiles = 0;
-        for (let steps = 0; steps < CLIMB_MAX_WALL_TILES; steps++) {
-          col += dir.x; row += dir.y;
-          if (col < 0 || row < 0 || col >= aC || row >= aR) return null;
-          const t = grid[row][col];
-          if (!t) return null;
-          if (!t.incline) {
-            if (wallTiles === 0) return null; // nothing but open ground ahead
-            if (isSolid(t.type)) return null;
-            if ((t.elevTier || 0) === startElevTier) return null;
-            return { dir, landCol: col, landRow: row, startElevTier, landElevTier: t.elevTier || 0, wallTiles };
-          }
-          wallTiles++;
-        }
-        return null;
-      }
-
-      // Scripted cliff crossing — bypasses tileSpeedAt/canPlayerOccupy entirely
-      // (it deliberately walks through incline tiles that are otherwise
-      // impassable) and drains no stamina. See updateClimb for the per-frame
-      // staggered-hop motion.
-      const CLIMB_HOP_ACTIVE_S = 0.32;
-      const CLIMB_HOP_PAUSE_S  = 0.26;
-      const CLIMB_HOP_BOUNCE_UNITS = 0.4;
-      function startClimb(climb) {
-        const grid = getActiveGrid();
-        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
-        const startTile = grid[startRow][startCol];
-        const landTile = grid[climb.landRow][climb.landCol];
-        player.climbing = true;
-        player.climbElapsed = 0;
-        player.climbHopCount = Math.max(3, climb.wallTiles + 1);
-        player.climbStartX = player.x;
-        player.climbStartY = player.y;
-        player.climbEndX = (climb.landCol + 0.5) * TILE;
-        player.climbEndY = (climb.landRow + 0.5) * TILE;
-        player.climbSurfaceStartY = tileSurfaceYInArea(startTile, currentArea);
-        player.climbSurfaceEndY = tileSurfaceYInArea(landTile, currentArea);
-        player.climbSurfaceY = player.climbSurfaceStartY;
-        player.climbHopBounce = 0;
-        player.vx = 0; player.vy = 0;
-        player.angle = Math.atan2(climb.dir.y, climb.dir.x);
-        facingAngle = player.angle;
-        targetAimAngle = player.angle;
-        lastMoveAngle = player.angle;
-        // -1 so updateClimb's hopIndex-change check always fires for hop 0
-        // (the very first stagger) instead of only from hop 1 onward.
-        player._climbLastHopIndex = -1;
-      }
-
-      function updateClimb(dt) {
-        const cycle = CLIMB_HOP_ACTIVE_S + CLIMB_HOP_PAUSE_S;
-        const totalDur = player.climbHopCount * cycle;
-        player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
-        const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
-        // One low gravel thud per stagger — each scripted hop up/down the
-        // cliff face lands like a foot planting on loose rock, distinct
-        // from ordinary footsteps (see playObjectSfx's climbStep cue,
-        // pitched well below a normal gravelstep).
-        if (hopIndex !== player._climbLastHopIndex) {
-          player._climbLastHopIndex = hopIndex;
-          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().climbStep);
-        }
-        const withinCycle = player.climbElapsed - hopIndex * cycle;
-        const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
-        const hopLocalT = hopActive ? clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;
-        const eased = 1 - Math.pow(1 - hopLocalT, 2); // quick lift-off, settles into each landing
-        const overall = clamp((hopIndex + eased) / player.climbHopCount, 0, 1);
-
-        player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * overall;
-        player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * overall;
-        player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * overall;
-        player.climbHopBounce = hopActive ? Math.sin(hopLocalT * Math.PI) * CLIMB_HOP_BOUNCE_UNITS : 0;
-        player.vx = 0; player.vy = 0;
-
-        if (player.climbElapsed >= totalDur) {
-          player.x = player.climbEndX;
-          player.y = player.climbEndY;
-          player.climbSurfaceY = player.climbSurfaceEndY;
-          player.climbHopBounce = 0;
-          player.climbing = false;
-        }
-      }
+      // Cliff climbing (getClimbTarget/startClimb/updateClimb) now lives in
+      // js/climb-system.js — call via window.ClimbSystem.*.
 
       function angleDiff(target, current) {
         let d = target - current;
@@ -17493,483 +14533,16 @@
       // tool-swing code still reads window.Fishing.state/.readyPose
       // directly where it poses the held harpoon during a throw.
 
-      const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
-      const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
-      // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
-      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 27.5;
-      const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
-      // Extra margin required to *exit* a dead zone once locked into it, on top of
-      // the radius required to *enter* it. Without this, a rawTarget hovering right
-      // at the dead zone's edge (e.g. from per-frame tracking noise while chasing a
-      // moving target) flips in and out every frame — visible as rotation flicker.
-      const PERP_DEAD_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
+      // Dead-zone rotation math (perpClamp/creatureDeadzoneTarget/
+      // creatureSnapSwayTarget/nearestCardinalAngle) shared by player/NPC/
+      // creature PNG-plane avatars now lives in js/perp-rotation.js — call
+      // via window.PerpRotation.*.
 
-      // Keeps model rotation outside dead zones around each perp angle (radius given
-      // by deadRad, defaulting to PERP_DEAD_RAD).
-      // state: persistent object per entity (must survive across frames).
-      // Returns { effectiveTarget, snapTo } where snapTo is non-null when the model
-      // should teleport (raw target crossed through a perp to the far side).
-      //
-      // Only the perp nearest rawTarget is ever evaluated. angleDiff wraps at
-      // ±π, so a *far* perp's side classification flips discontinuously right
-      // at that far perp's antipodal point — which is exactly where the
-      // *near* perp sits. Evaluating every perp every frame let that far-side
-      // flip fire a spurious snapTo while the model was stably locked near
-      // the near perp, producing rapid alternation between two rotations.
-      function perpClamp(state, rawTarget, perps, deadRad = PERP_DEAD_RAD) {
-        if (!state.perpSides) state.perpSides = perps.map(() => null);
-        if (!state.locked) state.locked = perps.map(() => false);
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        const P = perps[nearestI];
-        // Hysteresis: once locked, require crossing the wider exit radius before
-        // unlocking; once free, require crossing the (narrower) entry radius before
-        // locking. Prevents boundary chatter when rawTarget hovers near the edge.
-        const wasLocked = state.locked[nearestI];
-        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
-        // Which edge of the dead zone rawTarget is actually closest to right
-        // now — tracked every frame regardless of lock state, not just while
-        // unlocked. A locked model can still have rawTarget keep rotating
-        // straight through the zone (e.g. a continuous camera spin, or the
-        // seated look-rotate input) without ever exiting through the far
-        // side first; checking the side only while unlocked left it stuck
-        // holding the entry edge indefinitely in that case, even long after
-        // rawTarget had clearly crossed past center to the opposite side.
-        // Always snapping to whichever edge is nearest keeps the held
-        // rotation the closest acceptable one to rawTarget at all times,
-        // snapping again immediately if it keeps going past the far edge.
-        const newSide = nearestDT > 0 ? 1 : -1;
-        let snapTo = null;
-        if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
-          snapTo = P + newSide * deadRad;
-        }
-        state.perpSides[nearestI] = newSide;
-        const effectiveTarget = isLocked ? P + state.perpSides[nearestI] * deadRad : rawTarget;
-        state.locked[nearestI] = isLocked;
-        return { effectiveTarget, snapTo };
-      }
-
-      // ── Animal/creature PNG-plane dead-zone behavior — THREE implementations ──
-      // updateCreatureMesh's pngRot step (below) has been rewritten a few times
-      // while this gets tuned by feel, and all three attempts are kept side by
-      // side here on purpose rather than deleting the losers. ONLY the branch
-      // selected by CREATURE_PLANE_ROT_MODE actually runs at runtime — the
-      // other two are inert dead code, kept for quick A/B swaps back.
-      //
-      // NOTE FOR ANY LLM (or human) EDITING THIS FILE: do not assume any one
-      // of 'sway' / 'halt' / 'snap' is "the" system just because it's the one
-      // currently wired up, and do not assume the others are unused cruft
-      // safe to delete — check CREATURE_PLANE_ROT_MODE's value below before
-      // reasoning about which behavior is actually live, and ask before
-      // removing any of the three.
-      //   'sway' — legacy: continuously lerps/rocks through the dead zone via
-      //            creatureDeadzoneTarget (sine oscillation, smooth).
-      //   'halt' — current default going in: locks to the dead-zone edge and
-      //            stays there via perpClamp (same halt behavior player/NPC
-      //            avatars and farm-pen livestock already use), eased in.
-      //   'snap' — newest: alternates between the dead zone's two edges with
-      //            a hard cut (no interpolation) via creatureSnapSwayTarget,
-      //            instead of sweeping/lerping between them.
-      const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
-
-      // Oscillation angular speed shared by the 'sway' and 'snap' modes below
-      // — ~1.2s per full back-and-forth cycle, fast enough to read clearly
-      // against the pngRot smoothing lerp in updateCreatureMesh (time
-      // constant ~0.1s) without being frantic.
-      const CREATURE_DEADZONE_OSC_RATE = 2 * Math.PI / 1.2;
-
-      // 'sway' mode (legacy — see CREATURE_PLANE_ROT_MODE above; may not be
-      // the active implementation, check that constant before assuming so).
-      // For creature PNG planes: unlike perpClamp, a creature is never allowed
-      // to settle with its rotation reading inside the dead zone. Standing
-      // still, the target eases to the nearer dead-zone edge and stops there.
-      // While moving with a raw target that falls inside the dead zone, the
-      // target instead continuously rocks back and forth along an arc
-      // centered on the movement direction (rawTarget), swinging between the
-      // nearest dead-zone edge and that edge's mirror image reflected across
-      // the movement direction — so the sprite is always mid-flip through the
-      // zone rather than resting in it or sweeping through just once.
-      //
-      // This is continuous across the dead-zone boundary (amplitude/edge both
-      // converge to rawTarget as nearestAbs approaches deadRad), so unlike
-      // perpClamp it needs no entry/exit hysteresis to avoid flicker.
-      function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        if (nearestAbs >= deadRad) {
-          state.oscPhase = 0;
-          return rawTarget;
-        }
-        const sign = nearestDT >= 0 ? 1 : -1;
-        const edge = perps[nearestI] + sign * deadRad;
-        if (!moving) {
-          state.oscPhase = 0;
-          return edge;
-        }
-        const amplitude = angleDiff(edge, rawTarget);
-        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
-        return rawTarget + amplitude * Math.sin(state.oscPhase);
-      }
-
-      // 'snap' mode (see CREATURE_PLANE_ROT_MODE above; may not be the active
-      // implementation, check that constant before assuming so).
-      // Like 'sway', a creature is never allowed to settle mid-dead-zone —
-      // but instead of continuously lerping/rocking through the zone, this
-      // alternates the target between the dead zone's two boundary angles
-      // (perp ± deadRad — the two nearest rotations actually outside the
-      // dead zone) on a timer, and reports back whether this call is a flip
-      // so the caller can assign the new value directly (a hard cut) rather
-      // than easing toward it. The first time a given lock is entered isn't
-      // flagged as a flip, so the plane still eases in from wherever it was
-      // instead of popping in from nowhere; only the alternations after that
-      // are instant.
-      // Alternation only runs while `moving` is true — mirrors creatureDeadzoneTarget's
-      // own moving gate (see 'sway' above): a creature standing still just
-      // holds at whichever edge it's nearest, instead of visibly flip-flopping
-      // in place with no motion to sell the "swap side" as a stride change.
-      function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt, moving) {
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        if (nearestAbs >= deadRad) {
-          state.oscPhase = 0;
-          state.snapSide = null;
-          return { target: rawTarget, snap: false };
-        }
-        const P = perps[nearestI];
-        if (!moving) {
-          state.oscPhase = 0;
-          if (state.snapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
-          return { target: P + state.snapSide * deadRad, snap: false };
-        }
-        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
-        const side = Math.sin(state.oscPhase) >= 0 ? 1 : -1;
-        const flip = state.snapSide !== null && state.snapSide !== side;
-        state.snapSide = side;
-        return { target: P + side * deadRad, snap: flip };
-      }
-
-      function nearestCardinalAngle(angle) {
-        const cardinals = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // E S W N
-        let best = cardinals[0], bestDiff = Infinity;
-        for (const c of cardinals) {
-          const d = Math.abs(angleDiff(c, angle));
-          if (d < bestDiff) { bestDiff = d; best = c; }
-        }
-        return best;
-      }
-
-      const STORM_NAMES = [
-        'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
-        'Tempest Rimewind', 'Squall Cindermoor', 'Gale Thornhollow', 'Storm Marrowdeep',
-        'Tempest Sootveil', 'Gale Bramblegust', 'Squall Wraithrain', 'Storm Emberfall',
-      ];
-      let lastStormDay = 0;
-      function checkForMajorStorm() {
-        if (calendar.weather !== 'storm') return;
-        if (calendar.day === lastStormDay) return;
-        // ~30% of storm days trigger a major event
-        const roll = seededRandom(calendar.day * 6173 + 41);
-        if (roll > 0.30) return;
-        lastStormDay = calendar.day;
-
-        let trenchesHit = 0, raisedHit = 0;
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
-            const hitRoll = seededRandom(col * 17 + row * 31 + calendar.day * 7);
-            if (tile.type === TileType.TRENCH && hitRoll < 0.22) {
-              tile.type = TileType.GRASS; tile.water = 0.6; tile.flow = false;
-              trenchesHit++;
-            } else if (tile.type === TileType.RAISED && hitRoll < 0.18) {
-              tile.type = TileType.TILLED; tile.water = clamp(tile.water + 0.3, 0, 1);
-              raisedHit++;
-            }
-          }
-        }
-
-        const name = STORM_NAMES[calendar.day % STORM_NAMES.length];
-        const dmgText = [
-          trenchesHit > 0 ? `${trenchesHit} trench${trenchesHit > 1 ? 'es' : ''} collapsed` : null,
-          raisedHit   > 0 ? `${raisedHit} raised bed${raisedHit > 1 ? 's' : ''} flattened` : null,
-        ].filter(Boolean).join(', ');
-        showToast(`⚡ ${name}! ${dmgText || 'No structural damage.'}`, false);
-        debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
-      }
-
-      // ── Lantern light masks ────────────────────────────────────────────
-      // Carried by the player and any NPC tagged "watch" (the Watch). Punches
-      // a soft hole through the day/night darkness tint: a short inner ring
-      // where the tint is almost fully cleared (actual clarity), surrounded
-      // by a much larger, dim halo (the lantern "shines" further than it
-      // actually reveals detail).
-      const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
-      const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
-
-      function _lanternScreenRadius(tx, tz, tiles) {
-        const c = worldToOverlay(tx, 0.5, tz);
-        const e = worldToOverlay(tx + tiles, 0.5, tz);
-        return Math.hypot(e.x - c.x, e.y - c.y);
-      }
-
-      function drawLanternMasks() {
-        const carriers = [{ x: player.x / TILE, z: player.y / TILE }];
-        for (const w of npcWalkers) {
-          if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
-            carriers.push({ x: w.root.position.x, z: w.root.position.z });
-          }
-        }
-        lctx.globalCompositeOperation = 'destination-out';
-        for (const c of carriers) {
-          const center = worldToOverlay(c.x, 0.5, c.z);
-          if (!center.visible) continue;
-          const shineR = _lanternScreenRadius(c.x, c.z, LANTERN_SHINE_TILES);
-          if (!(shineR > 0)) continue;
-          const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
-          const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-          grad.addColorStop(0,                              'rgba(0,0,0,0.92)');
-          grad.addColorStop(clarityFrac,                     'rgba(0,0,0,0.80)');
-          grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
-          grad.addColorStop(1,                               'rgba(0,0,0,0)');
-          lctx.fillStyle = grad;
-          lctx.beginPath();
-          lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-          lctx.fill();
-        }
-        lctx.globalCompositeOperation = 'source-over';
-      }
-
-      let _lastLightingOverlayTime = 0;
-      function drawLightingOverlay() {
-        const now = performance.now();
-        if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
-        _lastLightingOverlayTime = now;
-        const rect = _threeRect;
-        lctx.clearRect(0, 0, rect.width, rect.height);
-
-        if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
-          // Interior/building: no outdoor day/night overlay — just warm interior ambience
-          lctx.fillStyle = 'rgba(80,40,10,0.08)';
-          lctx.fillRect(0, 0, rect.width, rect.height);
-          if (sceneTransAlpha > 0) {
-            lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
-            lctx.fillRect(0, 0, rect.width, rect.height);
-          }
-          return;
-        }
-
-        const { r, g, b, a } = getLightingState();
-        const W = rect.width;
-        const H = rect.height;
-
-        // Flat sky tint (ported from ScratchbonesGame's outdoor lighting):
-        // screen-blend at low opacity adds warmth/brightness on clear days,
-        // multiply-blend once opacity climbs darkens normally toward dusk/night.
-        // The opacity transitions through near-zero at phase boundaries,
-        // hiding the blend-mode switch.
-        lctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
-        lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
-        lctx.fillRect(0, 0, W, H);
-        lctx.globalCompositeOperation = 'source-over';
-
-        drawLanternMasks();
-
-        // Lightning flash on lighting canvas too
-        if (lightningAlpha > 0) {
-          lctx.fillStyle = `rgba(220, 240, 255, ${lightningAlpha * 0.45})`;
-          lctx.fillRect(0, 0, W, H);
-        }
-
-        // Scene transition fade-to-black
-        if (sceneTransAlpha > 0) {
-          lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
-          lctx.fillRect(0, 0, W, H);
-        }
-      }
-
-      function _computeRawLightingState() {
-        const hour = getHour(); // 6..22
-        const season = currentSeason();
-        const isRaining = calendar.isRaining;
-        const isStorm = isRaining && calendar.rainStrength >= 3;
-
-        // Keyframe stops: [hour, r, g, b, alpha]
-        const stops = [
-          [6.0,  40,  30, 80, 0.55],  // pre-dawn: deep blue-purple
-          [6.5,  220, 100, 40, 0.38], // sunrise: warm orange-red
-          [7.5,  240, 160, 60, 0.22], // early morning: golden
-          [9.0,  255, 230, 180, 0.08],// morning: near-clear
-          [12.0, 255, 245, 210, 0.04],// noon: very clear, slight warm
-          [15.0, 255, 225, 160, 0.10],// afternoon: slight golden
-          [17.5, 255, 160, 60, 0.28], // late afternoon: amber
-          [18.5, 220, 90,  30, 0.42], // sunset: deep orange
-          [19.5, 130, 50,  80, 0.52], // dusk: purple-red
-          [20.5, 30,  30,  80, 0.62], // early night: dark blue
-          [22.0, 10,  10,  40, 0.72], // full night
-        ];
-
-        // Interpolate between stops
-        let r = 10, g = 10, b = 40, a = 0.72;
-        for (let i = 0; i < stops.length - 1; i++) {
-          const [h0, r0, g0, b0, a0] = stops[i];
-          const [h1, r1, g1, b1, a1] = stops[i + 1];
-          if (hour >= h0 && hour <= h1) {
-            const t = (hour - h0) / (h1 - h0);
-            r = r0 + (r1 - r0) * t;
-            g = g0 + (g1 - g0) * t;
-            b = b0 + (b1 - b0) * t;
-            a = a0 + (a1 - a0) * t;
-            break;
-          }
-        }
-
-        // Overcast weather tint on top
-        if (isStorm) { r = r * 0.5 + 30 * 0.5; g = g * 0.5 + 45 * 0.5; b = b * 0.5 + 70 * 0.5; a = Math.min(0.85, a + 0.25); }
-        else if (isRaining) { r = r * 0.7 + 50 * 0.3; g = g * 0.7 + 65 * 0.3; b = b * 0.7 + 90 * 0.3; a = Math.min(0.78, a + 0.12); }
-
-        return { r, g, b, a };
-      }
-
-      // Smoothed lighting state — eases toward the raw target each frame so
-      // the lantern's punched-through clarity (and the sky/ambient tint) fade
-      // gradually instead of snapping, most noticeably at the day-rollover
-      // instant when getHour() jumps straight from ~22 back to 6.
-      let _lightR = 10, _lightG = 10, _lightB = 40, _lightA = 0.72;
-      let _lightingInitialized = false;
-      function _advanceSmoothedLighting(dt) {
-        const raw = _computeRawLightingState();
-        if (!_lightingInitialized) {
-          _lightR = raw.r; _lightG = raw.g; _lightB = raw.b; _lightA = raw.a;
-          _lightingInitialized = true;
-          return;
-        }
-        const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
-        const k = 1 - Math.exp(-dt / tc);
-        _lightR += (raw.r - _lightR) * k;
-        _lightG += (raw.g - _lightG) * k;
-        _lightB += (raw.b - _lightB) * k;
-        _lightA += (raw.a - _lightA) * k;
-      }
-
-      function getLightingState() {
-        return { r: Math.round(_lightR), g: Math.round(_lightG), b: Math.round(_lightB), a: _lightA };
-      }
-
-      function updateWaterParticles(dt) {
-        // Spawn particles on flowing trench tiles.
-        // _flowingTrenchTiles is rebuilt each sim tick so no full grid scan is needed.
-        const flowingTiles = currentArea === 'town' ? _townFlowingTrenchTiles : _flowingTrenchTiles;
-        for (const { col, row } of flowingTiles) {
-          if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
-            const tx = col * TILE + 10 + Math.random() * (TILE - 20);
-            const ty = row * TILE + 8 + Math.random() * (TILE - 16);
-            waterParticles.push({
-              wx: tx, wy: ty,
-              vx: (Math.random() - 0.5) * 4,
-              vy: 4 + Math.random() * 12,
-              alpha: 0.7 + Math.random() * 0.3,
-              radius: 1 + Math.random() * 2.5,
-              life: 0,
-              maxLife: 0.4 + Math.random() * 0.6,
-              type: Math.random() < 0.6 ? 'bubble' : 'foam'
-            });
-          }
-        }
-        // Update existing particles
-        for (let i = waterParticles.length - 1; i >= 0; i--) {
-          const p = waterParticles[i];
-          p.wx += p.vx * dt;
-          p.wy += p.vy * dt;
-          p.life += dt;
-          p.alpha = (1 - p.life / p.maxLife) * 0.85;
-          // Kill if out of life or off a flowing trench
-          const pc = Math.floor(p.wx / TILE);
-          const pr = Math.floor(p.wy / TILE);
-          const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
-          const onFlow = pc >= 0 && pc < aC && pr >= 0 && pr < aR
-            && aGrid[pr][pc].type === TileType.TRENCH && aGrid[pr][pc].flow;
-          if (p.life >= p.maxLife || !onFlow) waterParticles.splice(i, 1);
-        }
-      }
-
-      function updateRipples(dt) {
-        for (let i = ripples.length - 1; i >= 0; i--) {
-          ripples[i].age += dt;
-          if (ripples[i].age >= ripples[i].maxAge) ripples.splice(i, 1);
-        }
-      }
-
-      function spawnRipples() {
-        const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
-        for (let row = 0; row < aR; row++) {
-          for (let col = 0; col < aC; col++) {
-            const tile = aGrid[row][col];
-            const isWet = (tile.type === TileType.PADDY && tile.water >= 0.5)
-              || (tile.type !== TileType.TRENCH && tile.water >= 0.7);
-            if (!isWet) continue;
-            if (Math.random() < 0.22 && ripples.length < 60) {
-              const rx = col * TILE + TILE * 0.3 + Math.random() * TILE * 0.4;
-              const ry = row * TILE + TILE * 0.3 + Math.random() * TILE * 0.4;
-              ripples.push({ x: rx, y: ry, age: 0, maxAge: 1.2 + Math.random() * 0.8 });
-            }
-          }
-        }
-        // Rain ripples: spawn within the visible viewport region
-        if (calendar.isRaining) {
-          const rect = threeContainer.getBoundingClientRect();
-          const drops = calendar.rainStrength === 3 ? 8 : 3;
-          for (let i = 0; i < drops; i++) {
-            const rx = (camX - rect.width / 2) + Math.random() * rect.width;
-            const ry = (camY - rect.height / 2) + Math.random() * rect.height;
-            ripples.push({ x: rx, y: ry, age: 0, maxAge: 0.5 + Math.random() * 0.4 });
-          }
-        }
-      }
-
-      // Ported from ScratchbonesGame's outdoor lightning: a strike sequence is
-      // 1 flash (520ms fade) or, 30% of the time, 2 flashes — a bright lead
-      // strike that cuts to a brief dark gap, then a dimmer second flash.
-      const LIGHTNING_AVG_INTERVAL_S = 28; // average seconds between strike sequences during a storm
-      function updateLightningFlash(dt) {
-        const stormActive = calendar.isRaining && calendar.rainStrength >= 3;
-        if (stormActive && lightningStrikesRemaining <= 0) {
-          lightningTimer -= dt;
-          if (lightningTimer <= 0) {
-            lightningStrikesRemaining = Math.random() < 0.30 ? 2 : 1;
-            lightningAlpha = 0.72;
-            lightningDecayRate = 0.72 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
-            lightningTimer = LIGHTNING_AVG_INTERVAL_S * (0.4 + Math.random() * 1.2);
-          }
-        }
-        if (lightningStrikesRemaining > 0) {
-          if (lightningAlpha > 0) {
-            lightningAlpha = Math.max(0, lightningAlpha - lightningDecayRate * dt);
-            if (lightningAlpha <= 0 && lightningStrikesRemaining > 1) lightningGapTimer = 0.055;
-          } else if (lightningGapTimer > 0) {
-            lightningGapTimer -= dt;
-            if (lightningGapTimer <= 0) {
-              lightningStrikesRemaining -= 1;
-              if (lightningStrikesRemaining > 0) {
-                lightningAlpha = 0.52;
-                lightningDecayRate = 0.52 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
-              }
-            }
-          } else {
-            lightningStrikesRemaining = 0;
-          }
-        }
-      }
+      // Weather FX & lighting overlay (checkForMajorStorm, day/night sky
+      // tint + lantern masks + lightning flash, trench water particles,
+      // paddy/rain ripples) now lives in js/weather-fx.js
+      // (window.WeatherFX) — see its init(deps) call below for the shared
+      // game.js state it's threaded.
 
       // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
       // js/music-system.js (window.Music).
@@ -18988,7 +15561,7 @@
       // are declared further down the file and would TDZ-throw if this ran
       // any earlier than that.
       function applySeasonalGrassAppearance() {
-        const season = currentSeason();
+        const season = window.CalendarSystem.currentSeason();
         tileMats.grass.color.copy(season.grassColor);
         tileMats.grass.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         vegFloorMat.color.copy(season.grassColor);
@@ -22583,7 +19156,7 @@
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
-          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
+          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
           playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
@@ -22740,7 +19313,7 @@
         const now = performance.now();
         if (now - _lastLightUpdateTime < 500) return;
         _lastLightUpdateTime = now;
-        const { r, g, b, a } = getLightingState();
+        const { r, g, b, a } = window.WeatherFX.getLightingState();
         // Ambient: dimmer at night, brighter at noon
         const brightnessMul = 1 - a * 0.7;
         ambientLight.intensity = 0.3 + brightnessMul * 0.7;
@@ -22772,7 +19345,7 @@
         const now = performance.now();
         if (now - _lastTownLightUpdateTime < 500) return;
         _lastTownLightUpdateTime = now;
-        const { r, g, b, a } = getLightingState();
+        const { r, g, b, a } = window.WeatherFX.getLightingState();
         const brightnessMul = 1 - a * 0.7;
         townAmbientLight.intensity = 0.3 + brightnessMul * 0.7;
         townAmbientLight.color.setRGB(
@@ -23001,7 +19574,7 @@
         // landing at a den mouth like the zone-side path below instead of
         // requiring a separate exit step first.
         if (_isCavernBuildingArea(currentArea)) {
-          const zoneId = _denCavernZoneOf.get(currentArea);
+          const zoneId = window.WildlifeSpawn.denCavernZoneOf(currentArea);
           const dens = zoneId ? _zoneLayouts.get(zoneId)?.dens : null;
           if (!zoneId || !dens || !dens.length) {
             showToast("No dens found for this burrow's map.", false);
@@ -23047,67 +19620,12 @@
       }
       document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
 
-      // ── Wildlife/genotype debug panel (🧬 Wildlife tab) ─────────────
-      function renderWildlifeDebugPanel() {
-        const container = document.getElementById('wildlifeDenList');
-        if (!container) return;
-        if (!_denGenotypes.size) {
-          container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
-          return;
-        }
-        const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
-        const rows = [];
-        // Keys are now `${cavernMapId}|${family}` (see getOrMakeDenGenotype)
-        // since one den can independently hold a gar-wolf-family genotype
-        // and a uumkaoii-family genotype at once — split that back apart to
-        // display each family with its own shape (base+patterns vs
-        // fur+plates) instead of assuming every entry is gar-wolf-shaped.
-        for (const [key, genotype] of _denGenotypes) {
-          const sepIdx = key.lastIndexOf('|');
-          const cavernMapId = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
-          const family = sepIdx >= 0 ? key.slice(sepIdx + 1) : 'gar-wolf';
-          const zoneId = _denCavernZoneOf.get(cavernMapId) || '(unknown zone)';
-          const den = _zoneLayouts.get(zoneId)?.dens?.find(d => denCavernMapId(zoneId, d.id) === cavernMapId);
-          const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
-          let bodyHtml;
-          if (family === 'uumkaoii') {
-            const furColor = genotype.fur?.color, platesColor = genotype.plates?.color;
-            bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + esc(window.CreatureGenetics.paletteName(furColor)) : '(none)'}</div>
-              <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + esc(window.CreatureGenetics.paletteName(platesColor)) : '(none)'}</div>`;
-          } else {
-            const patternIds = window.CreatureGenetics.PATTERN_DEFS[family] || [];
-            const baseColor = genotype.base?.color;
-            const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(window.CreatureGenetics.paletteName(baseColor))}` : '(no base)';
-            const patternHtml = patternIds.map(id => {
-              const layer = genotype[id];
-              const on = layer?.enabled && layer.copies > 0;
-              return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
-            }).join(' &middot; ');
-            bodyHtml = `<div style="margin-top:3px">Base: ${baseHtml}</div>
-              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>`;
-          }
-          // Which live creatures are currently using this exact genotype
-          // object, if any are spawned right now — confirms the whole pack
-          // (and its Den-Mother) really do share one roll.
-          const aliveKinds = new Set();
-          for (const c of hostileObjects) if (c.genotype === genotype) aliveKinds.add(c.creatureKey);
-          const teleportBtn = den
-            ? `<button class="settings-small-btn wildlife-den-teleport-btn" data-zone="${esc(zoneId)}" data-den="${esc(den.id)}" style="font-size:10px;padding:2px 8px">Teleport</button>`
-            : '';
-          rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-            <div>
-              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)} <span style="opacity:.5;font-weight:400">(${esc(family)})</span>${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
-              ${bodyHtml}
-            </div>
-            ${teleportBtn}
-          </div>`);
-        }
-        container.innerHTML = rows.join('');
-      }
-      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', renderWildlifeDebugPanel);
+      // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
+      // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => window.WildlifeDebugPanel.render());
       document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
         await checkTothalShift(true);
-        renderWildlifeDebugPanel();
+        window.WildlifeDebugPanel.render();
       });
       // Delegated so it keeps working across every re-render of the list
       // (container.innerHTML replacement would otherwise drop per-button
@@ -23160,564 +19678,14 @@
         });
       }
 
-      // ── Dev Tools: Testing Arena + creature spawner ─────────────────
-      const DEV_ARENA_ZONE_ID = 'map_dev_arena';
-      // Remembers where the player was standing before warping into the
-      // arena so the same Settings button can toggle them back out again —
-      // unlike warpToDenAnchor's targets, the arena has no natural "return"
-      // spot of its own (see EXTERIOR_ZONES.map_dev_arena's exitCol/Row
-      // comment for the walk-out fallback).
-      let _devArenaReturnAnchor = null;
-      function teleportToDevArena() {
-        if (currentArea === DEV_ARENA_ZONE_ID) {
-          const back = _devArenaReturnAnchor || { area: 'farm', x: (COLS / 2) * TILE, y: (ROWS / 2) * TILE };
-          _devArenaReturnAnchor = null;
-          startSceneTransition(() => {
-            const fromScene = getActiveScene();
-            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-            if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
-            currentArea = back.area;
-            player.x = back.x; player.y = back.y;
-            player.vx = 0; player.vy = 0;
-            _snapCameraTarget();
-            const toScene = getActiveScene();
-            if (toScene) {
-              toScene.add(playerMesh); toScene.add(playerGroundShadow);
-              toScene.add(toolHolder); toScene.add(reticleMesh);
-              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-              toScene.add(reticleWavyGroup);
-            }
-            refreshActionBar();
-            showToast('Left the Testing Arena.', true);
-            closeMenu();
-          });
-          return;
-        }
-        _devArenaReturnAnchor = { area: currentArea, x: player.x, y: player.y };
-        startSceneTransition(() => {
-          const fromScene = getActiveScene();
-          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
-          currentArea = DEV_ARENA_ZONE_ID;
-          const zdef = EXTERIOR_ZONES[DEV_ARENA_ZONE_ID];
-          player.x = (zdef.entryCol + 0.5) * TILE;
-          player.y = (zdef.entryRow + 0.5) * TILE;
-          player.vx = 0; player.vy = 0;
-          _snapCameraTarget();
-          const toScene = buildZoneScene(DEV_ARENA_ZONE_ID)?.scene;
-          if (toScene) {
-            toScene.add(playerMesh); toScene.add(playerGroundShadow);
-            toScene.add(toolHolder); toScene.add(reticleMesh);
-            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-            toScene.add(reticleWavyGroup);
-          }
-          refreshActionBar();
-          showToast('Teleported to the Testing Arena — creature spawner unlocked.', true);
-          closeMenu();
-          // Pays the mask-JSON + base/pattern sprite network fetch up front
-          // instead of on the first Spawn click — a fully-patterned species
-          // is over a megabyte of images, so without this the cold fetch
-          // happens WHILE the first spawned creature is standing there
-          // plain/undyed, which is what actually reads as "no colors" (the
-          // recolor math itself is fast; the network round-trip isn't). Not
-          // a blocking loading screen — just a toast so the wait is visible
-          // instead of silent, since it can take a few seconds on a slow
-          // connection/CDN.
-          if (window.CreatureGeneticsRender) {
-            showToast('Warming up creature art…', true);
-            window.CreatureGeneticsRender.prewarm()
-              .then(() => showToast('Creature art ready — spawn away.', true))
-              .catch(() => {});
-          }
-        });
-      }
-      document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
+      // Dev Tools: Testing Arena teleport + creature/bandit/foliage
+      // spawner panel now lives in js/dev-spawner.js (window.DevSpawner)
+      // — see its init(deps) call below for the shared game.js state
+      // it's threaded.
 
-      // Creatures the dev spawn menu has placed in the arena this session —
-      // a separate tracking set from hostileObjects/companionObjects (which
-      // this panel also adds its spawns to, so the normal AI/render tick
-      // loops pick them up) purely so "Auto Kill All" only ever touches
-      // arena test subjects, never a real wild pack or summoned companion.
-      const _arenaSpawnedCreatures = new Set();
-      let devSpawnSelectedKey = Object.keys(CREATURE_DB)[0];
-      // Bandits aren't CREATURE_DB entries (see makeBanditEntity) and every
-      // spawn is async (portrait render), so they're addressable in this
-      // same species grid via a 'bandit:<rank>' key instead of a real
-      // CREATURE_DB key — spawnDevArenaCreature/spawnDevArenaBandit branch
-      // on that prefix. Camps never auto-place in the dev arena (see
-      // ensureCurrentZoneBanditCamps's DEV_ARENA_ZONE_ID exclusion, same
-      // reasoning as packSpecies/herbivoreSpecies being empty there) so this
-      // panel is the only way to get a bandit into it.
-      const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'lieutenant', 'captain'];
-      let devSpawnBanditTier = 0;
-
-      // Same species FoliageGenerator builds for a real wilderness zone's
-      // SHRUB tiles (see _buildZoneFloorMeshes) — spawning them here lets a
-      // tree/stump's view-corridor culling and camera-occlusion fade (see
-      // updateZoneVegetationCulling) get exercised and screenshotted without
-      // needing an actual zone (Southern Cloud Forest's real terrain alone
-      // takes a couple minutes to generate). skipOcclusionFade/scale2x mirror
-      // that same switch's own per-species handling exactly, so a spawned
-      // bush/shrub behaves (and doesn't fade) the same as a real one.
-      const DEV_SPAWN_FOLIAGE_TYPES = {
-        crownedPine: { label: 'Crowned Pine', build: (seed) => window.FoliageGenerator.buildCrownedPineMesh(seed, 0) },
-        shadewood: { label: 'Shadewood', build: (seed) => window.FoliageGenerator.buildShadewoodMesh(seed, 0) },
-        stump: { label: 'Old Stump', build: (seed) => window.FoliageGenerator.buildStumpMesh(seed, 0) },
-        bush: { label: 'Wilderness Bush', build: (seed) => window.FoliageGenerator.buildWildernessBushMesh(seed, 0), skipOcclusionFade: true },
-        shrub: { label: 'Generic Shrub', build: (seed) => window.FoliageGenerator.buildShrubMesh(seed, 0), skipOcclusionFade: true, scale2x: true },
-      };
-      let devSpawnFoliageSelectedKey = Object.keys(DEV_SPAWN_FOLIAGE_TYPES)[0];
-      let _arenaFoliageSeedCounter = 0;
-      // Separate from _arenaSpawnedCreatures — these are plain decorative
-      // meshes, not AI entities, so "Clear Objects" just removes/disposes
-      // them directly instead of going through damageCreature.
-      const _arenaSpawnedFoliage = new Set();
-
-      function renderDevSpawnPanel() {
-        const grid = document.getElementById('devSpawnSpeciesGrid');
-        if (grid) {
-          const creatureBtns = Object.keys(CREATURE_DB).map(key => {
-            const label = CREATURE_DB[key].label || key;
-            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">${esc(label)}</button>`;
-          });
-          const banditBtns = DEV_SPAWN_BANDIT_RANKS.map(rank => {
-            const key = 'bandit:' + rank;
-            const label = window.BanditCombat.RANK_LABEL[rank] || rank;
-            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">🗡️ ${esc(label)}</button>`;
-          });
-          grid.innerHTML = creatureBtns.concat(banditBtns).join('');
-        }
-        const tierGrid = document.getElementById('devSpawnBanditTierGrid');
-        if (tierGrid) {
-          tierGrid.innerHTML = [0, 1, 2, 3].map(t => {
-            const active = t === devSpawnBanditTier ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-tier="${t}">Tier ${t}</button>`;
-          }).join('');
-        }
-        const countEl = document.getElementById('devArenaSpawnCount');
-        if (countEl) countEl.textContent = String(_arenaSpawnedCreatures.size);
-        const foliageGrid = document.getElementById('devSpawnFoliageGrid');
-        if (foliageGrid) {
-          foliageGrid.innerHTML = Object.entries(DEV_SPAWN_FOLIAGE_TYPES).map(([key, def]) => {
-            const active = key === devSpawnFoliageSelectedKey ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-foliage="${esc(key)}">${esc(def.label)}</button>`;
-          }).join('');
-        }
-        const foliageCountEl = document.getElementById('devArenaFoliageCount');
-        if (foliageCountEl) foliageCountEl.textContent = String(_arenaSpawnedFoliage.size);
-      }
-      document.getElementById('devSpawnSpeciesGrid')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.fed-btn');
-        if (!btn) return;
-        devSpawnSelectedKey = btn.dataset.species;
-        renderDevSpawnPanel();
-      });
-      document.getElementById('devSpawnFoliageGrid')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.fed-btn');
-        if (!btn) return;
-        devSpawnFoliageSelectedKey = btn.dataset.foliage;
-        renderDevSpawnPanel();
-      });
-      document.getElementById('devSpawnBanditTierGrid')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.fed-btn');
-        if (!btn) return;
-        devSpawnBanditTier = clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, 3);
-        renderDevSpawnPanel();
-      });
-
-      // Rolls the exact same cosmetic-gene odds a wild den pack (or a
-      // farm-bought crate) gets — see makeDefaultGenotype — before placing
-      // the creature, so this panel doubles as the place to confirm which
-      // species' genes actually render (see CreatureGeneticsRender.SPECIES:
-      // today only gar-wolf/dabinggi-hound have real cosmetic art; any other
-      // species spawned here with a genotype will keep showing its plain
-      // default sprite/tint instead — that's the "why don't my genes show
-      // up" bug this whole panel exists to help chase down, not a spawner bug).
-      function spawnDevArenaCreature(creatureKey) {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const def = CREATURE_DB[creatureKey];
-        if (!def) return;
-        const angle = Math.random() * Math.PI * 2;
-        const dist = TILE * (1.5 + Math.random() * 2.5);
-        const x = player.x + Math.cos(angle) * dist;
-        const y = player.y + Math.sin(angle) * dist;
-        // Roll against the "family" species (see window.CreatureGenetics.SPECIES_ALIAS) —
-        // same normalization getOrMakeDenGenotype applies for wild packs —
-        // so gar-wolf-alpha/den-mother variants get real pattern genes too,
-        // instead of makeDefaultGenotype silently no-opping on an exact key
-        // window.CreatureGenetics.PATTERN_DEFS never defines.
-        const genotypeKind = window.CreatureGenetics.SPECIES_ALIAS[creatureKey] || creatureKey;
-        const genotype = window.CreatureGenetics.makeDefaultGenotype(genotypeKind);
-        const creature = makeCreatureEntity(creatureKey, x, y, { homeX: x, homeY: y, state: 'idle', genotype });
-        if (!creature) { showToast(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`, false); return; }
-        // Same real-AI registration the cutscene combat stager uses (see
-        // runCombat's combatOnIds loop) — hostile species chase/attack via
-        // updateHostiles, everything else follows/defends the player via
-        // updateCompanions, instead of a bespoke test-only behavior.
-        if (def.hostile) {
-          hostileObjects.add(creature);
-        } else {
-          creature.isCompanion = true;
-          creature.master = player;
-          companionObjects.add(creature);
-        }
-        _arenaSpawnedCreatures.add(creature);
-        const renderSupported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
-        const msg = `[dev-arena] spawned ${creatureKey} #${creature.id} (aiSet=${def.hostile ? 'hostileObjects' : 'companionObjects'}, genotypeKind=${genotypeKind}, renderSupported=${renderSupported}) genotype=${JSON.stringify(genotype)}`;
-        window.__farmLog?.(msg, 'wildlife');
-        console.log(msg);
-        renderDevSpawnPanel();
-      }
-
-      // Bandit counterpart to spawnDevArenaCreature — async because building
-      // a bandit's portrait avatar is (see buildBanditAvatar), and rolled
-      // against devSpawnBanditTier instead of the zone-distance tier a real
-      // camp would use, so every rank/tier combination in
-      // bandit-gang-config.json can be spawned on demand for testing.
-      async function spawnDevArenaBandit(rank, tier) {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const cfg = await window.BanditCombat.loadGangConfig();
-        if (!cfg) { showToast('Could not spawn bandit — bandit-gang-config.json failed to load.', false); return; }
-        if (currentArea !== DEV_ARENA_ZONE_ID) return; // player left mid-await
-        const angle = Math.random() * Math.PI * 2;
-        const dist = TILE * (1.5 + Math.random() * 2.5);
-        const x = player.x + Math.cos(angle) * dist;
-        const y = player.y + Math.sin(angle) * dist;
-        const creature = await window.BanditCombat.makeEntity(cfg, rank, tier, x, y, {
-          zoneId: DEV_ARENA_ZONE_ID,
-          extra: { homeX: x, homeY: y, state: 'idle' },
-        });
-        if (!creature) { showToast(`Could not spawn bandit "${rank}" — see console/log for details.`, false); return; }
-        hostileObjects.add(creature);
-        _arenaSpawnedCreatures.add(creature);
-        const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
-        window.__farmLog?.(msg, 'wildlife');
-        console.log(msg);
-        renderDevSpawnPanel();
-      }
-
-      document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => {
-        if (devSpawnSelectedKey?.startsWith('bandit:')) {
-          spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
-        } else {
-          spawnDevArenaCreature(devSpawnSelectedKey);
-        }
-      });
-
-      function devArenaAutoKillAll() {
-        const toKill = [..._arenaSpawnedCreatures];
-        for (const c of toKill) {
-          _arenaSpawnedCreatures.delete(c);
-          if (c.health > 0) damageCreature(c, c.health, undefined, undefined, 0, {});
-        }
-        showToast(`Auto-killed ${toKill.length} arena creature${toKill.length === 1 ? '' : 's'}.`, true);
-        renderDevSpawnPanel();
-      }
-      document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
-
-      // Places a real FoliageGenerator tree/bush/stump near the player, wired
-      // into the exact same view-corridor culling + camera-occlusion fade a
-      // real zone's own trees get (see updateZoneVegetationCulling) by
-      // computing the same cullSphere bounding-sphere tag _buildZoneFloorMeshes
-      // does and pushing it onto this zone's own cullables list — the only
-      // other place that list is ever built is once, at zone-build time (see
-      // buildZoneScene), so a tree spawned after that has to be added here by
-      // hand rather than picked up automatically.
-      function spawnDevArenaFoliage(key) {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const typeDef = DEV_SPAWN_FOLIAGE_TYPES[key];
-        if (!typeDef) return;
-        if (!window.FoliageGenerator) { showToast('Could not spawn — FoliageGenerator not loaded.', false); return; }
-        const vegGroup = typeDef.build(_arenaFoliageSeedCounter++);
-        if (typeDef.scale2x) vegGroup.scale.multiplyScalar(2);
-        if (typeDef.skipOcclusionFade) vegGroup.userData.skipOcclusionFade = true;
-        const angle = Math.random() * Math.PI * 2;
-        const dist = TILE * (1.5 + Math.random() * 2.5);
-        const x = player.x + Math.cos(angle) * dist;
-        const y = player.y + Math.sin(angle) * dist;
-        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
-        const targetGrid = getActiveGrid();
-        const surfY = targetGrid?.[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
-        vegGroup.position.set(x / TILE, surfY, y / TILE);
-        const box = new THREE.Box3().setFromObject(vegGroup);
-        if (!box.isEmpty()) {
-          const sphere = box.getBoundingSphere(new THREE.Sphere());
-          const xzRadius = Math.hypot((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2);
-          vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius, xzRadius };
-        }
-        getActiveScene().add(vegGroup);
-        _markOutline(vegGroup);
-        const zi = _zoneScenes.get(DEV_ARENA_ZONE_ID);
-        if (zi && vegGroup.userData.cullSphere) {
-          zi.cullables = zi.cullables || [];
-          zi.cullables.push(vegGroup);
-        }
-        _arenaSpawnedFoliage.add(vegGroup);
-        renderDevSpawnPanel();
-      }
-      document.getElementById('devSpawnFoliageBtnAction')?.addEventListener('click', () => {
-        spawnDevArenaFoliage(devSpawnFoliageSelectedKey);
-      });
-      function devArenaClearFoliage() {
-        const zi = _zoneScenes.get(DEV_ARENA_ZONE_ID);
-        const toRemove = [..._arenaSpawnedFoliage];
-        for (const vegGroup of toRemove) {
-          _arenaSpawnedFoliage.delete(vegGroup);
-          _treeFadeActive.delete(vegGroup);
-          vegGroup.parent?.remove(vegGroup);
-          if (zi?.cullables) {
-            const idx = zi.cullables.indexOf(vegGroup);
-            if (idx !== -1) zi.cullables.splice(idx, 1);
-          }
-          vegGroup.traverse(o => {
-            if (!o.isMesh) return;
-            o.geometry?.dispose();
-            for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m?.map?.dispose(); m?.dispose(); }
-          });
-        }
-        showToast(`Cleared ${toRemove.length} arena object${toRemove.length === 1 ? '' : 's'}.`, true);
-        renderDevSpawnPanel();
-      }
-      document.getElementById('devClearFoliageBtn')?.addEventListener('click', devArenaClearFoliage);
-
-      // ── Combat log (for AI/Claude review, not players) ─────────────────
-      // One button dumps every arena entity's internal AI/combat state as
-      // dense coded lines, meant to be pasted into a chat with an AI session
-      // that has no other way to see a live browser — a static code review
-      // can (and did, twice: attachBanditWeaponProp was defined but never
-      // called, and the "1 hit then retreat" report) miss things that only
-      // show up once the AI loop is actually ticking, and this environment's
-      // egress policy blocks the CDN this game loads three.js from, so a
-      // headless Chromium session can't render it either. The guide string
-      // is the interpretation key for whichever Claude session receives it.
-      //
-      // A single frozen instant wasn't enough to read state actually
-      // CHANGING over time (a combo step advancing, a cooldown counting
-      // down) -- captureBanditCombatSnapshot runs on its own real-time
-      // interval (not the game's own dt, so it keeps ticking at a steady
-      // rate regardless of framerate) independently of the copy button,
-      // pushing into a capped ring buffer; the button only ever copies
-      // whatever's currently buffered, it doesn't take a fresh snapshot.
-      const BANDIT_COMBAT_LOG_BUFFER_SIZE = 7;
-      const BANDIT_COMBAT_LOG_INTERVAL_S = 1;
-      const _banditCombatLogBuffer = []; // [{ t, text }], oldest first
-
-      const COMBAT_LOG_GUIDE = `HOBUNJI COMBAT LOG -- interpretation guide for AI review
-This is a CONVEYOR BELT of up to ${BANDIT_COMBAT_LOG_BUFFER_SIZE} snapshots, one captured automatically every ${BANDIT_COMBAT_LOG_INTERVAL_S}s in the background (oldest dropped once an extra one would push the buffer past ${BANDIT_COMBAT_LOG_BUFFER_SIZE}) while the Testing Arena is active -- pressing the copy button doesn't take a fresh snapshot, it just copies whatever's currently buffered, oldest first. Read consecutive snapshots together to see state actually CHANGE over ~${BANDIT_COMBAT_LOG_BUFFER_SIZE} real seconds (comboIdx advancing, cdT counting down, retreatT/guarding windows opening and closing, hp dropping) instead of guessing from one frozen instant.
-Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/updateBanditCombatAI() (Bandit Gangs section) for the state machine these fields describe. Bandits fight through the SAME named abilities the player has (Combo/Quick Attack/Charged Breaker/Counter Shield -- real damage/range/cone numbers exposed read-only via window.Combat.comboData/quickAttackData/chargedBreakerData/counterShieldData), executed by a parallel bandit-only AI (updateBanditCombatAI) rather than the player-singleton combat-core/combo/quickattacks/holds modules themselves -- see the long comment above updateBanditCombatAI for why. Wildlife still uses the older plain bite-telegraph/behaviorStage/Pounce system (combat-enemy-telegraph.js/combat-animal-attacks.js) unchanged.
-Common fields:
-  id            unique entity id (bandit ids look like "bandit_<rank>_<timestamp>_<rand>")
-  kind          PLAYER | BANDIT | CREATURE | COMPANION | CORPSE (CORPSE = health<=0, still lootable via the action bar; a dead companion also reports CORPSE)
-  state         idle|chase|return|patrol-chase|fleeing-low-health|dying|corpse
-  hp/stam       current/max health and stamina
-  pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (TILE=55px is 1 tile)
-  tState        telegraphState: none|windup|strike -- mid-swing "tell" (bandits set this from their own ability AI, not combat-enemy-telegraph.js); a hit can only land during "strike"
-  aaBusy        wildlife only: 1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
-  retreatT      seconds left jumping backward after an attack (0 = not retreating); duration scales with how much of the attempt actually landed (see banditRetreatDurationS -- a total whiff gets the full jump-back, a fully-landed combo barely backs off)
-  cdT           seconds left before the next attack attempt is allowed (attackCooldownT)
-  aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer -- NOTE for bandits: atkRangePx is only the flat melee baseline, NOT the real approach/attack-commit threshold (that's engageRangePx, its current combo step's own hit range + lunge distance -- see banditEngagementReachPx and the bandit's own why= text, which reports the real number)
-Bandit-only fields:
-  rank/tier/mastery   grunt|lieutenant|captain; difficulty tier 0-3 the camp/spawn used; rolled weapon-mastery level 0-5
-  species/gender      rolled from speciesWeights in bandit-gang-config.json
-  wpn                 def.weaponKey, a crafted "<shape>_<metal>" id (e.g. hatchet_lowTinBronze) -- "none" would mean banditWeaponFor() failed, should never happen
-  wpnMeshOK           1 if the weapon's own toolHolder mesh actually built (makeBanditToolHolder) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen. The weapon is animated (updateBanditToolMesh), not a static prop -- it reuses the player's own fourPhaseLerp/STYLE_NEUTRAL_POSE/SWEEP_POSE swing pose math against the bandit's own facing/position and its own current ability's windup/strike timing.
-  atkTag/atkDmg       attackTag (sharp/blunt, from the weapon's own dmgType) and attackDamage after rank/tier/mastery/metal multipliers
-  loadout             its banditAbilityLoadout as tap1/tap2/hold1/hold2 ability ids ("-" for a null hold slot) -- tap1/tap2 are on every rank, hold1 only lieutenant+/captain, hold2 only captain (see heldAbilitiesByRank)
-  comboIdx            which of tap1's 3 combo steps fires next (0-2); resets to 0 after the 3rd step completes and retreats
-  actionBusy          1 if a staged ability (windup or strike) is currently in flight (c._banditAction) -- while 1, the bandit is standing still finishing its swing
-  hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
-  guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(window.BanditCombat.GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
-  cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
-  idle/settleT        idle=1 means no staged action is in flight AND the brief post-swing settle window (BANDIT_TOOL_SETTLE_S) has elapsed -- the bandit is truly at rest, not just between windup/strike. settleT is seconds left in that settle window (0 outside it). stanceMatch/bodyLeanDeg below are only meaningful (worth flagging as a bug) once idle=1 -- mid-swing or mid-settle they're expected to differ from their "rest" values.
-  stanceAnim/stanceExpected/stanceMatch   stanceAnim is the bandit's CURRENT rest-pose style (c._banditSwingAnim: sweep|thrust); stanceExpected is what its equipped weapon's own animStyle says it should be (banditNaturalSwing(def) -- sweep for hatchet/fishingmace, thrust for the rest); stanceMatch=0 while idle=1 means the idle stance is stuck showing a DIFFERENT ability's style than the one its weapon actually plays at rest (this exact bug happened once already -- Quick Attack/Charged Breaker hardcode their own anim/pose and finishBanditAction has to reset it back afterward).
-  facingDeg/groupRotDeg/bodyLeanDeg   facingDeg is c.facing (the bandit's true aim/facing angle, degrees) and groupRotDeg is c.groupRot (its avatar body's actual rendered rotation.y, in the portrait-rig's own reflected+offset space -- see updateCreatureMesh's rawTargetRotY) -- these are NOT the same convention and are not meant to numerically match. bodyLeanDeg is the signed difference between groupRotDeg and where the body SHOULD be sitting at rest for the current facingDeg (0 = body exactly at its rest angle); a large bodyLeanDeg while idle=1 means the avatar body is stuck leaned into a swing that already ended -- the other half of the same class of bug as stanceMatch above (this also happened once already, from the settle window not reasserting the lean on both the weapon and the body together).
-why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant
-Companion-only fields (kind=COMPANION -- the player's own active whistle/stable companion, only listed when it's actually in this zone):
-  name          the companion's given name (stable) or "-" if whistle-summoned with none set
-  master        always "player" today (companions are player-only; the field exists in case that changes)
-  perceptionPx  this companion's own _companionPerceptionRangePx(c) -- the radius within which it senses/marks a nearby bandit camp or animal den (see updateCompanionPerception); compare against distances to camps/dens, not distPlayer alone, since perception is centered on the COMPANION, not the player`;
-
-      function _combatLogDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-      function _combatLogNearestOther(c, all) {
-        let best = null, bestDist = Infinity;
-        for (const o of all) {
-          if (o === c) continue;
-          const d = _combatLogDist(c, o);
-          if (d < bestDist) { bestDist = d; best = o; }
-        }
-        return best ? `${best.id || 'player'}@${Math.round(bestDist)}px` : 'none';
-      }
-
-      function _combatLogBanditWhy(c, def, targetPlayer, nearestOtherTxt) {
-        if (c.health <= 0) return `dead; corpse lootable via action bar (rolled loot table + 100% of worn clothing)`;
-        const distP = Math.round(_combatLogDist(c, targetPlayer));
-        if (c.state === 'idle') return `idle; distPlayer=${distP}px > aggroRangePx=${Math.round(def.aggroRangePx)}px, not aggro'd yet. nearest=${nearestOtherTxt}`;
-        if (c.state === 'return') return `returning home; player out of leashRangePx=${Math.round(def.leashRangePx)}px or too far from its own homeX/Y`;
-        if (c.state !== 'chase') return `state=${c.state}, not currently in combat`;
-        if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
-        if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
-        if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
-        // Non-mutating read of _banditAttackSlots/_banditQueueRings (does
-        // NOT call claimBanditAttackSlot/claimBanditQueueRing, which would
-        // claim/allocate one as a side effect just from generating a log
-        // line) -- checked BEFORE the closing-distance branch below, not
-        // after: a queued bandit's real target is its assigned standoff
-        // ring (see updateBanditCombatAI's !readyToStrike branch), whose
-        // radius is deliberately well past engageRangePx (BANDIT_STANDOFF_
-        // RANGE_MUL, bumped further per ring for a big gang's outer rings)
-        // -- checking distance first would misreport an already-correctly-
-        // positioned queued bandit as "closing distance, waiting to enter
-        // engageRangePx" forever, since it's never actually trying to reach
-        // that number. Only BANDIT_MAX_ATTACK_SLOTS=2 bandits are ever
-        // allowed to close in and swing at once.
-        if (!window.BanditCombat.attackSlots.some(s => s.bandit === c)) {
-          const queueRing = window.BanditCombat.queueRings.find(q => q.bandit === c);
-          return queueRing
-            ? `queued on standoff ring ${queueRing.ringIndex} (not one of the ${window.BanditCombat.MAX_ATTACK_SLOTS} bandits currently holding an attack slot) -- holding/swaying at its assigned ring, NOT trying to close the distance; distPlayer=${distP}px`
-            : `queued, not yet assigned a standoff ring (should self-correct next frame -- flag as a bug if this persists); distPlayer=${distP}px`;
-        }
-        // The real approach/attack-commit gate is banditEngagementReachPx
-        // (its current combo step's own reach, folding in that step's own
-        // lunge distance) -- NOT the flat def.attackRangePx shown in the
-        // ENTITY line's atkRangePx field, which is only the melee baseline
-        // before any per-step range/lunge math. Reporting attackRangePx
-        // here instead used to make a bandit committing to (and, before the
-        // engagement-reach fix, whiffing) an attack from well outside its
-        // real hit cone look like ordinary "still closing" text.
-        const engageReach = Math.round(window.BanditCombat.engagementReachPx(c, def, def.banditAbilityLoadout || {}, targetPlayer));
-        if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
-        if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
-        // Mid-combo continuation (comboIdx > 0) skips this gate -- see
-        // updateBanditCombatAI's continuingCombo comment -- so it's only
-        // ever the real block for an opening attack.
-        if (c._banditComboIndex === 0 && c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
-        return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
-      }
-
-      // Idle REST pose/orientation diagnostic -- deliberately separate from
-      // the attack-frame fields above (tState/actionBusy/comboIdx etc, which
-      // describe an in-flight swing). Reports what the bandit's stance
-      // currently IS and where it SHOULD be at rest, to catch either half
-      // of the two bugs already found once each: the idle stance getting
-      // stuck showing whichever ability last fired instead of the equipped
-      // weapon's own style (see finishBanditAction/banditNaturalSwing), and
-      // the avatar body rotating independently of (leaning a different
-      // amount than) the weapon it's holding (see updateBanditToolMesh's
-      // settle-window reassertion). stanceMatch/bodyLeanDeg are only worth
-      // reading as "wrong" once idle=1 -- mid-swing or mid-settle they're
-      // supposed to differ from their rest values.
-      function _combatLogBanditStance(c, def) {
-        const settleT = Math.max(0, ((c._banditToolSettleUntil || 0) - performance.now()) / 1000);
-        const idle = !c._banditAction && settleT <= 0;
-        const natural = window.BanditCombat.naturalSwing(def);
-        const stanceAnim = c._banditSwingAnim || 'thrust';
-        // c.groupRot's own rest value for the CURRENT facing (see
-        // updateCreatureMesh's rawTargetRotY, the same formula) -- diffed
-        // against the actual live c.groupRot via angleDiff (wrap-safe) so a
-        // stuck lean shows up as a nonzero bodyLeanDeg regardless of which
-        // way c.facing happens to be pointing right now.
-        const aimOffset = def.aimAngleOffset || 0;
-        const restGroupRot = -((c.facing || 0) + aimOffset) + Math.PI / 2;
-        const bodyLeanDeg = Math.round(THREE.MathUtils.radToDeg(angleDiff(c.groupRot || 0, restGroupRot)));
-        return [
-          `idle=${idle ? 1 : 0}`, `settleT=${settleT.toFixed(2)}`,
-          `stanceAnim=${stanceAnim}`, `stanceExpected=${natural.anim}`, `stanceMatch=${stanceAnim === natural.anim ? 1 : 0}`,
-          `facingDeg=${Math.round(THREE.MathUtils.radToDeg(c.facing || 0))}`,
-          `groupRotDeg=${Math.round(THREE.MathUtils.radToDeg(c.groupRot || 0))}`,
-          `bodyLeanDeg=${bodyLeanDeg}`,
-        ].join(' ');
-      }
-
-      function captureBanditCombatSnapshotText() {
-        // companionObjects is a separate tracking Set from
-        // _arenaSpawnedCreatures (the dev-spawner's own bookkeeping) -- a
-        // whistle/stable companion summoned the normal way was previously
-        // invisible to this log entirely, silently omitted even though it's
-        // a real participant standing right next to the player.
-        const companions = [...companionObjects].filter(c => c.areaId === currentArea);
-        const all = [player, ..._arenaSpawnedCreatures, ...companions];
-        const lines = [`--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
-          `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)})`];
-        for (const c of _arenaSpawnedCreatures) {
-          const def = c.def || {};
-          const nearestTxt = _combatLogNearestOther(c, all);
-          const kind = c.health <= 0 ? 'CORPSE' : (c.isBandit ? 'BANDIT' : 'CREATURE');
-          if (c.isBandit) {
-            const r = c.rosterRecord || {};
-            const clothTxt = (r.equippedCosmetics || []).length
-              ? r.equippedCosmetics.map(id => `${r.cosmeticSlots?.[id] || '?'}:${id}:${r.appliedDyes?.[window.BanditCombat.TINT_SLOT_BY_SLOT[r.cosmeticSlots?.[id]]] || '-'}`).join(';')
-              : '-';
-            const loadout = def.banditAbilityLoadout || {};
-            const loadoutTxt = `${loadout.tap1 || '-'}/${loadout.tap2 || '-'}/${loadout.hold1 || '-'}/${loadout.hold2 || '-'}`;
-            lines.push([
-              `ENTITY kind=${kind}`, `id=${c.id}`, `rank=${c.banditRank}`, `tier=${c.banditTier}`, `mastery=${c.banditMastery}`,
-              `species=${r.appearance?.speciesId}/${r.appearance?.gender}`,
-              `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
-              `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `actionBusy=${c._banditAction ? 1 : 0}`,
-              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-              `loadout=${loadoutTxt}`, `comboIdx=${c._banditComboIndex || 0}`, `hold1CdT=${(c._banditHold1CdT || 0).toFixed(2)}`,
-              `guarding=${c._banditGuardUntil > performance.now() ? 1 : 0}`, `guardCdT=${(c._banditGuardCdT || 0).toFixed(2)}`,
-              `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
-              `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,
-              `cloth=${clothTxt}`, _combatLogBanditStance(c, def), `nearestOther=${nearestTxt}`,
-              `why="${_combatLogBanditWhy(c, def, player, nearestTxt)}"`,
-            ].join(' '));
-          } else {
-            lines.push([
-              `ENTITY kind=${kind}`, `id=${c.id}`, `species=${c.creatureKey}`,
-              `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
-              `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
-              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-              `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `nearestOther=${nearestTxt}`,
-            ].join(' '));
-          }
-        }
-        for (const c of companions) {
-          const def = c.def || {};
-          const nearestTxt = _combatLogNearestOther(c, all);
-          const kind = c.health <= 0 ? 'CORPSE' : 'COMPANION';
-          lines.push([
-            `ENTITY kind=${kind}`, `id=${c.id}`, `species=${c.creatureKey}`, `name=${c.name || '-'}`, `master=${c.master === player ? 'player' : (c.master?.id || 'none')}`,
-            `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
-            `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-            `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
-            `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-            `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `perceptionPx=${Math.round(window.BanditCamps.companionPerceptionRangePx(c))}`,
-            `nearestOther=${nearestTxt}`,
-          ].join(' '));
-        }
-        return lines.join('\n');
-      }
-
-      // Runs on its own real-time interval (see the comment above
-      // BANDIT_COMBAT_LOG_BUFFER_SIZE) -- pushes one snapshot, then drops
-      // the oldest once the buffer would exceed BANDIT_COMBAT_LOG_BUFFER_SIZE.
-      function captureBanditCombatSnapshot() {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        _banditCombatLogBuffer.push({ t: Date.now(), text: captureBanditCombatSnapshotText() });
-        while (_banditCombatLogBuffer.length > BANDIT_COMBAT_LOG_BUFFER_SIZE) _banditCombatLogBuffer.shift();
-      }
-      setInterval(captureBanditCombatSnapshot, BANDIT_COMBAT_LOG_INTERVAL_S * 1000);
-
-      async function copyArenaCombatLog() {
-        const body = _banditCombatLogBuffer.length
-          ? _banditCombatLogBuffer.map(s => s.text).join('\n\n')
-          : '(no buffered snapshots yet -- wait a second and try again; the Testing Arena must be the active zone for the background capture to run)';
-        const text = [COMBAT_LOG_GUIDE, '', body].join('\n');
-        try {
-          await navigator.clipboard.writeText(text);
-          showToast(`Combat log copied (${_banditCombatLogBuffer.length} snapshot${_banditCombatLogBuffer.length === 1 ? '' : 's'}).`, true);
-        } catch (e) {
-          console.log(text);
-          showToast('Clipboard blocked — full log printed to console instead (check devtools).', false);
-        }
-      }
-      document.getElementById('devCombatLogBtn')?.addEventListener('click', copyArenaCombatLog);
+      // Bandit combat-log capture (AI/Claude review tool, not player-
+      // facing) now lives in js/bandit-combat-log.js — call via
+      // window.BanditCombatLog.captureSnapshotText() if needed elsewhere.
 
       document.getElementById('devSpeedMulSlider')?.addEventListener('input', (e) => {
         devGlobalSpeedMul = clamp(Number(e.target.value) || 100, 25, 300) / 100;
@@ -23725,36 +19693,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (label) label.textContent = Math.round(devGlobalSpeedMul * 100) + '%';
       });
 
-      window._devSpawner = {
-        toggle() {
-          const panel = document.getElementById('devSpawnPanel');
-          const btn = document.getElementById('devSpawnBtn');
-          const open = panel?.style.display !== 'flex';
-          if (panel) panel.style.display = open ? 'flex' : 'none';
-          if (btn) btn.classList.toggle('fed-open', open);
-          if (open) renderDevSpawnPanel();
-        },
-      };
-
-      // Pencil (farm editor) and 🐾 (dev spawner) toggle buttons share one
-      // top-right UI slot and are mutually exclusive by area: farmEditBtn
-      // previously had NO visibility gating at all and stayed on screen in
-      // every area (town, wilderness, indoors) even though the editor itself
-      // only ever does anything on the farm — this is what actually hides it
-      // everywhere else, and reveals the spawner only inside the arena.
-      function _refreshEditorButtonVisibility() {
-        const showFarmEdit = currentArea === 'farm' && isFarmOwner();
-        const showDevSpawn = currentArea === DEV_ARENA_ZONE_ID;
-        const farmBtn = document.getElementById('farmEditBtn');
-        const spawnBtn = document.getElementById('devSpawnBtn');
-        if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';
-        if (spawnBtn) spawnBtn.style.display = showDevSpawn ? '' : 'none';
-        if (!showFarmEdit && farmEditMode) toggleFarmEditMode();
-        if (!showDevSpawn) {
-          const panel = document.getElementById('devSpawnPanel');
-          if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; spawnBtn?.classList.remove('fed-open'); }
-        }
-      }
+      // window._devSpawner and _refreshEditorButtonVisibility now live in
+      // js/dev-spawner.js (window.DevSpawner) — call via
+      // window.DevSpawner.toggle()/.refreshEditorButtonVisibility().
 
       // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
       // in loadBuildingScene) ──────────────────────────────────────────
@@ -23832,7 +19773,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         _minimapRedrawAccum += dt;
         if (_minimapRedrawAccum >= 0.3) {
           _minimapRedrawAccum = 0;
-          renderWildernessMinimap();
+          window.WildernessMap.renderMinimap();
         }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
@@ -23845,10 +19786,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         if (!paused) {
           updateCalendar(dt);
-          _advanceSmoothedLighting(dt);
+          window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMovement(dt);
-          updateZoneFogAroundPlayer();
+          window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.BountyBoard.updateTracking(dt);
@@ -23865,7 +19806,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             window.Mounts?.updateMountRide(dt);
             window.BanditCamps.updateCompanionPerception(dt);
             window.BanditCamps.updateCampBanners(dt);
-            updateHostileSpawning(dt);
+            window.WildlifeSpawn.updateHostileSpawning(dt);
             updateHostiles(dt);
             window.CreatureDeath.updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
@@ -23893,9 +19834,9 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
           if (currentArea === 'farm' || currentArea === 'town') {
             waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
-            updateWaterParticles(dt);
-            updateRipples(dt);
-            updateLightningFlash(dt);
+            window.WeatherFX.updateWaterParticles(dt);
+            window.WeatherFX.updateRipples(dt);
+            window.WeatherFX.updateLightningFlash(dt);
           }
           if (currentArea === 'farm') window.DewVats.updateMeshRotations(dt);
           if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
@@ -23914,7 +19855,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
               const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
               recomputeWater(false, townGrid, TROWS, TCOLS);
             }
-            spawnRipples();
+            window.WeatherFX.spawnRipples();
           }
         }
 
@@ -24117,216 +20058,15 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
-        drawLightingOverlay();
+        window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         updateHud();
         requestAnimationFrame(gameLoop);
       }
 
-      // ── Debug hitbox overlay (Settings → Dev Tools → Show Hitboxes) ─
-      // Ground-plane circles for the player's and every creature's collision
-      // footprint, plus whatever attack collider (if any) is currently live
-      // on a creature: the Pounce leap's forward cone (the real cone passed
-      // to deps.inCone, not a recomputed approximation) while it's in its
-      // 'leap' stage, or the generic bite's range circle (that attack only
-      // ever does a flat distance check, not a cone) while telegraphed.
-      const DEBUG_HITBOX_COLOR_PLAYER    = '#5cf2ff';
-      const DEBUG_HITBOX_COLOR_HOSTILE   = '#ff6a6a';
-      const DEBUG_HITBOX_COLOR_COMPANION = '#7fe89a';
-      const DEBUG_ATTACK_COLOR_WINDUP    = '#ffc23d';
-      const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
-      const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
-      const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
-      // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-      // camera-relative dead zones the PNG plane never freely tracks through
-      // (see CREATURE_PLANE_ROT_MODE for which of sway/halt/snap governs
-      // what it does instead). The pngRot line shows where the PNG plane is
-      // actually pointed right now (may differ from group rotation).
-      const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
-      const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
-      const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
-      // Player avatar's crossed-plane "prism" base width (tile units) —
-      // mirrors the worldModelWidth lookup refreshPlayerAvatar() uses to
-      // build the avatar mesh, since the player object stores no width
-      // of its own.
-      function playerModelWidthTiles() {
-        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
-      }
-
-      function _debugGroundY(wx, wy) {
-        const tile = getActiveTileAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
-        return (tile ? tileSurfaceY(tile.type) : 0) + 0.05;
-      }
-
-      function _drawDebugCircle(wx, wy, radiusPx, color, dashed) {
-        const y = _debugGroundY(wx, wy);
-        const center = worldToOverlay(wx / TILE, y, wy / TILE);
-        if (!center.visible) return;
-        const edge = worldToOverlay((wx + radiusPx) / TILE, y, wy / TILE);
-        const r = Math.hypot(edge.x - center.x, edge.y - center.y);
-        octx.save();
-        octx.globalAlpha = 0.8;
-        octx.strokeStyle = color;
-        octx.lineWidth = 1.5;
-        if (dashed) octx.setLineDash([5, 4]);
-        octx.beginPath();
-        octx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawDebugSquare(wx, wy, halfSizePx, color, dashed) {
-        const y = _debugGroundY(wx, wy);
-        const halfTiles = halfSizePx / TILE;
-        const baseX = wx / TILE, baseZ = wy / TILE;
-        const corners = [
-          worldToOverlay(baseX - halfTiles, y, baseZ - halfTiles),
-          worldToOverlay(baseX + halfTiles, y, baseZ - halfTiles),
-          worldToOverlay(baseX + halfTiles, y, baseZ + halfTiles),
-          worldToOverlay(baseX - halfTiles, y, baseZ + halfTiles),
-        ];
-        if (!corners[0].visible) return;
-        octx.save();
-        octx.globalAlpha = 0.8;
-        octx.strokeStyle = color;
-        octx.lineWidth = 1.5;
-        if (dashed) octx.setLineDash([5, 4]);
-        octx.beginPath();
-        octx.moveTo(corners[0].x, corners[0].y);
-        for (let i = 1; i < corners.length; i++) octx.lineTo(corners[i].x, corners[i].y);
-        octx.closePath();
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawDebugLine(wx1, wy1, wx2, wy2, color, dashed) {
-        const p1 = worldToOverlay(wx1 / TILE, _debugGroundY(wx1, wy1), wy1 / TILE);
-        const p2 = worldToOverlay(wx2 / TILE, _debugGroundY(wx2, wy2), wy2 / TILE);
-        if (!p1.visible && !p2.visible) return;
-        octx.save();
-        octx.globalAlpha = 0.85;
-        octx.strokeStyle = color;
-        octx.lineWidth = 2;
-        if (dashed) octx.setLineDash([4, 4]);
-        octx.beginPath();
-        octx.moveTo(p1.x, p1.y);
-        octx.lineTo(p2.x, p2.y);
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawDebugCone(wx, wy, angle, rangePx, halfConeRad, color) {
-        const y = _debugGroundY(wx, wy);
-        const rangeTiles = rangePx / TILE;
-        const baseX = wx / TILE, baseZ = wy / TILE;
-        const left = angle - halfConeRad, right = angle + halfConeRad;
-        const origin = worldToOverlay(baseX, y, baseZ);
-        if (!origin.visible) return;
-        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
-        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
-        octx.save();
-        octx.globalAlpha = 0.85;
-        octx.strokeStyle = color;
-        octx.lineWidth = 2;
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(leftEnd.x, leftEnd.y);
-        octx.lineTo(rightEnd.x, rightEnd.y);
-        octx.closePath();
-        octx.stroke();
-        octx.restore();
-      }
-
-      // Ground-plane arc sector (for deadzone fans). fromAngle/toAngle are
-      // world-space angles (same convention as c.facing / atan2 game coords).
-      // radiusPx is the visual reach of the fan in game pixels.
-      function _drawDebugArcSector(wx, wy, fromAngle, toAngle, radiusPx, edgeColor, fillColor) {
-        const N = 20;
-        const y = _debugGroundY(wx, wy);
-        const bx = wx / TILE, bz = wy / TILE, rT = radiusPx / TILE;
-        const origin = worldToOverlay(bx, y, bz);
-        if (!origin.visible) return;
-        const pts = [];
-        for (let i = 0; i <= N; i++) {
-          const a = fromAngle + (toAngle - fromAngle) * (i / N);
-          pts.push(worldToOverlay(bx + Math.cos(a) * rT, y, bz + Math.sin(a) * rT));
-        }
-        octx.save();
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(pts[0].x, pts[0].y);
-        for (let i = 1; i <= N; i++) octx.lineTo(pts[i].x, pts[i].y);
-        octx.closePath();
-        octx.globalAlpha = 0.18;
-        octx.fillStyle = fillColor;
-        octx.fill();
-        octx.globalAlpha = 0.75;
-        octx.strokeStyle = edgeColor;
-        octx.lineWidth = 1.5;
-        octx.setLineDash([3, 3]);
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawCreatureDebug(c, hitboxColor) {
-        const def = c.def;
-        const halfSize = creatureHitboxHalfSizePx(def);
-        _drawDebugSquare(c.x, c.y, halfSize, hitboxColor, false);
-
-        if (def.attacks?.includes('pounce')) {
-          const ang = c.facing || 0;
-          const reach = creatureAimColliderReachPx(def);
-          const sx = c.x + Math.cos(ang) * halfSize, sy = c.y + Math.sin(ang) * halfSize;
-          const ex = c.x + Math.cos(ang) * reach, ey = c.y + Math.sin(ang) * reach;
-          _drawDebugLine(sx, sy, ex, ey, DEBUG_AIM_COLLIDER_COLOR, true);
-        }
-
-        const aa = c._animalAttack;
-        if (aa && aa.state.stage === 'leap' && aa.state.rangePx != null) {
-          const st = aa.state;
-          const headX = c.x + Math.cos(st.angle) * st.headOffsetPx;
-          const headY = c.y + Math.sin(st.angle) * st.headOffsetPx;
-          _drawDebugCone(headX, headY, st.angle, st.rangePx, st.halfConeRad, DEBUG_ATTACK_COLOR_LEAP);
-        } else if (c.telegraphState) {
-          _drawDebugCircle(c.x, c.y, def.attackRangePx,
-            c.telegraphState === 'strike' ? DEBUG_ATTACK_COLOR_STRIKE : DEBUG_ATTACK_COLOR_WINDUP, true);
-        }
-
-        // Deadzone fans — the two camera-relative angle bands where the PNG
-        // plane lerps through rather than tracking freely. Each perp is stored
-        // in Three.js rotation.y space; convert to world-space angle via
-        //   worldAngle = π/2 − rotY
-        // so the sector maps back into the same atan2 space as c.facing.
-        const dzR = TILE * 0.65;
-        for (const P_rotY of cameraRelativeCreaturePerps()) {
-          const wc = Math.PI / 2 - P_rotY;
-          _drawDebugArcSector(c.x, c.y, wc - CREATURE_PERP_DEAD_RAD, wc + CREATURE_PERP_DEAD_RAD,
-            dzR, DEBUG_DEADZONE_EDGE_COLOR, DEBUG_DEADZONE_FILL_COLOR);
-        }
-        // Current PNG plane direction — where the sprite is visually facing
-        // right now (may lag or differ from the prism/group rotation).
-        if (c.pngRot !== undefined) {
-          const pngWorldAngle = Math.PI / 2 - c.pngRot;
-          _drawDebugLine(c.x, c.y,
-            c.x + Math.cos(pngWorldAngle) * dzR,
-            c.y + Math.sin(pngWorldAngle) * dzR,
-            DEBUG_PNG_ROT_COLOR, false);
-        }
-      }
-
-      function drawDebugHitboxes() {
-        if (!s_showHitboxes) return;
-        _drawDebugSquare(player.x, player.y, playerModelWidthTiles() * TILE / 2, DEBUG_HITBOX_COLOR_PLAYER, false);
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
-          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
-        }
-        for (const c of companionObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
-          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
-        }
-      }
+      // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
+      // now lives in js/debug-hitboxes.js — call via window.DebugHitboxes.draw().
 
       // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
       function drawOverlays() {
@@ -24378,7 +20118,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           octx.fillRect(0, 0, W, H);
         }
 
-        drawDebugHitboxes();
+        window.DebugHitboxes.draw();
       }
 
       function markTileDirty(col, row) {
@@ -24395,16 +20135,16 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function updateCalendar(dt) {
 
-        const previousHour = getHour();
+        const previousHour = window.CalendarSystem.getHour();
         calendar.time01 += dt / DAY_LENGTH_SECONDS;
         if (calendar.time01 >= 1) {
           calendar.time01 -= 1;
           advanceDay();
         }
-        const currentHour = getHour();
+        const currentHour = window.CalendarSystem.getHour();
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
-          updateRainState();
-          if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); checkForMajorStorm(); worldObjectMorningTick(); }
+          window.WeatherFX.updateRainState();
+          if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
           // rollovers still only loses a few minutes of in-game time
@@ -24415,7 +20155,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function advanceDay() {
         calendar.day += 1;
-        chooseWeatherForDay();
+        window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
         window.FarmAnimals.tickBreeding();
         window.FarmAnimals.tickResources();
@@ -24425,7 +20165,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // Any den wiped out since it started waiting can now be moved back
         // into — see ensureCurrentZoneDenPacks, which does the actual
         // (lazy, current-zone-only) spawning once this fires.
-        pendingDenRespawn.clear();
+        window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
         window.WildBerries.respawnAll();
         window.WildTreasure.respawnAll();
@@ -24443,13 +20183,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       function sleepInBed() {
         calendar.day += 1;
         calendar.time01 = 0; // wake at MORNING_HOUR
-        chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
+        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
         window.FarmAnimals.tickBreeding();
         window.FarmAnimals.tickResources();
         window.ProceduralTasks.maybeRefreshBoardTask();
         checkTothalShift();
-        pendingDenRespawn.clear();
+        window.WildlifeSpawn.clearPendingDenRespawn();
         window.ReagentPlants.respawnAllZoneReagents();
         window.WildTreasure.respawnAll();
         tickFelledTreeRegrowth();
@@ -24462,42 +20202,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         return { ok: true, message: msg };
       }
 
-      function chooseWeatherForDay() {
-        const season = currentSeason();
-        applySeasonalGrassAppearance();
-        const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
-        const stormRoll = seededRandom(calendar.day * 373 + 11);
-        const hasStorm = stormRoll < season.stormChance;
-        const droughtDays = calendar.day - calendar.lastRainDay;
-        const hasRain = hasStorm || seed < season.rainChance || droughtDays >= RAIN_PITY_DAYS;
-        calendar.weather = hasStorm ? 'storm' : hasRain ? 'rain' : 'clear';
-        calendar.nextRainWindows = [];
-
-        if (hasStorm) {
-          calendar.nextRainWindows.push({ start: 11, end: 17, strength: 3 });
-          calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
-        } else if (hasRain) {
-          // A fixed 5-hour window meant even a 'rain' day in the wettest
-          // season (Longpour, 70% daily chance) only actually had it raining
-          // ~5/24 = 21% of the time — the season label reads "wet" but the
-          // moment-to-moment odds of catching rain stayed low. Scale the
-          // window length with how rainy the season is so Longpour/Stormtide
-          // days visibly rain for a large chunk of the day, while a
-          // Deadgrass pity-timer shower stays a brief, isolated event.
-          const windowHours = Math.round(4 + season.rainChance * 8);
-          const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
-          calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
-        }
-        if (hasRain) calendar.lastRainDay = calendar.day;
-        updateRainState();
-      }
-
-      function updateRainState() {
-        const hour = getHour();
-        const activeWindow = calendar.nextRainWindows.find((window) => hour >= window.start && hour < window.end);
-        calendar.isRaining = Boolean(activeWindow);
-        calendar.rainStrength = activeWindow ? activeWindow.strength : 0;
-      }
+      // Weather rolling (chooseWeatherForDay/updateRainState) now lives
+      // in js/weather-fx.js — call via window.WeatherFX.*.
 
       function tickCropDay() {
         for (let row = 0; row < ROWS; row++) {
@@ -25293,7 +20999,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         }
 
         // Zone: a climbable cliff face straight ahead takes priority over tool use.
-        if (_isZoneArea(currentArea) && !player.climbing && getClimbTarget()) {
+        if (_isZoneArea(currentArea) && !player.climbing && window.ClimbSystem.getClimbTarget()) {
           return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
         }
 
@@ -25387,7 +21093,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       let _lastBarKey = '';
 
       function refreshActionBar() {
-        _refreshEditorButtonVisibility();
+        window.DevSpawner.refreshEditorButtonVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
@@ -25725,8 +21431,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       });
 
       function updateHud() {
-        const season = currentSeason();
-        const clock  = formatClock(getHour());
+        const season = window.CalendarSystem.currentSeason();
+        const clock  = formatClock(window.CalendarSystem.getHour());
 
         // Season (changes slowly)
         spSeason.textContent = season.emoji + ' ' + season.name;
@@ -25751,7 +21457,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         spWeather.textContent = weatherText + ' ' + precipText;
 
         spTime.textContent = clock;
-        if (spDay) spDay.textContent = formatCalendarDate();
+        if (spDay) spDay.textContent = window.CalendarSystem.formatCalendarDate();
         spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
 
         // Reticle tile info
@@ -25804,7 +21510,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function nextRainText() {
         if (!calendar.nextRainWindows.length) return 'No rain scheduled today';
-        const hour = getHour();
+        const hour = window.CalendarSystem.getHour();
         const next = calendar.nextRainWindows.find((window) => hour < window.end);
         if (!next) return 'Rain has passed for today';
         return `Next flow ${formatClock(next.start)}-${formatClock(next.end)}`;
@@ -25910,7 +21616,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
           `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
-          `Calendar: ${formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(getHour())}, ${calendar.weather}`,
+          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
@@ -26455,72 +22161,21 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
       document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
 
-      function renderInputSettings() {
-        const desktopEl = document.getElementById('desktopInputBindings');
-        const controllerEl = document.getElementById('controllerInputBindings');
-        const shiftsEl = document.getElementById('modeShiftList');
-        function renderDevice(el, device) {
-          if (!el) return;
-          el.innerHTML = '';
-          for (const action of INPUT_DEFAULTS.actions) {
-            const row = document.createElement('div'); row.className = 'input-binding-row';
-            row.innerHTML = `<span class="settings-name">${action.label}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${buttonLabel(inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
-            const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
-            if (device === 'controller') {
-              control.add(new Option('Unbound', ''));
-              CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(buttonLabel(code), code)));
-              control.value = inputBindings.controller[action.id] || '';
-              control.addEventListener('change', () => { const conflict = bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = inputBindings.controller[action.id] || ''; } else { inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; saveInputBindings(); } });
-            } else {
-              control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { inputBindings[device][action.id] = code; warn.textContent = ''; saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
-            }
-            el.appendChild(row);
-          }
-        }
-        renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller');
-        if (shiftsEl) {
-          shiftsEl.innerHTML = '';
-          inputBindings.modeShifts.forEach((shift, idx) => {
-            const row = document.createElement('div'); row.className = 'mode-shift-row';
-            row.innerHTML = `<input class="settings-select" value="${shift.label || ''}"><select class="settings-select"><option value="desktop">Desktop</option><option value="controller">Controller</option></select><input class="settings-select" value="${shift.button || ''}"><button type="button" class="settings-small-btn">Remove</button>`;
-            row.children[1].value = shift.device || 'desktop';
-            row.children[0].addEventListener('change', e => { shift.label = e.target.value; saveInputBindings(); });
-            row.children[1].addEventListener('change', e => { shift.device = e.target.value; saveInputBindings(); });
-            row.children[2].addEventListener('change', e => { shift.button = e.target.value; saveInputBindings(); });
-            row.children[3].addEventListener('click', () => { inputBindings.modeShifts.splice(idx, 1); saveInputBindings(); renderInputSettings(); });
-            shiftsEl.appendChild(row);
-            const bindings = document.createElement('div'); bindings.className = 'input-bindings-grid';
-            Object.entries(shift.bindings || {}).forEach(([button, actionId]) => {
-              const bRow = document.createElement('div'); bRow.className = 'mode-shift-row';
-              bRow.innerHTML = `<span class="settings-name">${buttonLabel(button)}</span><select class="settings-select"></select><span class="input-binding-warning"></span><button type="button" class="settings-small-btn">Remove</button>`;
-              const select = bRow.children[1];
-              INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(action.label, action.id)));
-              select.value = actionId;
-              select.addEventListener('change', e => { shift.bindings[button] = e.target.value; saveInputBindings(); renderInputSettings(); });
-              bRow.children[3].addEventListener('click', () => { delete shift.bindings[button]; saveInputBindings(); renderInputSettings(); });
-              bindings.appendChild(bRow);
-            });
-            const add = document.createElement('button'); add.type = 'button'; add.className = 'settings-small-btn'; add.textContent = 'Add Shifted Binding';
-            add.addEventListener('click', () => {
-              add.classList.add('is-listening'); add.textContent = 'Press shifted input…';
-              const once = ev => {
-                ev.preventDefault();
-                const manual = window.prompt?.('Input code (examples: RightStickLeft, RightTrigger, Button0)') || '';
-                const button = manual.trim() || ev.code;
-                const actionId = INPUT_DEFAULTS.actions[0]?.id || 'interact';
-                const conflict = bindingConflict(shift.device || 'desktop', button, actionId, shift);
-                if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; saveInputBindings(); }
-                window.removeEventListener('keydown', once, true); renderInputSettings();
-              };
-              window.addEventListener('keydown', once, true);
-            });
-            bindings.appendChild(add);
-            shiftsEl.appendChild(bindings);
-          });
-        }
-      }
-      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); renderInputSettings(); });
-      renderInputSettings();
+      // Settings tab's input-binding rows now live in
+      // js/input-settings-panel.js — call via window.InputSettingsPanel.render().
+      // init()'d here rather than down with the other window.<Namespace>
+      // modules, since (unlike them) this one is rendered once immediately
+      // at boot rather than lazily on first tab open.
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
+      window.InputSettingsPanel?.init({
+        INPUT_DEFAULTS,
+        inputBindings,
+        CONTROLLER_INPUT_OPTIONS,
+        buttonLabel,
+        bindingConflict,
+        saveInputBindings,
+      });
+      window.InputSettingsPanel.render();
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
@@ -26923,7 +22578,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
-        renderFarmProcessors: () => renderFarmProcessors(),
+        renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
         enterInterior: () => enterInterior(),
         interiorFurnitureObjects: () => interiorFurnitureObjects,
         setShowLegBones: (v) => window.ProceduralLegAnimation?.setShowBones(v),
@@ -26974,8 +22629,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getDialogueOpen: () => dialogueOpen,
         getDialogueWalker: () => _dialogueWalker,
         getWaresPools: () => WARES_POOLS,
-        currentWeekdayName,
-        currentSeason,
+        currentWeekdayName: window.CalendarSystem.currentWeekdayName,
+        currentSeason: window.CalendarSystem.currentSeason,
         fishingTimeOfDay: () => window.Fishing.timeOfDay(),
         normalizeStationLabel,
         canAccessContent,
@@ -27021,7 +22676,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getCurrentArea: () => currentArea,
         getPaused: () => paused,
         getGameStarted: () => gameStarted,
-        getHour,
+        getHour: window.CalendarSystem.getHour,
         isPlayerInCombat,
         MORNING_HOUR,
         getWorkspaceMaps: () => _workspaceMaps,
@@ -27176,8 +22831,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       window.Fishing?.init({
         clamp,
         getActiveScene,
-        currentSeason,
-        getHour,
+        currentSeason: window.CalendarSystem.currentSeason,
+        getHour: window.CalendarSystem.getHour,
         FISH_DEFS,
         getReticleTile,
         getActiveTileAt,
@@ -27270,6 +22925,367 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         saveMemberWorldData,
       });
 
+      window.PerpRotation?.init({
+        angleDiff,
+      });
+
+      window.GeneralStore?.init({
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getGeneralStoreCatalog: () => GENERAL_STORE_CATALOG,
+        lootShopWorldState: _lootShopWorldState,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
+        getGeneralStoreClothingSlots: () => GENERAL_STORE_CLOTHING_SLOTS,
+        calendar,
+        esc,
+        getPackClothing: () => packClothing,
+        buildPackClothingSection,
+        seededRandom,
+        clothingSpriteForCosmetic,
+      });
+
+      window.CarpenterShop?.init({
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getBarnTiers: () => BARN_TIERS,
+        FURNITURE_BLUEPRINT_CATALOG,
+        lootShopWorldState: _lootShopWorldState,
+        esc,
+      });
+
+      window.WeatherFX?.init({
+        calendar,
+        seededRandom,
+        getGrid: () => grid,
+        ROWS, COLS,
+        TileType,
+        clamp,
+        showToast,
+        debugLog,
+        worldToOverlay,
+        lctx,
+        player,
+        npcWalkers,
+        getCurrentArea: () => currentArea,
+        TILE,
+        getLightningAlpha: () => lightningAlpha,
+        setLightningAlpha: (v) => { lightningAlpha = v; },
+        getSceneTransAlpha: () => sceneTransAlpha,
+        getThreeRect: () => _threeRect,
+        _isBuildingArea,
+        getActiveGrid, getActiveCols, getActiveRows,
+        getFlowingTrenchTiles: () => _flowingTrenchTiles,
+        getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
+        threeContainer,
+        getCamX: () => camX,
+        getCamY: () => camY,
+        applySeasonalGrassAppearance,
+        RAIN_PITY_DAYS,
+      });
+
+      window.FarmPanel?.init({
+        LIVESTOCK_ITEM_KINDS,
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        refreshActionBar,
+        isFarmOwner,
+        getFarmName,
+        setFarmName,
+        getFarmOwnerName,
+        TileType,
+        COLS, ROWS,
+        getGrid: () => grid,
+        isHouseFootprint,
+        processingFurnitureObjects,
+        _loadWorldLivestock,
+        worldObjects,
+        animalObjects,
+        esc,
+        hasFarmPermission,
+        getBarnTiers: () => BARN_TIERS,
+        HOUSE_FOOTPRINT_W,
+        HOUSE_FOOTPRINT_D,
+        getFarmBuildings: () => farmBuildings,
+        PROCESSING_FURNITURE_DEFS,
+        AGING_METHODS,
+        calendar,
+        getStable: () => stable,
+        _loadWorldBreedingPairs,
+        saveMemberWorldData,
+        _saveWorldBreedingPairs,
+        _saveWorldLivestock,
+        companionAiTypeForKind,
+        _autoAssignStableRole,
+        saveStable,
+        _tothalWorldId,
+        defaultWorldMemberState,
+        spGold,
+        _loadWorldStorage,
+        _saveWorldStorage,
+        ITEM_DEFS,
+        clampInventoryStack,
+        getActiveMountId: () => activeMountId,
+        setActiveMountId: (v) => { activeMountId = v; },
+        getActiveShoulderPetId: () => activeShoulderPetId,
+        setActiveShoulderPetId: (v) => { activeShoulderPetId = v; },
+        getActiveCompanionId: () => activeCompanionId,
+        setActiveCompanionId: (v) => { activeCompanionId = v; },
+      });
+
+      window.TasksPanel?.init({
+        ITEM_DEFS,
+        esc,
+        WMAP_ZONE_LABELS,
+        getQuestProgress: () => questProgress,
+        inventory,
+      });
+
+      window.SupplyPage?.init({
+        inventory,
+        getSupplyBoxObject: () => supplyBoxObject,
+        SUPPLY_CATALOG,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getPendingOrders: () => pendingOrders,
+        getDeliveryLog: () => deliveryLog,
+      });
+
+      window.WhistleEquip?.init({
+        setEquipmentSlot,
+        getGearInventory: () => gearInventory,
+        CREATURE_DB,
+        equipmentSlots,
+      });
+
+      window.WildlifeDebugPanel?.init({
+        esc,
+        _zoneLayouts,
+        hostileObjects,
+      });
+
+      window.ShippingPanel?.init({
+        inventory,
+        ITEM_DEFS,
+        BASE_PRICES,
+        getShippingBoxObject: () => shippingBoxObject,
+        showToast,
+        hasFarmPermission,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
+        saveMemberWorldData,
+      });
+
+      window.CraftingPanel?.init({
+        inventory,
+        clampInventoryStack,
+        FURNITURE_BLUEPRINT_CATALOG,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        esc,
+      });
+
+      window.DevSpawner?.init({
+        getCurrentArea: () => currentArea,
+        setCurrentArea: (v) => { currentArea = v; },
+        getActiveScene,
+        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        _isBuildingArea,
+        setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
+        startSceneTransition,
+        player,
+        _snapCameraTarget,
+        refreshActionBar,
+        showToast,
+        closeMenu,
+        EXTERIOR_ZONES,
+        buildZoneScene,
+        COLS, ROWS, TILE,
+        CREATURE_DB,
+        esc,
+        clamp,
+        makeCreatureEntity,
+        hostileObjects, companionObjects,
+        damageCreature,
+        getActiveGrid,
+        tileSurfaceYInArea,
+        markOutline: _markOutline,
+        zoneScenes: _zoneScenes,
+        treeFadeActive: _treeFadeActive,
+        isFarmOwner,
+        getFarmEditMode: () => farmEditMode,
+        toggleFarmEditMode,
+      });
+
+      window.TownZoneBuildings?.init({
+        getTownZone: () => _townZone,
+        debugLog,
+        getTownScene: () => townScene,
+        getTownBuildingDefs: () => _townBuildingDefs,
+        getTownBuildingGroups: () => _townBuildingGroups,
+        setTownBuildingGroups: (v) => { _townBuildingGroups = v; },
+        getWorldTownTransitions: () => worldTownTransitions,
+        houseWallBuilder,
+        INTERIOR_COLS,
+        INTERIOR_ROWS,
+        tileSurfaceY,
+        TileType,
+        zoneLayouts: _zoneLayouts,
+        zoneBuildingGroups: _zoneBuildingGroups,
+        zoneBuildingsGlbUpgradePending: _zoneBuildingsGlbUpgradePending,
+        zoneScenes: _zoneScenes,
+        zoneDecorFurnitureGroups: _zoneDecorFurnitureGroups,
+        makeDecorativeFurnitureMesh,
+        PROCESSING_FURNITURE_DEFS,
+        buildFurnitureVisual,
+        markOutline: _markOutline,
+        markFurnitureEdgeId: _markFurnitureEdgeId,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+      });
+
+      window.WildlifeSpawn?.init({
+        TILE,
+        TileType,
+        rnd,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        hostileObjects,
+        EXTERIOR_ZONES,
+        damageCreature,
+        HOSTILE_BITE_KNOCKBACK_PX_S,
+        zoneLayouts: _zoneLayouts,
+        makeCreatureEntity,
+        CREATURE_DB,
+        showToast,
+        buildingScenes: _buildingScenes,
+        denNests: _denNests,
+        getCutscenePreviewActive: () => cutscenePreviewActive,
+        buildZoneScene,
+      });
+
+      window.MetalCraftShop?.init({
+        inventory,
+        showToast,
+        clampInventoryStack,
+        buildInventoryGrid,
+        buildEquipmentSlots,
+        saveMemberWorldData,
+        esc,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        metalBarItemKey,
+        craftedToolItemKey,
+        toolPlating,
+        clearToolPlating,
+        setToolPlating,
+        toolReinforcementMetal,
+        setToolReinforcement,
+        toolEffectiveMetalKey,
+        toolVerdigrisFraction,
+        toolMasteryLevel,
+        refreshMetalToolWorldTexture,
+        METAL_DEFS,
+        TOOL_ITEM_DEFS,
+        VERDIGRIS_METAL_KEYS,
+        UNLOCKED_TOOL_SHAPES,
+        TOOL_SHAPE_DEFS,
+      });
+
+      window.WildernessMap?.init({
+        _zoneLayouts,
+        tothalWorldId: _tothalWorldId,
+        currentTothalYear,
+        showToast,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        player,
+        TILE,
+        npcWalkers,
+        WMAP_ZONE_LABELS,
+      });
+
+      window.ClimbSystem?.init({
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        player,
+        facingCardinal,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        TILE,
+        isSolid,
+        tileSurfaceYInArea,
+        clamp,
+        setFacingAngle: (v) => { facingAngle = v; },
+        setTargetAimAngle: (v) => { targetAimAngle = v; },
+        setLastMoveAngle: (v) => { lastMoveAngle = v; },
+      });
+
+      window.BanditCombatLog?.init({
+        player,
+        companionObjects,
+        arenaSpawnedCreatures: window.DevSpawner.getArenaSpawnedCreatures(),
+        getCurrentArea: () => currentArea,
+        getDevGlobalSpeedMul: () => devGlobalSpeedMul,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
+        TILE,
+        angleDiff,
+        showToast,
+      });
+
+      window.DebugHitboxes?.init({
+        getActiveTileAt,
+        tileSurfaceY,
+        worldToOverlay,
+        octx,
+        TILE,
+        player,
+        hostileObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        getShowHitboxes: () => s_showHitboxes,
+        creatureHitboxHalfSizePx,
+        creatureAimColliderReachPx,
+        cameraRelativeCreaturePerps,
+        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+      });
+
+      window.RelationshipsPanel?.init({
+        npcWalkers,
+        esc,
+      });
+
+      window.CalendarSystem?.init({
+        MORNING_HOUR,
+        NIGHT_HOUR,
+        calendar,
+        calToday,
+        calMonthTitle,
+        calPrevMonth,
+        calNextMonth,
+        calWeeks,
+      });
+
+      window.JubmirShop?.init({
+        tothalWorldId: _tothalWorldId,
+        getShopStock: () => _shopStock,
+        lootShopWorldState: _lootShopWorldState,
+        calendar,
+        inventory,
+        showToast,
+        esc,
+        buildInventoryGrid,
+        saveMemberWorldData,
+      });
+
       window.DyeSystem?.init({
         getGearInventory: () => gearInventory,
         saveGearInventory,
@@ -27312,7 +23328,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         creaturePlaneGroundOffset,
         nearestAngleAmong,
         cameraRelativePerps,
-        perpClamp,
+        perpClamp: window.PerpRotation.perpClamp,
         angleDiff,
         dewItemKey,
         ensureProcessedItemDef,
@@ -27393,7 +23409,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         TILE,
         TileType,
         CREATURE_DB,
-        CREATURE_PERP_DEAD_RAD,
+        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
         ITEM_DEFS,
         LIVESTOCK_RESOURCE_DEFS,
         LIVESTOCK_RESOURCE_VERB,
@@ -27418,7 +23434,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         hasFarmPermission,
         isSolid,
         nearestAngleAmong,
-        perpClamp,
+        perpClamp: window.PerpRotation.perpClamp,
         resolveCreatureGroundAnchorRatio,
         rnd,
         saveStable,
@@ -27456,7 +23472,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         debugLog,
         hasFarmPermission,
         inventory,
-        loadHousePieceFaceTexture,
+        loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
         markTileDirty,
         openMenu,
         recomputeWater,
@@ -27501,13 +23517,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         clampInventoryStack,
         getActiveInventoryItem,
         itemIconForKey,
-        getHour,
+        getHour: window.CalendarSystem.getHour,
         hasFarmPermission,
         openMenu,
         showToast,
         saveMemberWorldData,
         buildInventoryGrid,
-        buildShippingTransferUI,
+        buildShippingTransferUI: () => window.ShippingPanel.build(),
         tileSurfaceY,
         scene,
         getDeliveryLog: () => deliveryLog,
@@ -27560,8 +23576,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         companionObjects,
         corpseObjects,
         isZoneArea: _isZoneArea,
-        isDenPackAlive,
-        denKeyFor,
+        isDenPackAlive: window.WildlifeSpawn.isDenPackAlive,
+        denKeyFor: window.WildlifeSpawn.denKeyFor,
         player,
         showZoneBanner,
         showToast,
@@ -27575,7 +23591,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getDyeCatalog: window.DyeSystem.getCatalog,
         dyeToClothingColor: window.DyeSystem.toClothingColor,
         clothingSpriteForCosmetic,
-        DEV_ARENA_ZONE_ID,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
         getActionHeldDown: () => actionHeldDown,

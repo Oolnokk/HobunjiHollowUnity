@@ -1,0 +1,384 @@
+(() => {
+  'use strict';
+
+  // Wildlife schedule AI's den layer: ambient pack/herd spawning at a
+  // wilderness zone's den anchors, per-den shared "family" genotype
+  // rolls (reused by a den's exterior pack, its Den-Mother, and any nest
+  // eggs/babies), and the non-lethal wildlife-vs-wildlife skirmish damage
+  // path. Extracted out of game.js following the same window.<Namespace> +
+  // init(deps) pattern as its sibling systems.
+  //
+  // This one has more external touchpoints than most: game.js's Tothal
+  // Shift, zone-entry, den/cavern building-entry, and day-advance code all
+  // reach into this system directly (not just through updateHostileSpawning's
+  // own tick), and window.BanditCamps reads isDenPackAlive/denKeyFor too.
+  // Everything those call sites need is exposed below; anything genuinely
+  // shared with the (much larger, still-in-game.js) updateHostiles AI loop
+  // — DEN_PACK_WANDER_RADIUS_PX, DEN_SETTLE_RADIUS_PX,
+  // WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS, PATROL_SIGHT_RANGE_PX,
+  // WILDLIFE_DRINK_INTERVAL_HOURS, WILDLIFE_DRINK_DURATION_S — stays
+  // declared in game.js instead of moving here, since this module's own
+  // functions never actually read them.
+  let deps = null;
+  function init(injectedDeps) { deps = injectedDeps; }
+
+  // Once a den's whole pack/herd is wiped, it stays empty — no ambient
+  // scatter-spawning — until the next in-game day, when a fresh pack
+  // (species re-rolled from the zone's packSpecies pool, not necessarily
+  // the one that died) moves in. See game.js's advanceDay().
+  const DEN_PACK_SIZE_MIN = 2;
+  const DEN_PACK_SIZE_MAX = 4;
+  const DEN_CHECK_INTERVAL_S = 2;
+  let denCheckTimer = 0;
+
+  // Wildlife schedule AI (den = home, foliage patches = feeding/patrol
+  // grounds) — see applyWildlifeSkirmishDamage/assignWildlifeStation and
+  // game.js's updateHostiles' 'fleeing-low-health'/'patrol-chase'/
+  // 'at-station-grazing'/'patrolling' states.
+  const WILDLIFE_FLEE_HP_THRESHOLD = 0.3; // health ratio that forces a losing animal to disengage and run home
+  const WILDLIFE_HP_FLOOR_FRACTION = 0.12; // wildlife-vs-wildlife skirmishes can never reduce health below this fraction — nothing dies from them
+
+  // Non-lethal analogue of game.js's damageCreature, used only for
+  // predator-vs-prey wildlife skirmishes (see the 'patrol-chase' state) —
+  // player and companion combat still go through damageCreature directly
+  // and stay lethal. Clamps damage so health can never drop below
+  // WILDLIFE_HP_FLOOR_FRACTION, and forces the target into
+  // 'fleeing-low-health' once it's hurt enough, even if it was already
+  // below threshold before this hit.
+  function applyWildlifeSkirmishDamage(attacker, target, amount) {
+    const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
+    const clamped = Math.max(0, Math.min(amount, target.health - floor));
+    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
+    if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
+      target.state = 'fleeing-low-health';
+      target.targetCreature = null;
+    }
+  }
+
+  // The foliage patch (see workspace.foliagePatches) nearest a den's home
+  // point — geographic proximity, not zone-wide random pick, so a pack
+  // doesn't get assigned a patrol route clear across the map. preferRich
+  // only matters for predators (see assignWildlifeStation): a predator
+  // needs a *rich* patch (the only ones with a nearby-cover point set —
+  // see workspace.ambushStations — to patrol), a herbivore will graze at
+  // any patch.
+  function nearestFoliagePatch(zoneData, homeX, homeY, { preferRich = false } = {}) {
+    const patches = zoneData?.foliagePatches;
+    if (!patches || !patches.length) return null;
+    const homeCol = homeX / deps.TILE, homeRow = homeY / deps.TILE;
+    const scored = patches.map(p => ({ p, d: Math.hypot(p.centroid.x - homeCol, p.centroid.y - homeRow) })).sort((a, b) => a.d - b.d);
+    if (preferRich) {
+      const rich = scored.find(s => s.p.rich);
+      if (rich) return rich.p;
+      return null; // no rich patch anywhere in the zone — this predator gets no patrol route, falls back to plain wander
+    }
+    return scored[0].p;
+  }
+
+  // Nearest river/stream tile to a home point, scanning the zone's own
+  // exported tile list (zoneData.tiles — the same data buildZoneScene
+  // folds into zGrid) rather than requiring a live 2D grid, since this
+  // runs once at spawn time (see assignWildlifeStation) before the
+  // creature necessarily has one. Null if the zone has no water at all.
+  function nearestWaterTile(zoneData, homeX, homeY) {
+    const tiles = zoneData?.tiles;
+    if (!tiles || !tiles.length) return null;
+    const homeCol = homeX / deps.TILE, homeRow = homeY / deps.TILE;
+    let best = null, bestD = Infinity;
+    for (const t of tiles) {
+      if (t.type !== deps.TileType.RIVER && t.type !== deps.TileType.STREAM) continue;
+      const d = Math.hypot(t.c - homeCol, t.r - homeRow);
+      if (d < bestD) { bestD = d; best = { x: t.c, y: t.r }; }
+    }
+    return best;
+  }
+
+  // Assigns a herbivore's grazing tile or a predator's patrol route,
+  // mutating the opts object makeCreatureEntity is about to be called
+  // with (see spawnPackAtDen) — a creature with neither field set just
+  // falls back to plain wandering (legacy zones without generator data,
+  // or no rich patch found).
+  function assignWildlifeStation(opts, zoneData, homeX, homeY, isHerbivore) {
+    if (isHerbivore) {
+      // Assigned independently of grazing-patch availability — a
+      // herbivore still needs to know where to drink even if (rarely) no
+      // foliage patch was found nearby (see game.js's updateHostiles'
+      // drink check).
+      const water = nearestWaterTile(zoneData, homeX, homeY);
+      if (water) opts.waterTile = water;
+      const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: false });
+      if (!patch) return;
+      const tile = patch.tiles[Math.floor(deps.rnd() * patch.tiles.length)];
+      opts.grazingTile = { x: tile.x, y: tile.y };
+      opts.grazingPatchId = patch.id;
+    } else {
+      const patch = nearestFoliagePatch(zoneData, homeX, homeY, { preferRich: true });
+      if (!patch) return;
+      // The full nearby-cover point set (see workspace.ambushStations —
+      // wilderness-map-generator.js still names it after the stationary
+      // "ambush" behavior this used to drive) becomes the patrol route,
+      // walked in a loop rather than camped at as one fixed spot.
+      const group = (zoneData.ambushStations || []).find(g => g.patchId === patch.id);
+      if (!group?.points?.length) return;
+      opts.patrolPoints = group.points.map(pt => ({ x: pt.x, y: pt.y }));
+      opts.patrolIndex = Math.floor(deps.rnd() * opts.patrolPoints.length);
+      opts.linkedPatchId = patch.id;
+    }
+  }
+
+  // Set on entering a wilderness zone (see onZoneEntered, called from
+  // game.js's enterZone); cleared the next time updateHostileSpawning's
+  // den-check actually runs for that same zone, at which point it logs
+  // the living-animal count so entering a zone reliably reports whether
+  // wildlife is actually spawning there — logging immediately in
+  // enterZone itself would usually just show 0, since den spawning is
+  // lazy/timer-gated rather than synchronous.
+  let _zoneEntryAnimalLogPending = null;
+
+  // denKey → true once that den has ever had a pack spawned (so a fresh
+  // zone's dens seed immediately, while a den that's merely between packs
+  // waits for pendingDenRespawn to clear on the next day instead).
+  const denEverSpawned = new Set();
+  // denKey → alive/dead as of the last check — lets ensureCurrentZoneDenPacks
+  // tell "just now wiped" (alive → dead transition: start waiting for the
+  // next day) apart from "already known empty and the day has since
+  // turned over" (spawn a fresh pack right now).
+  const denLastKnownAlive = new Map();
+  // denKey → true while a den is empty and deliberately waiting for the
+  // next day (game.js's advanceDay/sleepInBed clear these) rather than
+  // instantly refilling.
+  const pendingDenRespawn = new Set();
+
+  function denKeyFor(zoneId, den) { return `${zoneId}:${den.id}`; }
+  // cavernMapId -> the zone it belongs to — zoneId/denId can't be
+  // reliably parsed back out of "map_i_den_<zoneId>_<denId>" (both
+  // halves can themselves contain underscores), so this side table is
+  // populated wherever a cavern id is minted (denCavernMapId) instead.
+  // Used by game.js's teleportToRandomDen to work from inside a den too.
+  const _denCavernZoneOf = new Map();
+  // Same id shape game.js's performTothalShift's denTransitions and
+  // synthesizeCavernMapData both already use for the den's cavern —
+  // reused as the shared lookup key so a den's exterior pack, its
+  // Den-Mother, and its nest rewards all resolve the same genotype
+  // without needing to parse zoneId/denId back out of the mapId string.
+  function denCavernMapId(zoneId, denId) {
+    const id = `map_i_den_${zoneId}_${denId}`;
+    _denCavernZoneOf.set(id, zoneId);
+    return id;
+  }
+  // Which shared-genotype "family" a CREATURE_DB key rolls/renders as —
+  // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
+  // shaped genotype (base+pattern layers), uumkaoii-wild/uumkaoii-wild-
+  // den-mother share a uumkaoii-shaped one (fur+plates). Derived from
+  // window.CreatureGenetics.SPECIES_ALIAS + CreatureGeneticsRender.SPECIES
+  // — the exact same "which real species does this variant's genotype
+  // render against" resolution game.js's updateCreatureAnimFrame/
+  // spawnDevArenaCreature already do — rather than a second, separate
+  // hardcoded name-prefix check that has to be kept in sync by hand and
+  // silently doesn't recognize any future species until someone
+  // remembers to add its prefix here too. Returns null for any species
+  // with no gene system.
+  function denGenotypeFamily(kind) {
+    const resolved = window.CreatureGenetics.SPECIES_ALIAS[kind] || kind;
+    return window.CreatureGeneticsRender?.SPECIES?.[resolved] ? resolved : null;
+  }
+  // (cavernMapId, family) -> shared genotype — one roll per den PER
+  // FAMILY, reused by every same-family pack member, the Den-Mother, and
+  // any eggs/babies taken from its nest, using the exact same odds as a
+  // farm-bought crate (see makeDefaultGenotype). Keyed by family, not
+  // just cavernMapId: a den's exterior population (predator pack vs.
+  // herbivore herd, re-rolled each cycle) and its Den-Mother species
+  // (pickDenMotherKind, a separate deterministic-per-den roll, game.js)
+  // are chosen independently, so the SAME den can have a gar-wolf-family
+  // occupant and a uumkaoii-family occupant at once — sharing one plain
+  // cavernMapId key would mean whichever family asked first clobbers the
+  // cache with its own shape, and the other family's genotype reads
+  // would silently come back with none of the fields it expects.
+  const _denGenotypes = new Map(); // key: `${cavernMapId}|${family}`
+  function getOrMakeDenGenotype(cavernMapId, family) {
+    const key = `${cavernMapId}|${family}`;
+    if (!_denGenotypes.has(key)) {
+      _denGenotypes.set(key, window.CreatureGenetics.makeDefaultGenotype(family));
+      window.__farmLog?.(`[genotype] rolled new ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
+    } else {
+      window.__farmLog?.(`[genotype] reused cached ${family} family genotype for den ${cavernMapId}`, 'wildlife');
+    }
+    return _denGenotypes.get(key);
+  }
+
+  // Forgets all pack/respawn bookkeeping for a zone whose terrain (and
+  // therefore den ids) just got regenerated (see game.js's
+  // performTothalShift) — otherwise stale keys from the previous
+  // layout's dens would linger forever and any of this zone's dens that
+  // happen to reuse an id could resume mid-"waiting for next day"
+  // instead of seeding fresh.
+  function forgetZoneDenState(zoneId) {
+    const prefix = `${zoneId}:`;
+    for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
+    for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
+    for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+    // Den ids (e.g. "animalDen_3") are assigned sequentially per zone
+    // generation, so a fresh Tothal Shift very likely reuses an old
+    // den's exact id — without this, that den's cavern would keep
+    // returning its stale cached scene/nest/genotype from before the
+    // shift (see game.js's loadBuildingScene's _buildingScenes.has()
+    // early-return and getOrMakeDenGenotype's cache-forever lookup)
+    // instead of rolling a fresh one for the new pack that just spawned
+    // there.
+    const cavernPrefix = `map_i_den_${zoneId}_`;
+    for (const key of [..._denGenotypes.keys()]) if (key.startsWith(cavernPrefix)) _denGenotypes.delete(key);
+    for (const key of [...deps.denNests.keys()]) if (key.startsWith(cavernPrefix)) deps.denNests.delete(key);
+    for (const key of [...deps.buildingScenes.keys()]) if (key.startsWith(cavernPrefix)) deps.buildingScenes.delete(key);
+  }
+
+  function isDenPackAlive(denKey) {
+    for (const c of deps.hostileObjects) if (c.denKey === denKey && c.health > 0) return true;
+    return false;
+  }
+
+  function spawnPackAtDen(zoneId, den, denKey) {
+    const zdef = deps.EXTERIOR_ZONES[zoneId];
+    // A den's population type (predator pack vs. herbivore herd) is
+    // decided fresh each spawn cycle rather than fixed per den — simplest
+    // v1 (see the wildlife-schedule-AI plan's Feature 4 notes). Falls
+    // back to whichever pool the zone actually has if only one exists.
+    const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
+    const useHerd = hasHerd && (!hasPack || deps.rnd() < 0.5);
+    const pool = useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies;
+    if (!pool || !pool.length) {
+      window.__farmLog?.(`[wildlife] ${denKey}: no packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+      return;
+    }
+    const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
+    // Every same-family member of this pack (e.g. gar-wolf + alpha, or
+    // the whole uumkaoii-wild herd) shares one rolled-once "family"
+    // genotype — see getOrMakeDenGenotype.
+    const denFamily = denGenotypeFamily(speciesKey);
+    const denGenotype = denFamily ? getOrMakeDenGenotype(denCavernMapId(zoneId, den.id), denFamily) : null;
+    // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
+    // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
+    const homeX = (den.x + (den.w || 1) * 0.5) * deps.TILE, homeY = (den.y + (den.h || 1) * 0.5) * deps.TILE;
+    const count = DEN_PACK_SIZE_MIN + Math.floor(deps.rnd() * (DEN_PACK_SIZE_MAX - DEN_PACK_SIZE_MIN + 1));
+    const zoneData = deps.zoneLayouts.get(zoneId);
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      const angle = deps.rnd() * Math.PI * 2;
+      const dist = deps.TILE * (0.8 + deps.rnd() * 1.6);
+      const x = homeX + Math.cos(angle) * dist, y = homeY + Math.sin(angle) * dist;
+      const opts = { homeX, homeY, state: 'idle', denKey, genotype: denGenotype };
+      assignWildlifeStation(opts, zoneData, homeX, homeY, useHerd);
+      const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
+      if (creature) { deps.hostileObjects.add(creature); spawned++; }
+      else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
+    }
+    if (spawned > 0 && zoneId === deps.getCurrentArea()) {
+      deps.showToast(`${deps.CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
+    } else if (spawned === 0) {
+      window.__farmLog?.(`[wildlife] ${denKey}: pack spawn for "${speciesKey}" placed 0/${count} creatures (fallback: den left empty).`, 'wildlife');
+    }
+  }
+
+  // Spawning only positions/heights correctly for the currently active
+  // area (makeCreatureEntity resolves ground height against `currentArea`
+  // regardless of which scene it's told to target), so dens in a zone
+  // the player isn't currently in just wait — a wipe there still marks
+  // pendingDenRespawn immediately, and the very next visit (or the rest
+  // of this visit, once the day turns over) lazily seeds it correctly.
+  const _loggedMissingDenZones = new Set();
+  function ensureCurrentZoneDenPacks() {
+    const currentArea = deps.getCurrentArea();
+    const layout = deps.zoneLayouts.get(currentArea);
+    const dens = layout?.dens;
+    if (!dens || !dens.length) {
+      // A zone configured with a packSpecies pool is expected to have
+      // den data (see game.js's performTothalShift's `dens:
+      // workspace.animalDens`) — if it doesn't, something upstream
+      // (generation, or a stale/authored-only layout — see the other
+      // _zoneLayouts.set call site) silently produced none. Only log
+      // once per zone per session so this doesn't spam every
+      // DEN_CHECK_INTERVAL_S.
+      const zdef = deps.EXTERIOR_ZONES[currentArea];
+      if ((zdef?.packSpecies?.length || zdef?.herbivoreSpecies?.length) && !_loggedMissingDenZones.has(currentArea)) {
+        _loggedMissingDenZones.add(currentArea);
+        window.__farmLog?.(`[wildlife] zone "${currentArea}" has a packSpecies/herbivoreSpecies pool but no den anchors in _zoneLayouts (fallback: no wild packs will spawn here this session).`, 'wildlife');
+      }
+      return;
+    }
+    for (const den of dens) {
+      const key = denKeyFor(currentArea, den);
+      const alive = isDenPackAlive(key);
+
+      if (alive) { denLastKnownAlive.set(key, true); continue; }
+
+      if (!denEverSpawned.has(key)) {
+        // Never populated (fresh zone/den) — seed immediately, no wait.
+        denEverSpawned.add(key);
+        denLastKnownAlive.set(key, false);
+        spawnPackAtDen(currentArea, den, key);
+        continue;
+      }
+
+      if (denLastKnownAlive.get(key) !== false) {
+        // Alive as of the last check (or never checked while alive) and
+        // empty now — just got wiped. Start waiting for the next day
+        // instead of refilling on the spot.
+        denLastKnownAlive.set(key, false);
+        pendingDenRespawn.add(key);
+        continue;
+      }
+
+      if (pendingDenRespawn.has(key)) continue; // still waiting for the next day
+
+      // Already known empty, and no longer pending — the day turned
+      // over since this den was wiped (see game.js's advanceDay()).
+      // Move in a fresh pack now, species re-rolled from the zone's pool.
+      spawnPackAtDen(currentArea, den, key);
+    }
+  }
+
+  function updateHostileSpawning(dt) {
+    // Ambient wildlife spawning has no business intruding on an
+    // authored cutscene once this scene finally lives on a real
+    // wilderness zone map — the combat card's own wolves are added to
+    // hostileObjects explicitly (see game.js's runCombat).
+    if (deps.getCutscenePreviewActive()) return;
+    const currentArea = deps.getCurrentArea();
+    if (!deps._isZoneArea(currentArea)) return;
+    denCheckTimer -= dt;
+    if (denCheckTimer > 0) return;
+    denCheckTimer = DEN_CHECK_INTERVAL_S;
+    if (!deps.buildZoneScene(currentArea)) return;
+    ensureCurrentZoneDenPacks();
+    window.BanditCamps.ensureCurrentZoneCamps();
+    if (_zoneEntryAnimalLogPending === currentArea) {
+      _zoneEntryAnimalLogPending = null;
+      let alive = 0;
+      for (const c of deps.hostileObjects) if (c.health > 0 && c.areaId === currentArea) alive++;
+      window.__farmLog?.(`[wildlife] entered "${currentArea}": ${alive} living animal${alive === 1 ? '' : 's'} present.`, 'wildlife');
+    }
+  }
+
+  // Called from game.js's enterZone — fires the den-check on the very
+  // next frame instead of waiting up to DEN_CHECK_INTERVAL_S, so wildlife
+  // populates promptly on arrival and the log reflects it.
+  function onZoneEntered(mapId) {
+    denCheckTimer = 0;
+    _zoneEntryAnimalLogPending = mapId;
+  }
+
+  window.WildlifeSpawn = {
+    init,
+    applyWildlifeSkirmishDamage,
+    denKeyFor,
+    denCavernMapId,
+    denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
+    denGenotypeFamily,
+    getOrMakeDenGenotype,
+    getDenGenotypes: () => _denGenotypes,
+    forgetZoneDenState,
+    isDenPackAlive,
+    updateHostileSpawning,
+    onZoneEntered,
+    clearPendingDenRespawn: () => pendingDenRespawn.clear(),
+  };
+})();
