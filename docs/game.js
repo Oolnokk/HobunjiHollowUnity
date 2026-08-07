@@ -1286,13 +1286,15 @@
         },
       };
 
-      // Overrides CREATURE_DB's per-species attack* fields and the bandit
-      // baseline melee constants (see BANDIT_BASE_ATTACK_DAMAGE etc., set
-      // near makeBanditDef) from docs/config/combat/attack-values.json once
+      // Overrides CREATURE_DB's per-species attack* fields from
+      // docs/config/combat/attack-values.json once
       // docs/js/combat/combat-config-loader.js's fetch resolves — same
       // synchronous-default-then-override pattern as every combat-*.js
       // module's applyXConfig, just without a dedicated module of its own
-      // since CREATURE_DB/the bandit constants live directly in game.js.
+      // since CREATURE_DB lives directly in game.js. The bandit baseline
+      // melee constants get the same treatment via
+      // window.BanditCombat.applyBanditConfig (js/combat/combat-bandit.js
+      // owns those now).
       window.__attackValuesConfigPromise?.then(cfg => {
         if (!cfg) return;
         if (cfg.creatures) {
@@ -1308,14 +1310,7 @@
             if (Array.isArray(o.attacks)) def.attacks = o.attacks;
           }
         }
-        if (cfg.bandit) {
-          if (cfg.bandit.BASE_ATTACK_DAMAGE != null) BANDIT_BASE_ATTACK_DAMAGE = cfg.bandit.BASE_ATTACK_DAMAGE;
-          if (cfg.bandit.attackRangeTiles != null) BANDIT_ATTACK_RANGE_TILES = cfg.bandit.attackRangeTiles;
-          if (cfg.bandit.attackHalfConeDeg != null) BANDIT_ATTACK_HALF_CONE_DEG = cfg.bandit.attackHalfConeDeg;
-          if (cfg.bandit.attackStaminaCost != null) BANDIT_ATTACK_STAMINA_COST = cfg.bandit.attackStaminaCost;
-          if (cfg.bandit.attackCooldownSCaptain != null) BANDIT_ATTACK_COOLDOWN_S_CAPTAIN = cfg.bandit.attackCooldownSCaptain;
-          if (cfg.bandit.attackCooldownSOther != null) BANDIT_ATTACK_COOLDOWN_S_OTHER = cfg.bandit.attackCooldownSOther;
-        }
+        window.BanditCombat?.applyBanditConfig(cfg.bandit);
       });
 
       // Minimal standalone exterior zones reachable from the town's pre-authored
@@ -1480,7 +1475,7 @@
       // that slot is currently empty (mirrors the old "first companion is
       // automatically active" convenience, generalized to 3 slots).
       function _autoAssignStableRole(entry) {
-        const role = stableEntryRole(entry);
+        const role = window.CreatureGenetics.stableEntryRole(entry);
         if (role === 'mount' && !activeMountId) activeMountId = entry.id;
         else if (role === 'shoulderPet' && !activeShoulderPetId) activeShoulderPetId = entry.id;
         else if (role === 'companion' && !activeCompanionId) activeCompanionId = entry.id;
@@ -3478,361 +3473,10 @@
         return true;
       }
 
-      // ── Livestock genetics & breeding ───────────────────────────────
-      // Ported from the "Creature Pattern, Base Recolor & Breeding Lab"
-      // prototype: each livestock genotype holds one named fur color per
-      // permanent anatomical region (Uumkao'ii: fur + plates, both always
-      // visible — unlike other species' future optional pattern layers).
-      // Breeding blends parent colors per region with a small mutation
-      // chance; sell value rewards fur/plate color contrast. The same genotype feeds Farm-tab valuation, breeding, and the masked
-      // texture compositor, keeping the displayed coat and stored genes in sync.
-      // `weight` skews which colors actually turn up on an animal — real
-      // wildlife/livestock coats are overwhelmingly gray/brown/tan, with
-      // orange an occasional accent and true red rare, so a flat uniform
-      // pick over this list (the previous behavior) way overrepresented
-      // the 4 genuinely red entries relative to how often real coats look
-      // that way. Weight is a relative share within _pickWeightedFurEntry's
-      // cumulative draw, not a percentage — gray/brown/tan sit at 4, orange
-      // at 2, red at 1, which nets out to roughly gray/brown/tan ~87%,
-      // orange ~9%, red ~4% of picks given how many entries land in each
-      // bucket (see _pickWeightedFurEntry below).
-      const LIVESTOCK_FUR_PALETTES = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.palettes || {};
-      const LIVESTOCK_FUR_PALETTE = LIVESTOCK_FUR_PALETTES.default || [];
-      function _livestockPalette(kind) {
-        return LIVESTOCK_FUR_PALETTES[kind] || LIVESTOCK_FUR_PALETTE;
-      }
-      // Cumulative-weight draw over LIVESTOCK_FUR_PALETTE (or a filtered
-      // subset, e.g. mutateFurColor excluding the current color) — every
-      // random fur-color pick in the game goes through this instead of a
-      // flat array-index pick, so the gray/brown/tan-common, orange-
-      // occasional, red-rare distribution described above actually holds.
-      function _pickWeightedFurEntry(entries = LIVESTOCK_FUR_PALETTE) {
-        const total = entries.reduce((sum, e) => sum + (e.weight || 1), 0);
-        let roll = Math.random() * total;
-        for (const entry of entries) {
-          roll -= (entry.weight || 1);
-          if (roll < 0) return entry;
-        }
-        return entries[entries.length - 1];
-      }
-
-      function _furHexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
-      function _furRgbToHsv(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
-        let h = 0;
-        if (d) { if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h /= 6; if (h < 0) h += 1; }
-        return [h, max === 0 ? 0 : d / max, max];
-      }
-      function _furHsvToRgb(h, s, v) {
-        h = ((h % 1) + 1) % 1;
-        const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
-        let r, g, b;
-        switch (i % 6) {
-          case 0: r = v; g = t; b = p; break; case 1: r = q; g = v; b = p; break; case 2: r = p; g = v; b = t; break;
-          case 3: r = p; g = q; b = v; break; case 4: r = t; g = p; b = v; break; default: r = v; g = p; b = q;
-        }
-        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-      }
-      function _furNormalizeHex(s) { const m = String(s).trim().match(/^#?([0-9a-f]{6})$/i); return m ? '#' + m[1].toLowerCase() : null; }
-      function _furPaletteEntry(color, kind) {
-        const palette = _livestockPalette(kind);
-        const normalized = _furNormalizeHex(color) || palette[0].hex;
-        const exact = Object.values(LIVESTOCK_FUR_PALETTES).flat().find(x => x.hex.toLowerCase() === normalized);
-        if (exact) return exact;
-        const [h, s] = _furRgbToHsv(..._furHexToRgb(normalized));
-        let best = palette[0], score = Infinity;
-        for (const entry of palette) {
-          const [eh, es] = _furRgbToHsv(..._furHexToRgb(entry.hex));
-          let dh = Math.abs(h - eh); dh = Math.min(dh, 1 - dh);
-          const d = dh * dh * 2.5 + (s - es) * (s - es);
-          if (d < score) { score = d; best = entry; }
-        }
-        return best;
-      }
-      function _furPaletteColor(color, kind) { return _furPaletteEntry(color, kind).hex; }
-      function _furPaletteName(color) { return _furPaletteEntry(color).name; }
-      function randomFurColor(kind) { return _pickWeightedFurEntry(_livestockPalette(kind)).hex; }
-
-      function blendFurHex(colorA, colorB, kind) {
-        const ha = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorA, kind))), hb = _furRgbToHsv(..._furHexToRgb(_furPaletteColor(colorB, kind)));
-        let dh = hb[0] - ha[0]; if (dh > 0.5) dh -= 1; if (dh < -0.5) dh += 1;
-        const h = (ha[0] + dh * 0.5 + 1) % 1, s = (ha[1] + hb[1]) / 2, v = 0.72;
-        const [r, g, b] = _furHsvToRgb(h, s, v);
-        return _furPaletteColor('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''), kind);
-      }
-      function mutateFurColor(hex, kind) {
-        const palette = _livestockPalette(kind);
-        const current = _furPaletteEntry(hex, kind), choices = palette.filter(x => x.id !== current.id);
-        return _pickWeightedFurEntry(choices).hex;
-      }
-
-      // Perceptual color contrast (CIE Lab deltaE76), used to reward
-      // striking fur/plate combinations in sell value — same math as the
-      // HTML prototype's "color strikingness" meter.
-      function _furSrgbToLinear(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-      function _furRgbToLab(r, g, b) {
-        r = _furSrgbToLinear(r); g = _furSrgbToLinear(g); b = _furSrgbToLinear(b);
-        const x = (r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047,
-              y = r * 0.2126729 + g * 0.7151522 + b * 0.072175,
-              z = (r * 0.0193339 + g * 0.119192 + b * 0.9503041) / 1.08883;
-        const e = 216 / 24389, k = 24389 / 27, f = t => t > e ? Math.cbrt(t) : (k * t + 16) / 116;
-        const fx = f(x), fy = f(y), fz = f(z);
-        return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
-      }
-      function _furDeltaE76(colorA, colorB) {
-        const a = _furRgbToLab(..._furHexToRgb(_furPaletteColor(colorA))), b = _furRgbToLab(..._furHexToRgb(_furPaletteColor(colorB)));
-        return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-      }
-
-      const LIVESTOCK_SELL_RULES = { baseValue: 100, uumPatternBonus: 175, contrastScaleDeltaE: 65 };
-      function _furColorContrastScore(colorA, colorB) {
-        const delta = _furDeltaE76(colorA, colorB);
-        return { deltaE: delta, score: clamp(Math.round(delta / LIVESTOCK_SELL_RULES.contrastScaleDeltaE * 100), 0, 100) };
-      }
-      function sellTierFor(amount) {
-        if (amount >= 600) return 'Exceptional';
-        if (amount >= 450) return 'Rare';
-        if (amount >= 300) return 'Striking';
-        if (amount >= 180) return 'Distinctive';
-        return 'Common';
-      }
-
-      // Reads CREATURE_DB's own label instead of duplicating a second,
-      // separate name list here that has to be updated by hand every time a
-      // new livestock species ships — falls back to a capitalized kind (or
-      // 'Livestock') only for a kind CREATURE_DB doesn't even know about.
-      function defaultLivestockName(kind) {
-        return CREATURE_DB[kind]?.label || (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
-      }
-
-      // Optional pattern layers per species — the HTML lab's Dabinggi-hound
-      // and Gar-wolf "layers" (mitts/spectacles/stripes, colorpoint/foxtail/
-      // mitts respectively). Order matters: it's the draw/composite order
-      // (see composeGenotypeFrame in creature-genetics-render.js).
-      const LIVESTOCK_PATTERN_DEFS = {
-        'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
-        'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
-        grehlr: ['mitts', 'spectacles'],
-        drenkirra: ['bodystripes', 'spectacles'],
-      };
-      // CREATURE_DB variants that reuse a pattern-species' sprite/pattern
-      // assets under a different creatureKey (different stats/label, same
-      // art) — used to resolve which CreatureGeneticsRender.SPECIES entry
-      // a given creature's genotype should render against. Without this,
-      // gar-wolf-alpha and gar-wolf-den-mother genotypes never render:
-      // CreatureGeneticsRender.SPECIES only has a "gar-wolf" key.
-      const GENOTYPE_SPECIES_ALIAS = {
-        'gar-wolf-alpha': 'gar-wolf',
-        'gar-wolf-den-mother': 'gar-wolf',
-        'uumkaoii-wild': 'uumkaoii',
-        'uumkaoii-wild-den-mother': 'uumkaoii',
-        'grehlr-den-mother': 'grehlr',
-        'drenkirra-den-mother': 'drenkirra',
-      };
-      // Picks two fur colors that read as visually distinct — same rejection-
-      // sample loop as the HTML lab's pickTwoFurColors().
-      function pickTwoLivestockFurColors(kind) {
-        const palette = _livestockPalette(kind);
-        let a = _pickWeightedFurEntry(palette), b = a;
-        for (let i = 0; i < 40; i++) {
-          b = _pickWeightedFurEntry(palette);
-          const [ah, as] = _furRgbToHsv(..._furHexToRgb(a.hex)), [bh, bs] = _furRgbToHsv(..._furHexToRgb(b.hex));
-          let dh = Math.abs(ah - bh); dh = Math.min(dh, 1 - dh);
-          if (a.id !== b.id && (dh > 0.045 || Math.abs(as - bs) > 0.18)) break;
-        }
-        if (a.id === b.id) b = palette[(palette.indexOf(a) + Math.max(1, Math.floor(palette.length / 2))) % palette.length];
-        return [a, b];
-      }
-
-      // Species whose genotype is two ALWAYS-present colored regions (e.g.
-      // Uumkao'ii's fur+plates) rather than a base color plus N optional
-      // pattern layers (LIVESTOCK_PATTERN_DEFS' gar-wolf/dabinggi-hound
-      // shape). makeDefaultGenotype/sellValueFor/crossOffspring all branch
-      // on this shape — checked by membership here, not a hardcoded
-      // `kind === 'uumkaoii'` at each site, so a second dual-region species
-      // is a one-line addition instead of a hunt through 3 functions.
-      const DUAL_REGION_GENOTYPE_KINDS = new Set(['uumkaoii']);
-
-      // A creature's Size (small/medium/large, carried on genotype.sizeClass)
-      // gates which one of the personal stable's three equip slots it's
-      // eligible for — see renderStablePanel/syncCompanionFromWhistle. Each
-      // stable-able species has a default Size (CREATURE_DB[kind].defaultSizeClass);
-      // breeding can rarely mutate an individual's Size a step away from
-      // whichever parent it inherited from (see crossOffspring), which is how
-      // any species can eventually turn up as any role given enough luck.
-      const CREATURE_SIZE_CLASSES = ['small', 'medium', 'large'];
-      const CREATURE_SIZE_ROLE = { small: 'shoulderPet', medium: 'companion', large: 'mount' };
-      function normalizeCreatureSizeClass(value) {
-        return CREATURE_SIZE_CLASSES.includes(value) ? value : 'medium';
-      }
-      function stableEntryRole(entry) {
-        return CREATURE_SIZE_ROLE[normalizeCreatureSizeClass(entry?.genotype?.sizeClass)];
-      }
-      // Steps a Size one notch up or down (clamped at the ends, no wraparound)
-      // — the shape a rare breeding mutation takes, mirroring mutateFurColor's
-      // role for coat genes.
-      function mutateSizeClassStep(sizeClass) {
-        const idx = CREATURE_SIZE_CLASSES.indexOf(normalizeCreatureSizeClass(sizeClass));
-        const dir = Math.random() < 0.5 ? -1 : 1;
-        return CREATURE_SIZE_CLASSES[clamp(idx + dir, 0, CREATURE_SIZE_CLASSES.length - 1)];
-      }
-      // Offspring Size: inherited from a randomly-chosen parent (falling back
-      // to the species default for a parent with no sizeClass on record, e.g.
-      // a pre-Size save), with the same flat LIVESTOCK_MUTATION_CHANCE roll
-      // crossOffspring's coat genes use to instead step it by one.
-      function inheritedSizeClass(genotypeA, genotypeB, kind) {
-        const fallback = CREATURE_DB[kind]?.defaultSizeClass || 'medium';
-        const parentSize = Math.random() < 0.5
-          ? normalizeCreatureSizeClass(genotypeA?.sizeClass || fallback)
-          : normalizeCreatureSizeClass(genotypeB?.sizeClass || fallback);
-        return Math.random() < LIVESTOCK_MUTATION_CHANCE ? mutateSizeClassStep(parentSize) : parentSize;
-      }
-
-      // Fresh (non-bred) livestock gets two independently random fur colors —
-      // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
-      // are both permanent (copies:2, dominant). Gar-wolf/Dabinggi-hound get
-      // one base fur color plus a shared pattern color applied to 0-3
-      // randomly-chosen optional pattern layers (copies:1, dominant) — the
-      // exact same odds used for wild-den pack genotypes (see
-      // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
-      // pack member are statistically the same roll. Palette selection is
-      // species-aware: Drenkirra use the tropical palette configured in
-      // scratchbones-config.js through creation, breeding, and rendering.
-      function makeDefaultGenotype(kind) {
-        // Fresh/wild specimens always roll their species' default Size — the
-        // rare mutation only ever applies on breeding (see crossOffspring).
-        const sizeClass = CREATURE_DB[kind]?.defaultSizeClass || 'medium';
-        if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
-          return {
-            fur:    { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
-            plates: { color: randomFurColor(kind), copies: 2, inheritance: 'dominant' },
-            sizeClass,
-          };
-        }
-        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
-        if (patterns) {
-          const [first, second] = pickTwoLivestockFurColors(kind);
-          // Each pattern layer gets an independently configured chance of showing up
-          // (rather than rolling "how many, then which") — with 3 patterns
-          // that's ~70% odds of at least one being visible per specimen,
-          // instead of leaving a pack looking plain too often.
-          const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
-          const geneticsCfg = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics || {};
-          for (const id of patterns) {
-            const configuredChance = geneticsCfg.patternChances?.[kind]?.[id];
-            const chance = Number.isFinite(Number(configuredChance))
-              ? Number(configuredChance)
-              : Number.isFinite(Number(geneticsCfg.defaultPatternChance))
-                ? Number(geneticsCfg.defaultPatternChance)
-                : (1 / 3);
-            const enabled = Math.random() < chance;
-            genotype[id] = { color: second.hex, copies: enabled ? 1 : 0, inheritance: 'dominant', enabled };
-          }
-          genotype.sizeClass = sizeClass;
-          const enabledIds = patterns.filter(id => genotype[id].enabled);
-          window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) pattern=${second.name}(${second.hex}) enabled=[${enabledIds.join(',') || 'none'}]`, 'wildlife');
-          return genotype;
-        }
-        // null, not {} — an empty object is still truthy, and every caller
-        // (makeCreatureEntity's opts.genotype check, updateCreatureAnimFrame's
-        // genotypeKind resolution) treats "has a genotype" as "try to render
-        // it", which for a species with no gene system at all (uumkaoii-wild,
-        // the den-mother variants, ...) meant composeFrame got called every
-        // tick forever, always failing (no SPECIES config), never caching,
-        // never giving up — exactly the infinite-retry log spam a real
-        // report caught. null reads as "no genotype" everywhere downstream.
-        return null;
-      }
-
-      // Sell value from color contrast + pattern complexity — generalizes
-      // the HTML's sellValueFor to any species: Uumkao'ii's two permanent
-      // regions collapse to a flat bonus (as before); pattern-layer species
-      // get a per-enabled-pattern bonus (HTML's patternBonuses table) plus
-      // base-vs-pattern-color contrast.
-      const LIVESTOCK_PATTERN_BONUSES = [0, 70, 175, 315];
-      function sellValueFor(genotype, kind = 'uumkaoii') {
-        if (DUAL_REGION_GENOTYPE_KINDS.has(kind) || (!LIVESTOCK_PATTERN_DEFS[kind] && genotype?.fur)) {
-          const fur = genotype?.fur, plates = genotype?.plates;
-          if (!fur?.color || !plates?.color) {
-            return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
-          }
-          const contrast = _furColorContrastScore(fur.color, plates.color);
-          const contrastBonus = Math.round(contrast.score * 1.8); // (.9 + .45 × 2 fixed patterns), per the HTML formula
-          const amount = LIVESTOCK_SELL_RULES.baseValue + LIVESTOCK_SELL_RULES.uumPatternBonus + contrastBonus;
-          return {
-            amount, contrastScore: contrast.score, contrastBonus,
-            tier: sellTierFor(amount),
-            comparison: `${_furPaletteName(fur.color)} fur vs. ${_furPaletteName(plates.color)} plates`,
-          };
-        }
-        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
-        if (!patterns) return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: 'Plain specimen' };
-        const baseColor = genotype?.base?.color;
-        const enabledIds = patterns.filter(id => genotype?.[id]?.enabled && genotype[id]?.copies > 0);
-        if (!baseColor || !enabledIds.length) {
-          return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: baseColor ? `Plain ${_furPaletteName(baseColor)} coat` : 'Plain specimen' };
-        }
-        const patternColor = genotype[enabledIds[0]].color;
-        const contrast = _furColorContrastScore(baseColor, patternColor);
-        const contrastBonus = Math.round(contrast.score * (0.9 + 0.45 * enabledIds.length));
-        const patternBonus = LIVESTOCK_PATTERN_BONUSES[Math.min(enabledIds.length, LIVESTOCK_PATTERN_BONUSES.length - 1)];
-        const amount = LIVESTOCK_SELL_RULES.baseValue + patternBonus + contrastBonus;
-        return {
-          amount, contrastScore: contrast.score, contrastBonus,
-          tier: sellTierFor(amount),
-          comparison: `${_furPaletteName(baseColor)} coat with ${enabledIds.length} pattern${enabledIds.length === 1 ? '' : 's'} in ${_furPaletteName(patternColor)}`,
-        };
-      }
-
-      // Breeding — the HTML's two offspring paths generalized: Uumkao'ii's
-      // permanent dual-region blend (unchanged), and a Mendelian pattern-
-      // layer path for gar-wolf/dabinggi-hound (each parent contributes 0-1
-      // allele per pattern based on its own copies/2 odds; dominant/
-      // recessive/codominant expression + a flat de-novo mutation chance —
-      // same math as the lab's generateOffspring()).
-      const LIVESTOCK_MUTATION_CHANCE = 0.05;
-      function _livestockAlleleContribution(layer) {
-        const copies = clamp(Number(layer?.copies) || 0, 0, 2);
-        return Math.random() < copies / 2 ? { color: layer.color } : null;
-      }
-      function crossOffspring(genotypeA, genotypeB, kind = 'uumkaoii') {
-        if (DUAL_REGION_GENOTYPE_KINDS.has(kind)) {
-          const child = {};
-          for (const layerId of ['fur', 'plates']) {
-            const la = genotypeA?.[layerId] || { color: randomFurColor(kind) };
-            const lb = genotypeB?.[layerId] || { color: randomFurColor(kind) };
-            let color = blendFurHex(la.color, lb.color, kind);
-            if (Math.random() < LIVESTOCK_MUTATION_CHANCE) color = mutateFurColor(color, kind);
-            child[layerId] = { color, copies: 2, inheritance: 'dominant' };
-          }
-          child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
-          return child;
-        }
-        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
-        if (!patterns) return makeDefaultGenotype(kind);
-        const child = {};
-        const baseA = genotypeA?.base || { color: randomFurColor(kind) }, baseB = genotypeB?.base || { color: randomFurColor(kind) };
-        let baseColor = blendFurHex(baseA.color, baseB.color, kind);
-        if (Math.random() < LIVESTOCK_MUTATION_CHANCE) baseColor = mutateFurColor(baseColor, kind);
-        child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
-        for (const id of patterns) {
-          const la = genotypeA?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
-          const lb = genotypeB?.[id] || { copies: 0, color: randomFurColor(kind), inheritance: 'dominant' };
-          const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
-          let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
-          if (copies === 0 && Math.random() < LIVESTOCK_MUTATION_CHANCE) { copies = 1; mutated = true; }
-          const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
-          const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
-          let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomFurColor(kind));
-          if (mutated) color = mutateFurColor(color, kind);
-          child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
-        }
-        child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind);
-        const childEnabledIds = patterns.filter(id => child[id].enabled);
-        window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledIds.join(',') || 'none'}]`, 'wildlife');
-        return child;
-      }
+      // Livestock genetics & breeding (fur-color math, pattern layers,
+      // Size inheritance, sell-value scoring, crossOffspring) now live in
+      // js/creature-genetics.js (window.CreatureGenetics) -- see
+      // window.CreatureGenetics.init(...) below for the wiring.
 
       // ── Animal system ─────────────────────────────────────────────
       function canSpawnAnimalAt(col, row) {
@@ -4327,7 +3971,7 @@
         const kind = LIVESTOCK_ITEM_KINDS[itemKey];
         if (!kind) return { ok: false, message: 'That item cannot be added to the farm.' };
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: 'None of that item in bag.' };
-        const genotype = _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind);
+        const genotype = _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind);
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
         // Livestock belongs to the world, not this character — persisted
@@ -4337,12 +3981,12 @@
         const id = 'livestock_' + Math.random().toString(36).slice(2, 10);
         livestock.push({
           id, kind, barnId: null, releasedAt: Date.now(),
-          name: defaultLivestockName(kind), genotype,
+          name: window.CreatureGenetics.defaultLivestockName(kind), genotype,
           daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
           ...(kind === 'uumkaoii' ? { dewColor: UUMKAOII_DEFAULT_DEW_COLOR, dewDaysUntil: UUMKAOII_DEW_COOLDOWN_DAYS, dewReady: false } : {}),
         });
         _saveWorldLivestock(livestock);
-        return { ok: true, message: `🦆 ${defaultLivestockName(kind)} is waiting in stasis — assign it to a barn from the Farm tab to bring it out.` };
+        return { ok: true, message: `🦆 ${window.CreatureGenetics.defaultLivestockName(kind)} is waiting in stasis — assign it to a barn from the Farm tab to bring it out.` };
       }
 
       // Assigns unhoused (or re-homes already-housed) livestock to a built
@@ -4769,7 +4413,7 @@
         clampInventoryStack(itemKey);
         const entry = {
           id: 'stable_' + Math.random().toString(36).slice(2, 10),
-          kind, name: defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || makeDefaultGenotype(kind),
+          kind, name: window.CreatureGenetics.defaultLivestockName(kind), genotype: _consumeLivestockItemGenotype(itemKey) || window.CreatureGenetics.makeDefaultGenotype(kind),
           aiType: companionAiTypeForKind(kind), level: 0, stabledAt: Date.now(),
         };
         stable.push(entry);
@@ -4855,16 +4499,16 @@
           changed = true;
           if (!parentA || !parentB) continue; // a parent was sold/removed/stable-emptied — pair quietly lapses
           const kind = parentA.kind;
-          const childGenotype = crossOffspring(parentA.genotype, parentB.genotype, kind);
+          const childGenotype = window.CreatureGenetics.crossOffspring(parentA.genotype, parentB.genotype, kind);
           // Newborns start in stasis just like a freshly-released crate
           // animal — the owner assigns them to a barn from the Farm tab
           // when there's room, same as any other unhoused livestock.
           livestock.push({
             id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, releasedAt: Date.now(),
-            name: defaultLivestockName(kind), genotype: childGenotype,
+            name: window.CreatureGenetics.defaultLivestockName(kind), genotype: childGenotype,
             daysUntilResource: LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
           });
-          showToast(`🐣 A new ${defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
+          showToast(`🐣 A new ${window.CreatureGenetics.defaultLivestockName(kind)} was born! It's waiting in stasis until you assign it to a barn.`, true);
         }
         if (changed) {
           _saveWorldLivestock(livestock);
@@ -5103,7 +4747,7 @@
           }
         }
         if (opts.genotype) {
-          const genotypeKind = GENOTYPE_SPECIES_ALIAS[creatureKey] || creatureKey;
+          const genotypeKind = window.CreatureGenetics.SPECIES_ALIAS[creatureKey] || creatureKey;
           const supported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
           window.__farmLog?.(`[genotype-render] makeCreatureEntity(${creatureKey}): genotype attached, genotypeKind="${genotypeKind}", ${supported ? 'SUPPORTED by CreatureGeneticsRender.SPECIES — should recolor' : 'NOT in CreatureGeneticsRender.SPECIES — will stay on its plain default sprite, this is expected for this species'}`, 'wildlife');
         }
@@ -5403,7 +5047,7 @@
           weekdays: currentWeekdayName(),
           seasons: currentSeason().name,
           weather: calendar.weather,
-          timesOfDay: fishingTimeOfDay(),
+          timesOfDay: window.Fishing.timeOfDay(),
           maps: currentArea,
           playerSpecies: _playerData?.appearance?.speciesId || '',
         };
@@ -5462,7 +5106,7 @@
         // a guaranteed drop of everything they were wearing. Same
         // getButtons()/onAction() shape, so getCorpseObjectAt below and the
         // action bar are unaware of the difference.
-        if (c.isBandit) return makeBanditCorpseWorldObject(c);
+        if (c.isBandit) return window.BanditCamps.makeCorpseWorldObject(c);
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
@@ -5520,9 +5164,9 @@
         const t = performance.now() / 1000;
         if (t - (c._banditLastCounterAt || -99) >= BANDIT_COUNTER_COOLDOWN_S) {
           c._banditLastCounterAt = t;
-          fireBanditCounterRiposte(c, c.def, targetPlayer);
+          window.BanditCombat.fireCounterRiposte(c, c.def, targetPlayer);
         }
-        return amount * (1 - BANDIT_GUARD_DAMAGE_ABSORB);
+        return amount * (1 - window.BanditCombat.GUARD_DAMAGE_ABSORB);
       }
 
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
@@ -5569,7 +5213,7 @@
         // ability can be active at a time, so this is a single settable slot.
         if (window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
         _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
-        _banditTentHoldT = 0; // ...and a bandit-tent loot/burn, same reasoning
+        window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
         if (player.health > 0) {
@@ -5974,11 +5618,11 @@
         // it was actually THIS creature's THIS frame that became ready.
         // gar-wolf-alpha/gar-wolf-den-mother are separate CREATURE_DB
         // entries (different stats) but share the plain gar-wolf's sprite
-        // files and pattern assets — GENOTYPE_SPECIES_ALIAS maps them back
+        // files and pattern assets — window.CreatureGenetics.SPECIES_ALIAS maps them back
         // to the "gar-wolf" key CreatureGeneticsRender.SPECIES actually
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
-        const genotypeKind = c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        const genotypeKind = c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
@@ -6308,7 +5952,7 @@
               // see updateBanditCombatAI, defined with the rest of the
               // Bandit Gangs section) instead of the plain bite-telegraph/
               // behaviorStage machinery below, which stays wildlife-only.
-              const result = updateBanditCombatAI(c, dt, targetPlayer, distToPlayer);
+              const result = window.BanditCombat.updateCombatAI(c, dt, targetPlayer, distToPlayer);
               aimAngle = result.aimAngle;
               moving = result.moving;
             } else if (c.retreatT > 0) {
@@ -6493,7 +6137,7 @@
           // same frame, since it always hard-sets grp.rotation.y from
           // c.groupRot. Also lets feetY read this frame's fresh avatar Y
           // position instead of last frame's.
-          if (c.isBandit) { updateBanditToolMesh(c); updateBanditTrailArc(c, dt); }
+          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
           // A modular attack in its leap stage owns the sprite frame (locked
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
@@ -7440,7 +7084,7 @@
       function getJubmirStock() {
         let stock = _loadJubmirStock();
         if (!stock || stock.day !== calendar.day) {
-          stock = { day: calendar.day, genotype: makeDefaultGenotype(_jubmirEggEntry().givesGenotype), purchased: false };
+          stock = { day: calendar.day, genotype: window.CreatureGenetics.makeDefaultGenotype(_jubmirEggEntry().givesGenotype), purchased: false };
           _saveJubmirStock(stock);
         }
         return stock;
@@ -7939,132 +7583,9 @@
         return { ok: true, message: 'Task turned in.' };
       }
 
-      // ── Bounty board: hunt a named bandit captain, destroy his camp ────
-      //
-      // A bounty rides the same questProgress/setQuestStatus scaffold as a
-      // board/favor task (kind: 'bounty' instead of 'board'/'favor'), so it
-      // needs no new save fields either -- questProgress is already part of
-      // saveMemberWorldData()'s persisted blob, which is what makes a
-      // bounty survive a reload despite bandit camps themselves being
-      // deliberately session-only (see the big comment above
-      // _banditCampInstances). Shape: { kind:'bounty', captainName,
-      // zoneId, tier, rewardGold, postedDay }. Status: 'posted' (on the
-      // board) -> 'available' (accepted, tracked on the map) -> 'completed'
-      // (that captain's camp confirmed destroyed -- paid out automatically,
-      // no turn-in NPC needed, unlike board/favor tasks).
-      const BOUNTY_RANK_LABELS = ['Petty', 'Notorious', 'Ruthless', 'Infamous'];
-      const BOUNTY_REWARD_GOLD_BY_TIER = [80, 160, 280, 450];
-
-      function _zoneHasAnyBounty(zoneId) {
-        return Object.values(questProgress).some(st =>
-          st.progress?.kind === 'bounty' && st.progress.zoneId === zoneId
-          && (st.status === 'posted' || st.status === 'available'));
-      }
-      // The live, accepted bounty (if any) targeting this zone -- used by
-      // spawnBanditCamp to decide whether a freshly-generated camp there
-      // needs its tier/captain forced to match a promise already posted.
-      function _activeBountyForZone(zoneId) {
-        for (const [id, st] of Object.entries(questProgress)) {
-          if (st.progress?.kind === 'bounty' && st.progress.zoneId === zoneId && st.status === 'available') {
-            return { id, ...st.progress };
-          }
-        }
-        return null;
-      }
-      function hasActiveBounty() {
-        return Object.values(questProgress).some(st => st.progress?.kind === 'bounty' && (st.status === 'posted' || st.status === 'available'));
-      }
-      function getCurrentBountyPosting() {
-        const entries = Object.entries(questProgress).filter(([, st]) => st.progress?.kind === 'bounty' && st.status === 'posted');
-        entries.sort((a, b) => (b[1].progress.postedDay || 0) - (a[1].progress.postedDay || 0));
-        return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
-      }
-      // Rolls a new wanted poster only when there's genuinely none up right
-      // now (posted-but-unclaimed or accepted-but-unresolved both count) --
-      // unlike the daily board notice, a bounty isn't superseded just
-      // because a day passed; a captain stays wanted until someone claims
-      // the poster or brings the camp down.
-      function maybeRefreshBountyPosting() {
-        if (hasActiveBounty()) return;
-        generateBountyTask();
-      }
-      // Prefers naming a captain who already has a real, live camp
-      // somewhere the player's already generated (adopting a real identity
-      // outright, no future generation needs steering at all). Only when
-      // NO zone currently has a live captain-led camp does it fall back to
-      // rolling a fresh identity and pinning it for whichever zone gets
-      // that camp generated next (see spawnBanditCamp's bountyPin check).
-      function generateBountyTask() {
-        const liveCandidates = [];
-        for (const [zoneId, recs] of _banditCampInstances) {
-          if (_zoneHasAnyBounty(zoneId)) continue;
-          for (const rec of recs) {
-            if (rec.captainName && !isBanditCampCleared(rec)) liveCandidates.push({ zoneId, tier: rec.tier, captainName: rec.captainName });
-          }
-        }
-        let target;
-        if (liveCandidates.length) {
-          target = liveCandidates[Math.floor(Math.random() * liveCandidates.length)];
-        } else {
-          const zoneIds = Object.keys(WMAP_ZONE_LABELS).filter(z => !_zoneHasAnyBounty(z));
-          if (!zoneIds.length) return null;
-          const zoneId = zoneIds[Math.floor(Math.random() * zoneIds.length)];
-          target = { zoneId, tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length), captainName: _banditName('captain') };
-        }
-        const id = _makeTaskId();
-        const task = {
-          kind: 'bounty', captainName: target.captainName, zoneId: target.zoneId, tier: target.tier,
-          rewardGold: BOUNTY_REWARD_GOLD_BY_TIER[target.tier], postedDay: calendar.day,
-        };
-        setQuestStatus(id, 'posted', task);
-        return { id, ...task };
-      }
-      function takeBountyTask(taskId) {
-        const st = questProgress[taskId];
-        if (!st || st.status !== 'posted' || st.progress?.kind !== 'bounty') return { ok: false, message: 'That bounty is no longer available.' };
-        setQuestStatus(taskId, 'available', {});
-        showToast(`🎯 Bounty accepted — hunt down ${st.progress.captainName} and destroy their camp.`, true);
-        updateBountyTracking(); // populate the map marker right away if that camp's already known
-        return { ok: true, message: 'Bounty added to your log.' };
-      }
-      // key: bounty taskId -> { zoneId, col, row, label } for the map/
-      // minimap marker (see _drawWildernessMapOnCanvas's matching loop).
-      const _bountyMarkers = new Map();
-      // Zone-independent on purpose (unlike updateBanditCampBanners, which
-      // only runs in the player's CURRENT zone) -- the bountied camp can be
-      // anywhere, and isBanditCampCleared/rec lookups are already safely
-      // zone-scoped internally (a zone with no cached view just reads as
-      // "not cleared yet," never a false completion), so this can run
-      // regardless of where the player currently is.
-      const BOUNTY_TRACKING_CHECK_INTERVAL_S = 1;
-      let _bountyTrackingAccum = 0;
-      function updateBountyTracking(dt) {
-        if (dt != null) {
-          _bountyTrackingAccum += dt;
-          if (_bountyTrackingAccum < BOUNTY_TRACKING_CHECK_INTERVAL_S) return;
-          _bountyTrackingAccum = 0;
-        }
-        for (const [id, st] of Object.entries(questProgress)) {
-          if (st.progress?.kind !== 'bounty') continue;
-          if (st.status !== 'available') { _bountyMarkers.delete(id); continue; }
-          const bounty = st.progress;
-          const rec = (_banditCampInstances.get(bounty.zoneId) || []).find(r => r.captainName === bounty.captainName);
-          if (!rec) continue; // camp not generated/found yet -- no marker until then
-          if (isBanditCampCleared(rec)) {
-            setQuestStatus(id, 'completed', {});
-            inventory.gold = (inventory.gold || 0) + bounty.rewardGold;
-            showToast(`🎯 Bounty complete! ${bounty.captainName}'s camp is destroyed. +${bounty.rewardGold}g`, true);
-            _bountyMarkers.delete(id);
-            continue;
-          }
-          _bountyMarkers.set(id, {
-            zoneId: bounty.zoneId,
-            col: rec.instance.site.x + rec.instance.site.w / 2,
-            row: rec.instance.site.y + rec.instance.site.h / 2,
-            label: bounty.captainName,
-          });
-        }
-      }
+      // Bounty board (hunt a named bandit captain, destroy his camp) now
+      // lives in js/bounty-board.js (window.BountyBoard) -- see
+      // window.BountyBoard.init(...) below for the wiring.
 
       let _tothalShiftInFlight = false;
       // Set while a shift is running so enterZone() can wait for it instead
@@ -8113,8 +7634,8 @@
           // them before it can stamp a camp. Bandit camps are NOT part of this
           // shift's stamping pass — they're temporary locales placed at runtime
           // against the finished zone (see ensureCurrentZoneBanditCamps).
-          loadBanditGangConfig();
-          loadBanditCampLocaleDefs();
+          window.BanditCombat?.loadGangConfig();
+          window.BanditCombat?.loadCampLocaleDefs();
           let remainingLocales = localeDefs.slice();
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
@@ -8277,7 +7798,7 @@
             // respawn bookkeeping from the previous layout's den ids (see
             // ensureZoneDenPacks/spawnPackAtDen).
             forgetZoneDenState(zoneId);
-            forgetZoneBanditState(zoneId);
+            window.BanditCamps.forgetZoneState(zoneId);
             // Entering from town has no authored spawn coordinate of its own
             // (see EXTERIOR_ZONES' comment) — it always falls back to
             // zdef.entryCol/Row, so keep that pinned to this shift's own entry gate.
@@ -8539,7 +8060,7 @@
         // point of interest. Disappears the moment the threat is actually
         // cleared, at which point it's pruned from _perceivedThreats itself.
         const threatMarkerR = Math.max(4, markerR * 1.2);
-        for (const info of _perceivedThreats.values()) {
+        for (const info of window.BanditCamps.perceivedThreats.values()) {
           if (info.zoneId !== zoneId) continue;
           const mx = info.col * scaleX, my = info.row * scaleY;
           ctx.beginPath();
@@ -8559,7 +8080,7 @@
         // camp is confirmed destroyed, at which point the bounty completes
         // and this is pruned from _bountyMarkers itself.
         const bountyMarkerR = Math.max(4, markerR * 1.25);
-        for (const info of _bountyMarkers.values()) {
+        for (const info of window.BountyBoard.markers.values()) {
           if (info.zoneId !== zoneId) continue;
           const mx = info.col * scaleX, my = info.row * scaleY;
           ctx.beginPath();
@@ -8750,7 +8271,7 @@
         getGenotypeTexCacheSize: () => _genotypeTexCache.front.size,
         getGenotypeTexCacheKeys: () => [..._genotypeTexCache.front.keys()],
         debugGetGenotypeTextures: (kind, frame, genotype) => !!_getGenotypeTextures(kind, frame, genotype),
-        makeDefaultGenotype: (kind) => makeDefaultGenotype(kind),
+        makeDefaultGenotype: (kind) => window.CreatureGenetics.makeDefaultGenotype(kind),
         makeCreatureEntity: (key, x, y, opts) => makeCreatureEntity(key, x, y, opts),
         getGenotypeReadyFrames: (c) => c._genotypeReadyFrames ? [...c._genotypeReadyFrames] : [],
       };
@@ -8916,7 +8437,7 @@
       // gar-wolf/gar-wolf-alpha/gar-wolf-den-mother all share one gar-wolf-
       // shaped genotype (base+pattern layers), uumkaoii-wild/uumkaoii-wild-
       // den-mother share a uumkaoii-shaped one (fur+plates). Derived from
-      // GENOTYPE_SPECIES_ALIAS + CreatureGeneticsRender.SPECIES — the exact
+      // window.CreatureGenetics.SPECIES_ALIAS + CreatureGeneticsRender.SPECIES — the exact
       // same "which real species does this variant's genotype render
       // against" resolution updateCreatureAnimFrame/spawnDevArenaCreature
       // already do — rather than a second, separate hardcoded name-prefix
@@ -8924,7 +8445,7 @@
       // recognize any future species until someone remembers to add its
       // prefix here too. Returns null for any species with no gene system.
       function _denGenotypeFamily(kind) {
-        const resolved = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+        const resolved = window.CreatureGenetics.SPECIES_ALIAS[kind] || kind;
         return window.CreatureGeneticsRender?.SPECIES?.[resolved] ? resolved : null;
       }
       // (cavernMapId, family) -> shared genotype — one roll per den PER
@@ -8943,7 +8464,7 @@
       function getOrMakeDenGenotype(cavernMapId, family) {
         const key = `${cavernMapId}|${family}`;
         if (!_denGenotypes.has(key)) {
-          _denGenotypes.set(key, makeDefaultGenotype(family));
+          _denGenotypes.set(key, window.CreatureGenetics.makeDefaultGenotype(family));
           window.__farmLog?.(`[genotype] rolled new ${family} family genotype for den ${cavernMapId} (cache size now ${_denGenotypes.size})`, 'wildlife');
         } else {
           window.__farmLog?.(`[genotype] reused cached ${family} family genotype for den ${cavernMapId}`, 'wildlife');
@@ -9089,7 +8610,7 @@
         denCheckTimer = DEN_CHECK_INTERVAL_S;
         if (!buildZoneScene(currentArea)) return;
         ensureCurrentZoneDenPacks();
-        ensureCurrentZoneBanditCamps();
+        window.BanditCamps.ensureCurrentZoneCamps();
         if (_zoneEntryAnimalLogPending === currentArea) {
           _zoneEntryAnimalLogPending = null;
           let alive = 0;
@@ -9099,2520 +8620,15 @@
       }
 
 
-      // ── Bandit Gangs ──────────────────────────────────────────────────
-      //
-      // A bandit camp is a `placement.mode: "temporary"` locale (see
-      // docs/js/temporary-locales.js) stamped into an ALREADY-generated
-      // wilderness zone at runtime, plus a gang of hostiles spawned around
-      // it. Bandits deliberately reuse the entire animal-hostile pipeline
-      // (hostileObjects -> updateHostiles -> damageCreature ->
-      // beginCreatureDeath -> updateCorpses -> makeCorpseWorldObject) by
-      // being shaped exactly like a makeCreatureEntity() result. Only two
-      // things differ: the avatar is a per-instance composed NPC portrait
-      // (species + clothing + dyes) rather than a species sprite sheet, and
-      // the corpse hands over everything the bandit was wearing on top of
-      // its rolled loot table. All tuning lives in
-      // docs/config/bandits/bandit-gang-config.json.
-
-      let _banditConfigPromise = null;
-      function loadBanditGangConfig() {
-        if (_banditConfigPromise) return _banditConfigPromise;
-        _banditConfigPromise = (async () => {
-          try {
-            const r = await fetch('config/bandits/bandit-gang-config.json');
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return await r.json();
-          } catch (e) {
-            debugLog('Bandits: gang config load failed: ' + e.message, 'warn');
-            return null;
-          }
-        })();
-        return _banditConfigPromise;
-      }
-
-      let _banditLocaleDefsPromise = null;
-      function loadBanditCampLocaleDefs() {
-        if (_banditLocaleDefsPromise) return _banditLocaleDefsPromise;
-        _banditLocaleDefsPromise = (async () => {
-          // Local override — see the matching comment in
-          // loadStampableLocaleDefs above.
-          if (window.LocalDBOverrides?.getSourceMode() === 'local') {
-            const override = window.LocalDBOverrides.getOverride('locales');
-            if (override?.locales) {
-              return override.locales.filter(e => e.category === 'bandit_camp');
-            }
-          }
-          try {
-            const idxRes = await fetch('config/locales/index.json');
-            if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
-            const idx = await idxRes.json();
-            const defs = [];
-            for (const entry of (idx.locales || []).filter(e => e.category === 'bandit_camp')) {
-              try {
-                const r = await fetch(entry.file);
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                defs.push(await r.json());
-              } catch (e) { debugLog(`Bandits: camp locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
-            }
-            return defs;
-          } catch (e) {
-            debugLog('Bandits: locale index load failed: ' + e.message, 'warn');
-            return [];
-          }
-        })();
-        return _banditLocaleDefsPromise;
-      }
-
-      const _banditSpeciesDefPromises = new Map();
-      function loadBanditSpeciesDef(speciesId) {
-        if (_banditSpeciesDefPromises.has(speciesId)) return _banditSpeciesDefPromises.get(speciesId);
-        const p = (async () => {
-          try {
-            const r = await fetch(`config/species/${speciesId}.json`);
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return await r.json();
-          } catch (e) {
-            debugLog(`Bandits: species def load failed for ${speciesId}: ${e.message}`, 'warn');
-            return null;
-          }
-        })();
-        _banditSpeciesDefPromises.set(speciesId, p);
-        return p;
-      }
-
-      // ── Roster generation ─────────────────────────────────────────────
-
-      // appliedDyes is keyed by the *tint* slot a cosmetic resolves to, not by
-      // its wardrobe slot -- see portrait-utils.js's resolvedTintSlot ladder.
-      // Every item in bandit-gang-config.json's clothingPool resolves purely
-      // from its own `slot` under that ladder (torso with no colorRange but an
-      // explicit tintSlot -> TORSO; hat with a colorRange -> HAT; overwear with
-      // a colorRange and no `appearance` block -> CLOTH), which is why this is a
-      // flat slot->tintSlot map instead of a per-item JSON fetch. Confirmed
-      // against the appliedDyes samples in config/npcs/hobunji-starter-npc-database.json.
-      const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD' };
-
-      const BANDIT_NAME_PARTS = {
-        first: ['Nakku', 'Tobri', 'Hesk', 'Vurra', 'Ommi', 'Dagat', 'Renji', 'Sulko', 'Pahru', 'Marek', 'Iggo', 'Yavra'],
-        last: ['Ashjaw', 'Coldhand', 'Rustnail', 'Grinner', 'Sixteeth', 'Mudfoot', 'Blackrope', 'Splitlip', 'Farcry', 'Kettle'],
-      };
-      function _banditName(rank) {
-        const first = BANDIT_NAME_PARTS.first[Math.floor(rnd() * BANDIT_NAME_PARTS.first.length)];
-        const last = BANDIT_NAME_PARTS.last[Math.floor(rnd() * BANDIT_NAME_PARTS.last.length)];
-        return rank === 'captain' ? `${first} ${last}` : first;
-      }
-
-      function _banditWeightedPick(weights) {
-        const entries = Object.entries(weights || {}).filter(([k, v]) => !k.startsWith('_') && Number(v) > 0);
-        if (!entries.length) return null;
-        const total = entries.reduce((a, [, v]) => a + Number(v), 0);
-        let r = rnd() * total;
-        for (const [key, v] of entries) { r -= Number(v); if (r <= 0) return key; }
-        return entries[entries.length - 1][0];
-      }
-
-      // Species cosmeticWeights are keyed by wardrobe slot then by the item's
-      // BARE base name (`basic_headband`, not `appearance::hat::basic_headband`),
-      // and several whitelisted items (bandolier1/tankan_tunic) have no weights
-      // entry at all -- so allowedCosmetics is the authority on what a species
-      // may wear and cosmeticWeights only biases the pick when it happens to
-      // list the item.
-      function _banditClothingCandidates(speciesDef, gender, slot, poolIds, exclusiveIds) {
-        const genderData = speciesDef?.[gender] || speciesDef?.male || null;
-        const allowed = new Set(genderData?.allowedCosmetics || []);
-        const exclusive = new Set(exclusiveIds || []);
-        const weights = genderData?.cosmeticWeights?.[slot] || null;
-        const out = {};
-        for (const id of (poolIds || [])) {
-          if (!allowed.has(id) && !exclusive.has(id)) continue;
-          const bare = id.split('::').pop();
-          out[id] = Number(weights?.[bare]) > 0 ? Number(weights[bare]) : 1;
-        }
-        return out;
-      }
-
-      function _banditRollDyeId(cfg) {
-        const variants = cfg?.clothingPool?.dyeVariantPool || [];
-        const hues = cfg?.clothingPool?.dyeHueFamilyPool || [];
-        if (!variants.length || !hues.length) return null;
-        const variant = variants[Math.floor(rnd() * variants.length)];
-        const hue = hues[Math.floor(rnd() * hues.length)];
-        return `dye:CLOTH:${variant}_${hue}`;
-      }
-
-      // Produces exactly the record shape makeNpcWalker feeds into
-      // NpcAvatarPreview.buildProfileFromNpcExport, plus a `cosmeticSlots`
-      // side table the corpse-loot step reads to rebuild each worn item as a
-      // packClothing entry without re-deriving its slot.
-      async function rollBanditRoster(cfg, rank, nameOverride) {
-        const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
-        const gender = rnd() < 0.5 ? 'male' : 'female';
-        const speciesDef = await loadBanditSpeciesDef(speciesId);
-        const slots = cfg?.clothingPool?.slots || [];
-        const fillP = Number(cfg?.clothingPool?.fillProbabilityByRank?.[rank] ?? 0.5);
-        const equippedCosmetics = [];
-        const cosmeticSlots = {};
-        const appliedDyes = {};
-        const candidatesBySlot = {};
-        for (const slot of slots) {
-          candidatesBySlot[slot] = _banditClothingCandidates(
-            speciesDef, gender, slot, cfg?.clothingPool?.itemsBySlot?.[slot], cfg?.clothingPool?.banditExclusiveIds);
-        }
-        const fillSlot = (slot) => {
-          const id = _banditWeightedPick(candidatesBySlot[slot]);
-          if (!id || equippedCosmetics.includes(id)) return false;
-          equippedCosmetics.push(id);
-          cosmeticSlots[id] = slot;
-          const tintSlot = BANDIT_TINT_SLOT_BY_SLOT[slot];
-          const dyeId = _banditRollDyeId(cfg);
-          if (tintSlot && dyeId) appliedDyes[tintSlot] = dyeId;
-          return true;
-        };
-        for (const slot of slots) { if (rnd() < fillP) fillSlot(slot); }
-        // See the config's _fillComment -- nobody walks around in nothing, so
-        // an all-empty roll force-fills one slot the species can actually wear.
-        if (!equippedCosmetics.length) {
-          const wearable = slots.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
-          if (wearable.length) fillSlot(wearable[Math.floor(rnd() * wearable.length)]);
-        }
-        // Head covering is never left to chance: every bandit wears a fine_hood,
-        // a facewrap, or a headband. The independent per-slot rolls above already
-        // land one most of the time -- this only force-fills hat or hood when
-        // both came up empty (or unwearable) for this species/gender.
-        const HEAD_SLOTS = ['hat', 'hood'];
-        if (!HEAD_SLOTS.some(s => Object.values(cosmeticSlots).includes(s))) {
-          const headWearable = HEAD_SLOTS.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
-          if (headWearable.length) fillSlot(headWearable[Math.floor(rnd() * headWearable.length)]);
-        }
-        return {
-          // nameOverride pins a captain to a specific bounty's persisted
-          // identity (see _activeBountyForZone/spawnBanditCamp) instead of
-          // a fresh random roll -- unused for grunts/lieutenants, which are
-          // never a bounty target.
-          name: nameOverride || _banditName(rank),
-          appearance: { speciesId, gender, cosmetics: {} },
-          equippedCosmetics, appliedDyes, cosmeticSlots,
-        };
-      }
-
-      // ── Avatar ────────────────────────────────────────────────────────
-
-      async function buildBanditAvatar(roster) {
-        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return null;
-        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
-        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
-          name: roster.name,
-          appearance: roster.appearance,
-          equippedCosmetics: roster.equippedCosmetics,
-          appliedDyes: roster.appliedDyes,
-        });
-        if (!profile) return null;
-        const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
-        const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
-        const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
-        // forceEyesOpen for the same reason makeNpcWalker needs it: this bakes
-        // one static texture at spawn and never re-renders, so an unlucky
-        // blink roll would leave the bandit permanently squint-eyed.
-        const frontCanvas = document.createElement('canvas');
-        frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
-        const backCanvas = document.createElement('canvas');
-        backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
-        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
-
-        const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
-          THREE, frontCanvas,
-          {
-            backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
-            alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait',
-          },
-        );
-        const assembly = portrait.children[0];
-        const frontMesh = assembly?.children?.[0];
-        const backMesh = assembly?.children?.[1];
-        if (!frontMesh || !backMesh) return null;
-
-        // updateCreatureMesh, beginCreatureDeath and updateCorpses all assume
-        // the ANIMAL two-plane convention: the flat cutout's face-normal lies
-        // along the group's own local X at rest (frontPlane.rotation.y = +PI/2,
-        // backPlane = -PI/2), which is exactly what makes rotating the group
-        // +PI/2 about Z tip a corpse over to lie face-up. A portrait plane
-        // (createSinglePlaneAssembly) instead has its normal along +Z, with the
-        // front at rotation.y 0 and the back at PI. Rather than special-casing
-        // three shared functions, each portrait mesh gets its own pivot Group
-        // standing in as the "plane" those functions rotate, while the mesh
-        // keeps rotation.y 0 inside it -- the net normal then lands on the
-        // group's +X/-X exactly like an animal's, and the 180 degrees between
-        // the two pivots preserves the front/back texture relationship
-        // (buildTextureSet already UV-flips the rear canvas).
-        //
-        // The one thing this convention costs is a quarter turn of apparent
-        // facing, which makeBanditEntity pays back via def.aimAngleOffset (see
-        // updateCreatureMesh's rawTargetRotY) -- so a bandit still faces the
-        // way it walks, and cameraRelativeCreaturePerps' edge-on dead zones
-        // land on the correct angles for a front-facing sprite too.
-        assembly.remove(frontMesh);
-        assembly.remove(backMesh);
-        frontMesh.rotation.y = 0;
-        backMesh.rotation.y = 0;
-        frontMesh.position.z = 0;
-        backMesh.position.z = 0;
-        const group = new THREE.Group();
-        group.name = 'bandit_avatar_group';
-        const frontPivot = new THREE.Group(); frontPivot.name = 'bandit_front_plane';
-        const backPivot = new THREE.Group(); backPivot.name = 'bandit_back_plane';
-        frontPivot.add(frontMesh);
-        backPivot.add(backMesh);
-        // Keeps the portrait's own species/gender grounding offset (the
-        // assembly's y position inside the model root) now that the meshes no
-        // longer sit under it.
-        frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
-        group.add(frontPivot);
-        group.add(backPivot);
-
-        // Procedural feet, mirroring the NPC walker's own ProceduralLegAnimation.attach
-        // call (see makeNpcWalker) -- needs its own floor-anchored pivot rather than
-        // reusing `group` directly, since (unlike playerMesh/the walker's root) `group`
-        // here already IS the sprite's own transform, sitting at world Y = surfY +
-        // halfHeight (see makeBanditEntity), not at floor level. A child positioned at
-        // local Y = -halfHeight cancels that back out to true floor level -- attach()
-        // itself assumes its parent's local Y=0 is the floor (see its own comment).
-        const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
-        const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
-        const legsPivot = new THREE.Group();
-        legsPivot.name = 'bandit_legs_pivot';
-        legsPivot.position.y = -(modelHeight / 2);
-        group.add(legsPivot);
-        // legsPivot's rotation.y is kept in sync with the same pngRot-derived
-        // planeDelta the front/back planes use (see updateCreatureMesh), not
-        // group's own free-tracking groupRot -- so the legs share whichever
-        // dead-zone behavior currently governs the visible sprite (see
-        // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
-        // same clipping fix applied to the mounted-rider case.
-        const legs = window.ProceduralLegAnimation?.attach(THREE, legsPivot, {
-          speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
-          bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
-          modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
-          name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
-        }) || null;
-
-        return {
-          group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
-          modelWidth, modelHeight,
-          // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
-          // scans from the actual rendered portrait (png-plane-avatar.js's
-          // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
-          // refreshPlayerAvatar reads the same fields (game.js's
-          // playerToolBaseX/Y) instead of banditToolBaseXY's generic
-          // -width/2,height/2 fallback.
-          handAttachX: portrait.userData?.handAttachX,
-          handAttachY: portrait.userData?.handAttachY,
-          dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
-        };
-      }
-
-      // ── Combatant ─────────────────────────────────────────────────────
-
-      // Tier-0 CAPTAIN baseline; every other rank/tier is this scaled by
-      // statWeakenMultiplierByRank * (1 + tier * tierStatBonusPerTier). Sized
-      // against CREATURE_DB's own hostiles: a gar-wolf is 38 HP / 12 damage
-      // and an alpha 78 / 18, so a tier-0 captain (70 / 17) reads a shade
-      // under an alpha, and a tier-0 grunt (x0.55 -> ~39 HP / ~9 damage) is a
-      // gar-wolf's worth of health that hits noticeably softer -- a lightly
-      // armed thug, not a predator.
-      const BANDIT_BASE_MAX_HEALTH = 70;
-      // These 5 (plus CREATURE_DB's own per-species attack* fields) are
-      // overridden from docs/config/combat/attack-values.json's `bandit`
-      // section once it loads (see the window.__attackValuesConfigPromise
-      // chain below) — kept as `let` with their original values as the
-      // synchronous fallback default, same pattern as every combat-*.js
-      // module's applyXConfig.
-      let BANDIT_BASE_ATTACK_DAMAGE = 17;
-      let BANDIT_ATTACK_RANGE_TILES = 0.9;
-      let BANDIT_ATTACK_HALF_CONE_DEG = 44;
-      let BANDIT_ATTACK_STAMINA_COST = 12;
-      let BANDIT_ATTACK_COOLDOWN_S_CAPTAIN = 0.95;
-      let BANDIT_ATTACK_COOLDOWN_S_OTHER = 1.15;
-      const BANDIT_BASE_MAX_STAMINA = 46;
-      // Rolled mastery is plain data on the combatant (bandits have no
-      // gearInventory and never touch the player's tool-mastery XP system) --
-      // it only ever scales damage, at this much per level.
-      const BANDIT_MASTERY_DAMAGE_PER_LEVEL = 0.06;
-      const BANDIT_RANK_LABEL = { grunt: 'Bandit', lieutenant: 'Bandit Lieutenant', captain: 'Bandit Captain' };
-      // opportunistJab is excluded -- its bonus condition (target mid-strike-
-      // telegraph) has no equivalent on the player, who has no telegraphState.
-      const BANDIT_QUICK_ATTACK_IDS = ['exhaustCutter', 'backstabFlick', 'mercySpike'];
-
-      function banditMasteryFor(cfg, rank, tier) {
-        const base = Number(cfg?.masteryBaseByRank?.[rank] ?? 0);
-        return clamp(Math.round(base + tier), 0, 5);
-      }
-
-      // A bandit's actual held weapon -- see weaponMetalTierRangeByRank's
-      // _comment in bandit-gang-config.json. Reuses the player's own
-      // TOOL_SHAPE_DEFS/METAL_DEFS/craftedToolItemKey/metalDmgMultiplier
-      // rather than inventing a parallel weapon system, so a bandit's
-      // hatchet/fishing-mace/fishing-spear/pick-shovel renders with the
-      // exact same crafted-tool sprite+metal recolor the player's own gear
-      // uses (see refreshMetalToolWorldTexture).
-      // Only shapes that actually go in the weapon slot (see TOOL_SHAPE_DEFS
-      // -- hoe is 'hoe' slot only, no dmgType at all) can be rolled here.
-      // Recomputed fresh each call rather than cached at module load so a
-      // shape added to TOOL_SHAPE_DEFS later is picked up automatically.
-      function banditWeaponShapeKeys() {
-        return Object.keys(TOOL_SHAPE_DEFS).filter(k => TOOL_SHAPE_DEFS[k].slots?.includes('weapon'));
-      }
-      function banditWeaponFor(cfg, rank, tier) {
-        const shapeKeys = banditWeaponShapeKeys();
-        const shapeKey = shapeKeys[Math.floor(rnd() * shapeKeys.length)];
-        const shape = TOOL_SHAPE_DEFS[shapeKey];
-        const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
-        const bonusT = tier;
-        const loT = clamp(Math.round(minT), 1, 7), hiT = clamp(Math.round(maxT) + bonusT, loT, 7);
-        const tierPool = VERDIGRIS_METAL_KEYS.filter(k => METAL_DEFS[k].tier >= loT && METAL_DEFS[k].tier <= hiT);
-        const metalKey = (tierPool.length ? tierPool : VERDIGRIS_METAL_KEYS)[Math.floor(rnd() * (tierPool.length || VERDIGRIS_METAL_KEYS.length))];
-        const weaponKey = craftedToolItemKey(shapeKey, metalKey);
-        return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: metalDmgMultiplier(metalKey) };
-      }
-
-      // A bandit's real ability loadout -- tap1 (Combo) and tap2 (Quick
-      // Attack) are available to every rank (matching the player's own
-      // always-on tap slots), while hold1/hold2 are gated by
-      // heldAbilitiesByRank: only lieutenants/captains get hold1 (Charged
-      // Breaker), and only the captain also gets hold2 (Counter Shield).
-      // See updateBanditCombatAI for how these are actually executed
-      // (window.Combat.beginStagedAction + the real per-ability data tables
-      // exposed by combat-combo.js/combat-quickattacks.js/combat-charged-
-      // breaker.js/combat-counter-shield.js) -- this function only decides
-      // WHICH abilities a bandit carries, not how they run.
-      function banditAbilityLoadout(shapeKey, held) {
-        return {
-          tap1: TOOL_SHAPE_DEFS[shapeKey]?.animStyle === 'thrust' ? 'pokeCombo' : 'swingCombo',
-          tap2: BANDIT_QUICK_ATTACK_IDS[Math.floor(rnd() * BANDIT_QUICK_ATTACK_IDS.length)],
-          hold1: held >= 1 ? 'chargedBreaker' : null,
-          hold2: held >= 2 ? 'counterShield' : null,
-        };
-      }
-
-      function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
-        const weaken = Number(cfg?.statWeakenMultiplierByRank?.[rank] ?? 1);
-        const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
-        const statMul = weaken * tierMul;
-        const weapon = banditWeaponFor(cfg, rank, tier);
-        const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
-        const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
-        return {
-          label: BANDIT_RANK_LABEL[rank] || 'Bandit',
-          hostile: true, liveBirth: true,
-          maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
-          maxStamina: Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul)),
-          moveSpeed: 118 + tier * 4,
-          chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * 5,
-          attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
-          attackRangePx: TILE * BANDIT_ATTACK_RANGE_TILES,
-          attackHalfConeRad: BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180,
-          attackStaminaCost: BANDIT_ATTACK_STAMINA_COST,
-          attackCooldownS: rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER,
-          attackTag: weapon.dmgType,
-          weaponKey: weapon.weaponKey,
-          banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
-          aiType: 'vigilantProtector',
-          aggroRangePx: TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
-          leashRangePx: TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
-          canClimb: false, canSwim: false,
-          modelWidth, tint: 0xffffff,
-          // Quarter-turn correction for the portrait plane convention -- see
-          // buildBanditAvatar's long comment.
-          aimAngleOffset: Math.PI / 2,
-          lootPool: 'bandit_' + rank,
-        };
-      }
-
-      // ── Bandit ability AI ────────────────────────────────────────────
-      //
-      // Bandits attack through the SAME abilities the player has access to
-      // (real Combo/Quick Attack/Charged Breaker/Counter Shield numbers --
-      // see combat-combo.js/combat-quickattacks.js/combat-charged-
-      // breaker.js/combat-counter-shield.js's `window.Combat.*Data` read-only
-      // exports), not a bite-telegraph approximation. This is deliberately a
-      // PARALLEL executor rather than a shared one: the real ability modules
-      // are hardwired to the single player singleton (deps.player,
-      // window.Combat.deps.currentWeaponKey(), etc — see combat-core.js's
-      // own "every staged action in this pipeline is a player weapon-tool
-      // attack" comment), so reusing them for an NPC attacker would mean
-      // refactoring every one of those modules to take an attacker
-      // parameter -- real, working code with genuine risk of subtly
-      // changing how the player's own combat feels. What IS safely reusable
-      // is window.Combat.beginStagedAction (combat-core.js's generic
-      // windup/strike/recover timer, which takes no player-specific
-      // assumptions at all) and each ability's own numeric data tables,
-      // which is what this does. Per MULTIPLAYER.md's own analysis this
-      // isn't something multiplayer needs solved either way: multiplayer's
-      // model is one full client per player (each with its own independent
-      // copy of the singleton combat state), not one process simulating
-      // several attackers -- an NPC-vs-player fight is an orthogonal,
-      // single-client concern either way.
-      //
-      // Telegraphing: sets c.telegraphState ('windup'|'strike') exactly like
-      // combat-enemy-telegraph.js does, so updateCreatureMesh's existing
-      // tint code (amber windup / white strike) gives the player the same
-      // visible tell against a bandit as against a wolf, for free.
-
-      // Effectively no pause between the 3 combo steps -- next frame's
-      // attackCooldownT check (updateBanditCombatAI) passes immediately once
-      // the prior step's own onComplete fires, same as a player tapping the
-      // Combo button again the instant the last swing resolves.
-      const BANDIT_COMBO_CHAIN_GAP_S = 0.02;
-      const BANDIT_HOLD1_COOLDOWN_S = 5;
-      const BANDIT_HOLD1_CHANCE = 0.4; // chance to open a fresh engagement with Charged Breaker instead of the combo
-      const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // chance to use tap2 instead of continuing tap1 when a condition is favorable
-      const BANDIT_GUARD_WINDOW_S = 1.6;
-      const BANDIT_GUARD_COOLDOWN_S = 6;
-      const BANDIT_GUARD_DAMAGE_ABSORB = 0.7; // fraction of incoming damage blocked while a captain is guarding
-
-      // A bandit's post-attack "jump back" used to always play at the same
-      // full JUMP_BACK_DUR_S regardless of whether the attack that
-      // triggered it actually landed -- a combo where every step connected
-      // looked identical to a total whiff, both backing off by the same
-      // amount. Scales the retreat duration down the more of the attempt
-      // actually landed (successFrac: 0 = total whiff, 1 = every step/the
-      // one attack landed) -- a clean, fully-landed combo barely backs off
-      // at all, while a total whiff still gets the complete jump-back (it
-      // needs the space to reset and re-approach).
-      const BANDIT_RETREAT_MIN_SCALE = 0.3;
-      function banditRetreatDurationS(successFrac) {
-        return JUMP_BACK_DUR_S * (1 - (1 - BANDIT_RETREAT_MIN_SCALE) * clamp(successFrac, 0, 1));
-      }
-
-      // The bandit-side equivalent of combat-combo.js/combat-quickattacks.js/
-      // combat-charged-breaker.js's `deps.weaponAbility('cut')` base numbers
-      // every step/technique multiplies from -- except a bandit's own
-      // def.attackDamage/attackRangePx already carries its full rank/tier/
-      // mastery/weapon-metal scaling, so this IS the scaled baseline, not a
-      // flat constant every bandit shares.
-      function banditAttackBaseline(def) {
-        return { damage: def.attackDamage, rangePx: def.attackRangePx, knockbackPxS: HOSTILE_BITE_KNOCKBACK_PX_S };
-      }
-
-      // Mirrors combat-quickattacks.js's getConditions(), but for a bandit
-      // attacking the player instead of the player attacking a creature --
-      // "behind" is recomputed from the player's own facing (player.angle)
-      // since the real version reads target.facing (a creature-only field);
-      // "enemyStriking" has no equivalent (the player has no telegraphState)
-      // and always reads false, which is exactly why opportunistJab (the
-      // only technique keyed on it) is excluded from BANDIT_QUICK_ATTACK_IDS.
-      function banditQuickAttackConditions(c, targetPlayer) {
-        const dxBP = c.x - targetPlayer.x, dyBP = c.y - targetPlayer.y;
-        const distBP = Math.max(0.001, Math.hypot(dxBP, dyBP));
-        const forwardX = Math.cos(targetPlayer.angle || 0), forwardY = Math.sin(targetPlayer.angle || 0);
-        const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
-        return {
-          enemyStriking: false,
-          exhausted: !!targetPlayer.exhaustion?.active || targetPlayer.stamina <= targetPlayer.maxStamina * 0.20,
-          behind: behindDot < -0.35,
-          lowHealth: targetPlayer.health > 0 && targetPlayer.health <= targetPlayer.maxHealth * 0.30,
-        };
-      }
-
-      // The weapon's own natural at-rest swing style (sweep for hatchet/
-      // fishing-mace, thrust for the rest) -- used both at spawn and to
-      // reset back to after any ability that plays a DIFFERENT style
-      // finishes (see finishBanditAction below).
-      function banditNaturalSwing(def) {
-        const isSweep = TOOL_ITEM_DEFS[def.weaponKey]?.animStyle === 'sweep';
-        return { anim: isSweep ? 'sweep' : 'thrust', pose: isSweep ? window.Combat?.poses?.SWEEP_POSE : null };
-      }
-
-      // Ends the current staged action's telegraph tell and, if provided,
-      // runs extra bookkeeping (retreat, cooldowns) once it's actually done
-      // rather than the moment it's cancelled mid-flight.
-      function finishBanditAction(c) {
-        c._banditAction = null;
-        c.telegraphState = null;
-        // Quick Attack and Charged Breaker both hardcode their OWN anim/
-        // pose regardless of the equipped weapon ('thrust'/null and
-        // 'sweep'/SWEEP_POSE respectively -- see fireBanditQuickAttack/
-        // fireBanditChargedBreaker's own comments) and, unlike
-        // fireBanditComboStep, nothing ever set these back afterward --
-        // once ANY bandit used either ability even once, its idle-between-
-        // attacks stance got stuck showing that ability's style forever
-        // (regardless of its real weapon) until a combo step happened to
-        // fire and correct it by coincidence. Reset unconditionally here so
-        // "idle" always means the weapon's own natural rest stance, not
-        // whatever the last-fired ability happened to want.
-        const natural = banditNaturalSwing(c.def);
-        c._banditSwingAnim = natural.anim;
-        c._banditSwingPose = natural.pose;
-        c._banditSwingDirSign = 1;
-        c._banditSwingPower = 1;
-      }
-
-      // ── Bandit lunge ─────────────────────────────────────────────────
-      //
-      // Mirrors beginCombatLunge/updateMovement's player-only lunge block
-      // (game.js ~18958-19012) rather than reusing it directly (it writes
-      // straight to the single global `player` object throughout). Angle
-      // locks at fire time and never re-aims mid-flight -- Pounce's own
-      // leap (combat-animal-attacks.js) is the existing creature-side
-      // precedent for that choice ("nothing during windup/leap re-aims it,
-      // which is what makes the leap genuinely dodgeable"), so this skips
-      // the player lunge's mid-flight homing correction rather than
-      // reinventing it. tickCreatureLungeTrail (the ground-stamp trail) and
-      // tickCreatureFootsteps are already entity-generic -- called exactly
-      // the way pounceUpdate already calls them.
-      function beginBanditLunge(c, distancePx, durationS, hitTest, targetPlayer) {
-        if (durationS <= 0 || distancePx <= 0 || c._banditLunging) return;
-        // Cap the travel distance so an already-close bandit can't lunge
-        // straight past a stationary target -- distancePx above is a FIXED
-        // per-ability budget (e.g. Step Thrust's full tile*lungeMul) applied
-        // regardless of current range, and the ease-out curve below front-
-        // loads most of that travel very early, so at point-blank range the
-        // bandit shot clean through the target and ended up on the far
-        // side with c.facing now ~180 degrees off (confirmed live:
-        // diffDeg=180.0 on a Step Thrust that was already within rangePx).
-        // Never lunge past haltDist -- the same margin-inside-the-cone
-        // distance isPlayerInBanditLungeCone/updateBanditLunge already halt
-        // at -- so a close target simply skips the lunge (distancePx <= 0)
-        // instead of overshooting it.
-        if (targetPlayer && hitTest) {
-          const currentDist = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
-          const haltDist = hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN;
-          distancePx = Math.min(distancePx, Math.max(0, currentDist - haltDist));
-          if (distancePx <= 0) return;
-        }
-        c._banditLunging = true;
-        c._banditLungeT = durationS;
-        c._banditLungeDur = durationS;
-        c._banditLungeStartX = c.x;
-        c._banditLungeStartY = c.y;
-        c._banditLungeDirX = Math.cos(c.facing || 0);
-        c._banditLungeDirY = Math.sin(c.facing || 0);
-        c._banditLungeDistancePx = distancePx;
-        c._banditLungeHitTest = hitTest;
-      }
-
-      // Halts the lunge at a margin INSIDE the real hit-cone (see
-      // BANDIT_LUNGE_HALT_MARGIN), not right at its edge -- the actual
-      // damage hit-check (fireBandit*'s own onStrike) still uses the real,
-      // unshrunk rangePx/halfConeRad, so this margin only affects when the
-      // lunge itself stops moving, not what counts as a hit. Without it,
-      // the lunge halts the instant the player is barely inside the cone
-      // (zero cushion) and the hit-check doesn't actually fire until
-      // strikeS later, since the halt only ends the windup-phase movement
-      // early -- a real human player, unlike a hostile creature's target,
-      // routinely drifts during that gap, and with the real hit-cone now
-      // correctly sized (see banditEngagementReachPx's RANGE_SCALE fix,
-      // e.g. ~30px for a Forehand Swing) that's enough room to step back
-      // outside it before the hit-check ever runs, whiffing an attack that
-      // looked like it landed.
-      const BANDIT_LUNGE_HALT_MARGIN = 0.68;
-      function isPlayerInBanditLungeCone(c, hitTest, targetPlayer) {
-        if (!hitTest || targetPlayer.health <= 0) return false;
-        return inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, hitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN, hitTest.halfConeRad);
-      }
-
-      // Re-aim rate (rad/sec) for the lunge homing below -- same value and
-      // reasoning as the player's own lunge homing (game.js's
-      // LUNGE_HOMING_RATE in updateMovement).
-      const BANDIT_LUNGE_HOMING_RATE = 6;
-
-      // Returns true while a lunge is in flight (caller should skip its own
-      // normal movement/approach logic for the frame).
-      function updateBanditLunge(c, dt, targetPlayer) {
-        if (!c._banditLunging) return false;
-        if (isPlayerInBanditLungeCone(c, c._banditLungeHitTest, targetPlayer)) {
-          c._banditLunging = false;
-          return true;
-        }
-        // Re-aims c.facing toward the target's CURRENT position every
-        // frame, capped at BANDIT_LUNGE_HOMING_RATE -- mirrors the player's
-        // own lunge homing instead of Pounce's lock-at-fire-and-never-
-        // correct precedent this used to follow. Pounce's prey doesn't
-        // actively strafe against it; a human player does, and the swing's
-        // own hit-cone is narrow (13-42 degree half-angle) and was never
-        // re-checked against anything but the frozen fire-time angle, so
-        // even a moderate sidestep during the ~0.2-0.4s windup+strike
-        // window routinely carried the player clean outside the cone
-        // despite being well within range -- a systematic whiff source no
-        // amount of range-margin tuning (BANDIT_LUNGE_HALT_MARGIN) could
-        // fix, since that only ever widens the RANGE cushion, not the
-        // ANGULAR one. fireBandit*'s onStrike/spawnBanditTrailArc calls
-        // read c.facing live (not a fire-time-frozen local) so the eventual
-        // hit-check and the visual trail both land on wherever this homing
-        // actually ends up aiming.
-        if (targetPlayer.health > 0) {
-          const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-          c.facing += angleDiff(desiredFacing, c.facing) * Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
-          c._banditLungeDirX = Math.cos(c.facing);
-          c._banditLungeDirY = Math.sin(c.facing);
-        }
-        c._banditLungeT = Math.max(0, c._banditLungeT - dt);
-        const t = 1 - c._banditLungeT / c._banditLungeDur;
-        const eased = 1 - Math.pow(1 - t, 3);
-        const desiredX = c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
-        const desiredY = c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
-        const swept = sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
-        const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
-        c.x = swept.x; c.y = swept.y;
-        // Same-frame overshoot correction: a lunge's own cone-halt (above)
-        // normally stops it well outside contact range, but the lunge
-        // doesn't home like the player's own does, so a target that
-        // sidesteps out of the locked cone mid-flight can otherwise carry
-        // the bandit straight through it -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
-        enforceBanditPlayerCollision(c, targetPlayer);
-        const dmgTag = c.def.attackTag || 'sharp';
-        const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
-        tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
-        tickCreatureFootsteps?.(c, stepPx);
-        if (c._banditLungeT <= 0) c._banditLunging = false;
-        return true;
-      }
-
-      function fireBanditComboStep(c, def, loadout, targetPlayer) {
-        const comboData = window.Combat?.comboData;
-        const steps = comboData?.[loadout.tap1];
-        if (!steps || !steps.length) return false;
-        // Preserve the selected index before advancing, matching the player
-        // combo path. comboData's pitch array is updated in place by
-        // applyComboConfig, so the loaded attack-values config remains the
-        // authority for bandit mirrors of either combo family too.
-        const comboStep = c._banditComboIndex % steps.length;
-        const step = steps[comboStep];
-        const configuredPitch = comboData.sfxPitchByStep?.[comboStep];
-        const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
-        const isFinalStep = comboStep === steps.length - 1;
-        // Landed-step tally for this combo cycle, reset at the opening step
-        // -- see banditRetreatDurationS, which uses it to size the eventual
-        // retreat to how much of the combo actually connected.
-        if (comboStep === 0) c._banditComboLandCount = 0;
-        c._banditComboIndex++;
-        const base = banditAttackBaseline(def);
-        const damage = Math.max(1, Math.round(base.damage * step.damageMul));
-        // combat-combo.js's own RANGE_SCALE (0.6) shrinks the raw
-        // rangeMul-scaled cone down from what "read as oversized in
-        // practice" for the player -- omitting it here would give bandits a
-        // ~67% bigger hit cone than the identical player attack.
-        const rangePx = base.rangePx * step.rangeMul * (comboData.RANGE_SCALE ?? 1);
-        const halfConeRad = step.halfConeDeg * Math.PI / 180;
-        const knockbackPxS = base.knockbackPxS * step.knockbackMul;
-        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        c.facing = aimAngle; // lunge direction locks off c.facing -- must be fresh, not last frame's
-        c.telegraphState = 'windup';
-        c._banditSwingAnim = step.anim; c._banditSwingPose = step.pose || null;
-        c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = step.power || 1;
-        beginBanditLunge(c, TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5), step.windupS + step.strikeS, { rangePx, halfConeRad }, targetPlayer);
-        // Tracked so onComplete below can tell a whiff from a landed hit --
-        // a bandit should only break off (retreat) on a miss or after
-        // landing its 3rd/final step, never after landing steps 1-2, which
-        // should chain straight into the next step instead.
-        let comboStepHit = false;
-        c._banditAction = window.Combat.beginStagedAction({
-          windupS: step.windupS, strikeS: step.strikeS, recoverS: 0,
-          // isBandit -- see cancelAllStaged's own comment: without this tag
-          // damagePlayer's stagger-on-hit call cancels EVERY staged action
-          // in the shared registry, including THIS one, the instant its own
-          // onStrike lands (damagePlayer runs synchronously from inside the
-          // onStrike below) -- self-cancelling mid-strike, every time, on
-          // every bandit that actually connects. onCancel only clears the
-          // swing pose (finishBanditAction), never sets attackCooldownT or
-          // (on the final combo step) retreatT/resets comboIndex -- a
-          // landing bandit attack was silently skipping its own cooldown
-          // and never retreating after its 3-hit combo.
-          data: { isBandit: true, comboId: loadout.tap1, comboStep, sfxPitch },
-          onStrike: () => {
-            c.telegraphState = 'strike';
-            // c.facing, not the fire-time aimAngle local -- see
-            // updateBanditLunge's homing comment.
-            spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
-            if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              comboStepHit = true;
-              c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
-              // def.attackTag (the bandit's actual rolled weapon material,
-              // see weaponDamageTypeForTool/weapon.dmgType) determines both
-              // the affliction dealt and the impact sound -- matches the
-              // player's own combat-combo.js fix, which no longer tags a
-              // swing by combo family (sweep=blunt/thrust=sharp) regardless
-              // of the equipped weapon's real material.
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch);
-            }
-          },
-          onComplete: () => {
-            finishBanditAction(c);
-            // Break off on a miss (whiffing a swing isn't worth pressing
-            // through) or after landing the final step -- a landed step
-            // 1-2 chains straight into the next step instead of retreating.
-            const shouldRetreat = isFinalStep || !comboStepHit;
-            c.attackCooldownT = shouldRetreat ? def.attackCooldownS : BANDIT_COMBO_CHAIN_GAP_S;
-            if (shouldRetreat) {
-              c.retreatT = banditRetreatDurationS((c._banditComboLandCount || 0) / steps.length);
-              c._banditComboIndex = 0;
-              c._banditComboLandCount = 0;
-            }
-          },
-          onCancel: () => finishBanditAction(c),
-        });
-        return true;
-      }
-
-      function fireBanditQuickAttack(c, def, loadout, targetPlayer) {
-        const qa = window.Combat?.quickAttackData;
-        const techDef = qa?.TECHNIQUES?.[loadout.tap2];
-        if (!techDef) return false;
-        const cond = banditQuickAttackConditions(c, targetPlayer);
-        const tech = window.Combat.buildQuickAttack(techDef, cond);
-        const base = banditAttackBaseline(def);
-        const damage = Math.max(1, Math.round(base.damage * tech.damageMul));
-        // combat-quickattacks.js's own RANGE_SCALE (0.6) shrinks the raw
-        // rangeMul-scaled cone -- see the matching comment in
-        // fireBanditComboStep, same "read as oversized" fix applies here.
-        const rangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
-        const halfConeRad = tech.halfConeDeg * Math.PI / 180;
-        const knockbackPxS = base.knockbackPxS * tech.knockbackMul;
-        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        c.facing = aimAngle;
-        c.telegraphState = 'windup';
-        c._banditSwingAnim = 'thrust'; c._banditSwingPose = null;
-        c._banditSwingDirSign = 1; c._banditSwingPower = 1;
-        beginBanditLunge(c, TILE * (qa.LUNGE_TILE_MUL || 5.5), qa.WINDUP_S + qa.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
-        let techHit = false;
-        c._banditAction = window.Combat.beginStagedAction({
-          windupS: qa.WINDUP_S, strikeS: qa.STRIKE_S, recoverS: 0,
-          data: { isBandit: true }, // see fireBanditComboStep's matching comment
-          onStrike: () => {
-            c.telegraphState = 'strike';
-            // c.facing, not the fire-time aimAngle local -- see
-            // updateBanditLunge's homing comment.
-            spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
-            // def.attackTag (the bandit's real weapon material) determines
-            // both the affliction and the impact sound -- see
-            // combat-quickattacks.js's onTap, which no longer hardcodes
-            // 'sharp' regardless of the equipped weapon either.
-            if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              techHit = true;
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
-            }
-          },
-          onComplete: () => {
-            finishBanditAction(c);
-            c.attackCooldownT = def.attackCooldownS;
-            c.retreatT = banditRetreatDurationS(techHit ? 1 : 0);
-            c._banditComboIndex = 0;
-          },
-          onCancel: () => finishBanditAction(c),
-        });
-        return true;
-      }
-
-      function fireBanditChargedBreaker(c, def, targetPlayer) {
-        const cb = window.Combat?.chargedBreakerData;
-        if (!cb) return false;
-        const chargeT = 0.5 + rnd() * 0.5; // a bandit always "holds" for a decent charge, no button to under-hold
-        const base = banditAttackBaseline(def);
-        const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
-        const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
-        const halfConeRad = cb.HALF_CONE_DEG * Math.PI / 180;
-        const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT);
-        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        c.facing = aimAngle;
-        c.telegraphState = 'windup';
-        // Charged Breaker always plays the sweep pose regardless of the
-        // equipped weapon's own style (see combat-charged-breaker.js).
-        c._banditSwingAnim = 'sweep'; c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE;
-        c._banditSwingDirSign = 1; c._banditSwingPower = cb.POWER || 1.7;
-        // Real chargedBreaker.js only lunges during the strike (a separate,
-        // windupS:0 staged action started once the hold is released) --
-        // simplified here to span the bandit's own whole windup+strike
-        // instead: ease-out is front-loaded (fastest right at the start),
-        // so ticking updateBanditLunge across the full action still closes
-        // most of the distance well before onStrike's hit-check fires at
-        // the windup->strike boundary, without needing a second staged
-        // action just to match the real system's exact timing split.
-        beginBanditLunge(c, TILE * (cb.LUNGE_TILE_MUL || 2.0), cb.WINDUP_S + cb.STRIKE_S, { rangePx, halfConeRad }, targetPlayer);
-        let techHit = false;
-        c._banditAction = window.Combat.beginStagedAction({
-          windupS: cb.WINDUP_S, strikeS: cb.STRIKE_S, recoverS: 0,
-          data: { isBandit: true }, // see fireBanditComboStep's matching comment
-          onStrike: () => {
-            c.telegraphState = 'strike';
-            // c.facing, not the fire-time aimAngle local -- see
-            // updateBanditLunge's homing comment.
-            spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);
-            // def.attackTag (bandit's real weapon material) drives both the
-            // affliction and the impact sound -- see combat-charged-
-            // breaker.js's matching fix (no longer hardcodes 'blunt').
-            if (inCone(c.x, c.y, c.facing, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              techHit = true;
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, heavy: true, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
-            }
-          },
-          onComplete: () => {
-            finishBanditAction(c);
-            c.attackCooldownT = def.attackCooldownS;
-            c.retreatT = banditRetreatDurationS(techHit ? 1 : 0);
-            c._banditComboIndex = 0;
-            c._banditHold1CdT = BANDIT_HOLD1_COOLDOWN_S;
-          },
-          onCancel: () => finishBanditAction(c),
-        });
-        return true;
-      }
-
-      // Captain-only, hold2. Not a held button either -- a periodic timed
-      // window instead: while `_banditGuardUntil` is in the future, an
-      // incoming hit (see damageCreature's isBandit branch) is reduced and
-      // answered with a real Counter Shield riposte using the exact damage/
-      // range/cone multipliers combat-counter-shield.js's own riposte uses.
-      function updateBanditGuardWindow(c, dt) {
-        if (c._banditGuardUntil > 0) { if (performance.now() >= c._banditGuardUntil) c._banditGuardUntil = 0; return; }
-        c._banditGuardCdT = Math.max(0, (c._banditGuardCdT || 0) - dt);
-        if (c._banditGuardCdT <= 0) { c._banditGuardUntil = performance.now() + BANDIT_GUARD_WINDOW_S * 1000; c._banditGuardCdT = BANDIT_GUARD_COOLDOWN_S; }
-      }
-
-      function fireBanditCounterRiposte(c, def, targetPlayer) {
-        const cs = window.Combat?.counterShieldData;
-        if (!cs) return;
-        const base = banditAttackBaseline(def);
-        const damage = Math.max(1, Math.round(base.damage * cs.COUNTER_DAMAGE_MUL));
-        const rangePx = base.rangePx * cs.COUNTER_RANGE_MUL;
-        const halfConeRad = cs.COUNTER_HALF_CONE_DEG * Math.PI / 180;
-        const knockbackPxS = base.knockbackPxS * cs.COUNTER_KNOCKBACK_MUL;
-        const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        // Deliberately doesn't touch c._banditAction (a captain can be
-        // mid-combo when guarded damage triggers this) or c._banditSwing* --
-        // the riposte's own 0.2s swing is brief enough that skipping its
-        // dedicated weapon-pose animation (rather than adding a second
-        // parallel progress channel just for this) is an acceptable gap.
-        window.Combat.beginStagedAction({
-          windupS: 0.05, strikeS: 0.15, recoverS: 0,
-          data: { isBandit: true }, // see fireBanditComboStep's matching comment
-          onStrike: () => {
-            // def.attackTag (bandit's real weapon material) drives both the
-            // affliction and the impact sound -- matches
-            // combat-counter-shield.js's own riposte fix (no longer
-            // hardcodes 'sharp' regardless of weapon).
-            spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle);
-            if (inCone(c.x, c.y, aimAngle, targetPlayer.x, targetPlayer.y, rangePx, halfConeRad)) {
-              damagePlayer(damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-              window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId);
-            }
-          },
-        });
-      }
-
-      // "Choose an attack, then judge how close to get" -- gates the
-      // approach on whichever combo step is actually about to fire
-      // (c._banditComboIndex), not always step 0 -- later steps in a chain
-      // often have a noticeably shorter lunge (see SWING_STEPS/POKE_STEPS:
-      // step 0 is lungeMul 2.0, steps 1-2 are 1.0), so gating on step 0's
-      // bigger number let a bandit commit to swing 2/3 from farther than
-      // that step's own lunge could actually close.
-      //
-      // This used to also take the MAX reach across quickAttack/
-      // chargedBreaker on top of combo, on the theory that combo's own
-      // current-step reach (rangePx + its FULL lunge budget) is always the
-      // smallest of the three since quickAttack/chargedBreaker both have a
-      // much bigger raw lunge budget (quick attack's LUNGE_TILE_MUL alone
-      // is 5.5 tiles, ~300px vs combo's ~115-195px). That's true of the
-      // raw budget, but false of how much of it is actually COVERED by
-      // onStrike time: onStrike fires at windupS elapsed, not the lunge's
-      // full windupS+strikeS duration, and the ease-out curve is front-
-      // loaded, so what matters is windupS as a FRACTION of the whole
-      // duration -- a combo step's windupS is typically 55-77% of its
-      // total (leaving little of the ease curve uncovered by strike time),
-      // while quick attacks share one WINDUP_S/STRIKE_S pair that's only
-      // ~42% of their own total. A quick attack's bigger raw budget times
-      // a smaller covered fraction can net out SHORTER, by strike time,
-      // than combo's smaller budget times its bigger covered fraction --
-      // confirmed live: quick attacks committing from the combo-gated
-      // ~150-200px range were consistently whiffing 10-50px short, while
-      // combo steps from the same gate landed cleanly. banditLungeEaseAtStrike
-      // below computes that covered fraction so this can take the real
-      // minimum SAFE reach across every ability that could actually fire
-      // this cycle, instead of assuming combo's is automatically smallest.
-      function banditLungeEaseAtStrike(windupS, strikeS) {
-        const total = windupS + strikeS;
-        if (total <= 0) return 1;
-        const t = Math.min(1, windupS / total);
-        return 1 - Math.pow(1 - t, 3);
-      }
-      // The max currentDist an ability can safely COMMIT from and still
-      // land, given only `eased` of its lunge budget is covered by strike
-      // time. beginBanditLunge caps the actual travel to (currentDist -
-      // haltDist) whenever that's less than the raw budget, so at strike
-      // time the bandit sits at currentDist - (currentDist-haltDist)*eased.
-      // Solving currentDist - (currentDist-haltDist)*eased <= rangePx for
-      // currentDist gives the bound below -- NOT rangePx + budget*eased,
-      // which was tried first and is still too generous (confirmed live:
-      // quick attacks kept committing from ~150-200px and landing 5-20px
-      // short even after that "fix") because it ignores that the UNCOVERED
-      // fraction (1-eased) applies to currentDist itself, which grows
-      // right along with how far the bandit is allowed to commit from.
-      function banditAbilitySafeReachPx(rangePx, lungeBudgetPx, windupS, strikeS) {
-        const eased = banditLungeEaseAtStrike(windupS, strikeS);
-        if (eased >= 0.999) return rangePx + lungeBudgetPx;
-        const haltDist = rangePx * BANDIT_LUNGE_HALT_MARGIN;
-        const safeReach = (rangePx - haltDist * eased) / (1 - eased);
-        // Can't exceed what's physically reachable if the raw budget ends
-        // up being the binding cap instead (a small lungeMul ability).
-        return Math.max(rangePx, Math.min(safeReach, haltDist + lungeBudgetPx));
-      }
-      function banditEngagementReachPx(c, def, loadout, targetPlayer) {
-        const base = banditAttackBaseline(def);
-        let reach = base.rangePx;
-        const combo = window.Combat?.comboData;
-        const steps = combo?.[loadout.tap1];
-        if (steps?.length) {
-          const step = steps[(c._banditComboIndex || 0) % steps.length];
-          const comboRangePx = base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1);
-          const comboLungePx = TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
-          reach = banditAbilitySafeReachPx(comboRangePx, comboLungePx, step.windupS, step.strikeS);
-        }
-        // Quick attack (tap2) can fire on ANY cycle regardless of which
-        // combo step is current (see updateBanditCombatAI's conditionFavorable
-        // roll), so its own safe reach always constrains this gate too.
-        const qa = window.Combat?.quickAttackData;
-        const techDef = qa?.TECHNIQUES?.[loadout.tap2];
-        if (techDef && targetPlayer) {
-          const cond = banditQuickAttackConditions(c, targetPlayer);
-          const tech = window.Combat.buildQuickAttack(techDef, cond);
-          const qaRangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
-          const qaLungePx = TILE * (qa.LUNGE_TILE_MUL || 5.5);
-          reach = Math.min(reach, banditAbilitySafeReachPx(qaRangePx, qaLungePx, qa.WINDUP_S, qa.STRIKE_S));
-        }
-        // Charged Breaker (hold1) only ever fires as a fresh opener
-        // (comboIndex 0) -- only worth constraining the gate for it when
-        // that's actually possible this cycle.
-        if ((c._banditComboIndex || 0) === 0 && loadout.hold1 === 'chargedBreaker') {
-          const cb = window.Combat?.chargedBreakerData;
-          if (cb) {
-            // A bandit always "holds" for a decent charge (see
-            // fireBanditChargedBreaker) -- a representative mid charge is
-            // a reasonable stand-in for this gate's range/lunge.
-            const chargeT = 0.75;
-            const cbRangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
-            const cbLungePx = TILE * (cb.LUNGE_TILE_MUL || 2.0);
-            reach = Math.min(reach, banditAbilitySafeReachPx(cbRangePx, cbLungePx, cb.WINDUP_S, cb.STRIKE_S));
-          }
-        }
-        return reach;
-      }
-
-      // ── Multi-attacker coordination ─────────────────────────────────
-      //
-      // At most BANDIT_MAX_ATTACK_SLOTS bandits are ever actively closing
-      // to melee range against a given target at once, each locked to a
-      // world angle (around the target) at least BANDIT_SLOT_MIN_ANGLE_RAD
-      // from every other slot's angle -- so two attackers flank from
-      // genuinely different sides instead of both approaching down the same
-      // line. Everyone else stays queued: it orbits at a standoff distance
-      // and keeps personal space from other nearby bandits rather than
-      // piling into melee range for free hits. Slots aren't explicitly
-      // handed back on retreat -- claimBanditAttackSlot's own prune (below)
-      // drops a slot the instant its holder dies or leaves 'chase', which
-      // covers every release case without needing a separate teardown path.
-      const BANDIT_MAX_ATTACK_SLOTS = 2;
-      const BANDIT_SLOT_MIN_ANGLE_RAD = 60 * Math.PI / 180;
-      const BANDIT_STANDOFF_RANGE_MUL = 1.8;
-      const BANDIT_PERSONAL_SPACE_PX = TILE * 0.85;
-      // Idle sway applied to a waiting bandit's ring/standoff point (see the
-      // !readyToStrike branch below) -- a slow guard-stance shift, not a
-      // dodge, so it reads as "still in the fight, waiting its turn"
-      // instead of a dead stand while a slot/cooldown/stamina frees up.
-      // Swept as an ANGLE around the player (see banditRingPoint), not a
-      // straight-line Cartesian offset -- a linear offset from a point
-      // already at some radius moves partly toward/away from the player as
-      // well as sideways (chord vs. arc), and combined with the emergency
-      // too-close retreat that branch used to also have (a second, separate
-      // target formula it could disagree with frame to frame), that read as
-      // shivering forward/backward rather than a clean side-to-side stride.
-      // Sweeping the angle instead keeps the bandit on the ring at a
-      // constant radius by construction; there's now only ONE positioning
-      // formula for the whole waiting state (see readyToStrike below), with
-      // the personal-space nudge as the only thing allowed to pull it off
-      // the ring, and only when actually crowding another bandit.
-      // Chased with BANDIT_STRAFE_SPEED_PX_S (a dedicated slow walking
-      // speed), not def.chaseSpeed -- at full chase speed the bandit closes
-      // most of the gap to this continuously-recalculated target in a
-      // single frame and ends up snapping almost exactly onto it every
-      // frame, which (moveCreatureToward never overshoots, so it can't be a
-      // bounce-back oscillation) just means any frame-timing irregularity
-      // gets reproduced directly in its position with no damping. Capping
-      // the speed well below the sway's own peak velocity forces a real lag
-      // between the bandit and its target, acting as a low-pass filter.
-      const BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD = 30 * Math.PI / 180;
-      const BANDIT_STRAFE_HZ = 0.14;
-      const BANDIT_STRAFE_SPEED_PX_S = 55;
-      const _banditAttackSlots = []; // [{ bandit, angle }]
-
-      function claimBanditAttackSlot(c, towardAngle) {
-        for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
-          const s = _banditAttackSlots[i];
-          if (s.bandit.health <= 0 || s.bandit.state !== 'chase') _banditAttackSlots.splice(i, 1);
-        }
-        const existing = _banditAttackSlots.find(s => s.bandit === c);
-        if (existing) return existing;
-        if (_banditAttackSlots.length >= BANDIT_MAX_ATTACK_SLOTS) return null;
-        let angle = towardAngle;
-        for (const s of _banditAttackSlots) {
-          if (Math.abs(angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
-        }
-        const slot = { bandit: c, angle };
-        _banditAttackSlots.push(slot);
-        return slot;
-      }
-
-      // Queued (non-slot-holding) bandits used to all share one single
-      // standoff ring, relying entirely on banditPersonalSpaceAdjust to
-      // keep them apart -- fine for 2-3 spares, but a bigger gang (up to
-      // gruntsMax+lieutenantsMax+1 per bandit-gang-config.json) packs
-      // everyone onto that one ring at once. Spreads them across multiple
-      // concentric rings instead, BANDIT_QUEUE_RING_CAPACITY bandits per
-      // ring before the next one queues onto a ring further out (see
-      // BANDIT_QUEUE_RING_STEP_MUL, applied in the !readyToStrike branch).
-      // Mirrors claimBanditAttackSlot's own prune/persist pattern -- a
-      // bandit keeps its ring+angle once assigned rather than being
-      // reshuffled every frame, which also fixes queued bandits' ring point
-      // otherwise recomputing at a fresh towardAngle every single frame
-      // (jittering with the player's/bandit's own minor position noise).
-      const BANDIT_QUEUE_RING_CAPACITY = 3;
-      const BANDIT_QUEUE_RING_STEP_MUL = 0.6;
-      const _banditQueueRings = []; // [{ bandit, ringIndex, angle }]
-
-      function claimBanditQueueRing(c, towardAngle) {
-        for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
-          const q = _banditQueueRings[i];
-          if (q.bandit.health <= 0 || q.bandit.state !== 'chase') _banditQueueRings.splice(i, 1);
-        }
-        const existing = _banditQueueRings.find(q => q.bandit === c);
-        if (existing) return existing;
-        const countByRing = [];
-        for (const q of _banditQueueRings) countByRing[q.ringIndex] = (countByRing[q.ringIndex] || 0) + 1;
-        let ringIndex = 0;
-        while ((countByRing[ringIndex] || 0) >= BANDIT_QUEUE_RING_CAPACITY) ringIndex++;
-        // Spread bandits already on this same ring apart by angle -- not a
-        // hard minimum-separation lock like attack slots (queue rings don't
-        // need that guarantee), just an even starting spacing so a ring
-        // doesn't spawn its members all bunched at the same bearing.
-        const onRing = _banditQueueRings.filter(q => q.ringIndex === ringIndex);
-        const slice = Math.PI * 2 / (BANDIT_QUEUE_RING_CAPACITY + 1);
-        let angle = towardAngle;
-        for (const q of onRing) {
-          if (Math.abs(angleDiff(angle, q.angle)) < slice) angle += slice;
-        }
-        const rec = { bandit: c, ringIndex, angle };
-        _banditQueueRings.push(rec);
-        return rec;
-      }
-
-      // A point on a ring of the given radius around the target, at the
-      // given world angle -- moving toward this (rather than straight at
-      // the target) is what actually draws a bandit around to its assigned
-      // flank/standoff side as it closes in, instead of just walking the
-      // direct line and hoping the angle check above sorts itself out.
-      function banditRingPoint(targetPlayer, angle, radiusPx) {
-        return { x: targetPlayer.x + Math.cos(angle) * radiusPx, y: targetPlayer.y + Math.sin(angle) * radiusPx };
-      }
-
-      // Nudges a movement target away from any other live bandit closer
-      // than BANDIT_PERSONAL_SPACE_PX -- keeps queued gang-mates from
-      // stacking on each other while they wait for an attack slot.
-      function banditPersonalSpaceAdjust(c, point) {
-        let px = point.x, py = point.y;
-        for (const o of hostileObjects) {
-          if (o === c || !o.isBandit || o.health <= 0) continue;
-          const dx = px - o.x, dy = py - o.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > 0.001 && dist < BANDIT_PERSONAL_SPACE_PX) {
-            const push = BANDIT_PERSONAL_SPACE_PX - dist;
-            px += (dx / dist) * push; py += (dy / dist) * push;
-          }
-        }
-        return { x: px, y: py };
-      }
-
-      // A bandit's own rough body radius plus the player's (PLAYER_RADIUS) --
-      // the minimum center-to-center distance bandit movement is allowed to
-      // close to, enforced unconditionally (including mid-lunge and mid-
-      // swing, see updateBanditCombatAI/updateBanditLunge). This used to
-      // assume every bandit ability's own rangePx was comfortably bigger
-      // than this radius (~32.6px) -- false after combat-combo.js's
-      // RANGE_SCALE (0.6) shrunk the real hit cones down: Forehand Swing's
-      // rangePx is ~29.7px and Backhand Swing's ~31.2px, BOTH already
-      // smaller than this floor, so the push was pinning distance at 32.6px
-      // and making those two attacks geometrically impossible to land no
-      // matter how well aimed (confirmed live: dist=32.6 on repeated
-      // Forehand Swing whiffs). enforceBanditPlayerCollision now caps its
-      // own push radius to the active attack's real range (via
-      // c._banditLungeHitTest) so this anti-clip floor can never itself
-      // exceed what that attack needs to reach.
-      const BANDIT_PLAYER_COLLISION_RADIUS_PX = PLAYER_RADIUS + TILE * 0.32;
-      function enforceBanditPlayerCollision(c, targetPlayer) {
-        // Also constrained through the brief inter-step gap of an active
-        // combo (comboIdx > 0, both this step's lunge and its staged action
-        // already finished, but the next step is about to fire within
-        // BANDIT_COMBO_CHAIN_GAP_S) -- without this, the instant a landed
-        // step's own action completed, this fell back to the full uncapped
-        // floor and physically snapped the bandit back out from wherever it
-        // had just landed (often well under the floor) to the full 32.6px
-        // right before the next combo step fired, pushing steps with a
-        // real range near that floor (e.g. Backhand Swing, ~31.2px) outside
-        // their own reach for a hit that should have connected (confirmed
-        // live: Backhand Swing whiffing at dist=38.7/84.3px immediately
-        // after the preceding Forehand Swing landed well inside range).
-        const midComboGap = c._banditComboIndex > 0 && !c._banditLunging && !c._banditAction;
-        const activeHitTest = (c._banditLunging || c._banditAction || midComboGap) ? c._banditLungeHitTest : null;
-        const radiusPx = activeHitTest
-          ? Math.min(BANDIT_PLAYER_COLLISION_RADIUS_PX, activeHitTest.rangePx * BANDIT_LUNGE_HALT_MARGIN)
-          : BANDIT_PLAYER_COLLISION_RADIUS_PX;
-        const dx = c.x - targetPlayer.x, dy = c.y - targetPlayer.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist >= radiusPx || dist < 0.001) return;
-        const push = radiusPx - dist;
-        const nx = dx / dist, ny = dy / dist;
-        const desiredX = c.x + nx * push, desiredY = c.y + ny * push;
-        if (creatureCanEnterTile(c.def, desiredX, c.y)) c.x = desiredX;
-        if (creatureCanEnterTile(c.def, c.x, desiredY)) c.y = desiredY;
-      }
-
-      // Called from updateHostiles' chase-state branch in place of the
-      // plain bite-telegraph/behaviorStage machinery for any c.isBandit.
-      function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
-        const def = c.def, loadout = def.banditAbilityLoadout;
-        const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-        if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
-        if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
-        // Unconditional now (was only called from the engaged branch below,
-        // skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
-        // Covers the retreat/busy states below too: a stationary swinging
-        // bandit should still get pushed off if the player walks into it,
-        // even though it isn't the one closing the distance.
-        enforceBanditPlayerCollision(c, targetPlayer);
-        if (updateBanditLunge(c, dt, targetPlayer)) return { aimAngle: c.facing, moving: true };
-        if (c.retreatT > 0) {
-          c.retreatT = Math.max(0, c.retreatT - dt);
-          const awayAng = towardAngle + Math.PI;
-          const moving = moveCreatureToward(c, c.x + Math.cos(awayAng) * TILE, c.y + Math.sin(awayAng) * TILE, JUMP_BACK_SPEED, dt);
-          return { aimAngle: towardAngle, moving };
-        }
-        if (c._banditAction) {
-          // Keep tracking the target's CURRENT position with c.facing for
-          // the rest of the windup/strike, even after updateBanditLunge's
-          // own translational movement already halted (see its own
-          // halt-margin comment). The real hit-check (fireBandit*'s
-          // onStrike) fires later and reads whatever c.facing is AT THAT
-          // MOMENT, but nothing kept re-aiming it once the lunge stopped
-          // moving early -- which happens routinely, e.g. a bandit that
-          // was already near point-blank when it committed to a short step
-          // like Forehand Swing halts its lunge almost immediately, then
-          // stood frozen facing a stale angle for the rest of the ~0.3s
-          // windup+strike with zero further correction. A player free to
-          // sidestep, unopposed, for that whole remaining window slips
-          // outside even a short-range cone without ever looking like they
-          // dodged anything -- a whiff that reads as "missed at point-blank
-          // range" in a combat log.
-          if (targetPlayer.health > 0) {
-            const desiredFacing = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
-            c.facing += angleDiff(desiredFacing, c.facing) * Math.min(1, BANDIT_LUNGE_HOMING_RATE * dt);
-          }
-          return { aimAngle: c.facing, moving: false };
-        }
-
-        // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
-        // other bandits -- once a bandit is "in range" (below) it stops
-        // approaching entirely and just holds position to fight, so with
-        // nothing else keeping them apart a fast-moving player can walk two
-        // stationary attackers onto the exact same tile as each other.
-        // Applied every frame regardless of engage/queued state. Player
-        // separation is handled separately, unconditionally at the top of
-        // this function, by enforceBanditPlayerCollision -- that one's a hard positional
-        // clamp (the player has no "movement target" a bandit could aim
-        // short of), this one only ever nudges where a bandit is walking
-        // toward, never teleports it.
-        const unstack = banditPersonalSpaceAdjust(c, { x: c.x, y: c.y });
-        if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
-
-        const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
-        const slot = claimBanditAttackSlot(c, towardAngle);
-        // attackCooldownS (0.95-1.15s) runs noticeably longer than the
-        // post-attack retreat step (JUMP_BACK_DUR_S, 0.4s), and retreating
-        // only backs up one tile -- well short of engageRangePx once lunge
-        // distance is folded in -- so a bandit reliably lands back here
-        // still "in range" with real cooldown left on the clock. Gating on
-        // cooldown/stamina here alongside range/slot (instead of after, as
-        // its own dead-stop return) means that remaining wait is spent the
-        // same way "still closing" is: holding/adjusting its ring position
-        // and tracking the player, instead of a frozen no-op stand -- this
-        // was the actual source of the awkward post-attack pause, not any
-        // missing animation. Wildlife's own chase branch never has this gap
-        // since it keeps calling moveCreatureToward every frame regardless
-        // of its own attackCooldownT.
-        // A continuing combo step (comboIdx > 0, already mid-flurry after
-        // landing/chaining a prior step -- see fireBanditComboStep's
-        // shouldRetreat, which only resets comboIdx to 0 on a miss or the
-        // final step) skips the hard stamina gate an opening attack still
-        // needs. attackStaminaCost is a flat per-swing cost (e.g. 12)
-        // steep against bandits' small stamina pools (16-46 depending on
-        // rank/tier), so requiring a full recharge before EVERY step of an
-        // already-landing 3-hit combo dropped the bandit out of "ready"
-        // between steps into the ring-strafe waiting branch below for up
-        // to ~1.5s -- a big, awkward pause with a lot of visible movement
-        // mid-combo even while the combo was actively landing.
-        // spendStamina below already lets an overspend go into Exhausted
-        // debt instead of hard-refusing (see resource-system.js's own
-        // "Overspending Stamina never blocks the action" comment) -- this
-        // just lets a continuing combo step use that same path instead of
-        // hard-blocking on it first, matching how the player's own combo
-        // (combat-combo.js) spends stamina unconditionally per step rather
-        // than pre-checking it.
-        const continuingCombo = c._banditComboIndex > 0;
-        const readyToStrike = distToPlayer <= engageRangePx && !!slot && c.attackCooldownT <= 0
-          && (continuingCombo || c.stamina >= def.attackStaminaCost) && !isCreatureSwimming(c);
-        if (!readyToStrike) {
-          // One unified ring formula for the whole waiting state (slot-
-          // holder-on-cooldown, stamina-short, or genuinely queued alike),
-          // instead of a separate too-close emergency retreat and a
-          // separate ring/standoff target that could disagree frame to
-          // frame about where the bandit should be -- see the comment on
-          // BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD for why that disagreement was
-          // reading as forward/backward shivering. baseAngle sweeps with the
-          // idle sway (a slot holder swings around its locked flank angle; a
-          // queued bandit around its own claimed queue-ring angle -- see
-          // claimBanditQueueRing, spreading a big gang's spares across
-          // several concentric rings instead of packing them all onto one)
-          // and baseRadius is clamped to never sit inside melee range even
-          // if engageRangePx*0.85/1.8 would otherwise put it there (a
-          // crowded arena's personal-space pushes can shove the "supposed
-          // to be far enough out" ring/flank point closer than intended).
-          const queueRing = slot ? null : claimBanditQueueRing(c, towardAngle);
-          const baseAngle = slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle);
-          const baseRadius = Math.max(
-            def.attackRangePx * 1.5,
-            slot
-              ? engageRangePx * 0.85
-              : engageRangePx * BANDIT_STANDOFF_RANGE_MUL * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL)
-          );
-          const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
-          const swayAngle = Math.sin(strafeT) * BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD;
-          const ringPoint = banditRingPoint(targetPlayer, baseAngle + swayAngle, baseRadius);
-          // Only pulls the bandit off the ring when actually crowding
-          // another bandit -- the common case is a pure ring point, so
-          // "back off when waiting" and "sway side to side" both fall out
-          // of this same call instead of being two separate movements.
-          const targetPoint = banditPersonalSpaceAdjust(c, ringPoint);
-          // BANDIT_STRAFE_SPEED_PX_S (55px/s) is deliberately slow -- right
-          // for the final small-amplitude sway once already near the ring,
-          // but an outer queue ring can sit 500-800px out for a big gang
-          // (BANDIT_QUEUE_RING_STEP_MUL compounding per ring). Using the
-          // sway speed for that ENTIRE approach too meant an outer-ring
-          // bandit could take 10+ seconds just to reach its assigned spot,
-          // reading as vaguely wandering rather than "queued and waiting."
-          // Closes the real distance at normal chase speed, same as
-          // everything else in this state machine, and only downshifts to
-          // the gentle sway speed once actually close to the target point.
-          const distToTarget = Math.hypot(targetPoint.x - c.x, targetPoint.y - c.y);
-          const travelSpeed = distToTarget > TILE * 1.5 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S;
-          const moving = moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
-          return { aimAngle: towardAngle, moving };
-        }
-        window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
-        const openingFresh = c._banditComboIndex === 0;
-        let fired = false;
-        if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && rnd() < BANDIT_HOLD1_CHANCE) {
-          fired = fireBanditChargedBreaker(c, def, targetPlayer);
-        }
-        if (!fired) {
-          const cond = banditQuickAttackConditions(c, targetPlayer);
-          const conditionFavorable = cond.exhausted || cond.behind || cond.lowHealth;
-          if (conditionFavorable && rnd() < BANDIT_QUICK_ATTACK_CHANCE) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
-        }
-        if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
-        // The staged action just created above (inside whichever fire*
-        // call ran) gets its own first tick later THIS SAME FRAME --
-        // window.Combat.update(dt) runs after updateHostiles in the main
-        // loop, so a brand-new action always advances from t=0 the instant
-        // it's created. updateBanditLunge's own countdown has no such
-        // same-frame catch-up: it only ticks from calls made earlier in
-        // THIS invocation of updateBanditCombatAI, before the attack fired,
-        // so without this the lunge silently runs exactly one frame's dt
-        // BEHIND the staged action for its entire lifetime -- onStrike
-        // (driven by the staged action's clock) checks the hit-cone before
-        // the lunge has covered as much ground as it should have. Confirmed
-        // live: every combo/quick-attack step landed short by a fixed
-        // ~1-frame amount regardless of the ability's own duration (e.g.
-        // Short Thrust's lungeT read 0.130s remaining out of a 0.210s
-        // budget right at onStrike -- only 0.08s had elapsed on the lunge's
-        // clock against the staged action's own windupS=0.12s), whiffing
-        // attacks with otherwise perfect aim. Ticking the fresh lunge once
-        // immediately gives it the same same-frame head start the staged
-        // action already has.
-        if (fired) updateBanditLunge(c, dt, targetPlayer);
-        return { aimAngle: towardAngle, moving: false };
-      }
-
-      // ── Bandit weapon visuals ────────────────────────────────────────
-      //
-      // Reuses the PLAYER's own tool-swing pose math verbatim (fourPhaseLerp,
-      // STYLE_NEUTRAL_POSE, window.Combat.poses.SWEEP_POSE, and the same
-      // thrust/sweep formulas updateToolMesh itself computes from) instead of
-      // a static prop or an invented animation -- "use the player
-      // animations," per design direction. What's NOT reused is
-      // updateToolMesh itself or the single shared toolHolder/toolSwingT/
-      // combatSwing* variables it reads: those are one-per-game singletons
-      // (see combat-core.js's own "every staged action in this pipeline is a
-      // player weapon-tool attack" comment) that assume exactly one attacker
-      // exists. Each bandit gets its own toolHolder-equivalent group
-      // (_banditToolHolder, added straight to the scene and repositioned in
-      // world space every frame, exactly like the player's toolHolder is),
-      // driven by that SAME pure pose math against its own facing/position
-      // and its own current ability's windup/strike timing (c._banditAction)
-      // instead of the player's. fourPhaseLerp/STYLE_NEUTRAL_POSE/SWEEP_POSE
-      // are already stateless pure functions/data -- the only reason this
-      // isn't a one-line call into updateToolMesh is that updateToolMesh
-      // hardcodes which entity it's posing for throughout.
-      function makeBanditToolHolder(scene, weaponKey) {
-        const mesh = makeToolPlaneMesh(weaponKey);
-        if (!mesh) return null;
-        const holder = new THREE.Group();
-        holder.name = 'banditToolHolder';
-        holder.add(mesh);
-        scene.add(holder);
-        return holder;
-      }
-
-      // Two-phase version of updateToolMesh's fourPhaseLerp: 0->wf rises from
-      // neutral to the windup pose (identical formula), then HOLDS at the
-      // strike pose for the rest of the action instead of also modeling a
-      // separate strike/hold/return split -- a bandit's own staged action has
-      // no cosmetic return-tail duration of its own (recoverS is always 0;
-      // see fireBanditComboStep etc), so there's no real "SF"/"HF" window to
-      // ease across the way the player's longer toolSwingDur has room for.
-      // The brief hold-then-freeze in updateBanditToolMesh below covers the
-      // return instead.
-      function banditPoseLerp(progress, wf, windupV, strikeV, neutralV) {
-        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-        return strikeV;
-      }
-
-      // How long the weapon keeps showing its last (strike) pose once
-      // c._banditAction completes, before resetting straight to neutral --
-      // a cheap stand-in for the player's own eased return-to-neutral tail.
-      const BANDIT_TOOL_SETTLE_S = 0.15;
-
-      // ── Bandit weapon swing trail ────────────────────────────────────
-      //
-      // A single-lane simplification of updateCombatConeTrail's ribbon-arc
-      // mesh (same tapered/arched shape, same BufferGeometry layout) built
-      // per-bandit instead of reading the singleton toolHolder/combatSwing*
-      // state: the real version's affliction-colored multi-lane system
-      // (up to 4 lanes, one per possible affliction) isn't reproduced --
-      // every bandit swing draws one lane, tinted by its own attackTag,
-      // which is enough to sell "the blade is sweeping through here" without
-      // needing combat-progression.js's player-only upgrade-affliction data.
-      const BANDIT_TRAIL_SAMPLES = 12;
-      const BANDIT_TRAIL_HALF_THICKNESS_TILES = 0.06;
-      const BANDIT_TRAIL_ARCH_UNITS = 0.2;
-      const BANDIT_TRAIL_COLOR_BY_TAG = { sharp: 0xd9ffe0, blunt: 0xffc23d };
-
-      function makeBanditTrailMesh() {
-        const geo = new THREE.BufferGeometry();
-        const vertCount = (BANDIT_TRAIL_SAMPLES + 1) * 2;
-        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
-        const indices = [];
-        for (let s = 0; s < BANDIT_TRAIL_SAMPLES; s++) {
-          const a = s * 2, b = a + 1, cc = a + 2, d = a + 3;
-          indices.push(a, b, cc, b, d, cc);
-        }
-        geo.setIndex(indices);
-        const mat = new THREE.MeshBasicMaterial({
-          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-          side: THREE.DoubleSide, color: 0xffffff,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.visible = false;
-        mesh.frustumCulled = false;
-        return mesh;
-      }
-
-      // Called from each fireBandit*'s onStrike (the same moment
-      // updateCombatConeTrail's own sweep starts -- WF, not fire-time) so
-      // the arc appears exactly when the hit actually lands, not during the
-      // windup telegraph.
-      function spawnBanditTrailArc(c, rangePx, halfConeRad, angle) {
-        const mesh = c._banditTrailMesh || (c._banditTrailMesh = makeBanditTrailMesh());
-        if (mesh.parent !== c.scene) c.scene.add(mesh);
-        mesh.material.color.setHex(BANDIT_TRAIL_COLOR_BY_TAG[c.def.attackTag] || 0xffffff);
-        const rangeTiles = rangePx / TILE;
-        const baseX = c.x / TILE, baseZ = c.y / TILE;
-        const y = (c._banditToolHolder?.position.y ?? c.avatarRef.group.position.y) + 0.05;
-        const posAttr = mesh.geometry.attributes.position;
-        for (let s = 0; s <= BANDIT_TRAIL_SAMPLES; s++) {
-          const u = s / BANDIT_TRAIL_SAMPLES;
-          const a = angle - halfConeRad + (2 * halfConeRad) * u;
-          const cosA = Math.cos(a), sinA = Math.sin(a);
-          const taper = Math.sin(u * Math.PI);
-          const half = BANDIT_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
-          const arch = BANDIT_TRAIL_ARCH_UNITS * taper;
-          const innerR = rangeTiles - half, outerR = rangeTiles + half;
-          const vi = s * 2;
-          posAttr.setXYZ(vi, baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
-          posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
-        }
-        posAttr.needsUpdate = true;
-        mesh.material.opacity = 0.85;
-        mesh.visible = true;
-        c._banditTrailAge = 0;
-      }
-
-      // The real cone trail (updateCombatConeTrail) stays at FULL opacity for
-      // its entire visible window and only fades (or, for a tap attack whose
-      // strikeFrac is 1, just vanishes outright) right at the very end -- it
-      // never dims gradually from the moment it appears. The previous
-      // version here faded linearly from spawn across its whole (short)
-      // lifetime, so it spent most of its life at low opacity under additive
-      // blending -- easy to miss entirely. HOLD_S now keeps it fully bright
-      // first, matching how a tap attack's own trail reads, before a brief
-      // fade-out standing in for the real system's end-of-swing return tail.
-      const BANDIT_TRAIL_HOLD_S = 0.22;
-      const BANDIT_TRAIL_FADE_S = 0.16;
-      function updateBanditTrailArc(c, dt) {
-        const mesh = c._banditTrailMesh;
-        if (!mesh || !mesh.visible) return;
-        c._banditTrailAge = (c._banditTrailAge || 0) + dt;
-        if (c._banditTrailAge < BANDIT_TRAIL_HOLD_S) { mesh.material.opacity = 0.85; return; }
-        const fadeT = c._banditTrailAge - BANDIT_TRAIL_HOLD_S;
-        const alpha = 1 - fadeT / BANDIT_TRAIL_FADE_S;
-        if (alpha <= 0.01) { mesh.visible = false; return; }
-        mesh.material.opacity = alpha * 0.85;
-      }
-
-      function updateBanditToolMesh(c) {
-        const holder = c._banditToolHolder;
-        if (!holder) return;
-        const action = c._banditAction;
-        if (!action) {
-          if (performance.now() < (c._banditToolSettleUntil || 0)) {
-            // Holding last pose briefly -- the weapon holder's own
-            // quaternion/position are frozen (nothing below runs), but
-            // updateCreatureMesh (which now runs BEFORE this every frame,
-            // unconditionally) keeps smoothing c.groupRot/the avatar's
-            // rotation.y back toward the plain aim angle the whole time,
-            // since it has no idea a swing was ever leaning it. Without
-            // reasserting the lean here too, the body visibly turns back
-            // to facing the player while the weapon stays frozen leaned
-            // out from the swing -- "the character turns independently of
-            // the weapon." Keeps both in sync until the settle window
-            // actually ends and they reset to plain θ together below.
-            if (c._banditToolLastVθ != null) { c.avatarRef.group.rotation.y = c._banditToolLastVθ; c.groupRot = c._banditToolLastVθ; }
-            return;
-          }
-        }
-        const anim = c._banditSwingAnim || 'thrust';
-        const pose = c._banditSwingPose;
-        const dirSign = c._banditSwingDirSign || 1;
-        const power = c._banditSwingPower || 1;
-
-        // The sprite plane's own local twist/mirror -- mirrors updateToolMesh's
-        // spinPlane handling exactly (see its own comment there): a sweep-style
-        // blade needs an extra -90 degree z-twist to lie edge-on into the swing
-        // plane instead of sitting flat the way a thrust weapon's sprite does,
-        // and dirSign mirrors it across (x-scale flip) for a Backhand-style
-        // step. makeBanditToolHolder builds the exact same flat plane mesh
-        // (makeToolPlaneMesh) the player equips, but nothing here was ever
-        // applying this twist -- every bandit SWEEP weapon (hatchet, fishing
-        // mace) rendered lying flat regardless of anim/pose, reading as "held
-        // like a thrust weapon" even while stanceAnim/stanceExpected both
-        // correctly reported "sweep". Player-only cosmetics (the harpoon-cast
-        // twirl, refillTwistOut/Back) don't apply to a bandit's own combat
-        // swing, so only the two channels real combat swings actually use are
-        // ported here.
-        const spinPlane = holder.children[0]?.userData?.toolPlane;
-        if (spinPlane) {
-          spinPlane.rotation.z = anim === 'sweep' ? -Math.PI / 2 : 0;
-          spinPlane.scale.x = anim === 'sweep' ? dirSign : 1;
-        }
-
-        let progress = 0, wf = 0.16;
-        if (action) {
-          const totalS = Math.max(0.0001, action.windupS + action.strikeS);
-          progress = Math.min(1, action.t / totalS);
-          wf = action.windupS / totalS;
-          c._banditToolSettleUntil = performance.now() + BANDIT_TOOL_SETTLE_S * 1000;
-        }
-
-        // NEITHER c.facing NOR c.groupRot directly -- the weapon holder is a
-        // standalone world object using the exact same rotation.y convention
-        // as the player's own tool (θ = playerFacing there). Turns out
-        // playerFacing is itself NOT the raw facing angle either: the
-        // player's own per-frame update computes it as
-        // `-facingAngle + Math.PI / 2` (facingAngle === player.angle, the
-        // raw aim angle -- see the player's own mesh-update code) before
-        // smoothing/deadzoning. c.facing is the bandit's equivalent of
-        // facingAngle/player.angle (the raw aim angle fireBandit*'s own
-        // cone/lunge checks use directly) -- so the weapon's own θ needs
-        // that SAME `-angle + PI/2` transform applied to c.facing, just
-        // WITHOUT def.aimAngleOffset baked in (that offset exists only to
-        // correct the bandit portrait RIG's own internal axis quirk -- see
-        // buildBanditAvatar -- the weapon holder isn't part of that rig and
-        // has no such quirk to correct for).
-        //
-        // c.groupRot (the avatar body's own rotation.y) is this SAME
-        // transform but WITH aimAngleOffset included (see
-        // updateCreatureMesh's rawTargetRotY), so at rest groupRot is
-        // always θ - aimAngleOffset, a fixed difference. Both groupRot and
-        // holder.rotation.y are used completely directly as literal Y
-        // rotations (grp.rotation.y = c.groupRot in updateCreatureMesh;
-        // holder.quaternion built straight from θ below) -- so a lean
-        // (bodyYawRad) carries across the fixed difference by plain
-        // addition in EITHER space, without re-deriving anything from
-        // c.facing: vθGroup = vθ - aimAngleOffset (see the sweep/thrust
-        // branches below). A previous version of this code re-ran the
-        // leaned angle back through a fresh `-(angle) + offset` transform,
-        // which silently flips bodyYawRad's own sign (the transform negates
-        // its argument, including whatever lean had just been added),
-        // leaning the avatar body the OPPOSITE way from the weapon it's
-        // supposedly holding -- exactly the "independent rotations between
-        // avatars and weapons" this replaces.
-        const θ = -(c.facing || 0) + Math.PI / 2;
-        const aimOffset = c.def.aimAngleOffset || 0;
-        const base = banditToolBaseXY(c.avatarRef);
-        // playerMesh.position.y is a feet-level origin (playerToolBaseY then
-        // adds the hand height on top of that) -- avatarRef.group.position.y
-        // is a CENTER-of-model anchor instead (see makeBanditEntity's
-        // surfY+halfH spawn position and updateCreatureMesh's ty), so the
-        // same +base.y offset needs feet-level Y here too, not center Y.
-        const feetY = c.avatarRef.group.position.y - (c.halfHeight || 0);
-
-        if (anim === 'sweep' && pose) {
-          const styleNeutral = STYLE_NEUTRAL_POSE.sweep;
-          const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
-          const chan = (ch, mirror = false) => {
-            const w = (neutral[ch] + ((pose.windup?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
-            const s = (neutral[ch] + ((pose.strike?.[ch] ?? neutral[ch]) - neutral[ch]) * power) * (mirror ? dirSign : 1);
-            const n = neutral[ch] * (mirror ? dirSign : 1);
-            return banditPoseLerp(progress, wf, w, s, n);
-          };
-          const x = chan('x', true), y = chan('y'), z = chan('z');
-          const pitchRad = THREE.MathUtils.degToRad(chan('pitch'));
-          const yawRad = THREE.MathUtils.degToRad(chan('yaw', true));
-          const rollRad = THREE.MathUtils.degToRad(chan('roll', true));
-          const bodyYawRad = THREE.MathUtils.degToRad(chan('bodyYaw', true));
-          const vθ = θ + bodyYawRad;
-          // Leans the avatar body itself into the swing too, not just the
-          // weapon -- matches the player's own updateToolMesh, which sets
-          // playerMesh.rotation.y = vθ in every branch (the whole character
-          // visibly winds up and follows through, not just their weapon).
-          // c.groupRot is θ's own space minus the constant aimAngleOffset
-          // (see θ's own comment above) -- the lean carries straight across
-          // by plain subtraction of that same constant, NOT by re-deriving
-          // from c.facing (which would flip bodyYawRad's own sign). Also
-          // updates c.groupRot itself (not just the live mesh rotation.y),
-          // so next frame's updateCreatureMesh lerp continues from this
-          // leaned angle instead of snapping back to the plain aim angle
-          // and re-leaning from scratch every single frame while the swing
-          // is active. Resolves to plain rest angle (no visible change) at
-          // rest, since bodyYawRad is 0 at progress=0 for every style here.
-          const vθGroup = vθ - aimOffset;
-          c.avatarRef.group.rotation.y = vθGroup;
-          c.groupRot = vθGroup;
-          c._banditToolLastVθ = vθGroup; // reasserted during the settle window below (already in groupRot-space)
-          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
-          _qFac.setFromAxisAngle(_tUp, vθ);
-          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
-          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
-          _qRoll.setFromAxisAngle(_zAxis, rollRad);
-          holder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
-          holder.position.set(
-            c.x / TILE + vRX * (base.x + x) + vFX * z,
-            feetY + base.y + y,
-            c.y / TILE + vRZ * (base.x + x) + vFZ * z,
-          );
-        } else {
-          // THRUST -- mirrors updateToolMesh's own thrust branch exactly
-          // (same windup-back/jab-forward/lateral/pitch/yaw formulas), used
-          // for pokeCombo, every Quick Attack, and the Counter Shield riposte.
-          const windupBack = -0.40 * power;
-          // neutralV=0, NOT windupBack -- matches the player's own thrust
-          // branch, whose equivalent fourPhaseLerp call for jabOff omits an
-          // explicit neutralV entirely (defaulting to 0), which is verified
-          // intentional (not just "happened to be 0") by STYLE_NEUTRAL_POSE.
-          // thrust.z === 0, the authored attack-animation-editor rest value
-          // this whole style is built to match at progress=0. Passing
-          // windupBack here instead left a bandit's thrust weapon
-          // permanently held pulled back (as if crouched mid-windup) even
-          // at true idle, never resting at the same neutral extension the
-          // player's own weapon sits at.
-          const jabOff = banditPoseLerp(progress, wf, windupBack, 0.32 * power, 0);
-          const lateral = banditPoseLerp(progress, wf, 0, -0.23 * power, 0);
-          const pitchRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
-          const yawRad = banditPoseLerp(progress, wf, 0, THREE.MathUtils.degToRad(-45) * power, 0);
-          const bodyYawRad = banditPoseLerp(progress, wf, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power, 0);
-          const vθ = θ + bodyYawRad;
-          // Leans the avatar body itself into the thrust too -- see the
-          // matching comment in the sweep branch above.
-          const vθGroup = vθ - aimOffset;
-          c.avatarRef.group.rotation.y = vθGroup;
-          c.groupRot = vθGroup;
-          c._banditToolLastVθ = vθGroup; // reasserted during the settle window above (already in groupRot-space)
-          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ), vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
-          _qFac.setFromAxisAngle(_tUp, vθ);
-          _qToolYaw.setFromAxisAngle(_tUp, yawRad);
-          _qAnim.setFromAxisAngle(_xAxis, pitchRad);
-          holder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim);
-          holder.position.set(
-            c.x / TILE + vRX * (base.x + lateral) + vFX * jabOff,
-            feetY + base.y,
-            c.y / TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
-          );
-        }
-      }
-
-      // Mirrors refreshPlayerAvatar's own playerToolBaseX/Y exactly: prefers
-      // the real per-species/gender hand-attach point scanned off the
-      // rendered portrait (buildBanditAvatar's handAttachX/Y, forwarded from
-      // buildSinglePlaneAvatarModel), falling back to the generic
-      // -width/2,height/2 guess only if that scan didn't produce one.
-      function banditToolBaseXY(avatarRef) {
-        const w = avatarRef?.modelWidth || 0.9, h = avatarRef?.modelHeight || 0.9;
-        return {
-          x: avatarRef?.handAttachX ?? (-w / 2),
-          y: avatarRef?.handAttachY ?? (h / 2),
-        };
-      }
-
-      async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-        const roster = await rollBanditRoster(cfg, rank, opts.nameOverride);
-        const avatarRef = await buildBanditAvatar(roster);
-        if (!avatarRef) {
-          window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
-          return null;
-        }
-        // Building the portrait is two awaited canvas renders long, so the
-        // player can transition out of the zone mid-build. Everything below
-        // resolves against whatever area is current NOW (scene, grid, areaId),
-        // so a stale spawn would land a bandit in the wrong zone entirely —
-        // drop it instead and let the next visit re-seed the camp.
-        if (opts.zoneId && opts.zoneId !== currentArea) {
-          avatarRef.dispose();
-          return null;
-        }
-        const mastery = banditMasteryFor(cfg, rank, tier);
-        const def = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
-        const targetScene = opts.scene || getActiveScene();
-        const targetGrid = opts.grid || getActiveGrid();
-        const gridCols = opts.cols || getActiveCols();
-        const gridRows = opts.rows || getActiveRows();
-        const halfH = avatarRef.modelHeight / 2;
-        const col = clamp(Math.floor(x / TILE), 0, gridCols - 1);
-        const row = clamp(Math.floor(y / TILE), 0, gridRows - 1);
-        const surfY = targetGrid[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
-        avatarRef.group.position.set(x / TILE, surfY + halfH, y / TILE);
-        _markPngPlane(avatarRef.group);
-        targetScene.add(avatarRef.group);
-        const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
-        if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
-
-        const groundShadow = makeCharacterGroundShadow('bandit_ground_shadow');
-        const shadowRadii = creatureGroundShadowRadii(def);
-        groundShadow.scale.set(shadowRadii.radiusX, 1, shadowRadii.radiusZ);
-        groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
-        targetScene.add(groundShadow);
-
-        const c = {
-          id: 'bandit_' + rank + '_' + (performance.now() | 0) + '_' + Math.floor(rnd() * 100000),
-          creatureKey: 'bandit-' + rank, def, avatarRef, groundShadow,
-          x, y, vx: 0, vy: 0,
-          halfHeight: halfH,
-          health: def.maxHealth, maxHealth: def.maxHealth,
-          stamina: def.maxStamina, maxStamina: def.maxStamina,
-          facing: 0, groupRot: 0, pngRot: 0, perpState: {},
-          scaleY: 1,
-          attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
-          knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
-          runFrame: 0, runFrameDistPx: 0, currentFrameUrl: null,
-          isCompanion: false, master: null,
-          name: roster.name,
-          state: 'idle',
-          wanderTarget: null, wanderT: 0,
-          homeX: x, homeY: y,
-          scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
-          isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
-          banditWeaponMeshAttached: !!banditToolHolder,
-          _banditToolHolder: banditToolHolder,
-          // Idle/approach rest pose matches the weapon's own natural swing
-          // style (see banditNaturalSwing) until an ability fire overwrites
-          // these with its own (see fireBanditComboStep/fireBanditQuickAttack
-          // /fireBanditChargedBreaker/fireBanditCounterRiposte) -- reset
-          // back to this same natural style once the action completes (see
-          // finishBanditAction) rather than staying stuck on whichever
-          // ability last fired -- see updateBanditToolMesh.
-          _banditSwingAnim: banditNaturalSwing(def).anim,
-          _banditSwingPose: banditNaturalSwing(def).pose,
-          _banditSwingDirSign: 1, _banditSwingPower: 1, _banditToolSettleUntil: 0,
-          // Ability-AI state -- see updateBanditCombatAI/damageCreature's
-          // isBandit branch/the leaving-chase reset above for where these
-          // get driven and cleared.
-          _banditAction: null, _banditComboIndex: 0,
-          _banditHold1CdT: 0, _banditGuardUntil: 0, _banditGuardCdT: 0, _banditLastCounterAt: -99,
-          // Per-bandit phase offset for the idle side-to-side strafe applied
-          // while queued/waiting (see BANDIT_STRAFE_* below) -- randomized so
-          // a gang doesn't all sway in unison.
-          _banditStrafePhase: rnd() * Math.PI * 2,
-          rosterRecord: roster,
-          ...opts.extra,
-        };
-        window.ResourceSystem?.initEntity(c);
-        return c;
-      }
-
-      // ── Zone adapter for TemporaryLocales ─────────────────────────────
-      //
-      // TemporaryLocales operates on the wilderness generator's own workspace
-      // shape ({cols, rows, tiles: tiles[y][x], objects, entry}). A live
-      // zone's cached layout (_zoneLayouts) is a flatter RUNTIME form: a flat
-      // array of {c, r, type, elevTier, incline, floraKind} tile records with
-      // no `objects` list at all, because the generator folds its flora and
-      // resource objects down into tile types on the way out (a copse/bush/
-      // fruitBush/mushroomPatch/beehive all become a SHRUB tile carrying
-      // `floraKind`; ore and boulders become ROCK) -- see terrain-preview.js's
-      // buildMergedZoneGrid and mergeZoneTiles. So the module's
-      // DEFAULT_CLEARABLE_TYPES (which names the generator's pre-fold object
-      // types: 'copse', 'diggableRockOre', ...) can never match anything at
-      // runtime; _BANDIT_CLEARABLE_TYPES is passed as opts.clearableTypes
-      // instead, and this adapter re-inflates the tile grid into the shape
-      // findSite/stamp/release expect. Cached per zone so occupiedBy
-      // reservations from one camp are visible to the next.
-      const _BANDIT_CLEARABLE_TYPES = new Set(['shrub']);
-      const _banditZoneViews = new Map();
-
-      function _banditZoneView(zoneId) {
-        if (_banditZoneViews.has(zoneId)) return _banditZoneViews.get(zoneId);
-        const layout = _zoneLayouts.get(zoneId);
-        if (!layout?.cols || !layout?.rows) return null;
-        const cols = layout.cols, rows = layout.rows;
-        const tiles = Array.from({ length: rows }, () => new Array(cols).fill(null));
-        const objects = [];
-        const srcByKey = new Map();
-        for (const t of (layout.tiles || [])) {
-          if (!(t.r >= 0 && t.r < rows && t.c >= 0 && t.c < cols)) continue;
-          const view = {
-            height: t.elevTier || 0,
-            water: WATERWAY_TYPES.has(t.type),
-            path: t.type === TileType.PATH,
-            // An incline tile is solid to the game's own movement collision
-            // (tileSpeedAt), so it must never end up under a camp.
-            ramp: t.type === TileType.RAMP || !!t.incline,
-            waterfall: t.type === TileType.WATERFALL,
-            terrain: t.type,
-            occupiedBy: null,
-          };
-          tiles[t.r][t.c] = view;
-          srcByKey.set(`${t.c},${t.r}`, t);
-          // Flora and resource clutter, re-inflated as clearable objects.
-          // A generated zone's ROCK tiles are always a generator resource
-          // object (diggableRockOre/undiggableBoulder) — mergeZoneTiles
-          // suppresses any stray authored decorative rock back to grass unless
-          // it carries a generatedObjectType — and DEFAULT_CLEARABLE_TYPES
-          // names both, so they're bulldozeable clutter like anything else.
-          // release() puts the node straight back, so a camp only ever hides
-          // a mining spot for as long as it stands.
-          if (t.type === TileType.SHRUB || t.type === TileType.ROCK) {
-            const id = `zclutter_${t.c}_${t.r}`;
-            objects.push({
-              id, type: 'shrub', x: t.c, y: t.r, w: 1, h: 1,
-              srcType: t.type, floraKind: t.floraKind || null,
-            });
-            view.occupiedBy = id;
-          }
-        }
-        let uniqueSeq = 0;
-        const blockRect = (col, row, w, h) => {
-          if (!Number.isFinite(col) || !Number.isFinite(row)) return;
-          const id = `zunique_${uniqueSeq++}`;
-          // localeMeta short-circuits isBlocked -- never bulldozeable, whatever
-          // clearableTypes says.
-          objects.push({ id, type: 'unique', x: col, y: row, w: w || 1, h: h || 1, localeMeta: true });
-          for (let r = row; r < row + (h || 1); r++) {
-            for (let cc = col; cc < col + (w || 1); cc++) if (tiles[r]?.[cc]) tiles[r][cc].occupiedBy = id;
-          }
-        };
-        for (const b of (layout.buildings || [])) blockRect(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
-        for (const d of (layout.dens || [])) blockRect(d.x, d.y, d.w || 1, d.h || 1);
-        for (const d of (layout.decor || [])) blockRect(d.col, d.row, 1, 1);
-        for (const f of (layout.furniture || [])) blockRect(f.col, f.row, 1, 1);
-        for (const tr of (layout.transitions || [])) blockRect(tr.col, tr.row, 1, 1);
-        for (const t of (layout.rootTotems || [])) blockRect(t.x ?? t.col, t.y ?? t.row, t.w || 1, t.h || 1);
-        for (const inst of (layout.localeInstances || [])) {
-          for (const o of (inst.objects || [])) blockRect(o.x, o.y, o.w || 1, o.h || 1);
-        }
-        const zdef = EXTERIOR_ZONES[zoneId];
-        const entry = layout.toTownExit
-          ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
-          : (Number.isFinite(zdef?.entryCol) ? { x: zdef.entryCol, y: zdef.entryRow } : null);
-        const view = { cols, rows, tiles, objects, entry, _srcByKey: srcByKey };
-        _banditZoneViews.set(zoneId, view);
-        return view;
-      }
-
-      // stamp()/release() only ever touch the adapter view above, so the real
-      // zone layout (and, while the zone is built, its live scene grid) has to
-      // be brought in line by hand: a bulldozed flora tile becomes plain grass
-      // and its tree/bush mesh gets rebuilt away, exactly the way felling a
-      // tree with the axe already does.
-      function _syncBanditFlora(zoneId, snapshots, restore) {
-        const view = _banditZoneViews.get(zoneId);
-        const zi = _zoneScenes.get(zoneId);
-        let changed = 0;
-        for (const snap of (snapshots || [])) {
-          if (snap.type !== 'shrub') continue;
-          const nextType = restore ? (snap.srcType || TileType.SHRUB) : TileType.GRASS;
-          const src = view?._srcByKey.get(`${snap.x},${snap.y}`);
-          if (src) {
-            src.type = nextType;
-            if (restore) src.floraKind = snap.floraKind || null;
-          }
-          const gridTile = zi?.grid?.[snap.y]?.[snap.x];
-          if (gridTile) {
-            gridTile.type = nextType;
-            if (restore) gridTile.floraKind = snap.floraKind || null;
-          }
-          changed++;
-        }
-        if (changed && zi) refreshZoneGroundVisuals(zoneId);
-        return changed;
-      }
-
-      // ── Tent props ────────────────────────────────────────────────────
-
-      // Deliberately does not block movement, same as reagent plants and
-      // buried chests -- the tent is a hold-to-interact prop, and making it
-      // solid would need a matching entry in the zone's collision grid that
-      // release()/burning would then have to unpick.
-      function buildBanditTentMesh() {
-        const group = new THREE.Group();
-        const canvas = new THREE.Mesh(
-          new THREE.ConeGeometry(0.9, 1.2, 5),
-          new THREE.MeshLambertMaterial({ color: 0x8a7550 }));
-        canvas.position.y = 0.6;
-        canvas.castShadow = true;
-        const doorway = new THREE.Mesh(
-          new THREE.PlaneGeometry(0.44, 0.6),
-          new THREE.MeshBasicMaterial({ color: 0x1a1410, side: THREE.DoubleSide }));
-        doorway.position.set(0, 0.3, 0.66);
-        const pole = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.035, 0.035, 1.45, 5),
-          new THREE.MeshLambertMaterial({ color: 0x5a4326 }));
-        pole.position.y = 0.72;
-        group.add(canvas, doorway, pole);
-        return group;
-      }
-
-      // zoneId -> Map<stampedObjectId, { mesh, light, sfxSource }> for every
-      // prop a camp placed (tents plus the locale's own decor).
-      const _banditCampMeshes = new Map();
-
-      function banditTentCenterPx(obj) {
-        return { x: (obj.x + (obj.w || 1) / 2) * TILE, y: (obj.y + (obj.h || 1) / 2) * TILE };
-      }
-
-      // Each camp record caches its own tent objects at stamp time (see
-      // spawnBanditCamp) rather than re-filtering the zone view's whole object
-      // list — updateBanditTentInteraction runs this every frame, and a large
-      // zone's view holds one object per flora/rock tile.
-      function _banditZoneTents(zoneId) {
-        const out = [];
-        for (const rec of (_banditCampInstances.get(zoneId) || [])) {
-          for (const prop of rec.props) if (prop.type === 'tent') out.push(prop);
-        }
-        return out;
-      }
-
-      function _disposeBanditProp(zoneId, entry) {
-        const zScene = _zoneScenes.get(zoneId)?.scene;
-        if (zScene) {
-          zScene.remove(entry.mesh);
-          if (entry.light) zScene.remove(entry.light);
-        }
-        entry.mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
-        if (entry.sfxSource) window.Music?.unregisterFurnitureSfxSource(entry.sfxSource);
-      }
-
-      // (Re)builds every prop for whatever camps this zone currently tracks --
-      // idempotent, and re-run on every den-check tick so a zone scene that got
-      // disposed and rebuilt (leaving town and coming back) gets its camps back.
-      // Tents get their own procedural mesh; the locale's plain decor objects
-      // (campfire, supply crates) go through DECORATIVE_FURNITURE_DEFS the same
-      // way authored zone decor does, so the camp fire even lights the place.
-      function ensureBanditCampMeshes(zoneId) {
-        const zi = _zoneScenes.get(zoneId);
-        if (!zi) return;
-        let meshes = _banditCampMeshes.get(zoneId);
-        if (!meshes) { meshes = new Map(); _banditCampMeshes.set(zoneId, meshes); }
-        const live = new Set();
-        for (const rec of (_banditCampInstances.get(zoneId) || [])) {
-          for (const obj of rec.props) {
-            if (obj.destroyed) continue;
-            live.add(obj.id);
-            const existing = meshes.get(obj.id);
-            if (existing && existing.mesh.parent === zi.scene) continue;
-            if (existing) { _disposeBanditProp(zoneId, existing); meshes.delete(obj.id); }
-            const gridTile = zi.grid?.[obj.y]?.[obj.x];
-            const y = gridTile ? tileSurfaceYInArea(gridTile, zoneId) : NORMAL_TOP;
-            if (obj.type === 'tent') {
-              const mesh = buildBanditTentMesh();
-              const center = banditTentCenterPx(obj);
-              mesh.position.set(center.x / TILE, y, center.y / TILE);
-              _markOutline(mesh);
-              zi.scene.add(mesh);
-              meshes.set(obj.id, { mesh, light: null, sfxSource: null });
-            } else if (obj.key && window.ProceduralFurniture) {
-              const result = makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
-              if (!result) continue;
-              result.mesh.position.y += y;
-              if (result.light) result.light.position.y += y;
-              meshes.set(obj.id, result);
-            }
-          }
-        }
-        for (const [id, entry] of [...meshes]) {
-          if (live.has(id)) continue;
-          _disposeBanditProp(zoneId, entry);
-          meshes.delete(id);
-        }
-      }
-
-      function removeBanditCampProp(zoneId, propId) {
-        const meshes = _banditCampMeshes.get(zoneId);
-        const entry = meshes?.get(propId);
-        if (!entry) return;
-        _disposeBanditProp(zoneId, entry);
-        meshes.delete(propId);
-      }
-
-      // ── Camp lifecycle ────────────────────────────────────────────────
-
-      // zoneId -> [{ zoneId, instance, tier, gangIds: Set<creatureId>,
-      //              props: [stamped tent/decor objects] }]
-      const _banditCampInstances = new Map();
-      // Zones the player has just (re-)entered; consumed by
-      // ensureCurrentZoneBanditCamps so a cleared camp only ever re-rolls
-      // between visits, never under the player's feet mid-visit.
-      const _banditZoneEntryPending = new Set();
-      const _banditZoneWorkInFlight = new Set();
-
-      function banditTierForSite(cfg, view, site) {
-        const per = Number(cfg?.difficultyTiers?.tierDistanceTiles || 14);
-        const maxTier = Number(cfg?.difficultyTiers?.maxTier ?? 3);
-        if (!view?.entry || !(per > 0)) return 0;
-        const cx = site.x + site.w / 2, cy = site.y + site.h / 2;
-        const dist = Math.hypot(cx - view.entry.x, cy - view.entry.y);
-        return clamp(Math.floor(dist / per), 0, maxTier);
-      }
-
-      // A camp is cleared once every tent it placed has been burned down AND
-      // every bandit it spawned is dead -- the hostileObjects scan mirrors
-      // isDenPackAlive, keyed on banditCampInstanceId the way a pack member is
-      // keyed on denKey. Looting a tent deliberately does NOT count: it only
-      // strips the tent's supplies (interactable.lootable -> false) and leaves
-      // it standing, so clearing a camp always means burning it out.
-      function isBanditCampCleared(rec) {
-        const view = _banditZoneViews.get(rec.zoneId);
-        if (!view) return false;
-        if (window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
-        for (const c of hostileObjects) {
-          if (c.banditCampInstanceId === rec.instance.id && c.health > 0) return false;
-        }
-        return true;
-      }
-
-      // Location title card ("<Captain>'s Bandit Camp") when the player
-      // crosses INTO a live camp's radius from outside it -- tracks the
-      // inside/outside boolean per instance so it fires again on a real
-      // re-entry (walk away and come back) instead of only ever once per
-      // camp, matching how a genre "Entering X" banner usually behaves.
-      // Independent of updateCompanionPerception's own map-reveal system:
-      // that one requires an active companion and a much larger sensed
-      // range before marking a camp on the map at all; this is a plain
-      // proximity trigger off the player's own position, no companion
-      // needed, since it's just naming what's already visually right
-      // there rather than revealing a hidden threat.
-      const BANDIT_CAMP_BANNER_RADIUS_TILES = 10;
-      const BANDIT_CAMP_BANNER_CHECK_INTERVAL_S = 0.5;
-      let _banditCampBannerAccum = 0;
-      // instance.id -> was the player inside the banner radius last check
-      const _banditCampBannerInside = new Map();
-      function updateBanditCampBanners(dt) {
-        _banditCampBannerAccum += dt;
-        if (_banditCampBannerAccum < BANDIT_CAMP_BANNER_CHECK_INTERVAL_S) return;
-        _banditCampBannerAccum = 0;
-        if (!_isZoneArea(currentArea)) return;
-        const live = new Set();
-        for (const rec of (_banditCampInstances.get(currentArea) || [])) {
-          if (isBanditCampCleared(rec)) continue;
-          live.add(rec.instance.id);
-          const col = rec.instance.site.x + rec.instance.site.w / 2;
-          const row = rec.instance.site.y + rec.instance.site.h / 2;
-          const distTiles = Math.hypot(col - player.x / TILE, row - player.y / TILE);
-          const inside = distTiles <= BANDIT_CAMP_BANNER_RADIUS_TILES;
-          if (inside && !_banditCampBannerInside.get(rec.instance.id)) {
-            showZoneBanner(rec.captainName ? `${rec.captainName}'s Bandit Camp` : 'Bandit Camp');
-          }
-          _banditCampBannerInside.set(rec.instance.id, inside);
-        }
-        // Drop tracking for any instance no longer live (cleared/re-rolled)
-        // so a brand new camp that happens to reuse a stale id-adjacent
-        // slot starts from a clean "outside" state rather than inheriting
-        // whatever the old, unrelated camp's inside/outside flag was.
-        for (const id of _banditCampBannerInside.keys()) {
-          if (!live.has(id)) _banditCampBannerInside.delete(id);
-        }
-      }
-
-      // ── Companion Perception: sensing nearby bandit camps/dens ─────────
-      //
-      // A companion's own species-defined perceptionTiles (see CREATURE_DB —
-      // a hunting dog's nose beats a farm bird's) is how far away it can
-      // sense danger through cover/foliage that fog-of-war alone wouldn't
-      // reveal. An active companion (whistle-summoned, actually present and
-      // following the player — not just sitting in the stable) periodically
-      // checks every live camp/den in the current zone against this range.
-      // The first time one comes into range it's announced once and marked
-      // on the map/minimap with its own danger marker (see
-      // _drawWildernessMapOnCanvas) until the threat is actually cleared —
-      // a camp once every tent is burned and every bandit dead (see
-      // isBanditCampCleared), a den once its current pack is wiped (see
-      // isDenPackAlive). Clearing removes the marker outright rather than
-      // leaving a stale "already handled" icon on the map — a den that
-      // later repopulates needs sensing again from scratch, same as never
-      // having found it the first time.
-      //
-      // Deliberately in-memory only, not saved to localStorage: camps
-      // re-roll to a new spot once cleared and dens are re-seeded per zone
-      // visit already (see forgetZoneBanditState/ensureCurrentZoneDenPacks),
-      // so there's no stable location to persist a reveal against across a
-      // reload the way _loadDiscoveredLocales persists a fixed landmark.
-      const PERCEPTION_CHECK_INTERVAL_S = 0.6;
-      let _perceptionCheckAccum = 0;
-      const DEFAULT_PERCEPTION_TILES = 6;
-      // Global tuning knob on top of each species' own base perceptionTiles
-      // (10 tiles "as the crow flies" read as "it's basically already on top
-      // of you" in actual play, not a meaningful early-warning distance) --
-      // scale every species' range from here rather than re-tuning each
-      // CREATURE_DB entry by hand.
-      const PERCEPTION_TILES_MULTIPLIER = 4;
-      // key ('camp:'+instanceId or 'den:'+denKey) -> { kind, zoneId, col, row, label }
-      const _perceivedThreats = new Map();
-
-      function _companionPerceptionRangePx(c) {
-        return (c.def?.perceptionTiles ?? DEFAULT_PERCEPTION_TILES) * PERCEPTION_TILES_MULTIPLIER * TILE;
-      }
-
-      function updateCompanionPerception(dt) {
-        _perceptionCheckAccum += dt;
-        if (_perceptionCheckAccum < PERCEPTION_CHECK_INTERVAL_S) return;
-        _perceptionCheckAccum = 0;
-
-        // Prune anything that's since been cleared before scanning for new
-        // reveals, so a freshly-repopulated den isn't left permanently
-        // unmarked just because it was sensed once, long ago, before it was
-        // wiped out the first time.
-        for (const [key, info] of _perceivedThreats) {
-          if (info.kind === 'camp') {
-            const rec = (_banditCampInstances.get(info.zoneId) || []).find(r => r.instance.id === info.instanceId);
-            if (!rec || isBanditCampCleared(rec)) _perceivedThreats.delete(key);
-          } else if (info.kind === 'den') {
-            if (!isDenPackAlive(info.denKey)) _perceivedThreats.delete(key);
-          }
-        }
-
-        if (!_isZoneArea(currentArea)) return;
-        const layout = _zoneLayouts.get(currentArea);
-        for (const c of companionObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
-          // Only the human player's own perception drives map reveals — an
-          // NPC's or another master's companion sensing danger wouldn't mean
-          // anything to the player.
-          if ((c.master || player) !== player) continue;
-          const rangePx = _companionPerceptionRangePx(c);
-          const label = c.name || c.def?.label || 'Your companion';
-
-          for (const rec of (_banditCampInstances.get(currentArea) || [])) {
-            const key = 'camp:' + rec.instance.id;
-            if (_perceivedThreats.has(key) || isBanditCampCleared(rec)) continue;
-            const col = rec.instance.site.x + rec.instance.site.w / 2, row = rec.instance.site.y + rec.instance.site.h / 2;
-            if (Math.hypot(col * TILE - c.x, row * TILE - c.y) > rangePx) continue;
-            _perceivedThreats.set(key, { kind: 'camp', zoneId: currentArea, instanceId: rec.instance.id, col, row, label: 'Bandit Camp' });
-            showToast(`${label} senses a bandit camp nearby — marked on the map!`, false);
-          }
-
-          for (const den of (layout?.dens || [])) {
-            const denKey = denKeyFor(currentArea, den);
-            const key = 'den:' + denKey;
-            if (_perceivedThreats.has(key) || !isDenPackAlive(denKey)) continue;
-            const col = den.x + (den.w || 1) / 2, row = den.y + (den.h || 1) / 2;
-            if (Math.hypot(col * TILE - c.x, row * TILE - c.y) > rangePx) continue;
-            _perceivedThreats.set(key, { kind: 'den', zoneId: currentArea, denKey, col, row, label: 'Animal Den' });
-            showToast(`${label} senses an animal den nearby — marked on the map!`, false);
-          }
-        }
-      }
-
-      // Stamps one camp into an already-generated zone and spawns its gang.
-      // Returns the TemporaryLocales instance record, or null if the zone had
-      // no room for the footprint.
-      async function spawnBanditCamp(zoneId, localeDef, cfg) {
-        const view = _banditZoneView(zoneId);
-        if (!view) return null;
-        const placement = localeDef.placement || {};
-        // The authored clearance (2 tiles all round) turns a 9x8 camp into a
-        // 13x12 rectangle, which simply does not fit in the two small 22x16
-        // zones once terrain is accounted for -- so fall back through tighter
-        // buffers rather than silently leaving half the wilderness camp-free.
-        let instance = null;
-        for (const clearance of [placement.clearanceTiles ?? 2, 1, 0]) {
-          instance = window.TemporaryLocales.stamp(view, localeDef, {
-            clearanceTiles: clearance,
-            requiresFlatGround: placement.requiresFlatGround !== false,
-            minDistanceFromEntry: placement.minDistanceFromEntry,
-            clearableTypes: _BANDIT_CLEARABLE_TYPES,
-            rng: rnd,
-          });
-          if (instance) break;
-        }
-        if (!instance) {
-          window.__farmLog?.(`[bandits] zone "${zoneId}": no site fits ${localeDef.id} (fallback: no camp placed here).`, 'wildlife');
-          return null;
-        }
-        _syncBanditFlora(zoneId, instance.removedObjectSnapshots, false);
-
-        // A bounty pin (see _activeBountyForZone/generateBountyTask) forces
-        // this camp's tier and captain identity to match a wanted poster
-        // already promising a specific captain in this zone, but only
-        // while that zone doesn't already HAVE a camp carrying the pinned
-        // name -- most bounties are generated by adopting an already-live
-        // camp's real identity outright (no pin needed at all), so this
-        // path only matters for the fallback case: a bounty rolled when no
-        // live camp existed anywhere, which has to steer whatever camp
-        // gets generated next instead of naming one that already exists.
-        const bountyPin = _activeBountyForZone(zoneId);
-        const alreadyHasPinnedCaptain = bountyPin
-          && (_banditCampInstances.get(zoneId) || []).some(r => r.captainName === bountyPin.captainName);
-        const pinThisCamp = bountyPin && !alreadyHasPinnedCaptain;
-        const tier = pinThisCamp ? bountyPin.tier : banditTierForSite(cfg, view, instance.site);
-        const rec = {
-          zoneId, instance, tier, gangIds: new Set(),
-          props: view.objects.filter(o => o.temporaryLocaleInstanceId === instance.id),
-        };
-        const tracked = _banditCampInstances.get(zoneId) || [];
-        tracked.push(rec);
-        _banditCampInstances.set(zoneId, tracked);
-        ensureBanditCampMeshes(zoneId);
-
-        const comp = cfg?.gangComposition || {};
-        const grunts = (comp.gruntsMin ?? 3) + Math.floor(rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
-        const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
-        const roster = [
-          ...Array(grunts).fill('grunt'),
-          ...Array(lieutenants).fill('lieutenant'),
-          ...Array(comp.captains ?? 1).fill('captain'),
-        ];
-        // Camp centre in world pixels -- the same homeX/homeY + angle/distance
-        // scatter spawnPackAtDen uses around a den's footprint.
-        const homeX = (instance.site.x + instance.site.w / 2) * TILE;
-        const homeY = (instance.site.y + instance.site.h / 2) * TILE;
-        let spawned = 0;
-        for (const rank of roster) {
-          if (zoneId !== currentArea) break; // player left mid-build; the next visit re-seeds
-          const angle = rnd() * Math.PI * 2;
-          const dist = TILE * (1.0 + rnd() * 2.6);
-          const c = await makeBanditEntity(cfg, rank, tier, homeX + Math.cos(angle) * dist, homeY + Math.sin(angle) * dist, {
-            zoneId,
-            extra: { homeX, homeY, banditCampInstanceId: instance.id, state: 'idle' },
-            nameOverride: (pinThisCamp && rank === 'captain') ? bountyPin.captainName : undefined,
-          });
-          if (!c) continue;
-          hostileObjects.add(c);
-          rec.gangIds.add(c.id);
-          spawned++;
-          // _banditName(rank) only appends a surname for rank==='captain'
-          // (see its own comment), so c.name is already the captain's full
-          // "First Last" -- captured here for the camp-entry title banner
-          // (updateBanditCampBanners) rather than re-deriving it. First
-          // captain found wins if gangComposition.captains is ever >1.
-          if (rank === 'captain' && !rec.captainName) rec.captainName = c.name;
-        }
-        window.__farmLog?.(`[bandits] zone "${zoneId}": camp ${instance.id} stamped at (${instance.site.x},${instance.site.y}) tier ${tier}, ${spawned}/${roster.length} gang members spawned.`, 'wildlife');
-        if (spawned > 0 && zoneId === currentArea) showToast('Smoke on the wind — a bandit camp is nearby.', false);
-        return instance;
-      }
-
-      async function seedBanditCampsForZone(zoneId) {
-        const [cfg, localeDefs] = await Promise.all([loadBanditGangConfig(), loadBanditCampLocaleDefs()]);
-        if (!cfg || !localeDefs.length) { _banditCampInstances.set(zoneId, []); return; }
-        if (!_banditCampInstances.has(zoneId)) _banditCampInstances.set(zoneId, []);
-        const maxCamps = Math.max(0, Number(cfg.campLifecycle?.maxCampsPerZone ?? 1));
-        for (let i = _banditCampInstances.get(zoneId).length; i < maxCamps; i++) {
-          const localeDef = localeDefs[Math.floor(rnd() * localeDefs.length)];
-          const maxInstances = Number(localeDef.placement?.maxInstances ?? maxCamps);
-          const already = _banditCampInstances.get(zoneId).filter(r => r.instance.localeId === localeDef.id).length;
-          if (already >= maxInstances) continue;
-          await spawnBanditCamp(zoneId, localeDef, cfg);
-        }
-      }
-
-      // Releases each cleared camp's footprint (restoring the flora it
-      // bulldozed) and stamps a fresh one somewhere else in the same zone, with
-      // a brand new gang. Only ever called from the zone-(re)entry branch of
-      // ensureCurrentZoneBanditCamps.
-      async function rerollBanditCamps(zoneId, clearedRecs) {
-        const [cfg, localeDefs] = await Promise.all([loadBanditGangConfig(), loadBanditCampLocaleDefs()]);
-        if (!cfg || !localeDefs.length) return;
-        const view = _banditZoneView(zoneId);
-        if (!view) return;
-        const tracked = _banditCampInstances.get(zoneId) || [];
-        for (const rec of clearedRecs) {
-          for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
-          window.TemporaryLocales.release(view, rec.instance);
-          _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
-          const idx = tracked.indexOf(rec);
-          if (idx >= 0) tracked.splice(idx, 1);
-        }
-        _banditCampInstances.set(zoneId, tracked);
-        await seedBanditCampsForZone(zoneId);
-      }
-
-      // A Tothal Shift replaces a zone's whole _zoneLayouts entry, so the cached
-      // adapter view, every camp instance stamped into it, and every tent mesh
-      // built from it all describe terrain that no longer exists. Mirrors
-      // forgetZoneDenState; the gang itself needs no cleanup here because
-      // performTothalShift's clearHostileObjects() already wipes them, and the
-      // zone scene is disposed/rebuilt with the tent meshes gone.
-      function forgetZoneBanditState(zoneId) {
-        _banditCampMeshes.delete(zoneId);
-        _banditCampInstances.delete(zoneId);
-        _banditZoneViews.delete(zoneId);
-        _banditZoneEntryPending.delete(zoneId);
-      }
-
-      // Called alongside ensureCurrentZoneDenPacks on the shared zone-tick (see
-      // updateHostileSpawning).
-      function ensureCurrentZoneBanditCamps() {
-        const zoneId = currentArea;
-        if (!_isZoneArea(zoneId) || zoneId === DEV_ARENA_ZONE_ID) return;
-        if (!window.TemporaryLocales) return;
-        // Checked before the pending flag is consumed, so a re-entry that lands
-        // while a seed/re-roll is still awaiting its config fetches isn't
-        // swallowed -- it's still pending on the next tick.
-        if (_banditZoneWorkInFlight.has(zoneId)) return;
-        const reentered = _banditZoneEntryPending.delete(zoneId);
-        if (!_banditCampInstances.has(zoneId)) {
-          _banditZoneWorkInFlight.add(zoneId);
-          seedBanditCampsForZone(zoneId)
-            .catch(e => debugLog('Bandits: camp seed failed: ' + e.message, 'warn'))
-            .finally(() => _banditZoneWorkInFlight.delete(zoneId));
-          return;
-        }
-        ensureBanditCampMeshes(zoneId);
-        if (!reentered) return;
-        const cleared = (_banditCampInstances.get(zoneId) || []).filter(isBanditCampCleared);
-        if (!cleared.length) return;
-        _banditZoneWorkInFlight.add(zoneId);
-        rerollBanditCamps(zoneId, cleared)
-          .catch(e => debugLog('Bandits: camp re-roll failed: ' + e.message, 'warn'))
-          .finally(() => _banditZoneWorkInFlight.delete(zoneId));
-      }
-
-      // ── Tent hold actions: loot, then burn ────────────────────────────
-      //
-      // Mirrors the Den-Mother nest's hold-to-take (NEST_TAKE_HOLD_S /
-      // updateNestInteraction): proximity plus the global actionHeldDown flag,
-      // no action-bar button to arm first, with a progress bar that resets the
-      // moment the player steps away or lets go. A tent has two held actions
-      // rather than the nest's one, and they're sequential rather than a menu:
-      // the first completed hold LOOTS it (grants the tent's supplies and
-      // clears interactable.lootable, leaving the tent standing), the second
-      // BURNS it (no loot, tent removed from the world). That keeps the nest's
-      // one-action-when-near UX exactly as-is while making both authored
-      // interactable flags meaningful, and means clearing a camp always
-      // requires burning every tent out rather than just rifling through them.
-      const BANDIT_TENT_HOLD_S = 4;
-      const BANDIT_TENT_NEAR_PX = TILE * 1.7;
-      let _banditTentHoldT = 0;
-      let _banditTentHoldId = null;
-      const _tentActionHudEl = document.getElementById('tentActionHud');
-      const _tentActionLabelEl = document.getElementById('tentActionLabel');
-      const _tentActionFillEl = document.getElementById('tentActionFill');
-
-      function nearestBanditTent(zoneId) {
-        let best = null, bestDist = Infinity;
-        for (const obj of _banditZoneTents(zoneId)) {
-          if (obj.destroyed) continue;
-          const center = banditTentCenterPx(obj);
-          const dist = Math.hypot(player.x - center.x, player.y - center.y);
-          if (dist <= BANDIT_TENT_NEAR_PX && dist < bestDist) { best = obj; bestDist = dist; }
-        }
-        return best;
-      }
-
-      function lootBanditTent(zoneId, obj) {
-        const gained = rollLootPool('banditTent');
-        const parts = grantBanditLoot(gained);
-        if (obj.interactable) obj.interactable.lootable = false;
-        refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
-        saveMemberWorldData();
-        showToast(parts.length
-          ? `Ransacked the tent: ${parts.join(' ')}`
-          : 'Nothing worth taking in the tent.', true);
-      }
-
-      function burnBanditTent(zoneId, obj) {
-        obj.destroyed = true;
-        if (obj.interactable) { obj.interactable.lootable = false; obj.interactable.burnable = false; }
-        const view = _banditZoneViews.get(zoneId);
-        if (view) {
-          const idx = view.objects.indexOf(obj);
-          if (idx >= 0) view.objects.splice(idx, 1);
-          // Hand the tent's tiles back to the instance's own reservation rather
-          // than clearing them outright: the whole padded rect still belongs to
-          // this camp until release() runs, and nulling these would let a
-          // second camp's findSite place itself inside the first one's footprint.
-          for (let r = obj.y; r < obj.y + (obj.h || 1); r++) {
-            for (let c = obj.x; c < obj.x + (obj.w || 1); c++) {
-              if (view.tiles[r]?.[c]?.occupiedBy === obj.id) view.tiles[r][c].occupiedBy = obj.temporaryLocaleInstanceId;
-            }
-          }
-        }
-        removeBanditCampProp(zoneId, obj.id);
-        showToast('🔥 Burned the bandit tent down.', true);
-      }
-
-      function updateBanditTentInteraction(dt) {
-        const zoneId = currentArea;
-        const tent = _isZoneArea(zoneId) ? nearestBanditTent(zoneId) : null;
-        if (!tent || !actionHeldDown) {
-          if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
-          if (_tentActionHudEl?.classList.contains('visible')) _tentActionHudEl.classList.remove('visible');
-          return;
-        }
-        // Walking from one tent to another restarts the hold rather than
-        // carrying accumulated progress across to the new one.
-        if (_banditTentHoldId !== tent.id) { _banditTentHoldId = tent.id; _banditTentHoldT = 0; }
-        const looting = !!tent.interactable?.lootable;
-        // The locale authors its own hold duration per tent (interactable.
-        // holdSeconds); BANDIT_TENT_HOLD_S is only the fallback.
-        const holdS = Number(tent.interactable?.holdSeconds) > 0
-          ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
-        _banditTentHoldT += dt;
-        if (_tentActionLabelEl) _tentActionLabelEl.textContent = looting ? 'Looting Tent...' : 'Burning Tent...';
-        if (_tentActionFillEl) _tentActionFillEl.style.width = Math.min(100, (_banditTentHoldT / holdS) * 100) + '%';
-        _tentActionHudEl?.classList.add('visible');
-        if (_banditTentHoldT < holdS) return;
-        _banditTentHoldT = 0;
-        _banditTentHoldId = null;
-        _tentActionHudEl?.classList.remove('visible');
-        if (looting) lootBanditTent(zoneId, tent);
-        else burnBanditTent(zoneId, tent);
-      }
-
-      // ── Corpse loot ───────────────────────────────────────────────────
-
-      // `gold` is a currency, not an ITEM_DEFS entry (see itemsForScroll's
-      // explicit filter) -- it has no 99-stack cap and no icon lookup, so it
-      // can't go through the ordinary inventory path makeCorpseWorldObject
-      // uses for butchering byproducts.
-      function grantBanditLoot(gained) {
-        const parts = [];
-        for (const [key, qty] of Object.entries(gained || {})) {
-          if (key === 'gold') {
-            inventory.gold = (inventory.gold || 0) + qty;
-            parts.push('💰' + qty + 'g');
-            continue;
-          }
-          inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
-          clampInventoryStack(key);
-          parts.push(itemIconForKey(key) + '×' + qty);
-        }
-        return parts;
-      }
-
-      // STORE_CLOTHING_PIECES only lists what the General Store actually
-      // stocks, and the bandit pool includes two items it doesn't
-      // (tankan_bodywrap, riverlandskasa_low) — both of which are in the
-      // account shop catalog with a proper label/price/category, so fall
-      // through to that before resorting to prettifying the raw id.
-      function _banditClothingPiece(cosmeticId, rolledSlot) {
-        const store = STORE_CLOTHING_PIECES.find(p => p.id === cosmeticId);
-        if (store) return store;
-        const shop = (window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []).find(i => i.id === cosmeticId);
-        if (shop) return { id: cosmeticId, label: shop.label, category: shop.category || rolledSlot, usesB: false, price: shop.price ?? 40 };
-        const pretty = cosmeticId.split('::').pop().replace(/[_-]+/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
-        return { id: cosmeticId, label: pretty, category: rolledSlot, usesB: false, price: 40 };
-      }
-
-      // Rebuilds each worn cosmetic as a packClothing entry -- the exact same
-      // owned-clothing storage a treasure chest's `clothing` bundle grants
-      // through (see makeTreasureChestObject), so a looted bandit's gear shows
-      // up in the pack and can be worn/sold like any other clothing item.
-      // Cosmetics are not ITEM_DEFS inventory keys, so there is no other path.
-      function banditWornClothingItems(roster) {
-        const catalog = getDyeCatalog();
-        const items = [];
-        for (const cosmeticId of (roster?.equippedCosmetics || [])) {
-          const slot = roster.cosmeticSlots?.[cosmeticId] || 'torso';
-          const piece = _banditClothingPiece(cosmeticId, slot);
-          const dyeId = roster.appliedDyes?.[BANDIT_TINT_SLOT_BY_SLOT[piece.category]] || null;
-          const dye = dyeId ? catalog.find(d => d.id === dyeId) : null;
-          items.push({
-            uid: 'citem_bandit_' + Date.now().toString(36) + '_' + Math.floor(rnd() * 1e6),
-            cosmeticId: piece.id,
-            slot: piece.category,
-            label: (dye ? dye.label + ' ' : '') + piece.label,
-            baseLabel: piece.label,
-            colorA: dyeToClothingColor(dye),
-            colorB: null,
-            price: piece.price,
-            sellPrice: Math.floor(piece.price * 0.4),
-            sprite: clothingSpriteForCosmetic(piece.id),
-          });
-        }
-        return items;
-      }
-
-      // Same { getButtons(), onAction() } shape as makeCorpseWorldObject, which
-      // branches here for bandits -- so getCorpseObjectAt and the action bar
-      // need no bandit-specific dispatch of their own.
-      function makeBanditCorpseWorldObject(c) {
-        return {
-          id: 'corpse_' + c.id,
-          type: 'bandit_corpse',
-          getButtons() {
-            return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
-            const parts = grantBanditLoot(rollLootPool(c.def.lootPool));
-            // 100% of what they were wearing, on top of the rolled table.
-            for (const item of banditWornClothingItems(c.rosterRecord)) {
-              packClothing.push(item);
-              parts.push('👘 ' + item.label);
-            }
-            corpseObjects.delete(c);
-            despawnCreature(c);
-            refreshItemScroll();
-            buildInventoryGrid();
-            buildPackClothingSection();
-            saveMemberWorldData();
-            return {
-              ok: true,
-              message: parts.length
-                ? `Looted the ${c.def.label}: ${parts.join(' ')}`
-                : `The ${c.def.label} carried nothing.`,
-            };
-          },
-        };
-      }
+      // Bandit Gangs (config/locale loading, roster/avatar generation,
+      // ability-driven combat AI, weapon visuals/trail, entity spawn) now
+      // live in js/combat/combat-bandit.js (window.BanditCombat) -- see
+      // window.BanditCombat.init(...) below for the wiring.
+
+      // Bandit camps (zone adapter, tent props, camp lifecycle,
+      // companion perception, corpse loot) now live in
+      // js/bandit-camps.js (window.BanditCamps) -- see
+      // window.BanditCamps.init(...) below for the wiring.
 
       function updatePlayerVitals(dt) {
         // Health/Stamina regen, Exhausted/black-stamina recovery, and every
@@ -11860,8 +8876,6 @@
       let npcDialogueStaging = null;
       let activeCameraMode   = cameraConfig().defaultMode || 'default';
       let activeCameraTarget = null;
-      let _prevCameraMode    = null; // saved mode to restore when the fishing minigame closes
-      let _prevCameraTarget  = null; // saved target to restore when the fishing minigame closes
       // Mobile drag-to-look offsets, layered on top of the active mode's base
       // azimuth/angle. Clamped tightly (±45°) since this is a look-around nudge,
       // not a free-orbit camera.
@@ -16071,7 +13085,7 @@
         // A cleared bandit camp only ever re-rolls somewhere else BETWEEN
         // visits, never under the player's feet — this is the one moment
         // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
-        _banditZoneEntryPending.add(mapId);
+        window.BanditCamps?.markZoneEntered(mapId);
       }
 
       // ── Town building detection ──────────────────────────────────────
@@ -18361,7 +15375,7 @@
       // ── Tasks panel (board requests + accepted NPC favors) ───────────
       function renderTasksPanel() {
         maybeRefreshBoardTask();
-        maybeRefreshBountyPosting();
+        window.BountyBoard.maybeRefreshPosting();
 
         // Today's board notice — not yet in the player's log. Taking it is
         // the only action this panel offers; turning a task in (board or
@@ -18401,9 +15415,9 @@
         const bountyEl = document.getElementById('tasksBountyPosting');
         if (bountyEl) {
           bountyEl.innerHTML = '';
-          const posting = getCurrentBountyPosting();
+          const posting = window.BountyBoard.getCurrentPosting();
           if (posting) {
-            const rank = BOUNTY_RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
+            const rank = window.BountyBoard.RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
             const zoneLabel = WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
             const row = document.createElement('div');
             row.className = 'shop-row';
@@ -18416,7 +15430,7 @@
               <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
             `;
             row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
-              takeBountyTask(posting.id);
+              window.BountyBoard.take(posting.id);
               renderTasksPanel();
             });
             bountyEl.appendChild(row);
@@ -18444,9 +15458,9 @@
           const row = document.createElement('div');
           row.className = 'shop-row';
           if (task.kind === 'bounty') {
-            const rank = BOUNTY_RANK_LABELS[task.tier] || `Tier ${task.tier}`;
+            const rank = window.BountyBoard.RANK_LABELS[task.tier] || `Tier ${task.tier}`;
             const zoneLabel = WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
-            const marked = _bountyMarkers.has(task.id);
+            const marked = window.BountyBoard.markers.has(task.id);
             row.innerHTML = `
               <div class="sh-icon">🎯</div>
               <div class="sh-info">
@@ -20937,7 +17951,7 @@
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (harvestInteraction) { updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
-        if (fishingMinigame?.active) return;
+        if (window.Fishing?.state?.active) return;
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
@@ -21580,7 +18594,7 @@
       // this is a breeding-only view of the stable.
       function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
         const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
-        const value = hasGenotype ? sellValueFor(entry.genotype, entry.kind) : null;
+        const value = hasGenotype ? window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind) : null;
         const pending = pairs.some(p => refsEqual(p.parentA, ref) || refsEqual(p.parentB, ref));
         const pickKey = `${ref.source}:${ref.id}`;
         const row = document.createElement('div');
@@ -21589,8 +18603,8 @@
           (canManage ? `<input type="checkbox" class="farm-pick" ${farmPairPicks.has(pickKey) ? 'checked' : ''} ${pending ? 'disabled' : ''}>` : '') +
           `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span>` +
           (onRename
-            ? `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
-            : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || defaultLivestockName(entry.kind))}</span>`) +
+            ? `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
+            : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}</span>`) +
           _livestockSwatchesHtml(entry.genotype, entry.kind) +
           `<span class="farm-row-value${value ? ' tier-' + esc(value.tier) : ''}">${value ? `${value.amount}g · ${esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
           (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
@@ -21854,10 +18868,10 @@
         if (!hasFarmPermission('livestock')) return;
         const entry = _removeWorldLivestockAndCleanup(id);
         if (!entry) return;
-        const value = sellValueFor(entry.genotype, entry.kind);
+        const value = window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind);
         inventory.gold = (inventory.gold || 0) + value.amount;
         saveMemberWorldData();
-        showToast(`Sold ${entry.name || defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
+        showToast(`Sold ${entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
         if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
         renderFarmLivestock(); renderFarmGridGlance();
       }
@@ -22135,7 +19149,7 @@
           return (genotype.fur ? `<span class="farm-swatch" style="background:${esc(genotype.fur.color)}" title="Fur color"></span>` : '') +
                  (genotype.plates ? `<span class="farm-swatch" style="background:${esc(genotype.plates.color)}" title="Plate color"></span>` : '');
         }
-        const patterns = LIVESTOCK_PATTERN_DEFS[kind];
+        const patterns = window.CreatureGenetics.PATTERN_DEFS[kind];
         if (patterns && genotype.base) {
           const enabledId = patterns.find(id => genotype[id]?.enabled);
           return `<span class="farm-swatch" style="background:${esc(genotype.base.color)}" title="Base color"></span>` +
@@ -22155,7 +19169,7 @@
         if (!list) return;
         list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
         stable.forEach(entry => {
-          const role = stableEntryRole(entry);
+          const role = window.CreatureGenetics.stableEntryRole(entry);
           const roleMeta = STABLE_ROLE_META[role];
           const isActive = entry.id === activeStableIdForRole(role);
           const row = document.createElement('div');
@@ -22163,7 +19177,7 @@
           row.innerHTML =
             `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${roleMeta.label.toLowerCase()}` : `Set as ${roleMeta.label.toLowerCase()}`}">${roleMeta.icon}</button>` +
             `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
-            `<input class="farm-row-name" value="${esc(entry.name || defaultLivestockName(entry.kind))}" maxlength="30">` +
+            `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" maxlength="30">` +
             _livestockSwatchesHtml(entry.genotype, entry.kind) +
             `<span class="farm-row-value">${esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
           row.querySelector('.farm-companion-btn').addEventListener('click', () => {
@@ -23157,10 +20171,10 @@
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
-        // fishingMinigame?.active special-case for keyboard/controller.
-        if (fishingMinigame?.active) {
-          if (activeAction === 'fish_primary') fishingPrimaryAction();
-          else if (activeAction === 'fish_cancel') closeFishingMinigame();
+        // window.Fishing?.state?.active special-case for keyboard/controller.
+        if (window.Fishing?.state?.active) {
+          if (activeAction === 'fish_primary') window.Fishing?.primaryAction();
+          else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
         if (activeAction === 'climb') {
@@ -23195,7 +20209,7 @@
             showToast('No river or stream here to fish.', false);
             return;
           }
-          beginFishingCast();
+          window.Fishing?.beginCast();
           return;
         }
         // Weapon attacks route through the loadout's tap-slot abilities
@@ -23499,1308 +20513,11 @@
         return d;
       }
 
-      // ── Spearfishing minigame: Spear Bridge ─────────────────────
-      // Ported from the spearfishing prototype's "Spear Bridge" preset only
-      // (no fourSpear/ringStardew). One simplification vs. the prototype:
-      // catch detection is a geometric point-to-segment distance test instead
-      // of a pixel alpha-mask read. The fish and harpoon/mace render using the
-      // same real assets and per-frame bone-slice "skinning" deform as the
-      // prototype (see FISHING_BRIDGE_ART below). The fish still patrols a 1D
-      // position mapped to a ring angle (FishBehavior.stepBase1D) and the
-      // bridge mechanic (rotating aim segment → two-tap markers → spear
-      // travel/retract → catch-or-panic) is otherwise numerically identical.
-      const FISHING_RING = {
-        cx: 160, cy: 160,
-        fishRadius: 96,      // ring the fish patrols (== prototype's grooveRadius)
-        outerOffset: 56,     // bridge ring sits this far outside the fish ring
-        segmentSize: 18,     // degrees, width of the rotating aim segment
-        sweepSpeed: 240,     // degrees/sec
-        shotDuration: 0.16,
-        retractDuration: 0.28,
-        panicStep: 34,
-        panicMax: 100,
-      };
-      // Bait-cast pre-minigame timings (see beginFishingCast/updateFishingMinigame).
-      const FISHING_BAIT_FLIGHT_S = 0.6; // matches spawnFishingBaitToss's ~0.5-0.62s particle flight time
-      const FISHING_BITE_WAIT_MIN_S = 1.2;
-      const FISHING_BITE_WAIT_MAX_S = 3.0;
-      // Escape/respawn sequence timings, ported from the prototype's fishRespawn
-      // state: when panic maxes out the fish doesn't just end the round, it visibly
-      // slides into the central pool, shrinks away, waits, then a freshly rolled
-      // fish grows in the pool and swims back out onto the ring.
-      const FISH_RESPAWN_TIMING = {
-        retreatDuration: 0.72,
-        shrinkDuration: 0.42,
-        waitDuration: 2.15,
-        growDuration: 0.68,
-        enterDuration: 0.88,
-      };
-      function angleDiffDeg(from, to) {
-        let d = (to - from) % 360;
-        if (d > 180) d -= 360;
-        if (d < -180) d += 360;
-        return d;
-      }
-      const FISH_CLASS_VEL_RANGE = {
-        smooth:  [-0.15, 0.15],
-        sinker:  [0.05, 0.55],
-        floater: [-0.55, -0.05],
-        dart:    [-0.55, 0.55],
-        mixed:   [-0.35, 0.35],
-      };
-      const FISH_CLASS_RETARGET   = { smooth: 0.25, mixed: 0.55, sinker: 0.5, floater: 0.5, dart: 1.2 };
-      const FISH_CLASS_SMOOTHNESS = { smooth: 0.8,  mixed: 1.4,  sinker: 1.5, floater: 1.5, dart: 4.0 };
-
-      // Periodic "surface → dive into the safe zone → resurface" behavior —
-      // unlike FISH_RESPAWN_TIMING's panic-triggered escape below, this is
-      // unprompted: every fish does it on its own cadence as part of normal
-      // movement, ported from the prototype's FishBehavior.maybeStartDive/
-      // updateDiveOverlay (see docs/tools, or the uploaded prototype HTML).
-      const FISH_CLASS_DIVE_CADENCE  = { smooth: 0.82, mixed: 1.0, sinker: 0.95, floater: 0.95, dart: 1.28 };
-      const FISH_CLASS_DIVE_RADIUS   = { smooth: 0.78, mixed: 1.0, sinker: 0.92, floater: 0.92, dart: 1.3 };
-      // The prototype uses two separate "indecision" tables with slightly
-      // different numbers — one tunes how eagerly a dive starts, the other
-      // how jittery the underwater inspect-motion looks. Kept distinct here
-      // rather than merged, matching the source.
-      const FISH_CLASS_DIVE_START_INDECISION   = { smooth: 0.8,  mixed: 1.0, sinker: 0.9, floater: 1.05, dart: 1.35 };
-      const FISH_CLASS_DIVE_INSPECT_INDECISION = { smooth: 0.78, mixed: 1.0, sinker: 0.9, floater: 1.0,  dart: 1.42 };
-      // The prototype's dive-radius formula below was tuned against its own
-      // ring (SVG groove sits at r=340); scaling by this ratio makes the dive
-      // pull proportionally as far toward the center on FISHING_RING's much
-      // smaller scale instead of importing the raw prototype pixel values.
-      const FISH_DIVE_RADIUS_SCALE = FISHING_RING.fishRadius / 340;
-      const FISH_DIVE_TARGET_PERCENT = 50; // % of time (clamped 50-80) a fish aims to spend submerged
-
-      // Real-asset rendering for the fish silhouette + harpoon/mace sprite, ported
-      // from the spearfishing prototype's ensureFishDeformCanvas/renderImageFish/
-      // renderBridgeSpearSprite. The fish body+whiskers PNGs face left, same as the
-      // prototype's source art, so the same flipX/rotation convention applies as-is.
-      const FISHING_BRIDGE_ART = {
-        imgW: 64, imgH: 40,                 // deformed fish draw size (~matches the body PNG's aspect ratio)
-        deformSlices: 28, boneCount: 6,
-        boneAmpScale: 0.82, whiskerBoneAmpScale: 0.3, whiskerRate: 0.38,
-        flipX: -1,                          // source silhouettes face left; mirror so facing=1 points right
-        spriteWidth: 46, spriteHeight: 122,  // harpoon/mace sprite box (preserveAspectRatio keeps the real PNG shape)
-        spriteRotationOffset: 90,           // the PNG's business end is at the bottom, not the top
-        ropeAttachBack: 23, spearAttachFront: 10,
-        ropeSag: 0.1,
-        maceSpinRateDeg: 9720,              // ~27 spins/sec while the mace is outbound
-      };
-
-      let fishBodySpriteImage = null, fishWhiskersSpriteImage = null;
-      let harpoonSpearSpriteImage = null, harpoonMaceSpriteImage = null;
-      function loadFishSprite(src, onOk) {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          onOk(img);
-          window.__farmLog?.(`sprite loaded OK: ${src} (${img.naturalWidth}x${img.naturalHeight})`, 'fish');
-        };
-        img.onerror = (ev) => {
-          window.__farmLog?.(`sprite FAILED to load: ${src}`, 'fish');
-        };
-        img.src = src;
-        return img;
-      }
-      loadFishSprite('assets/hud/fish_silhouette-body.png', (img) => { fishBodySpriteImage = img; });
-      loadFishSprite('assets/hud/fish_silhouette-whiskers.png', (img) => { fishWhiskersSpriteImage = img; });
-      loadFishSprite('assets/toolsprites/harpoon_fishingspear.png', (img) => { harpoonSpearSpriteImage = img; });
-      loadFishSprite('assets/toolsprites/harpoon_fishingmace.png', (img) => { harpoonMaceSpriteImage = img; });
-
-      let fishDeformCanvas = null, fishDeformCtx = null;
-      function ensureFishDeformCanvas(width, height) {
-        const w = Math.max(48, Math.round(width));
-        const h = Math.max(24, Math.round(height));
-        if (!fishDeformCanvas) { fishDeformCanvas = document.createElement('canvas'); fishDeformCtx = fishDeformCanvas.getContext('2d'); }
-        if (fishDeformCanvas.width !== w || fishDeformCanvas.height !== h) { fishDeformCanvas.width = w; fishDeformCanvas.height = h; }
-        return { canvas: fishDeformCanvas, ctx: fishDeformCtx, w, h };
-      }
-
-      // Small spline-skeleton "bone" offsets sampled across deformSlices vertical strips,
-      // tapered toward the head/tail so the deform bends most in the middle of the body.
-      function buildFishBoneOffsets(sliceCount, amp, phase, rateScale) {
-        const boneCount = FISHING_BRIDGE_ART.boneCount;
-        const bones = [];
-        for (let i = 0; i < boneCount; i++) {
-          const t01 = boneCount === 1 ? 0.5 : i / (boneCount - 1);
-          const taper = Math.sin(Math.PI * t01);
-          const leadLag = t01 * Math.PI * 2.15;
-          bones.push(Math.sin(phase * rateScale + leadLag) * amp * taper);
-        }
-        const offsets = [];
-        for (let i = 0; i < sliceCount; i++) {
-          const t01 = sliceCount === 1 ? 0.5 : i / (sliceCount - 1);
-          const scaled = t01 * (bones.length - 1);
-          const left = Math.max(0, Math.min(bones.length - 2, Math.floor(scaled)));
-          const local = scaled - left;
-          offsets.push(bones[left] + (bones[left + 1] - bones[left]) * local);
-        }
-        return offsets;
-      }
-
-      function drawFishImageAlongBones(ctx, image, canvasW, canvasH, drawW, drawH, offsets, alpha) {
-        if (!image || !image.naturalWidth || !image.naturalHeight) return;
-        const sliceCount = Math.max(4, offsets.length || 4);
-        const srcSliceW = image.naturalWidth / sliceCount;
-        const dstSliceW = drawW / sliceCount;
-        const startX = (canvasW - drawW) * 0.5;
-        const startY = (canvasH - drawH) * 0.5;
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.imageSmoothingEnabled = true;
-        for (let i = 0; i < sliceCount; i++) {
-          const nextOffset = offsets[Math.min(offsets.length - 1, i + 1)] ?? offsets[i] ?? 0;
-          const offset = offsets[i] || 0;
-          const shear = clamp((nextOffset - offset) / Math.max(1, dstSliceW), -0.32, 0.32);
-          const sx = i * srcSliceW;
-          const dx = startX + i * dstSliceW;
-          const dy = startY + offset;
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(dx - 1, 0, dstSliceW + 2, canvasH);
-          ctx.clip();
-          ctx.transform(1, shear, 0, 1, 0, 0);
-          ctx.drawImage(image, sx, 0, srcSliceW + 1, image.naturalHeight, dx, dy - shear * dx, dstSliceW + 1.5, drawH);
-          ctx.restore();
-        }
-        ctx.restore();
-      }
-
-      // toDataURL() is a synchronous PNG encode — doing it every animation frame
-      // (60/sec) is what was tripping the browser's "requestAnimationFrame handler
-      // took Nms" violation while fishing. The deform itself still redraws every
-      // frame (cheap drawImage calls), but the expensive re-encode to a data URL
-      // only happens a few times a second; the SVG <image> keeps showing the last
-      // encoded frame in between, which reads as smooth at this swim speed.
-      let _fishDeformUrlCache = null;
-      let _fishDeformUrlCacheAt = -Infinity;
-      const FISH_DEFORM_REENCODE_INTERVAL = 1 / 12; // seconds
-      let _fishDeformLastFailReason = null;
-      function renderFishDeformedTexture(fm) {
-        if (!fishBodySpriteImage || !fishBodySpriteImage.naturalWidth) {
-          if (_fishDeformLastFailReason !== 'noimg') {
-            _fishDeformLastFailReason = 'noimg';
-            window.__farmLog?.('fish render: body sprite not loaded yet, skipping draw', 'fish');
-          }
-          return null;
-        }
-        const art = FISHING_BRIDGE_ART;
-        const pad = Math.ceil(art.imgH * 0.45);
-        const targetW = Math.ceil(art.imgW + pad * 2);
-        const targetH = Math.ceil(art.imgH + pad * 2);
-        const { canvas, ctx, w, h } = ensureFishDeformCanvas(targetW, targetH);
-        ctx.clearRect(0, 0, w, h);
-
-        const phase = fm.fishAnimT * 7.5 + fm.fish.angle * 0.025;
-        const bodyAmp = Math.max(2, art.imgH * 0.075 * art.boneAmpScale);
-        const bodyOffsets = buildFishBoneOffsets(art.deformSlices, bodyAmp, phase, 1);
-        const whiskerOffsets = buildFishBoneOffsets(art.deformSlices, bodyAmp * art.whiskerBoneAmpScale, phase + 0.85, art.whiskerRate);
-
-        drawFishImageAlongBones(ctx, fishBodySpriteImage, w, h, art.imgW, art.imgH, bodyOffsets, 1);
-        if (fishWhiskersSpriteImage && fishWhiskersSpriteImage.naturalWidth) {
-          drawFishImageAlongBones(ctx, fishWhiskersSpriteImage, w, h, art.imgW, art.imgH, whiskerOffsets, 0.95);
-        }
-        if (_fishDeformUrlCache && fm.fishAnimT - _fishDeformUrlCacheAt < FISH_DEFORM_REENCODE_INTERVAL) {
-          return { url: _fishDeformUrlCache, w, h };
-        }
-        try {
-          _fishDeformUrlCache = canvas.toDataURL('image/png');
-          _fishDeformUrlCacheAt = fm.fishAnimT;
-          _fishDeformLastFailReason = null;
-          return { url: _fishDeformUrlCache, w, h };
-        } catch (err) {
-          if (_fishDeformLastFailReason !== 'tainted') {
-            _fishDeformLastFailReason = 'tainted';
-            window.__farmLog?.(`fish render: canvas.toDataURL() threw (${err.name}: ${err.message}) — canvas likely tainted by a cross-origin sprite load`, 'fish');
-          }
-          return null;
-        }
-      }
-
-      // non-null from the moment bait is cast through the whole ring minigame —
-      // fm.phase tracks where in that sequence things are: 'cast' (bait
-      // arcing through the air) -> 'waiting' (bait landed, watching for a
-      // bite) -> 'bite' (splash happened, waiting on the player) -> 'active'
-      // (ring open, existing spear-bridge gameplay).
-      let fishingMinigame = null;
-      let fishingEls = null; // cached ring SVG DOM refs — built on entering 'active', torn down on close
-      const fishingOverlayEl = document.getElementById('fishingOverlay');
-
-      function currentFishZoneKey() {
-        if (currentArea === 'farm') return 'farm';
-        if (currentArea === 'town') return 'town';
-        if (currentArea === 'map_northern_cliffs') return 'northernCliffs';
-        if (currentArea === 'map_southern_cloud_forest') return 'cloudForest';
-        return null;
-      }
-
-      function fishingTimeOfDay() {
-        const h = getHour();
-        if (h < 8)  return 'dawn';
-        if (h < 17) return 'day';
-        if (h < 20) return 'dusk';
-        return 'night';
-      }
-
-      function pickFishForCurrentZone() {
-        const zoneKey = currentFishZoneKey();
-        if (!zoneKey) return null;
-        const list = FISH_DEFS[zoneKey] || [];
-        if (!list.length) return null;
-        const season = currentSeason().name;
-        const tod = fishingTimeOfDay();
-        let pool = list.filter(f =>
-          (f.seasons === 'any' || f.seasons.includes(season)) &&
-          (f.timesOfDay === 'any' || f.timesOfDay.includes(tod)));
-        if (!pool.length) pool = list;
-        const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
-        const weights = pool.map(f => rarityWeight[f.rarity] || 1);
-        let r = Math.random() * weights.reduce((a, b) => a + b, 0);
-        for (let i = 0; i < pool.length; i++) {
-          r -= weights[i];
-          if (r <= 0) return { fish: pool[i], zoneKey };
-        }
-        return { fish: pool[pool.length - 1], zoneKey };
-      }
-
-      function fishPickTargetVel(fm) {
-        const [min, max] = FISH_CLASS_VEL_RANGE[fm.fishClass] || FISH_CLASS_VEL_RANGE.mixed;
-        const d = fm.difficulty / 100;
-        fm.fish.targetVel = (min + Math.random() * (max - min)) * (0.6 + d * 0.9);
-      }
-
-      function fishStartTurnaround(fm, nextDir) {
-        const f = fm.fish;
-        if (!nextDir || nextDir === f.moveDir) return;
-        f.turning = true;
-        f.pendingMoveDir = nextDir;
-        f.turnProgress = 0;
-      }
-
-      function fishUpdateTurnaround(fm, dt) {
-        const f = fm.fish;
-        if (!f.turning) return;
-        f.turnProgress = clamp(f.turnProgress + dt / 0.24, 0, 1);
-        f.localFacingScale = f.moveDir * Math.cos(Math.PI * f.turnProgress);
-        if (f.turnProgress >= 1) {
-          f.turning = false;
-          f.moveDir = f.pendingMoveDir || -f.moveDir;
-          f.turnProgress = 0;
-          f.localFacingScale = f.moveDir;
-          f.vel = Math.abs(f.vel) * f.moveDir * 0.35;
-          f.targetVel = Math.abs(f.targetVel) * f.moveDir;
-        }
-      }
-
-      function fishStepMotion(fm, dt) {
-        const f = fm.fish;
-        const cls = fm.fishClass;
-        const retargetChance = (FISH_CLASS_RETARGET[cls] ?? 0.55) * dt;
-        const smoothness = FISH_CLASS_SMOOTHNESS[cls] ?? 1.4;
-        const d = fm.difficulty / 100;
-
-        if (Math.random() < retargetChance) fishPickTargetVel(fm);
-
-        const desiredSource = Math.abs(f.targetVel) > 0.01 ? f.targetVel : (Math.abs(f.vel) > 0.01 ? f.vel : f.moveDir);
-        const desiredDir = desiredSource < 0 ? -1 : 1;
-        if (!f.turning && desiredDir !== f.moveDir) fishStartTurnaround(fm, desiredDir);
-        fishUpdateTurnaround(fm, dt);
-
-        let appliedTargetVel = f.turning ? Math.abs(f.targetVel) * f.moveDir : f.targetVel;
-        f.vel += (appliedTargetVel - f.vel) * Math.min(1, dt * (2.5 + smoothness * 2.2));
-        if (cls === 'sinker')  f.vel += 0.08 * dt * (0.5 + d);
-        if (cls === 'floater') f.vel -= 0.08 * dt * (0.5 + d);
-        if (f.turning) f.vel = Math.abs(f.vel) * f.moveDir;
-
-        f.pos = clamp(f.pos + f.vel * dt, 0, 1);
-        if (f.pos <= 0.02) {
-          f.pos = 0.02;
-          if (!f.turning) {
-            f.vel = Math.abs(f.vel) * 0.18;
-            f.targetVel = Math.max(0.04, Math.abs(f.targetVel));
-            if (f.moveDir < 0) fishStartTurnaround(fm, 1);
-          }
-        } else if (f.pos >= 0.98) {
-          f.pos = 0.98;
-          if (!f.turning) {
-            f.vel = -Math.abs(f.vel) * 0.18;
-            f.targetVel = -Math.max(0.04, Math.abs(f.targetVel));
-            if (f.moveDir > 0) fishStartTurnaround(fm, -1);
-          }
-        }
-        f.angle = (f.pos * 359) % 360;
-      }
-
-      // Rolls whether the fish starts a new unprompted dive this frame. The
-      // hidden 1D ring patrol (fishStepMotion/f.angle) keeps running the whole
-      // time — a dive only pulls the *visible* render position in toward the
-      // center (f.renderRadius/f.renderAngle), it never pauses or reroutes the
-      // underlying patrol. chancePerSecond is derived so that, on average, the
-      // fish spends FISH_DIVE_TARGET_PERCENT of its time submerged.
-      function fishMaybeStartDive(fm, dt) {
-        const dive = fm.dive;
-        if (dive.active) return false;
-        dive.cooldown -= dt;
-        if (dive.cooldown > 0) return false;
-
-        const cls = fm.fishClass;
-        const d01 = fm.difficulty / 100;
-        const cadence = FISH_CLASS_DIVE_CADENCE[cls] ?? FISH_CLASS_DIVE_CADENCE.mixed;
-        const radiusMul = FISH_CLASS_DIVE_RADIUS[cls] ?? FISH_CLASS_DIVE_RADIUS.mixed;
-        const startIndecision = FISH_CLASS_DIVE_START_INDECISION[cls] ?? FISH_CLASS_DIVE_START_INDECISION.mixed;
-
-        const diveDurationEstimate = 3.4 + startIndecision * 1.2 + d01 * 1.2;
-        const targetFraction = clamp(FISH_DIVE_TARGET_PERCENT / 100, 0.5, 0.8);
-        const expectedSurfaceWindow = diveDurationEstimate * (1 - targetFraction) / Math.max(0.001, targetFraction);
-        const chancePerSecond = 1 / Math.max(0.2, expectedSurfaceWindow * (1 / cadence));
-
-        if (Math.random() < chancePerSecond * dt) {
-          dive.active = true;
-          dive.timer = 0;
-          dive.lastDuration = diveDurationEstimate;
-          dive.inspectTargetAngle = fm.fish.angle;
-          dive.visualOffset = 0;
-          dive.centerRadius = (72 + radiusMul * 18 + d01 * 16 + Math.random() * (14 + radiusMul * 8)) * FISH_DIVE_RADIUS_SCALE;
-          dive.cooldown = Math.max(0.15, expectedSurfaceWindow * 0.2 + Math.random() * expectedSurfaceWindow * 0.28);
-          fm.fish.dimmed = true;
-          return true;
-        }
-        return false;
-      }
-
-      // Drives f.renderAngle/f.renderRadius through the dive: pull in toward
-      // dive.centerRadius, "inspect" the pool by wandering visualOffset around
-      // a periodically re-picked angle, then ease back out onto the ring.
-      // Rather than ending on a fixed timer, the surfacing phase keeps easing
-      // until both the angle offset and radius have actually converged back
-      // onto the hidden ring track, so it can't visibly snap into place.
-      function fishUpdateDiveOverlay(fm, dt) {
-        const f = fm.fish, dive = fm.dive;
-        const cls = fm.fishClass;
-        const d01 = fm.difficulty / 100;
-        const inspectIndecision = FISH_CLASS_DIVE_INSPECT_INDECISION[cls] ?? FISH_CLASS_DIVE_INSPECT_INDECISION.mixed;
-        const inspectStep = 0.95 - inspectIndecision * 0.22 + (1 - d01) * 0.1;
-        const inspectTurnRate = 1.8 + inspectIndecision * 1.4 + d01 * 0.8;
-        const inspectWobble = 8 + inspectIndecision * 10;
-        const enterExitRate = 4.8 + d01 * 1.4;
-
-        dive.timer += dt;
-
-        if (dive.timer < 0.45) {
-          f.renderRadius += (dive.centerRadius - f.renderRadius) * Math.min(1, dt * enterExitRate);
-        } else if (dive.timer < dive.lastDuration - 0.65) {
-          const phase = dive.timer - 0.45;
-          if (Math.floor(phase / Math.max(0.24, inspectStep)) !== Math.floor((phase - dt) / Math.max(0.24, inspectStep))) {
-            const bias = cls === 'sinker' ? 180 : cls === 'floater' ? 0 : f.angle;
-            dive.inspectTargetAngle = (bias + (Math.random() * 120 - 60) + Math.random() * 260 * (cls === 'dart' ? 0.22 : 0.08)) % 360;
-          }
-          const targetOffset = angleDiffDeg(f.angle, dive.inspectTargetAngle);
-          dive.visualOffset += (targetOffset - dive.visualOffset) * Math.min(1, dt * inspectTurnRate);
-          dive.visualOffset += Math.sin(dive.timer * (3.2 + inspectIndecision * 1.2)) * inspectWobble * dt;
-          dive.visualOffset = clamp(dive.visualOffset, -42, 42);
-
-          f.renderRadius += (dive.centerRadius - f.renderRadius) * Math.min(1, dt * (2.4 + d01 * 1.1));
-        } else {
-          dive.visualOffset += (0 - dive.visualOffset) * Math.min(1, dt * 6.8);
-          f.renderRadius += (FISHING_RING.fishRadius - f.renderRadius) * Math.min(1, dt * (enterExitRate + 1.2));
-
-          const offsetDone = Math.abs(dive.visualOffset) < 0.55;
-          const radiusDone = Math.abs(f.renderRadius - FISHING_RING.fishRadius) < 1.25;
-
-          if (offsetDone && radiusDone) {
-            dive.active = false;
-            dive.visualOffset = 0;
-            f.renderRadius = FISHING_RING.fishRadius;
-            f.dimmed = false;
-            f.renderAngle = f.angle;
-          }
-        }
-
-        f.renderAngle = (f.angle + dive.visualOffset + 360) % 360;
-      }
-      function fishingPolarToXY(angleDeg, radius) {
-        const rad = (angleDeg - 90) * Math.PI / 180; // 0deg = top, matches prototype orientation
-        return { x: FISHING_RING.cx + Math.cos(rad) * radius, y: FISHING_RING.cy + Math.sin(rad) * radius };
-      }
-
-      function fishingDistPointToSegment(px, py, x1, y1, x2, y2) {
-        const dx = x2 - x1, dy = y2 - y1;
-        const len2 = dx * dx + dy * dy;
-        if (len2 <= 0.0001) return Math.hypot(px - x1, py - y1);
-        const t = clamp(((px - x1) * dx + (py - y1) * dy) / len2, 0, 1);
-        return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
-      }
-
-      // ── Fishing FX particles (bait toss / bite splash) ────────────────
-      // Small one-off 3D bursts, deliberately separate from the existing
-      // actionParticles (2D HUD-canvas tool feedback) and waterParticles
-      // (ambient, tile-local trench bubbles) systems — these need to travel
-      // through real 3D world space between the player and the fished tile.
-      const fishingFxParticles = [];
-
-      function spawnFishingFxParticle(pos, vel, opts = {}) {
-        const size = opts.size ?? 0.03;
-        const geo = new THREE.SphereGeometry(size, 4, 3);
-        const mat = new THREE.MeshBasicMaterial({ color: opts.color ?? 0xffffff, transparent: true, opacity: 1 });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(pos.x, pos.y, pos.z);
-        // Farm has its own scene; town/interiors/wilderness zones each have
-        // their own too (see getActiveScene) — adding straight to the bare
-        // farm `scene` here meant these never rendered anywhere else.
-        getActiveScene().add(mesh);
-        fishingFxParticles.push({
-          mesh, mat,
-          vx: vel.x, vy: vel.y, vz: vel.z,
-          gravity: opts.gravity ?? -4.2,
-          // Bob mode (bobAmp > 0) ignores gravity/vy entirely and instead
-          // rides a sine wave around baseY — for things that sit and drift
-          // on the water surface rather than falling, like the bait float.
-          bobAmp: opts.bobAmp || 0,
-          bobRate: opts.bobRate || 3,
-          bobPhase: Math.random() * Math.PI * 2,
-          baseY: pos.y,
-          age: 0,
-          maxAge: opts.maxAge ?? 0.55,
-        });
-      }
-
-      // Arcs a handful of small particles from the player toward the fished
-      // water tile — cosmetic stand-in for tossing bait onto the surface.
-      // These avatars have no arms to actually throw with, so the particle
-      // arc alone has to sell the motion (see beginFishingCast).
-      function spawnFishingBaitToss(fromWorld, toWorld) {
-        const dx = toWorld.x - fromWorld.x, dz = toWorld.z - fromWorld.z;
-        for (let i = 0; i < 7; i++) {
-          const T = 0.5 + Math.random() * 0.12;          // flight time
-          const h = 0.3 + Math.random() * 0.15;           // arc peak height
-          const gravity = -8 * h / (T * T);
-          const vy = 4 * h / T;
-          const jitter = 0.06;
-          spawnFishingFxParticle(
-            { x: fromWorld.x, y: fromWorld.y + 0.5, z: fromWorld.z },
-            { x: dx / T + (Math.random() - 0.5) * jitter, y: vy, z: dz / T + (Math.random() - 0.5) * jitter },
-            { size: 0.025 + Math.random() * 0.02, color: 0xcdaa6b, gravity, maxAge: T }
-          );
-        }
-      }
-
-      // One pink fleck drifting/bobbing on the water surface — spawned
-      // repeatedly (see updateFishingMinigame's 'cast'/'waiting' handling)
-      // for as long as the player is waiting on a bite, so the surface
-      // reads as continuously "baited" rather than a one-off toss.
-      function spawnFishingFloatParticle(atWorld) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 0.05 + Math.random() * 0.32;
-        spawnFishingFxParticle(
-          { x: atWorld.x + Math.cos(angle) * dist, y: atWorld.y + 0.015, z: atWorld.z + Math.sin(angle) * dist },
-          { x: (Math.random() - 0.5) * 0.05, y: 0, z: (Math.random() - 0.5) * 0.05 },
-          { size: 0.018 + Math.random() * 0.016, color: 0xff6fb0, maxAge: 2.0 + Math.random() * 1.4, bobAmp: 0.012 + Math.random() * 0.008, bobRate: 2.2 + Math.random() * 1.4 }
-        );
-      }
-
-      // Sustained bubbling patch for the bite — several small bubbles
-      // rising and wobbling at different speeds/lifetimes instead of one
-      // instant splash burst, so it visibly reads as bubbling for a beat
-      // rather than a single flash of particles.
-      function spawnFishingBiteSplash(atWorld) {
-        for (let i = 0; i < 22; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const dist = Math.random() * 0.1;
-          const speed = 0.25 + Math.random() * 0.55;
-          spawnFishingFxParticle(
-            { x: atWorld.x + Math.cos(angle) * dist, y: atWorld.y + 0.02, z: atWorld.z + Math.sin(angle) * dist },
-            // bobAmp mode uses y as a steady rise rate (bubbles don't
-            // decelerate under gravity the way a thrown particle would).
-            { x: Math.cos(angle) * speed * 0.3, y: 0.5 + Math.random() * 0.7, z: Math.sin(angle) * speed * 0.3 },
-            { size: 0.022 + Math.random() * 0.026, color: 0xeaf7ff, maxAge: 0.5 + Math.random() * 0.55, bobAmp: 0.01, bobRate: 8 + Math.random() * 6 }
-          );
-        }
-      }
-
-      function updateFishingFxParticles(dt) {
-        for (let i = fishingFxParticles.length - 1; i >= 0; i--) {
-          const p = fishingFxParticles[i];
-          p.age += dt;
-          if (p.age >= p.maxAge) {
-            p.mesh.parent?.remove(p.mesh);
-            p.mesh.geometry.dispose();
-            p.mat.dispose();
-            fishingFxParticles.splice(i, 1);
-            continue;
-          }
-          p.mesh.position.x += p.vx * dt;
-          p.mesh.position.z += p.vz * dt;
-          if (p.bobAmp) {
-            p.baseY += p.vy * dt;
-            p.mesh.position.y = p.baseY + Math.sin((p.age + p.bobPhase) * p.bobRate) * p.bobAmp;
-          } else {
-            p.vy += p.gravity * dt;
-            p.mesh.position.y += p.vy * dt;
-          }
-          p.mat.opacity = Math.max(0, 1 - p.age / p.maxAge);
-        }
-      }
-
-      // Entry point (replaces the old immediate-start startFishingMinigame):
-      // interacting with water while a harpoon is equipped only casts bait
-      // and swaps the camera — the ring doesn't open until the player
-      // confirms a bite (see beginFishingRing). World time/NPCs/weather keep
-      // running throughout; only player movement is suspended (see the guard
-      // in updateMovement).
-      function beginFishingCast() {
-        const picked = pickFishForCurrentZone();
-        if (!picked) { showToast('No fish here.', false); return; }
-        const { fish, zoneKey } = picked;
-        // Anchor the floating ring over the actual river tile being fished, so it
-        // tracks the live 3D scene's camera angle instead of sitting in a fixed
-        // modal position (see updateFishingRingScreenPosition/worldToOverlay).
-        const reticle = getReticleTile();
-        const reticleTile = getActiveTileAt(reticle.col, reticle.row);
-        // tileSurfaceY(type) alone ignores the tile's own elevTier — fine on
-        // town/farm's flat single-tier grid, but an exterior zone's water can
-        // sit on any plateau tier (see tileSurfaceYInArea's own comment).
-        // Anchoring on the bare ground-level Y here dragged the fishing
-        // camera (see below) down to ground level for the whole minigame
-        // whenever the fished water was actually up on a plateau.
-        const anchorWorld = {
-          x: reticle.col + 0.5,
-          z: reticle.row + 0.5,
-          y: tileSurfaceYInArea(reticleTile, currentArea) + 0.35,
-        };
-        fishingMinigame = {
-          phase: 'cast',
-          phaseTimer: 0,
-          floatSpawnTimer: 0,
-          biteAt: FISHING_BITE_WAIT_MIN_S + Math.random() * (FISHING_BITE_WAIT_MAX_S - FISHING_BITE_WAIT_MIN_S),
-          anchorWorld,
-          fishDef: fish,
-          zoneKey,
-          difficulty: fish.difficulty,
-          fishClass: fish.fishClass,
-          active: true,
-        };
-        // Hold the harpoon at its windup extreme for the whole cast/waiting/
-        // bite sequence, so the character visibly looks like it's getting
-        // ready instead of resting in its normal idle pose.
-        fishingReadyPose = true;
-        spawnFishingBaitToss(
-          { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z },
-          anchorWorld
-        );
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishCast);
-        fishingOverlayEl.innerHTML = '';
-        fishingEls = null;
-        fishingOverlayEl.classList.add('open');
-
-        // Swap to the "fishing" camera mode (fixed diagonal offset, matching the
-        // (HA)SpearFishingMinigameV2 prototype's cube/river framing) and track the
-        // fished water tile instead of the player while the minigame is open.
-        _prevCameraMode = activeCameraMode;
-        _prevCameraTarget = activeCameraTarget;
-        activeCameraMode = 'fishing';
-        activeCameraTarget = { position: new THREE.Vector3(anchorWorld.x, anchorWorld.y, anchorWorld.z) };
-
-        // Drop the harpoon's "Fish" arc button immediately (computeActionButtons
-        // returns [] while fishingMinigame.active — see there) instead of
-        // waiting for whatever next unrelated event happens to call
-        // refreshActionBar(); fishing's real controls are #actionPrompt now.
-        refreshActionBar();
-        setNonFishingArcControlsHidden(true);
-      }
-
-      // Opens the actual spear-bridge ring once the player confirms a bite
-      // (fm.phase 'bite' -> 'active') — extends the existing fm in place
-      // rather than replacing it, so anchorWorld/camera/overlay state from
-      // beginFishingCast carries straight through.
-      function beginFishingRing(fm) {
-        fm.phase = 'active';
-        fm.fishAnimT = 0;
-        fm.fish = {
-          pos: Math.random(), vel: 0, targetVel: 0, angle: 0,
-          renderAngle: 0, renderRadius: FISHING_RING.fishRadius, dimmed: false,
-          moveDir: 1, pendingMoveDir: 1, turning: false, turnProgress: 0, localFacingScale: 1,
-        };
-        fm.dive = {
-          active: false, timer: 0, cooldown: 3 + Math.random() * 4,
-          inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
-        };
-        fm.bridge = {
-          angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
-          markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
-          shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
-          weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
-        };
-        fm.panic = 0;
-        fm.resolved = false;
-        fm.resultTimer = 0;
-        fm.message = 'Tap Fire to drop the first marker.';
-        fm.messageType = '';
-        fm.respawn = {
-          active: false, phase: 'idle', timer: 0, scale: 1,
-          startAngle: 0, startRadius: FISHING_RING.fishRadius,
-          centerAngle: 0, centerRadius: 0,
-          enterStartAngle: 0, enterStartRadius: 0, enterTargetAngle: 0,
-        };
-        fishPickTargetVel(fm);
-        _fishDeformUrlCache = null;
-        _fishDeformUrlCacheAt = -Infinity;
-        fishingReadyPose = false;
-        window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
-        // The prompt DOM (button/status/panic/cancel) persists across this
-        // transition; only the ring SVG is fresh here.
-        fishingEls = null;
-        renderFishingOverlay();
-      }
-
-      // Dispatches the "primary" fishing button/key press (action bar tap,
-      // Space/Enter) to whatever it means at the current phase: confirm a
-      // bite to open the ring, or place/fire a bridge marker once it's open.
-      // No-op during 'cast'/'waiting' — there's nothing to do until a bite.
-      function fishingPrimaryAction() {
-        const fm = fishingMinigame;
-        if (!fm) return;
-        if (fm.phase === 'bite') { beginFishingRing(fm); return; }
-        if (fm.phase === 'active') { fireFishingBridge(); return; }
-        // The catch "showoff" view (beginFishCatchView) previously only
-        // dismissed via a pointerup listener on #fcvContinueBtn — keyboard
-        // (Space/Enter/E) and gamepad (interact/action1) both already route
-        // into fishingPrimaryAction for every other phase (see the keydown
-        // handler and runInputAction), but this phase fell through as a
-        // no-op, leaving controller/keyboard players stuck unable to
-        // continue without a mouse/touch tap.
-        if (fm.phase === 'caught') { continueFromFishCatch(); return; }
-      }
-
-      // The dynamic action-bar buttons (btnAction1-3/btnItemAction1-2) already
-      // swap to fish_primary/fish_cancel while fishing is active (see
-      // computeActionButtons), but the tool-select/item-select dial openers
-      // and the weapon quick-switch button are separate, always-on controls
-      // that don't go through that array at all — nothing stopped a player
-      // from switching away from the harpoon (or opening the item wheel)
-      // mid-cast. Hidden outright (not just disabled) so their own
-      // press/hold listeners can't fire either.
-      function setNonFishingArcControlsHidden(hidden) {
-        const display = hidden ? 'none' : '';
-        if (toolBtn) toolBtn.style.display = display;
-        const itemBtnEl = document.getElementById('itemBtn');
-        if (itemBtnEl) itemBtnEl.style.display = display;
-        if (btnWeaponSwitch) btnWeaponSwitch.style.display = display;
-        if (dodgeBtn) dodgeBtn.style.display = display;
-      }
-
-      function closeFishingMinigame() {
-        if (!fishingMinigame) return;
-        fishingMinigame = null;
-        fishingReadyPose = false;
-        fishingOverlayEl.classList.remove('open');
-        fishingOverlayEl.innerHTML = '';
-        fishingEls = null;
-        hideActionPrompt();
-        hideFishCatchView();
-        setNonFishingArcControlsHidden(false);
-        // Always return to holding the harpoon, ready to fish again —
-        // covers the catch-view popup, which temporarily switches to
-        // heldMode 'item' so the held-item system can show the caught fish
-        // (see beginFishCatchView). A no-op for every other exit path,
-        // since heldMode/activeTool are never touched outside that popup.
-        heldMode = 'tool';
-        activeTool = 'harpoon';
-        refreshActionBar();
-        if (_prevCameraMode !== null) { activeCameraMode = _prevCameraMode; _prevCameraMode = null; }
-        activeCameraTarget = _prevCameraTarget;
-        _prevCameraTarget = null;
-      }
-
-      function fireFishingBridge() {
-        const fm = fishingMinigame;
-        if (!fm || fm.resolved || fm.respawn.active || fm.bridge.spearActive) return;
-        const b = fm.bridge;
-        const currentAngle = b.angle;
-        if (b.markerA == null) {
-          b.markerA = currentAngle;
-          b.markerB = null;
-          fm.message = 'First marker placed. Tap Fire again.';
-          fm.messageType = '';
-          return;
-        }
-        b.markerB = currentAngle;
-        b.lineA = b.markerA;
-        b.lineB = b.markerB;
-        b.spearActive = true;
-        b.shotTimer = 0;
-        b.retractTimer = 0;
-        b.caughtFish = false;
-        const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
-        const a = fishingPolarToXY(b.lineA, outerRadius);
-        b.tipX = b.prevTipX = a.x;
-        b.tipY = b.prevTipY = a.y;
-        b.direction *= -1;
-        b.markerA = null;
-        b.markerB = null;
-        fm.message = 'Spear thrown!';
-        fm.messageType = '';
-
-        // Cosmetic 3D-world throw: reuse the hoe/chop swing arc (raise → slam) but
-        // fly the held harpoon mesh out to the fishing anchor mid-slam instead of
-        // slamming it down at the player's feet, then ease it back to the hand.
-        // Duration must stay under the 2D ring's shot+retract window (~0.44s) so a
-        // repeat cast can't restart the swing while the mesh is still mid-flight.
-        toolSwingDur = 0.42;
-        toolSwingT = toolSwingDur;
-        strikeFired = true; // fishing has no pendingAction to fire on strike
-        fishThrowActive = true;
-      }
-
-      function fishingTryTipCatch(fm) {
-        const b = fm.bridge;
-        if (b.caughtFish || !b.spearActive) return false;
-        // Diving pulls the fish's *rendered* position off the ring toward the
-        // center (fm.fish.renderAngle/renderRadius) — testing against that
-        // instead of the hidden ring angle/fixed ring radius is what makes a
-        // dive genuinely unhittable, not just visually distinct. The explicit
-        // dive.active check is a belt-and-suspenders guard for the first
-        // instant of a dive, before renderRadius has eased inward enough for
-        // distance alone to rule it out.
-        if (fm.dive.active) return false;
-        const fishPos = fishingPolarToXY(fm.fish.renderAngle, fm.fish.renderRadius);
-        const colliderRadius = 14;
-        const dist = fishingDistPointToSegment(fishPos.x, fishPos.y, b.prevTipX, b.prevTipY, b.tipX, b.tipY);
-        if (dist <= colliderRadius) { b.caughtFish = true; return true; }
-        return false;
-      }
-
-      function resolveFishingRound(fm, caught) {
-        if (caught) {
-          fm.resolved = true;
-          inventory[fm.fishDef.key] = Math.min(99, (inventory[fm.fishDef.key] || 0) + 1);
-          const stars = rollItemStars();
-          fm.message = `Caught a ${starRatingText(stars)} ${fm.fishDef.label}! ${fm.fishDef.icon}`;
-          fm.messageType = 'good';
-          lastActionMessage = fm.message;
-          awardToolUseMasteryXp('harpoon');
-          window.AudioSystem?.playWeaponSlashSfx();
-          beginFishCatchView(fm, stars);
-          return;
-        }
-        // Escaping used to slide the fish into the pool and swim a fresh
-        // one back out (beginFishEscapeRespawn), letting the player keep
-        // fishing the same cast indefinitely. Now a single escape just
-        // ends the round and drops back to normal gameplay.
-        fm.resolved = true;
-        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishMiss);
-        showToast('The fish got away!', false);
-        closeFishingMinigame();
-      }
-
-      let fishCatchViewEls = null;
-      function buildFishCatchViewDom() {
-        if (fishCatchViewEls) return;
-        const el = document.getElementById('fishCatchView');
-        if (!el) return;
-        fishCatchViewEls = {
-          el,
-          stars: document.getElementById('fcvStars'),
-          text: document.getElementById('fcvText'),
-          continueBtn: document.getElementById('fcvContinueBtn'),
-        };
-        fishCatchViewEls.continueBtn.addEventListener('pointerup', (e) => { e.stopPropagation(); continueFromFishCatch(); });
-      }
-
-      // The catch "victory view": zooms/angles the camera onto the player
-      // (a zoomed-out cousin of the NPC dialogue camera — see the
-      // 'fishCatch' camera mode config) while they face the camera and
-      // hold the caught fish to their chest via the same held-item system
-      // bag items use (heldMode 'item' — see heldItemHolder/
-      // updateHeldItemHolder), captioned with its star rating. Stays up
-      // until the player taps Continue (continueFromFishCatch), not on a
-      // timer — see updateFishingMinigame's 'caught' early return.
-      function beginFishCatchView(fm, stars) {
-        fm.phase = 'caught';
-        hideActionPrompt();
-        // The ring SVG would otherwise stay frozen on-screen at its last
-        // rendered frame — renderFishingOverlay never runs again once
-        // updateFishingMinigame's 'caught' branch takes over.
-        fishingOverlayEl.classList.remove('open');
-        // Same reason: renderFishingOverlay (which otherwise keeps the arc's
-        // fish_primary/fish_cancel buttons in sync) stops running once
-        // 'caught' takes over, so without this the last active-phase arc
-        // buttons would stay stuck on screen underneath the victory view.
-        refreshActionBar();
-
-        // Face the fixed fishCatch camera (azimuthDeg 0 in its config sits
-        // south of the player looking north, matching playerFacing 0)
-        // regardless of whichever way the player was actually fishing.
-        playerFacing = 0;
-
-        // Point the held-item system at the fish that was just caught,
-        // not whatever bag item the player had selected before fishing.
-        const idx = getInventoryStackKeys('all').indexOf(fm.fishDef.key);
-        if (idx >= 0) activeItemIndex = idx;
-        heldMode = 'item';
-
-        // _prevCameraMode/_prevCameraTarget already hold the pre-fishing
-        // camera from beginFishingCast — left untouched here so Continue
-        // (closeFishingMinigame) restores straight back to it, skipping
-        // over the 'fishing' ring camera entirely.
-        activeCameraMode = 'fishCatch';
-        activeCameraTarget = null; // updateCameraPosition falls back to tracking the player directly
-
-        buildFishCatchViewDom();
-        if (!fishCatchViewEls) return;
-        fishCatchViewEls.stars.textContent = starRatingText(stars);
-        fishCatchViewEls.text.textContent = `You caught a ${stars} Star ${fm.fishDef.label}`;
-        fishCatchViewEls.el.classList.add('open');
-        fishCatchViewEls.el.setAttribute('aria-hidden', 'false');
-      }
-
-      function hideFishCatchView() {
-        if (!fishCatchViewEls) return;
-        fishCatchViewEls.el.classList.remove('open');
-        fishCatchViewEls.el.setAttribute('aria-hidden', 'true');
-      }
-
-      function continueFromFishCatch() {
-        closeFishingMinigame();
-      }
-
-      function respawnNextFish(fm) {
-        const picked = pickFishForCurrentZone();
-        const fish = picked ? picked.fish : fm.fishDef;
-        fm.fishDef = fish;
-        fm.difficulty = fish.difficulty;
-        fm.fishClass = fish.fishClass;
-        fm.fish.pos = Math.random();
-        fm.fish.vel = 0;
-        fm.fish.targetVel = 0;
-        fm.fish.moveDir = 1;
-        fm.fish.pendingMoveDir = 1;
-        fm.fish.turning = false;
-        fm.fish.turnProgress = 0;
-        fm.fish.localFacingScale = 1;
-        fishPickTargetVel(fm);
-        fm.panic = 0;
-        fm.dive.active = false;
-        fm.dive.timer = 0;
-        fm.dive.visualOffset = 0;
-        fm.dive.cooldown = 3 + Math.random() * 4;
-        fm.fish.dimmed = false;
-        const r = fm.respawn;
-        r.enterStartAngle = r.centerAngle;
-        r.enterStartRadius = r.centerRadius;
-        r.enterTargetAngle = fm.fish.angle;
-      }
-
-      function beginFishPoolEnter(fm) {
-        const r = fm.respawn;
-        r.phase = 'enter';
-        r.timer = 0;
-        r.scale = 1;
-        r.enterStartAngle = r.centerAngle;
-        r.enterStartRadius = r.centerRadius;
-        r.enterTargetAngle = fm.fish.angle;
-        fm.message = 'New fish is swimming back to the ring.';
-        fm.messageType = '';
-      }
-
-      function finishFishPoolEnter(fm) {
-        const r = fm.respawn;
-        r.active = false;
-        r.phase = 'idle';
-        r.timer = 0;
-        r.scale = 1;
-        fm.message = 'New fish entered. Tap Fire to drop the first marker.';
-        fm.messageType = '';
-      }
-
-      function updateFishRespawnAnimation(fm, dt) {
-        const r = fm.respawn;
-        const T = FISH_RESPAWN_TIMING;
-        r.timer += dt;
-        if (r.phase === 'retreat' && r.timer >= T.retreatDuration) {
-          r.phase = 'shrink'; r.timer = 0; r.scale = 1;
-        } else if (r.phase === 'shrink' && r.timer >= T.shrinkDuration) {
-          r.phase = 'wait'; r.timer = 0; r.scale = 0;
-        } else if (r.phase === 'wait' && r.timer >= T.waitDuration) {
-          r.phase = 'grow'; r.timer = 0; r.scale = 0;
-          respawnNextFish(fm);
-        } else if (r.phase === 'grow' && r.timer >= T.growDuration) {
-          beginFishPoolEnter(fm);
-        } else if (r.phase === 'enter') {
-          fishStepMotion(fm, dt);
-          r.enterTargetAngle = fm.fish.angle;
-          if (r.timer >= T.enterDuration) finishFishPoolEnter(fm);
-        }
-      }
-
-      // Visual-only pose during the escape/respawn sequence: where to draw the
-      // fish (pool center vs sliding/growing) and at what scale. Returns null
-      // once the sequence is over so normal ring rendering takes over again.
-      function getRespawnFishPose(fm) {
-        const r = fm.respawn;
-        if (!r.active) return null;
-        const T = FISH_RESPAWN_TIMING;
-        if (r.phase === 'retreat') {
-          const t = clamp(r.timer / T.retreatDuration, 0, 1);
-          const angle = r.startAngle + angleDiffDeg(r.startAngle, r.centerAngle) * t;
-          const radius = r.startRadius + (r.centerRadius - r.startRadius) * t;
-          return { angle, radius, scale: 1 };
-        }
-        if (r.phase === 'shrink') {
-          const t = clamp(r.timer / T.shrinkDuration, 0, 1);
-          return { angle: r.centerAngle, radius: r.centerRadius, scale: Math.max(0, 1 - t) };
-        }
-        if (r.phase === 'wait') {
-          return { angle: r.centerAngle, radius: r.centerRadius, scale: 0 };
-        }
-        if (r.phase === 'grow') {
-          const t = clamp(r.timer / T.growDuration, 0, 1);
-          return { angle: r.centerAngle, radius: r.centerRadius, scale: t };
-        }
-        if (r.phase === 'enter') {
-          const t = clamp(r.timer / T.enterDuration, 0, 1);
-          const angle = r.enterStartAngle + angleDiffDeg(r.enterStartAngle, r.enterTargetAngle) * t;
-          const radius = r.enterStartRadius + (FISHING_RING.fishRadius - r.enterStartRadius) * t;
-          return { angle, radius, scale: 1 };
-        }
-        return null;
-      }
-
-      function updateFishingMinigame(dt) {
-        const fm = fishingMinigame;
-        if (!fm) return;
-
-        // The catch-view popup (camera zoom + star rating + Continue) is
-        // static per-frame — it only advances via its own button, not a
-        // timer — see beginFishCatchView/continueFromFishCatch.
-        if (fm.phase === 'caught') return;
-
-        if (fm.phase !== 'active') {
-          fm.phaseTimer += dt;
-          if (fm.phase === 'cast' || fm.phase === 'waiting') {
-            fm.floatSpawnTimer -= dt;
-            if (fm.floatSpawnTimer <= 0) {
-              spawnFishingFloatParticle(fm.anchorWorld);
-              fm.floatSpawnTimer = 0.3 + Math.random() * 0.3;
-            }
-          }
-          if (fm.phase === 'cast' && fm.phaseTimer >= FISHING_BAIT_FLIGHT_S) {
-            fm.phase = 'waiting';
-            fm.phaseTimer = 0;
-          } else if (fm.phase === 'waiting' && fm.phaseTimer >= fm.biteAt) {
-            spawnFishingBiteSplash(fm.anchorWorld);
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().fishBite);
-            fm.phase = 'bite';
-          }
-          renderFishingOverlay();
-          return;
-        }
-
-        if (fm.respawn.active) {
-          fm.fishAnimT += dt;
-          updateFishRespawnAnimation(fm, dt);
-          renderFishingOverlay();
-          return;
-        }
-
-        fm.fishAnimT += dt;
-        fishStepMotion(fm, dt);
-
-        if (fishMaybeStartDive(fm, dt) || fm.dive.active) {
-          fishUpdateDiveOverlay(fm, dt);
-        } else {
-          fm.fish.renderRadius = FISHING_RING.fishRadius;
-          fm.fish.renderAngle = fm.fish.angle;
-          fm.fish.dimmed = false;
-        }
-
-        const b = fm.bridge;
-        b.angle = (b.angle + b.speed * b.direction * dt + 360) % 360;
-
-        if (b.spearActive) {
-          const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
-          const a = fishingPolarToXY(b.lineA, outerRadius);
-          const bPt = fishingPolarToXY(b.lineB, outerRadius);
-          b.prevTipX = b.tipX;
-          b.prevTipY = b.tipY;
-
-          if (b.shotTimer < FISHING_RING.shotDuration) {
-            b.weaponSpinDeg = (b.weaponSpinDeg + FISHING_BRIDGE_ART.maceSpinRateDeg * dt) % 360;
-            b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
-            b.shotTimer = Math.min(FISHING_RING.shotDuration, b.shotTimer + dt);
-            const t = b.shotTimer / FISHING_RING.shotDuration;
-            b.tipX = a.x + (bPt.x - a.x) * t;
-            b.tipY = a.y + (bPt.y - a.y) * t;
-            fishingTryTipCatch(fm);
-          } else if (b.retractTimer < FISHING_RING.retractDuration) {
-            b.weaponSpinDeg = 0;
-            b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
-            b.retractTimer = Math.min(FISHING_RING.retractDuration, b.retractTimer + dt);
-            const t = b.retractTimer / FISHING_RING.retractDuration;
-            b.tipX = bPt.x + (a.x - bPt.x) * t;
-            b.tipY = bPt.y + (a.y - bPt.y) * t;
-          } else if (b.caughtFish) {
-            // Leave the bridge/spear state alone on a catch — the fish stays
-            // pinned to the (now fully retracted) tip position for the whole
-            // "Caught!" celebration window instead of popping back onto the
-            // ring the instant it resolves. closeFishingMinigame() discards
-            // the whole fishingMinigame object once the round actually ends,
-            // so there's nothing to clean up here.
-            resolveFishingRound(fm, true);
-          } else {
-            fm.panic = Math.min(FISHING_RING.panicMax, fm.panic + FISHING_RING.panicStep);
-            if (fm.panic >= FISHING_RING.panicMax) {
-              resolveFishingRound(fm, false);
-            } else {
-              fm.message = 'Missed! Panic rising.';
-              fm.messageType = 'bad';
-            }
-            b.spearActive = false;
-            b.lineA = null;
-            b.lineB = null;
-            b.shotTimer = 0;
-            b.retractTimer = 0;
-            b.caughtFish = false;
-          }
-        }
-
-        renderFishingOverlay();
-      }
-
-      // Built once on entering 'active' (the ring SVG only — the "Ready
-      // Harpoon"/"Throw Harpoon" button itself is an arc button, built by
-      // computeActionButtons/applyAbt; the bottom-of-screen action prompt
-      // just mirrors it as an info display, see renderFishingOverlay).
-      function buildFishingRingDom() {
-        const R = FISHING_RING;
-        const outerRadius = R.fishRadius + R.outerOffset;
-        const ringWrap = document.createElement('div');
-        ringWrap.className = 'fish-ring-wrap';
-        ringWrap.id = 'fishRingWrap';
-        ringWrap.innerHTML = `
-          <svg viewBox="0 0 ${R.cx * 2} ${R.cy * 2}">
-            <circle cx="${R.cx}" cy="${R.cy}" r="${R.fishRadius}" fill="none" stroke="rgba(127,232,154,0.4)" stroke-width="2"/>
-            <circle cx="${R.cx}" cy="${R.cy}" r="${outerRadius}" fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
-            <path id="fishSegArc" fill="none" stroke="#f9e28a" stroke-width="6" stroke-linecap="round"/>
-            <circle id="fishMarkerA" r="5" fill="#ff8060" opacity="0"/>
-            <circle id="fishMarkerB" r="5" fill="#ff8060" opacity="0"/>
-            <path id="fishSpearRope" fill="none" stroke="#cbb892" stroke-width="2" opacity="0"/>
-            <g id="fishSpearSpriteWrap" opacity="0"><image id="fishSpearImage" preserveAspectRatio="xMidYMid meet"/></g>
-            <g id="fishImageRig" opacity="0"><g id="fishImageTransform"><image id="fishDeformedImage" preserveAspectRatio="none"/></g></g>
-          </svg>`;
-        fishingOverlayEl.insertBefore(ringWrap, fishingOverlayEl.firstChild);
-
-        fishingEls = {
-          ringWrap,
-          segArc: document.getElementById('fishSegArc'),
-          markerA: document.getElementById('fishMarkerA'),
-          markerB: document.getElementById('fishMarkerB'),
-          spearRope: document.getElementById('fishSpearRope'),
-          spearSpriteWrap: document.getElementById('fishSpearSpriteWrap'),
-          spearImage: document.getElementById('fishSpearImage'),
-          fishImageRig: document.getElementById('fishImageRig'),
-          fishImageTransform: document.getElementById('fishImageTransform'),
-          fishDeformedImage: document.getElementById('fishDeformedImage'),
-        };
-      }
-
-      // Ported from the prototype's renderBridgeSpearSprite: positions the real
-      // harpoon/mace PNG (business end at the image's bottom) rotated along the
-      // flight chord, with a quadratic-bezier rope back to the launch point, and
-      // (mace only) a rapid spin while outbound that freezes once retracting.
-      function renderFishingSpearSprite(startPoint, endPoint) {
-        const art = FISHING_BRIDGE_ART;
-        const useMace = equipmentSlots.harpoon === 'fishingmace';
-        const spriteImg = useMace ? harpoonMaceSpriteImage : harpoonSpearSpriteImage;
-        const dx = endPoint.x - startPoint.x, dy = endPoint.y - startPoint.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const ux = dx / len, uy = dy / len;
-        const nx = -uy, ny = ux;
-        const ropeEndX = useMace ? endPoint.x : endPoint.x - ux * art.ropeAttachBack;
-        const ropeEndY = useMace ? endPoint.y : endPoint.y - uy * art.ropeAttachBack;
-        const sag = Math.min(22, len * art.ropeSag);
-        const ctrlX = (startPoint.x + ropeEndX) * 0.5 + nx * sag;
-        const ctrlY = (startPoint.y + ropeEndY) * 0.5 + ny * sag;
-        fishingEls.spearRope.setAttribute('d', `M ${startPoint.x.toFixed(2)} ${startPoint.y.toFixed(2)} Q ${ctrlX.toFixed(2)} ${ctrlY.toFixed(2)} ${ropeEndX.toFixed(2)} ${ropeEndY.toFixed(2)}`);
-        fishingEls.spearRope.setAttribute('opacity', '1');
-
-        if (!spriteImg || !spriteImg.naturalWidth) { fishingEls.spearSpriteWrap.setAttribute('opacity', '0'); return; }
-
-        const spriteW = art.spriteWidth, spriteH = art.spriteHeight, front = art.spearAttachFront;
-        fishingEls.spearImage.setAttribute('href', spriteImg.src);
-        fishingEls.spearImage.setAttribute('x', (-spriteW * 0.5).toFixed(2));
-        fishingEls.spearImage.setAttribute('y', (useMace ? -spriteH * 0.5 : -front).toFixed(2));
-        fishingEls.spearImage.setAttribute('width', spriteW.toFixed(2));
-        fishingEls.spearImage.setAttribute('height', spriteH.toFixed(2));
-        fishingEls.spearImage.setAttribute('transform', 'scale(1 -1)');
-
-        const baseAngleDeg = Math.atan2(dy, dx) * 180 / Math.PI + art.spriteRotationOffset;
-        const b = fishingMinigame.bridge;
-        const isOutbound = b.spearActive && b.shotTimer < FISHING_RING.shotDuration;
-        let angleDeg = baseAngleDeg;
-        if (useMace) {
-          if (isOutbound) angleDeg = baseAngleDeg + (b.weaponSpinDeg || 0);
-          else if (Number.isFinite(b.frozenWeaponAngleDeg)) angleDeg = b.frozenWeaponAngleDeg;
-        }
-        fishingEls.spearSpriteWrap.setAttribute('transform', `translate(${endPoint.x.toFixed(2)} ${endPoint.y.toFixed(2)}) rotate(${angleDeg.toFixed(2)})`);
-        fishingEls.spearSpriteWrap.setAttribute('opacity', '1');
-      }
-
-      // Ported from the prototype's renderImageFish: positions the deformed/skinned
-      // fish silhouette (see renderFishDeformedTexture) at its ring point, rotated to
-      // the ring angle and mirrored by localFacingScale for left/right turnarounds.
-      function renderFishingImageFish(fm) {
-        const pose = getRespawnFishPose(fm);
-        if (pose && pose.scale <= 0.01) {
-          fishingEls.fishImageRig.setAttribute('opacity', '0');
-          return;
-        }
-        const b = fm.bridge;
-        // Once the spear actually lands, the fish rides the retracting tip
-        // back toward the player instead of staying pinned to its ring/dive
-        // spot — ported from the prototype's spearBridge caughtFish branch.
-        const caughtFollow = !pose && b.spearActive && b.caughtFish;
-        let renderAngle, fishPt;
-        if (caughtFollow) {
-          const outerRadius = FISHING_RING.fishRadius + FISHING_RING.outerOffset;
-          const anchor = fishingPolarToXY(b.lineA, outerRadius);
-          renderAngle = Math.atan2(b.tipY - anchor.y, b.tipX - anchor.x) * 180 / Math.PI;
-          fishPt = { x: b.tipX, y: b.tipY };
-        } else {
-          renderAngle = pose ? pose.angle : fm.fish.renderAngle;
-          const renderRadius = pose ? pose.radius : fm.fish.renderRadius;
-          fishPt = fishingPolarToXY(renderAngle, renderRadius);
-        }
-        const renderScale = pose ? pose.scale : 1;
-        const deform = renderFishDeformedTexture(fm);
-        // Only log on a state change (loaded vs. not), so the debug panel gets one
-        // entry per session instead of one per frame at 60fps.
-        if (fm._pngLogState !== !!deform) {
-          fm._pngLogState = !!deform;
-          window.__farmLog?.(
-            `fish png render: ${deform ? 'OK (' + deform.w.toFixed(0) + 'x' + deform.h.toFixed(0) + ')' : 'FAILED'} ` +
-            `bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`,
-            deform ? 'info' : 'warn'
-          );
-        }
-        if (!deform) {
-          fishingEls.fishImageRig.setAttribute('opacity', '0');
-          return;
-        }
-
-        const art = FISHING_BRIDGE_ART;
-        const requested = fm.fish.localFacingScale;
-        const localFacingScale = Math.abs(requested) < 0.035 ? 0.035 * Math.sign(requested || 1) : requested;
-        const scaleX = art.flipX * localFacingScale;
-
-        const w = deform.w * renderScale, h = deform.h * renderScale;
-        // Dimmed while diving/escaping (fm.fish.dimmed) — a visible cue that
-        // the fish is in the safe zone, on top of it genuinely being
-        // geometrically unreachable (see fishingTryTipCatch).
-        fishingEls.fishImageRig.setAttribute('opacity', pose || !fm.fish.dimmed ? '1' : '0.55');
-        fishingEls.fishImageRig.setAttribute('transform', `translate(${fishPt.x.toFixed(2)} ${fishPt.y.toFixed(2)})`);
-        fishingEls.fishImageTransform.setAttribute('transform', `rotate(${renderAngle.toFixed(2)}) scale(${scaleX.toFixed(4)} 1)`);
-        fishingEls.fishDeformedImage.setAttribute('href', deform.url);
-        fishingEls.fishDeformedImage.setAttribute('x', (-w / 2).toFixed(2));
-        fishingEls.fishDeformedImage.setAttribute('y', (-h / 2).toFixed(2));
-        fishingEls.fishDeformedImage.setAttribute('width', w.toFixed(2));
-        fishingEls.fishDeformedImage.setAttribute('height', h.toFixed(2));
-      }
-
-      // Floats the ring over the live 3D scene at the river tile's projected screen
-      // position instead of centering it in a modal — same camera-angle-tracking
-      // intent as the prototype's backdrop demo (cube player + river prism).
-      function updateFishingRingScreenPosition(fm) {
-        if (!fishingEls || !fm.anchorWorld) return;
-        const proj = worldToOverlay(fm.anchorWorld.x, fm.anchorWorld.y, fm.anchorWorld.z);
-        if (!proj.visible) return;
-        const halfRing = 160; // matches the ring-wrap's max 320px size
-        const rect = _threeRect;
-        const left = clamp(proj.x, halfRing, Math.max(halfRing, rect.width - halfRing));
-        const top = clamp(proj.y, halfRing, Math.max(halfRing, rect.height - halfRing));
-        fishingEls.ringWrap.style.left = (rect.left + left) + 'px';
-        fishingEls.ringWrap.style.top = (rect.top + top) + 'px';
-      }
-
-      function renderFishingOverlay() {
-        const fm = fishingMinigame;
-        if (!fm) return;
-
-        // Keeps the fish_primary/fish_cancel arc buttons in sync with phase
-        // (computeActionButtons' fishingMinigame branch returns nothing
-        // before 'bite', the button pair from 'bite' onward) — cheap no-op
-        // via refreshActionBar's own key-diff whenever the phase hasn't
-        // actually changed since the last call, so calling this every frame
-        // here is fine.
-        refreshActionBar();
-
-        // "Ready Harpoon"/"Throw Harpoon" is now primarily an arc button
-        // (see computeActionButtons' fishingMinigame branch) — natural
-        // thumb reach on touch, unlike this bottom-center spot. This prompt
-        // stays up alongside it purely as an info display (status text/
-        // panic bar, and the actual key/button label on desktop/
-        // controller), but keeps its own onPress/onCancel too as a
-        // redundant secondary tap target — harmless, and convenient for a
-        // desktop mouse user who'd rather click here than hunt for the arc.
-        if (fm.phase === 'bite' || fm.phase === 'active') {
-          const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
-          showActionPrompt({
-            actionId: 'interact',
-            touchIcon: attackActionIconHTML('harpoon', 'fish', '🎣'),
-            verb: notYetMarked ? 'Ready Harpoon' : 'Throw Harpoon',
-            onPress: fishingPrimaryAction,
-            cancelText: 'Give up',
-            onCancel: closeFishingMinigame,
-            statusText: fm.phase === 'active' ? fm.message : '',
-            statusType: fm.phase === 'active' ? fm.messageType : '',
-            panicPercent: fm.phase === 'active' ? fm.panic : null,
-          });
-        }
-
-        if (fm.phase !== 'active') return;
-
-        if (!fishingEls) buildFishingRingDom();
-        updateFishingRingScreenPosition(fm);
-
-        const R = FISHING_RING;
-        const outerRadius = R.fishRadius + R.outerOffset;
-        const half = R.segmentSize / 2;
-
-        fishingEls.segArc.setAttribute('d', describeFishingArc(outerRadius, fm.bridge.angle - half, fm.bridge.angle + half));
-
-        if (fm.bridge.markerA != null) {
-          const p = fishingPolarToXY(fm.bridge.markerA, outerRadius);
-          fishingEls.markerA.setAttribute('cx', p.x.toFixed(1));
-          fishingEls.markerA.setAttribute('cy', p.y.toFixed(1));
-          fishingEls.markerA.setAttribute('opacity', '1');
-        } else {
-          fishingEls.markerA.setAttribute('opacity', '0');
-        }
-        if (fm.bridge.markerB != null) {
-          const p = fishingPolarToXY(fm.bridge.markerB, outerRadius);
-          fishingEls.markerB.setAttribute('cx', p.x.toFixed(1));
-          fishingEls.markerB.setAttribute('cy', p.y.toFixed(1));
-          fishingEls.markerB.setAttribute('opacity', '1');
-        } else {
-          fishingEls.markerB.setAttribute('opacity', '0');
-        }
-
-        if (fm.bridge.spearActive && fm.bridge.lineA != null) {
-          const spearA = fishingPolarToXY(fm.bridge.lineA, outerRadius);
-          renderFishingSpearSprite(spearA, { x: fm.bridge.tipX, y: fm.bridge.tipY });
-        } else {
-          fishingEls.spearRope.setAttribute('opacity', '0');
-          fishingEls.spearSpriteWrap.setAttribute('opacity', '0');
-        }
-
-        renderFishingImageFish(fm);
-      }
-
-      function describeFishingArc(radius, startDeg, endDeg) {
-        const start = fishingPolarToXY(startDeg, radius);
-        const end = fishingPolarToXY(endDeg, radius);
-        const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
-        return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
-      }
+      // Spearfishing minigame (Spear Bridge) + fishing FX particles now
+      // live in js/fishing-minigame.js (window.Fishing) -- see
+      // window.Fishing.init(...) below for the wiring. game.js's own
+      // tool-swing code still reads window.Fishing.state/.readyPose
+      // directly where it poses the held harpoon during a throw.
 
       const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
       const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
@@ -27972,13 +23689,12 @@
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
-      // True while the player is waiting on a fishing bite (see
-      // beginFishingCast/fishing cast phases below) — holds the equipped
-      // tool at its windup extreme so the harpoon visibly looks "at the
-      // ready" instead of resting in its normal idle pose. Deliberately
-      // separate from combatSwingHeld/triggerWeaponHoldVisual (which only
-      // work for activeTool === 'weapon') rather than reusing that system.
-      let fishingReadyPose = false;
+      // Fishing's own equivalent of combatSwingHeld (holds the harpoon at
+      // its windup extreme while waiting on a bite) now lives in
+      // js/fishing-minigame.js (window.Fishing) — read below via the
+      // window.Fishing.readyPose getter, since it's deliberately separate
+      // from combatSwingHeld/triggerWeaponHoldVisual (which only work for
+      // activeTool === 'weapon') rather than reusing that system.
       // Per-ability post-strike pause, in seconds — set via opts.holdS on a
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual call (a config knob
       // each ability's own file sets, not a built-in engine default). 0 means
@@ -28537,7 +24253,7 @@
         // away from θ (the facing set by aiming at the fished tile) instead
         // of leaving them squared up toward it. This pose only tilts the
         // tool itself — playerMesh.rotation.y stays exactly θ.
-        if (fishingReadyPose) {
+        if (window.Fishing?.readyPose) {
           playerMesh.rotation.y = θ;
           _qFac.setFromAxisAngle(_tUp, θ);
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(10.31));
@@ -28576,7 +24292,7 @@
         // fourPhaseLerp(progress===wf, wf, ...) always resolves to exactly
         // windupV regardless of style, so this holds any equipped harpoon's
         // ready pose without needing a style-specific pose computation here.
-        if (fishingReadyPose) progress = WF;
+        if (window.Fishing?.readyPose) progress = WF;
 
         if (combatSwingAnim && combatSwingPose) {
           // POSE-DRIVEN COMBAT SWING — applies a full 7-channel pose authored
@@ -28705,7 +24421,7 @@
           const handX = playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z;
           const handY = playerMesh.position.y + playerToolBaseY + y;
           const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
-          if (fishThrowActive && fishingMinigame?.anchorWorld) {
+          if (fishThrowActive && window.Fishing?.state?.anchorWorld) {
             // Out during the slam (WF→SF), held at the anchor through the
             // hold (SF→HF), back during the return (HF→1).
             let travel;
@@ -28713,7 +24429,7 @@
             else if (progress <= SF) travel = (progress - WF) / (SF - WF);
             else if (progress <= HF) travel = 1;
             else travel = 1 - (progress - HF) / (1.0 - HF);
-            const aw = fishingMinigame.anchorWorld;
+            const aw = window.Fishing.state.anchorWorld;
             toolHolder.position.set(
               handX + (aw.x - handX) * travel,
               handY + (aw.y - handY) * travel,
@@ -29862,7 +25578,7 @@
         // Skipped during the fish-catch view: beginFishCatchView pins playerFacing to face
         // the camera, and this recompute runs every frame regardless of fishing state, so
         // without the guard it fought that and spun the character back around immediately.
-        if (fishingMinigame?.phase === 'caught') {
+        if (window.Fishing?.state?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
@@ -30382,12 +26098,12 @@
           let bodyHtml;
           if (family === 'uumkaoii') {
             const furColor = genotype.fur?.color, platesColor = genotype.plates?.color;
-            bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + esc(_furPaletteName(furColor)) : '(none)'}</div>
-              <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + esc(_furPaletteName(platesColor)) : '(none)'}</div>`;
+            bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + esc(window.CreatureGenetics.paletteName(furColor)) : '(none)'}</div>
+              <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + esc(window.CreatureGenetics.paletteName(platesColor)) : '(none)'}</div>`;
           } else {
-            const patternIds = LIVESTOCK_PATTERN_DEFS[family] || [];
+            const patternIds = window.CreatureGenetics.PATTERN_DEFS[family] || [];
             const baseColor = genotype.base?.color;
-            const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(_furPaletteName(baseColor))}` : '(no base)';
+            const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(window.CreatureGenetics.paletteName(baseColor))}` : '(no base)';
             const patternHtml = patternIds.map(id => {
               const layer = genotype[id];
               const on = layer?.enabled && layer.copies > 0;
@@ -30593,7 +26309,7 @@
           });
           const banditBtns = DEV_SPAWN_BANDIT_RANKS.map(rank => {
             const key = 'bandit:' + rank;
-            const label = BANDIT_RANK_LABEL[rank] || rank;
+            const label = window.BanditCombat.RANK_LABEL[rank] || rank;
             const active = key === devSpawnSelectedKey ? ' fed-active' : '';
             return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">🗡️ ${esc(label)}</button>`;
           });
@@ -30653,13 +26369,13 @@
         const dist = TILE * (1.5 + Math.random() * 2.5);
         const x = player.x + Math.cos(angle) * dist;
         const y = player.y + Math.sin(angle) * dist;
-        // Roll against the "family" species (see GENOTYPE_SPECIES_ALIAS) —
+        // Roll against the "family" species (see window.CreatureGenetics.SPECIES_ALIAS) —
         // same normalization getOrMakeDenGenotype applies for wild packs —
         // so gar-wolf-alpha/den-mother variants get real pattern genes too,
         // instead of makeDefaultGenotype silently no-opping on an exact key
-        // LIVESTOCK_PATTERN_DEFS never defines.
-        const genotypeKind = GENOTYPE_SPECIES_ALIAS[creatureKey] || creatureKey;
-        const genotype = makeDefaultGenotype(genotypeKind);
+        // window.CreatureGenetics.PATTERN_DEFS never defines.
+        const genotypeKind = window.CreatureGenetics.SPECIES_ALIAS[creatureKey] || creatureKey;
+        const genotype = window.CreatureGenetics.makeDefaultGenotype(genotypeKind);
         const creature = makeCreatureEntity(creatureKey, x, y, { homeX: x, homeY: y, state: 'idle', genotype });
         if (!creature) { showToast(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`, false); return; }
         // Same real-AI registration the cutscene combat stager uses (see
@@ -30688,14 +26404,14 @@
       // bandit-gang-config.json can be spawned on demand for testing.
       async function spawnDevArenaBandit(rank, tier) {
         if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const cfg = await loadBanditGangConfig();
+        const cfg = await window.BanditCombat.loadGangConfig();
         if (!cfg) { showToast('Could not spawn bandit — bandit-gang-config.json failed to load.', false); return; }
         if (currentArea !== DEV_ARENA_ZONE_ID) return; // player left mid-await
         const angle = Math.random() * Math.PI * 2;
         const dist = TILE * (1.5 + Math.random() * 2.5);
         const x = player.x + Math.cos(angle) * dist;
         const y = player.y + Math.sin(angle) * dist;
-        const creature = await makeBanditEntity(cfg, rank, tier, x, y, {
+        const creature = await window.BanditCombat.makeEntity(cfg, rank, tier, x, y, {
           zoneId: DEV_ARENA_ZONE_ID,
           extra: { homeX: x, homeY: y, state: 'idle' },
         });
@@ -30838,7 +26554,7 @@ Bandit-only fields:
   comboIdx            which of tap1's 3 combo steps fires next (0-2); resets to 0 after the 3rd step completes and retreats
   actionBusy          1 if a staged ability (windup or strike) is currently in flight (c._banditAction) -- while 1, the bandit is standing still finishing its swing
   hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
-  guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(BANDIT_GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
+  guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(window.BanditCombat.GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
   cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
   idle/settleT        idle=1 means no staged action is in flight AND the brief post-swing settle window (BANDIT_TOOL_SETTLE_S) has elapsed -- the bandit is truly at rest, not just between windup/strike. settleT is seconds left in that settle window (0 outside it). stanceMatch/bodyLeanDeg below are only meaningful (worth flagging as a bug) once idle=1 -- mid-swing or mid-settle they're expected to differ from their "rest" values.
   stanceAnim/stanceExpected/stanceMatch   stanceAnim is the bandit's CURRENT rest-pose style (c._banditSwingAnim: sweep|thrust); stanceExpected is what its equipped weapon's own animStyle says it should be (banditNaturalSwing(def) -- sweep for hatchet/fishingmace, thrust for the rest); stanceMatch=0 while idle=1 means the idle stance is stuck showing a DIFFERENT ability's style than the one its weapon actually plays at rest (this exact bug happened once already -- Quick Attack/Charged Breaker hardcode their own anim/pose and finishBanditAction has to reset it back afterward).
@@ -30883,10 +26599,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // engageRangePx" forever, since it's never actually trying to reach
         // that number. Only BANDIT_MAX_ATTACK_SLOTS=2 bandits are ever
         // allowed to close in and swing at once.
-        if (!_banditAttackSlots.some(s => s.bandit === c)) {
-          const queueRing = _banditQueueRings.find(q => q.bandit === c);
+        if (!window.BanditCombat.attackSlots.some(s => s.bandit === c)) {
+          const queueRing = window.BanditCombat.queueRings.find(q => q.bandit === c);
           return queueRing
-            ? `queued on standoff ring ${queueRing.ringIndex} (not one of the ${BANDIT_MAX_ATTACK_SLOTS} bandits currently holding an attack slot) -- holding/swaying at its assigned ring, NOT trying to close the distance; distPlayer=${distP}px`
+            ? `queued on standoff ring ${queueRing.ringIndex} (not one of the ${window.BanditCombat.MAX_ATTACK_SLOTS} bandits currently holding an attack slot) -- holding/swaying at its assigned ring, NOT trying to close the distance; distPlayer=${distP}px`
             : `queued, not yet assigned a standoff ring (should self-correct next frame -- flag as a bug if this persists); distPlayer=${distP}px`;
         }
         // The real approach/attack-commit gate is banditEngagementReachPx
@@ -30897,7 +26613,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // here instead used to make a bandit committing to (and, before the
         // engagement-reach fix, whiffing) an attack from well outside its
         // real hit cone look like ordinary "still closing" text.
-        const engageReach = Math.round(banditEngagementReachPx(c, def, def.banditAbilityLoadout || {}, targetPlayer));
+        const engageReach = Math.round(window.BanditCombat.engagementReachPx(c, def, def.banditAbilityLoadout || {}, targetPlayer));
         if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
         if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
         // Mid-combo continuation (comboIdx > 0) skips this gate -- see
@@ -30922,7 +26638,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       function _combatLogBanditStance(c, def) {
         const settleT = Math.max(0, ((c._banditToolSettleUntil || 0) - performance.now()) / 1000);
         const idle = !c._banditAction && settleT <= 0;
-        const natural = banditNaturalSwing(def);
+        const natural = window.BanditCombat.naturalSwing(def);
         const stanceAnim = c._banditSwingAnim || 'thrust';
         // c.groupRot's own rest value for the CURRENT facing (see
         // updateCreatureMesh's rawTargetRotY, the same formula) -- diffed
@@ -30958,7 +26674,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (c.isBandit) {
             const r = c.rosterRecord || {};
             const clothTxt = (r.equippedCosmetics || []).length
-              ? r.equippedCosmetics.map(id => `${r.cosmeticSlots?.[id] || '?'}:${id}:${r.appliedDyes?.[BANDIT_TINT_SLOT_BY_SLOT[r.cosmeticSlots?.[id]]] || '-'}`).join(';')
+              ? r.equippedCosmetics.map(id => `${r.cosmeticSlots?.[id] || '?'}:${id}:${r.appliedDyes?.[window.BanditCombat.TINT_SLOT_BY_SLOT[r.cosmeticSlots?.[id]]] || '-'}`).join(';')
               : '-';
             const loadout = def.banditAbilityLoadout || {};
             const loadoutTxt = `${loadout.tap1 || '-'}/${loadout.tap2 || '-'}/${loadout.hold1 || '-'}/${loadout.hold2 || '-'}`;
@@ -30997,7 +26713,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
             `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
             `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-            `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `perceptionPx=${Math.round(_companionPerceptionRangePx(c))}`,
+            `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `perceptionPx=${Math.round(window.BanditCamps.companionPerceptionRangePx(c))}`,
             `nearestOther=${nearestTxt}`,
           ].join(' '));
         }
@@ -31145,7 +26861,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           renderWildernessMinimap();
         }
 
-        if (fishingMinigame?.active) updateFishingMinigame(dt);
+        if (window.Fishing?.state?.active) window.Fishing.update(dt);
 
         window.Music?.updateRainAudio();
         window.Music?.updateExteriorBgs();
@@ -31161,7 +26877,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           updateZoneFogAroundPlayer();
           updatePlayerVitals(dt);
           updateAlchemyEffects();
-          updateBountyTracking(dt);
+          window.BountyBoard.updateTracking(dt);
 
           if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
             // Den-Mother caverns are the one building exception (boss arena,
@@ -31173,8 +26889,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
             syncCompanionFromWhistle();
             updateCompanions(dt);
             window.Mounts?.updateMountRide(dt);
-            updateCompanionPerception(dt);
-            updateBanditCampBanners(dt);
+            window.BanditCamps.updateCompanionPerception(dt);
+            window.BanditCamps.updateCampBanners(dt);
             updateHostileSpawning(dt);
             updateHostiles(dt);
             updateCorpses(dt);
@@ -31187,7 +26903,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           }
 
           if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
-          if (_isZoneArea(currentArea)) updateBanditTentInteraction(dt);
+          if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
           // Interior exit detection: player walks south through exit door
           if (currentArea === 'interior' && sceneTransDir === 0) {
@@ -31211,7 +26927,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
           updateActionParticles(dt);
           updateTreasureSparkles(dt);
-          updateFishingFxParticles(dt);
+          window.Fishing?.updateFx(dt);
           // Water sim ticks every 1/8 game-hour (~9s real-time)
           // Uses game time so rain and drainage are clock-consistent
           simAccumulator += dt / DAY_LENGTH_SECONDS * (NIGHT_HOUR - MORNING_HOUR); // game-hours per sec
@@ -32505,8 +28221,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // other tool action. Nothing shows before 'bite' (no bite yet to
         // react to), and nothing shows during 'caught' (the victory view
         // has its own Continue button).
-        if (fishingMinigame?.active) {
-          const fm = fishingMinigame;
+        if (window.Fishing?.state?.active) {
+          const fm = window.Fishing.state;
           if (fm.phase !== 'bite' && fm.phase !== 'active') return [];
           const notYetMarked = fm.phase === 'bite' || fm.bridge.markerA == null;
           const icon = attackActionIconHTML('harpoon', 'fish', '🎣');
@@ -32709,7 +28425,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
           : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
-        // fishingMinigame?.phase (not just .active) must be in this key:
+        // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
         // fish_primary/fish_cancel pair from 'bite' onward), but that whole
@@ -32718,7 +28434,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${fishingMinigame?.phase || ''}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -33669,8 +29385,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           if (releaseSlot) window.Combat.input.pressEnd(releaseSlot);
           return;
         }
-        if (fishingMinigame?.active) {
-          if (actionId === 'interact' || actionId === 'action1') fishingPrimaryAction();
+        if (window.Fishing?.state?.active) {
+          if (actionId === 'interact' || actionId === 'action1') window.Fishing?.primaryAction();
           return;
         }
         if (menuOpen || farmEditMode) return;
@@ -33834,12 +29550,12 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
-        if (fishingMinigame?.active) {
-          if (key === 'escape') { event.preventDefault(); closeFishingMinigame(); return; }
+        if (window.Fishing?.state?.active) {
+          if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
           const fishingBoundAction = getActionForButton('desktop', event.code);
           if (fishingBoundAction === 'interact' || fishingBoundAction === 'action1' || key === ' ' || key === 'enter') {
             event.preventDefault();
-            fishingPrimaryAction();
+            window.Fishing?.primaryAction();
           }
           return;
         }
@@ -33944,7 +29660,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // keydown fell through to the 'e' handling below, which calls
         // useActiveAction() — re-triggering beginFishingCast() and clobbering
         // the ring minigame that press had just opened.
-        if (fishingMinigame?.active) return;
+        if (window.Fishing?.state?.active) return;
         // Symmetric release for whatever keydown dispatched as a 'press' —
         // same binding lookup/exclusion as keydown above, so a held weapon
         // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
@@ -34045,7 +29761,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !fishingMinigame?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
+        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
       }
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
@@ -34434,7 +30150,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         activeMountId = playerData.activeMountId ?? null;
         activeShoulderPetId = playerData.activeShoulderPetId ?? null;
         if (!stable.length) {
-          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
+          const starter = { id: 'stable_bingo', kind: 'dabinggi-hound', name: 'Bingo', genotype: window.CreatureGenetics.makeDefaultGenotype('dabinggi-hound'), aiType: companionAiTypeForKind('dabinggi-hound'), level: 0, stabledAt: Date.now() };
           stable.push(starter);
           activeCompanionId = starter.id;
         }
@@ -34445,8 +30161,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // backfills a missing Size (genotype.sizeClass) on entries saved
         // before the stable's mount/companion/shoulder-pet system existed.
         for (const entry of stable) {
-          if (!entry.genotype && (LIVESTOCK_PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
-            entry.genotype = makeDefaultGenotype(entry.kind);
+          if (!entry.genotype && (window.CreatureGenetics.PATTERN_DEFS[entry.kind] || entry.kind === 'uumkaoii')) {
+            entry.genotype = window.CreatureGenetics.makeDefaultGenotype(entry.kind);
           }
           if (entry.genotype && !entry.genotype.sizeClass) {
             entry.genotype.sizeClass = CREATURE_DB[entry.kind]?.defaultSizeClass || 'medium';
@@ -34530,7 +30246,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getWaresPools: () => WARES_POOLS,
         currentWeekdayName,
         currentSeason,
-        fishingTimeOfDay,
+        fishingTimeOfDay: () => window.Fishing.timeOfDay(),
         normalizeStationLabel,
         canAccessContent,
         setQuestStatus,
@@ -34616,7 +30332,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         canPlayerOccupy,
         canOccupyAt,
         setCreatureFrame,
-        genotypeKindFor: (c) => (c.genotype ? (GENOTYPE_SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
+        genotypeKindFor: (c) => (c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,
         triggerWeaponHoldVisual,
@@ -34725,6 +30441,146 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getControllerLookAngle: () => controllerLookAngle,
         getLastMouseMoveTime: () => lastMouseMoveTime,
         getMouseLookAngle: () => mouseLookAngle,
+      });
+
+      window.Fishing?.init({
+        clamp,
+        getActiveScene,
+        currentSeason,
+        getHour,
+        FISH_DEFS,
+        getReticleTile,
+        getActiveTileAt,
+        tileSurfaceYInArea,
+        playerMesh,
+        showToast,
+        refreshActionBar,
+        hideActionPrompt,
+        showActionPrompt,
+        attackActionIconHTML,
+        worldToOverlay,
+        inventory,
+        equipmentSlots,
+        rollItemStars,
+        starRatingText,
+        awardToolUseMasteryXp,
+        getInventoryStackKeys,
+        getCurrentArea: () => currentArea,
+        getThreeRect: () => _threeRect,
+        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        setPlayerFacing: (v) => { playerFacing = v; },
+        setHeldMode: (v) => { heldMode = v; },
+        setActiveTool: (v) => { activeTool = v; },
+        setLastActionMessage: (v) => { lastActionMessage = v; },
+        getCameraMode: () => activeCameraMode,
+        setCameraMode: (v) => { activeCameraMode = v; },
+        getCameraTarget: () => activeCameraTarget,
+        setCameraTarget: (v) => { activeCameraTarget = v; },
+        setToolSwingDur: (v) => { toolSwingDur = v; },
+        setToolSwingT: (v) => { toolSwingT = v; },
+        setStrikeFired: (v) => { strikeFired = v; },
+        setFishThrowActive: (v) => { fishThrowActive = v; },
+      });
+
+      window.BanditCombat?.init({
+        rnd,
+        clamp,
+        debugLog,
+        TILE,
+        PLAYER_RADIUS,
+        JUMP_BACK_DUR_S,
+        JUMP_BACK_SPEED,
+        HOSTILE_BITE_KNOCKBACK_PX_S,
+        TOOL_SHAPE_DEFS,
+        METAL_DEFS,
+        TOOL_ITEM_DEFS,
+        VERDIGRIS_METAL_KEYS,
+        craftedToolItemKey,
+        metalDmgMultiplier,
+        damagePlayer,
+        inCone,
+        sweptMove,
+        canOccupyAt,
+        angleDiff,
+        moveCreatureToward,
+        creatureCanEnterTile,
+        isCreatureSwimming,
+        tickCreatureLungeTrail,
+        tickCreatureFootsteps,
+        hostileObjects,
+        getActiveScene,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        tileSurfaceYInArea,
+        makeCharacterGroundShadow,
+        creatureGroundShadowRadii,
+        characterGroundShadowSurfaceOffset,
+        markPngPlane: _markPngPlane,
+        makeToolPlaneMesh,
+        STYLE_NEUTRAL_POSE,
+        qFac: _qFac,
+        qToolYaw: _qToolYaw,
+        qAnim: _qAnim,
+        qRoll: _qRoll,
+        tUp: _tUp,
+        xAxis: _xAxis,
+        zAxis: _zAxis,
+        getCurrentArea: () => currentArea,
+      });
+
+      window.CreatureGenetics?.init({ clamp, CREATURE_DB });
+
+      window.BountyBoard?.init({
+        getQuestProgress: () => questProgress,
+        setQuestStatus,
+        showToast,
+        inventory,
+        calendar,
+        WMAP_ZONE_LABELS,
+        makeTaskId: _makeTaskId,
+      });
+
+      window.BanditCamps?.init({
+        clamp,
+        rnd,
+        debugLog,
+        TILE,
+        TileType,
+        WATERWAY_TYPES,
+        EXTERIOR_ZONES,
+        NORMAL_TOP,
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        refreshZoneGroundVisuals,
+        markOutline: _markOutline,
+        makeDecorativeFurnitureMesh,
+        tileSurfaceYInArea,
+        hostileObjects,
+        companionObjects,
+        corpseObjects,
+        isZoneArea: _isZoneArea,
+        isDenPackAlive,
+        denKeyFor,
+        player,
+        showZoneBanner,
+        showToast,
+        rollLootPool,
+        refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        saveMemberWorldData,
+        despawnCreature,
+        buildPackClothingSection,
+        getDyeCatalog,
+        dyeToClothingColor,
+        clothingSpriteForCosmetic,
+        DEV_ARENA_ZONE_ID,
+        activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
+        getCurrentArea: () => currentArea,
+        getActionHeldDown: () => actionHeldDown,
+        getPackClothing: () => packClothing,
+        getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
       });
 
       // ══════════════════════════════════════════════════════════════════
