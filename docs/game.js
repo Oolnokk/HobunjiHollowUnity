@@ -152,7 +152,7 @@
         if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
         if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
         if (targetPanel === 'tasks') renderTasksPanel();
-        if (targetPanel === 'relationships') renderRelationshipsPanel();
+        if (targetPanel === 'relationships') window.RelationshipsPanel.render();
         auditInventorySizing();
       }
       function closeMenu() {
@@ -181,7 +181,7 @@
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'crafting') renderCraftingPanel();
-        if (id === 'calendar') renderCalendarPanel();
+        if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
         if (id === 'map') renderWildernessMapPanel();
         if (id === 'farm') renderFarmPanel();
         if (id === 'stable') renderStablePanel();
@@ -193,7 +193,7 @@
         if (id === 'metalCraftShop') renderMetalCraftShopPage();
         if (id === 'alchemy') window.AlchemySystem.renderPanel();
         if (id === 'tasks') renderTasksPanel();
-        if (id === 'relationships') renderRelationshipsPanel();
+        if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
         if (id === 'wildlife') renderWildlifeDebugPanel();
       }
@@ -544,22 +544,11 @@
       const DAY_LENGTH_SECONDS = 288; // 4x the original 72s — time now runs at 25% speed
       const MORNING_HOUR = 6;
       const NIGHT_HOUR   = 22;
-      // ── Khymeryyan civil calendar ──
-      // Universal calendar used across Tanka: 7-day weeks, 48 weeks/year (336
-      // days), 12 months of 28 days (= exactly 4 weeks) each. calendar.day is
-      // an ever-incrementing absolute day count from world start (day 1);
-      // year/month/week/day-of-year are all derived from it via modulo.
-      const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // calendar.day 1 falls on Anan
-      const DAYS_PER_WEEK  = WEEKDAY_NAMES.length; // 7
-      const WEEKS_PER_YEAR = 48;
-      const YEAR_LENGTH_DAYS = DAYS_PER_WEEK * WEEKS_PER_YEAR; // 336
-      const DAYS_PER_MONTH = 28; // exactly 4 weeks
-      const MONTH_NAMES = [
-        'Waxingheat', 'Highheat', 'Waningheat',       // Summer
-        'Firstfall', 'Secondfall', 'Thirdfall',       // Fall
-        'Shallowfrost', 'Deepfrost', 'Pouringfrost',  // Winter
-        'Firstrise', 'Secondrise', 'Thirdrise',       // Spring
-      ]; // universal civil months — decoupled from Tanka's regional tropical seasons
+      // Khymeryyan civil calendar (week/month/year names + lengths) now
+      // lives in js/calendar-system.js (window.CalendarSystem) — MORNING_HOUR/
+      // NIGHT_HOUR above stay here since the day/weather tick and lighting
+      // code also read them, and are threaded into CalendarSystem.init(...)
+      // below as deps.
 
       // ── Highland House — adjust these to fit the GLB and position it on the farm ──
       // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
@@ -642,34 +631,14 @@
       const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
 
       // ── Game data ──
-      // Regional seasons: Northwestern Tanka. The civil calendar above is
-      // universal, but lived seasons are regional — this location reads its
-      // weather off week-of-year bands (Stormtide/Deadgrass/Longpour, plus a
-      // short Coldmuck slush-cover/wind-hinge season with occasional pituraq
-      // micro-winter squalls at the Longpour→Stormtide turn) rather than the
-      // calendar month. Deliberately unbalanced 4/2/4/2 months (not the
-      // "pure" 5/1/5/1 the doc's week math would give) — Secondfall was
-      // pulled into Deadgrass and Secondrise into Coldmuck for pacing, so
-      // neither short season is a single awkward month.
-      // Every transition falls mid-month (week 2 of a 4-week month) rather
-      // than on a month boundary, so a player looking at the Calendar tab
-      // sees the season already starting to turn partway through the
-      // currently-open month page instead of the change only showing up
-      // once they flip to the next one. Stormtide's band therefore wraps
-      // the year boundary (weeks 47-48, then 1-14) — seasonForDay()/
-      // weekOfSeason() below handle startWeek > endWeek as a wraparound,
-      // same convention isNowWithinNpcRuleWindow() uses for overnight
-      // schedule rules.
-      // grassColor/grassDensity drive the ground tile material and the grass
-      // billboard tufts (see applySeasonalGrassAppearance()) — vibrant/full
-      // for the wet seasons, sparse and off-hue for Deadgrass (dead, dry) and
-      // Coldmuck (slush-covered, dormant).
-      const seasons = [
-        { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 47, endWeek: 14, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
-        { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 15, endWeek: 22, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
-        { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 23, endWeek: 38, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
-        { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
-      ];
+      // Regional seasons (Stormtide/Deadgrass/Longpour/Coldmuck) also moved
+      // into js/calendar-system.js alongside the calendar derivations —
+      // access via window.CalendarSystem.currentSeason()/seasonForDay(day).
+      // season.grassColor/grassDensity still drive the ground tile material
+      // and grass billboard tufts here (see applySeasonalGrassAppearance()),
+      // and season.rainChance/stormChance still drive the weather roll
+      // (see chooseWeatherForDay()) — both read the season object returned
+      // by those CalendarSystem calls rather than the raw table.
       // Deadgrass rolls as low as a 6% rain chance per day and runs 8
       // weeks (56 days) straight, long enough in real time to read as "it
       // never rains anymore." chooseWeatherForDay()'s pity timer guarantees a
@@ -3330,8 +3299,8 @@
       // concept here, so those axes are simply never supplied/checked.
       function _lootShopWorldState() {
         return {
-          weekdays: currentWeekdayName(),
-          seasons: currentSeason().name,
+          weekdays: window.CalendarSystem.currentWeekdayName(),
+          seasons: window.CalendarSystem.currentSeason().name,
           weather: calendar.weather,
           timesOfDay: window.Fishing.timeOfDay(),
           maps: currentArea,
@@ -4332,7 +4301,7 @@
             // spawnPackAtDen), otherwise travels to its assigned grazing tile
             // and settles there. Falls back to plain wander with neither
             // assigned (legacy zones without generator data).
-            const nowHours = (calendar.day - 1) * 24 + getHour();
+            const nowHours = (calendar.day - 1) * 24 + window.CalendarSystem.getHour();
             if (c.nextDrinkHour == null) c.nextDrinkHour = nowHours + rnd() * WILDLIFE_DRINK_INTERVAL_HOURS;
             const wantsDrink = c.waterTile && nowHours >= c.nextDrinkHour;
             if (wantsDrink) {
@@ -5171,7 +5140,7 @@
       }
 
       function currentTothalYear() {
-        return yearNumber(calendar.day);
+        return window.CalendarSystem.yearNumber(calendar.day);
       }
 
       function _tothalWorldId() {
@@ -9082,7 +9051,7 @@
       }
 
       function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
-      function currentGameMinutes() { return Math.round(getHour() * 60); }
+      function currentGameMinutes() { return Math.round(window.CalendarSystem.getHour() * 60); }
       function isNowWithinNpcRuleWindow(now, start, end) {
         if (start === null || end === null) return false;
         if (start <= end) return now >= start && now < end;
@@ -9189,8 +9158,8 @@
       // A rule may restrict itself to one or more weekdays via "day" (single
       // name) or "days" (array); rules with neither run every day, same as before.
       function isNpcRuleActiveOnDay(rule) {
-        if (rule.day) return rule.day === currentWeekdayName();
-        if (rule.days) return rule.days.includes(currentWeekdayName());
+        if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
+        if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
         return true;
       }
 
@@ -9244,7 +9213,7 @@
         for (const shared of npcSharedSchedules) {
           if (!shared || shared.contentIncomplete) continue;
           const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
-          if (currentWeekdayName() !== shared.day) continue;
+          if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
           if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
           if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
           if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
@@ -12163,11 +12132,11 @@
         deliveryLog = deliveryLog.slice(0, 12);
         if (menuOpen) renderSupplyPage();
         // Tick sell crate clock
-        worldObjects.forEach(o => o.tick && o.tick(getHour()));
+        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
       }
 
       function tickWorldObjects() {
-        worldObjects.forEach(o => o.tick && o.tick(getHour()));
+        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
       }
 
       let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
@@ -12369,34 +12338,8 @@
       }
 
       // ── Relationships panel (friendship tier per NPC talked to) ──────
-      function renderRelationshipsPanel() {
-        const list = document.getElementById('relationshipsList');
-        if (!list) return;
-        list.innerHTML = '';
-        const dlgState = window.DialogueContent?.npcDlgState;
-        const knownIds = dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : [];
-        if (!knownIds.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
-          return;
-        }
-        knownIds
-          .map(npcId => ({ npcId, rec: npcWalkers.find(w => w.rec?.id === npcId)?.rec, ...window.ProceduralTasks.friendshipTierProgress(npcId) }))
-          .sort((a, b) => b.favor - a.favor)
-          .forEach(({ npcId, rec, tier, favor, next }) => {
-            const name = rec?.name || npcId;
-            const progressNote = next != null ? `${next - favor} favor to Tier ${tier + 1}` : 'max tier';
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.innerHTML = `
-              <div class="sh-icon">💬</div>
-              <div class="sh-info">
-                <div class="sh-name">${esc(name)} — Friendship Tier ${tier}</div>
-                <div class="sh-desc">${favor} favor (${progressNote})</div>
-              </div>
-            `;
-            list.appendChild(row);
-          });
-      }
+      // Relationships tab render now lives in js/relationships-panel.js —
+      // call via window.RelationshipsPanel.render().
 
       // ── Market page render ─────────────────────────────────────────
       function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
@@ -15161,98 +15104,10 @@
         return { x, y, active: x !== 0 || y !== 0 };
       }
 
-      function getHour() {
-        return MORNING_HOUR + calendar.time01 * (NIGHT_HOUR - MORNING_HOUR);
-      }
-
-      // ── Calendar derivations ──
-      // calendar.day is an ever-incrementing absolute day count from world
-      // start (day 1). Everything else — year, month, week-of-year, weekday,
-      // and the regional season — is derived from it via modulo, and every
-      // helper below takes an optional absolute day (defaulting to
-      // calendar.day) so the Calendar tab can compute dates other than today.
-      function dayOfYear(day = calendar.day) {
-        return ((day - 1) % YEAR_LENGTH_DAYS) + 1; // 1..336
-      }
-      function yearNumber(day = calendar.day) {
-        return Math.floor((day - 1) / YEAR_LENGTH_DAYS) + 1;
-      }
-      function weekOfYear(day = calendar.day) {
-        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_WEEK) + 1; // 1..48
-      }
-      function monthIndex(day = calendar.day) {
-        return Math.floor((dayOfYear(day) - 1) / DAYS_PER_MONTH); // 0..11
-      }
-      function monthNumber(day = calendar.day) {
-        return monthIndex(day) + 1; // 1..12
-      }
-      function monthName(day = calendar.day) {
-        return MONTH_NAMES[monthIndex(day)];
-      }
-      function dayOfMonth(day = calendar.day) {
-        return ((dayOfYear(day) - 1) % DAYS_PER_MONTH) + 1; // 1..28
-      }
-      // startWeek > endWeek means the season wraps the year boundary (see
-      // Stormtide, weeks 47-48 then 1-14) — same "overnight window"
-      // convention as isNowWithinNpcRuleWindow().
-      function seasonForDay(day = calendar.day) {
-        const wk = weekOfYear(day);
-        return seasons.find(s => s.startWeek <= s.endWeek
-          ? (wk >= s.startWeek && wk <= s.endWeek)
-          : (wk >= s.startWeek || wk <= s.endWeek)
-        ) || seasons[seasons.length - 1];
-      }
-      function currentSeason() {
-        return seasonForDay(calendar.day);
-      }
-      function weekOfSeason(day = calendar.day) {
-        const wk = weekOfYear(day);
-        const season = seasonForDay(day);
-        if (season.startWeek <= season.endWeek) return wk - season.startWeek + 1;
-        return wk >= season.startWeek ? wk - season.startWeek + 1 : wk + (WEEKS_PER_YEAR - season.startWeek + 1);
-      }
-
-      function weekdayIndexForCalendarDay(day) {
-        return ((day - 1) % DAYS_PER_WEEK + DAYS_PER_WEEK) % DAYS_PER_WEEK;
-      }
-      function weekdayNameForDay(day = calendar.day) {
-        return WEEKDAY_NAMES[weekdayIndexForCalendarDay(day)];
-      }
-      function currentWeekdayIndex() {
-        return weekdayIndexForCalendarDay(calendar.day);
-      }
-      function currentWeekdayName() {
-        return weekdayNameForDay(calendar.day);
-      }
-      function ordinalSuffix(n) {
-        const v = n % 100;
-        if (v >= 11 && v <= 13) return 'th';
-        switch (n % 10) {
-          case 1: return 'st';
-          case 2: return 'nd';
-          case 3: return 'rd';
-          default: return 'th';
-        }
-      }
-      // HUD-friendly short date, e.g. "Anan, 1/1, 1st week of Storm"
-      function formatCalendarDate(day = calendar.day) {
-        const dom = dayOfMonth(day), wk = weekOfSeason(day);
-        return `${weekdayNameForDay(day)}, ${dom}/${monthNumber(day)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
-      }
-      // Full date for the Calendar tab header, e.g. "Anan, Waxingheat 1st, 1st week of Storm"
-      function formatCalendarDateFull(day = calendar.day) {
-        const dom = dayOfMonth(day), wk = weekOfSeason(day);
-        return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
-      }
-
-      // Absolute day of a month's first day. Months are exactly 4 weeks
-      // (28 days), so every month starts on Anan — no partial first/last
-      // week to special-case, unlike a real Gregorian month grid.
-      function absDayForMonthStart(year, monthIdx0) {
-        return (year - 1) * YEAR_LENGTH_DAYS + monthIdx0 * DAYS_PER_MONTH + 1;
-      }
-
-      let calViewYear = 1, calViewMonthIndex = 0;
+      // Calendar day/week/month/year derivations (getHour, dayOfYear,
+      // yearNumber, monthIndex, seasonForDay, currentSeason,
+      // currentWeekdayName, formatCalendarDate, etc.) now live in
+      // js/calendar-system.js — call via window.CalendarSystem.*.
 
       // ── Farm tab: the farm's identity/progression hub ──────────────────
       // Reads `grid`/`worldObjects`/`animalObjects` directly (not through
@@ -16079,60 +15934,9 @@
         });
       }
 
-      function renderCalendarPanel() {
-        if (!calToday) return;
-        calViewYear = yearNumber(calendar.day);
-        calViewMonthIndex = monthIndex(calendar.day);
-        calToday.textContent = formatCalendarDateFull(calendar.day);
-        renderCalendarMonthView();
-      }
-
-      // Redraws the currently-navigated month (calViewYear/calViewMonthIndex)
-      // as 4 week rows — the core gameplay unit — each its own tight
-      // container: a season+week label on the left, its 7 days packed
-      // together on the right, with only today's cell picked out in a
-      // different color.
-      function renderCalendarMonthView() {
-        const monthStartDay = absDayForMonthStart(calViewYear, calViewMonthIndex);
-        calMonthTitle.textContent = `${MONTH_NAMES[calViewMonthIndex]} — Year ${calViewYear}`;
-        calPrevMonth.disabled = (calViewYear === 1 && calViewMonthIndex === 0);
-
-        calWeeks.innerHTML = '';
-        for (let w = 0; w < DAYS_PER_MONTH / DAYS_PER_WEEK; w++) {
-          const weekStartDay = monthStartDay + w * DAYS_PER_WEEK;
-          const season = seasonForDay(weekStartDay);
-          const row = document.createElement('div');
-          row.className = 'cal-week-row';
-          const label = document.createElement('div');
-          label.className = 'cal-week-label';
-          label.innerHTML = `${season.emoji} ${season.name}<br>Week ${weekOfSeason(weekStartDay)}`;
-          row.appendChild(label);
-          const daysWrap = document.createElement('div');
-          daysWrap.className = 'cal-week-days';
-          for (let i = 0; i < DAYS_PER_WEEK; i++) {
-            const d = weekStartDay + i;
-            const cell = document.createElement('button');
-            cell.type = 'button';
-            cell.className = 'cal-day-btn' + (d === calendar.day ? ' today' : '');
-            cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}</span>`;
-            daysWrap.appendChild(cell);
-          }
-          row.appendChild(daysWrap);
-          calWeeks.appendChild(row);
-        }
-      }
-
-      calPrevMonth.addEventListener('click', () => {
-        if (calViewYear === 1 && calViewMonthIndex === 0) return;
-        if (calViewMonthIndex === 0) { calViewYear--; calViewMonthIndex = 11; }
-        else calViewMonthIndex--;
-        renderCalendarMonthView();
-      });
-      calNextMonth.addEventListener('click', () => {
-        if (calViewMonthIndex === 11) { calViewYear++; calViewMonthIndex = 0; }
-        else calViewMonthIndex++;
-        renderCalendarMonthView();
-      });
+      // Calendar tab render (renderCalendarPanel/renderCalendarMonthView)
+      // and its prev/next month nav buttons now live in
+      // js/calendar-system.js — call via window.CalendarSystem.renderCalendarPanel().
 
       // A 'copse'-sourced SHRUB tile in Northern Cliffs or the Southern Cloud
       // Forest renders as a real tree (crowned pine / shadewood — see
@@ -17709,8 +17513,8 @@
       }
 
       function _computeRawLightingState() {
-        const hour = getHour(); // 6..22
-        const season = currentSeason();
+        const hour = window.CalendarSystem.getHour(); // 6..22
+        const season = window.CalendarSystem.currentSeason();
         const isRaining = calendar.isRaining;
         const isStorm = isRaining && calendar.rainStrength >= 3;
 
@@ -18898,7 +18702,7 @@
       // are declared further down the file and would TDZ-throw if this ran
       // any earlier than that.
       function applySeasonalGrassAppearance() {
-        const season = currentSeason();
+        const season = window.CalendarSystem.currentSeason();
         tileMats.grass.color.copy(season.grassColor);
         tileMats.grass.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         vegFloorMat.color.copy(season.grassColor);
@@ -23392,242 +23196,9 @@
       }
       document.getElementById('devClearFoliageBtn')?.addEventListener('click', devArenaClearFoliage);
 
-      // ── Combat log (for AI/Claude review, not players) ─────────────────
-      // One button dumps every arena entity's internal AI/combat state as
-      // dense coded lines, meant to be pasted into a chat with an AI session
-      // that has no other way to see a live browser — a static code review
-      // can (and did, twice: attachBanditWeaponProp was defined but never
-      // called, and the "1 hit then retreat" report) miss things that only
-      // show up once the AI loop is actually ticking, and this environment's
-      // egress policy blocks the CDN this game loads three.js from, so a
-      // headless Chromium session can't render it either. The guide string
-      // is the interpretation key for whichever Claude session receives it.
-      //
-      // A single frozen instant wasn't enough to read state actually
-      // CHANGING over time (a combo step advancing, a cooldown counting
-      // down) -- captureBanditCombatSnapshot runs on its own real-time
-      // interval (not the game's own dt, so it keeps ticking at a steady
-      // rate regardless of framerate) independently of the copy button,
-      // pushing into a capped ring buffer; the button only ever copies
-      // whatever's currently buffered, it doesn't take a fresh snapshot.
-      const BANDIT_COMBAT_LOG_BUFFER_SIZE = 7;
-      const BANDIT_COMBAT_LOG_INTERVAL_S = 1;
-      const _banditCombatLogBuffer = []; // [{ t, text }], oldest first
-
-      const COMBAT_LOG_GUIDE = `HOBUNJI COMBAT LOG -- interpretation guide for AI review
-This is a CONVEYOR BELT of up to ${BANDIT_COMBAT_LOG_BUFFER_SIZE} snapshots, one captured automatically every ${BANDIT_COMBAT_LOG_INTERVAL_S}s in the background (oldest dropped once an extra one would push the buffer past ${BANDIT_COMBAT_LOG_BUFFER_SIZE}) while the Testing Arena is active -- pressing the copy button doesn't take a fresh snapshot, it just copies whatever's currently buffered, oldest first. Read consecutive snapshots together to see state actually CHANGE over ~${BANDIT_COMBAT_LOG_BUFFER_SIZE} real seconds (comboIdx advancing, cdT counting down, retreatT/guarding windows opening and closing, hp dropping) instead of guessing from one frozen instant.
-Each ENTITY line is space-separated key=value pairs (multi-word values use _ instead of spaces). Read docs/game.js's updateHostiles()/updateBanditCombatAI() (Bandit Gangs section) for the state machine these fields describe. Bandits fight through the SAME named abilities the player has (Combo/Quick Attack/Charged Breaker/Counter Shield -- real damage/range/cone numbers exposed read-only via window.Combat.comboData/quickAttackData/chargedBreakerData/counterShieldData), executed by a parallel bandit-only AI (updateBanditCombatAI) rather than the player-singleton combat-core/combo/quickattacks/holds modules themselves -- see the long comment above updateBanditCombatAI for why. Wildlife still uses the older plain bite-telegraph/behaviorStage/Pounce system (combat-enemy-telegraph.js/combat-animal-attacks.js) unchanged.
-Common fields:
-  id            unique entity id (bandit ids look like "bandit_<rank>_<timestamp>_<rand>")
-  kind          PLAYER | BANDIT | CREATURE | COMPANION | CORPSE (CORPSE = health<=0, still lootable via the action bar; a dead companion also reports CORPSE)
-  state         idle|chase|return|patrol-chase|fleeing-low-health|dying|corpse
-  hp/stam       current/max health and stamina
-  pos           (col,row) tile position; distPlayer = straight-line px distance to the human player (TILE=55px is 1 tile)
-  tState        telegraphState: none|windup|strike -- mid-swing "tell" (bandits set this from their own ability AI, not combat-enemy-telegraph.js); a hit can only land during "strike"
-  aaBusy        wildlife only: 1 if a named/modular attack (Pounce etc, combat-animal-attacks.js) is currently playing
-  retreatT      seconds left jumping backward after an attack (0 = not retreating); duration scales with how much of the attempt actually landed (see banditRetreatDurationS -- a total whiff gets the full jump-back, a fully-landed combo barely backs off)
-  cdT           seconds left before the next attack attempt is allowed (attackCooldownT)
-  aggroPx/leashPx/atkRangePx  this entity's own def.aggroRangePx/leashRangePx/attackRangePx, to compare against distPlayer -- NOTE for bandits: atkRangePx is only the flat melee baseline, NOT the real approach/attack-commit threshold (that's engageRangePx, its current combo step's own hit range + lunge distance -- see banditEngagementReachPx and the bandit's own why= text, which reports the real number)
-Bandit-only fields:
-  rank/tier/mastery   grunt|lieutenant|captain; difficulty tier 0-3 the camp/spawn used; rolled weapon-mastery level 0-5
-  species/gender      rolled from speciesWeights in bandit-gang-config.json
-  wpn                 def.weaponKey, a crafted "<shape>_<metal>" id (e.g. hatchet_lowTinBronze) -- "none" would mean banditWeaponFor() failed, should never happen
-  wpnMeshOK           1 if the weapon's own toolHolder mesh actually built (makeBanditToolHolder) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen. The weapon is animated (updateBanditToolMesh), not a static prop -- it reuses the player's own fourPhaseLerp/STYLE_NEUTRAL_POSE/SWEEP_POSE swing pose math against the bandit's own facing/position and its own current ability's windup/strike timing.
-  atkTag/atkDmg       attackTag (sharp/blunt, from the weapon's own dmgType) and attackDamage after rank/tier/mastery/metal multipliers
-  loadout             its banditAbilityLoadout as tap1/tap2/hold1/hold2 ability ids ("-" for a null hold slot) -- tap1/tap2 are on every rank, hold1 only lieutenant+/captain, hold2 only captain (see heldAbilitiesByRank)
-  comboIdx            which of tap1's 3 combo steps fires next (0-2); resets to 0 after the 3rd step completes and retreats
-  actionBusy          1 if a staged ability (windup or strike) is currently in flight (c._banditAction) -- while 1, the bandit is standing still finishing its swing
-  hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
-  guarding/guardCdT   captain only: 1 if Counter Shield's guard window is currently active (incoming player hits are reduced ${Math.round(window.BanditCombat.GUARD_DAMAGE_ABSORB * 100)}% and answered with a riposte), and seconds left before the next window opens
-  cloth               worn cosmetics as slot:cosmeticId:dyeId, semicolon-separated ("-" = nothing rolled, should be rare -- see fillProbabilityByRank)
-  idle/settleT        idle=1 means no staged action is in flight AND the brief post-swing settle window (BANDIT_TOOL_SETTLE_S) has elapsed -- the bandit is truly at rest, not just between windup/strike. settleT is seconds left in that settle window (0 outside it). stanceMatch/bodyLeanDeg below are only meaningful (worth flagging as a bug) once idle=1 -- mid-swing or mid-settle they're expected to differ from their "rest" values.
-  stanceAnim/stanceExpected/stanceMatch   stanceAnim is the bandit's CURRENT rest-pose style (c._banditSwingAnim: sweep|thrust); stanceExpected is what its equipped weapon's own animStyle says it should be (banditNaturalSwing(def) -- sweep for hatchet/fishingmace, thrust for the rest); stanceMatch=0 while idle=1 means the idle stance is stuck showing a DIFFERENT ability's style than the one its weapon actually plays at rest (this exact bug happened once already -- Quick Attack/Charged Breaker hardcode their own anim/pose and finishBanditAction has to reset it back afterward).
-  facingDeg/groupRotDeg/bodyLeanDeg   facingDeg is c.facing (the bandit's true aim/facing angle, degrees) and groupRotDeg is c.groupRot (its avatar body's actual rendered rotation.y, in the portrait-rig's own reflected+offset space -- see updateCreatureMesh's rawTargetRotY) -- these are NOT the same convention and are not meant to numerically match. bodyLeanDeg is the signed difference between groupRotDeg and where the body SHOULD be sitting at rest for the current facingDeg (0 = body exactly at its rest angle); a large bodyLeanDeg while idle=1 means the avatar body is stuck leaned into a swing that already ended -- the other half of the same class of bug as stanceMatch above (this also happened once already, from the settle window not reasserting the lean on both the weapon and the body together).
-why="..."             free-text reasoning computed at snapshot time, referencing the nearest other entity by id where relevant
-Companion-only fields (kind=COMPANION -- the player's own active whistle/stable companion, only listed when it's actually in this zone):
-  name          the companion's given name (stable) or "-" if whistle-summoned with none set
-  master        always "player" today (companions are player-only; the field exists in case that changes)
-  perceptionPx  this companion's own _companionPerceptionRangePx(c) -- the radius within which it senses/marks a nearby bandit camp or animal den (see updateCompanionPerception); compare against distances to camps/dens, not distPlayer alone, since perception is centered on the COMPANION, not the player`;
-
-      function _combatLogDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-      function _combatLogNearestOther(c, all) {
-        let best = null, bestDist = Infinity;
-        for (const o of all) {
-          if (o === c) continue;
-          const d = _combatLogDist(c, o);
-          if (d < bestDist) { bestDist = d; best = o; }
-        }
-        return best ? `${best.id || 'player'}@${Math.round(bestDist)}px` : 'none';
-      }
-
-      function _combatLogBanditWhy(c, def, targetPlayer, nearestOtherTxt) {
-        if (c.health <= 0) return `dead; corpse lootable via action bar (rolled loot table + 100% of worn clothing)`;
-        const distP = Math.round(_combatLogDist(c, targetPlayer));
-        if (c.state === 'idle') return `idle; distPlayer=${distP}px > aggroRangePx=${Math.round(def.aggroRangePx)}px, not aggro'd yet. nearest=${nearestOtherTxt}`;
-        if (c.state === 'return') return `returning home; player out of leashRangePx=${Math.round(def.leashRangePx)}px or too far from its own homeX/Y`;
-        if (c.state !== 'chase') return `state=${c.state}, not currently in combat`;
-        if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
-        if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
-        if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
-        // Non-mutating read of _banditAttackSlots/_banditQueueRings (does
-        // NOT call claimBanditAttackSlot/claimBanditQueueRing, which would
-        // claim/allocate one as a side effect just from generating a log
-        // line) -- checked BEFORE the closing-distance branch below, not
-        // after: a queued bandit's real target is its assigned standoff
-        // ring (see updateBanditCombatAI's !readyToStrike branch), whose
-        // radius is deliberately well past engageRangePx (BANDIT_STANDOFF_
-        // RANGE_MUL, bumped further per ring for a big gang's outer rings)
-        // -- checking distance first would misreport an already-correctly-
-        // positioned queued bandit as "closing distance, waiting to enter
-        // engageRangePx" forever, since it's never actually trying to reach
-        // that number. Only BANDIT_MAX_ATTACK_SLOTS=2 bandits are ever
-        // allowed to close in and swing at once.
-        if (!window.BanditCombat.attackSlots.some(s => s.bandit === c)) {
-          const queueRing = window.BanditCombat.queueRings.find(q => q.bandit === c);
-          return queueRing
-            ? `queued on standoff ring ${queueRing.ringIndex} (not one of the ${window.BanditCombat.MAX_ATTACK_SLOTS} bandits currently holding an attack slot) -- holding/swaying at its assigned ring, NOT trying to close the distance; distPlayer=${distP}px`
-            : `queued, not yet assigned a standoff ring (should self-correct next frame -- flag as a bug if this persists); distPlayer=${distP}px`;
-        }
-        // The real approach/attack-commit gate is banditEngagementReachPx
-        // (its current combo step's own reach, folding in that step's own
-        // lunge distance) -- NOT the flat def.attackRangePx shown in the
-        // ENTITY line's atkRangePx field, which is only the melee baseline
-        // before any per-step range/lunge math. Reporting attackRangePx
-        // here instead used to make a bandit committing to (and, before the
-        // engagement-reach fix, whiffing) an attack from well outside its
-        // real hit cone look like ordinary "still closing" text.
-        const engageReach = Math.round(window.BanditCombat.engagementReachPx(c, def, def.banditAbilityLoadout || {}, targetPlayer));
-        if (distP > engageReach) return `closing distance, distPlayer=${distP}px, waiting to enter engageRangePx=${engageReach}px (its current combo step's own hit range + lunge; melee baseline atkRangePx=${Math.round(def.attackRangePx)}px)`;
-        if (c.attackCooldownT > 0) return `recovering, cdT=${c.attackCooldownT.toFixed(2)}s left before its next tap/hold attempt; distPlayer=${distP}px, engageRangePx=${engageReach}px`;
-        // Mid-combo continuation (comboIdx > 0) skips this gate -- see
-        // updateBanditCombatAI's continuingCombo comment -- so it's only
-        // ever the real block for an opening attack.
-        if (c._banditComboIndex === 0 && c.stamina < def.attackStaminaCost) return `in range but stamina=${Math.round(c.stamina)} < attackStaminaCost=${def.attackStaminaCost}, waiting to regen`;
-        return `in range and off cooldown, about to pick an ability (chargedBreaker opener chance, then a favorable-condition Quick Attack, else the next Combo step); distPlayer=${distP}px`;
-      }
-
-      // Idle REST pose/orientation diagnostic -- deliberately separate from
-      // the attack-frame fields above (tState/actionBusy/comboIdx etc, which
-      // describe an in-flight swing). Reports what the bandit's stance
-      // currently IS and where it SHOULD be at rest, to catch either half
-      // of the two bugs already found once each: the idle stance getting
-      // stuck showing whichever ability last fired instead of the equipped
-      // weapon's own style (see finishBanditAction/banditNaturalSwing), and
-      // the avatar body rotating independently of (leaning a different
-      // amount than) the weapon it's holding (see updateBanditToolMesh's
-      // settle-window reassertion). stanceMatch/bodyLeanDeg are only worth
-      // reading as "wrong" once idle=1 -- mid-swing or mid-settle they're
-      // supposed to differ from their rest values.
-      function _combatLogBanditStance(c, def) {
-        const settleT = Math.max(0, ((c._banditToolSettleUntil || 0) - performance.now()) / 1000);
-        const idle = !c._banditAction && settleT <= 0;
-        const natural = window.BanditCombat.naturalSwing(def);
-        const stanceAnim = c._banditSwingAnim || 'thrust';
-        // c.groupRot's own rest value for the CURRENT facing (see
-        // updateCreatureMesh's rawTargetRotY, the same formula) -- diffed
-        // against the actual live c.groupRot via angleDiff (wrap-safe) so a
-        // stuck lean shows up as a nonzero bodyLeanDeg regardless of which
-        // way c.facing happens to be pointing right now.
-        const aimOffset = def.aimAngleOffset || 0;
-        const restGroupRot = -((c.facing || 0) + aimOffset) + Math.PI / 2;
-        const bodyLeanDeg = Math.round(THREE.MathUtils.radToDeg(angleDiff(c.groupRot || 0, restGroupRot)));
-        return [
-          `idle=${idle ? 1 : 0}`, `settleT=${settleT.toFixed(2)}`,
-          `stanceAnim=${stanceAnim}`, `stanceExpected=${natural.anim}`, `stanceMatch=${stanceAnim === natural.anim ? 1 : 0}`,
-          `facingDeg=${Math.round(THREE.MathUtils.radToDeg(c.facing || 0))}`,
-          `groupRotDeg=${Math.round(THREE.MathUtils.radToDeg(c.groupRot || 0))}`,
-          `bodyLeanDeg=${bodyLeanDeg}`,
-        ].join(' ');
-      }
-
-      function captureBanditCombatSnapshotText() {
-        // companionObjects is a separate tracking Set from
-        // _arenaSpawnedCreatures (the dev-spawner's own bookkeeping) -- a
-        // whistle/stable companion summoned the normal way was previously
-        // invisible to this log entirely, silently omitted even though it's
-        // a real participant standing right next to the player.
-        const companions = [...companionObjects].filter(c => c.areaId === currentArea);
-        const all = [player, ..._arenaSpawnedCreatures, ...companions];
-        const lines = [`--- SNAPSHOT zone=${currentArea} t=${new Date().toISOString()} devGlobalSpeedMul=${devGlobalSpeedMul} ---`,
-          `ENTITY kind=PLAYER hp=${Math.round(player.health)}/${player.maxHealth} stam=${Math.round(player.stamina)}/${player.maxStamina} pos=(${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)})`];
-        for (const c of _arenaSpawnedCreatures) {
-          const def = c.def || {};
-          const nearestTxt = _combatLogNearestOther(c, all);
-          const kind = c.health <= 0 ? 'CORPSE' : (c.isBandit ? 'BANDIT' : 'CREATURE');
-          if (c.isBandit) {
-            const r = c.rosterRecord || {};
-            const clothTxt = (r.equippedCosmetics || []).length
-              ? r.equippedCosmetics.map(id => `${r.cosmeticSlots?.[id] || '?'}:${id}:${r.appliedDyes?.[window.BanditCombat.TINT_SLOT_BY_SLOT[r.cosmeticSlots?.[id]]] || '-'}`).join(';')
-              : '-';
-            const loadout = def.banditAbilityLoadout || {};
-            const loadoutTxt = `${loadout.tap1 || '-'}/${loadout.tap2 || '-'}/${loadout.hold1 || '-'}/${loadout.hold2 || '-'}`;
-            lines.push([
-              `ENTITY kind=${kind}`, `id=${c.id}`, `rank=${c.banditRank}`, `tier=${c.banditTier}`, `mastery=${c.banditMastery}`,
-              `species=${r.appearance?.speciesId}/${r.appearance?.gender}`,
-              `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
-              `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `actionBusy=${c._banditAction ? 1 : 0}`,
-              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-              `loadout=${loadoutTxt}`, `comboIdx=${c._banditComboIndex || 0}`, `hold1CdT=${(c._banditHold1CdT || 0).toFixed(2)}`,
-              `guarding=${c._banditGuardUntil > performance.now() ? 1 : 0}`, `guardCdT=${(c._banditGuardCdT || 0).toFixed(2)}`,
-              `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
-              `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,
-              `cloth=${clothTxt}`, _combatLogBanditStance(c, def), `nearestOther=${nearestTxt}`,
-              `why="${_combatLogBanditWhy(c, def, player, nearestTxt)}"`,
-            ].join(' '));
-          } else {
-            lines.push([
-              `ENTITY kind=${kind}`, `id=${c.id}`, `species=${c.creatureKey}`,
-              `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
-              `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-              `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
-              `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-              `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `nearestOther=${nearestTxt}`,
-            ].join(' '));
-          }
-        }
-        for (const c of companions) {
-          const def = c.def || {};
-          const nearestTxt = _combatLogNearestOther(c, all);
-          const kind = c.health <= 0 ? 'CORPSE' : 'COMPANION';
-          lines.push([
-            `ENTITY kind=${kind}`, `id=${c.id}`, `species=${c.creatureKey}`, `name=${c.name || '-'}`, `master=${c.master === player ? 'player' : (c.master?.id || 'none')}`,
-            `hp=${Math.round(c.health)}/${c.maxHealth}`, `stam=${Math.round(c.stamina)}/${c.maxStamina}`,
-            `pos=(${Math.floor(c.x / TILE)},${Math.floor(c.y / TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
-            `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `aaBusy=${window.Combat?.animalAttacks?.isBusy?.(c) ? 1 : 0}`,
-            `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-            `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`, `perceptionPx=${Math.round(window.BanditCamps.companionPerceptionRangePx(c))}`,
-            `nearestOther=${nearestTxt}`,
-          ].join(' '));
-        }
-        return lines.join('\n');
-      }
-
-      // Runs on its own real-time interval (see the comment above
-      // BANDIT_COMBAT_LOG_BUFFER_SIZE) -- pushes one snapshot, then drops
-      // the oldest once the buffer would exceed BANDIT_COMBAT_LOG_BUFFER_SIZE.
-      function captureBanditCombatSnapshot() {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        _banditCombatLogBuffer.push({ t: Date.now(), text: captureBanditCombatSnapshotText() });
-        while (_banditCombatLogBuffer.length > BANDIT_COMBAT_LOG_BUFFER_SIZE) _banditCombatLogBuffer.shift();
-      }
-      setInterval(captureBanditCombatSnapshot, BANDIT_COMBAT_LOG_INTERVAL_S * 1000);
-
-      async function copyArenaCombatLog() {
-        const body = _banditCombatLogBuffer.length
-          ? _banditCombatLogBuffer.map(s => s.text).join('\n\n')
-          : '(no buffered snapshots yet -- wait a second and try again; the Testing Arena must be the active zone for the background capture to run)';
-        const text = [COMBAT_LOG_GUIDE, '', body].join('\n');
-        try {
-          await navigator.clipboard.writeText(text);
-          showToast(`Combat log copied (${_banditCombatLogBuffer.length} snapshot${_banditCombatLogBuffer.length === 1 ? '' : 's'}).`, true);
-        } catch (e) {
-          console.log(text);
-          showToast('Clipboard blocked — full log printed to console instead (check devtools).', false);
-        }
-      }
-      document.getElementById('devCombatLogBtn')?.addEventListener('click', copyArenaCombatLog);
+      // Bandit combat-log capture (AI/Claude review tool, not player-
+      // facing) now lives in js/bandit-combat-log.js — call via
+      // window.BanditCombatLog.captureSnapshotText() if needed elsewhere.
 
       document.getElementById('devSpeedMulSlider')?.addEventListener('input', (e) => {
         devGlobalSpeedMul = clamp(Number(e.target.value) || 100, 25, 300) / 100;
@@ -24034,209 +23605,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         requestAnimationFrame(gameLoop);
       }
 
-      // ── Debug hitbox overlay (Settings → Dev Tools → Show Hitboxes) ─
-      // Ground-plane circles for the player's and every creature's collision
-      // footprint, plus whatever attack collider (if any) is currently live
-      // on a creature: the Pounce leap's forward cone (the real cone passed
-      // to deps.inCone, not a recomputed approximation) while it's in its
-      // 'leap' stage, or the generic bite's range circle (that attack only
-      // ever does a flat distance check, not a cone) while telegraphed.
-      const DEBUG_HITBOX_COLOR_PLAYER    = '#5cf2ff';
-      const DEBUG_HITBOX_COLOR_HOSTILE   = '#ff6a6a';
-      const DEBUG_HITBOX_COLOR_COMPANION = '#7fe89a';
-      const DEBUG_ATTACK_COLOR_WINDUP    = '#ffc23d';
-      const DEBUG_ATTACK_COLOR_STRIKE    = '#ffffff';
-      const DEBUG_ATTACK_COLOR_LEAP      = '#ff3df0';
-      const DEBUG_AIM_COLLIDER_COLOR     = '#c792ff';
-      // Deadzone arcs drawn per-creature when hitboxes are visible: the two
-      // camera-relative dead zones the PNG plane never freely tracks through
-      // (see CREATURE_PLANE_ROT_MODE for which of sway/halt/snap governs
-      // what it does instead). The pngRot line shows where the PNG plane is
-      // actually pointed right now (may differ from group rotation).
-      const DEBUG_DEADZONE_FILL_COLOR    = '#cc2020';
-      const DEBUG_DEADZONE_EDGE_COLOR    = '#ff5050';
-      const DEBUG_PNG_ROT_COLOR          = '#ff80ff';
-      // Player avatar's crossed-plane "prism" base width (tile units) —
-      // mirrors the worldModelWidth lookup refreshPlayerAvatar() uses to
-      // build the avatar mesh, since the player object stores no width
-      // of its own.
-      function playerModelWidthTiles() {
-        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9;
-      }
-
-      function _debugGroundY(wx, wy) {
-        const tile = getActiveTileAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
-        return (tile ? tileSurfaceY(tile.type) : 0) + 0.05;
-      }
-
-      function _drawDebugCircle(wx, wy, radiusPx, color, dashed) {
-        const y = _debugGroundY(wx, wy);
-        const center = worldToOverlay(wx / TILE, y, wy / TILE);
-        if (!center.visible) return;
-        const edge = worldToOverlay((wx + radiusPx) / TILE, y, wy / TILE);
-        const r = Math.hypot(edge.x - center.x, edge.y - center.y);
-        octx.save();
-        octx.globalAlpha = 0.8;
-        octx.strokeStyle = color;
-        octx.lineWidth = 1.5;
-        if (dashed) octx.setLineDash([5, 4]);
-        octx.beginPath();
-        octx.ellipse(center.x, center.y, r, r * 0.5, 0, 0, Math.PI * 2);
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawDebugSquare(wx, wy, halfSizePx, color, dashed) {
-        const y = _debugGroundY(wx, wy);
-        const halfTiles = halfSizePx / TILE;
-        const baseX = wx / TILE, baseZ = wy / TILE;
-        const corners = [
-          worldToOverlay(baseX - halfTiles, y, baseZ - halfTiles),
-          worldToOverlay(baseX + halfTiles, y, baseZ - halfTiles),
-          worldToOverlay(baseX + halfTiles, y, baseZ + halfTiles),
-          worldToOverlay(baseX - halfTiles, y, baseZ + halfTiles),
-        ];
-        if (!corners[0].visible) return;
-        octx.save();
-        octx.globalAlpha = 0.8;
-        octx.strokeStyle = color;
-        octx.lineWidth = 1.5;
-        if (dashed) octx.setLineDash([5, 4]);
-        octx.beginPath();
-        octx.moveTo(corners[0].x, corners[0].y);
-        for (let i = 1; i < corners.length; i++) octx.lineTo(corners[i].x, corners[i].y);
-        octx.closePath();
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawDebugLine(wx1, wy1, wx2, wy2, color, dashed) {
-        const p1 = worldToOverlay(wx1 / TILE, _debugGroundY(wx1, wy1), wy1 / TILE);
-        const p2 = worldToOverlay(wx2 / TILE, _debugGroundY(wx2, wy2), wy2 / TILE);
-        if (!p1.visible && !p2.visible) return;
-        octx.save();
-        octx.globalAlpha = 0.85;
-        octx.strokeStyle = color;
-        octx.lineWidth = 2;
-        if (dashed) octx.setLineDash([4, 4]);
-        octx.beginPath();
-        octx.moveTo(p1.x, p1.y);
-        octx.lineTo(p2.x, p2.y);
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawDebugCone(wx, wy, angle, rangePx, halfConeRad, color) {
-        const y = _debugGroundY(wx, wy);
-        const rangeTiles = rangePx / TILE;
-        const baseX = wx / TILE, baseZ = wy / TILE;
-        const left = angle - halfConeRad, right = angle + halfConeRad;
-        const origin = worldToOverlay(baseX, y, baseZ);
-        if (!origin.visible) return;
-        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
-        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
-        octx.save();
-        octx.globalAlpha = 0.85;
-        octx.strokeStyle = color;
-        octx.lineWidth = 2;
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(leftEnd.x, leftEnd.y);
-        octx.lineTo(rightEnd.x, rightEnd.y);
-        octx.closePath();
-        octx.stroke();
-        octx.restore();
-      }
-
-      // Ground-plane arc sector (for deadzone fans). fromAngle/toAngle are
-      // world-space angles (same convention as c.facing / atan2 game coords).
-      // radiusPx is the visual reach of the fan in game pixels.
-      function _drawDebugArcSector(wx, wy, fromAngle, toAngle, radiusPx, edgeColor, fillColor) {
-        const N = 20;
-        const y = _debugGroundY(wx, wy);
-        const bx = wx / TILE, bz = wy / TILE, rT = radiusPx / TILE;
-        const origin = worldToOverlay(bx, y, bz);
-        if (!origin.visible) return;
-        const pts = [];
-        for (let i = 0; i <= N; i++) {
-          const a = fromAngle + (toAngle - fromAngle) * (i / N);
-          pts.push(worldToOverlay(bx + Math.cos(a) * rT, y, bz + Math.sin(a) * rT));
-        }
-        octx.save();
-        octx.beginPath();
-        octx.moveTo(origin.x, origin.y);
-        octx.lineTo(pts[0].x, pts[0].y);
-        for (let i = 1; i <= N; i++) octx.lineTo(pts[i].x, pts[i].y);
-        octx.closePath();
-        octx.globalAlpha = 0.18;
-        octx.fillStyle = fillColor;
-        octx.fill();
-        octx.globalAlpha = 0.75;
-        octx.strokeStyle = edgeColor;
-        octx.lineWidth = 1.5;
-        octx.setLineDash([3, 3]);
-        octx.stroke();
-        octx.restore();
-      }
-
-      function _drawCreatureDebug(c, hitboxColor) {
-        const def = c.def;
-        const halfSize = creatureHitboxHalfSizePx(def);
-        _drawDebugSquare(c.x, c.y, halfSize, hitboxColor, false);
-
-        if (def.attacks?.includes('pounce')) {
-          const ang = c.facing || 0;
-          const reach = creatureAimColliderReachPx(def);
-          const sx = c.x + Math.cos(ang) * halfSize, sy = c.y + Math.sin(ang) * halfSize;
-          const ex = c.x + Math.cos(ang) * reach, ey = c.y + Math.sin(ang) * reach;
-          _drawDebugLine(sx, sy, ex, ey, DEBUG_AIM_COLLIDER_COLOR, true);
-        }
-
-        const aa = c._animalAttack;
-        if (aa && aa.state.stage === 'leap' && aa.state.rangePx != null) {
-          const st = aa.state;
-          const headX = c.x + Math.cos(st.angle) * st.headOffsetPx;
-          const headY = c.y + Math.sin(st.angle) * st.headOffsetPx;
-          _drawDebugCone(headX, headY, st.angle, st.rangePx, st.halfConeRad, DEBUG_ATTACK_COLOR_LEAP);
-        } else if (c.telegraphState) {
-          _drawDebugCircle(c.x, c.y, def.attackRangePx,
-            c.telegraphState === 'strike' ? DEBUG_ATTACK_COLOR_STRIKE : DEBUG_ATTACK_COLOR_WINDUP, true);
-        }
-
-        // Deadzone fans — the two camera-relative angle bands where the PNG
-        // plane lerps through rather than tracking freely. Each perp is stored
-        // in Three.js rotation.y space; convert to world-space angle via
-        //   worldAngle = π/2 − rotY
-        // so the sector maps back into the same atan2 space as c.facing.
-        const dzR = TILE * 0.65;
-        for (const P_rotY of cameraRelativeCreaturePerps()) {
-          const wc = Math.PI / 2 - P_rotY;
-          _drawDebugArcSector(c.x, c.y, wc - CREATURE_PERP_DEAD_RAD, wc + CREATURE_PERP_DEAD_RAD,
-            dzR, DEBUG_DEADZONE_EDGE_COLOR, DEBUG_DEADZONE_FILL_COLOR);
-        }
-        // Current PNG plane direction — where the sprite is visually facing
-        // right now (may lag or differ from the prism/group rotation).
-        if (c.pngRot !== undefined) {
-          const pngWorldAngle = Math.PI / 2 - c.pngRot;
-          _drawDebugLine(c.x, c.y,
-            c.x + Math.cos(pngWorldAngle) * dzR,
-            c.y + Math.sin(pngWorldAngle) * dzR,
-            DEBUG_PNG_ROT_COLOR, false);
-        }
-      }
-
-      function drawDebugHitboxes() {
-        if (!s_showHitboxes) return;
-        _drawDebugSquare(player.x, player.y, playerModelWidthTiles() * TILE / 2, DEBUG_HITBOX_COLOR_PLAYER, false);
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
-          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_HOSTILE);
-        }
-        for (const c of companionObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea) continue;
-          _drawCreatureDebug(c, DEBUG_HITBOX_COLOR_COMPANION);
-        }
-      }
+      // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
+      // now lives in js/debug-hitboxes.js — call via window.DebugHitboxes.draw().
 
       // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
       function drawOverlays() {
@@ -24288,7 +23658,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           octx.fillRect(0, 0, W, H);
         }
 
-        drawDebugHitboxes();
+        window.DebugHitboxes.draw();
       }
 
       function markTileDirty(col, row) {
@@ -24305,13 +23675,13 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function updateCalendar(dt) {
 
-        const previousHour = getHour();
+        const previousHour = window.CalendarSystem.getHour();
         calendar.time01 += dt / DAY_LENGTH_SECONDS;
         if (calendar.time01 >= 1) {
           calendar.time01 -= 1;
           advanceDay();
         }
-        const currentHour = getHour();
+        const currentHour = window.CalendarSystem.getHour();
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
           updateRainState();
           if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); checkForMajorStorm(); worldObjectMorningTick(); }
@@ -24373,7 +23743,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       }
 
       function chooseWeatherForDay() {
-        const season = currentSeason();
+        const season = window.CalendarSystem.currentSeason();
         applySeasonalGrassAppearance();
         const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
         const stormRoll = seededRandom(calendar.day * 373 + 11);
@@ -24403,7 +23773,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       }
 
       function updateRainState() {
-        const hour = getHour();
+        const hour = window.CalendarSystem.getHour();
         const activeWindow = calendar.nextRainWindows.find((window) => hour >= window.start && hour < window.end);
         calendar.isRaining = Boolean(activeWindow);
         calendar.rainStrength = activeWindow ? activeWindow.strength : 0;
@@ -25635,8 +25005,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       });
 
       function updateHud() {
-        const season = currentSeason();
-        const clock  = formatClock(getHour());
+        const season = window.CalendarSystem.currentSeason();
+        const clock  = formatClock(window.CalendarSystem.getHour());
 
         // Season (changes slowly)
         spSeason.textContent = season.emoji + ' ' + season.name;
@@ -25661,7 +25031,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         spWeather.textContent = weatherText + ' ' + precipText;
 
         spTime.textContent = clock;
-        if (spDay) spDay.textContent = formatCalendarDate();
+        if (spDay) spDay.textContent = window.CalendarSystem.formatCalendarDate();
         spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
 
         // Reticle tile info
@@ -25714,7 +25084,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
 
       function nextRainText() {
         if (!calendar.nextRainWindows.length) return 'No rain scheduled today';
-        const hour = getHour();
+        const hour = window.CalendarSystem.getHour();
         const next = calendar.nextRainWindows.find((window) => hour < window.end);
         if (!next) return 'Rain has passed for today';
         return `Next flow ${formatClock(next.start)}-${formatClock(next.end)}`;
@@ -25820,7 +25190,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           `Joystick viewport anchor: ${Math.round(joystickZone.getBoundingClientRect().left)}px left, ${Math.round(window.innerHeight - joystickZone.getBoundingClientRect().bottom)}px bottom`,
           `Movement tuning: speed=${MOVE_SPEED} accel=${ACCEL} turn=${TURN_ACCEL} decel=${DECEL} deadzone=${JOYSTICK_DEADZONE}`,
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
-          `Calendar: ${formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(getHour())}, ${calendar.weather}`,
+          `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${toolName(activeTool)} / ${actionName(activeAction)}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           '--- raw log ---',
@@ -26884,8 +26254,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getDialogueOpen: () => dialogueOpen,
         getDialogueWalker: () => _dialogueWalker,
         getWaresPools: () => WARES_POOLS,
-        currentWeekdayName,
-        currentSeason,
+        currentWeekdayName: window.CalendarSystem.currentWeekdayName,
+        currentSeason: window.CalendarSystem.currentSeason,
         fishingTimeOfDay: () => window.Fishing.timeOfDay(),
         normalizeStationLabel,
         canAccessContent,
@@ -26931,7 +26301,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         getCurrentArea: () => currentArea,
         getPaused: () => paused,
         getGameStarted: () => gameStarted,
-        getHour,
+        getHour: window.CalendarSystem.getHour,
         isPlayerInCombat,
         MORNING_HOUR,
         getWorkspaceMaps: () => _workspaceMaps,
@@ -27086,8 +26456,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       window.Fishing?.init({
         clamp,
         getActiveScene,
-        currentSeason,
-        getHour,
+        currentSeason: window.CalendarSystem.currentSeason,
+        getHour: window.CalendarSystem.getHour,
         FISH_DEFS,
         getReticleTile,
         getActiveTileAt,
@@ -27178,6 +26548,51 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         refreshItemScroll,
         showToast,
         saveMemberWorldData,
+      });
+
+      window.BanditCombatLog?.init({
+        player,
+        companionObjects,
+        arenaSpawnedCreatures: _arenaSpawnedCreatures,
+        getCurrentArea: () => currentArea,
+        getDevGlobalSpeedMul: () => devGlobalSpeedMul,
+        DEV_ARENA_ZONE_ID,
+        TILE,
+        angleDiff,
+        showToast,
+      });
+
+      window.DebugHitboxes?.init({
+        getActiveTileAt,
+        tileSurfaceY,
+        worldToOverlay,
+        octx,
+        TILE,
+        player,
+        hostileObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        getShowHitboxes: () => s_showHitboxes,
+        creatureHitboxHalfSizePx,
+        creatureAimColliderReachPx,
+        cameraRelativeCreaturePerps,
+        CREATURE_PERP_DEAD_RAD,
+      });
+
+      window.RelationshipsPanel?.init({
+        npcWalkers,
+        esc,
+      });
+
+      window.CalendarSystem?.init({
+        MORNING_HOUR,
+        NIGHT_HOUR,
+        calendar,
+        calToday,
+        calMonthTitle,
+        calPrevMonth,
+        calNextMonth,
+        calWeeks,
       });
 
       window.JubmirShop?.init({
@@ -27423,7 +26838,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         clampInventoryStack,
         getActiveInventoryItem,
         itemIconForKey,
-        getHour,
+        getHour: window.CalendarSystem.getHour,
         hasFarmPermission,
         openMenu,
         showToast,

@@ -196,6 +196,33 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
   <script src="js/jubmir-shop.js?v=20260807a"></script>
+  <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
+       seasons) and the Calendar tab UI (window.CalendarSystem) —
+       self-contained aside from deps injected via init(), so load order
+       relative to the other systems above doesn't matter; must load before
+       game.js, which calls window.CalendarSystem.init(...) during its own
+       setup. -->
+  <script src="js/calendar-system.js?v=20260807a"></script>
+  <!-- Relationships menu tab render (window.RelationshipsPanel) —
+       self-contained aside from deps injected via init(), and reads
+       window.DialogueContent/window.ProceduralTasks at render time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.RelationshipsPanel.init(...) during its own setup. -->
+  <script src="js/relationships-panel.js?v=20260807a"></script>
+  <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
+       (window.DebugHitboxes) — self-contained aside from deps injected via
+       init(), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.DebugHitboxes.init(...) during its own setup. -->
+  <script src="js/debug-hitboxes.js?v=20260807a"></script>
+  <!-- Bandit combat-log capture, AI/Claude review tool for the dev Testing
+       Arena (window.BanditCombatLog) — reads window.BanditCombat/
+       window.BanditCamps/window.Combat at capture time (already global by
+       then), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.BanditCombatLog.init(...) during its own setup. -->
+  <script src="js/bandit-combat-log.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
