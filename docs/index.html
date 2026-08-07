@@ -106,6 +106,12 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/combat-bandit.js?v=20260807a"></script>
+  <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
+       perception, corpse loot) — window.BanditCamps. Calls
+       window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
+       must load after combat-bandit.js above, and before game.js, which
+       calls window.BanditCamps.init(...) during its own setup. -->
+  <script src="js/bandit-camps.js?v=20260807a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20260727a"></script>
