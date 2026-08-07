@@ -276,6 +276,16 @@
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
   <script src="js/town-zone-buildings.js?v=20260807a"></script>
+  <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
+       panel (window.DevSpawner) — reads window.CreatureGenetics/
+       window.CreatureGeneticsRender/window.BanditCombat/
+       window.FoliageGenerator at call time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.DevSpawner.init(...) during
+       its own setup, and reads window.DevSpawner.DEV_ARENA_ZONE_ID/
+       .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
+       window.BanditCamps at that same call-time point. -->
+  <script src="js/dev-spawner.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
@@ -339,7 +349,7 @@
 
   <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
        farm editor pencil, shown only while standing in the Testing Arena -->
-  <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window._devSpawner?.toggle()" style="display:none;">🐾</button>
+  <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window.DevSpawner?.toggle()" style="display:none;">🐾</button>
 
   <!-- Farm Editor Panel -->
   <div id="farmEditorPanel" style="display:none;" aria-label="Farm editor">
@@ -405,7 +415,7 @@
   <div id="devSpawnPanel" style="display:none;" aria-label="Creature spawn menu">
     <div class="fed-header">
       <span>🐾 Creature Spawner</span>
-      <button class="fed-close" onclick="window._devSpawner?.toggle()" title="Close spawn menu">✕</button>
+      <button class="fed-close" onclick="window.DevSpawner?.toggle()" title="Close spawn menu">✕</button>
     </div>
     <div class="fed-scroll">
       <div class="fed-section">

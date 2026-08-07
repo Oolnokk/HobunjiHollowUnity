@@ -21309,327 +21309,10 @@
         });
       }
 
-      // ── Dev Tools: Testing Arena + creature spawner ─────────────────
-      const DEV_ARENA_ZONE_ID = 'map_dev_arena';
-      // Remembers where the player was standing before warping into the
-      // arena so the same Settings button can toggle them back out again —
-      // unlike warpToDenAnchor's targets, the arena has no natural "return"
-      // spot of its own (see EXTERIOR_ZONES.map_dev_arena's exitCol/Row
-      // comment for the walk-out fallback).
-      let _devArenaReturnAnchor = null;
-      function teleportToDevArena() {
-        if (currentArea === DEV_ARENA_ZONE_ID) {
-          const back = _devArenaReturnAnchor || { area: 'farm', x: (COLS / 2) * TILE, y: (ROWS / 2) * TILE };
-          _devArenaReturnAnchor = null;
-          startSceneTransition(() => {
-            const fromScene = getActiveScene();
-            if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-            if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
-            currentArea = back.area;
-            player.x = back.x; player.y = back.y;
-            player.vx = 0; player.vy = 0;
-            _snapCameraTarget();
-            const toScene = getActiveScene();
-            if (toScene) {
-              toScene.add(playerMesh); toScene.add(playerGroundShadow);
-              toScene.add(toolHolder); toScene.add(reticleMesh);
-              toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-              toScene.add(reticleWavyGroup);
-            }
-            refreshActionBar();
-            showToast('Left the Testing Arena.', true);
-            closeMenu();
-          });
-          return;
-        }
-        _devArenaReturnAnchor = { area: currentArea, x: player.x, y: player.y };
-        startSceneTransition(() => {
-          const fromScene = getActiveScene();
-          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
-          if (_isBuildingArea(currentArea)) _currentBuildingMapId = null;
-          currentArea = DEV_ARENA_ZONE_ID;
-          const zdef = EXTERIOR_ZONES[DEV_ARENA_ZONE_ID];
-          player.x = (zdef.entryCol + 0.5) * TILE;
-          player.y = (zdef.entryRow + 0.5) * TILE;
-          player.vx = 0; player.vy = 0;
-          _snapCameraTarget();
-          const toScene = buildZoneScene(DEV_ARENA_ZONE_ID)?.scene;
-          if (toScene) {
-            toScene.add(playerMesh); toScene.add(playerGroundShadow);
-            toScene.add(toolHolder); toScene.add(reticleMesh);
-            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
-            toScene.add(reticleWavyGroup);
-          }
-          refreshActionBar();
-          showToast('Teleported to the Testing Arena — creature spawner unlocked.', true);
-          closeMenu();
-          // Pays the mask-JSON + base/pattern sprite network fetch up front
-          // instead of on the first Spawn click — a fully-patterned species
-          // is over a megabyte of images, so without this the cold fetch
-          // happens WHILE the first spawned creature is standing there
-          // plain/undyed, which is what actually reads as "no colors" (the
-          // recolor math itself is fast; the network round-trip isn't). Not
-          // a blocking loading screen — just a toast so the wait is visible
-          // instead of silent, since it can take a few seconds on a slow
-          // connection/CDN.
-          if (window.CreatureGeneticsRender) {
-            showToast('Warming up creature art…', true);
-            window.CreatureGeneticsRender.prewarm()
-              .then(() => showToast('Creature art ready — spawn away.', true))
-              .catch(() => {});
-          }
-        });
-      }
-      document.getElementById('devTeleportArenaBtn')?.addEventListener('click', teleportToDevArena);
-
-      // Creatures the dev spawn menu has placed in the arena this session —
-      // a separate tracking set from hostileObjects/companionObjects (which
-      // this panel also adds its spawns to, so the normal AI/render tick
-      // loops pick them up) purely so "Auto Kill All" only ever touches
-      // arena test subjects, never a real wild pack or summoned companion.
-      const _arenaSpawnedCreatures = new Set();
-      let devSpawnSelectedKey = Object.keys(CREATURE_DB)[0];
-      // Bandits aren't CREATURE_DB entries (see makeBanditEntity) and every
-      // spawn is async (portrait render), so they're addressable in this
-      // same species grid via a 'bandit:<rank>' key instead of a real
-      // CREATURE_DB key — spawnDevArenaCreature/spawnDevArenaBandit branch
-      // on that prefix. Camps never auto-place in the dev arena (see
-      // ensureCurrentZoneBanditCamps's DEV_ARENA_ZONE_ID exclusion, same
-      // reasoning as packSpecies/herbivoreSpecies being empty there) so this
-      // panel is the only way to get a bandit into it.
-      const DEV_SPAWN_BANDIT_RANKS = ['grunt', 'lieutenant', 'captain'];
-      let devSpawnBanditTier = 0;
-
-      // Same species FoliageGenerator builds for a real wilderness zone's
-      // SHRUB tiles (see _buildZoneFloorMeshes) — spawning them here lets a
-      // tree/stump's view-corridor culling and camera-occlusion fade (see
-      // updateZoneVegetationCulling) get exercised and screenshotted without
-      // needing an actual zone (Southern Cloud Forest's real terrain alone
-      // takes a couple minutes to generate). skipOcclusionFade/scale2x mirror
-      // that same switch's own per-species handling exactly, so a spawned
-      // bush/shrub behaves (and doesn't fade) the same as a real one.
-      const DEV_SPAWN_FOLIAGE_TYPES = {
-        crownedPine: { label: 'Crowned Pine', build: (seed) => window.FoliageGenerator.buildCrownedPineMesh(seed, 0) },
-        shadewood: { label: 'Shadewood', build: (seed) => window.FoliageGenerator.buildShadewoodMesh(seed, 0) },
-        stump: { label: 'Old Stump', build: (seed) => window.FoliageGenerator.buildStumpMesh(seed, 0) },
-        bush: { label: 'Wilderness Bush', build: (seed) => window.FoliageGenerator.buildWildernessBushMesh(seed, 0), skipOcclusionFade: true },
-        shrub: { label: 'Generic Shrub', build: (seed) => window.FoliageGenerator.buildShrubMesh(seed, 0), skipOcclusionFade: true, scale2x: true },
-      };
-      let devSpawnFoliageSelectedKey = Object.keys(DEV_SPAWN_FOLIAGE_TYPES)[0];
-      let _arenaFoliageSeedCounter = 0;
-      // Separate from _arenaSpawnedCreatures — these are plain decorative
-      // meshes, not AI entities, so "Clear Objects" just removes/disposes
-      // them directly instead of going through damageCreature.
-      const _arenaSpawnedFoliage = new Set();
-
-      function renderDevSpawnPanel() {
-        const grid = document.getElementById('devSpawnSpeciesGrid');
-        if (grid) {
-          const creatureBtns = Object.keys(CREATURE_DB).map(key => {
-            const label = CREATURE_DB[key].label || key;
-            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">${esc(label)}</button>`;
-          });
-          const banditBtns = DEV_SPAWN_BANDIT_RANKS.map(rank => {
-            const key = 'bandit:' + rank;
-            const label = window.BanditCombat.RANK_LABEL[rank] || rank;
-            const active = key === devSpawnSelectedKey ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-species="${esc(key)}">🗡️ ${esc(label)}</button>`;
-          });
-          grid.innerHTML = creatureBtns.concat(banditBtns).join('');
-        }
-        const tierGrid = document.getElementById('devSpawnBanditTierGrid');
-        if (tierGrid) {
-          tierGrid.innerHTML = [0, 1, 2, 3].map(t => {
-            const active = t === devSpawnBanditTier ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-tier="${t}">Tier ${t}</button>`;
-          }).join('');
-        }
-        const countEl = document.getElementById('devArenaSpawnCount');
-        if (countEl) countEl.textContent = String(_arenaSpawnedCreatures.size);
-        const foliageGrid = document.getElementById('devSpawnFoliageGrid');
-        if (foliageGrid) {
-          foliageGrid.innerHTML = Object.entries(DEV_SPAWN_FOLIAGE_TYPES).map(([key, def]) => {
-            const active = key === devSpawnFoliageSelectedKey ? ' fed-active' : '';
-            return `<button type="button" class="fed-btn${active}" data-foliage="${esc(key)}">${esc(def.label)}</button>`;
-          }).join('');
-        }
-        const foliageCountEl = document.getElementById('devArenaFoliageCount');
-        if (foliageCountEl) foliageCountEl.textContent = String(_arenaSpawnedFoliage.size);
-      }
-      document.getElementById('devSpawnSpeciesGrid')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.fed-btn');
-        if (!btn) return;
-        devSpawnSelectedKey = btn.dataset.species;
-        renderDevSpawnPanel();
-      });
-      document.getElementById('devSpawnFoliageGrid')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.fed-btn');
-        if (!btn) return;
-        devSpawnFoliageSelectedKey = btn.dataset.foliage;
-        renderDevSpawnPanel();
-      });
-      document.getElementById('devSpawnBanditTierGrid')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.fed-btn');
-        if (!btn) return;
-        devSpawnBanditTier = clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, 3);
-        renderDevSpawnPanel();
-      });
-
-      // Rolls the exact same cosmetic-gene odds a wild den pack (or a
-      // farm-bought crate) gets — see makeDefaultGenotype — before placing
-      // the creature, so this panel doubles as the place to confirm which
-      // species' genes actually render (see CreatureGeneticsRender.SPECIES:
-      // today only gar-wolf/dabinggi-hound have real cosmetic art; any other
-      // species spawned here with a genotype will keep showing its plain
-      // default sprite/tint instead — that's the "why don't my genes show
-      // up" bug this whole panel exists to help chase down, not a spawner bug).
-      function spawnDevArenaCreature(creatureKey) {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const def = CREATURE_DB[creatureKey];
-        if (!def) return;
-        const angle = Math.random() * Math.PI * 2;
-        const dist = TILE * (1.5 + Math.random() * 2.5);
-        const x = player.x + Math.cos(angle) * dist;
-        const y = player.y + Math.sin(angle) * dist;
-        // Roll against the "family" species (see window.CreatureGenetics.SPECIES_ALIAS) —
-        // same normalization getOrMakeDenGenotype applies for wild packs —
-        // so gar-wolf-alpha/den-mother variants get real pattern genes too,
-        // instead of makeDefaultGenotype silently no-opping on an exact key
-        // window.CreatureGenetics.PATTERN_DEFS never defines.
-        const genotypeKind = window.CreatureGenetics.SPECIES_ALIAS[creatureKey] || creatureKey;
-        const genotype = window.CreatureGenetics.makeDefaultGenotype(genotypeKind);
-        const creature = makeCreatureEntity(creatureKey, x, y, { homeX: x, homeY: y, state: 'idle', genotype });
-        if (!creature) { showToast(`Could not spawn "${creatureKey}" — missing CREATURE_DB entry.`, false); return; }
-        // Same real-AI registration the cutscene combat stager uses (see
-        // runCombat's combatOnIds loop) — hostile species chase/attack via
-        // updateHostiles, everything else follows/defends the player via
-        // updateCompanions, instead of a bespoke test-only behavior.
-        if (def.hostile) {
-          hostileObjects.add(creature);
-        } else {
-          creature.isCompanion = true;
-          creature.master = player;
-          companionObjects.add(creature);
-        }
-        _arenaSpawnedCreatures.add(creature);
-        const renderSupported = !!window.CreatureGeneticsRender?.SPECIES?.[genotypeKind];
-        const msg = `[dev-arena] spawned ${creatureKey} #${creature.id} (aiSet=${def.hostile ? 'hostileObjects' : 'companionObjects'}, genotypeKind=${genotypeKind}, renderSupported=${renderSupported}) genotype=${JSON.stringify(genotype)}`;
-        window.__farmLog?.(msg, 'wildlife');
-        console.log(msg);
-        renderDevSpawnPanel();
-      }
-
-      // Bandit counterpart to spawnDevArenaCreature — async because building
-      // a bandit's portrait avatar is (see buildBanditAvatar), and rolled
-      // against devSpawnBanditTier instead of the zone-distance tier a real
-      // camp would use, so every rank/tier combination in
-      // bandit-gang-config.json can be spawned on demand for testing.
-      async function spawnDevArenaBandit(rank, tier) {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const cfg = await window.BanditCombat.loadGangConfig();
-        if (!cfg) { showToast('Could not spawn bandit — bandit-gang-config.json failed to load.', false); return; }
-        if (currentArea !== DEV_ARENA_ZONE_ID) return; // player left mid-await
-        const angle = Math.random() * Math.PI * 2;
-        const dist = TILE * (1.5 + Math.random() * 2.5);
-        const x = player.x + Math.cos(angle) * dist;
-        const y = player.y + Math.sin(angle) * dist;
-        const creature = await window.BanditCombat.makeEntity(cfg, rank, tier, x, y, {
-          zoneId: DEV_ARENA_ZONE_ID,
-          extra: { homeX: x, homeY: y, state: 'idle' },
-        });
-        if (!creature) { showToast(`Could not spawn bandit "${rank}" — see console/log for details.`, false); return; }
-        hostileObjects.add(creature);
-        _arenaSpawnedCreatures.add(creature);
-        const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
-        window.__farmLog?.(msg, 'wildlife');
-        console.log(msg);
-        renderDevSpawnPanel();
-      }
-
-      document.getElementById('devSpawnBtnAction')?.addEventListener('click', () => {
-        if (devSpawnSelectedKey?.startsWith('bandit:')) {
-          spawnDevArenaBandit(devSpawnSelectedKey.slice('bandit:'.length), devSpawnBanditTier);
-        } else {
-          spawnDevArenaCreature(devSpawnSelectedKey);
-        }
-      });
-
-      function devArenaAutoKillAll() {
-        const toKill = [..._arenaSpawnedCreatures];
-        for (const c of toKill) {
-          _arenaSpawnedCreatures.delete(c);
-          if (c.health > 0) damageCreature(c, c.health, undefined, undefined, 0, {});
-        }
-        showToast(`Auto-killed ${toKill.length} arena creature${toKill.length === 1 ? '' : 's'}.`, true);
-        renderDevSpawnPanel();
-      }
-      document.getElementById('devKillAllBtn')?.addEventListener('click', devArenaAutoKillAll);
-
-      // Places a real FoliageGenerator tree/bush/stump near the player, wired
-      // into the exact same view-corridor culling + camera-occlusion fade a
-      // real zone's own trees get (see updateZoneVegetationCulling) by
-      // computing the same cullSphere bounding-sphere tag _buildZoneFloorMeshes
-      // does and pushing it onto this zone's own cullables list — the only
-      // other place that list is ever built is once, at zone-build time (see
-      // buildZoneScene), so a tree spawned after that has to be added here by
-      // hand rather than picked up automatically.
-      function spawnDevArenaFoliage(key) {
-        if (currentArea !== DEV_ARENA_ZONE_ID) return;
-        const typeDef = DEV_SPAWN_FOLIAGE_TYPES[key];
-        if (!typeDef) return;
-        if (!window.FoliageGenerator) { showToast('Could not spawn — FoliageGenerator not loaded.', false); return; }
-        const vegGroup = typeDef.build(_arenaFoliageSeedCounter++);
-        if (typeDef.scale2x) vegGroup.scale.multiplyScalar(2);
-        if (typeDef.skipOcclusionFade) vegGroup.userData.skipOcclusionFade = true;
-        const angle = Math.random() * Math.PI * 2;
-        const dist = TILE * (1.5 + Math.random() * 2.5);
-        const x = player.x + Math.cos(angle) * dist;
-        const y = player.y + Math.sin(angle) * dist;
-        const col = Math.floor(x / TILE), row = Math.floor(y / TILE);
-        const targetGrid = getActiveGrid();
-        const surfY = targetGrid?.[row]?.[col] ? tileSurfaceYInArea(targetGrid[row][col], currentArea) : 0;
-        vegGroup.position.set(x / TILE, surfY, y / TILE);
-        const box = new THREE.Box3().setFromObject(vegGroup);
-        if (!box.isEmpty()) {
-          const sphere = box.getBoundingSphere(new THREE.Sphere());
-          const xzRadius = Math.hypot((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2);
-          vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius, xzRadius };
-        }
-        getActiveScene().add(vegGroup);
-        _markOutline(vegGroup);
-        const zi = _zoneScenes.get(DEV_ARENA_ZONE_ID);
-        if (zi && vegGroup.userData.cullSphere) {
-          zi.cullables = zi.cullables || [];
-          zi.cullables.push(vegGroup);
-        }
-        _arenaSpawnedFoliage.add(vegGroup);
-        renderDevSpawnPanel();
-      }
-      document.getElementById('devSpawnFoliageBtnAction')?.addEventListener('click', () => {
-        spawnDevArenaFoliage(devSpawnFoliageSelectedKey);
-      });
-      function devArenaClearFoliage() {
-        const zi = _zoneScenes.get(DEV_ARENA_ZONE_ID);
-        const toRemove = [..._arenaSpawnedFoliage];
-        for (const vegGroup of toRemove) {
-          _arenaSpawnedFoliage.delete(vegGroup);
-          _treeFadeActive.delete(vegGroup);
-          vegGroup.parent?.remove(vegGroup);
-          if (zi?.cullables) {
-            const idx = zi.cullables.indexOf(vegGroup);
-            if (idx !== -1) zi.cullables.splice(idx, 1);
-          }
-          vegGroup.traverse(o => {
-            if (!o.isMesh) return;
-            o.geometry?.dispose();
-            for (const m of Array.isArray(o.material) ? o.material : [o.material]) { m?.map?.dispose(); m?.dispose(); }
-          });
-        }
-        showToast(`Cleared ${toRemove.length} arena object${toRemove.length === 1 ? '' : 's'}.`, true);
-        renderDevSpawnPanel();
-      }
-      document.getElementById('devClearFoliageBtn')?.addEventListener('click', devArenaClearFoliage);
+      // Dev Tools: Testing Arena teleport + creature/bandit/foliage
+      // spawner panel now lives in js/dev-spawner.js (window.DevSpawner)
+      // — see its init(deps) call below for the shared game.js state
+      // it's threaded.
 
       // Bandit combat-log capture (AI/Claude review tool, not player-
       // facing) now lives in js/bandit-combat-log.js — call via
@@ -21641,36 +21324,9 @@
         if (label) label.textContent = Math.round(devGlobalSpeedMul * 100) + '%';
       });
 
-      window._devSpawner = {
-        toggle() {
-          const panel = document.getElementById('devSpawnPanel');
-          const btn = document.getElementById('devSpawnBtn');
-          const open = panel?.style.display !== 'flex';
-          if (panel) panel.style.display = open ? 'flex' : 'none';
-          if (btn) btn.classList.toggle('fed-open', open);
-          if (open) renderDevSpawnPanel();
-        },
-      };
-
-      // Pencil (farm editor) and 🐾 (dev spawner) toggle buttons share one
-      // top-right UI slot and are mutually exclusive by area: farmEditBtn
-      // previously had NO visibility gating at all and stayed on screen in
-      // every area (town, wilderness, indoors) even though the editor itself
-      // only ever does anything on the farm — this is what actually hides it
-      // everywhere else, and reveals the spawner only inside the arena.
-      function _refreshEditorButtonVisibility() {
-        const showFarmEdit = currentArea === 'farm' && isFarmOwner();
-        const showDevSpawn = currentArea === DEV_ARENA_ZONE_ID;
-        const farmBtn = document.getElementById('farmEditBtn');
-        const spawnBtn = document.getElementById('devSpawnBtn');
-        if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';
-        if (spawnBtn) spawnBtn.style.display = showDevSpawn ? '' : 'none';
-        if (!showFarmEdit && farmEditMode) toggleFarmEditMode();
-        if (!showDevSpawn) {
-          const panel = document.getElementById('devSpawnPanel');
-          if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; spawnBtn?.classList.remove('fed-open'); }
-        }
-      }
+      // window._devSpawner and _refreshEditorButtonVisibility now live in
+      // js/dev-spawner.js (window.DevSpawner) — call via
+      // window.DevSpawner.toggle()/.refreshEditorButtonVisibility().
 
       // ── Den-Mother nest: hold-to-take egg/baby (see _denNests, populated
       // in loadBuildingScene) ──────────────────────────────────────────
@@ -23102,7 +22758,7 @@
       let _lastBarKey = '';
 
       function refreshActionBar() {
-        _refreshEditorButtonVisibility();
+        window.DevSpawner.refreshEditorButtonVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
@@ -25017,6 +24673,38 @@
         esc,
       });
 
+      window.DevSpawner?.init({
+        getCurrentArea: () => currentArea,
+        setCurrentArea: (v) => { currentArea = v; },
+        getActiveScene,
+        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        _isBuildingArea,
+        setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
+        startSceneTransition,
+        player,
+        _snapCameraTarget,
+        refreshActionBar,
+        showToast,
+        closeMenu,
+        EXTERIOR_ZONES,
+        buildZoneScene,
+        COLS, ROWS, TILE,
+        CREATURE_DB,
+        esc,
+        clamp,
+        makeCreatureEntity,
+        hostileObjects, companionObjects,
+        damageCreature,
+        getActiveGrid,
+        tileSurfaceYInArea,
+        markOutline: _markOutline,
+        zoneScenes: _zoneScenes,
+        treeFadeActive: _treeFadeActive,
+        isFarmOwner,
+        getFarmEditMode: () => farmEditMode,
+        toggleFarmEditMode,
+      });
+
       window.TownZoneBuildings?.init({
         getTownZone: () => _townZone,
         debugLog,
@@ -25125,10 +24813,10 @@
       window.BanditCombatLog?.init({
         player,
         companionObjects,
-        arenaSpawnedCreatures: _arenaSpawnedCreatures,
+        arenaSpawnedCreatures: window.DevSpawner.getArenaSpawnedCreatures(),
         getCurrentArea: () => currentArea,
         getDevGlobalSpeedMul: () => devGlobalSpeedMul,
-        DEV_ARENA_ZONE_ID,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         TILE,
         angleDiff,
         showToast,
@@ -25484,7 +25172,7 @@
         getDyeCatalog: window.DyeSystem.getCatalog,
         dyeToClothingColor: window.DyeSystem.toClothingColor,
         clothingSpriteForCosmetic,
-        DEV_ARENA_ZONE_ID,
+        DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
         getActionHeldDown: () => actionHeldDown,
