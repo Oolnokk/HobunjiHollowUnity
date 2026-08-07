@@ -144,7 +144,7 @@
         buildInventoryGrid();
         buildEquipmentSlots();
         if (targetPanel === 'crafting') renderCraftingPanel();
-        if (targetPanel === 'shipping') buildShippingTransferUI();
+        if (targetPanel === 'shipping') window.ShippingPanel.build();
         if (targetPanel === 'supplies') window.SupplyPage.render();
         if (targetPanel === 'generalStore') window.GeneralStore.render();
         if (targetPanel === 'carpenterShop') window.CarpenterShop.render();
@@ -185,7 +185,7 @@
         if (id === 'map') window.WildernessMap.renderMapPanel();
         if (id === 'farm') window.FarmPanel.render();
         if (id === 'stable') window.FarmPanel.renderStablePanel();
-        if (id === 'shipping') buildShippingTransferUI();
+        if (id === 'shipping') window.ShippingPanel.build();
         if (id === 'supplies') window.SupplyPage.render();
         if (id === 'generalStore') window.GeneralStore.render();
         if (id === 'carpenterShop') window.CarpenterShop.render();
@@ -255,25 +255,24 @@
       document.querySelectorAll('.ship-cat').forEach(btn => {
         btn.addEventListener('click', () => {
           const side = btn.dataset.side;
-          if (side === 'left') shippingActiveCat.left = btn.dataset.cat;
-          if (side === 'right') shippingActiveCat.right = btn.dataset.cat;
+          window.ShippingPanel.setActiveCat(side, btn.dataset.cat);
           document.querySelectorAll(`.ship-cat[data-side="${side}"]`).forEach(b =>
-            b.classList.toggle('active', b.dataset.cat === (side === 'left' ? shippingActiveCat.left : shippingActiveCat.right)));
-          buildShippingTransferUI();
+            b.classList.toggle('active', b.dataset.cat === window.ShippingPanel.getActiveCat(side)));
+          window.ShippingPanel.build();
         });
       });
       const shipCloseBtn = document.getElementById('shipCloseBtn');
       if (shipCloseBtn) shipCloseBtn.addEventListener('click', closeMenu);
       const shipAmtMinus = document.getElementById('shipAmtMinus');
       const shipAmtPlus  = document.getElementById('shipAmtPlus');
-      if (shipAmtMinus) shipAmtMinus.addEventListener('click', () => bumpShippingAmount(-1));
-      if (shipAmtPlus)  shipAmtPlus.addEventListener('click',  () => bumpShippingAmount(1));
+      if (shipAmtMinus) shipAmtMinus.addEventListener('click', () => window.ShippingPanel.bumpAmount(-1));
+      if (shipAmtPlus)  shipAmtPlus.addEventListener('click',  () => window.ShippingPanel.bumpAmount(1));
       const shipTransferOne = document.getElementById('shipTransferOne');
       const shipTransferHalf = document.getElementById('shipTransferHalf');
       const shipTransferStack = document.getElementById('shipTransferStack');
-      if (shipTransferOne) shipTransferOne.addEventListener('click', () => transferShippingAmount(1));
-      if (shipTransferHalf) shipTransferHalf.addEventListener('click', () => transferShippingAmount('half'));
-      if (shipTransferStack) shipTransferStack.addEventListener('click', () => transferShippingAmount('stack'));
+      if (shipTransferOne) shipTransferOne.addEventListener('click', () => window.ShippingPanel.transferAmount(1));
+      if (shipTransferHalf) shipTransferHalf.addEventListener('click', () => window.ShippingPanel.transferAmount('half'));
+      if (shipTransferStack) shipTransferStack.addEventListener('click', () => window.ShippingPanel.transferAmount('stack'));
 
       // ── Legend + old legend toggle removed — handled by menu now
       // ── Toast ──────────────────────────────────────────────
@@ -11728,148 +11727,8 @@
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
       }
 
-      let shippingSelected = { side: 'left', key: null }; // Used by the Shipping pane transfer controls.
-      let shippingAmount = 1; // Used by the Shipping pane stepper and transfer buttons.
-      const shippingActiveCat = { left: 'all', right: 'all' }; // Used by the Shipping pane category filters.
-
-      function getShippingBoxContents() {
-        return shippingBoxObject && shippingBoxObject.getContents ? shippingBoxObject.getContents() : {};
-      }
-
-      function getShippingKeys(side) {
-        const source = side === 'right' ? getShippingBoxContents() : inventory;
-        return Object.keys(ITEM_DEFS).filter(key => {
-          const def = ITEM_DEFS[key];
-          const cat = shippingActiveCat[side];
-          if (cat !== 'all' && def.cat !== cat) return false;
-          return (source[key] || 0) > 0;
-        });
-      }
-
-      function getShippingCount(side, key) {
-        return side === 'right' ? (getShippingBoxContents()[key] || 0) : (inventory[key] || 0);
-      }
-
-      function canShipKey(key) {
-        return BASE_PRICES[key] !== undefined;
-      }
-
-      function selectShippingItem(side, key) {
-        shippingSelected = { side, key };
-        shippingAmount = Math.max(1, Math.min(shippingAmount, getShippingCount(side, key) || 1));
-        buildShippingTransferUI();
-      }
-
-      function bumpShippingAmount(delta) {
-        const key = shippingSelected.key;
-        if (!key) return;
-        const max = Math.max(1, getShippingCount(shippingSelected.side, key));
-        shippingAmount = Math.max(1, Math.min(max, shippingAmount + delta));
-        buildShippingTransferUI();
-      }
-
-      function transferShippingAmount(mode) {
-        const key = shippingSelected.key;
-        if (!key || !shippingBoxObject) return;
-        const count = getShippingCount(shippingSelected.side, key);
-        if (count < 1) return;
-        let qty = shippingAmount;
-        if (mode === 'half') qty = Math.max(1, Math.floor(count / 2));
-        if (mode === 'stack') qty = count;
-        qty = Math.max(1, Math.min(qty, count));
-
-        let moved = 0;
-        if (shippingSelected.side === 'left') {
-          if (!canShipKey(key)) { showToast('That item cannot be shipped.', false); return; }
-          moved = shippingBoxObject.depositItem(key, qty);
-          if (moved > 0) showToast(`📦 Shipped ${moved}× ${ITEM_DEFS[key].label}`, true);
-        } else {
-          // Taking items back OUT of storage is owner/granted-farmhand only —
-          // depositing into it is always allowed.
-          if (!hasFarmPermission('storage')) {
-            showToast("Only the farm's owner (or a granted farmhand) can take from storage.", false);
-            return;
-          }
-          moved = shippingBoxObject.withdrawItem(key, qty);
-          if (moved > 0) showToast(`↩ Took back ${moved}× ${ITEM_DEFS[key].label}`, true);
-        }
-        if (moved < 1) return;
-        clampInventoryStack(key);
-        const remaining = getShippingCount(shippingSelected.side, key);
-        if (remaining < 1) shippingSelected.key = null;
-        shippingAmount = 1;
-        buildInventoryGrid();
-        buildShippingTransferUI();
-        refreshItemScroll();
-        saveMemberWorldData();
-      }
-
-      function renderShippingGrid(side) {
-        const grid = document.getElementById(side === 'left' ? 'shipLeftGrid' : 'shipRightGrid');
-        if (!grid) return;
-        grid.innerHTML = '';
-        const keys = getShippingKeys(side);
-        keys.forEach(key => {
-          const def = ITEM_DEFS[key];
-          const count = getShippingCount(side, key);
-          const blocked = side === 'left' && !canShipKey(key);
-          const slot = document.createElement('button');
-          slot.className = 'ship-slot' + (shippingSelected.side === side && shippingSelected.key === key ? ' selected' : '') + (blocked ? ' blocked' : '');
-          slot.dataset.side = side;
-          slot.dataset.key = key;
-          slot.innerHTML = `<span class="ship-slot-icon">${def.icon}</span><span class="ship-slot-count">×${count}</span>${side === 'right' ? '<span class="ship-slot-pending">BOX</span>' : ''}`;
-          slot.addEventListener('click', () => selectShippingItem(side, key));
-          grid.appendChild(slot);
-        });
-        if (keys.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'ship-footer';
-          empty.textContent = side === 'right' ? 'Shipping box is empty.' : 'No items in this filter.';
-          grid.appendChild(empty);
-        }
-      }
-
-      function buildShippingTransferUI() {
-        if (!document.getElementById('mpShipping')) return;
-        renderShippingGrid('left');
-        renderShippingGrid('right');
-
-        const leftStacks = Object.keys(ITEM_DEFS).filter(k => (inventory[k] || 0) > 0).length;
-        const boxTotal = shippingBoxObject && shippingBoxObject.getTotalItems ? shippingBoxObject.getTotalItems() : 0;
-        const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-        setText('shipLeftCap', `${leftStacks} stacks`);
-        setText('shipRightCap', boxTotal > 0 ? `${boxTotal} queued` : 'Empty');
-
-        const key = shippingSelected.key;
-        const def = key ? ITEM_DEFS[key] : null;
-        const count = key ? getShippingCount(shippingSelected.side, key) : 0;
-        const max = Math.max(1, count);
-        shippingAmount = Math.max(1, Math.min(shippingAmount, max));
-        const blocked = key && shippingSelected.side === 'left' && !canShipKey(key);
-        const direction = !key ? '↔' : (shippingSelected.side === 'left' ? '→ Box' : '← Bag');
-
-        setText('shipPreviewIcon', def ? def.icon : '📦');
-        setText('shipPreviewName', def ? `${def.label} ×${count}` : 'Select item');
-        setText('shipDirection', blocked ? 'Blocked' : direction);
-        setText('shipAmount', String(shippingAmount));
-        setText('shipLeftFooter', shippingSelected.side === 'left' && def ? `${def.label} ×${count}` : 'Select a player item.');
-        setText('shipRightFooter', shippingSelected.side === 'right' && def ? `${def.label} ×${count}` : 'Select a boxed item to take it back before sale.');
-        setText('shipDetailIcon', def ? def.icon : '📦');
-        setText('shipDetailName', def ? def.label : 'Shipping Box Transfer');
-        setText('shipDetailValue', def && canShipKey(key) ? `${BASE_PRICES[key]}g each` : (def ? 'Not sellable' : '—'));
-        setText('shipDetailDesc', def ? `${def.desc}${blocked ? ' This item stays in your bag because the shipping box only accepts sellable goods.' : ''}` : 'Move sellable crops and materials from the player bag into the shipping box. Select items already in the box to pull them back out before the timed sale.');
-        const tags = document.getElementById('shipDetailTags');
-        if (tags) tags.innerHTML = def ? def.tags.map(t => `<span class="ship-tag">${t}</span>`).join('') : '<span class="ship-tag">Player ↔ Box</span><span class="ship-tag">Instant transfer</span>';
-
-        const hasTransfer = !!key && count > 0 && !blocked;
-        ['shipAmtMinus','shipAmtPlus','shipTransferOne','shipTransferHalf','shipTransferStack'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.disabled = !hasTransfer;
-        });
-        setText('shipTransferOne', shippingSelected.side === 'left' ? 'Ship 1' : 'Take 1');
-        setText('shipTransferHalf', shippingSelected.side === 'left' ? 'Ship Half' : 'Take Half');
-        setText('shipTransferStack', shippingSelected.side === 'left' ? 'Ship Stack' : 'Take Stack');
-      }
+      // Shipping tab (player bag <-> shipping-box transfer UI) now lives
+      // in js/shipping-panel.js — call via window.ShippingPanel.build().
 
       function clearInventoryDetail(message = '← Select an item') {
         invSelectedKey = null;
@@ -23343,6 +23202,19 @@
         hostileObjects,
       });
 
+      window.ShippingPanel?.init({
+        inventory,
+        ITEM_DEFS,
+        BASE_PRICES,
+        getShippingBoxObject: () => shippingBoxObject,
+        showToast,
+        hasFarmPermission,
+        clampInventoryStack,
+        buildInventoryGrid,
+        refreshItemScroll,
+        saveMemberWorldData,
+      });
+
       window.DevSpawner?.init({
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
@@ -23774,7 +23646,7 @@
         showToast,
         saveMemberWorldData,
         buildInventoryGrid,
-        buildShippingTransferUI,
+        buildShippingTransferUI: () => window.ShippingPanel.build(),
         tileSurfaceY,
         scene,
         getDeliveryLog: () => deliveryLog,

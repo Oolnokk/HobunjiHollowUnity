@@ -315,6 +315,13 @@
   <script src="js/supply-page.js?v=20260807a"></script>
   <script src="js/whistle-equip.js?v=20260807a"></script>
   <script src="js/wildlife-debug-panel.js?v=20260807a"></script>
+  <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
+       ShippingPanel) — pure DOM/state, no other window.* system reads;
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.ShippingPanel.init(...)
+       during its own setup, and also wires boot-time shipping-tab button
+       listeners through window.ShippingPanel.* directly. -->
+  <script src="js/shipping-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
