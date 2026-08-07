@@ -126,6 +126,13 @@
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
   <script src="js/alchemy-system.js?v=20260807a"></script>
+  <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
+       redye panel, General Store clothing stock, and treasure loot all
+       draw from it. Self-contained aside from deps injected via init(), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls window.DyeSystem.init(...) during
+       its own setup. -->
+  <script src="js/dye-system.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

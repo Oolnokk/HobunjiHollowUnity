@@ -2209,54 +2209,6 @@
         // tab using wood, stone, and the blueprint.
       ];
 
-      // ── Dye catalog (see docs/config/scratchbones-config.js game.dyes) ──
-      // Single source of truth for every clothing dye color in the game —
-      // character creation's Collections tab, the redye system, the General
-      // Store's daily clothing stock, and treasure-chest loot all draw from
-      // this same catalog so a given dye always looks the same (exact hex,
-      // not an approximate CSS filter) no matter where it came from.
-      function getDyeCatalog() {
-        return window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
-      }
-      function getDyeById(dyeId) {
-        return getDyeCatalog().find(d => d.id === dyeId) || null;
-      }
-      // Trims a catalog entry down to the {h,s,v,hex,dyeId,label} shape
-      // clothing items store on colorA/colorB (see makeClothingItem in
-      // onboarding.js and makeClothingGearEntry above).
-      function dyeToClothingColor(dye) {
-        if (!dye) return null;
-        return { ...(dye.color || {}), hex: dye.hex, dyeId: dye.id, label: dye.label };
-      }
-      function ensureDyeCollection() {
-        if (!gearInventory) return;
-        if (!Array.isArray(gearInventory.dyeCollection)) {
-          gearInventory.dyeCollection = [...(window.SCRATCHBONES_CONFIG?.game?.dyes?.starterDyeIds || [])];
-        }
-      }
-      function ownsDye(dyeId) {
-        return Array.isArray(gearInventory?.dyeCollection) && gearInventory.dyeCollection.includes(dyeId);
-      }
-      function unlockDye(dyeId) {
-        ensureDyeCollection();
-        if (gearInventory.dyeCollection.includes(dyeId)) return false;
-        gearInventory.dyeCollection.push(dyeId);
-        saveGearInventory();
-        return true;
-      }
-      function ownedDyesByHue() {
-        const groups = new Map();
-        for (const dye of getDyeCatalog()) {
-          if (!ownsDye(dye.id)) continue;
-          const groupKey = dye.neutral ? 'neutral' : dye.hueFamilyId;
-          const groupLabel = dye.neutral ? 'Neutral' : dye.hueFamily;
-          if (!groups.has(groupKey)) groups.set(groupKey, { id: groupKey, label: groupLabel, dyes: [] });
-          groups.get(groupKey).dyes.push(dye);
-        }
-        for (const group of groups.values()) group.dyes.sort((a, b) => a.sortOrder - b.sortOrder);
-        return [...groups.values()];
-      }
-
       // Synchronous startup default — overwritten from docs/config/shops/
       // shop-stock.json's generalStoreWares.clothingRotation once it loads.
       let STORE_CLOTHING_PIECES = [
@@ -2273,7 +2225,7 @@
 
       function generateDailyClothingStock(day) {
         const stock = [];
-        const catalog = getDyeCatalog();
+        const catalog = window.DyeSystem.getCatalog();
         // Condition-eligible candidates only (e.g. a season-gated piece) —
         // falls back to the full list if conditions would otherwise empty
         // it out entirely, so a misconfigured pool never bricks the shop.
@@ -2291,8 +2243,8 @@
             slot:       piece.category,
             label:      dyeLbl + ' ' + piece.label,
             baseLabel:  piece.label,
-            colorA:     dyeToClothingColor(dyeA),
-            colorB:     dyeToClothingColor(dyeB),
+            colorA:     window.DyeSystem.toClothingColor(dyeA),
+            colorB:     window.DyeSystem.toClothingColor(dyeB),
             price:      piece.price,
             sellPrice:  Math.floor(piece.price * 0.4),
             sprite:     clothingSpriteForCosmetic(piece.id),
@@ -13702,7 +13654,7 @@
           bundle.potionKey = window.AlchemySystem.ensurePotionItemDef(effects, reagentKeys);
         }
         if (_rollTreasureChance('clothing', 0.25)) {
-          const catalog = getDyeCatalog();
+          const catalog = window.DyeSystem.getCatalog();
           const piece = STORE_CLOTHING_PIECES[Math.floor(rnd() * STORE_CLOTHING_PIECES.length)];
           const dyeA  = catalog[Math.floor(rnd() * catalog.length)];
           const dyeB  = piece.usesB ? catalog[Math.floor(rnd() * catalog.length)] : null;
@@ -13710,7 +13662,7 @@
           bundle.clothing = {
             uid: 'citem_chest_' + Date.now() + '_' + Math.floor(rnd() * 1e6),
             cosmeticId: piece.id, slot: piece.category, label: dyeLbl + ' ' + piece.label, baseLabel: piece.label,
-            colorA: dyeToClothingColor(dyeA), colorB: dyeToClothingColor(dyeB), price: piece.price, sellPrice: Math.floor(piece.price * 0.4),
+            colorA: window.DyeSystem.toClothingColor(dyeA), colorB: window.DyeSystem.toClothingColor(dyeB), price: piece.price, sellPrice: Math.floor(piece.price * 0.4),
             sprite: clothingSpriteForCosmetic(piece.id),
           };
         }
@@ -15780,10 +15732,10 @@
       function useMysteryDye(key) {
         const pool = MYSTERY_DYE_POOL_BY_ITEM_KEY[key];
         if (!pool || (inventory[key] || 0) < 1) return { ok: false, message: 'Nothing to use.' };
-        const candidates = getDyeCatalog().filter(d => !d.neutral && pool.hueFamilies.includes(d.hueFamily) && !ownsDye(d.id));
+        const candidates = window.DyeSystem.getCatalog().filter(d => !d.neutral && pool.hueFamilies.includes(d.hueFamily) && !window.DyeSystem.owns(d.id));
         if (!candidates.length) return { ok: false, message: `You already own every dye ${pool.label} can grant.` };
         const dye = candidates[Math.floor(Math.random() * candidates.length)];
-        unlockDye(dye.id);
+        window.DyeSystem.unlock(dye.id);
         inventory[key]--;
         clampInventoryStack(key);
         return { ok: true, message: `Unlocked ${dye.label} for your dye collection!` };
@@ -16990,7 +16942,7 @@
       }
 
       function openRedyePanel(slot, item) {
-        ensureDyeCollection();
+        window.DyeSystem.ensureCollection();
         const panel = document.getElementById('dyePanel');
         const titleEl = document.getElementById('dyePanelTitle');
         const subslotsEl = document.getElementById('dyePanelSubslots');
@@ -17012,10 +16964,10 @@
         const isWorn = () => gearInventory?.clothing?.[slot]?.uid === item.uid;
 
         function applyPreview() {
-          const dyeA = pendingDyeIdA ? getDyeById(pendingDyeIdA) : null;
-          const dyeB = hasSecondary && pendingDyeIdB ? getDyeById(pendingDyeIdB) : null;
-          if (dyeA) item.colorA = dyeToClothingColor(dyeA);
-          if (hasSecondary && dyeB) item.colorB = dyeToClothingColor(dyeB);
+          const dyeA = pendingDyeIdA ? window.DyeSystem.getById(pendingDyeIdA) : null;
+          const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
+          if (dyeA) item.colorA = window.DyeSystem.toClothingColor(dyeA);
+          if (hasSecondary && dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
           const dyeLbl = hasSecondary && dyeB ? ((dyeA || {}).label + ' & ' + dyeB.label) : (dyeA || {}).label;
           previewEl.innerHTML = '';
           if (dyeA) {
@@ -17053,7 +17005,7 @@
 
         function renderGroups() {
           groupsEl.innerHTML = '';
-          const groups = ownedDyesByHue();
+          const groups = window.DyeSystem.ownedByHue();
           if (!groups.length) {
             groupsEl.innerHTML = '<div class="dye-panel-empty">No dyes collected yet.</div>';
             return;
@@ -17097,8 +17049,8 @@
         document.getElementById('dyePanelClose').onclick = () => { revert(); closeRedyePanel(); };
         document.getElementById('dyePanelApply').onclick = () => {
           if (!pendingDyeIdA) { showToast('Pick a dye first.', false); return; }
-          const dyeA = getDyeById(pendingDyeIdA);
-          const dyeB = hasSecondary && pendingDyeIdB ? getDyeById(pendingDyeIdB) : null;
+          const dyeA = window.DyeSystem.getById(pendingDyeIdA);
+          const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
           const dyeLbl = hasSecondary && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
           item.label = dyeLbl + ' ' + (item.baseLabel || originalLabel);
           saveGearInventory();
@@ -29797,7 +29749,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
         ensureGearClothingCollection();
-        ensureDyeCollection();
+        window.DyeSystem.ensureCollection();
 
         // Personal stable — same lazy-seed pattern as the whistles block just
         // above: a character with no stable yet gets the starter dabinggi-hound
@@ -30198,6 +30150,11 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         saveMemberWorldData,
       });
 
+      window.DyeSystem?.init({
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+      });
+
       window.BountyBoard?.init({
         getQuestProgress: () => questProgress,
         setQuestStatus,
@@ -30239,8 +30196,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         saveMemberWorldData,
         despawnCreature,
         buildPackClothingSection,
-        getDyeCatalog,
-        dyeToClothingColor,
+        getDyeCatalog: window.DyeSystem.getCatalog,
+        dyeToClothingColor: window.DyeSystem.toClothingColor,
         clothingSpriteForCosmetic,
         DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
