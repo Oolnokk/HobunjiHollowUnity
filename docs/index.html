@@ -151,6 +151,13 @@
        must load before game.js, which calls window.WildTreasure.init(...)
        during its own setup. -->
   <script src="js/wild-treasure.js?v=20260807a"></script>
+  <!-- Farm livestock: barn AI, animal factories, harvest interaction,
+       breeding (window.FarmAnimals) — self-contained aside from deps
+       injected via init(), and reads window.DewVats at call time (already
+       global by then), so load order relative to the other systems above
+       doesn't matter; must load before game.js, which calls
+       window.FarmAnimals.init(...) during its own setup. -->
+  <script src="js/farm-animals.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
