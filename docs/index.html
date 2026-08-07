@@ -303,6 +303,18 @@
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
   <script src="js/farm-panel.js?v=20260807a"></script>
+  <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
+       whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
+       debug panel (window.WildlifeDebugPanel) — all read
+       window.ProceduralTasks/window.BountyBoard/window.WildlifeSpawn/
+       window.CreatureGenetics at call time (already global by then), so
+       load order relative to the other systems above doesn't matter; must
+       load before game.js, which calls each module's init(...) during its
+       own setup. -->
+  <script src="js/tasks-panel.js?v=20260807a"></script>
+  <script src="js/supply-page.js?v=20260807a"></script>
+  <script src="js/whistle-equip.js?v=20260807a"></script>
+  <script src="js/wildlife-debug-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

@@ -145,13 +145,13 @@
         buildEquipmentSlots();
         if (targetPanel === 'crafting') renderCraftingPanel();
         if (targetPanel === 'shipping') buildShippingTransferUI();
-        if (targetPanel === 'supplies') renderSupplyPage();
+        if (targetPanel === 'supplies') window.SupplyPage.render();
         if (targetPanel === 'generalStore') window.GeneralStore.render();
         if (targetPanel === 'carpenterShop') window.CarpenterShop.render();
         if (targetPanel === 'jubmirShop') window.JubmirShop.render();
         if (targetPanel === 'metalCraftShop') window.MetalCraftShop.render();
         if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
-        if (targetPanel === 'tasks') renderTasksPanel();
+        if (targetPanel === 'tasks') window.TasksPanel.render();
         if (targetPanel === 'relationships') window.RelationshipsPanel.render();
         auditInventorySizing();
       }
@@ -186,16 +186,16 @@
         if (id === 'farm') window.FarmPanel.render();
         if (id === 'stable') window.FarmPanel.renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
-        if (id === 'supplies') renderSupplyPage();
+        if (id === 'supplies') window.SupplyPage.render();
         if (id === 'generalStore') window.GeneralStore.render();
         if (id === 'carpenterShop') window.CarpenterShop.render();
         if (id === 'jubmirShop') window.JubmirShop.render();
         if (id === 'metalCraftShop') window.MetalCraftShop.render();
         if (id === 'alchemy') window.AlchemySystem.renderPanel();
-        if (id === 'tasks') renderTasksPanel();
+        if (id === 'tasks') window.TasksPanel.render();
         if (id === 'relationships') window.RelationshipsPanel.render();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
-        if (id === 'wildlife') renderWildlifeDebugPanel();
+        if (id === 'wildlife') window.WildlifeDebugPanel.render();
       }
 
       document.querySelectorAll('.mp-tab').forEach(tab => {
@@ -11192,7 +11192,7 @@
           showToast('📦 ' + o.qty + '× ' + item.name + ' delivered!', true);
         }
         deliveryLog = deliveryLog.slice(0, 12);
-        if (menuOpen) renderSupplyPage();
+        if (menuOpen) window.SupplyPage.render();
         // Tick sell crate clock
         worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
       }
@@ -11201,203 +11201,11 @@
         worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
       }
 
-      let supplyActiveCategory = 'seeds'; // Used by renderSupplyPage() to keep the longer catalog readable on mobile.
+      // Supplies tab (Supply Box ordering + pending deliveries/sale log)
+      // now lives in js/supply-page.js — call via window.SupplyPage.render().
 
-      function getSupplyItemCategory(item) {
-        // Used by the supply ordering pane; avoids hard-coding future catalog rows into the UI.
-        if (item.category) return item.category;
-        if (item.comingSoon) return 'livestock';
-        if (/Seed$|Seeds$/.test(item.key) || item.key === 'mulchBag') return 'seeds';
-        return 'all';
-      }
-
-      function getSupplyCategoryLabel(category) {
-        return ({ all: 'All', seeds: 'Seeds', furniture: 'Furniture', livestock: 'Livestock' })[category] || 'Supply';
-      }
-
-      function bindSupplyTabs() {
-        document.querySelectorAll('[data-supply-cat]').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.supplyCat === supplyActiveCategory);
-          btn.onclick = () => {
-            supplyActiveCategory = btn.dataset.supplyCat || 'seeds';
-            renderSupplyPage();
-          };
-        });
-      }
-
-      function renderSupplyPage() {
-        bindSupplyTabs();
-        const sectionTitle = document.getElementById('supplySectionTitle');
-        if (sectionTitle) sectionTitle.textContent = 'Supply Shop — ' + getSupplyCategoryLabel(supplyActiveCategory);
-        const list = document.getElementById('supplyShopList');
-        const deliveries = document.getElementById('supplyDeliveryList');
-        const goldEl = document.getElementById('supplyGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        if (!list) return;
-        const qtys = supplyBoxObject && supplyBoxObject.getQtys ? supplyBoxObject.getQtys() : {};
-        list.innerHTML = '';
-        const visibleSupplyItems = SUPPLY_CATALOG.filter(item => supplyActiveCategory === 'all' || getSupplyItemCategory(item) === supplyActiveCategory);
-        visibleSupplyItems.forEach(item => {
-          const qty = qtys[item.key] || 0;
-          const row = document.createElement('div');
-          row.className = 'shop-row' + (item.comingSoon ? ' coming-soon' : '');
-          row.innerHTML = `
-            <div class="sh-icon">${item.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${item.name}</div>
-              <div class="sh-desc">${item.desc}</div>
-              <div class="sh-price">${item.comingSoon ? 'Livestock system not active yet' : item.price + 'g per order'}</div>
-            </div>
-            <div class="shop-qty-ctrl">
-              <button class="shop-qty-btn" data-act="minus" ${item.comingSoon ? 'disabled' : ''}>−</button>
-              <span class="shop-qty-val">${item.comingSoon ? '—' : qty}</span>
-              <button class="shop-qty-btn" data-act="plus" ${item.comingSoon ? 'disabled' : ''}>+</button>
-            </div>
-            <button class="shop-buy-btn" data-act="buy" ${item.comingSoon ? 'disabled' : ''}>${item.comingSoon ? 'Soon' : 'Order'}</button>
-          `;
-          row.querySelector('[data-act="minus"]')?.addEventListener('click', () => {
-            qtys[item.key] = Math.max(0, (qtys[item.key] || 0) - 1);
-            renderSupplyPage();
-          });
-          row.querySelector('[data-act="plus"]')?.addEventListener('click', () => {
-            qtys[item.key] = Math.min(99, (qtys[item.key] || 0) + 1);
-            renderSupplyPage();
-          });
-          row.querySelector('[data-act="buy"]')?.addEventListener('click', () => {
-            const result = supplyBoxObject ? supplyBoxObject.onAction('obj_buy_' + item.key) : { ok: false, message: 'No supply box linked.' };
-            showToast(result.message, result.ok !== false);
-            renderSupplyPage();
-            buildInventoryGrid();
-            if (result.ok !== false) saveMemberWorldData();
-          });
-          list.appendChild(row);
-        });
-        if (visibleSupplyItems.length === 0) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📭</span><span class="dr-name">No entries in this supply category yet.</span><span class="dr-eta">—</span></div>';
-        }
-        if (deliveries) {
-          if (pendingOrders.length === 0 && deliveryLog.length === 0) {
-            deliveries.innerHTML = '<div class="delivery-row"><span class="dr-icon">📭</span><span class="dr-name">No pending deliveries or recent sales.</span><span class="dr-eta">—</span></div>';
-          } else {
-            const pending = pendingOrders.map(order => `<div class="delivery-row"><span class="dr-icon">${order.item.icon}</span><span class="dr-name">${order.qty}× ${order.item.name}</span><span class="dr-eta">Day ${order.arrivalDay}</span></div>`).join('');
-            const history = deliveryLog.map(line => `<div class="delivery-row received"><span class="dr-icon">${line.type === 'sale' ? '🟧' : '📦'}</span><span class="dr-name">${line.text}</span><span class="dr-eta">Done</span></div>`).join('');
-            deliveries.innerHTML = pending + history;
-          }
-        }
-      }
-
-      // ── Tasks panel (board requests + accepted NPC favors) ───────────
-      function renderTasksPanel() {
-        window.ProceduralTasks.maybeRefreshBoardTask();
-        window.BountyBoard.maybeRefreshPosting();
-
-        // Today's board notice — not yet in the player's log. Taking it is
-        // the only action this panel offers; turning a task in (board or
-        // favor) always happens by talking to the NPC who posted/asked it.
-        const postingEl = document.getElementById('tasksBoardPosting');
-        if (postingEl) {
-          postingEl.innerHTML = '';
-          const posting = window.ProceduralTasks.getCurrentBoardPosting();
-          if (posting) {
-            const def = ITEM_DEFS[posting.itemKey];
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.innerHTML = `
-              <div class="sh-icon">📋</div>
-              <div class="sh-info">
-                <div class="sh-name">${esc(posting.npcName)} wants ${esc(def?.label || posting.itemKey)} ×${posting.qty}</div>
-                <div class="sh-desc">Reward: ${posting.rewardGold}g + ${posting.rewardFriendship} friendship with ${esc(posting.npcName)} — turn in to them once you have it.</div>
-              </div>
-              <button class="shop-buy-btn" data-take="${posting.id}">Take Quest</button>
-            `;
-            row.querySelector('[data-take]')?.addEventListener('click', () => {
-              window.ProceduralTasks.takeBoardTask(posting.id);
-              renderTasksPanel();
-            });
-            postingEl.appendChild(row);
-          } else {
-            postingEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">📋</span><span class="dr-name">Nothing posted right now — check back tomorrow.</span><span class="dr-eta">—</span></div>';
-          }
-        }
-
-        // Wanted poster for a bandit captain — separate from the board
-        // notice above (its own slot, its own refresh rule: see
-        // maybeRefreshBountyPosting). Accepting marks that captain's camp
-        // on the map the moment it's known (see updateBountyTracking) and
-        // pays out automatically once the camp is destroyed — no NPC
-        // turn-in, unlike board/favor tasks.
-        const bountyEl = document.getElementById('tasksBountyPosting');
-        if (bountyEl) {
-          bountyEl.innerHTML = '';
-          const posting = window.BountyBoard.getCurrentPosting();
-          if (posting) {
-            const rank = window.BountyBoard.RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
-            const zoneLabel = WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.innerHTML = `
-              <div class="sh-icon">🎯</div>
-              <div class="sh-info">
-                <div class="sh-name">Wanted: ${esc(posting.captainName)} — ${esc(rank)}</div>
-                <div class="sh-desc">Last seen in the ${esc(zoneLabel)}. Destroy his camp for ${posting.rewardGold}g.</div>
-              </div>
-              <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
-            `;
-            row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
-              window.BountyBoard.take(posting.id);
-              renderTasksPanel();
-            });
-            bountyEl.appendChild(row);
-          } else {
-            bountyEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">🎯</span><span class="dr-name">No bounties posted right now.</span><span class="dr-eta">—</span></div>';
-          }
-        }
-
-        // The player's actual quest log — everything accepted, board,
-        // favor, or an active bounty, with no completion deadline. Read-
-        // only: no turn-in button here on purpose (see above) -- a bounty
-        // resolves itself via updateBountyTracking, not this panel.
-        const list = document.getElementById('tasksList');
-        if (!list) return;
-        list.innerHTML = '';
-        const active = Object.entries(questProgress)
-          .filter(([, st]) => st.status === 'available' && ['board', 'favor', 'bounty'].includes(st.progress?.kind))
-          .map(([id, st]) => ({ id, ...st.progress }))
-          .sort((a, b) => (a.kind === 'board' ? 0 : a.kind === 'favor' ? 1 : 2) - (b.kind === 'board' ? 0 : b.kind === 'favor' ? 1 : 2));
-        if (!active.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">📜</span><span class="dr-name">No quests in your log yet.</span><span class="dr-eta">—</span></div>';
-          return;
-        }
-        active.forEach(task => {
-          const row = document.createElement('div');
-          row.className = 'shop-row';
-          if (task.kind === 'bounty') {
-            const rank = window.BountyBoard.RANK_LABELS[task.tier] || `Tier ${task.tier}`;
-            const zoneLabel = WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
-            const marked = window.BountyBoard.markers.has(task.id);
-            row.innerHTML = `
-              <div class="sh-icon">🎯</div>
-              <div class="sh-info">
-                <div class="sh-name">Bounty: ${esc(task.captainName)} — ${esc(rank)}</div>
-                <div class="sh-desc">${esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : 'Still tracking him down...'} Reward: ${task.rewardGold}g on his camp\'s destruction.</div>
-              </div>
-            `;
-          } else {
-            const def = ITEM_DEFS[task.itemKey];
-            const have = inventory[task.itemKey] || 0;
-            const source = task.kind === 'board' ? `${esc(task.npcName)}'s board request` : `${esc(task.npcName)}'s favor`;
-            row.innerHTML = `
-              <div class="sh-icon">${task.kind === 'board' ? '📋' : '💌'}</div>
-              <div class="sh-info">
-                <div class="sh-name">${source} — ${esc(def?.label || task.itemKey)} ×${task.qty}</div>
-                <div class="sh-desc">Have ${have}/${task.qty}. Reward: ${task.rewardGold}g + ${task.rewardFriendship} friendship. Turn in to ${esc(task.npcName)}.</div>
-              </div>
-            `;
-          }
-          list.appendChild(row);
-        });
-      }
-
+      // Tasks tab (board requests + accepted NPC favors + active bounty) now
+      // lives in js/tasks-panel.js — call via window.TasksPanel.render().
       // ── Relationships panel (friendship tier per NPC talked to) ──────
       // Relationships tab render now lives in js/relationships-panel.js —
       // call via window.RelationshipsPanel.render().
@@ -13136,59 +12944,11 @@
           empty.textContent = 'No collected clothing in gear.';
           sec.appendChild(empty);
         }
-        buildWhistleEquipUI();
+        window.WhistleEquip.build();
       }
 
-      function equipWhistle(whistleId) {
-        setEquipmentSlot('whistle', whistleId);
-        buildWhistleEquipUI();
-      }
-
-      function unequipWhistle() {
-        setEquipmentSlot('whistle', null);
-        buildWhistleEquipUI();
-      }
-
-      function buildWhistleEquipUI() {
-        const sec = document.getElementById('invWhistleSection');
-        if (!sec) return;
-        sec.innerHTML = '';
-        const whistles = gearInventory?.whistles || [];
-        if (!whistles.length) {
-          const empty = document.createElement('div');
-          empty.className = 'inv-gear-extra-empty';
-          empty.textContent = 'No whistles in gear.';
-          sec.appendChild(empty);
-          return;
-        }
-        const row = document.createElement('div');
-        row.className = 'inv-equip-row';
-        for (const whistle of whistles) {
-          const def = CREATURE_DB[whistle.creatureKey];
-          const equipped = equipmentSlots.whistle === whistle.id;
-          const cell = document.createElement('div');
-          cell.className = 'inv-equip-slot occupied' + (equipped ? ' active-slot' : '');
-          cell.setAttribute('title', `${whistle.name} (${def?.label || whistle.creatureKey})` + (equipped ? ' — equipped' : ' — click to equip'));
-          if (def?.sprites?.idle) {
-            const img = document.createElement('img');
-            img.src = def.sprites.idle; img.className = 'ies-sprite'; img.alt = whistle.name;
-            cell.appendChild(img);
-          }
-          if (equipped) {
-            const unBtn = document.createElement('button');
-            unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unequip ' + whistle.name;
-            unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipWhistle(); });
-            cell.appendChild(unBtn);
-          }
-          const lbl = document.createElement('span');
-          lbl.className = 'ies-label';
-          lbl.textContent = whistle.name;
-          cell.appendChild(lbl);
-          cell.addEventListener('click', () => equipWhistle(whistle.id));
-          row.appendChild(cell);
-        }
-        sec.appendChild(row);
-      }
+      // equipWhistle/unequipWhistle/buildWhistleEquipUI now live in
+      // js/whistle-equip.js — call via window.WhistleEquip.build().
 
       let activeItemIndex = 0;
       // Declared before createInitialGrid() because recomputeWater() (called
@@ -20083,67 +19843,12 @@
       }
       document.getElementById('devTeleportDenBtn')?.addEventListener('click', teleportToRandomDen);
 
-      // ── Wildlife/genotype debug panel (🧬 Wildlife tab) ─────────────
-      function renderWildlifeDebugPanel() {
-        const container = document.getElementById('wildlifeDenList');
-        if (!container) return;
-        if (!window.WildlifeSpawn.getDenGenotypes().size) {
-          container.innerHTML = '<div style="opacity:.6;padding:8px 0">No den packs generated yet this session — enter a wilderness zone with wild dens, or force a Tothal Shift below, to populate this list.</div>';
-          return;
-        }
-        const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
-        const rows = [];
-        // Keys are now `${cavernMapId}|${family}` (see getOrMakeDenGenotype)
-        // since one den can independently hold a gar-wolf-family genotype
-        // and a uumkaoii-family genotype at once — split that back apart to
-        // display each family with its own shape (base+patterns vs
-        // fur+plates) instead of assuming every entry is gar-wolf-shaped.
-        for (const [key, genotype] of window.WildlifeSpawn.getDenGenotypes()) {
-          const sepIdx = key.lastIndexOf('|');
-          const cavernMapId = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
-          const family = sepIdx >= 0 ? key.slice(sepIdx + 1) : 'gar-wolf';
-          const zoneId = window.WildlifeSpawn.denCavernZoneOf(cavernMapId) || '(unknown zone)';
-          const den = _zoneLayouts.get(zoneId)?.dens?.find(d => window.WildlifeSpawn.denCavernMapId(zoneId, d.id) === cavernMapId);
-          const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
-          let bodyHtml;
-          if (family === 'uumkaoii') {
-            const furColor = genotype.fur?.color, platesColor = genotype.plates?.color;
-            bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + esc(window.CreatureGenetics.paletteName(furColor)) : '(none)'}</div>
-              <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + esc(window.CreatureGenetics.paletteName(platesColor)) : '(none)'}</div>`;
-          } else {
-            const patternIds = window.CreatureGenetics.PATTERN_DEFS[family] || [];
-            const baseColor = genotype.base?.color;
-            const baseHtml = baseColor ? `${swatch(baseColor, 13)}${esc(window.CreatureGenetics.paletteName(baseColor))}` : '(no base)';
-            const patternHtml = patternIds.map(id => {
-              const layer = genotype[id];
-              const on = layer?.enabled && layer.copies > 0;
-              return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${esc(id)}</span>`;
-            }).join(' &middot; ');
-            bodyHtml = `<div style="margin-top:3px">Base: ${baseHtml}</div>
-              <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>`;
-          }
-          // Which live creatures are currently using this exact genotype
-          // object, if any are spawned right now — confirms the whole pack
-          // (and its Den-Mother) really do share one roll.
-          const aliveKinds = new Set();
-          for (const c of hostileObjects) if (c.genotype === genotype) aliveKinds.add(c.creatureKey);
-          const teleportBtn = den
-            ? `<button class="settings-small-btn wildlife-den-teleport-btn" data-zone="${esc(zoneId)}" data-den="${esc(den.id)}" style="font-size:10px;padding:2px 8px">Teleport</button>`
-            : '';
-          rows.push(`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-            <div>
-              <div style="font-weight:600;color:#e5e7eb">${esc(zoneId)} — den ${esc(denLabel)} <span style="opacity:.5;font-weight:400">(${esc(family)})</span>${aliveKinds.size ? ` <span style="opacity:.6;font-weight:400">(${[...aliveKinds].map(esc).join(', ')} alive now)</span>` : ' <span style="opacity:.5;font-weight:400">(none alive right now)</span>'}</div>
-              ${bodyHtml}
-            </div>
-            ${teleportBtn}
-          </div>`);
-        }
-        container.innerHTML = rows.join('');
-      }
-      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', renderWildlifeDebugPanel);
+      // Wildlife/genotype debug panel (🧬 Wildlife tab) now lives in
+      // js/wildlife-debug-panel.js — call via window.WildlifeDebugPanel.render().
+      document.getElementById('wildlifeRefreshBtn')?.addEventListener('click', () => window.WildlifeDebugPanel.render());
       document.getElementById('wildlifeShiftBtn')?.addEventListener('click', async () => {
         await checkTothalShift(true);
-        renderWildlifeDebugPanel();
+        window.WildlifeDebugPanel.render();
       });
       // Delegated so it keeps working across every re-render of the list
       // (container.innerHTML replacement would otherwise drop per-button
@@ -23604,6 +23309,38 @@
         setActiveShoulderPetId: (v) => { activeShoulderPetId = v; },
         getActiveCompanionId: () => activeCompanionId,
         setActiveCompanionId: (v) => { activeCompanionId = v; },
+      });
+
+      window.TasksPanel?.init({
+        ITEM_DEFS,
+        esc,
+        WMAP_ZONE_LABELS,
+        getQuestProgress: () => questProgress,
+        inventory,
+      });
+
+      window.SupplyPage?.init({
+        inventory,
+        getSupplyBoxObject: () => supplyBoxObject,
+        SUPPLY_CATALOG,
+        showToast,
+        buildInventoryGrid,
+        saveMemberWorldData,
+        getPendingOrders: () => pendingOrders,
+        getDeliveryLog: () => deliveryLog,
+      });
+
+      window.WhistleEquip?.init({
+        setEquipmentSlot,
+        getGearInventory: () => gearInventory,
+        CREATURE_DB,
+        equipmentSlots,
+      });
+
+      window.WildlifeDebugPanel?.init({
+        esc,
+        _zoneLayouts,
+        hostileObjects,
       });
 
       window.DevSpawner?.init({
