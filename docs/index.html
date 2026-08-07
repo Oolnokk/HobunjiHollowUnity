@@ -223,6 +223,23 @@
        matter; must load before game.js, which calls
        window.BanditCombatLog.init(...) during its own setup. -->
   <script src="js/bandit-combat-log.js?v=20260807a"></script>
+  <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
+       aside from deps injected via init(), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.ClimbSystem.init(...) during its own setup. -->
+  <script src="js/climb-system.js?v=20260807a"></script>
+  <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
+       (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
+       at draw time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.WildernessMap.init(...) during its own setup. -->
+  <script src="js/wilderness-map.js?v=20260807a"></script>
+  <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
+       avatars (window.PerpRotation) — self-contained aside from deps
+       injected via init(), so load order relative to the other systems
+       above doesn't matter; must load before game.js, which calls
+       window.PerpRotation.init(...) during its own setup. -->
+  <script src="js/perp-rotation.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

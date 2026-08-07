@@ -182,7 +182,7 @@
         if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
         if (id === 'crafting') renderCraftingPanel();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
-        if (id === 'map') renderWildernessMapPanel();
+        if (id === 'map') window.WildernessMap.renderMapPanel();
         if (id === 'farm') renderFarmPanel();
         if (id === 'stable') renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
@@ -3800,17 +3800,17 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
-        if (CREATURE_PLANE_ROT_MODE === 'snap') {
+        if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          const { target: pngTarget, snap } = creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
-        } else if (CREATURE_PLANE_ROT_MODE === 'sway') {
+        } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
           const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
-          const pngTarget = creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
+          const pngTarget = window.PerpRotation.creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else { // 'halt'
-          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), CREATURE_PERP_DEAD_RAD);
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
           if (pngSnapTo !== null) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         }
@@ -5081,21 +5081,8 @@
       };
 
       // ── Locales (docs/tools/locale-editor/, docs/config/locales/) ──────────
-      // Leaf & Pahu's House ("Little Swamp House" above) has a fixed,
-      // non-relocating anchor via TOTHAL_PRESERVED_TRANSITIONS -- a real
-      // building interior is meant to be authored at that same fixed spot
-      // later, so its position never changes and the wilderness map (see the
-      // map UI) can just list it here as a constant. Everything else --
-      // the Researcher's Tent and the Great Fey shrines -- gets stamped
-      // fresh into the regenerated wilderness by the generator itself (see
-      // stampLocales in wilderness-map-generator.js): their location
-      // genuinely reshuffles with the rest of the terrain on every Tothal
-      // Shift, which is why the map only shows their *current* position once
-      // you've found them before (or always, for the Tent -- see its
-      // alwaysVisibleOnMap placement flag).
-      const FIXED_LOCALE_LANDMARKS = [
-        { localeId: 'locale_leaf_pahu_house', name: "Leaf & Pahu's House", category: 'dwelling', zoneId: 'map_eastern_mire', col: 34, row: 29 },
-      ];
+      // FIXED_LOCALE_LANDMARKS (Leaf & Pahu's House's fixed map anchor) now
+      // lives in js/wilderness-map.js alongside the rest of the map system.
 
       // Fetched once per page load and cached -- the locale JSON files rarely
       // change mid-session, and every Tothal Shift needs the same list.
@@ -5751,310 +5738,18 @@
       }
       window.forceTothalShift = () => checkTothalShift(true);
 
-      // ── Wilderness map: fog-of-war + locale discovery ──────────────────
-      // Two kinds of state, deliberately kept separate:
-      //  - Per-zone fog (what terrain you've walked near) is bulky, cheap to
-      //    regenerate, and meaningless once a Tothal Shift reshapes that
-      //    zone's terrain -- stored outside hobunjiSaveMeta, tagged with the
-      //    Tothal year it was revealed under, and thrown away/rebuilt blank
-      //    the moment that tag goes stale.
-      //  - Discovered locales (have you ever found Leaf & Pahu's House, the
-      //    Researcher's Tent, or a Great Fey shrine) is small and meant to
-      //    last forever -- stored in hobunjiSaveMeta like the rest of the
-      //    world's permanent state (see _saveTothalYear et al. above), and
-      //    updated (never cleared) every time you rediscover one after a
-      //    shift has moved it.
-      const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
-      const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
-
-      function _fogStorageKey(worldId, zoneId) { return `hobunji_zone_fog_v1_${worldId}_${zoneId}`; }
-
-      function _bitsToBase64(bytes) {
-        let bin = '';
-        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        return btoa(bin);
-      }
-      function _base64ToBits(b64, minBytes) {
-        const bin = atob(b64);
-        const bytes = new Uint8Array(Math.max(bin.length, minBytes));
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        return bytes;
-      }
-
-      function _loadZoneFog(zoneId) {
-        const layout = _zoneLayouts.get(zoneId);
-        if (!layout) return null;
-        const year = currentTothalYear();
-        const cached = _fogCache.get(zoneId);
-        if (cached && cached.year === year && cached.cols === layout.cols && cached.rows === layout.rows) return cached;
-        const worldId = _tothalWorldId() || 'default';
-        let entry = null;
-        try {
-          const raw = localStorage.getItem(_fogStorageKey(worldId, zoneId));
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.year === year && parsed.cols === layout.cols && parsed.rows === layout.rows) {
-              entry = { year, cols: parsed.cols, rows: parsed.rows, bits: _base64ToBits(parsed.bits, Math.ceil(parsed.cols * parsed.rows / 8)) };
-            }
-          }
-        } catch {}
-        if (!entry) entry = { year, cols: layout.cols, rows: layout.rows, bits: new Uint8Array(Math.ceil(layout.cols * layout.rows / 8)) };
-        _fogCache.set(zoneId, entry);
-        return entry;
-      }
-
-      function _saveZoneFog(zoneId) {
-        const entry = _fogCache.get(zoneId);
-        if (!entry) return;
-        const worldId = _tothalWorldId() || 'default';
-        try {
-          localStorage.setItem(_fogStorageKey(worldId, zoneId), JSON.stringify({ year: entry.year, cols: entry.cols, rows: entry.rows, bits: _bitsToBase64(entry.bits) }));
-        } catch {}
-      }
-
-      function _fogIsRevealed(entry, c, r) {
-        if (!entry || c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
-        const idx = r * entry.cols + c;
-        return (entry.bits[idx >> 3] & (1 << (idx & 7))) !== 0;
-      }
-      function _fogReveal(entry, c, r) {
-        if (c < 0 || r < 0 || c >= entry.cols || r >= entry.rows) return false;
-        const idx = r * entry.cols + c;
-        const byte = idx >> 3, bit = 1 << (idx & 7);
-        if (entry.bits[byte] & bit) return false;
-        entry.bits[byte] |= bit;
-        return true;
-      }
-
-      // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
-      function _loadDiscoveredLocales() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return {};
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {};
-        } catch { return {}; }
-      }
-      function _saveDiscoveredLocales(discovered) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.discoveredLocales = discovered;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      // All currently-placed locale instances this session, fixed + randomly
-      // stamped: [{ localeId, name, category, zoneId, col, row, fixed, alwaysVisible }].
-      function _allLocaleInstances() {
-        const out = FIXED_LOCALE_LANDMARKS.map(f => ({ localeId: f.localeId, name: f.name, category: f.category, zoneId: f.zoneId, col: f.col, row: f.row, fixed: true, alwaysVisible: false }));
-        for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
-          const layout = _zoneLayouts.get(zoneId);
-          for (const inst of (layout?.localeInstances || [])) {
-            out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !!inst.alwaysVisible });
-          }
-        }
-        return out;
-      }
-
-      // Called whenever fog newly reveals ground in `zoneId` -- checks every
-      // locale instance currently placed there against the just-revealed
-      // radius and flags it discovered forever. Discovery only ever records
-      // *that* a locale was found, never *where* -- the map always draws
-      // discovered locales from _allLocaleInstances()'s live current
-      // placement, so "current location... if you've discovered them
-      // before" holds even after a later Tothal Shift moves it, with no
-      // need to physically revisit it again first.
-      function _checkLocaleDiscovery(zoneId, pc, pr) {
-        const discovered = _loadDiscoveredLocales();
-        let changed = false;
-        for (const inst of _allLocaleInstances()) {
-          if (inst.zoneId !== zoneId || discovered[inst.localeId]) continue;
-          const dist = Math.hypot(inst.col - pc, inst.row - pr);
-          if (dist > FOG_REVEAL_RADIUS) continue;
-          discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: currentTothalYear() };
-          changed = true;
-          showToast(`Discovered: ${inst.name}`, true);
-        }
-        if (changed) _saveDiscoveredLocales(discovered);
-      }
-
-      let _lastFogRevealTile = null;
-      function updateZoneFogAroundPlayer() {
-        if (!_isZoneArea(currentArea)) return;
-        const zoneId = currentArea;
-        const entry = _loadZoneFog(zoneId);
-        if (!entry) return;
-        const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
-        if (_lastFogRevealTile && _lastFogRevealTile.zoneId === zoneId && _lastFogRevealTile.c === pc && _lastFogRevealTile.r === pr) return;
-        _lastFogRevealTile = { zoneId, c: pc, r: pr };
-        let changed = false;
-        const R = FOG_REVEAL_RADIUS, R2 = R * R;
-        for (let dr = -R; dr <= R; dr++) {
-          for (let dc = -R; dc <= R; dc++) {
-            if (dc * dc + dr * dr > R2) continue;
-            if (_fogReveal(entry, pc + dc, pr + dr)) changed = true;
-          }
-        }
-        if (changed) { _saveZoneFog(zoneId); }
-        _checkLocaleDiscovery(zoneId, pc, pr);
-      }
-
-      // ── Wilderness map rendering (shared by the minimap widget and the
-      // full-screen Map pane) ─────────────────────────────────────────────
+      // Wilderness fog-of-war, discovered-locale tracking, and map
+      // rendering (minimap widget + full-screen Map panel) now live in
+      // js/wilderness-map.js (window.WildernessMap) — see its init(deps)
+      // call below for the shared game.js state it's threaded. Kept here
+      // (not moved into that module) since the Tasks panel and
+      // window.BountyBoard also read it.
       const WMAP_ZONE_LABELS = {
         map_northern_cliffs: 'Northern Cliffs',
         map_southern_cloud_forest: 'Southern Cloud Forest',
         map_western_slope: 'Western Slope',
         map_eastern_mire: 'Eastern Mire',
       };
-      const WMAP_TERRAIN_COLORS = {
-        grass: '#2f6b3a', weeds: '#3f7a3f', shrub: '#265a30', path: '#b8956a',
-        rock: '#6b6f76', river: '#2f6fb8', stream: '#4f9bd9', waterfall: '#bfe9f7',
-        tilled: '#5a4327', raised: '#7a6248', trench: '#2a1f16', paddy: '#33628a', ramp: '#8f8460',
-      };
-      const WMAP_LOCALE_COLORS = { dwelling: '#7fe89a', great_fey_shrine: '#c084fc', story_poi: '#6ec6f0', misc: '#f0f0f0' };
-
-      function _drawWildernessMapOnCanvas(canvas, zoneId, opts = {}) {
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width, h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#05070a';
-        ctx.fillRect(0, 0, w, h);
-        const layout = zoneId ? _zoneLayouts.get(zoneId) : null;
-        if (!layout) {
-          ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.font = '13px system-ui';
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText('Not yet explored', w / 2, h / 2);
-          return;
-        }
-        const cols = layout.cols, rows = layout.rows;
-        const scaleX = w / cols, scaleY = h / rows;
-        const entry = _loadZoneFog(zoneId);
-        const cw = Math.ceil(scaleX), ch = Math.ceil(scaleY);
-        for (const tile of layout.tiles) {
-          if (!_fogIsRevealed(entry, tile.c, tile.r)) continue;
-          ctx.fillStyle = WMAP_TERRAIN_COLORS[tile.type] || WMAP_TERRAIN_COLORS.grass;
-          ctx.fillRect(Math.floor(tile.c * scaleX), Math.floor(tile.r * scaleY), cw, ch);
-        }
-        const markerR = Math.max(3, Math.min(scaleX, scaleY) * 1.4);
-        const discovered = _loadDiscoveredLocales();
-        for (const inst of _allLocaleInstances()) {
-          if (inst.zoneId !== zoneId) continue;
-          if (!inst.alwaysVisible && !discovered[inst.localeId]) continue;
-          const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, markerR, 0, Math.PI * 2);
-          ctx.fillStyle = WMAP_LOCALE_COLORS[inst.category] || WMAP_LOCALE_COLORS.misc;
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1; ctx.stroke();
-        }
-        // Threats a companion's Perception has sensed nearby (see
-        // updateCompanionPerception) — a distinct red danger marker rather
-        // than a WMAP_LOCALE_COLORS dot, since this is a temporary alert
-        // tied to an active, uncleared threat, not a permanently-remembered
-        // point of interest. Disappears the moment the threat is actually
-        // cleared, at which point it's pruned from _perceivedThreats itself.
-        const threatMarkerR = Math.max(4, markerR * 1.2);
-        for (const info of window.BanditCamps.perceivedThreats.values()) {
-          if (info.zoneId !== zoneId) continue;
-          const mx = info.col * scaleX, my = info.row * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, threatMarkerR, 0, Math.PI * 2);
-          ctx.fillStyle = '#c0392b';
-          ctx.fill();
-          ctx.strokeStyle = '#2a0d0a'; ctx.lineWidth = 1.5; ctx.stroke();
-          ctx.fillStyle = '#fff2d0';
-          ctx.font = `bold ${Math.max(7, Math.round(threatMarkerR * 1.1))}px system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText('!', mx, my + 0.5);
-        }
-        // An accepted bounty's target camp, once its actual location is
-        // known (see updateBountyTracking) -- a gold skull marker so it
-        // reads as "wanted target" rather than the red !  of a sensed
-        // threat or an ordinary discovered-locale dot. Stays up until the
-        // camp is confirmed destroyed, at which point the bounty completes
-        // and this is pruned from _bountyMarkers itself.
-        const bountyMarkerR = Math.max(4, markerR * 1.25);
-        for (const info of window.BountyBoard.markers.values()) {
-          if (info.zoneId !== zoneId) continue;
-          const mx = info.col * scaleX, my = info.row * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, bountyMarkerR, 0, Math.PI * 2);
-          ctx.fillStyle = '#e0b23c';
-          ctx.fill();
-          ctx.strokeStyle = '#4a3308'; ctx.lineWidth = 1.5; ctx.stroke();
-          ctx.fillStyle = '#2a1c05';
-          ctx.font = `bold ${Math.max(7, Math.round(bountyMarkerR * 1.1))}px system-ui`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText('☠', mx, my + 0.5);
-        }
-        // Garanki Gabu's live position, drawn as his own portrait (the same
-        // baked head-with-cosmetics canvas his world model and dialogue
-        // portrait use — see makeNpcWalker's avatarFrontCanvas) instead of a
-        // plain dot, so he reads as a person to go find rather than another
-        // static map marker. Tracks whichever zone he's actually in right
-        // now, independent of which zone tab the player happens to be
-        // standing in or viewing.
-        const garanki = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
-        if (garanki && garanki.area === zoneId && garanki.avatarFrontCanvas) {
-          const gx = garanki.root.position.x * scaleX, gy = garanki.root.position.z * scaleY;
-          const gr = Math.max(4, markerR * 1.3);
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-          ctx.closePath();
-          ctx.clip();
-          ctx.drawImage(garanki.avatarFrontCanvas, gx - gr, gy - gr, gr * 2, gr * 2);
-          ctx.restore();
-          ctx.beginPath();
-          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-          ctx.strokeStyle = '#f0d060'; ctx.lineWidth = 1.5; ctx.stroke();
-        }
-        if (opts.showPlayer) {
-          const mx = (player.x / TILE) * scaleX, my = (player.y / TILE) * scaleY;
-          ctx.beginPath();
-          ctx.arc(mx, my, Math.max(3, markerR * 0.8), 0, Math.PI * 2);
-          ctx.fillStyle = '#f9e28a';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
-        }
-      }
-
-      function renderWildernessMinimap() {
-        const widget = document.getElementById('minimapWidget');
-        const canvas = document.getElementById('minimapCanvas');
-        if (!widget || !canvas) return;
-        if (!_isZoneArea(currentArea)) { widget.classList.remove('show'); return; }
-        widget.classList.add('show');
-        _drawWildernessMapOnCanvas(canvas, currentArea, { showPlayer: true });
-      }
-
-      let _wmapActiveZone = null;
-      function renderWildernessMapPanel() {
-        const tabsEl = document.getElementById('wmapZoneTabs');
-        const canvas = document.getElementById('wildernessMapCanvas');
-        if (!tabsEl || !canvas) return;
-        const zoneIds = (typeof WildernessMapGenerator !== 'undefined') ? WildernessMapGenerator.zoneMapIds() : [];
-        if (!zoneIds.length) { tabsEl.innerHTML = ''; _drawWildernessMapOnCanvas(canvas, null); return; }
-        if (!_wmapActiveZone || !zoneIds.includes(_wmapActiveZone)) {
-          _wmapActiveZone = _isZoneArea(currentArea) ? currentArea : zoneIds[0];
-        }
-        tabsEl.innerHTML = '';
-        for (const zoneId of zoneIds) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'wmap-zone-tab' + (zoneId === _wmapActiveZone ? ' active' : '');
-          btn.textContent = WMAP_ZONE_LABELS[zoneId] || zoneId;
-          btn.addEventListener('click', () => { _wmapActiveZone = zoneId; renderWildernessMapPanel(); });
-          tabsEl.appendChild(btn);
-        }
-        _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
-      }
 
       // Devtools/QA hook for the cliff-climbing feature — mirrors
       // window.forceTothalShift's role of poking otherwise-input-driven
@@ -6097,8 +5792,8 @@
 
       window.__climbDebug = {
         getPlayer: () => player,
-        getClimbTarget,
-        startClimb,
+        getClimbTarget: window.ClimbSystem.getClimbTarget,
+        startClimb: window.ClimbSystem.startClimb,
         getActiveGrid,
         getCurrentArea: () => currentArea,
         enterZone,
@@ -6642,8 +6337,8 @@
       function performContextAction() {
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
-        const climb = getClimbTarget();
-        if (climb) { startClimb(climb); return; }
+        const climb = window.ClimbSystem.getClimbTarget();
+        if (climb) { window.ClimbSystem.startClimb(climb); return; }
         performDodge();
       }
 
@@ -9515,7 +9210,7 @@
             root.position.z += dz / d * movedTiles;
             this._tickFootsteps(movedTiles);
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
-            const { effectiveTarget, snapTo } = perpClamp(this.perpState, rawRot, cameraRelativePerps());
+            const { effectiveTarget, snapTo } = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativePerps());
             if (snapTo !== null) this.rot = effectiveTarget;
             else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
             root.rotation.y = this.rot;
@@ -14791,7 +14486,7 @@
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
         if (player.climbing) {
-          updateClimb(dt);
+          window.ClimbSystem.updateClimb(dt);
           return;
         }
 
@@ -15032,7 +14727,7 @@
               facingAngle += diff * Math.min(1, FACING_LERP * dt);
             } else if (cardinalHoldTimer > 0) {
               cardinalHoldTimer -= dt;
-              const card = nearestCardinalAngle(lastMoveAngle);
+              const card = window.PerpRotation.nearestCardinalAngle(lastMoveAngle);
               const diff = angleDiff(card, facingAngle);
               facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
             }
@@ -16867,8 +16562,8 @@
         }
         if (activeAction === 'climb') {
           if (player.climbing) return;
-          const climb = getClimbTarget();
-          if (climb) startClimb(climb); else showToast('Nothing to climb here.', false);
+          const climb = window.ClimbSystem.getClimbTarget();
+          if (climb) window.ClimbSystem.startClimb(climb); else showToast('Nothing to climb here.', false);
           return;
         }
         if (activeTool === 'shovel') {
@@ -17095,104 +16790,8 @@
         return { x: 0, y: Math.sign(y), name: y > 0 ? 'south' : 'north' };
       }
 
-      // Cliff climbing: the player must be facing straight into a plateau's
-      // auto-reserved incline wall (see mergeZoneTiles) from solid ground,
-      // with an actual walkable tile at a different elevation tier on the far
-      // side — otherwise there's nothing to climb. Works either direction
-      // (climbing up onto a plateau or back down off one uses the same check).
-      const CLIMB_MAX_WALL_TILES = 4;
-      function getClimbTarget() {
-        if (!_isZoneArea(currentArea)) return null;
-        const dir = facingCardinal(player.angle);
-        const grid = getActiveGrid();
-        const aC = getActiveCols(), aR = getActiveRows();
-        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
-        const startTile = grid[startRow]?.[startCol];
-        if (!startTile || startTile.incline) return null;
-        const startElevTier = startTile.elevTier || 0;
-        let col = startCol, row = startRow, wallTiles = 0;
-        for (let steps = 0; steps < CLIMB_MAX_WALL_TILES; steps++) {
-          col += dir.x; row += dir.y;
-          if (col < 0 || row < 0 || col >= aC || row >= aR) return null;
-          const t = grid[row][col];
-          if (!t) return null;
-          if (!t.incline) {
-            if (wallTiles === 0) return null; // nothing but open ground ahead
-            if (isSolid(t.type)) return null;
-            if ((t.elevTier || 0) === startElevTier) return null;
-            return { dir, landCol: col, landRow: row, startElevTier, landElevTier: t.elevTier || 0, wallTiles };
-          }
-          wallTiles++;
-        }
-        return null;
-      }
-
-      // Scripted cliff crossing — bypasses tileSpeedAt/canPlayerOccupy entirely
-      // (it deliberately walks through incline tiles that are otherwise
-      // impassable) and drains no stamina. See updateClimb for the per-frame
-      // staggered-hop motion.
-      const CLIMB_HOP_ACTIVE_S = 0.32;
-      const CLIMB_HOP_PAUSE_S  = 0.26;
-      const CLIMB_HOP_BOUNCE_UNITS = 0.4;
-      function startClimb(climb) {
-        const grid = getActiveGrid();
-        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
-        const startTile = grid[startRow][startCol];
-        const landTile = grid[climb.landRow][climb.landCol];
-        player.climbing = true;
-        player.climbElapsed = 0;
-        player.climbHopCount = Math.max(3, climb.wallTiles + 1);
-        player.climbStartX = player.x;
-        player.climbStartY = player.y;
-        player.climbEndX = (climb.landCol + 0.5) * TILE;
-        player.climbEndY = (climb.landRow + 0.5) * TILE;
-        player.climbSurfaceStartY = tileSurfaceYInArea(startTile, currentArea);
-        player.climbSurfaceEndY = tileSurfaceYInArea(landTile, currentArea);
-        player.climbSurfaceY = player.climbSurfaceStartY;
-        player.climbHopBounce = 0;
-        player.vx = 0; player.vy = 0;
-        player.angle = Math.atan2(climb.dir.y, climb.dir.x);
-        facingAngle = player.angle;
-        targetAimAngle = player.angle;
-        lastMoveAngle = player.angle;
-        // -1 so updateClimb's hopIndex-change check always fires for hop 0
-        // (the very first stagger) instead of only from hop 1 onward.
-        player._climbLastHopIndex = -1;
-      }
-
-      function updateClimb(dt) {
-        const cycle = CLIMB_HOP_ACTIVE_S + CLIMB_HOP_PAUSE_S;
-        const totalDur = player.climbHopCount * cycle;
-        player.climbElapsed = Math.min(player.climbElapsed + dt, totalDur);
-        const hopIndex = Math.min(player.climbHopCount - 1, Math.floor(player.climbElapsed / cycle));
-        // One low gravel thud per stagger — each scripted hop up/down the
-        // cliff face lands like a foot planting on loose rock, distinct
-        // from ordinary footsteps (see playObjectSfx's climbStep cue,
-        // pitched well below a normal gravelstep).
-        if (hopIndex !== player._climbLastHopIndex) {
-          player._climbLastHopIndex = hopIndex;
-          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().climbStep);
-        }
-        const withinCycle = player.climbElapsed - hopIndex * cycle;
-        const hopActive = withinCycle < CLIMB_HOP_ACTIVE_S;
-        const hopLocalT = hopActive ? clamp(withinCycle / CLIMB_HOP_ACTIVE_S, 0, 1) : 1;
-        const eased = 1 - Math.pow(1 - hopLocalT, 2); // quick lift-off, settles into each landing
-        const overall = clamp((hopIndex + eased) / player.climbHopCount, 0, 1);
-
-        player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * overall;
-        player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * overall;
-        player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * overall;
-        player.climbHopBounce = hopActive ? Math.sin(hopLocalT * Math.PI) * CLIMB_HOP_BOUNCE_UNITS : 0;
-        player.vx = 0; player.vy = 0;
-
-        if (player.climbElapsed >= totalDur) {
-          player.x = player.climbEndX;
-          player.y = player.climbEndY;
-          player.climbSurfaceY = player.climbSurfaceEndY;
-          player.climbHopBounce = 0;
-          player.climbing = false;
-        }
-      }
+      // Cliff climbing (getClimbTarget/startClimb/updateClimb) now lives in
+      // js/climb-system.js — call via window.ClimbSystem.*.
 
       function angleDiff(target, current) {
         let d = target - current;
@@ -17207,182 +16806,10 @@
       // tool-swing code still reads window.Fishing.state/.readyPose
       // directly where it poses the held harpoon during a throw.
 
-      const PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg ?? 40;
-      const PERP_DEAD_RAD = PERP_DEAD_DEG * Math.PI / 180;
-      // Creatures get a narrower dead zone than player/NPC (see cameraRelativeCreaturePerps).
-      const CREATURE_PERP_DEAD_DEG = window.SCRATCHBONES_CONFIG?.game?.movement?.creaturePerpRotDeadzoneDeg ?? 27.5;
-      const CREATURE_PERP_DEAD_RAD = CREATURE_PERP_DEAD_DEG * Math.PI / 180;
-      // Extra margin required to *exit* a dead zone once locked into it, on top of
-      // the radius required to *enter* it. Without this, a rawTarget hovering right
-      // at the dead zone's edge (e.g. from per-frame tracking noise while chasing a
-      // moving target) flips in and out every frame — visible as rotation flicker.
-      const PERP_DEAD_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
-
-      // Keeps model rotation outside dead zones around each perp angle (radius given
-      // by deadRad, defaulting to PERP_DEAD_RAD).
-      // state: persistent object per entity (must survive across frames).
-      // Returns { effectiveTarget, snapTo } where snapTo is non-null when the model
-      // should teleport (raw target crossed through a perp to the far side).
-      //
-      // Only the perp nearest rawTarget is ever evaluated. angleDiff wraps at
-      // ±π, so a *far* perp's side classification flips discontinuously right
-      // at that far perp's antipodal point — which is exactly where the
-      // *near* perp sits. Evaluating every perp every frame let that far-side
-      // flip fire a spurious snapTo while the model was stably locked near
-      // the near perp, producing rapid alternation between two rotations.
-      function perpClamp(state, rawTarget, perps, deadRad = PERP_DEAD_RAD) {
-        if (!state.perpSides) state.perpSides = perps.map(() => null);
-        if (!state.locked) state.locked = perps.map(() => false);
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        const P = perps[nearestI];
-        // Hysteresis: once locked, require crossing the wider exit radius before
-        // unlocking; once free, require crossing the (narrower) entry radius before
-        // locking. Prevents boundary chatter when rawTarget hovers near the edge.
-        const wasLocked = state.locked[nearestI];
-        const isLocked = wasLocked ? nearestAbs < deadRad + PERP_DEAD_HYSTERESIS_RAD : nearestAbs < deadRad;
-        // Which edge of the dead zone rawTarget is actually closest to right
-        // now — tracked every frame regardless of lock state, not just while
-        // unlocked. A locked model can still have rawTarget keep rotating
-        // straight through the zone (e.g. a continuous camera spin, or the
-        // seated look-rotate input) without ever exiting through the far
-        // side first; checking the side only while unlocked left it stuck
-        // holding the entry edge indefinitely in that case, even long after
-        // rawTarget had clearly crossed past center to the opposite side.
-        // Always snapping to whichever edge is nearest keeps the held
-        // rotation the closest acceptable one to rawTarget at all times,
-        // snapping again immediately if it keeps going past the far edge.
-        const newSide = nearestDT > 0 ? 1 : -1;
-        let snapTo = null;
-        if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
-          snapTo = P + newSide * deadRad;
-        }
-        state.perpSides[nearestI] = newSide;
-        const effectiveTarget = isLocked ? P + state.perpSides[nearestI] * deadRad : rawTarget;
-        state.locked[nearestI] = isLocked;
-        return { effectiveTarget, snapTo };
-      }
-
-      // ── Animal/creature PNG-plane dead-zone behavior — THREE implementations ──
-      // updateCreatureMesh's pngRot step (below) has been rewritten a few times
-      // while this gets tuned by feel, and all three attempts are kept side by
-      // side here on purpose rather than deleting the losers. ONLY the branch
-      // selected by CREATURE_PLANE_ROT_MODE actually runs at runtime — the
-      // other two are inert dead code, kept for quick A/B swaps back.
-      //
-      // NOTE FOR ANY LLM (or human) EDITING THIS FILE: do not assume any one
-      // of 'sway' / 'halt' / 'snap' is "the" system just because it's the one
-      // currently wired up, and do not assume the others are unused cruft
-      // safe to delete — check CREATURE_PLANE_ROT_MODE's value below before
-      // reasoning about which behavior is actually live, and ask before
-      // removing any of the three.
-      //   'sway' — legacy: continuously lerps/rocks through the dead zone via
-      //            creatureDeadzoneTarget (sine oscillation, smooth).
-      //   'halt' — current default going in: locks to the dead-zone edge and
-      //            stays there via perpClamp (same halt behavior player/NPC
-      //            avatars and farm-pen livestock already use), eased in.
-      //   'snap' — newest: alternates between the dead zone's two edges with
-      //            a hard cut (no interpolation) via creatureSnapSwayTarget,
-      //            instead of sweeping/lerping between them.
-      const CREATURE_PLANE_ROT_MODE = 'snap'; // 'sway' | 'halt' | 'snap'
-
-      // Oscillation angular speed shared by the 'sway' and 'snap' modes below
-      // — ~1.2s per full back-and-forth cycle, fast enough to read clearly
-      // against the pngRot smoothing lerp in updateCreatureMesh (time
-      // constant ~0.1s) without being frantic.
-      const CREATURE_DEADZONE_OSC_RATE = 2 * Math.PI / 1.2;
-
-      // 'sway' mode (legacy — see CREATURE_PLANE_ROT_MODE above; may not be
-      // the active implementation, check that constant before assuming so).
-      // For creature PNG planes: unlike perpClamp, a creature is never allowed
-      // to settle with its rotation reading inside the dead zone. Standing
-      // still, the target eases to the nearer dead-zone edge and stops there.
-      // While moving with a raw target that falls inside the dead zone, the
-      // target instead continuously rocks back and forth along an arc
-      // centered on the movement direction (rawTarget), swinging between the
-      // nearest dead-zone edge and that edge's mirror image reflected across
-      // the movement direction — so the sprite is always mid-flip through the
-      // zone rather than resting in it or sweeping through just once.
-      //
-      // This is continuous across the dead-zone boundary (amplitude/edge both
-      // converge to rawTarget as nearestAbs approaches deadRad), so unlike
-      // perpClamp it needs no entry/exit hysteresis to avoid flicker.
-      function creatureDeadzoneTarget(state, rawTarget, perps, deadRad, dt, moving) {
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        if (nearestAbs >= deadRad) {
-          state.oscPhase = 0;
-          return rawTarget;
-        }
-        const sign = nearestDT >= 0 ? 1 : -1;
-        const edge = perps[nearestI] + sign * deadRad;
-        if (!moving) {
-          state.oscPhase = 0;
-          return edge;
-        }
-        const amplitude = angleDiff(edge, rawTarget);
-        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
-        return rawTarget + amplitude * Math.sin(state.oscPhase);
-      }
-
-      // 'snap' mode (see CREATURE_PLANE_ROT_MODE above; may not be the active
-      // implementation, check that constant before assuming so).
-      // Like 'sway', a creature is never allowed to settle mid-dead-zone —
-      // but instead of continuously lerping/rocking through the zone, this
-      // alternates the target between the dead zone's two boundary angles
-      // (perp ± deadRad — the two nearest rotations actually outside the
-      // dead zone) on a timer, and reports back whether this call is a flip
-      // so the caller can assign the new value directly (a hard cut) rather
-      // than easing toward it. The first time a given lock is entered isn't
-      // flagged as a flip, so the plane still eases in from wherever it was
-      // instead of popping in from nowhere; only the alternations after that
-      // are instant.
-      // Alternation only runs while `moving` is true — mirrors creatureDeadzoneTarget's
-      // own moving gate (see 'sway' above): a creature standing still just
-      // holds at whichever edge it's nearest, instead of visibly flip-flopping
-      // in place with no motion to sell the "swap side" as a stride change.
-      function creatureSnapSwayTarget(state, rawTarget, perps, deadRad, dt, moving) {
-        let nearestI = 0, nearestAbs = Infinity, nearestDT = 0;
-        for (let i = 0; i < perps.length; i++) {
-          const dT = angleDiff(rawTarget, perps[i]);
-          const a = Math.abs(dT);
-          if (a < nearestAbs) { nearestAbs = a; nearestI = i; nearestDT = dT; }
-        }
-        if (nearestAbs >= deadRad) {
-          state.oscPhase = 0;
-          state.snapSide = null;
-          return { target: rawTarget, snap: false };
-        }
-        const P = perps[nearestI];
-        if (!moving) {
-          state.oscPhase = 0;
-          if (state.snapSide === null) state.snapSide = nearestDT >= 0 ? 1 : -1;
-          return { target: P + state.snapSide * deadRad, snap: false };
-        }
-        state.oscPhase = (state.oscPhase || 0) + dt * CREATURE_DEADZONE_OSC_RATE;
-        const side = Math.sin(state.oscPhase) >= 0 ? 1 : -1;
-        const flip = state.snapSide !== null && state.snapSide !== side;
-        state.snapSide = side;
-        return { target: P + side * deadRad, snap: flip };
-      }
-
-      function nearestCardinalAngle(angle) {
-        const cardinals = [0, Math.PI / 2, Math.PI, -Math.PI / 2]; // E S W N
-        let best = cardinals[0], bestDiff = Infinity;
-        for (const c of cardinals) {
-          const d = Math.abs(angleDiff(c, angle));
-          if (d < bestDiff) { bestDiff = d; best = c; }
-        }
-        return best;
-      }
+      // Dead-zone rotation math (perpClamp/creatureDeadzoneTarget/
+      // creatureSnapSwayTarget/nearestCardinalAngle) shared by player/NPC/
+      // creature PNG-plane avatars now lives in js/perp-rotation.js — call
+      // via window.PerpRotation.*.
 
       const STORM_NAMES = [
         'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
@@ -22297,7 +21724,7 @@
         } else {
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
-          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
+          const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, cameraRelativePerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
           playerMesh.rotation.y = playerFacing;  // default; sweep branch in updateToolMesh may override
@@ -23313,7 +22740,7 @@
         _minimapRedrawAccum += dt;
         if (_minimapRedrawAccum >= 0.3) {
           _minimapRedrawAccum = 0;
-          renderWildernessMinimap();
+          window.WildernessMap.renderMinimap();
         }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
@@ -23329,7 +22756,7 @@
           _advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMovement(dt);
-          updateZoneFogAroundPlayer();
+          window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.BountyBoard.updateTracking(dt);
@@ -24573,7 +24000,7 @@
         }
 
         // Zone: a climbable cliff face straight ahead takes priority over tool use.
-        if (_isZoneArea(currentArea) && !player.climbing && getClimbTarget()) {
+        if (_isZoneArea(currentArea) && !player.climbing && window.ClimbSystem.getClimbTarget()) {
           return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
         }
 
@@ -26550,6 +25977,40 @@
         saveMemberWorldData,
       });
 
+      window.PerpRotation?.init({
+        angleDiff,
+      });
+
+      window.WildernessMap?.init({
+        _zoneLayouts,
+        tothalWorldId: _tothalWorldId,
+        currentTothalYear,
+        showToast,
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        player,
+        TILE,
+        npcWalkers,
+        WMAP_ZONE_LABELS,
+      });
+
+      window.ClimbSystem?.init({
+        _isZoneArea,
+        getCurrentArea: () => currentArea,
+        player,
+        facingCardinal,
+        getActiveGrid,
+        getActiveCols,
+        getActiveRows,
+        TILE,
+        isSolid,
+        tileSurfaceYInArea,
+        clamp,
+        setFacingAngle: (v) => { facingAngle = v; },
+        setTargetAimAngle: (v) => { targetAimAngle = v; },
+        setLastMoveAngle: (v) => { lastMoveAngle = v; },
+      });
+
       window.BanditCombatLog?.init({
         player,
         companionObjects,
@@ -26576,7 +26037,7 @@
         creatureHitboxHalfSizePx,
         creatureAimColliderReachPx,
         cameraRelativeCreaturePerps,
-        CREATURE_PERP_DEAD_RAD,
+        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
       });
 
       window.RelationshipsPanel?.init({
@@ -26649,7 +26110,7 @@
         creaturePlaneGroundOffset,
         nearestAngleAmong,
         cameraRelativePerps,
-        perpClamp,
+        perpClamp: window.PerpRotation.perpClamp,
         angleDiff,
         dewItemKey,
         ensureProcessedItemDef,
@@ -26730,7 +26191,7 @@
         TILE,
         TileType,
         CREATURE_DB,
-        CREATURE_PERP_DEAD_RAD,
+        CREATURE_PERP_DEAD_RAD: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
         ITEM_DEFS,
         LIVESTOCK_RESOURCE_DEFS,
         LIVESTOCK_RESOURCE_VERB,
@@ -26755,7 +26216,7 @@
         hasFarmPermission,
         isSolid,
         nearestAngleAmong,
-        perpClamp,
+        perpClamp: window.PerpRotation.perpClamp,
         resolveCreatureGroundAnchorRatio,
         rnd,
         saveStable,
