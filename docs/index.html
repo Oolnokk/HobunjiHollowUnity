@@ -362,6 +362,14 @@
        Tothal Shift kicked off during world boot — that path never touches
        deps, so it works regardless of init() timing. -->
   <script src="js/cavern-generator.js?v=20260807a"></script>
+  <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
+       (window.ZonePlateauMesa) — pure scene-graph generation, no other
+       window.* system reads; must load before game.js, which calls
+       window.ZonePlateauMesa.init(...) alongside its sibling systems and
+       window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
+       zone with tiered plateaus is first built or a plateau-top tile
+       changes at runtime — never synchronously during initial boot. -->
+  <script src="js/zone-plateau-mesa.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
