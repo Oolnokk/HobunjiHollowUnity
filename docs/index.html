@@ -370,6 +370,13 @@
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
   <script src="js/zone-plateau-mesa.js?v=20260807a"></script>
+  <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
+       (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
+       window.* system reads; must load before game.js, which calls
+       window.ZoneTerrainFeatures.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene, never
+       synchronously during initial boot. -->
+  <script src="js/zone-terrain-features.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
