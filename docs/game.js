@@ -148,7 +148,7 @@
         if (targetPanel === 'supplies') renderSupplyPage();
         if (targetPanel === 'generalStore') renderGeneralStorePage();
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
-        if (targetPanel === 'jubmirShop') renderJubmirShopPage();
+        if (targetPanel === 'jubmirShop') window.JubmirShop.render();
         if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
         if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
         if (targetPanel === 'tasks') renderTasksPanel();
@@ -189,7 +189,7 @@
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') renderGeneralStorePage();
         if (id === 'carpenterShop') renderCarpenterShopPage();
-        if (id === 'jubmirShop') renderJubmirShopPage();
+        if (id === 'jubmirShop') window.JubmirShop.render();
         if (id === 'metalCraftShop') renderMetalCraftShopPage();
         if (id === 'alchemy') window.AlchemySystem.renderPanel();
         if (id === 'tasks') renderTasksPanel();
@@ -5324,99 +5324,9 @@
         } catch {}
       }
 
-      // ── Jubmir's daily trader stock (world-scoped — one shared egg per
-      // day, same as a real traveling trader visiting the whole village) ──
-      // { day, genotype, purchased }. Rerolled the first time anyone opens
-      // his shop on a new calendar.day; "purchased" makes that day's single
-      // egg unavailable to everyone until the next reroll, rather than each
-      // character getting their own independent copy.
-      function _loadJubmirStock() {
-        const worldId = _tothalWorldId();
-        if (!worldId) return null;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          return (meta?.worlds || []).find(w => w.id === worldId)?.jubmirStock ?? null;
-        } catch { return null; }
-      }
-
-      function _saveJubmirStock(stock) {
-        const worldId = _tothalWorldId();
-        if (!worldId) return;
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          world.jubmirStock = stock;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      // Jubmir sells exactly one goods entry today (a dabinggi-hound egg),
-      // sourced from docs/config/shops/shop-stock.json's jubmirWares.goods —
-      // the hardcoded fallback matches that file's default entry in case the
-      // config hasn't loaded yet. restockDays/maxPerRestock are only
-      // implemented for the "1 per day" case today (see getJubmirStock's
-      // day-reset check) — a future entry wanting a longer cycle or more
-      // than one unit per restock would need that check generalized.
-      function _jubmirEggEntry() {
-        return (_shopStock.jubmirWares?.goods || []).find(e => e.key === 'dabinggiHoundEgg') || {
-          key: 'dabinggiHoundEgg', icon: '🥚', name: 'Dabinggi-hound Egg',
-          desc: 'A rare, non-native find. One only, restocked daily.',
-          price: 200, givesGenotype: 'dabinggi-hound', restockDays: 1, maxPerRestock: 1,
-        };
-      }
-
-      // Returns today's stock, rolling a fresh dabinggi-hound egg genotype
-      // the first time it's checked on a new day.
-      function getJubmirStock() {
-        let stock = _loadJubmirStock();
-        if (!stock || stock.day !== calendar.day) {
-          stock = { day: calendar.day, genotype: window.CreatureGenetics.makeDefaultGenotype(_jubmirEggEntry().givesGenotype), purchased: false };
-          _saveJubmirStock(stock);
-        }
-        return stock;
-      }
-
-      function buyJubmirEgg() {
-        const stock = getJubmirStock();
-        const entry = _jubmirEggEntry();
-        if (stock.purchased) { showToast("Jubmir's sold out for today — check back tomorrow.", false); return; }
-        const gold = inventory.gold || 0;
-        if (gold < entry.price) { showToast('Not enough gold.', false); return; }
-        inventory.gold = gold - entry.price;
-        inventory.dabinggiHoundEgg = Math.min(9, (inventory.dabinggiHoundEgg || 0) + 1);
-        window.FarmAnimals.queueItemGenotype('dabinggiHoundEgg', stock.genotype);
-        stock.purchased = true;
-        _saveJubmirStock(stock);
-        showToast(`Bought a ${entry.name} from Jubmir!`, true);
-        renderJubmirShopPage();
-        buildInventoryGrid();
-        saveMemberWorldData();
-      }
-
-      function renderJubmirShopPage() {
-        const goldEl = document.getElementById('jmGoldDisplay');
-        if (goldEl) goldEl.innerHTML = `${inventory.gold || 0}<span class="wallet-unit">g</span>`;
-        const list = document.getElementById('jubmirShopList');
-        if (!list) return;
-        list.innerHTML = '';
-        const entry = _jubmirEggEntry();
-        if (!window.ConditionRegistry.entryEligible(entry, _lootShopWorldState())) return;
-        const stock = getJubmirStock();
-        const row = document.createElement('div');
-        row.className = 'shop-row';
-        row.innerHTML = `
-          <div class="sh-icon">${entry.icon}</div>
-          <div class="sh-info">
-            <div class="sh-name">${esc(entry.name)}</div>
-            <div class="sh-desc">${stock.purchased ? "Sold out — Jubmir will have another tomorrow." : entry.desc}</div>
-            <div class="sh-price">${entry.price}g</div>
-          </div>
-          <button class="shop-buy-btn" ${stock.purchased ? 'disabled' : ''}>${stock.purchased ? 'Sold Out' : 'Buy'}</button>
-        `;
-        if (!stock.purchased) row.querySelector('button')?.addEventListener('click', buyJubmirEgg);
-        list.appendChild(row);
-      }
+      // Jubmir's daily trader stock/shop page now lives in
+      // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
+      // below for the shared game.js state it's threaded.
 
       // ── Farm name (reuses world.label, the same field set at world
       // creation in onboarding.js) ────────────────────────────────────────
@@ -11979,8 +11889,8 @@
       // GENERAL_STORE_CLOTHING_SLOTS/BARN_TIERS wholesale once it resolves —
       // called from loadLootShopConfig() above. Jubmir's stock isn't a
       // simple catalog swap (it also drives genotype generation/one-shot
-      // purchase state), so getJubmirStock/buyJubmirEgg/renderJubmirShopPage
-      // read _shopStock.jubmirWares directly instead of a mirrored variable.
+      // purchase state), so window.JubmirShop reads _shopStock.jubmirWares
+      // (via deps.getShopStock()) directly instead of a mirrored variable.
       function _applyLoadedShopStock() {
         WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
           [id, { label: shop.label, menuId: shop.menuId }]));
@@ -27267,6 +27177,18 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         clampInventoryStack,
         refreshItemScroll,
         showToast,
+        saveMemberWorldData,
+      });
+
+      window.JubmirShop?.init({
+        tothalWorldId: _tothalWorldId,
+        getShopStock: () => _shopStock,
+        lootShopWorldState: _lootShopWorldState,
+        calendar,
+        inventory,
+        showToast,
+        esc,
+        buildInventoryGrid,
         saveMemberWorldData,
       });
 

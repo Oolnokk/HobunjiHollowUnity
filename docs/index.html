@@ -189,6 +189,13 @@
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
   <script src="js/reagent-plants.js?v=20260807a"></script>
+  <!-- Jubmir the traveling trader: daily one-off egg stock (window.JubmirShop)
+       — self-contained aside from deps injected via init(), and reads
+       window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
+       call time (already global by then), so load order relative to the
+       other systems above doesn't matter; must load before game.js, which
+       calls window.JubmirShop.init(...) during its own setup. -->
+  <script src="js/jubmir-shop.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
