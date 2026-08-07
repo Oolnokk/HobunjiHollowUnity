@@ -91,6 +91,14 @@
   <script src="js/combat/combat-charged-breaker.js?v=20260712d"></script>
   <script src="js/combat/combat-flurry.js?v=20260712d"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260712d"></script>
+  <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
+       load before game.js, which calls window.BanditCombat.init(...)
+       during its own setup. Reads window.Combat's comboData/quickAttackData/
+       chargedBreakerData/counterShieldData and window.ResourceSystem lazily
+       (at fight time, not load time), so exact ordering against those two
+       doesn't matter as long as both exist by the time bandits actually
+       spawn. -->
+  <script src="js/combat/combat-bandit.js?v=20260807a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20260727a"></script>
