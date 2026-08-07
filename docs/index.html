@@ -120,6 +120,12 @@
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20260727a"></script>
+  <!-- Alchemy (reagent/effect defs, potion brewing, active buff bar) —
+       window.AlchemySystem. Self-contained aside from deps injected via
+       init(), so load order relative to the other systems above doesn't
+       matter; must load before game.js, which calls
+       window.AlchemySystem.init(...) during its own setup. -->
+  <script src="js/alchemy-system.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

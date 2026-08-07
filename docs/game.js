@@ -150,7 +150,7 @@
         if (targetPanel === 'carpenterShop') renderCarpenterShopPage();
         if (targetPanel === 'jubmirShop') renderJubmirShopPage();
         if (targetPanel === 'metalCraftShop') renderMetalCraftShopPage();
-        if (targetPanel === 'alchemy') renderAlchemyPanel();
+        if (targetPanel === 'alchemy') window.AlchemySystem.renderPanel();
         if (targetPanel === 'tasks') renderTasksPanel();
         if (targetPanel === 'relationships') renderRelationshipsPanel();
         auditInventorySizing();
@@ -191,7 +191,7 @@
         if (id === 'carpenterShop') renderCarpenterShopPage();
         if (id === 'jubmirShop') renderJubmirShopPage();
         if (id === 'metalCraftShop') renderMetalCraftShopPage();
-        if (id === 'alchemy') renderAlchemyPanel();
+        if (id === 'alchemy') window.AlchemySystem.renderPanel();
         if (id === 'tasks') renderTasksPanel();
         if (id === 'relationships') renderRelationshipsPanel();
         if (id === 'debug' && window._renderDebugPanel) window._renderDebugPanel();
@@ -2149,249 +2149,6 @@
         craftCost: furnitureCraftCost(item.price),
         category,
       }));
-
-      // ── Alchemy: effects, reagents & active buffs ───────────────────
-      // Standard Elder-Scrolls-style setup: every reagent carries up to 3
-      // named boon/bane effects, but only effects[0] is known to the player
-      // from the start. Brewing 2-3 reagents at an Alchemy Table applies
-      // whichever effects appear on 2+ of the chosen reagents (see
-      // computeBrewEffects) and reveals ("discovers") those effects on every
-      // reagent that has them. Magnitude/duration are deliberately generic
-      // placeholders for most effects — only 'speed' is wired to an actual
-      // stat (see getAlchemySpeedMul) since the rest of the mechanical
-      // design is still open; every effect at least shows up as a named,
-      // timed buff/debuff icon in the on-screen buff bar once applied.
-      const ALCHEMY_EFFECT_DEFS = {
-        strength:   { label: 'Strength',   icon: '💪', kind: 'boon', durationS: 90, desc: 'Something in you feels sturdier.' },
-        fortitude:  { label: 'Fortitude',  icon: '🛡️', kind: 'boon', durationS: 90, desc: 'You feel harder to knock down.' },
-        vigor:      { label: 'Vigor',      icon: '⚡', kind: 'boon', durationS: 90, desc: 'Energy hums through your limbs.' },
-        speed:      { label: 'Speed',      icon: '🏃', kind: 'boon', durationS: 60, desc: 'Your steps come lighter and faster.', speedMul: 1.35 },
-        perception: { label: 'Perception', icon: '👁️', kind: 'boon', durationS: 90, desc: 'The world looks sharper somehow.' },
-        clarity:    { label: 'Clarity',    icon: '🧠', kind: 'boon', durationS: 90, desc: 'Your thoughts feel clean and ordered.' },
-        stupor:     { label: 'Stupor',     icon: '😵', kind: 'bane', durationS: 60, desc: 'Your head is thick and slow.' },
-        weakness:   { label: 'Weakness',   icon: '🦴', kind: 'bane', durationS: 60, desc: 'Your limbs feel drained of power.' },
-        frailty:    { label: 'Frailty',    icon: '💔', kind: 'bane', durationS: 60, desc: 'You feel brittle, easily hurt.' },
-        clumsiness: { label: 'Clumsiness', icon: '🤕', kind: 'bane', durationS: 60, desc: 'Your hands and feet won\'t cooperate.' },
-        nausea:     { label: 'Nausea',     icon: '🤢', kind: 'bane', durationS: 60, desc: 'Your stomach churns unpleasantly.' },
-        dread:      { label: 'Dread',      icon: '😱', kind: 'bane', durationS: 60, desc: 'A cold unease settles over you.' },
-      };
-
-      // Reagent plants foraged from the four wilderness zones. `color` tints
-      // the plant's billboard sprite — see buildReagentPlantMesh — as a
-      // placeholder stand-in until each reagent gets its own model.
-      const ALCHEMY_REAGENT_DEFS = {
-        frostcapMoss:      { label: 'Frostcap Moss',      icon: '🥶', zone: 'map_northern_cliffs',       color: 0x9fd8e6, sellPrice: 3, effects: ['fortitude', 'weakness', 'stupor'] },
-        graniteThistle:    { label: 'Granite Thistle',    icon: '🌵', zone: 'map_northern_cliffs',       color: 0x8a8a78, sellPrice: 3, effects: ['strength', 'frailty', 'clumsiness'] },
-        palehartLichen:    { label: 'Palehart Lichen',    icon: '🍂', zone: 'map_northern_cliffs',       color: 0xc9c2a0, sellPrice: 3, effects: ['perception', 'dread', 'weakness'] },
-        cinderveinBramble: { label: 'Cindervein Bramble', icon: '🌿', zone: 'map_northern_cliffs',       color: 0xb5493a, sellPrice: 3, effects: ['vigor', 'nausea', 'strength'] },
-        shalefrondFern:    { label: 'Shalefrond Fern',    icon: '🌾', zone: 'map_northern_cliffs',       color: 0x6f8f7a, sellPrice: 3, effects: ['clarity', 'stupor', 'fortitude'] },
-
-        mistpetalBloom:    { label: 'Mistpetal Bloom',    icon: '🌸', zone: 'map_southern_cloud_forest', color: 0xd7b7e8, sellPrice: 3, effects: ['clarity', 'dread', 'perception'] },
-        duskcapMushroom:   { label: 'Duskcap Mushroom',   icon: '🍄', zone: 'map_southern_cloud_forest', color: 0x5a4a78, sellPrice: 3, effects: ['vigor', 'stupor', 'nausea'] },
-        silverfernFrond:   { label: 'Silverfern Frond',   icon: '🌿', zone: 'map_southern_cloud_forest', color: 0xc8d8c0, sellPrice: 3, effects: ['perception', 'weakness', 'clarity'] },
-        cloudberryVine:    { label: 'Cloudberry Vine',    icon: '🫐', zone: 'map_southern_cloud_forest', color: 0x8ec6e0, sellPrice: 3, effects: ['speed', 'clumsiness', 'vigor'] },
-        hazewortSprig:     { label: 'Hazewort Sprig',     icon: '🌱', zone: 'map_southern_cloud_forest', color: 0xa0b090, sellPrice: 3, effects: ['fortitude', 'dread', 'speed'] },
-
-        windrootBulb:      { label: 'Windroot Bulb',      icon: '🧅', zone: 'map_western_slope',         color: 0xe8d27a, sellPrice: 3, effects: ['speed', 'weakness', 'vigor'] },
-        goldbrushWeed:     { label: 'Goldbrush Weed',     icon: '🌾', zone: 'map_western_slope',         color: 0xdba936, sellPrice: 3, effects: ['strength', 'clumsiness', 'fortitude'] },
-        larkspurTuft:      { label: 'Larkspur Tuft',      icon: '💐', zone: 'map_western_slope',         color: 0x7fb0e0, sellPrice: 3, effects: ['perception', 'stupor', 'speed'] },
-        sunbarleyHead:     { label: 'Sunbarley Head',     icon: '🌾', zone: 'map_western_slope',         color: 0xe0c95f, sellPrice: 3, effects: ['vigor', 'nausea', 'strength'] },
-        thistledownCap:    { label: 'Thistledown Cap',    icon: '🌼', zone: 'map_western_slope',         color: 0xeee4c0, sellPrice: 3, effects: ['clarity', 'frailty', 'perception'] },
-
-        bogwortLeaf:       { label: 'Bogwort Leaf',       icon: '🍃', zone: 'map_eastern_mire',          color: 0x4a6b3a, sellPrice: 3, effects: ['fortitude', 'nausea', 'strength'] },
-        mireLotusBud:      { label: 'Mire Lotus Bud',     icon: '🪷', zone: 'map_eastern_mire',          color: 0xc06090, sellPrice: 3, effects: ['clarity', 'dread', 'weakness'] },
-        sporeclusterCap:   { label: 'Sporecluster Cap',   icon: '🍄', zone: 'map_eastern_mire',          color: 0x6a5a3a, sellPrice: 3, effects: ['stupor', 'vigor', 'frailty'] },
-        weepingReed:       { label: 'Weeping Reed',       icon: '🌾', zone: 'map_eastern_mire',          color: 0x3a5a4a, sellPrice: 3, effects: ['speed', 'weakness', 'clumsiness'] },
-        muckmelonRind:     { label: 'Muckmelon Rind',     icon: '🍈', zone: 'map_eastern_mire',          color: 0x8a9a3a, sellPrice: 3, effects: ['strength', 'nausea', 'fortitude'] },
-      };
-
-      function alchemyReagentsForZone(mapId) {
-        return Object.keys(ALCHEMY_REAGENT_DEFS).filter(k => ALCHEMY_REAGENT_DEFS[k].zone === mapId);
-      }
-
-      // Which of a reagent's effects[] indices the player has learned so
-      // far. Index 0 is always known; 1/2 are revealed the first time a
-      // brew mixes that reagent with another sharing the effect.
-      const knownReagentEffects = {}; // reagentKey -> Set(effectIndex)
-      function isReagentEffectKnown(reagentKey, idx) {
-        if (idx === 0) return true;
-        return knownReagentEffects[reagentKey]?.has(idx) || false;
-      }
-      function discoverReagentEffect(reagentKey, idx) {
-        if (idx === 0) return;
-        if (!knownReagentEffects[reagentKey]) knownReagentEffects[reagentKey] = new Set();
-        knownReagentEffects[reagentKey].add(idx);
-      }
-
-      // Sets aren't JSON-serializable, so save/restore go through plain
-      // arrays — see saveMemberWorldData/spawnPlayerAvatar.
-      function serializeKnownReagentEffects() {
-        const out = {};
-        Object.entries(knownReagentEffects).forEach(([key, set]) => { if (set.size) out[key] = [...set]; });
-        return out;
-      }
-      function restoreKnownReagentEffects(saved) {
-        Object.keys(knownReagentEffects).forEach(k => delete knownReagentEffects[k]);
-        Object.entries(saved || {}).forEach(([key, idxs]) => {
-          if (Array.isArray(idxs) && idxs.length) knownReagentEffects[key] = new Set(idxs);
-        });
-      }
-
-      // Effects shared by 2+ of the given reagent keys — the classic ES rule
-      // for what a brewed mixture actually does.
-      function computeBrewEffects(reagentKeys) {
-        const counts = {};
-        for (const rk of reagentKeys) {
-          const def = ALCHEMY_REAGENT_DEFS[rk];
-          if (!def) continue;
-          def.effects.forEach(eff => { counts[eff] = (counts[eff] || 0) + 1; });
-        }
-        return Object.keys(counts).filter(eff => counts[eff] >= 2);
-      }
-
-      // ── Potions (brewed, storable, drinkable from the bag anywhere) ──
-      // A potion's item key is a deterministic sort of its effect list, so
-      // the same combination of shared effects always stacks into the same
-      // item, and — since effect ids never contain '_' — the key alone is
-      // enough to recover which effects it grants after a reload, with no
-      // separate persisted registry needed (see getPotionEffectsFromKey,
-      // called for every saved inventory key in spawnPlayerAvatar).
-      const ALCHEMY_POTION_ITEMS = {}; // itemKey -> effects[], rebuilt from the key as needed
-      function potionItemKeyForEffects(effects) {
-        return 'potion_' + [...effects].sort().join('_');
-      }
-      function getPotionEffectsFromKey(key) {
-        if (!key.startsWith('potion_')) return null;
-        const effects = key.slice('potion_'.length).split('_');
-        return effects.length && effects.every(e => ALCHEMY_EFFECT_DEFS[e]) ? effects : null;
-      }
-      // Averages the 0xRRGGBB colors of the reagents that went into a brew —
-      // the same THREE-style hex ints ALCHEMY_REAGENT_DEFS/getReagentPlantMaterial
-      // already use — into one procedural potion color. Reagent keys missing a
-      // color (shouldn't happen; every ALCHEMY_REAGENT_DEFS entry has one) are
-      // skipped rather than treated as black, so one bad lookup can't wash the
-      // mix toward zero.
-      function mixReagentColors(reagentKeys) {
-        let r = 0, g = 0, b = 0, n = 0;
-        (reagentKeys || []).forEach(k => {
-          const c = ALCHEMY_REAGENT_DEFS[k]?.color;
-          if (c == null) return;
-          r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255; n++;
-        });
-        if (!n) return 0x8a5fb0; // generic potion purple — only hit if reagentKeys was empty/unresolvable
-        return (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(b / n);
-      }
-
-      // reagentKeys (optional): the actual ingredients brewed this time, used
-      // to procedurally mix a color via mixReagentColors — see brewPotion.
-      // Since the item key is purely the sorted effect list (so different
-      // reagent combos sharing an effect set stack as the same item — see the
-      // comment above ALCHEMY_POTION_ITEMS), the color is fixed at whichever
-      // combo first created that effect-key item, same as its name/desc.
-      function ensurePotionItemDef(effects, reagentKeys) {
-        const key = potionItemKeyForEffects(effects);
-        ALCHEMY_POTION_ITEMS[key] = effects;
-        if (!ITEM_DEFS[key]) {
-          const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label);
-          const anyBane = effects.some(e => ALCHEMY_EFFECT_DEFS[e].kind === 'bane');
-          const color = mixReagentColors(reagentKeys);
-          ITEM_DEFS[key] = {
-            icon: '🧪',
-            label: 'Potion of ' + names.join(' & '),
-            cat: 'processed',
-            sellPrice: 0,
-            tags: ['Potion', 'Alchemy', ...(anyBane ? ['Mixed'] : [])],
-            desc: 'A brewed potion. Drink it (from the Inventory panel, anywhere) to gain: ' + names.join(', ') + '.',
-            color,
-            spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed',
-          };
-        }
-        return key;
-      }
-
-      // Consumes 1 potion and applies every effect it carries — see
-      // selectInventoryItem's Drink button, the only place this is called
-      // from, so it works from the Inventory panel regardless of location.
-      function drinkPotion(key) {
-        const effects = ALCHEMY_POTION_ITEMS[key] || getPotionEffectsFromKey(key);
-        if (!effects || (inventory[key] || 0) < 1) return { ok: false, message: 'No potion to drink.' };
-        inventory[key]--;
-        clampInventoryStack(key);
-        effects.forEach(eff => applyAlchemyEffect(eff));
-        const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
-        return { ok: true, message: '🧪 Drank a potion: ' + names + '.' };
-      }
-
-      // ── Active buffs/debuffs (on-screen icon strip) ──────────────────
-      let activeAlchemyEffects = []; // [{ key, label, icon, kind, durationS, expiresAt }]
-
-      function applyAlchemyEffect(effectKey) {
-        const def = ALCHEMY_EFFECT_DEFS[effectKey];
-        if (!def) return;
-        const expiresAt = performance.now() / 1000 + def.durationS;
-        const existing = activeAlchemyEffects.find(e => e.key === effectKey);
-        if (existing) existing.expiresAt = expiresAt; // refresh duration instead of stacking a duplicate icon
-        else activeAlchemyEffects.push({ key: effectKey, label: def.label, icon: def.icon, kind: def.kind, durationS: def.durationS, expiresAt });
-        refreshBuffBar();
-      }
-
-      function getAlchemySpeedMul() {
-        const speedEff = activeAlchemyEffects.find(e => e.key === 'speed');
-        return speedEff ? (ALCHEMY_EFFECT_DEFS.speed.speedMul || 1) : 1;
-      }
-
-      // expiresAt is measured against performance.now(), which resets to 0
-      // every page load — save/restore go through remaining seconds instead.
-      function serializeActiveAlchemyEffects() {
-        const now = performance.now() / 1000;
-        return activeAlchemyEffects
-          .map(e => ({ key: e.key, remainingS: e.expiresAt - now }))
-          .filter(e => e.remainingS > 0);
-      }
-      function restoreActiveAlchemyEffects(saved) {
-        activeAlchemyEffects = [];
-        const now = performance.now() / 1000;
-        (saved || []).forEach(({ key, remainingS }) => {
-          const def = ALCHEMY_EFFECT_DEFS[key];
-          if (!def || !(remainingS > 0)) return;
-          activeAlchemyEffects.push({ key, label: def.label, icon: def.icon, kind: def.kind, durationS: def.durationS, expiresAt: now + remainingS });
-        });
-        refreshBuffBar();
-      }
-
-      function updateAlchemyEffects() {
-        if (!activeAlchemyEffects.length) return;
-        const now = performance.now() / 1000;
-        const before = activeAlchemyEffects.length;
-        activeAlchemyEffects = activeAlchemyEffects.filter(e => e.expiresAt > now);
-        refreshBuffBar(before !== activeAlchemyEffects.length);
-      }
-
-      // Rebuilds the buff bar's DOM only when the active effect *set*
-      // changes; every other call just updates each icon's countdown fill.
-      let _lastBuffBarKey = '';
-      function refreshBuffBar() {
-        const bar = document.getElementById('buffBar');
-        if (!bar) return;
-        const key = activeAlchemyEffects.map(e => e.key).join(',');
-        if (key !== _lastBuffBarKey) {
-          _lastBuffBarKey = key;
-          bar.innerHTML = activeAlchemyEffects.map(e => `
-            <div class="buff-icon ${e.kind}" data-buff="${e.key}" title="${e.label}">
-              <span class="buff-icon-glyph">${e.icon}</span>
-              <div class="buff-icon-track"><div class="buff-icon-fill" data-fill="${e.key}"></div></div>
-            </div>
-          `).join('');
-        }
-        bar.style.display = activeAlchemyEffects.length ? 'flex' : 'none';
-        const now = performance.now() / 1000;
-        activeAlchemyEffects.forEach(e => {
-          const fill = bar.querySelector(`.buff-icon-fill[data-fill="${e.key}"]`);
-          if (!fill) return;
-          const remain = Math.max(0, e.expiresAt - now);
-          fill.style.width = Math.max(0, Math.min(100, (remain / e.durationS) * 100)) + '%';
-        });
-      }
 
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
@@ -7277,8 +7034,8 @@
           member.packClothing    = [...packClothing];
           member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
           member.questProgress    = { ...questProgress };
-          member.alchemyKnownEffects = serializeKnownReagentEffects();
-          member.alchemyActiveEffects = serializeActiveAlchemyEffects();
+          member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
+          member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = serializeZoneReagentState();
           member.wildBerryState = serializeZoneBerryState();
           member.zoneTreasureState = serializeZoneTreasureState();
@@ -7411,7 +7168,7 @@
       function taskItemPoolFor(domain) {
         if (domain === 'fishing') return Object.values(FISH_DEFS).flat().map(f => f.key);
         if (domain === 'combat') return [...new Set(Object.values(CREATURE_DB).flatMap(c => (_lootPools[c.lootPool]?.entries || []).map(e => e.itemKey).filter(Boolean)))];
-        if (domain === 'alchemy') return Object.keys(ALCHEMY_REAGENT_DEFS);
+        if (domain === 'alchemy') return Object.keys(window.AlchemySystem.REAGENT_DEFS);
         return TASK_FARMING_ITEM_POOL;
       }
 
@@ -7435,7 +7192,7 @@
       // onboarding.js is a dormant, never-incremented stub — deliberately
       // not used here.
       function getPlayerSkillLevels() {
-        const alchemyDiscoveries = Object.values(knownReagentEffects).reduce((n, s) => n + s.size, 0);
+        const alchemyDiscoveries = window.AlchemySystem.discoveryCount();
         return {
           farming: toolMasteryLevel(equipmentSlots.hoe),
           fishing: toolMasteryLevel(equipmentSlots.harpoon),
@@ -13422,7 +13179,7 @@
       // blade's size, standing alone as an individually pickable sprite
       // instead of being folded into a shared InstancedMesh tuft.
       function buildReagentPlantMesh(reagentKey) {
-        const def = ALCHEMY_REAGENT_DEFS[reagentKey];
+        const def = window.AlchemySystem.REAGENT_DEFS[reagentKey];
         if (!def) return null;
         const mat = getReagentPlantMaterial(def.color);
         if (!mat) return null;
@@ -13488,7 +13245,7 @@
       // per (zone, day) so re-entering the same zone on the same day doesn't
       // reshuffle plants that just haven't been picked yet.
       function scatterReagentsForZone(mapId) {
-        const pool = alchemyReagentsForZone(mapId);
+        const pool = window.AlchemySystem.reagentsForZone(mapId);
         if (!pool.length) return [];
         const zi = _zoneScenes.get(mapId);
         if (!zi) return [];
@@ -13501,7 +13258,7 @@
       // Builds a worldObjects-shaped pickable for one reagent plant, matching
       // the { getButtons(), onAction() } shape getWorldObjectAt's callers expect.
       function makeReagentPlantObject(mapId, col, row, reagentKey, mesh) {
-        const def = ALCHEMY_REAGENT_DEFS[reagentKey];
+        const def = window.AlchemySystem.REAGENT_DEFS[reagentKey];
         return {
           id: 'reagent_' + mapId + '_' + col + '_' + row, type: 'reagent_plant',
           col, row, mesh, reagentKey,
@@ -13548,7 +13305,7 @@
       // reload's restored placements, on re-entry.
       function ensureZoneReagents(mapId) {
         if (typeof WildernessMapGenerator === 'undefined') return;
-        if (!alchemyReagentsForZone(mapId).length) return;
+        if (!window.AlchemySystem.reagentsForZone(mapId).length) return;
         const zi = _zoneScenes.get(mapId);
         if (!zi) return;
         let persisted = _zoneReagentPersist.get(mapId);
@@ -13930,8 +13687,8 @@
           bundle.gold = min + Math.floor(rnd() * steps) * step;
         }
         if (_rollTreasureChance('potion', 0.35)) {
-          const effectKeys = Object.keys(ALCHEMY_EFFECT_DEFS);
-          const boonKeys = effectKeys.filter(k => ALCHEMY_EFFECT_DEFS[k].kind === 'boon');
+          const effectKeys = Object.keys(window.AlchemySystem.EFFECT_DEFS);
+          const boonKeys = effectKeys.filter(k => window.AlchemySystem.EFFECT_DEFS[k].kind === 'boon');
           const pickEffect = () => {
             const pool = rnd() < 0.75 && boonKeys.length ? boonKeys : effectKeys;
             return pool[Math.floor(rnd() * pool.length)];
@@ -13941,8 +13698,8 @@
             const second = pickEffect();
             if (second && !effects.includes(second)) effects.push(second);
           }
-          const reagentKeys = Object.keys(ALCHEMY_REAGENT_DEFS).sort(() => rnd() - 0.5).slice(0, 2);
-          bundle.potionKey = ensurePotionItemDef(effects, reagentKeys);
+          const reagentKeys = Object.keys(window.AlchemySystem.REAGENT_DEFS).sort(() => rnd() - 0.5).slice(0, 2);
+          bundle.potionKey = window.AlchemySystem.ensurePotionItemDef(effects, reagentKeys);
         }
         if (_rollTreasureChance('clothing', 0.25)) {
           const catalog = getDyeCatalog();
@@ -15273,105 +15030,6 @@
         }
       }
 
-      // ── Alchemy panel render ─────────────────────────────────────────
-      const ALCHEMY_MAX_REAGENTS = 3;
-      let alchemySelectedReagents = []; // up to ALCHEMY_MAX_REAGENTS reagent keys, chosen from inventory
-
-      function toggleAlchemyReagent(key) {
-        const i = alchemySelectedReagents.indexOf(key);
-        if (i >= 0) alchemySelectedReagents.splice(i, 1);
-        else if (alchemySelectedReagents.length < ALCHEMY_MAX_REAGENTS) alchemySelectedReagents.push(key);
-        renderAlchemyPanel();
-      }
-
-      // Consumes the selected reagents and, if they share any effects (see
-      // computeBrewEffects), credits 1 storable Potion item carrying those
-      // effects — drunk later from the Inventory panel (see
-      // selectInventoryItem's Drink button), anywhere, not just at the table.
-      function brewPotion() {
-        const keys = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
-        if (keys.length < 2) return { ok: false, message: 'Select at least 2 reagents.' };
-        const effects = computeBrewEffects(keys);
-        if (!effects.length) return { ok: false, message: 'No shared properties — the mixture does nothing.' };
-        for (const rk of keys) {
-          const def = ALCHEMY_REAGENT_DEFS[rk];
-          def.effects.forEach((eff, idx) => { if (effects.includes(eff)) discoverReagentEffect(rk, idx); });
-        }
-        keys.forEach(k => { inventory[k]--; clampInventoryStack(k); });
-        const potionKey = ensurePotionItemDef(effects, keys);
-        inventory[potionKey] = Math.min(99, (inventory[potionKey] || 0) + 1);
-        alchemySelectedReagents = [];
-        refreshItemScroll();
-        const names = effects.map(e => ALCHEMY_EFFECT_DEFS[e].label).join(', ');
-        return { ok: true, message: '⚗️ Brewed a Potion of ' + names + '. Drink it from your bag any time.' };
-      }
-
-      window._doBrewPotion = function () {
-        const result = brewPotion();
-        showToast(result.message, result.ok !== false);
-        renderAlchemyPanel();
-        if (result.ok !== false) saveMemberWorldData();
-      };
-
-      function renderAlchemyPanel() {
-        const list = document.getElementById('alchemyReagentList');
-        const selectedEl = document.getElementById('alchemySelectedStrip');
-        const previewEl = document.getElementById('alchemyEffectPreview');
-        if (!list) return;
-        alchemySelectedReagents = alchemySelectedReagents.filter(k => (inventory[k] || 0) > 0);
-        const heldReagents = Object.keys(ALCHEMY_REAGENT_DEFS).filter(k => (inventory[k] || 0) > 0);
-        list.innerHTML = '';
-        if (!heldReagents.length) {
-          list.innerHTML = '<div class="delivery-row"><span class="dr-icon">🌿</span><span class="dr-name">No reagents in your bag yet — forage them across the wilderness zones.</span><span class="dr-eta">—</span></div>';
-        }
-        heldReagents.forEach(key => {
-          const def = ALCHEMY_REAGENT_DEFS[key];
-          const selected = alchemySelectedReagents.includes(key);
-          const effectsHtml = def.effects.map((eff, idx) => isReagentEffectKnown(key, idx)
-            ? `<span class="alch-effect ${ALCHEMY_EFFECT_DEFS[eff].kind}">${ALCHEMY_EFFECT_DEFS[eff].icon} ${ALCHEMY_EFFECT_DEFS[eff].label}</span>`
-            : `<span class="alch-effect unknown">❓ ?</span>`).join('');
-          const row = document.createElement('div');
-          row.className = 'shop-row alch-reagent-row' + (selected ? ' selected' : '');
-          row.innerHTML = `
-            <div class="sh-icon">${def.icon}</div>
-            <div class="sh-info">
-              <div class="sh-name">${def.label} <span class="alch-count">×${inventory[key]}</span></div>
-              <div class="alch-effects">${effectsHtml}</div>
-            </div>
-            <button class="shop-buy-btn" data-act="toggle">${selected ? 'Selected' : 'Select'}</button>
-          `;
-          row.querySelector('[data-act="toggle"]')?.addEventListener('click', () => toggleAlchemyReagent(key));
-          list.appendChild(row);
-        });
-
-        if (selectedEl) {
-          selectedEl.innerHTML = alchemySelectedReagents.length
-            ? alchemySelectedReagents.map(k => `<span class="alch-selected-chip">${ALCHEMY_REAGENT_DEFS[k].icon} ${ALCHEMY_REAGENT_DEFS[k].label}</span>`).join('')
-            : '<span class="alch-empty-hint">Select 2–3 reagents to test for a reaction.</span>';
-        }
-        if (previewEl) {
-          const effects = computeBrewEffects(alchemySelectedReagents);
-          if (alchemySelectedReagents.length < 2) {
-            previewEl.innerHTML = '';
-          } else if (!effects.length) {
-            previewEl.innerHTML = '<div class="alch-empty-hint">No shared properties detected.</div>';
-          } else {
-            previewEl.innerHTML = effects.map(eff => {
-              const known = alchemySelectedReagents.some(k => {
-                const idx = ALCHEMY_REAGENT_DEFS[k].effects.indexOf(eff);
-                return idx >= 0 && isReagentEffectKnown(k, idx);
-              });
-              const def = ALCHEMY_EFFECT_DEFS[eff];
-              return known
-                ? `<span class="alch-effect ${def.kind}">${def.icon} ${def.label}</span>`
-                : `<span class="alch-effect unknown">❓ Unknown reaction</span>`;
-            }).join('');
-          }
-        }
-        const brewBtn = document.getElementById('alchemyBrewBtn');
-        if (brewBtn) brewBtn.disabled = alchemySelectedReagents.length < 2;
-      }
-
       // ── Tasks panel (board requests + accepted NPC favors) ───────────
       function renderTasksPanel() {
         maybeRefreshBoardTask();
@@ -16214,7 +15872,7 @@
         }
       });
 
-      Object.entries(ALCHEMY_REAGENT_DEFS).forEach(([key, def]) => {
+      Object.entries(window.AlchemySystem.REAGENT_DEFS).forEach(([key, def]) => {
         if (!inventoryItems.some(item => item.key === key)) {
           inventoryItems.push({ key, icon: def.icon, label: def.label.toUpperCase(), max: 99 });
         }
@@ -16222,7 +15880,7 @@
           ITEM_DEFS[key] = {
             icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
             tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
-            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${ALCHEMY_EFFECT_DEFS[def.effects[0]].label}.`,
+            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${window.AlchemySystem.EFFECT_DEFS[def.effects[0]].label}.`,
           };
         }
       });
@@ -16639,9 +16297,9 @@
           // Potions are drinkable from right here — the Inventory panel is
           // reachable from anywhere, so this is the "consume anywhere" path
           // (as opposed to brewing, which still needs the Alchemy Table).
-          if ((ALCHEMY_POTION_ITEMS[key] || getPotionEffectsFromKey(key)) && count > 0) {
+          if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
             mkBtn('🧪 Drink', 'equip', () => {
-              const result = drinkPotion(key);
+              const result = window.AlchemySystem.drinkPotion(key);
               showToast(result.message, result.ok !== false);
               if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
             });
@@ -18108,7 +17766,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * getAlchemySpeedMul() * devGlobalSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * devGlobalSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -26876,7 +26534,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           updateMovement(dt);
           updateZoneFogAroundPlayer();
           updatePlayerVitals(dt);
-          updateAlchemyEffects();
+          window.AlchemySystem.update();
           window.BountyBoard.updateTracking(dt);
 
           if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
@@ -30110,8 +29768,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
         // today's (not-yet-picked) wilderness reagent placements — all
         // world-scoped per character, same as the fields just above.
-        restoreKnownReagentEffects(playerData.alchemyKnownEffects);
-        restoreActiveAlchemyEffects(playerData.alchemyActiveEffects);
+        window.AlchemySystem.restoreKnownEffects(playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         restoreZoneReagentState(playerData.alchemyReagentState);
         restoreZoneBerryState(playerData.wildBerryState);
         restoreZoneTreasureState(playerData.zoneTreasureState);
@@ -30123,8 +29781,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         // each one's display/Drink metadata straight from its key, which
         // deterministically encodes its effects (see ensurePotionItemDef).
         Object.keys(inventory).forEach(key => {
-          const effects = getPotionEffectsFromKey(key);
-          if (effects) ensurePotionItemDef(effects);
+          const effects = window.AlchemySystem.getPotionEffectsFromKey(key);
+          if (effects) window.AlchemySystem.ensurePotionItemDef(effects);
         });
 
         gearInventory = (playerData.gearInventory && typeof playerData.gearInventory === 'object')
@@ -30414,7 +30072,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
         clamp,
         angleDiff,
         canPlayerOccupy,
-        getAlchemySpeedMul,
+        getAlchemySpeedMul: window.AlchemySystem.getSpeedMul,
         getKeyboardVector,
         makeCreatureEntity,
         despawnCreature,
@@ -30530,6 +30188,15 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
       });
 
       window.CreatureGenetics?.init({ clamp, CREATURE_DB });
+
+      window.AlchemySystem?.init({
+        ITEM_DEFS,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll,
+        showToast,
+        saveMemberWorldData,
+      });
 
       window.BountyBoard?.init({
         getQuestProgress: () => questProgress,
