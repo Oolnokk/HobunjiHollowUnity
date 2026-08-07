@@ -293,6 +293,16 @@
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
   <script src="js/weather-fx.js?v=20260807a"></script>
+  <!-- Farm tab hub (header, grid glance, buildings list, processor status
+       tiles, livestock roster + breeding, farm<->stable transfers, storage,
+       farmhands) and the Stable tab (window.FarmPanel) — reads
+       window.FarmAnimals/window.CreatureGenetics/window.DewVats/
+       window.FarmBuildings/window.__hobunjiAddFarmhand/
+       window.__hobunjiRemoveFarmhand at call time (already global by then),
+       so load order relative to the other systems above doesn't matter;
+       must load before game.js, which calls window.FarmPanel.init(...)
+       during its own setup. -->
+  <script src="js/farm-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

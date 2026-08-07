@@ -183,8 +183,8 @@
         if (id === 'crafting') renderCraftingPanel();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
         if (id === 'map') window.WildernessMap.renderMapPanel();
-        if (id === 'farm') renderFarmPanel();
-        if (id === 'stable') renderStablePanel();
+        if (id === 'farm') window.FarmPanel.render();
+        if (id === 'stable') window.FarmPanel.renderStablePanel();
         if (id === 'shipping') buildShippingTransferUI();
         if (id === 'supplies') renderSupplyPage();
         if (id === 'generalStore') window.GeneralStore.render();
@@ -4981,7 +4981,7 @@
         if (cutscenePreviewActive) return;
 
         for (const role of ['companion', 'shoulderPet']) {
-          const activeId = activeStableIdForRole(role);
+          const activeId = window.FarmPanel.activeStableIdForRole(role);
           // The stable is the primary source of truth for "what's my active
           // X" — only species with a matching CREATURE_DB entry (and
           // therefore a companion AI type) can actually be summoned; a
@@ -13808,830 +13808,16 @@
       // currentWeekdayName, formatCalendarDate, etc.) now live in
       // js/calendar-system.js — call via window.CalendarSystem.*.
 
-      // ── Farm tab: the farm's identity/progression hub ──────────────────
-      // Reads `grid`/`worldObjects`/`animalObjects` directly (not through
-      // getActiveGrid()/getWorldObjectAt(), which are area-gated) since
-      // those bare module variables are always the farm's own state
-      // regardless of which area the player currently stands in.
-      // Keyed by `${source}:${id}` so a world-livestock id and a stable id
-      // never collide. Values are the ref objects setBreedingPair() expects.
-      let farmPairPicks = new Map();
+      // Farm tab hub (header, grid glance, buildings list, processor status
+      // tiles, livestock roster + breeding, farm<->stable transfers, storage,
+      // farmhands) and the Stable tab now live in js/farm-panel.js — call via
+      // window.FarmPanel.*.
 
-      // Farm tab "move/place" state — armed by a button in renderFarmBuildings(),
-      // consumed by the farmGlanceCanvas click handler set up in
-      // renderFarmGridGlance(). null when nothing is being moved/placed.
-      let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'place', tier }
       // Set by a barn's in-world "Manage Livestock" button (see
       // makeBarnWorldObject) to jump straight to the Farm tab; currently just
       // opens the tab (the livestock list itself has no per-barn grouping to
       // scroll to yet), kept as a hook for a future focused view.
       let _farmLivestockFocusBarnId = null;
-
-      function renderFarmPanel() {
-        if (!document.getElementById('mpFarm')) return;
-        renderFarmHeader();
-        renderFarmGridGlance();
-        renderFarmBuildings();
-        renderFarmProcessors();
-        renderFarmLivestock();
-        renderFarmStoragePane();
-        renderFarmhandsSection();
-
-        const addLivestockBtn = document.getElementById('farmAddLivestockBtn');
-        if (addLivestockBtn) addLivestockBtn.onclick = () => {
-          const key = Object.keys(LIVESTOCK_ITEM_KINDS).find(k => (inventory[k] || 0) > 0);
-          if (!key) { showToast('No livestock crates in your bag.', false); return; }
-          const result = window.FarmAnimals.addFromItem(key);
-          showToast(result.message, result.ok);
-          if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); buildInventoryGrid(); refreshActionBar(); }
-        };
-        const pairBtn = document.getElementById('farmPairBtn');
-        if (pairBtn) pairBtn.onclick = () => {
-          const [a, b] = [...farmPairPicks.values()];
-          if (a && b) setBreedingPair(a, b);
-          farmPairPicks.clear();
-          renderFarmLivestock();
-        };
-        const addFarmhandBtn = document.getElementById('farmAddFarmhandBtn');
-        if (addFarmhandBtn) addFarmhandBtn.onclick = () => {
-          const id = document.getElementById('farmAddFarmhandSelect')?.value;
-          if (!id) return;
-          window.__hobunjiAddFarmhand(id, {});
-          renderFarmhandsSection();
-        };
-      }
-
-      function renderFarmHeader() {
-        const input = document.getElementById('farmNameInput');
-        const saveBtn = document.getElementById('farmNameSaveBtn');
-        const ownerSpan = document.getElementById('farmOwnerName');
-        const owner = isFarmOwner();
-        if (input) { input.value = getFarmName(); input.disabled = !owner; }
-        if (saveBtn) {
-          saveBtn.hidden = !owner;
-          saveBtn.onclick = () => { setFarmName(input.value); renderFarmHeader(); showToast('Farm renamed.', true); };
-        }
-        if (ownerSpan) ownerSpan.textContent = getFarmOwnerName();
-      }
-
-      const FARM_GLANCE_TILE_COLORS = {
-        [TileType.GRASS]: '#3c6e3f', [TileType.WEEDS]: '#4f5c2e', [TileType.TILLED]: '#6b4a30',
-        [TileType.TRENCH]: '#25445c', [TileType.RAISED]: '#8a6a3d', [TileType.PADDY]: '#2f6a63',
-        [TileType.ROCK]: '#6b6b6f', [TileType.SHRUB]: '#2e4a2c', [TileType.PATH]: '#8f8672',
-        [TileType.RIVER]: '#2c6fa8', [TileType.STREAM]: '#3a83bd', [TileType.RAMP]: '#7a7a68', [TileType.WATERFALL]: '#4ea0d6',
-      };
-      const FARM_GLANCE_PX = 10;
-
-      // Read-only top-down status glance — modeled on the map-editor's
-      // canvas2d cell-fill approach, but simplified: no camera controls, no
-      // editing, just "what does the farm look like right now."
-      function renderFarmGridGlance() {
-        const canvas = document.getElementById('farmGlanceCanvas');
-        if (!canvas) return;
-        canvas.width = COLS * FARM_GLANCE_PX;
-        canvas.height = ROWS * FARM_GLANCE_PX;
-        const ctx = canvas.getContext('2d');
-        const PX = FARM_GLANCE_PX;
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            const tile = grid[r]?.[c];
-            ctx.fillStyle = tile ? (FARM_GLANCE_TILE_COLORS[tile.type] || '#3c6e3f') : '#1a1a1a';
-            ctx.fillRect(c * PX, r * PX, PX, PX);
-            if (tile?.crop) {
-              ctx.fillStyle = tile.cropReady ? '#f9e28a' : '#8fd66b';
-              ctx.fillRect(c * PX + 2, r * PX + 2, PX - 4, PX - 4);
-            }
-            if (isHouseFootprint(c, r)) {
-              ctx.fillStyle = 'rgba(120,90,60,0.9)';
-              ctx.fillRect(c * PX, r * PX, PX, PX);
-            }
-          }
-        }
-        // Buildings / furniture / crates — everything occupying a farm tile
-        // that isn't an animal (animals get their own marker below).
-        // Processing furniture gets its actual status color (see
-        // farmProcessorStatus, shared with the Processors tile grid below)
-        // instead of the flat generic marker every other object still uses.
-        const _glanceLivestock = processingFurnitureObjects.size ? _loadWorldLivestock() : null;
-        worldObjects.forEach((obj, key) => {
-          if (!obj || obj.type === 'animal') return;
-          const [c, r] = key.split(',').map(Number);
-          ctx.fillStyle = obj.type === 'processing_furniture' ? FARM_PROCESSOR_STATUS_COLORS[farmProcessorStatus(obj, _glanceLivestock).status] : 'rgba(200,80,60,0.9)';
-          ctx.fillRect(c * PX, r * PX, PX, PX);
-        });
-        // Livestock
-        animalObjects.forEach(a => {
-          ctx.fillStyle = '#ffd27a';
-          ctx.beginPath();
-          ctx.arc(a.col * PX + PX / 2, a.row * PX + PX / 2, PX * 0.35, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        const legend = document.getElementById('farmGridLegend');
-        if (legend && !legend.dataset.built) {
-          legend.dataset.built = '1';
-          legend.innerHTML = [
-            ['#3c6e3f', 'Grass'], ['#6b4a30', 'Tilled'], ['#25445c', 'Trench'],
-            ['#8fd66b', 'Growing crop'], ['#f9e28a', 'Ready crop'],
-            ['rgba(200,80,60,0.9)', 'Building/decor'], ['#6b6b6f', 'Rock/obstruction'],
-            ['#ffd27a', 'Livestock'],
-            [FARM_PROCESSOR_STATUS_COLORS.idle, 'Processor: idle'],
-            [FARM_PROCESSOR_STATUS_COLORS.working, 'Processor: working'],
-            [FARM_PROCESSOR_STATUS_COLORS.ready, 'Processor: ready'],
-            [FARM_PROCESSOR_STATUS_COLORS.livestock, 'Processor: livestock-worked'],
-          ].map(([color, label]) => `<span><i style="background:${color}"></i>${esc(label)}</span>`).join('');
-        }
-
-        // Click-to-move/place — only active while _farmPlacementMode is armed
-        // (see renderFarmBuildings()'s Move/Place buttons). Bound once; reads
-        // _farmPlacementMode fresh on every click rather than being rebuilt.
-        if (!canvas.dataset.clickBound) {
-          canvas.dataset.clickBound = '1';
-          canvas.addEventListener('click', (e) => {
-            if (!_farmPlacementMode || !hasFarmPermission('alterFarm')) return;
-            const rect = canvas.getBoundingClientRect();
-            const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
-            const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
-            const mode = _farmPlacementMode;
-            const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row) : window.FarmBuildings.placePlan(mode.tier, col, row);
-            showToast(result.message, result.ok);
-            if (result.ok) _farmPlacementMode = null;
-            renderFarmPanel();
-          });
-        }
-        canvas.style.cursor = _farmPlacementMode ? 'crosshair' : '';
-      }
-
-      // "Buildings" section of the Farm tab: lists the house + every barn
-      // with a Move button (owner/alterFarm-gated), and any owned-but-
-      // unplaced barn plans with a Place button. Both arm _farmPlacementMode
-      // and wait for a click on the glance canvas above (see
-      // renderFarmGridGlance()'s click handler).
-      function renderFarmBuildings() {
-        const list = document.getElementById('farmBuildingsList');
-        const note = document.getElementById('farmBuildingsNote');
-        const cancelBtn = document.getElementById('farmCancelPlacementBtn');
-        if (!list) return;
-        const canAlter = hasFarmPermission('alterFarm');
-        list.innerHTML = '';
-
-        if (note) {
-          note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can move or build here."
-            : _farmPlacementMode
-              ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.' : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
-              : 'Move the house or a barn, or place an owned barn plan, by clicking the map above.';
-        }
-        if (cancelBtn) {
-          cancelBtn.hidden = !_farmPlacementMode;
-          cancelBtn.onclick = () => { _farmPlacementMode = null; renderFarmBuildings(); };
-        }
-
-        const addRow = (label, w, h, onMove) => {
-          const row = document.createElement('div');
-          row.className = 'farm-row';
-          row.innerHTML = `<span class="farm-row-name">${esc(label)}</span><span class="farm-note">${w}×${h}</span>`;
-          if (canAlter && onMove) {
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Move';
-            btn.addEventListener('click', onMove);
-            row.appendChild(btn);
-          }
-          list.appendChild(row);
-        };
-
-        addRow('🏠 Highland House', HOUSE_FOOTPRINT_W, HOUSE_FOOTPRINT_D,
-          () => { _farmPlacementMode = { type: 'move', buildingId: 'highland_house' }; renderFarmBuildings(); });
-
-        farmBuildings.filter(b => b.kind === 'barn').forEach(b => {
-          const tier = BARN_TIERS[b.tier];
-          addRow(`🏚 ${tier.label}${b.stage === 'foundation' ? ' (foundation)' : ''}`, b.w, b.h,
-            () => { _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
-        });
-
-        if (canAlter) {
-          Object.entries(BARN_TIERS).forEach(([tier, def]) => {
-            const owned = inventory[def.planItem] || 0;
-            if (owned < 1) return;
-            const row = document.createElement('div');
-            row.className = 'farm-row';
-            row.innerHTML = `<span class="farm-row-name">📜 ${esc(def.label)} Plan</span><span class="farm-note">${owned} owned</span>`;
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Place';
-            btn.addEventListener('click', () => { _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
-            row.appendChild(btn);
-            list.appendChild(row);
-          });
-        }
-      }
-
-      // Builds one pickable livestock/stable row. `ref` identifies it for
-      // breeding-pair selection. `onRename`/`onSell` are omitted (null) for
-      // stable entries — untradeable, and renamed from the Stable tab instead;
-      // this is a breeding-only view of the stable.
-      function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
-        const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
-        const value = hasGenotype ? window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind) : null;
-        const pending = pairs.some(p => window.FarmAnimals.refsEqual(p.parentA, ref) || window.FarmAnimals.refsEqual(p.parentB, ref));
-        const pickKey = `${ref.source}:${ref.id}`;
-        const row = document.createElement('div');
-        row.className = 'farm-row';
-        row.innerHTML =
-          (canManage ? `<input type="checkbox" class="farm-pick" ${farmPairPicks.has(pickKey) ? 'checked' : ''} ${pending ? 'disabled' : ''}>` : '') +
-          `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span>` +
-          (onRename
-            ? `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
-            : `<span class="farm-row-name" style="padding:2px 4px">${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}</span>`) +
-          _livestockSwatchesHtml(entry.genotype, entry.kind) +
-          `<span class="farm-row-value${value ? ' tier-' + esc(value.tier) : ''}">${value ? `${value.amount}g · ${esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
-          (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
-        if (canManage) {
-          if (onRename) row.querySelector('.farm-row-name').addEventListener('change', e => onRename(e.target.value));
-          row.querySelector('.farm-pick').addEventListener('change', e => {
-            if (e.target.checked) {
-              farmPairPicks.set(pickKey, ref);
-              if (farmPairPicks.size > 2) farmPairPicks.delete(farmPairPicks.keys().next().value);
-            } else farmPairPicks.delete(pickKey);
-            renderFarmLivestock();
-          });
-        }
-        if (onSell) row.querySelector('.farm-sell-btn').addEventListener('click', onSell);
-        return row;
-      }
-
-      // ── Farm tab: processing-station status tiles ──────────────────
-      // Color-coded by the same job state makeProcessingFurniture already
-      // tracks — no separate status system, this just reads getJob()/
-      // AGING_METHODS the same way its own getButtons() does, plus whether
-      // a squeezing vat has livestock assigned (see assignLivestockToVat).
-      const FARM_PROCESSOR_STATUS_COLORS = {
-        idle: '#8f8878', working: '#c9a227', ready: '#5fbf6b', livestock: '#4a90d9',
-      };
-      // Shared by the Processors tile grid and the Layout glance canvas
-      // marker — one status computation, read from the same job state
-      // makeProcessingFurniture's own getButtons() already uses.
-      function farmProcessorStatus(obj, livestock) {
-        const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
-        if (!def) return { status: 'idle', label: 'Idle' };
-        const isAging = AGING_METHODS.has(def.method);
-        const job = obj.getJob ? obj.getJob() : null;
-        const list = livestock || (def.method === 'squeezing' ? _loadWorldLivestock() : null);
-        const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id) : null;
-        if (isAging && job) {
-          const daysLeft = Math.max(0, job.readyDay - calendar.day);
-          return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };
-        }
-        if (worker) return { status: 'livestock', label: `Worked by ${worker.name}`, worker };
-        return { status: 'idle', label: 'Idle' };
-      }
-      function renderFarmProcessors() {
-        const grid = document.getElementById('farmProcessorsGrid');
-        const note = document.getElementById('farmProcessorsNote');
-        if (!grid) return;
-        const processors = [...processingFurnitureObjects];
-        if (note) note.textContent = processors.length ? '' : 'No processing stations placed yet.';
-        const livestock = _loadWorldLivestock();
-        grid.innerHTML = '';
-        processors.forEach(obj => {
-          const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
-          if (!def) return;
-          const { status, label, worker } = farmProcessorStatus(obj, livestock);
-          const tile = document.createElement('div');
-          tile.className = 'farm-processor-tile';
-          tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
-          tile.innerHTML = `
-            <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
-            <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
-          `;
-          if (status === 'ready' && hasFarmPermission('alterFarm')) {
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Collect';
-            btn.addEventListener('click', () => {
-              const result = obj.onAction('obj_process_' + obj.furnitureKey);
-              showToast(result.message, result.ok);
-              renderFarmProcessors(); renderFarmGridGlance();
-            });
-            tile.appendChild(btn);
-          }
-          if (worker && hasFarmPermission('livestock')) {
-            const btn = document.createElement('button');
-            btn.className = 'settings-small-btn';
-            btn.textContent = 'Unassign';
-            btn.addEventListener('click', () => {
-              const result = window.DewVats.unassignFromVat(worker.id);
-              showToast(result.message, result.ok);
-              renderFarmProcessors(); renderFarmLivestock();
-            });
-            tile.appendChild(btn);
-          }
-          grid.appendChild(tile);
-        });
-      }
-
-      function renderFarmLivestock() {
-        const list = document.getElementById('farmLivestockList');
-        if (!list) return;
-        const livestock = _loadWorldLivestock();
-        const pairs = _loadWorldBreedingPairs();
-        const canManage = hasFarmPermission('livestock');
-
-        const owner = isFarmOwner();
-        list.innerHTML = '';
-        if (!livestock.length) list.appendChild(Object.assign(document.createElement('div'), { className: 'farm-note', textContent: 'No livestock on the farm yet.' }));
-        livestock.forEach(entry => {
-          const row = _buildStablePickRow(
-            entry, { source: 'world', id: entry.id }, pairs, canManage,
-            name => renameLivestock(entry.id, name), () => sellLivestock(entry.id)
-          );
-
-          // Ownership-transfer / marketplace row — owner gets move/stable-able/
-          // offer-for-sale controls; a visiting farmhand gets Buy (if priced)
-          // and Take to Stable (if the owner flagged this one stable-able).
-          const extra = document.createElement('div');
-          extra.className = 'farm-row-extra';
-          if (canManage) {
-            const housingSelect = document.createElement('select');
-            housingSelect.className = 'settings-select farm-barn-select';
-            housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
-            const stasisOpt = document.createElement('option');
-            stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
-            housingSelect.appendChild(stasisOpt);
-            farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
-              const tier = BARN_TIERS[b.tier];
-              const occupants = livestock.filter(l => l.barnId === b.id).length;
-              const opt = document.createElement('option');
-              opt.value = b.id;
-              opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
-              opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
-              housingSelect.appendChild(opt);
-            });
-            housingSelect.value = entry.barnId || '';
-            housingSelect.addEventListener('change', () => {
-              const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
-              showToast(result.message, result.ok);
-              renderFarmLivestock(); renderFarmGridGlance();
-            });
-            extra.appendChild(housingSelect);
-            if (entry.resourceReady) {
-              const readyBadge = document.createElement('span');
-              readyBadge.className = 'farm-note';
-              readyBadge.textContent = '✅ Ready to collect — visit it on the farm';
-              extra.appendChild(readyBadge);
-            }
-            // Squeezing-vat assignment — only meaningful for a housed kind
-            // with a squeezable resource (uumkao'ii dew today, see
-            // vatCanAcceptLivestock), and only once it's actually housed
-            // (same gate as the dew/egg cooldowns themselves).
-            if (entry.barnId && window.DewVats.vatCanAccept(entry.kind)) {
-              const vats = [...processingFurnitureObjects].filter(o => PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
-              const vatSelect = document.createElement('select');
-              vatSelect.className = 'settings-select farm-barn-select';
-              vatSelect.title = 'Assign to a placed squeezing vat — its dew is squeezed into milk/curds automatically each cooldown instead of dropping a pile to dig up.';
-              const noneOpt = document.createElement('option');
-              noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
-              vatSelect.appendChild(noneOpt);
-              vats.forEach(v => {
-                const takenBy = livestock.find(l => l.assignedVatId === v.id);
-                const opt = document.createElement('option');
-                opt.value = v.id;
-                opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');
-                opt.disabled = !!(takenBy && takenBy.id !== entry.id);
-                vatSelect.appendChild(opt);
-              });
-              vatSelect.value = entry.assignedVatId || '';
-              vatSelect.addEventListener('change', () => {
-                const result = vatSelect.value ? window.DewVats.assignToVat(entry.id, vatSelect.value) : window.DewVats.unassignFromVat(entry.id);
-                showToast(result.message, result.ok);
-                renderFarmLivestock(); renderFarmProcessors();
-              });
-              extra.appendChild(vatSelect);
-            }
-          }
-          if (owner) {
-            const moveBtn = document.createElement('button');
-            moveBtn.className = 'settings-small-btn';
-            moveBtn.textContent = '→ My Stable';
-            moveBtn.title = 'Move into your personal stable (untradeable, leaves this farm)';
-            moveBtn.addEventListener('click', () => moveLivestockToStable(entry.id));
-            extra.appendChild(moveBtn);
-
-            const stableableLabel = document.createElement('label');
-            stableableLabel.className = 'farm-stableable-toggle';
-            stableableLabel.innerHTML = `<input type="checkbox" ${entry.stableable ? 'checked' : ''}> Stable-able`;
-            stableableLabel.querySelector('input').addEventListener('change', e => setLivestockStableable(entry.id, e.target.checked));
-            extra.appendChild(stableableLabel);
-
-            if (entry.forSale) {
-              const cancelBtn = document.createElement('button');
-              cancelBtn.className = 'settings-small-btn';
-              cancelBtn.textContent = `For Sale: ${entry.forSale.price}g (Cancel)`;
-              cancelBtn.addEventListener('click', () => setLivestockForSale(entry.id, null));
-              extra.appendChild(cancelBtn);
-            } else {
-              const priceInput = document.createElement('input');
-              priceInput.type = 'number'; priceInput.min = '1'; priceInput.placeholder = 'Price';
-              priceInput.className = 'farm-price-input';
-              const offerBtn = document.createElement('button');
-              offerBtn.className = 'settings-small-btn';
-              offerBtn.textContent = 'Offer for Sale';
-              offerBtn.addEventListener('click', () => {
-                const price = Math.max(1, Math.round(Number(priceInput.value) || 0));
-                if (!price) { showToast('Enter a price first.', false); return; }
-                setLivestockForSale(entry.id, price);
-              });
-              extra.appendChild(priceInput);
-              extra.appendChild(offerBtn);
-            }
-          } else {
-            if (entry.forSale) {
-              const buyBtn = document.createElement('button');
-              buyBtn.className = 'settings-small-btn';
-              buyBtn.textContent = `Buy for ${entry.forSale.price}g`;
-              buyBtn.addEventListener('click', () => buyLivestock(entry.id));
-              extra.appendChild(buyBtn);
-            }
-            if (entry.stableable) {
-              const takeBtn = document.createElement('button');
-              takeBtn.className = 'settings-small-btn';
-              takeBtn.textContent = 'Take to My Stable';
-              takeBtn.addEventListener('click', () => takeStableableLivestock(entry.id));
-              extra.appendChild(takeBtn);
-            }
-          }
-          if (extra.children.length) row.appendChild(extra);
-          list.appendChild(row);
-        });
-
-        // Your own stable, offered as breeding-pair candidates on this farm —
-        // untradeable, so no rename/Sell controls here (see the Stable tab).
-        if (canManage && stable.length) {
-          const charId = window.FarmAnimals.currentCharacterId();
-          const header = document.createElement('div');
-          header.className = 'farm-note';
-          header.style.marginTop = '4px';
-          header.textContent = 'Your stable (breeding only — untradeable):';
-          list.appendChild(header);
-          stable.forEach(entry => {
-            list.appendChild(_buildStablePickRow(
-              entry, { source: 'stable', id: entry.id, characterId: charId }, pairs, canManage, null, null
-            ));
-          });
-        }
-
-        const addBtn = document.getElementById('farmAddLivestockBtn');
-        if (addBtn) addBtn.disabled = !canManage;
-        const pairBtn = document.getElementById('farmPairBtn');
-        if (pairBtn) {
-          pairBtn.disabled = !canManage || farmPairPicks.size !== 2;
-          pairBtn.textContent = farmPairPicks.size === 2 ? 'Set Breeding Pair' : 'Set Breeding Pair (select 2)';
-        }
-        const note = document.getElementById('farmBreedingPairsNote');
-        if (note) note.textContent = pairs.length ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} currently breeding.` : '';
-      }
-
-      function renameLivestock(id, name) {
-        if (!hasFarmPermission('livestock')) return;
-        const trimmed = String(name || '').trim().slice(0, 30);
-        if (!trimmed) return;
-        const livestock = _loadWorldLivestock();
-        const entry = livestock.find(l => l.id === id);
-        if (!entry) return;
-        entry.name = trimmed;
-        _saveWorldLivestock(livestock);
-      }
-
-      function sellLivestock(id) {
-        if (!hasFarmPermission('livestock')) return;
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        const value = window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind);
-        inventory.gold = (inventory.gold || 0) + value.amount;
-        saveMemberWorldData();
-        showToast(`Sold ${entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind)} for ${value.amount}g`, true);
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      function setBreedingPair(refA, refB) {
-        if (!hasFarmPermission('livestock') || !refA || !refB || window.FarmAnimals.refsEqual(refA, refB)) return;
-        const pairs = _loadWorldBreedingPairs();
-        pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: calendar.day, readyDay: calendar.day + window.FarmAnimals.GESTATION_DAYS });
-        _saveWorldBreedingPairs(pairs);
-        showToast(`Breeding pair set — check back in ${window.FarmAnimals.GESTATION_DAYS} days.`, true);
-      }
-
-      // ── Farm livestock <-> personal stable transfers ────────────────────
-      // Three ways a farm animal leaves world.livestock and becomes a
-      // personal, untradeable stable companion: the owner moves their own
-      // animal directly, a visiting farmhand buys one the owner priced for
-      // sale, or a visiting farmhand takes one the owner flagged stable-able
-      // (free). All three converge on the same removal + stabling shape.
-      function _removeWorldLivestockAndCleanup(id) {
-        const livestock = _loadWorldLivestock();
-        const idx = livestock.findIndex(l => l.id === id);
-        if (idx < 0) return null;
-        const [entry] = livestock.splice(idx, 1);
-        _saveWorldLivestock(livestock);
-        const ref = { source: 'world', id };
-        _saveWorldBreedingPairs(_loadWorldBreedingPairs().filter(p => !window.FarmAnimals.refsEqual(p.parentA, ref) && !window.FarmAnimals.refsEqual(p.parentB, ref)));
-        removeLiveAnimalEntity(id);
-        return entry;
-      }
-      function removeLiveAnimalEntity(livestockId) {
-        const animal = [...animalObjects].find(a => a.livestockId === livestockId);
-        if (animal) {
-          worldObjects.delete(animal.col + ',' + animal.row);
-          animal.reset && animal.reset();
-          animalObjects.delete(animal);
-        }
-      }
-      function _stableEntryFromLivestock(entry) {
-        return {
-          id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
-          genotype: entry.genotype, aiType: companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
-        };
-      }
-      function _addToOwnStable(stabledEntry) {
-        stable.push(stabledEntry);
-        _autoAssignStableRole(stabledEntry);
-        saveStable();
-      }
-
-      function moveLivestockToStable(id) {
-        if (!isFarmOwner()) return;
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        _addToOwnStable(_stableEntryFromLivestock(entry));
-        showToast(`${entry.name} moved to your stable.`, true);
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      function setLivestockStableable(id, val) {
-        if (!isFarmOwner()) return;
-        const livestock = _loadWorldLivestock();
-        const entry = livestock.find(l => l.id === id);
-        if (!entry) return;
-        entry.stableable = !!val;
-        _saveWorldLivestock(livestock);
-        renderFarmLivestock();
-      }
-
-      function setLivestockForSale(id, price) {
-        if (!isFarmOwner()) return;
-        const livestock = _loadWorldLivestock();
-        const entry = livestock.find(l => l.id === id);
-        if (!entry) return;
-        entry.forSale = price ? { price } : null;
-        _saveWorldLivestock(livestock);
-        showToast(price ? `${entry.name} offered for sale at ${price}g.` : `${entry.name} no longer for sale.`, true);
-        renderFarmLivestock();
-      }
-
-      // Credits gold straight into the owner's per-world save data, even
-      // though they aren't the one currently playing — everything lives in
-      // one shared local save file, so this is the closest local simulation
-      // of a real sale completing (see saveMemberWorldData's shape).
-      function creditOwnerGold(amount) {
-        const worldId = _tothalWorldId();
-        try {
-          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          const ownerId = world.ownerCharacterId;
-          if (!world.members) world.members = {};
-          if (!world.members[ownerId]) world.members[ownerId] = defaultWorldMemberState();
-          const memberInv = world.members[ownerId].nonGearInventory || (world.members[ownerId].nonGearInventory = {});
-          memberInv.gold = (memberInv.gold || 0) + amount;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
-      }
-
-      function buyLivestock(id) {
-        const livestock = _loadWorldLivestock();
-        const target = livestock.find(l => l.id === id);
-        if (!target?.forSale) return;
-        const price = target.forSale.price;
-        if ((inventory.gold || 0) < price) { showToast(`Not enough gold (need ${price}g).`, false); return; }
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        inventory.gold -= price;
-        creditOwnerGold(price);
-        _addToOwnStable(_stableEntryFromLivestock(entry));
-        saveMemberWorldData();
-        showToast(`Bought ${entry.name} for ${price}g!`, true);
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      // Free transfer of an owner-flagged "stable-able" animal into a
-      // farmhand's own stable — gated purely by that per-animal flag rather
-      // than the general 'livestock' permission, since the owner already
-      // opted this specific animal in.
-      function takeStableableLivestock(id) {
-        const livestock = _loadWorldLivestock();
-        const target = livestock.find(l => l.id === id);
-        if (!target?.stableable) return;
-        const entry = _removeWorldLivestockAndCleanup(id);
-        if (!entry) return;
-        _addToOwnStable(_stableEntryFromLivestock(entry));
-        showToast(`${entry.name} moved to your stable.`, true);
-        renderFarmLivestock(); renderFarmGridGlance();
-      }
-
-      function renderFarmStoragePane() {
-        const locked = document.getElementById('farmStorageLocked');
-        const body = document.getElementById('farmStorageBody');
-        const canAccess = hasFarmPermission('storage');
-        if (locked) locked.hidden = canAccess;
-        if (body) body.hidden = !canAccess;
-        if (!canAccess) return;
-
-        const store = _loadWorldStorage();
-        const bagList = document.getElementById('farmStorageBagList');
-        if (bagList) {
-          const keys = Object.keys(inventory).filter(k => k !== 'gold' && ITEM_DEFS[k] && (inventory[k] || 0) > 0);
-          bagList.innerHTML = keys.length ? '' : '<div class="farm-note">Bag is empty.</div>';
-          keys.forEach(k => {
-            const def = ITEM_DEFS[k];
-            const row = document.createElement('div');
-            row.className = 'farm-storage-row';
-            row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${esc(def.label)} ×${inventory[k]}</span><button class="settings-small-btn">Store</button>`;
-            row.querySelector('button').addEventListener('click', () => depositToFarmStorage(k, 1));
-            bagList.appendChild(row);
-          });
-        }
-        const boxList = document.getElementById('farmStorageBoxList');
-        if (boxList) {
-          const keys = Object.keys(store).filter(k => (store[k] || 0) > 0);
-          boxList.innerHTML = keys.length ? '' : '<div class="farm-note">Storage is empty.</div>';
-          keys.forEach(k => {
-            const def = ITEM_DEFS[k] || { icon: '📦', label: k };
-            const row = document.createElement('div');
-            row.className = 'farm-storage-row';
-            row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${esc(def.label)} ×${store[k]}</span><button class="settings-small-btn">Take</button>`;
-            row.querySelector('button').addEventListener('click', () => withdrawFromFarmStorage(k, 1));
-            boxList.appendChild(row);
-          });
-        }
-      }
-
-      function depositToFarmStorage(key, amount) {
-        if (!hasFarmPermission('storage')) return;
-        const n = Math.min(amount, inventory[key] || 0);
-        if (n <= 0) return;
-        inventory[key] -= n;
-        clampInventoryStack(key);
-        const store = _loadWorldStorage();
-        store[key] = (store[key] || 0) + n;
-        _saveWorldStorage(store);
-        saveMemberWorldData();
-        renderFarmStoragePane(); buildInventoryGrid(); refreshActionBar();
-      }
-
-      function withdrawFromFarmStorage(key, amount) {
-        if (!hasFarmPermission('storage')) return;
-        const store = _loadWorldStorage();
-        const n = Math.min(amount, store[key] || 0);
-        if (n <= 0) return;
-        store[key] -= n;
-        if (store[key] <= 0) delete store[key];
-        _saveWorldStorage(store);
-        inventory[key] = (inventory[key] || 0) + n;
-        saveMemberWorldData();
-        renderFarmStoragePane(); buildInventoryGrid(); refreshActionBar();
-      }
-
-      const FARMHAND_PERM_LABELS = { storage: 'Storage', plant: 'Plant', harvest: 'Harvest', placeFurniture: 'Furniture', alterFarm: 'Till/Dig', livestock: 'Livestock' };
-
-      // Owner-only: manage farmhand grants. Reads hobunjiSaveMeta directly
-      // (like _loadWorldLivestock() etc.) since farmhands/characters live
-      // there, not on any live in-memory state.
-      function renderFarmhandsSection() {
-        const section = document.getElementById('farmhandsSection');
-        if (!section) return;
-        const owner = isFarmOwner();
-        section.hidden = !owner;
-        if (!owner) return;
-
-        let meta = null;
-        try { meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); } catch {}
-        const world = (meta?.worlds || []).find(w => w.id === _tothalWorldId());
-        if (!world) return;
-
-        const list = document.getElementById('farmhandsList');
-        if (list) {
-          const farmhands = world.farmhands || [];
-          list.innerHTML = farmhands.length ? '' : '<div class="farm-note">No farmhands yet.</div>';
-          farmhands.forEach(fh => {
-            const char = (meta.characters || []).find(c => c.id === fh.characterId);
-            const wrap = document.createElement('div');
-            wrap.className = 'farm-row';
-            wrap.style.flexWrap = 'wrap';
-            wrap.innerHTML = `<span class="farm-row-value" style="flex:1 0 100%;font-size:12px;color:var(--text)">${esc(char?.nickname || 'Unknown')}</span>`;
-            Object.entries(FARMHAND_PERM_LABELS).forEach(([key, label]) => {
-              const cell = document.createElement('div');
-              cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px';
-              cell.innerHTML =
-                `<label class="settings-toggle" style="width:auto"><input type="checkbox" ${fh.permissions?.[key] ? 'checked' : ''}><span class="toggle-slider"></span></label>` +
-                `<span style="font-size:9px;color:var(--muted)">${esc(label)}</span>`;
-              cell.querySelector('input').addEventListener('change', e => window.__hobunjiAddFarmhand(fh.characterId, { [key]: e.target.checked }));
-              wrap.appendChild(cell);
-            });
-            const removeBtn = document.createElement('button');
-            removeBtn.className = 'settings-small-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => { window.__hobunjiRemoveFarmhand(fh.characterId); renderFarmhandsSection(); });
-            wrap.appendChild(removeBtn);
-            list.appendChild(wrap);
-          });
-        }
-
-        const select = document.getElementById('farmAddFarmhandSelect');
-        if (select) {
-          const existingIds = new Set((world.farmhands || []).map(f => f.characterId));
-          const candidates = (meta.characters || []).filter(c => c.id !== world.ownerCharacterId && !existingIds.has(c.id));
-          select.innerHTML = candidates.length
-            ? candidates.map(c => `<option value="${esc(c.id)}">${esc(c.nickname || 'Unnamed')}</option>`).join('')
-            : '<option value="">No other characters</option>';
-          select.disabled = !candidates.length;
-        }
-      }
-
-      const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿' };
-
-      // Which of the stable's 3 equip slots a given stable-entry role occupies,
-      // and the icon/label its row button shows — see stableEntryRole.
-      const STABLE_ROLE_META = {
-        mount: { icon: '🐴', label: 'Mount' },
-        companion: { icon: '🐕', label: 'Companion' },
-        shoulderPet: { icon: '🐿️', label: 'Shoulder pet' },
-      };
-      function activeStableIdForRole(role) {
-        return role === 'mount' ? activeMountId : role === 'shoulderPet' ? activeShoulderPetId : activeCompanionId;
-      }
-      function setActiveStableIdForRole(role, id) {
-        if (role === 'mount') activeMountId = id;
-        else if (role === 'shoulderPet') activeShoulderPetId = id;
-        else activeCompanionId = id;
-      }
-
-      // Small color-swatch HTML shared by every livestock/stable row —
-      // Uumkao'ii shows its two permanent regions; pattern-layer species
-      // (gar-wolf/dabinggi-hound) show base color + first enabled pattern's
-      // color (there's only ever one shared pattern color per specimen).
-      function _livestockSwatchesHtml(genotype, kind) {
-        if (!genotype) return '';
-        if (genotype.fur || genotype.plates) {
-          return (genotype.fur ? `<span class="farm-swatch" style="background:${esc(genotype.fur.color)}" title="Fur color"></span>` : '') +
-                 (genotype.plates ? `<span class="farm-swatch" style="background:${esc(genotype.plates.color)}" title="Plate color"></span>` : '');
-        }
-        const patterns = window.CreatureGenetics.PATTERN_DEFS[kind];
-        if (patterns && genotype.base) {
-          const enabledId = patterns.find(id => genotype[id]?.enabled);
-          return `<span class="farm-swatch" style="background:${esc(genotype.base.color)}" title="Base color"></span>` +
-                 (enabledId ? `<span class="farm-swatch" style="background:${esc(genotype[enabledId].color)}" title="Pattern color"></span>` : '');
-        }
-        return '';
-      }
-
-      // Your personal companion collection — character-scoped, untradeable,
-      // never tied to any farm. Rename, set the active occupant of whichever
-      // of the 3 equip slots (mount/companion/shoulder pet) its Size makes it
-      // eligible for (spawned via syncCompanionFromWhistle/updateCompanions
-      // like the starter dabinggi-hound always has been), and see the level
-      // stub for later.
-      function renderStablePanel() {
-        const list = document.getElementById('stableList');
-        if (!list) return;
-        list.innerHTML = stable.length ? '' : '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
-        stable.forEach(entry => {
-          const role = window.CreatureGenetics.stableEntryRole(entry);
-          const roleMeta = STABLE_ROLE_META[role];
-          const isActive = entry.id === activeStableIdForRole(role);
-          const row = document.createElement('div');
-          row.className = 'farm-row';
-          row.innerHTML =
-            `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${roleMeta.label.toLowerCase()}` : `Set as ${roleMeta.label.toLowerCase()}`}">${roleMeta.icon}</button>` +
-            `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
-            `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" maxlength="30">` +
-            _livestockSwatchesHtml(entry.genotype, entry.kind) +
-            `<span class="farm-row-value">${esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
-          row.querySelector('.farm-companion-btn').addEventListener('click', () => {
-            setActiveStableIdForRole(role, isActive ? null : entry.id);
-            saveStable();
-            renderStablePanel();
-          });
-          row.querySelector('.farm-row-name').addEventListener('change', e => {
-            const trimmed = e.target.value.trim().slice(0, 30);
-            if (!trimmed) return;
-            entry.name = trimmed;
-            saveStable();
-          });
-          list.appendChild(row);
-        });
-      }
 
       // Calendar tab render (renderCalendarPanel/renderCalendarMonthView)
       // and its prev/next month nav buttons now live in
@@ -23961,7 +23147,7 @@
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
-        renderFarmProcessors: () => renderFarmProcessors(),
+        renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
         enterInterior: () => enterInterior(),
         interiorFurnitureObjects: () => interiorFurnitureObjects,
         setShowLegBones: (v) => window.ProceduralLegAnimation?.setShowBones(v),
@@ -24368,6 +23554,56 @@
         getCamY: () => camY,
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
+      });
+
+      window.FarmPanel?.init({
+        LIVESTOCK_ITEM_KINDS,
+        inventory,
+        showToast,
+        buildInventoryGrid,
+        refreshActionBar,
+        isFarmOwner,
+        getFarmName,
+        setFarmName,
+        getFarmOwnerName,
+        TileType,
+        COLS, ROWS,
+        getGrid: () => grid,
+        isHouseFootprint,
+        processingFurnitureObjects,
+        _loadWorldLivestock,
+        worldObjects,
+        animalObjects,
+        esc,
+        hasFarmPermission,
+        getBarnTiers: () => BARN_TIERS,
+        HOUSE_FOOTPRINT_W,
+        HOUSE_FOOTPRINT_D,
+        getFarmBuildings: () => farmBuildings,
+        PROCESSING_FURNITURE_DEFS,
+        AGING_METHODS,
+        calendar,
+        getStable: () => stable,
+        _loadWorldBreedingPairs,
+        saveMemberWorldData,
+        _saveWorldBreedingPairs,
+        _saveWorldLivestock,
+        companionAiTypeForKind,
+        _autoAssignStableRole,
+        saveStable,
+        _tothalWorldId,
+        defaultWorldMemberState,
+        spGold,
+        _loadWorldStorage,
+        _saveWorldStorage,
+        ITEM_DEFS,
+        clampInventoryStack,
+        getActiveMountId: () => activeMountId,
+        setActiveMountId: (v) => { activeMountId = v; },
+        getActiveShoulderPetId: () => activeShoulderPetId,
+        setActiveShoulderPetId: (v) => { activeShoulderPetId = v; },
+        getActiveCompanionId: () => activeCompanionId,
+        setActiveCompanionId: (v) => { activeCompanionId = v; },
       });
 
       window.DevSpawner?.init({
