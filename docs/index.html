@@ -352,6 +352,16 @@
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
   <script src="js/border-terrain.js?v=20260807a"></script>
+  <!-- Procedural den-cavern floor generation (window.CavernGenerator) —
+       pure data generation, no scene-graph/window.* system reads at load
+       time (window.WildlifeSpawn/window.__farmLog are read lazily, at
+       call time); must load before game.js, which calls
+       window.CavernGenerator.init(...) alongside window.WildlifeSpawn's
+       own init call, and window.CavernGenerator.generateCavernFloor(...)
+       can otherwise be reached earlier still, from the fire-and-forget
+       Tothal Shift kicked off during world boot — that path never touches
+       deps, so it works regardless of init() timing. -->
+  <script src="js/cavern-generator.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
