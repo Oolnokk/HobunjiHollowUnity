@@ -334,6 +334,15 @@
        to the other systems above doesn't matter; must load before game.js,
        which calls window.CraftingPanel.init(...) during its own setup. -->
   <script src="js/crafting-panel.js?v=20260807a"></script>
+  <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
+       equip/de-equip, redye panel — window.EquipmentPanel) — its
+       buildEquipmentSlots() calls window.WhistleEquip.build() at render
+       time (not load time), so load order relative to whistle-equip.js
+       doesn't matter; must load before game.js, which references
+       window.EquipmentPanel directly (including at top-level, in
+       window.__climbDebug) and calls window.EquipmentPanel.init(...)
+       during its own setup. -->
+  <script src="js/equipment-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
