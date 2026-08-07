@@ -286,6 +286,13 @@
        .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
        window.BanditCamps at that same call-time point. -->
   <script src="js/dev-spawner.js?v=20260807a"></script>
+  <!-- Weather rolling, day/night + weather lighting overlay, and trench
+       water particle/paddy ripple FX (window.WeatherFX) — reads
+       window.CalendarSystem at call time (already global by then), so load
+       order relative to the other systems above doesn't matter; must load
+       before game.js, which calls window.WeatherFX.init(...) during its
+       own setup. -->
+  <script src="js/weather-fx.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

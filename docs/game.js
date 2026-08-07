@@ -13391,23 +13391,19 @@
         return null;
       }
 
-      // Water particle system: bubbles / foam on flowing trenches
-      const waterParticles = [];
-      const MAX_PARTICLES = 120;
-      // Ripple rings: { x, y, age, maxAge, radius }
-      const ripples = [];
+      // Water particle system (bubbles/foam) and ripple rings now live as
+      // private state in js/weather-fx.js.
       // Tool-use feedback particles; rendered in drawActionParticles() as screen-space overlays.
       const actionParticles = [];
       // Tool-use tile flashes; rendered in drawActionTileEffects() to identify the affected tile.
       const actionTileEffects = [];
       // Machete slash trails; rendered in drawWeaponTrailEffects() to show the actual cone hit area.
       const weaponTrailEffects = [];
-      // Lightning flash state for storms
+      // Lightning flash alpha — stays here (not moved into js/weather-fx.js
+      // with the rest of the lightning state) since drawOverlays() reads it
+      // directly; js/weather-fx.js's updateLightningFlash reads/writes it
+      // via the getLightningAlpha/setLightningAlpha deps.
       let lightningAlpha = 0;
-      let lightningTimer = 6 + Math.random() * 8;
-      let lightningStrikesRemaining = 0;
-      let lightningGapTimer = 0;
-      let lightningDecayRate = 0;
 
       function createInitialGrid() {
         const nextGrid = Array.from({ length: ROWS }, (_, row) => (
@@ -15819,306 +15815,11 @@
       // creature PNG-plane avatars now lives in js/perp-rotation.js — call
       // via window.PerpRotation.*.
 
-      const STORM_NAMES = [
-        'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
-        'Tempest Rimewind', 'Squall Cindermoor', 'Gale Thornhollow', 'Storm Marrowdeep',
-        'Tempest Sootveil', 'Gale Bramblegust', 'Squall Wraithrain', 'Storm Emberfall',
-      ];
-      let lastStormDay = 0;
-      function checkForMajorStorm() {
-        if (calendar.weather !== 'storm') return;
-        if (calendar.day === lastStormDay) return;
-        // ~30% of storm days trigger a major event
-        const roll = seededRandom(calendar.day * 6173 + 41);
-        if (roll > 0.30) return;
-        lastStormDay = calendar.day;
-
-        let trenchesHit = 0, raisedHit = 0;
-        for (let row = 0; row < ROWS; row++) {
-          for (let col = 0; col < COLS; col++) {
-            const tile = grid[row][col];
-            const hitRoll = seededRandom(col * 17 + row * 31 + calendar.day * 7);
-            if (tile.type === TileType.TRENCH && hitRoll < 0.22) {
-              tile.type = TileType.GRASS; tile.water = 0.6; tile.flow = false;
-              trenchesHit++;
-            } else if (tile.type === TileType.RAISED && hitRoll < 0.18) {
-              tile.type = TileType.TILLED; tile.water = clamp(tile.water + 0.3, 0, 1);
-              raisedHit++;
-            }
-          }
-        }
-
-        const name = STORM_NAMES[calendar.day % STORM_NAMES.length];
-        const dmgText = [
-          trenchesHit > 0 ? `${trenchesHit} trench${trenchesHit > 1 ? 'es' : ''} collapsed` : null,
-          raisedHit   > 0 ? `${raisedHit} raised bed${raisedHit > 1 ? 's' : ''} flattened` : null,
-        ].filter(Boolean).join(', ');
-        showToast(`⚡ ${name}! ${dmgText || 'No structural damage.'}`, false);
-        debugLog(`major storm: ${name} — ${dmgText || 'no damage'}`);
-      }
-
-      // ── Lantern light masks ────────────────────────────────────────────
-      // Carried by the player and any NPC tagged "watch" (the Watch). Punches
-      // a soft hole through the day/night darkness tint: a short inner ring
-      // where the tint is almost fully cleared (actual clarity), surrounded
-      // by a much larger, dim halo (the lantern "shines" further than it
-      // actually reveals detail).
-      const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
-      const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
-
-      function _lanternScreenRadius(tx, tz, tiles) {
-        const c = worldToOverlay(tx, 0.5, tz);
-        const e = worldToOverlay(tx + tiles, 0.5, tz);
-        return Math.hypot(e.x - c.x, e.y - c.y);
-      }
-
-      function drawLanternMasks() {
-        const carriers = [{ x: player.x / TILE, z: player.y / TILE }];
-        for (const w of npcWalkers) {
-          if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
-            carriers.push({ x: w.root.position.x, z: w.root.position.z });
-          }
-        }
-        lctx.globalCompositeOperation = 'destination-out';
-        for (const c of carriers) {
-          const center = worldToOverlay(c.x, 0.5, c.z);
-          if (!center.visible) continue;
-          const shineR = _lanternScreenRadius(c.x, c.z, LANTERN_SHINE_TILES);
-          if (!(shineR > 0)) continue;
-          const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
-          const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-          grad.addColorStop(0,                              'rgba(0,0,0,0.92)');
-          grad.addColorStop(clarityFrac,                     'rgba(0,0,0,0.80)');
-          grad.addColorStop(Math.min(1, clarityFrac + 0.18), 'rgba(0,0,0,0.28)');
-          grad.addColorStop(1,                               'rgba(0,0,0,0)');
-          lctx.fillStyle = grad;
-          lctx.beginPath();
-          lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-          lctx.fill();
-        }
-        lctx.globalCompositeOperation = 'source-over';
-      }
-
-      let _lastLightingOverlayTime = 0;
-      function drawLightingOverlay() {
-        const now = performance.now();
-        if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
-        _lastLightingOverlayTime = now;
-        const rect = _threeRect;
-        lctx.clearRect(0, 0, rect.width, rect.height);
-
-        if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
-          // Interior/building: no outdoor day/night overlay — just warm interior ambience
-          lctx.fillStyle = 'rgba(80,40,10,0.08)';
-          lctx.fillRect(0, 0, rect.width, rect.height);
-          if (sceneTransAlpha > 0) {
-            lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
-            lctx.fillRect(0, 0, rect.width, rect.height);
-          }
-          return;
-        }
-
-        const { r, g, b, a } = getLightingState();
-        const W = rect.width;
-        const H = rect.height;
-
-        // Flat sky tint (ported from ScratchbonesGame's outdoor lighting):
-        // screen-blend at low opacity adds warmth/brightness on clear days,
-        // multiply-blend once opacity climbs darkens normally toward dusk/night.
-        // The opacity transitions through near-zero at phase boundaries,
-        // hiding the blend-mode switch.
-        lctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
-        lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
-        lctx.fillRect(0, 0, W, H);
-        lctx.globalCompositeOperation = 'source-over';
-
-        drawLanternMasks();
-
-        // Lightning flash on lighting canvas too
-        if (lightningAlpha > 0) {
-          lctx.fillStyle = `rgba(220, 240, 255, ${lightningAlpha * 0.45})`;
-          lctx.fillRect(0, 0, W, H);
-        }
-
-        // Scene transition fade-to-black
-        if (sceneTransAlpha > 0) {
-          lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
-          lctx.fillRect(0, 0, W, H);
-        }
-      }
-
-      function _computeRawLightingState() {
-        const hour = window.CalendarSystem.getHour(); // 6..22
-        const season = window.CalendarSystem.currentSeason();
-        const isRaining = calendar.isRaining;
-        const isStorm = isRaining && calendar.rainStrength >= 3;
-
-        // Keyframe stops: [hour, r, g, b, alpha]
-        const stops = [
-          [6.0,  40,  30, 80, 0.55],  // pre-dawn: deep blue-purple
-          [6.5,  220, 100, 40, 0.38], // sunrise: warm orange-red
-          [7.5,  240, 160, 60, 0.22], // early morning: golden
-          [9.0,  255, 230, 180, 0.08],// morning: near-clear
-          [12.0, 255, 245, 210, 0.04],// noon: very clear, slight warm
-          [15.0, 255, 225, 160, 0.10],// afternoon: slight golden
-          [17.5, 255, 160, 60, 0.28], // late afternoon: amber
-          [18.5, 220, 90,  30, 0.42], // sunset: deep orange
-          [19.5, 130, 50,  80, 0.52], // dusk: purple-red
-          [20.5, 30,  30,  80, 0.62], // early night: dark blue
-          [22.0, 10,  10,  40, 0.72], // full night
-        ];
-
-        // Interpolate between stops
-        let r = 10, g = 10, b = 40, a = 0.72;
-        for (let i = 0; i < stops.length - 1; i++) {
-          const [h0, r0, g0, b0, a0] = stops[i];
-          const [h1, r1, g1, b1, a1] = stops[i + 1];
-          if (hour >= h0 && hour <= h1) {
-            const t = (hour - h0) / (h1 - h0);
-            r = r0 + (r1 - r0) * t;
-            g = g0 + (g1 - g0) * t;
-            b = b0 + (b1 - b0) * t;
-            a = a0 + (a1 - a0) * t;
-            break;
-          }
-        }
-
-        // Overcast weather tint on top
-        if (isStorm) { r = r * 0.5 + 30 * 0.5; g = g * 0.5 + 45 * 0.5; b = b * 0.5 + 70 * 0.5; a = Math.min(0.85, a + 0.25); }
-        else if (isRaining) { r = r * 0.7 + 50 * 0.3; g = g * 0.7 + 65 * 0.3; b = b * 0.7 + 90 * 0.3; a = Math.min(0.78, a + 0.12); }
-
-        return { r, g, b, a };
-      }
-
-      // Smoothed lighting state — eases toward the raw target each frame so
-      // the lantern's punched-through clarity (and the sky/ambient tint) fade
-      // gradually instead of snapping, most noticeably at the day-rollover
-      // instant when getHour() jumps straight from ~22 back to 6.
-      let _lightR = 10, _lightG = 10, _lightB = 40, _lightA = 0.72;
-      let _lightingInitialized = false;
-      function _advanceSmoothedLighting(dt) {
-        const raw = _computeRawLightingState();
-        if (!_lightingInitialized) {
-          _lightR = raw.r; _lightG = raw.g; _lightB = raw.b; _lightA = raw.a;
-          _lightingInitialized = true;
-          return;
-        }
-        const tc = 1.5; // seconds — gentle fade, imperceptible as a "step"
-        const k = 1 - Math.exp(-dt / tc);
-        _lightR += (raw.r - _lightR) * k;
-        _lightG += (raw.g - _lightG) * k;
-        _lightB += (raw.b - _lightB) * k;
-        _lightA += (raw.a - _lightA) * k;
-      }
-
-      function getLightingState() {
-        return { r: Math.round(_lightR), g: Math.round(_lightG), b: Math.round(_lightB), a: _lightA };
-      }
-
-      function updateWaterParticles(dt) {
-        // Spawn particles on flowing trench tiles.
-        // _flowingTrenchTiles is rebuilt each sim tick so no full grid scan is needed.
-        const flowingTiles = currentArea === 'town' ? _townFlowingTrenchTiles : _flowingTrenchTiles;
-        for (const { col, row } of flowingTiles) {
-          if (waterParticles.length < MAX_PARTICLES && Math.random() < 0.12) {
-            const tx = col * TILE + 10 + Math.random() * (TILE - 20);
-            const ty = row * TILE + 8 + Math.random() * (TILE - 16);
-            waterParticles.push({
-              wx: tx, wy: ty,
-              vx: (Math.random() - 0.5) * 4,
-              vy: 4 + Math.random() * 12,
-              alpha: 0.7 + Math.random() * 0.3,
-              radius: 1 + Math.random() * 2.5,
-              life: 0,
-              maxLife: 0.4 + Math.random() * 0.6,
-              type: Math.random() < 0.6 ? 'bubble' : 'foam'
-            });
-          }
-        }
-        // Update existing particles
-        for (let i = waterParticles.length - 1; i >= 0; i--) {
-          const p = waterParticles[i];
-          p.wx += p.vx * dt;
-          p.wy += p.vy * dt;
-          p.life += dt;
-          p.alpha = (1 - p.life / p.maxLife) * 0.85;
-          // Kill if out of life or off a flowing trench
-          const pc = Math.floor(p.wx / TILE);
-          const pr = Math.floor(p.wy / TILE);
-          const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
-          const onFlow = pc >= 0 && pc < aC && pr >= 0 && pr < aR
-            && aGrid[pr][pc].type === TileType.TRENCH && aGrid[pr][pc].flow;
-          if (p.life >= p.maxLife || !onFlow) waterParticles.splice(i, 1);
-        }
-      }
-
-      function updateRipples(dt) {
-        for (let i = ripples.length - 1; i >= 0; i--) {
-          ripples[i].age += dt;
-          if (ripples[i].age >= ripples[i].maxAge) ripples.splice(i, 1);
-        }
-      }
-
-      function spawnRipples() {
-        const aGrid = getActiveGrid(), aC = getActiveCols(), aR = getActiveRows();
-        for (let row = 0; row < aR; row++) {
-          for (let col = 0; col < aC; col++) {
-            const tile = aGrid[row][col];
-            const isWet = (tile.type === TileType.PADDY && tile.water >= 0.5)
-              || (tile.type !== TileType.TRENCH && tile.water >= 0.7);
-            if (!isWet) continue;
-            if (Math.random() < 0.22 && ripples.length < 60) {
-              const rx = col * TILE + TILE * 0.3 + Math.random() * TILE * 0.4;
-              const ry = row * TILE + TILE * 0.3 + Math.random() * TILE * 0.4;
-              ripples.push({ x: rx, y: ry, age: 0, maxAge: 1.2 + Math.random() * 0.8 });
-            }
-          }
-        }
-        // Rain ripples: spawn within the visible viewport region
-        if (calendar.isRaining) {
-          const rect = threeContainer.getBoundingClientRect();
-          const drops = calendar.rainStrength === 3 ? 8 : 3;
-          for (let i = 0; i < drops; i++) {
-            const rx = (camX - rect.width / 2) + Math.random() * rect.width;
-            const ry = (camY - rect.height / 2) + Math.random() * rect.height;
-            ripples.push({ x: rx, y: ry, age: 0, maxAge: 0.5 + Math.random() * 0.4 });
-          }
-        }
-      }
-
-      // Ported from ScratchbonesGame's outdoor lightning: a strike sequence is
-      // 1 flash (520ms fade) or, 30% of the time, 2 flashes — a bright lead
-      // strike that cuts to a brief dark gap, then a dimmer second flash.
-      const LIGHTNING_AVG_INTERVAL_S = 28; // average seconds between strike sequences during a storm
-      function updateLightningFlash(dt) {
-        const stormActive = calendar.isRaining && calendar.rainStrength >= 3;
-        if (stormActive && lightningStrikesRemaining <= 0) {
-          lightningTimer -= dt;
-          if (lightningTimer <= 0) {
-            lightningStrikesRemaining = Math.random() < 0.30 ? 2 : 1;
-            lightningAlpha = 0.72;
-            lightningDecayRate = 0.72 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
-            lightningTimer = LIGHTNING_AVG_INTERVAL_S * (0.4 + Math.random() * 1.2);
-          }
-        }
-        if (lightningStrikesRemaining > 0) {
-          if (lightningAlpha > 0) {
-            lightningAlpha = Math.max(0, lightningAlpha - lightningDecayRate * dt);
-            if (lightningAlpha <= 0 && lightningStrikesRemaining > 1) lightningGapTimer = 0.055;
-          } else if (lightningGapTimer > 0) {
-            lightningGapTimer -= dt;
-            if (lightningGapTimer <= 0) {
-              lightningStrikesRemaining -= 1;
-              if (lightningStrikesRemaining > 0) {
-                lightningAlpha = 0.52;
-                lightningDecayRate = 0.52 / (lightningStrikesRemaining > 1 ? 0.09 : 0.52);
-              }
-            }
-          } else {
-            lightningStrikesRemaining = 0;
-          }
-        }
-      }
+      // Weather FX & lighting overlay (checkForMajorStorm, day/night sky
+      // tint + lantern masks + lightning flash, trench water particles,
+      // paddy/rain ripples) now lives in js/weather-fx.js
+      // (window.WeatherFX) — see its init(deps) call below for the shared
+      // game.js state it's threaded.
 
       // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
       // js/music-system.js (window.Music).
@@ -20889,7 +20590,7 @@
         const now = performance.now();
         if (now - _lastLightUpdateTime < 500) return;
         _lastLightUpdateTime = now;
-        const { r, g, b, a } = getLightingState();
+        const { r, g, b, a } = window.WeatherFX.getLightingState();
         // Ambient: dimmer at night, brighter at noon
         const brightnessMul = 1 - a * 0.7;
         ambientLight.intensity = 0.3 + brightnessMul * 0.7;
@@ -20921,7 +20622,7 @@
         const now = performance.now();
         if (now - _lastTownLightUpdateTime < 500) return;
         _lastTownLightUpdateTime = now;
-        const { r, g, b, a } = getLightingState();
+        const { r, g, b, a } = window.WeatherFX.getLightingState();
         const brightnessMul = 1 - a * 0.7;
         townAmbientLight.intensity = 0.3 + brightnessMul * 0.7;
         townAmbientLight.color.setRGB(
@@ -21417,7 +21118,7 @@
 
         if (!paused) {
           updateCalendar(dt);
-          _advanceSmoothedLighting(dt);
+          window.WeatherFX._advanceSmoothedLighting(dt);
           pollControllerInput();
           updateMovement(dt);
           window.WildernessMap.updateFogAroundPlayer();
@@ -21465,9 +21166,9 @@
 
           if (currentArea === 'farm' || currentArea === 'town') {
             waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
-            updateWaterParticles(dt);
-            updateRipples(dt);
-            updateLightningFlash(dt);
+            window.WeatherFX.updateWaterParticles(dt);
+            window.WeatherFX.updateRipples(dt);
+            window.WeatherFX.updateLightningFlash(dt);
           }
           if (currentArea === 'farm') window.DewVats.updateMeshRotations(dt);
           if (currentArea === 'farm') updateProcessingFurnitureVfx(dt);
@@ -21486,7 +21187,7 @@
               const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
               recomputeWater(false, townGrid, TROWS, TCOLS);
             }
-            spawnRipples();
+            window.WeatherFX.spawnRipples();
           }
         }
 
@@ -21689,7 +21390,7 @@
 
         // ── 2D overlays (rain, lighting) ─────────────────────────
         drawOverlays();
-        drawLightingOverlay();
+        window.WeatherFX.drawLightingOverlay();
 
         window.DialogueContent?.updateNpcDialoguePortrait(now);
         updateHud();
@@ -21774,8 +21475,8 @@
         }
         const currentHour = window.CalendarSystem.getHour();
         if (Math.floor(previousHour) !== Math.floor(currentHour)) {
-          updateRainState();
-          if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); checkForMajorStorm(); worldObjectMorningTick(); }
+          window.WeatherFX.updateRainState();
+          if (Math.floor(currentHour) === MORNING_HOUR) { tickCropDay(); window.WeatherFX.checkForMajorStorm(); worldObjectMorningTick(); }
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
           // rollovers still only loses a few minutes of in-game time
@@ -21786,7 +21487,7 @@
 
       function advanceDay() {
         calendar.day += 1;
-        chooseWeatherForDay();
+        window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
         window.FarmAnimals.tickBreeding();
         window.FarmAnimals.tickResources();
@@ -21814,7 +21515,7 @@
       function sleepInBed() {
         calendar.day += 1;
         calendar.time01 = 0; // wake at MORNING_HOUR
-        chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
+        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
         tickCropDay();
         window.FarmAnimals.tickBreeding();
         window.FarmAnimals.tickResources();
@@ -21833,42 +21534,8 @@
         return { ok: true, message: msg };
       }
 
-      function chooseWeatherForDay() {
-        const season = window.CalendarSystem.currentSeason();
-        applySeasonalGrassAppearance();
-        const seed = seededRandom(calendar.day * 991 + season.name.length * 37);
-        const stormRoll = seededRandom(calendar.day * 373 + 11);
-        const hasStorm = stormRoll < season.stormChance;
-        const droughtDays = calendar.day - calendar.lastRainDay;
-        const hasRain = hasStorm || seed < season.rainChance || droughtDays >= RAIN_PITY_DAYS;
-        calendar.weather = hasStorm ? 'storm' : hasRain ? 'rain' : 'clear';
-        calendar.nextRainWindows = [];
-
-        if (hasStorm) {
-          calendar.nextRainWindows.push({ start: 11, end: 17, strength: 3 });
-          calendar.nextRainWindows.push({ start: 19, end: 21, strength: 2 });
-        } else if (hasRain) {
-          // A fixed 5-hour window meant even a 'rain' day in the wettest
-          // season (Longpour, 70% daily chance) only actually had it raining
-          // ~5/24 = 21% of the time — the season label reads "wet" but the
-          // moment-to-moment odds of catching rain stayed low. Scale the
-          // window length with how rainy the season is so Longpour/Stormtide
-          // days visibly rain for a large chunk of the day, while a
-          // Deadgrass pity-timer shower stays a brief, isolated event.
-          const windowHours = Math.round(4 + season.rainChance * 8);
-          const start = 8 + Math.floor(seededRandom(calendar.day * 157) * 6);
-          calendar.nextRainWindows.push({ start, end: start + windowHours, strength: 2 });
-        }
-        if (hasRain) calendar.lastRainDay = calendar.day;
-        updateRainState();
-      }
-
-      function updateRainState() {
-        const hour = window.CalendarSystem.getHour();
-        const activeWindow = calendar.nextRainWindows.find((window) => hour >= window.start && hour < window.end);
-        calendar.isRaining = Boolean(activeWindow);
-        calendar.rainStrength = activeWindow ? activeWindow.strength : 0;
-      }
+      // Weather rolling (chooseWeatherForDay/updateRainState) now lives
+      // in js/weather-fx.js — call via window.WeatherFX.*.
 
       function tickCropDay() {
         for (let row = 0; row < ROWS; row++) {
@@ -24671,6 +24338,36 @@
         FURNITURE_BLUEPRINT_CATALOG,
         lootShopWorldState: _lootShopWorldState,
         esc,
+      });
+
+      window.WeatherFX?.init({
+        calendar,
+        seededRandom,
+        getGrid: () => grid,
+        ROWS, COLS,
+        TileType,
+        clamp,
+        showToast,
+        debugLog,
+        worldToOverlay,
+        lctx,
+        player,
+        npcWalkers,
+        getCurrentArea: () => currentArea,
+        TILE,
+        getLightningAlpha: () => lightningAlpha,
+        setLightningAlpha: (v) => { lightningAlpha = v; },
+        getSceneTransAlpha: () => sceneTransAlpha,
+        getThreeRect: () => _threeRect,
+        _isBuildingArea,
+        getActiveGrid, getActiveCols, getActiveRows,
+        getFlowingTrenchTiles: () => _flowingTrenchTiles,
+        getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
+        threeContainer,
+        getCamX: () => camX,
+        getCamY: () => camY,
+        applySeasonalGrassAppearance,
+        RAIN_PITY_DAYS,
       });
 
       window.DevSpawner?.init({
