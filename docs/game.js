@@ -22243,72 +22243,21 @@
       window.addEventListener('blur', () => { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; });
       document.addEventListener('visibilitychange', () => { if (document.hidden) { gamepadState.focused = false; gamepadState.previous.clear(); input.x = 0; input.y = 0; controllerLookActive = false; } });
 
-      function renderInputSettings() {
-        const desktopEl = document.getElementById('desktopInputBindings');
-        const controllerEl = document.getElementById('controllerInputBindings');
-        const shiftsEl = document.getElementById('modeShiftList');
-        function renderDevice(el, device) {
-          if (!el) return;
-          el.innerHTML = '';
-          for (const action of INPUT_DEFAULTS.actions) {
-            const row = document.createElement('div'); row.className = 'input-binding-row';
-            row.innerHTML = `<span class="settings-name">${action.label}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${buttonLabel(inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
-            const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
-            if (device === 'controller') {
-              control.add(new Option('Unbound', ''));
-              CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(buttonLabel(code), code)));
-              control.value = inputBindings.controller[action.id] || '';
-              control.addEventListener('change', () => { const conflict = bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = inputBindings.controller[action.id] || ''; } else { inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; saveInputBindings(); } });
-            } else {
-              control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { inputBindings[device][action.id] = code; warn.textContent = ''; saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
-            }
-            el.appendChild(row);
-          }
-        }
-        renderDevice(desktopEl, 'desktop'); renderDevice(controllerEl, 'controller');
-        if (shiftsEl) {
-          shiftsEl.innerHTML = '';
-          inputBindings.modeShifts.forEach((shift, idx) => {
-            const row = document.createElement('div'); row.className = 'mode-shift-row';
-            row.innerHTML = `<input class="settings-select" value="${shift.label || ''}"><select class="settings-select"><option value="desktop">Desktop</option><option value="controller">Controller</option></select><input class="settings-select" value="${shift.button || ''}"><button type="button" class="settings-small-btn">Remove</button>`;
-            row.children[1].value = shift.device || 'desktop';
-            row.children[0].addEventListener('change', e => { shift.label = e.target.value; saveInputBindings(); });
-            row.children[1].addEventListener('change', e => { shift.device = e.target.value; saveInputBindings(); });
-            row.children[2].addEventListener('change', e => { shift.button = e.target.value; saveInputBindings(); });
-            row.children[3].addEventListener('click', () => { inputBindings.modeShifts.splice(idx, 1); saveInputBindings(); renderInputSettings(); });
-            shiftsEl.appendChild(row);
-            const bindings = document.createElement('div'); bindings.className = 'input-bindings-grid';
-            Object.entries(shift.bindings || {}).forEach(([button, actionId]) => {
-              const bRow = document.createElement('div'); bRow.className = 'mode-shift-row';
-              bRow.innerHTML = `<span class="settings-name">${buttonLabel(button)}</span><select class="settings-select"></select><span class="input-binding-warning"></span><button type="button" class="settings-small-btn">Remove</button>`;
-              const select = bRow.children[1];
-              INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(action.label, action.id)));
-              select.value = actionId;
-              select.addEventListener('change', e => { shift.bindings[button] = e.target.value; saveInputBindings(); renderInputSettings(); });
-              bRow.children[3].addEventListener('click', () => { delete shift.bindings[button]; saveInputBindings(); renderInputSettings(); });
-              bindings.appendChild(bRow);
-            });
-            const add = document.createElement('button'); add.type = 'button'; add.className = 'settings-small-btn'; add.textContent = 'Add Shifted Binding';
-            add.addEventListener('click', () => {
-              add.classList.add('is-listening'); add.textContent = 'Press shifted input…';
-              const once = ev => {
-                ev.preventDefault();
-                const manual = window.prompt?.('Input code (examples: RightStickLeft, RightTrigger, Button0)') || '';
-                const button = manual.trim() || ev.code;
-                const actionId = INPUT_DEFAULTS.actions[0]?.id || 'interact';
-                const conflict = bindingConflict(shift.device || 'desktop', button, actionId, shift);
-                if (!conflict) { shift.bindings = shift.bindings || {}; shift.bindings[button] = actionId; saveInputBindings(); }
-                window.removeEventListener('keydown', once, true); renderInputSettings();
-              };
-              window.addEventListener('keydown', once, true);
-            });
-            bindings.appendChild(add);
-            shiftsEl.appendChild(bindings);
-          });
-        }
-      }
-      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); renderInputSettings(); });
-      renderInputSettings();
+      // Settings tab's input-binding rows now live in
+      // js/input-settings-panel.js — call via window.InputSettingsPanel.render().
+      // init()'d here rather than down with the other window.<Namespace>
+      // modules, since (unlike them) this one is rendered once immediately
+      // at boot rather than lazily on first tab open.
+      document.getElementById('addModeShiftBtn')?.addEventListener('click', () => { inputBindings.modeShifts.push({ id: `custom-${Date.now()}`, label: 'Custom Shift', device: 'controller', button: 'Button4', bindings: {} }); saveInputBindings(); window.InputSettingsPanel.render(); });
+      window.InputSettingsPanel?.init({
+        INPUT_DEFAULTS,
+        inputBindings,
+        CONTROLLER_INPUT_OPTIONS,
+        buttonLabel,
+        bindingConflict,
+        saveInputBindings,
+      });
+      window.InputSettingsPanel.render();
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();

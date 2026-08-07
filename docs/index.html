@@ -322,6 +322,13 @@
        during its own setup, and also wires boot-time shipping-tab button
        listeners through window.ShippingPanel.* directly. -->
   <script src="js/shipping-panel.js?v=20260807a"></script>
+  <!-- Settings tab's input-binding rows (window.InputSettingsPanel) — pure
+       DOM/state, no other window.* system reads; must load before game.js,
+       which calls window.InputSettingsPanel.init(...) and an immediate
+       render() during its own boot sequence (unlike its sibling panels,
+       this one renders once at boot rather than lazily on first tab
+       open). -->
+  <script src="js/input-settings-panel.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
