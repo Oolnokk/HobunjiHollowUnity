@@ -6712,7 +6712,7 @@
 
         _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
         _buildRichFoliageBillboards(zScene, zoneData, zGrid);
-        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
+        window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
@@ -7678,213 +7678,9 @@
         zScene.add(mesh);
       }
 
-      // Procedural cliff/border ring around a zone's playable area — same
-      // rugged-plain + distant-cliffs passes as buildTownBorderTerrain, parameterized
-      // by the zone's real size and a per-zone seed so each zone's border is distinct
-      // but stable across visits.
-      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
-        const BASE        = NORMAL_TOP + zoneBaseElev;
-        const BORDER_W    = 18;
-        const SEED        = (mapId.split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0)) || 1;
-        const BLEND_STEPS = 8;
-
-        const BV  = BORDER_W * 2;
-        const PVW = zcols * 2, PVH = zrows * 2;
-        const GW  = PVW + 2*BV + 1;
-        const GH  = PVH + 2*BV + 1;
-        const CW  = GW - 1, CH = GH - 1;
-
-        let _s = SEED >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
-        };
-
-        const hashDisp = (vi, vj) => {
-          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        const vSteps = (gi, gj) => {
-          const vi = gi - BV, vj = gj - BV;
-          const dx = Math.max(0, -vi, vi - PVW);
-          const dz = Math.max(0, -vj, vj - PVH);
-          return Math.sqrt(dx*dx + dz*dz);
-        };
-
-        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
-
-        // Seed height at each border vertex used to sit at one flat BASE
-        // everywhere, so the border only ever read as a flat plain/skybox
-        // wall with no relation to the actual zone it surrounds — obvious
-        // wherever a zone's playable edge itself has cliffs or plateaus.
-        // Weld the seam to the real playable-edge elevation instead (same
-        // elevTier lookup buildPlateauMesa's seedHeightAt uses), fading back
-        // to the flat BASE over SEAM_WELD_STEPS so only the near backdrop
-        // reads as a continuation of the zone and the far horizon still
-        // reads as generic distant terrain.
-        const SEAM_WELD_STEPS = 16; // 8 tiles
-        const nearestEdgeElevTier = (gi, gj) => {
-          if (!zGrid) return null;
-          const col = clamp(Math.floor((gi - BV) / 2), 0, zcols - 1);
-          const row = clamp(Math.floor((gj - BV) / 2), 0, zrows - 1);
-          const t = zGrid[row]?.[col];
-          return (t && typeof t.elevTier === 'number') ? t.elevTier : null;
-        };
-        const Y = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const jitter = hashDisp(gi-BV, gj-BV);
-            const edgeTier = nearestEdgeElevTier(gi, gj);
-            if (edgeTier === null) { Y[gj*GW+gi] = BASE + jitter; continue; }
-            const edgeY = NORMAL_TOP + edgeTier * PLATEAU_UNIT;
-            const weld = 1 - clamp(vSteps(gi, gj) / SEAM_WELD_STEPS, 0, 1);
-            Y[gj*GW+gi] = BASE + jitter + weld * (edgeY - BASE);
-          }
-
-        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
-
-        function pickGroup(ci0, cj0, maxSz) {
-          const group = [], seen = new Set([cj0*CW+ci0]);
-          const front = [[ci0, cj0]];
-          while (front.length && group.length < maxSz) {
-            const fi = Math.floor(rng() * front.length);
-            const [ci, cj] = front.splice(fi, 1)[0];
-            group.push([ci, cj]);
-            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const ni=ci+dc, nj=cj+dr;
-              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
-              const nk = nj*CW+ni;
-              if (seen.has(nk) || isPlayable(ni,nj)) continue;
-              seen.add(nk); front.push([ni,nj]);
-            }
-          }
-          return group;
-        }
-
-        function raiseGroup(group, amount) {
-          let maxY = -Infinity;
-          const verts = new Set();
-          for (const [ci,cj] of group)
-            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
-          const target = maxY + amount;
-          for (const vi of verts) {
-            const gi = vi%GW, gj = vi/GW|0;
-            const st = vSteps(gi, gj);
-            if (st === 0) continue;
-            const blend  = Math.min(1, st / BLEND_STEPS);
-            const raised = BASE + hashDisp(gi-BV, gj-BV) + blend*(target - BASE);
-            if (raised > Y[vi]) Y[vi] = raised;
-          }
-        }
-
-        function pickCell(outerBias) {
-          const rim = BV >> 2;
-          for (let attempt = 0; attempt < 300; attempt++) {
-            let ci, cj;
-            if (rng() < outerBias) {
-              const side = Math.floor(rng() * 4);
-              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
-              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
-              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
-              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
-            } else {
-              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
-            }
-            if (!isPlayable(ci,cj)) return [ci,cj];
-          }
-          return [0,0];
-        }
-
-        for (let p = 0; p < 55; p++) {
-          const [ci,cj] = pickCell(0.12);
-          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
-        }
-        for (let p = 0; p < 32; p++) {
-          const [ci,cj] = pickCell(0.88);
-          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
-        }
-
-        const RIM_V   = 20;
-        const RIM_MIN = BASE + 3.0;
-        for (let gj = 0; gj < GH; gj++) {
-          for (let gi = 0; gi < GW; gi++) {
-            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
-                gi >= RIM_V && gi <= GW-1-RIM_V) continue;
-            const k = gj * GW + gi;
-            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
-          }
-        }
-
-        const pos = new Float32Array(GW * GH * 3);
-        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
-            pos[k*3]   = wx;
-            pos[k*3+1] = Y[k];
-            pos[k*3+2] = wz;
-            uv[k*2] = wx; uv[k*2+1] = wz;
-          }
-
-        const idx = [];
-        for (let cj = 0; cj < CH; cj++) {
-          for (let ci = 0; ci < CW; ci++) {
-            if (isPlayable(ci, cj)) continue;
-            const [v00,v10,v01,v11] = cv4(ci,cj);
-            idx.push(v00, v01, v11, v00, v11, v10);
-          }
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.GRASS));
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-
-        // Stone cliff skin: same normal-based overlay rule as the farm/town border
-        // terrain — faces steeper than ~41° from horizontal get a stone skin instead
-        // of grass (cnx²+cnz² > 0.194 for a 0.5×0.5 cell, see buildBorderTerrain).
-        const cliffMat = resolveCliffMat(mapId);
-
-        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const skinPos = [], skinUv = [], idxArr = [];
-          let vi = 0;
-          for (let gj = gjMin; gj < gjMax; gj++) {
-            for (let gi = giMin; gi < giMax; gi++) {
-              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
-              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
-              const x0=(gi-BV)*0.5, x1=x0+0.5;
-              const z0=(gj-BV)*0.5, z1=z0+0.5;
-              skinPos.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
-              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
-            }
-          }
-          if (!skinPos.length) return;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
-          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
-          g.setIndex(new THREE.BufferAttribute(idxArr.length > 65535 ? new Uint32Array(idxArr) : new Uint16Array(idxArr), 1));
-          g.computeVertexNormals();
-          zScene.add(new THREE.Mesh(g, cliffMat));
-        }
-
-        elevStoneSkin(0,           BV,          0,          GW - 1); // north strip
-        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1); // south strip
-        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);      // west strip
-        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1); // east strip
-      }
+      // Procedural cliff/border ring around a zone's playable area
+      // (buildZoneBorderTerrain) now lives in js/border-terrain.js — call
+      // via window.BorderTerrain.buildZoneBorderTerrain(...).
 
       function initWorldTravel(layout) {
         if (layout?.version === 3) {
@@ -18234,11 +18030,12 @@
       // bottom of this file, which run too late) since buildBorderTerrain()
       // below needs it immediately — every other dep it captures by closure
       // (COLS/ROWS/scene/NORMAL_TOP/resolveTileMat/resolveCliffMat/TileType/
-      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass) is
-      // already declared above this point.
+      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass/clamp)
+      // is already declared above this point, or (clamp, a function
+      // declaration) hoisted regardless of where it's written.
       window.BorderTerrain?.init({
-        COLS, ROWS, NORMAL_TOP, scene, TileType,
-        resolveTileMat, resolveCliffMat,
+        COLS, ROWS, NORMAL_TOP, scene, TileType, PLATEAU_UNIT,
+        resolveTileMat, resolveCliffMat, clamp,
         mbRng: _mbRng,
         markOutline: _markOutline,
         grassBladeGeo: _grassBladeGeo,
