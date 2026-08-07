@@ -112,6 +112,11 @@
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
   <script src="js/bandit-camps.js?v=20260807a"></script>
+  <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
+       window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
+       directly, so must load after both above, and before game.js, which
+       calls window.BountyBoard.init(...) during its own setup. -->
+  <script src="js/bounty-board.js?v=20260807a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20260727a"></script>
