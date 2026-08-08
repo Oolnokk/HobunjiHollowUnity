@@ -329,7 +329,8 @@ const QHELP = {
   'station-rot': { title: 'Rot Y°', body: 'Which way the NPC faces while standing at this station, in degrees (0 = default facing).' },
   'station-tool': { title: 'Tool', body: 'Optional tool item key (e.g. "hatchet") the NPC visibly swings/uses on a loop while at this station — leave blank for a plain stand/sit/idle pose.' },
   'station-id': { title: 'Station id', body: 'Referenced by NPC schedule rules (Schedule Editor tab) as stationId — renaming this id will break any rule that already points at it. Copy it from here when wiring up a schedule.' },
-  'station-wander': { title: 'Wander mode', body: 'Radius (default, 0 tiles) keeps the NPC frozen exactly at this tile, matching a tool loop/fixed pose if set — set it above 0 to roam a circle of that many tiles instead. Custom shape instead roams only the tiles you paint: click 🖌 Paint, then click tiles on the map to toggle them in/out, click 🖌 again to stop — good for an irregular or disconnected region a circle can\'t express. Either way: pick a random open tile in the region, walk there, pause, repeat. The region only draws on the map while this station is selected.' },
+  'station-wander': { title: 'Wander mode', body: 'Radius (default, 0 tiles) keeps the NPC frozen exactly at this tile, matching a tool loop/fixed pose if set — set it above 0 to roam a circle of that many tiles instead. Custom shape instead roams only the tiles you paint: click 🖌 Paint, then click (or click-and-drag) tiles on the map to add them, click 🖌 again to stop — good for an irregular or disconnected region a circle can\'t express. Either way: pick a random open tile in the region, walk there, pause, repeat. The region only draws on the map while this station is selected.' },
+  'station-paint-brush': { title: 'Paint brush size', body: 'How many tiles wide each click/drag stroke paints, in tiles (1 = original single-tile precision, click a painted tile again to remove it). Above 1, drag across the map to fill a whole area in one stroke — same rounded-circle brush shape the Plateau tool uses.' },
 };
 let _qhelpBtn = null;
 function showHelp(btn) {
@@ -1295,6 +1296,7 @@ let activeRiverNodeIndex = null; // selected node index in active river
 let activeSpotId = null;   // transition spot selected in spot mode
 let activeStationId = null; // NPC station selected in station mode
 let _stationPaintMode = false; // painting the active station's wanderShapeTiles instead of placing/selecting stations
+let _stationPaintRadius = 1; // brush size (tiles) for station shape painting — 1 keeps the original single-tile toggle-on-click behavior
 let activeRampId = null;   // ramp being extended in ramp mode
 let activeRampNodeIndex = null; // selected node index in active ramp
 
@@ -1944,6 +1946,9 @@ function renderPalette() {
           ? `<div><label>Shape tiles</label><div class="row" style="gap:4px"><span class="item-meta" style="padding:0">${(st.wanderShapeTiles||[]).length} painted</span>${st.id===activeStationId ? `<button data-stationpaint="${st.id}" class="${_stationPaintMode?'act':''}" style="padding:2px 6px">🖌 ${_stationPaintMode?'Painting…':'Paint'}</button><button data-stationpaintclear="${st.id}" class="bad" style="padding:2px 6px">Clear</button>` : ''}</div></div>`
           : `<div><label>Radius (tiles)</label><input data-stationwander="${st.id}" type="number" step="1" min="0" value="${st.wanderRadiusTiles||0}"></div>`}
       </div>
+      ${st.wanderMode==='shape' && st.id===activeStationId
+        ? `<div class="g2" style="margin-top:4px"><div><label>Brush size (tiles) <span class="qhelp" data-help="station-paint-brush">?</span></label><input data-stationpaintradius type="number" step="1" min="1" value="${_stationPaintRadius}"></div></div>`
+        : ''}
       <div class="item-meta">id: ${st.id} · at (${st.col}, ${st.row}) <span class="qhelp" data-help="station-id">?</span></div>
     </div>`).join('') || '<p class="muted">No NPC stations yet.</p>';
     html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. NPC schedules reference these by <code>stationId</code> instead of raw x/y — author time-window → station rules in the Schedule Editor tab. Rotation, pose, and optional tool loop metadata travel with the station. Set a wander mode to have the NPC roam instead of standing still: Radius roams a circle around this tile; Custom shape roams only the tiles you paint (click 🖌 Paint, then click tiles on the map to toggle them — click 🖌 again to stop). The region only draws on the map while its station is selected.</p>';
@@ -2230,6 +2235,11 @@ function renderPalette() {
     e.stopPropagation();
     updateStation(el.dataset.stationpaintclear, { wanderShapeTiles: [] });
   }));
+  const stationPaintRadiusIn = box.querySelector('[data-stationpaintradius]');
+  if (stationPaintRadiusIn) stationPaintRadiusIn.addEventListener('change', e => {
+    _stationPaintRadius = clamp(Math.floor(Number(e.target.value) || 1), 1, 20);
+    updateBrushPill();
+  });
   // Spot palette wiring
   box.querySelectorAll('[data-spotsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,select,input')) return;
@@ -2615,9 +2625,12 @@ function draw() {
     // hand-painted tile as its own square (so an irregular/disconnected
     // shape reads clearly); 'radius' keeps the simple circle.
     if (st.id === activeStationId && st.wanderMode === 'shape' && (st.wanderShapeTiles || []).length) {
+      // Green, not the station/radius-mode cyan — a shape overlay drawn
+      // right on top of the station's own cyan marker+circle would be
+      // hard to tell apart at a glance otherwise.
       ctx.save();
-      ctx.fillStyle = _stationPaintMode ? 'rgba(34,211,238,.28)' : 'rgba(34,211,238,.16)';
-      ctx.strokeStyle = 'rgba(34,211,238,.6)';
+      ctx.fillStyle = _stationPaintMode ? 'rgba(74,222,128,.32)' : 'rgba(74,222,128,.18)';
+      ctx.strokeStyle = 'rgba(74,222,128,.65)';
       ctx.lineWidth = 1;
       (st.wanderShapeTiles || []).forEach(([dc, dr]) => {
         const tp = w2s(st.col + dc + .5, st.row + dr + .5);
@@ -2775,16 +2788,36 @@ function applyAt(tile) {
     m.npcStations = m.npcStations || [];
     if (_stationPaintMode) {
       // Painting the active station's custom wander shape instead of
-      // placing/selecting a station — toggle this tile's membership,
-      // stored as a [dc,dr] offset from the station's own (col,row) so
-      // the whole painted region travels with it if it's later dragged.
+      // placing/selecting a station — stored as [dc,dr] offsets from the
+      // station's own (col,row) so the whole painted region travels with
+      // it if it's later dragged. At brush size 1 this is a precise
+      // single-tile toggle (add or remove), matching the original
+      // click-to-toggle behavior; above 1 it's a fill brush like the
+      // Plateau tool's radius (rounds a discrete brush into a circle) —
+      // always ADDS every tile in the brush (a stroke that also removed
+      // tiles it merely passed over would be surprising to drag across),
+      // so pointermove can call this repeatedly for a continuous stroke
+      // without flicker.
       const st = m.npcStations.find(x => x.id === activeStationId);
       if (st) {
         st.wanderShapeTiles = st.wanderShapeTiles || [];
-        const dc = c - st.col, dr = r - st.row;
-        const idx = st.wanderShapeTiles.findIndex(t => t[0] === dc && t[1] === dr);
-        if (idx >= 0) st.wanderShapeTiles.splice(idx, 1);
-        else st.wanderShapeTiles.push([dc, dr]);
+        const rad = Math.max(1, _stationPaintRadius);
+        const has = (dc, dr) => st.wanderShapeTiles.some(t => t[0] === dc && t[1] === dr);
+        if (rad <= 1) {
+          const dc = c - st.col, dr = r - st.row;
+          const idx = st.wanderShapeTiles.findIndex(t => t[0] === dc && t[1] === dr);
+          if (idx >= 0) st.wanderShapeTiles.splice(idx, 1);
+          else st.wanderShapeTiles.push([dc, dr]);
+        } else {
+          const rad2 = rad * rad + 0.25;
+          for (let ddr = -rad; ddr <= rad; ddr++) {
+            for (let ddc = -rad; ddc <= rad; ddc++) {
+              if (ddc * ddc + ddr * ddr > rad2) continue;
+              const dc = (c + ddc) - st.col, dr = (r + ddr) - st.row;
+              if (!has(dc, dr)) st.wanderShapeTiles.push([dc, dr]);
+            }
+          }
+        }
         draw(); refreshPreview(); saveWorkspace();
       }
       renderPalette(); updateBrushPill();
@@ -2967,7 +3000,7 @@ canvas.addEventListener('pointerdown', e => {
     }
   }
   pushUndo();
-  if (PAINT_MODES.includes(mode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
+  if (PAINT_MODES.includes(mode) || (mode === 'station' && _stationPaintMode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
   else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
 canvas.addEventListener('pointermove', e => {
