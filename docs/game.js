@@ -11040,22 +11040,29 @@
       function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
         return BuildingDoor.rotateCell(localX, localY, width, depth, rotationDeg);
       }
+      // Axis-aligned bbox check using the building's own footprintW/D (or
+      // legacy w/h) — used both when no piece is loaded yet at all, and as
+      // a defensive fallback if a piece IS loaded but its footprint.cells
+      // came back empty (e.g. exported before the House Piece Author's
+      // footprint tool was used). Either way, a real placed/rendered
+      // building should never end up with silently zero collision.
+      function _buildingFootprintBbox(bldg, originX, originZ, col, row) {
+        const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
+        const fbSwap = fbRot === 90 || fbRot === 270;
+        const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
+        const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
+        return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
+      }
       function _buildingFootprintBlocks(bldg, piece, col, row) {
         const originX = bldg.gridX ?? bldg.col ?? 0;
         const originZ = bldg.gridZ ?? bldg.row ?? 0;
 
-        if (!piece?.footprint) {
-          const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
-          const fbSwap = fbRot === 90 || fbRot === 270;
-          const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
-          const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
-          return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
-        }
+        if (!piece?.footprint) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
 
         const structuralCells = piece.footprint.cells || [];
         const fencePostCells = piece.footprint.extensions?.railings || [];
         const collisionCells = structuralCells.concat(fencePostCells);
-        if (!collisionCells.length) return false;
+        if (!collisionCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
 
         const allBuildingCells = []
           .concat(piece.footprint.cells || [])
@@ -11090,16 +11097,23 @@
         if (area === 'town') {
           // Building-entrance transition tiles are always walkable (they ARE the door approach)
           if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
-          const loadedBuildingGroups = _townBuildingGroups.filter(entry => entry.piece?.footprint);
-          const buildingSources = loadedBuildingGroups.length
-            ? loadedBuildingGroups
+          // Every building must be checked regardless of whether ITS OWN piece
+          // has finished loading — _buildingFootprintBlocks already falls back
+          // to a bbox check per-entry when `piece` is null. Previously this
+          // filtered down to only piece-loaded entries once ANY building had
+          // loaded, which silently dropped collision entirely (not even the
+          // bbox fallback) for any building still fetching, whose fetch
+          // failed, or that the GLB-upgrade pass (town-zone-buildings.js)
+          // dropped for not having a piece — see that file's own upgrade loop.
+          const buildingSources = _townBuildingGroups.length
+            ? _townBuildingGroups
             : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
           return buildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
         }
 
-        const loadedZoneGroups = (_zoneBuildingGroups.get(area) || []).filter(entry => entry.piece?.footprint);
-        const zoneBuildingSources = loadedZoneGroups.length
-          ? loadedZoneGroups
+        const zoneGroups = _zoneBuildingGroups.get(area) || [];
+        const zoneBuildingSources = zoneGroups.length
+          ? zoneGroups
           : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
         if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
         return isAnimalDenCollisionTile(col, row, area);
@@ -13425,22 +13439,33 @@
       // Every mesh worth pulling the camera in front of, for whatever area is
       // currently active. Zones keep their existing tagged-mesh collection
       // (buildZoneScene's `occlusionMeshes`, built once per zone from
-      // `.userData.cameraObstacle` tags on cliff/mesa skins). Everywhere
-      // else has no such static collection — the farmhouse, barn, and any
-      // placed furniture can all sit between the camera and the player (the
-      // house/barn were the reported case for losing sight of animals
-      // behind them; furniture matters for the seated camera specifically,
-      // since a chair can easily have another piece of furniture right
-      // behind it) — so those are gathered fresh each call instead. Cheap
-      // in practice: a handful of structures/furniture pieces at most, and
-      // this only runs once a frame.
+      // `.userData.cameraObstacle` tags on cliff/mesa skins) as a base, but
+      // that snapshot is taken before spawnZoneBuildings' async piece-fetch
+      // (and later GLB-upgrade) resolves, so zone buildings can never join
+      // it by tagging alone — read _zoneBuildingGroups fresh each call
+      // instead, same as town/farm below. Town and farm buildings, and any
+      // placed furniture, have no static tagged collection at all — the
+      // farmhouse, barn, town buildings, and furniture can all sit between
+      // the camera and the player (the house/barn were the reported case
+      // for losing sight of animals behind them; furniture matters for the
+      // seated camera specifically, since a chair can easily have another
+      // piece of furniture right behind it) — so those are gathered fresh
+      // each call instead. Cheap in practice: a handful of structures/
+      // furniture pieces at most, and this only runs once a frame.
       function currentAreaOcclusionMeshes() {
-        if (_isZoneArea(currentArea)) return _zoneScenes.get(currentArea)?.occlusionMeshes || [];
+        if (_isZoneArea(currentArea)) {
+          const meshes = (_zoneScenes.get(currentArea)?.occlusionMeshes || []).slice();
+          for (const entry of (_zoneBuildingGroups.get(currentArea) || [])) if (entry.group) meshes.push(entry.group);
+          return meshes;
+        }
         const meshes = [];
         if (currentArea === 'farm') {
           if (_houseModel) meshes.push(_houseModel);
           else if (_houseFallbackMesh) meshes.push(_houseFallbackMesh);
           for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
+        }
+        if (currentArea === 'town') {
+          for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
         for (const obj of interiorFurnitureObjects) {
           if (obj.area === currentArea && obj.mesh) meshes.push(obj.mesh);
