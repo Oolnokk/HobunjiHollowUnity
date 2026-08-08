@@ -273,6 +273,37 @@
     return new Promise((resolve, reject) => loader.parse(buffer, '', resolve, reject));
   }
 
+  // Some authored GLBs (e.g. Roughbrick1.glb) carry no `uv` attribute at all —
+  // fine for their own baked/vertex-colored look, but a material.map assigned
+  // later (tintDefaultGlb below) would sample a fixed corner texel for the
+  // whole surface instead of actually varying across it. Generates a simple
+  // per-vertex UV by projecting each vertex onto whichever world axis its
+  // normal points along least (dominant-normal-axis projection), same
+  // technique the town-path preview tool used for its material painter.
+  // tileSize is world/local units per texture repeat, matching the tileSize
+  // convention already used by loadHousePieceFaceTexture/loadTerrainTileTexture.
+  // No-op if the geometry already has a `uv` attribute.
+  function ensureProjectedUv(geometry, tileSize) {
+    if (geometry.getAttribute('uv')) return geometry;
+    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+    const pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
+    if (!pos || !normal) return geometry;
+    const stride = Math.max(0.001, Number(tileSize) || 1);
+    const uvs = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      const nx = Math.abs(normal.getX(i)), ny = Math.abs(normal.getY(i)), nz = Math.abs(normal.getZ(i));
+      const axis = ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
+      let u, v;
+      if (axis === 'x') { u = pz; v = py; }
+      else if (axis === 'z') { u = px; v = py; }
+      else { u = px; v = pz; }
+      uvs[i * 2] = u / stride; uvs[i * 2 + 1] = v / stride;
+    }
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    return geometry;
+  }
+
   // ── WallBuilder ───────────────────────────────────────────────────────────
 
   /**
@@ -319,7 +350,7 @@
       const mesh = findFirstMesh(gltf.scene);
       if (!mesh) throw new Error('WallBuilder: no mesh in GLB "' + name + '"');
       const cloned = mesh.clone();
-      cloned.geometry = mesh.geometry.clone();
+      cloned.geometry = ensureProjectedUv(mesh.geometry.clone(), 1.5);
       cloned.material = cloneMaterial(mesh.material);
       cloned.name = name;
       self.glbLibrary.set(name, { mesh: cloned, perUnitScale: computePerUnitScale(cloned) });

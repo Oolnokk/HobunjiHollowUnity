@@ -96,11 +96,43 @@
     }, undefined, function () {});
   }
 
+  // Some authored GLBs (e.g. HighlandLongshingle_boned.glb's shell meshes)
+  // carry no `uv` attribute at all — fine for their own baked/vertex-colored
+  // look, but a material.map assigned later (tintShingleMaterial above) would
+  // sample a fixed corner texel for the whole surface instead of actually
+  // varying across it. Generates a simple per-vertex UV by projecting each
+  // vertex onto whichever world axis its normal points along least
+  // (dominant-normal-axis projection), same technique the town-path preview
+  // tool used for its material painter. tileSize is world/local units per
+  // texture repeat, matching the tileSize convention already used by
+  // loadHousePieceFaceTexture/loadTerrainTileTexture. No-op if the geometry
+  // already has a `uv` attribute.
+  function _ensureProjectedUv(geometry, tileSize) {
+    if (geometry.getAttribute('uv')) return;
+    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+    var pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
+    if (!pos || !normal) return;
+    var stride = Math.max(0.001, Number(tileSize) || 1);
+    var uvs = new Float32Array(pos.count * 2);
+    for (var i = 0; i < pos.count; i++) {
+      var px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      var nx = Math.abs(normal.getX(i)), ny = Math.abs(normal.getY(i)), nz = Math.abs(normal.getZ(i));
+      var axis = ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
+      var u, v;
+      if (axis === 'x') { u = pz; v = py; }
+      else if (axis === 'z') { u = px; v = py; }
+      else { u = px; v = pz; }
+      uvs[i * 2] = u / stride; uvs[i * 2 + 1] = v / stride;
+    }
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  }
+
   // Exact port of analyzeShingleTemplate() from house-piece-author
   function _analyzeShingle(sceneObj) {
     var bone = null;
     sceneObj.traverse(function (o) {
       if (!bone && String(o.name || '').toLowerCase() === 'shinglebone') bone = o;
+      if (o.isMesh && o.geometry) _ensureProjectedUv(o.geometry, 1.5);
     });
     var boneLength = 1, boneFrameInverse = null;
     if (bone) {

@@ -4,7 +4,7 @@
   "byMap": {
     "map_hobunji_town": {
       "grass": { "texture": "canvas.png", "tileSize": 10, "fillColor": "#2f7021" },
-      "tilled": { "texture": "canvas.png", "tileSize": 4, "fillColor": "#423d35" },
+      "tilled": { "texture": "canvas.png", "tileSize": 1, "fillColor": "#423d35" },
       "trench": { "texture": "canvas.png", "tileSize": 4, "fillColor": "#423d35" }
     }
   }
