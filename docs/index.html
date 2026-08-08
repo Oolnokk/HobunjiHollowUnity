@@ -334,6 +334,63 @@
        to the other systems above doesn't matter; must load before game.js,
        which calls window.CraftingPanel.init(...) during its own setup. -->
   <script src="js/crafting-panel.js?v=20260807a"></script>
+  <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
+       equip/de-equip, redye panel — window.EquipmentPanel) — its
+       buildEquipmentSlots() calls window.WhistleEquip.build() at render
+       time (not load time), so load order relative to whistle-equip.js
+       doesn't matter; must load before game.js, which references
+       window.EquipmentPanel directly (including at top-level, in
+       window.__climbDebug) and calls window.EquipmentPanel.init(...)
+       during its own setup. -->
+  <script src="js/equipment-panel.js?v=20260807a"></script>
+  <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
+       scene-graph generation, no other window.* system reads; must load
+       before game.js, which calls window.BorderTerrain.init(...) and then
+       window.BorderTerrain.buildBorderTerrain() immediately afterward
+       during its own farm-setup sequence (well before the other
+       window.*?.init(...) calls near the bottom of game.js run), and later
+       calls window.BorderTerrain.buildTownBorderTerrain() when the town
+       scene is built. -->
+  <script src="js/border-terrain.js?v=20260807a"></script>
+  <!-- Procedural den-cavern floor generation (window.CavernGenerator) —
+       pure data generation, no scene-graph/window.* system reads at load
+       time (window.WildlifeSpawn/window.__farmLog are read lazily, at
+       call time); must load before game.js, which calls
+       window.CavernGenerator.init(...) alongside window.WildlifeSpawn's
+       own init call, and window.CavernGenerator.generateCavernFloor(...)
+       can otherwise be reached earlier still, from the fire-and-forget
+       Tothal Shift kicked off during world boot — that path never touches
+       deps, so it works regardless of init() timing. -->
+  <script src="js/cavern-generator.js?v=20260807a"></script>
+  <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
+       (window.ZonePlateauMesa) — pure scene-graph generation, no other
+       window.* system reads; must load before game.js, which calls
+       window.ZonePlateauMesa.init(...) alongside its sibling systems and
+       window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
+       zone with tiered plateaus is first built or a plateau-top tile
+       changes at runtime — never synchronously during initial boot. -->
+  <script src="js/zone-plateau-mesa.js?v=20260807a"></script>
+  <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
+       (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
+       window.* system reads; must load before game.js, which calls
+       window.ZoneTerrainFeatures.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene, never
+       synchronously during initial boot. -->
+  <script src="js/zone-terrain-features.js?v=20260807a"></script>
+  <!-- Wilderness-zone animal-den rock mounds and root totem meshes
+       (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
+       other window.* system reads; must load before game.js, which calls
+       window.ZoneDenTotemFeatures.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene, never
+       synchronously during initial boot. -->
+  <script src="js/zone-den-totem-features.js?v=20260807a"></script>
+  <!-- Wilderness-zone grass and rich-foliage-patch billboards
+       (window.ZoneGrassBillboards) — pure scene-graph generation, no
+       other window.* system reads; must load before game.js, which calls
+       window.ZoneGrassBillboards.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene and
+       refreshZoneGroundVisuals, never synchronously during initial boot. -->
+  <script src="js/zone-grass-billboards.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->

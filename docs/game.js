@@ -142,7 +142,7 @@
         paused = true;
         switchMenuPanel(targetPanel);
         buildInventoryGrid();
-        buildEquipmentSlots();
+        window.EquipmentPanel.buildEquipmentSlots();
         if (targetPanel === 'crafting') window.CraftingPanel.render();
         if (targetPanel === 'shipping') window.ShippingPanel.build();
         if (targetPanel === 'supplies') window.SupplyPage.render();
@@ -179,7 +179,7 @@
         document.querySelectorAll('.mp-pane').forEach(p =>
           p.classList.toggle('active',
             p.id === 'mp' + id.charAt(0).toUpperCase() + id.slice(1)));
-        if (id === 'inventory') { buildInventoryGrid(); buildEquipmentSlots(); }
+        if (id === 'inventory') { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); }
         if (id === 'crafting') window.CraftingPanel.render();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
         if (id === 'map') window.WildernessMap.renderMapPanel();
@@ -1774,7 +1774,7 @@
           // A plain <img src> consumer (see metalToolImgSrc) was showing the
           // un-recolored base sprite until now — refresh the panels that
           // render tool sprites via <img> once the real recolor lands.
-          buildEquipmentSlots();
+          window.EquipmentPanel.buildEquipmentSlots();
         });
         return key;
       }
@@ -5632,7 +5632,7 @@
               .filter(den => den.mouthAnchor)
               .map(den => {
                 const cavernMapId = window.WildlifeSpawn.denCavernMapId(zoneId, den.id);
-                const { exitCol, exitRow } = generateCavernFloor(cavernMapId);
+                const { exitCol, exitRow } = window.CavernGenerator.generateCavernFloor(cavernMapId);
                 return {
                   id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
                   target: 'building', targetMapId: cavernMapId,
@@ -5792,7 +5792,7 @@
         weaponDamageTypeForTool,
         currentWeaponKey,
         equipmentSlots,
-        equipItem,
+        equipItem: window.EquipmentPanel.equipItem,
         toolMasteryLevel,
         toolMasteryXp,
         awardToolMasteryXp,
@@ -5824,7 +5824,7 @@
         isFarmEditMode: () => farmEditMode,
         getBoundDesktopEnter: () => getActionForButton('desktop', 'Enter'),
         debugComputeActionButtons: () => computeActionButtons(),
-        getCavernFloor: (mapId) => generateCavernFloor(mapId),
+        getCavernFloor: (mapId) => window.CavernGenerator.generateCavernFloor(mapId),
         exitBuilding: () => exitBuilding(),
         toolHolderParent: () => (toolHolder.parent ? (toolHolder.parent === scene ? 'farmScene' : 'otherScene') : null),
         addLivestockFromItem: (itemKey) => window.FarmAnimals.addFromItem(itemKey),
@@ -6700,19 +6700,19 @@
         // parent, so that margin is the cliff-face band).
         _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
 
-        buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
-        buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
-        buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
+        window.ZoneTerrainFeatures.buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        window.ZoneTerrainFeatures.buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        window.ZoneTerrainFeatures.buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
         _zoneWaterMeshes.set(mapId, [
-          ...buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
-          ...buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+          ...window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+          ...window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
         ]);
 
-        _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
-        _buildRichFoliageBillboards(zScene, zoneData, zGrid);
-        buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
+        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
+        window.ZoneGrassBillboards.buildRichFoliageBillboards(zScene, zoneData, zGrid);
+        window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
 
         const toTownExit = zoneData?.toTownExit;
         const backToTown = (toTownExit || zdef) ? [{
@@ -6784,7 +6784,7 @@
         plateauMesas.forEach((mesa, i) => {
           const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
           if (elevOffset <= 0) return;
-          const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
+          const mesh = window.ZonePlateauMesa.buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
           if (mesh) meshes.push(mesh);
         });
         return meshes;
@@ -6805,438 +6805,14 @@
         _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid));
       }
 
-      function buildPlateauMesa(zScene, mapId, groupId, bb, elevOffset, zoneBaseElev = 0, zGrid = null) {
-        const MARGIN_TILES = 1;
-        const BASE = NORMAL_TOP + zoneBaseElev;
-        const W = bb.maxC - bb.minC + 1, D = bb.maxR - bb.minR + 1;
-        const GW = W * 2 + 1, GH = D * 2 + 1; // vertices, 0.5-tile spacing, matching makeFloorGeo
+      // A zone's in-bounds elevated plateau/mesa terrain (buildPlateauMesa)
+      // now lives in js/zone-plateau-mesa.js — call via
+      // window.ZonePlateauMesa.buildPlateauMesa(...).
 
-        const hashDisp = (kx, kz) => {
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        // Multi-source BFS directly on the VERTEX grid (0.5-tile spacing, same
-        // grid as the position buffer below) so every vertex's blend reflects its
-        // own true distance to the nearest "outside" point — the bbox's literal
-        // edge, or an internal gap in an irregular/concave mask. A vertex is an
-        // "outside" seed if it touches the literal grid perimeter, or if any tile
-        // it borders is outside the painted footprint mask. Each BFS hop is 0.5
-        // tile, so hops*0.5 is exactly the tile-distance the old formula used.
-        // (Doing this per-tile-then-min-over-adjacent-tiles, as before, collapses
-        // the whole outer ring tile to blend 0 and renders mask cells next to an
-        // internal gap as fully raised even though mergeZoneTiles' onRing logic
-        // treats them as low ring tiles — both produced the grass-overhang bug.)
-        const mask = bb.maskWorldKeys || null;
-        // A neighbor is also "inside" (no blend needed there) if a different,
-        // touching mesa has already raised it to at least this tier — without
-        // this, two side-by-side mesas at the same height each independently
-        // trench their own margin band right at the shared border instead of
-        // merging into one continuous top ("blending curtains together").
-        // Ring cells of another, still-sloping mesa don't count: only an
-        // already-flat raised top at >= this tier reads as a seamless match.
-        const inMask = (c, r) => {
-          if (!mask) return true;
-          if (mask.has(`${c},${r}`)) return true;
-          const t = zGrid?.[r]?.[c];
-          return !!(t && !t.incline && (t.elevTier || 0) >= bb.toTier);
-        };
-        // Which tile(s) a vertex index borders along one axis — even gi sit on a
-        // tile boundary (shared by the tile each side), odd gi sit at a single
-        // tile's center. Deliberately NOT clamped to [0,N) — a perimeter vertex
-        // (gi=0 or gi=GW-1) needs to see one tile step beyond this mesa's own
-        // bbox too, so inMask can detect an adjacent mesa sitting right outside it.
-        const axisTiles = (gi, N) => {
-          const lo = Math.floor((gi - 1) / 2), hi = Math.floor(gi / 2), out = [lo];
-          if (hi !== lo) out.push(hi);
-          return out;
-        };
-        const vIdx = (gi, gj) => gj * GW + gi;
-        const CAP = MARGIN_TILES * 2; // hops (0.5 tile each) — cap matches old margin in tiles
-        const vertHops = new Int32Array(GW * GH).fill(CAP);
-        // A higher tier's footprint sometimes lands right at the edge of a LOWER
-        // tier's own ring band instead of fully inset onto its flat top (a tight
-        // or irregularly-shaped lower mesa can leave less than one full margin
-        // tile of flat interior at some rows/columns). Anchoring every seed
-        // vertex to this mesa's own flat `BASE` then makes the upper curtain
-        // float a flat ledge above the lower curtain's real (still-sloping,
-        // lower) surface — two independently-blended heightfields disagreeing
-        // right where they overlap. Anchor each seed to the ACTUAL elevation
-        // already staked for whatever tile triggered it instead, so the upper
-        // curtain starts from the lower curtain's real height there and the two
-        // read as one continuous slope.
-        const TOP = BASE + elevOffset;
-        const seedHeightAt = (c, r) => {
-          const t = zGrid?.[r]?.[c];
-          return (t && typeof t.elevTier === 'number') ? NORMAL_TOP + t.elevTier * PLATEAU_UNIT : BASE;
-        };
-        const vertSeedY = new Float32Array(GW * GH).fill(BASE);
-        const queue = [];
-        for (let gj = 0; gj < GH; gj++) {
-          const trs = axisTiles(gj, D);
-          for (let gi = 0; gi < GW; gi++) {
-            const tcs = axisTiles(gi, W);
-            // A real outer edge (no neighboring mesa raised to match) naturally
-            // seeds here too: inMask(c,r) for a world tile beyond the live grid
-            // (zGrid[r]?.[c] undefined) falls through to false.
-            let seedY = Infinity;
-            for (const tc of tcs) for (const tr of trs) {
-              const c = bb.minC + tc, r = bb.minR + tr;
-              if (!inMask(c, r)) seedY = Math.min(seedY, seedHeightAt(c, r));
-            }
-            if (seedY !== Infinity) {
-              const k = vIdx(gi, gj);
-              vertHops[k] = 0; vertSeedY[k] = seedY; queue.push([gi, gj]);
-            }
-          }
-        }
-        for (let qi = 0; qi < queue.length; qi++) {
-          const [gi, gj] = queue[qi], k0 = vIdx(gi, gj), d0 = vertHops[k0];
-          if (d0 >= CAP) continue;
-          for (const [dgi, dgj] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-            const ngi = gi + dgi, ngj = gj + dgj;
-            if (ngi < 0 || ngi >= GW || ngj < 0 || ngj >= GH) continue;
-            const nk = vIdx(ngi, ngj);
-            if (d0 + 1 < vertHops[nk]) { vertHops[nk] = d0 + 1; vertSeedY[nk] = vertSeedY[k0]; queue.push([ngi, ngj]); }
-          }
-        }
-
-        const Y = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++) {
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            const blend = Math.min(1, (vertHops[k] * 0.5) / MARGIN_TILES);
-            const kx = bb.minC * 2 + gi, kz = bb.minR * 2 + gj; // absolute seam-hash key, matches adjacent makeFloorGeo tiles
-            const seedY = vertSeedY[k];
-            Y[k] = seedY + blend * (TOP - seedY) + hashDisp(kx, kz);
-          }
-        }
-
-        // A ramp painted through this mesa's footprint (e.g. spooling around the
-        // mesa's perimeter while climbing) doesn't follow this mesa's generic
-        // 1-tile linear blend — it has its own, usually much slower, climb rate —
-        // so the two heightfields disagree and visibly fight/clip where they
-        // overlap. Wherever a ramp tile sits inside this bbox, snap that tile's
-        // 3x3 vertex block onto the ramp's own corner heights (same averaging
-        // buildZoneRampMeshes/buildRampCurtainMeshes use) instead of the BFS
-        // blend, so the mesa surface there literally follows the ramp instead of
-        // independently re-deriving a conflicting slope.
-        const rampCornerY = (ci, cj) => {
-          let sum = 0, n = 0;
-          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
-            const t = zGrid?.[cj + dr]?.[ci + dc];
-            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
-          }
-          return n ? sum / n : null;
-        };
-        const isRampTile = (tc, tr) => zGrid?.[bb.minR + tr]?.[bb.minC + tc]?.type === TileType.RAMP;
-        for (let tr = 0; tr < D; tr++) {
-          for (let tc = 0; tc < W; tc++) {
-            if (!isRampTile(tc, tr)) continue;
-            const wc = bb.minC + tc, wr = bb.minR + tr;
-            const y00 = rampCornerY(wc, wr), y10 = rampCornerY(wc + 1, wr);
-            const y01 = rampCornerY(wc, wr + 1), y11 = rampCornerY(wc + 1, wr + 1);
-            for (let dj = 0; dj <= 2; dj++) {
-              const fr = dj * 0.5;
-              for (let di = 0; di <= 2; di++) {
-                const fc = di * 0.5;
-                const y = y00*(1-fc)*(1-fr) + y10*fc*(1-fr) + y01*(1-fc)*fr + y11*fc*fr;
-                Y[(2*tr+dj)*GW + (2*tc+di)] = y;
-              }
-            }
-          }
-        }
-
-        const pos = new Float32Array(GW * GH * 3);
-        // World-space (X,Z) UV — same raw-world-units convention as
-        // _mergeTileGeos, so resolveTileMat's textured materials (scaled via
-        // texture.repeat) tile seamlessly across the mesa lid and line up
-        // with the ordinary ground tiles surrounding it.
-        const uv = new Float32Array(GW * GH * 2);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            const wx = bb.minC + gi * 0.5, wz = bb.minR + gj * 0.5;
-            pos[k*3]   = wx;
-            pos[k*3+1] = Y[k];
-            pos[k*3+2] = wz;
-            uv[k*2] = wx; uv[k*2+1] = wz;
-          }
-
-        // Quads fully inside a ramp tile are left as holes — buildZoneRampMeshes
-        // already renders that tile's own surface; doubling it here (even at a
-        // matching height) just invites z-fighting.
-        const quadIsRamp = (gi, gj) => isRampTile(Math.floor(gi / 2), Math.floor(gj / 2));
-        // The bbox is just this mesa's bounding rectangle, not its painted shape —
-        // an irregular/concave brush stroke leaves bbox cells that were never
-        // painted at all. Those still get a flat BFS-blended Y above (so the BFS
-        // distance field stays correct for the cells that ARE painted near them),
-        // but they must NOT turn into a rendered quad, or the whole bbox reads as
-        // a solid rectangular sheet regardless of the actual footprint. Gate on
-        // the literal own-mask (bb.maskWorldKeys), not the broader inMask() —
-        // inMask() also accepts a tile a DIFFERENT mesa already raised to match,
-        // which must still skip rendering here since that tile belongs to the
-        // other mesa, not this one.
-        const quadInOwnMask = (gi, gj) => !mask || mask.has(`${bb.minC + Math.floor(gi/2)},${bb.minR + Math.floor(gj/2)}`);
-        // A river/stream/waterfall/trench/raised cell carved INTO this mesa's own
-        // footprint still gets a mask-passing, BFS-blended Y above (so neighboring
-        // carved-tile geometry keeps blending against a sane height), but the flat
-        // mesa lid/skin must not also render a quad on top of it — buildTerrainTileGeo
-        // builds that cell's own carved-bed mesh, and without this check the mesa's
-        // solid lid simply painted over it, hiding the channel under flat ground.
-        const quadIsCarved = (gi, gj) => CARVED_TILE_TYPES.has(zGrid?.[bb.minR + Math.floor(gj/2)]?.[bb.minC + Math.floor(gi/2)]?.type);
-        // A quad's own corners already carry this mesa's real BFS-blended slope
-        // (Y above) — steep quads (the cliff-face margin band) are exactly where
-        // the old separate buildRockFormationMeshes wall used to get overlaid in
-        // front of this same grass surface via polygonOffset, producing both a
-        // visibly straight-edged stone plane AND the actual sloped/cliff-shaped
-        // grass geometry showing through/around it. Splitting this single mesh's
-        // faces into two material groups by the same steep-face rule the old
-        // border-terrain stone skin used (faces steeper than ~41 degrees from
-        // horizontal) puts the stone color directly on the real cliff geometry
-        // instead, with no separate mesh needed.
-        const grassIdx = [], stoneIdx = [];
-        for (let gj = 0; gj < GH - 1; gj++) {
-          for (let gi = 0; gi < GW - 1; gi++) {
-            if (quadIsRamp(gi, gj) || quadIsCarved(gi, gj) || !quadInOwnMask(gi, gj)) continue;
-            const v00 = gj*GW+gi, v10 = gj*GW+gi+1, v01 = (gj+1)*GW+gi, v11 = (gj+1)*GW+gi+1;
-            const y00 = Y[v00], y10 = Y[v10], y01 = Y[v01], y11 = Y[v11];
-            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-            const steep = cnx * cnx + cnz * cnz > 0.194;
-            (steep ? stoneIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
-          }
-        }
-        const idx = grassIdx.concat(stoneIdx);
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        if (grassIdx.length) geo.addGroup(0, grassIdx.length, 0);
-        if (stoneIdx.length) geo.addGroup(grassIdx.length, stoneIdx.length, 1);
-        displaceZoneGeometry(geo, mapId);
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, [resolveTileMat(mapId, TileType.GRASS), resolveTileMat(mapId, TileType.ROCK)]);
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-        // A plateau's own lid+skin is the primary way the fixed follow camera
-        // (see updateCameraPosition) can end up with something tall between
-        // itself and the player — flagged so buildZoneScene can collect it
-        // for the occlusion raycast.
-        mesh.userData.cameraObstacle = true;
-
-        console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
-        return mesh;
-      }
-
-      // Smooth ramp slope mesh: one quad per authored RAMP tile, with each tile's 4
-      // corner heights taken from the absolute world-Y (rampElevation * PLATEAU_UNIT)
-      // of whichever ramp tiles touch that corner, averaged where more than one
-      // ramp tile shares a corner — this follows the ramp's own monotonic gradient
-      // instead of blending toward the zone's flat base height like buildPlateauMesa
-      // does, since a ramp's whole point is to NOT be flat.
-      function buildZoneRampMeshes(zScene, zGrid, zcols, zrows, mapId) {
-        const rampCells = [];
-        for (let r = 0; r < zrows; r++)
-          for (let c = 0; c < zcols; c++)
-            if (zGrid[r]?.[c]?.type === TileType.RAMP) rampCells.push([c, r]);
-        if (!rampCells.length) return;
-
-        const cornerY = (ci, cj) => {
-          let sum = 0, n = 0;
-          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
-            const t = zGrid[cj + dr]?.[ci + dc];
-            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
-          }
-          return n ? sum / n : null;
-        };
-
-        const pos = [], uv = [], idx = [];
-        let vi = 0;
-        for (const [c, r] of rampCells) {
-          const fallback = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
-          const y00 = cornerY(c, r)     ?? fallback;
-          const y10 = cornerY(c+1, r)   ?? fallback;
-          const y01 = cornerY(c, r+1)   ?? fallback;
-          const y11 = cornerY(c+1, r+1) ?? fallback;
-          pos.push(c,y00,r,  c+1,y10,r,  c,y01,r+1,  c+1,y11,r+1);
-          uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
-          idx.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi += 4;
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        displaceZoneGeometry(geo, mapId);
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.PATH));
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.PATH));
-
-        console.log(`%c[zone:${mapId}] ramp mesh built: ${rampCells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
-      }
-
-      // Ramp side curtains: a 1-tile sloped skirt on every cell flagged `rampCurtain`
-      // (see buildZoneScene) — each corner takes the average height of whichever
-      // adjacent RAMP cells touch it (same averaging buildZoneRampMeshes uses for
-      // the ramp surface itself), falling back to the curtain cell's own natural
-      // ground height at corners that don't touch a ramp. That tapers the skirt
-      // from the ramp's edge down to ground over one tile — the same margin width
-      // buildPlateauMesa uses for its cliff face — and picks up the same steep-face
-      // stone skin so a ramp's sides read as a cut bank rather than floating grass.
-      function buildRampCurtainMeshes(zScene, zGrid, zcols, zrows, mapId) {
-        const cells = [];
-        for (let r = 0; r < zrows; r++)
-          for (let c = 0; c < zcols; c++)
-            if (zGrid[r]?.[c]?.rampCurtain) cells.push([c, r]);
-        if (!cells.length) return;
-
-        const cornerY = (ci, cj, fallback) => {
-          let sum = 0, n = 0;
-          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
-            const t = zGrid[cj + dr]?.[ci + dc];
-            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
-          }
-          return n ? sum / n : fallback;
-        };
-
-        const pos = [], uv = [], idx = [];
-        let vi = 0;
-        for (const [c, r] of cells) {
-          const ground = NORMAL_TOP + (zGrid[r][c].elevTier || 0) * PLATEAU_UNIT;
-          const y00 = cornerY(c, r, ground);
-          const y10 = cornerY(c + 1, r, ground);
-          const y01 = cornerY(c, r + 1, ground);
-          const y11 = cornerY(c + 1, r + 1, ground);
-          pos.push(c, y00, r,  c + 1, y10, r,  c, y01, r + 1,  c + 1, y11, r + 1);
-          uv.push(c,r,  c+1,r,  c,r+1,  c+1,r+1); // world-space (X,Z), same convention as _mergeTileGeos
-          idx.push(vi, vi + 2, vi + 3, vi, vi + 3, vi + 1); vi += 4;
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        displaceZoneGeometry(geo, mapId);
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.GRASS));
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS));
-
-        // Steep ramp-curtain skin is now emitted by buildRockFormationMeshes,
-        // after unioning ramp side spans with neighboring plateau cliff spans.
-
-        console.log(`%c[zone:${mapId}] ramp curtain skirt built: ${cells.length} tile(s)`, 'color:#22c55e;font-weight:bold');
-      }
-
-
-      // Unified solved non-walkable rock layer. This mirrors
-      // docs/js/terrain-preview.js buildRockFormationGeometry: semantic ramp
-      // side spans and ramp/plateau seam spans (plus bare tier steps not
-      // touching any plateau mesa) are unioned by tile edge before rendering,
-      // so overlapping authored features become one continuous rocky
-      // formation while walkable tops/ramp floors stay separate. Plain
-      // plateau-cliff spans are excluded — buildPlateauMesa's own mesh
-      // renders those directly with a stone material group now, so solving
-      // them again here would just double them up.
-      function buildRockFormationMeshes(zScene, zGrid, zcols, zrows, mapId) {
-        const rampCornerYFor = (ci, cj, fallback = null) => {
-          let sum = 0, n = 0;
-          for (const [dc, dr] of [[0,0],[-1,0],[0,-1],[-1,-1]]) {
-            const t = zGrid?.[cj + dr]?.[ci + dc];
-            if (t && t.type === TileType.RAMP) { sum += NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT; n++; }
-          }
-          return n ? sum / n : fallback;
-        };
-        const cellCornerHeights = (c, r) => {
-          const t = zGrid?.[r]?.[c];
-          if (!t) return [NORMAL_TOP, NORMAL_TOP, NORMAL_TOP, NORMAL_TOP];
-          if (t.type === TileType.RAMP) {
-            const fallback = NORMAL_TOP + (t.rampElevation || 0) * PLATEAU_UNIT;
-            return [rampCornerYFor(c, r, fallback), rampCornerYFor(c + 1, r, fallback), rampCornerYFor(c, r + 1, fallback), rampCornerYFor(c + 1, r + 1, fallback)];
-          }
-          const y = NORMAL_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
-          return [y, y, y, y];
-        };
-        const hash01 = (x, z, salt) => {
-          let h = (2166136261 ^ Math.imul(Math.round(x * 8) + salt, 374761393) ^ Math.imul(Math.round(z * 8) - salt, 668265263)) >>> 0;
-          h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-          return h / 4294967296;
-        };
-        const spans = new Map();
-        const add = (key, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kind) => {
-          if (Math.max(top0, top1) - Math.min(bottom0, bottom1) <= 0.04) return;
-          const prev = spans.get(key);
-          if (!prev) spans.set(key, { key, axis, x0, z0, x1, z1, top0, top1, bottom0, bottom1, kinds: new Set([kind]) });
-          else { prev.top0 = Math.max(prev.top0, top0); prev.top1 = Math.max(prev.top1, top1); prev.bottom0 = Math.min(prev.bottom0, bottom0); prev.bottom1 = Math.min(prev.bottom1, bottom1); prev.kinds.add(kind); }
-        };
-        const kindOf = (a, b) => (a?.type === TileType.RAMP || b?.type === TileType.RAMP) ? ((a?.incline || b?.incline) ? 'ramp_plateau_seam' : 'ramp_side') : ((a?.incline || b?.incline) ? 'plateau_cliff' : 'tier_seam');
-        for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
-          const t = zGrid?.[r]?.[c]; if (!t) continue;
-          const [, y10, y01, y11] = cellCornerHeights(c, r);
-          for (const [dc, dr, side] of [[1,0,'E'],[0,1,'S']]) {
-            const nt = zGrid?.[r + dr]?.[c + dc];
-            const [ny00, ny10, ny01] = cellCornerHeights(c + dc, r + dr);
-            const a = side === 'E' ? [y10, y11] : [y01, y11];
-            const b = side === 'E' ? [ny00, ny01] : [ny00, ny10];
-            const top0 = Math.max(a[0], b[0]), top1 = Math.max(a[1], b[1]);
-            const bottom0 = Math.min(a[0], b[0]), bottom1 = Math.min(a[1], b[1]);
-            const step = Math.max(top0, top1) - Math.min(bottom0, bottom1);
-            if (!(((t.type === TileType.RAMP || nt?.type === TileType.RAMP) && step > 0.04) || (step > 0.04 && (t.incline || nt?.incline || (t.elevTier || 0) !== (nt?.elevTier || 0))))) continue;
-            const kind = kindOf(t, nt);
-            // A plain plateau_cliff span is exactly the cliff-face margin band
-            // buildPlateauMesa's own mesh already renders (now stone-textured
-            // directly on that geometry — see its own comment) — solving it a
-            // second time here just overlays a second, perfectly flat plane in
-            // front of that real sloped surface. Ramp seams/sides and bare tier
-            // steps aren't rendered by any other mesh, so those still need this
-            // solver.
-            if (kind === 'plateau_cliff') continue;
-            if (side === 'E') add(`x:${c + 1}:${r}`, 'x', c + 1, r, c + 1, r + 1, top0, top1, bottom0, bottom1, kind);
-            else add(`z:${r + 1}:${c}`, 'z', c, r + 1, c + 1, r + 1, top0, top1, bottom0, bottom1, kind);
-          }
-        }
-        const pos = [], idx = []; let vi = 0;
-        const pushV = (x, y, z, nx, nz, at, vt) => {
-          const rib = (vt > 0.001 && vt < 0.999 && at > 0.001 && at < 0.999) ? (hash01(x, z, Math.round(y * 10)) - 0.5) * 0.16 : 0;
-          const ledge = (vt > 0.15 && vt < 0.9 && Math.abs((vt * 5) % 1 - 0.5) < 0.14) ? 0.035 : 0;
-          pos.push(x + nx * (rib + ledge), y, z + nz * (rib + ledge));
-        };
-        for (const s of spans.values()) {
-          const nx = s.axis === 'x' ? (hash01(s.x0, s.z0, 7) > 0.5 ? 1 : -1) : 0;
-          const nz = s.axis === 'z' ? (hash01(s.x0, s.z0, 11) > 0.5 ? 1 : -1) : 0;
-          const segs = 2, base = vi;
-          for (let j = 0; j <= segs; j++) for (let i = 0; i <= segs; i++) {
-            const at = i / segs, vt = j / segs;
-            const x = s.x0 + (s.x1 - s.x0) * at, z = s.z0 + (s.z1 - s.z0) * at;
-            const top = s.top0 + (s.top1 - s.top0) * at, bot = s.bottom0 + (s.bottom1 - s.bottom0) * at;
-            pushV(x, bot + (top - bot) * (1 - vt), z, nx, nz, at, vt);
-          }
-          for (let j = 0; j < segs; j++) for (let i = 0; i < segs; i++) {
-            const a = base + j * (segs + 1) + i, b = a + 1, c0 = a + (segs + 1), d = c0 + 1;
-            idx.push(a, c0, d, a, d, b);
-          }
-          vi += (segs + 1) * (segs + 1);
-        }
-        if (!idx.length) return;
-        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        displaceZoneGeometry(geo, mapId);
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
-        mesh.userData.cameraObstacle = true; // vertical cliff-face skin — see buildPlateauMesa's own tag
-        console.log(`%c[zone:${mapId}] solved rock formation built: ${spans.size} edge span(s)`, 'color:#22c55e;font-weight:bold');
-      }
+      // Zone ramp surfaces/curtains (buildZoneRampMeshes/
+      // buildRampCurtainMeshes) and the unioned non-walkable rock layer
+      // (buildRockFormationMeshes) now live in js/zone-terrain-features.js
+      // — call via window.ZoneTerrainFeatures.*.
 
       // Rounded boulder-mound bump field — the exact same BFS-grown-plateau
       // algorithm (and the identical seam/roughness noise formulas) that
@@ -7324,567 +6900,22 @@
         return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
       }
 
-      // A single rounded lump spanning a whole col x row footprint, with a
-      // hole cut into one side — not an organic BFS-grown blob (which read
-      // as an amoeba/horseshoe from directly above once scaled up), but a
-      // dome built from each point's distance to its NEAREST footprint edge
-      // (Chebyshev/L-infinity distance: contours of "distance to nearest
-      // edge = constant" are themselves smaller rectangles nested toward
-      // the center, not circles) — so the lump's own outline, measured at
-      // any height, is always a rectangle matching the footprint exactly,
-      // while it still reads as one rounded mass rising to a single peak at
-      // the center. The footprint's own w:h ratio (a den is wider than it
-      // is deep) reads as a horizontally-skewed/elongated lump for free.
-      // `mouthRect` ({u0,u1,v0}, 0-1 space) carves the hole near one edge.
-      function buildDenRockMoundGeo(colsTiles, rowsTiles, peakHeight, salt, mouthRect) {
-        const CX = Math.max(3, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
-        const CZ = Math.max(3, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
-        const VX = CX + 1, VZ = CZ + 1;
-        let _s = (Math.imul(Math.round(colsTiles * 97) + 1, 374761393) ^ Math.imul(Math.round(rowsTiles * 131) + 1, 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
-        const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-        // Small per-vertex jitter for a natural rock-surface texture — never
-        // large enough to disturb the overall rectangular-contour shape.
-        const roughSeed = rng() * 1000;
-        const roughDisp = (u, v) => {
-          const kx = Math.round(u * CX * 8) | 0, kz = Math.round(v * CZ * 8) | 0;
-          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263) ^ Math.imul(roughSeed | 0, 97)) >>> 0;
-          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.16;
-        };
+      // Animal den rock mounds (buildDenRockMoundGeo/buildAnimalDenMeshes)
+      // and root totem meshes (buildRootTotemMeshes) now live in
+      // js/zone-den-totem-features.js — call via
+      // window.ZoneDenTotemFeatures.*.
 
-        const Y = new Float32Array(VX * VZ);
-        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
-          const u = vi / CX, v = vj / CZ;
-          const edgeDist = Math.min(u, 1 - u, v, 1 - v); // 0 at the true footprint edge, up to 0.5 at dead center
-          const norm = Math.min(1, edgeDist * 2);
-          const dome = norm * norm * (3 - 2 * norm); // smoothstep — rounded profile, not a flat-topped mesa
-          const idxv = vj * VX + vi;
-          Y[idxv] = Math.max(0, dome * peakHeight + roughDisp(u, v) * dome);
-        }
+      // Zone waterway meshes (buildWaterfallCurtainMeshes/
+      // buildZoneRiverWaterMeshes) now live in js/zone-terrain-features.js
+      // — call via window.ZoneTerrainFeatures.*.
 
-        // Carve the entrance — a straightforward drop to ~ground level
-        // within mouthRect, same as cutting a doorway into a real boulder's
-        // face; a thin blended collar around it keeps the cut edge from
-        // being a single razor-sharp ring of triangles.
-        if (mouthRect) {
-          for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) {
-            const u = vi / CX, v = vj / CZ;
-            const inU = u >= mouthRect.u0 && u <= mouthRect.u1;
-            const nearV = Math.max(0, (v - mouthRect.v0) / (1 - mouthRect.v0));
-            if (inU && nearV > 0) {
-              const idxv = vj * VX + vi;
-              Y[idxv] *= Math.max(0, 1 - nearV * 1.6);
-            }
-          }
-        }
+      // Zone grass billboards and rich foliage patch billboards
+      // (buildZoneGrassBillboards/buildRichFoliageBillboards) now live in
+      // js/zone-grass-billboards.js — call via window.ZoneGrassBillboards.*.
 
-        const positions = [];
-        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) positions.push((vi / CX) * colsTiles, Y[vj * VX + vi], (vj / CZ) * rowsTiles);
-        const idx = [];
-        for (let cj = 0; cj < CZ; cj++) for (let ci = 0; ci < CX; ci++) {
-          const v00 = cj * VX + ci, v10 = cj * VX + ci + 1, v01 = (cj + 1) * VX + ci, v11 = (cj + 1) * VX + ci + 1;
-          idx.push(v00, v01, v11, v00, v11, v10);
-        }
-        return { positions, idx, vertexCount: VX * VZ };
-      }
-
-      // Animal dens: a single rounded lump over a den's whole multi-tile
-      // footprint, with a hole cut into one side — see buildDenRockMoundGeo
-      // above for the shape itself; this just places one per den (sunk
-      // slightly into the ground) and merges them into one mesh.
-      function buildAnimalDenMeshes(zScene, zGrid, dens, mapId) {
-        if (!dens || !dens.length) return;
-        const DEN_PEAK_HEIGHT = 2.0, DEN_SINK = 0.5;
-        const MOUTH_U0 = 0.3, MOUTH_U1 = 0.7, MOUTH_V0 = 0.6;
-        const pos = [], idx = []; let vi = 0;
-        let denSalt = 0;
-        for (const den of dens) {
-          const w = den.w || 1, h = den.h || 1;
-          const centerCol = den.x + Math.floor(w / 2), centerRow = den.y + Math.floor(h / 2);
-          const elevTier = zGrid?.[centerRow]?.[centerCol]?.elevTier || 0;
-          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT - DEN_SINK;
-          const mound = buildDenRockMoundGeo(w, h, DEN_PEAK_HEIGHT, (denSalt += 97), { u0: MOUTH_U0, u1: MOUTH_U1, v0: MOUTH_V0 });
-          const base = vi;
-          for (let p = 0; p < mound.vertexCount; p++) {
-            pos.push(den.x + mound.positions[p * 3], groundY + mound.positions[p * 3 + 1], den.y + mound.positions[p * 3 + 2]);
-          }
-          for (const i of mound.idx) idx.push(base + i);
-          vi += mound.vertexCount;
-        }
-        if (!idx.length) return;
-        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide });
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-        _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.ROCK));
-        mesh.userData.cameraObstacle = true;
-        console.log(`%c[zone:${mapId}] animal den rock mounds built: ${dens.length}`, 'color:#22c55e;font-weight:bold');
-      }
-
-      // Root Totems (see wilderness-map-generator.js's placeRootTotems) — a
-      // simple carved-pole placeholder mesh (pole + a few rings + a glowing
-      // cap) marking each zone's permanent respawn checkpoint. Purely a
-      // visual landmark; the actual nearest-totem lookup on death reads
-      // zoneData.rootTotems directly (see respawnPlayer/nearestRootTotemFor),
-      // not this mesh.
-      function buildRootTotemMeshes(zScene, zGrid, totems, mapId) {
-        if (!totems || !totems.length) return;
-        const poleMat = new THREE.MeshBasicMaterial({ color: 0x5b3a22 });
-        const bandMat = new THREE.MeshBasicMaterial({ color: 0x9a6a35 });
-        const glowMat = new THREE.MeshBasicMaterial({ color: 0x7fe7c4 });
-        const group = new THREE.Group();
-        for (const totem of totems) {
-          const elevTier = zGrid?.[totem.y]?.[totem.x]?.elevTier || 0;
-          const groundY = NORMAL_TOP + elevTier * PLATEAU_UNIT;
-          const cx = totem.x + 0.5, cz = totem.y + 0.5;
-          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 2.6, 8), poleMat);
-          pole.position.set(cx, groundY + 1.3, cz);
-          group.add(pole);
-          for (let i = 0; i < 3; i++) {
-            const band = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.07, 6, 12), bandMat);
-            band.rotation.x = Math.PI / 2;
-            band.position.set(cx, groundY + 0.55 + i * 0.75, cz);
-            group.add(band);
-          }
-          const glow = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), glowMat);
-          glow.position.set(cx, groundY + 2.75, cz);
-          group.add(glow);
-        }
-        zScene.add(group);
-        console.log(`%c[zone:${mapId}] root totems built: ${totems.length}`, 'color:#22c55e;font-weight:bold');
-        return group;
-      }
-
-      // Waterwall curtains: an animated vertical water sheet wherever a river
-      // crosses a plateau edge (TileType.WATERFALL, stamped by the Map Editor's
-      // mirrorRiverAcrossPlateau — see docs/js/terrain-preview.js's
-      // buildWaterfallWallGeometry, which this mirrors). A waterfall cell's
-      // merged-grid neighbor one step toward the footprint edge is always the
-      // cliff-face ring — mergeZoneTiles always stakes that flat at `type:
-      // 'grass'` on the lower tier (it's covered by the mesa mesh, not a real
-      // floor tile) — so the elevTier step alone marks where the water needs to
-      // climb, the same way buildRampCurtainMeshes uses an elevTier step to find
-      // a ramp's sides. Returns the spawned mesh(es) for _zoneWaterMeshes.
-      function buildWaterfallCurtainMeshes(zScene, zGrid, zcols, zrows, mapId) {
-        const cells = [];
-        for (let r = 0; r < zrows; r++)
-          for (let c = 0; c < zcols; c++)
-            if (zGrid[r]?.[c]?.type === TileType.WATERFALL) cells.push([c, r]);
-        if (!cells.length) return [];
-
-        const pos = [], uv = [], idx = [];
-        let vi = 0;
-        for (const [c, r] of cells) {
-          const t = zGrid[r][c];
-          const selfY = RIVER_TOP + (t.elevTier || 0) * PLATEAU_UNIT;
-          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-            const nt = zGrid[r + dr]?.[c + dc];
-            if (!nt || (nt.elevTier || 0) === (t.elevTier || 0)) continue;
-            const neighborIsWater = nt.type === TileType.RIVER || nt.type === TileType.STREAM || nt.type === TileType.WATERFALL;
-            const neighborY = (neighborIsWater ? RIVER_TOP : NORMAL_TOP) + (nt.elevTier || 0) * PLATEAU_UNIT;
-            const top = Math.max(selfY, neighborY), bottom = Math.min(selfY, neighborY);
-            if (top - bottom < 0.01) continue;
-            let x0, z0, x1, z1;
-            if (dc === 1)       { x0 = c+1; z0 = r;   x1 = c+1; z1 = r+1; }
-            else if (dc === -1) { x0 = c;   z0 = r+1; x1 = c;   z1 = r;   }
-            else if (dr === 1)  { x0 = c;   z0 = r+1; x1 = c+1; z1 = r+1; }
-            else /* dr === -1 */{ x0 = c+1; z0 = r;   x1 = c;   z1 = r;   }
-            pos.push(x0, top, z0,  x1, top, z1,  x0, bottom, z0,  x1, bottom, z1);
-            uv.push(0,1, 1,1, 0,0, 1,0); // v=1 at top so uFlow=(0,1) scrolls downward
-            idx.push(vi, vi+2, vi+3, vi, vi+3, vi+1); vi += 4;
-          }
-        }
-        if (!pos.length) return [];
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        displaceZoneGeometry(geo, mapId);
-        geo.computeVertexNormals();
-
-        const mat = new THREE.ShaderMaterial({
-          uniforms: {
-            uTime:  { value: 0 },
-            uPhase: { value: 0 },
-            uDepth: { value: 0.85 },
-            uFlow:  { value: new THREE.Vector2(0, 1) }, // local UV-space "down" — always set, never still-mode
-            uColor: { value: new THREE.Color(0x1f6f9c) },
-          },
-          vertexShader:   waterVertShader,
-          fragmentShader: waterFragShader,
-          transparent:    true,
-          depthWrite:     false,
-          side:           THREE.DoubleSide,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = false;
-        zScene.add(mesh);
-        _markTerrainEdgeId(mesh, 'water');
-
-        console.log(`%c[zone:${mapId}] waterfall wall built: ${cells.length} cell(s)`, 'color:#22c55e;font-weight:bold');
-        return [mesh];
-      }
-
-      // River/stream/waterfall water surface — an animated translucent plane
-      // sitting above the sunken bed built in buildZoneScene's tile loop, so a
-      // zone's waterways read as real water instead of just their bare bed
-      // color. Mirrors _townRiverWaterMeshes (built in buildTownScene), but
-      // each plane also carries its own tile's elevTier — a zone's water can
-      // sit on any plateau tier, unlike town's single flat grid — and a
-      // WATERFALL cell gets one too (the pool at the top/bottom of its
-      // curtain from buildWaterfallCurtainMeshes above), not just plain
-      // river/stream cells.
-      function buildZoneRiverWaterMeshes(zScene, zGrid, zcols, zrows, mapId) {
-        const isWaterTile = (cc, rr) => {
-          const t = zGrid[rr]?.[cc]?.type;
-          return t === TileType.RIVER || t === TileType.STREAM || t === TileType.WATERFALL;
-        };
-        const meshes = [];
-        for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
-          const tile = zGrid[r][c];
-          if (!isWaterTile(c, r)) continue;
-          let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
-          let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
-          const flen = Math.hypot(fx, fz);
-          if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
-          const deep = tile.type !== TileType.STREAM;
-          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-          const mat = new THREE.ShaderMaterial({
-            uniforms: {
-              uTime:  { value: 0 },
-              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
-              uDepth: { value: deep ? 0.8 : 0.45 },
-              uFlow:  { value: new THREE.Vector2(fx, fz) },
-              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
-            },
-            vertexShader:   waterVertShader,
-            fragmentShader: waterFragShader,
-            transparent:    true,
-            depthWrite:     false,
-            side:           THREE.FrontSide,
-          });
-          // A dedicated PlaneGeometry per mesh (not the shared module-level
-          // waterGeo used by farm/town) — _disposeZoneScene disposes every
-          // mesh's geometry when a zone is torn down (e.g. on a Tothal
-          // Shift), and that would take the shared geometry down with it,
-          // breaking every other scene still using it. rotateX matches
-          // waterGeo's own baked-in orientation so the plane lies flat.
-          const geo = new THREE.PlaneGeometry(1.0, 1.0);
-          geo.rotateX(-Math.PI / 2);
-          displaceZoneGeometry(geo, mapId, c + 0.5, r + 0.5);
-          geo.computeVertexNormals();
-          const wm = new THREE.Mesh(geo, mat);
-          wm.receiveShadow = false;
-          wm.position.set(c + 0.5, NORMAL_TOP + tierY - (deep ? 0.10 : 0.05), r + 0.5);
-          zScene.add(wm);
-          _markTerrainEdgeId(wm, 'water');
-          meshes.push(wm);
-        }
-        if (meshes.length) console.log(`%c[zone:${mapId}] river/stream/waterfall water surface built: ${meshes.length} tile(s)`, 'color:#22c55e;font-weight:bold');
-        return meshes;
-      }
-
-      // Grass billboard tufts for a zone — mirrors _buildTownGrassBillboards but
-      // parameterized so each zone gets its own InstancedMesh sized to its real grid.
-      function _buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0) {
-        if (!grassBillboardMat) return null;
-        let count = 0;
-        for (let row = 0; row < zrows; row++)
-          for (let col = 0; col < zcols; col++)
-            if (zGrid[row]?.[col]?.type === TileType.GRASS) count++;
-        if (count === 0) return null;
-
-        const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
-        mesh.frustumCulled = false;
-        mesh.visible = s_grass;
-        mesh.userData.isBillboard = true;
-        const dummy = new THREE.Object3D();
-        let idx = 0;
-        for (let row = 0; row < zrows; row++) {
-          for (let col = 0; col < zcols; col++) {
-            const tile = zGrid[row]?.[col];
-            if (tile?.type !== TileType.GRASS) continue;
-            const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
-            idx = _fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev + tierY);
-          }
-        }
-        mesh.count = idx;
-        mesh.instanceMatrix.needsUpdate = true;
-        zScene.add(mesh);
-        return mesh;
-      }
-
-      // Rich foliage patches (see workspace.foliagePatches' `rich` flag —
-      // the dense copse clusters the wildlife schedule AI's herbivores graze
-      // in and predators patrol near) get their own tightly-packed, tall
-      // billboard cluster instead of blending into the zone's ordinary grass
-      // tufts — always visible regardless of the Settings > Grass toggle
-      // (s_grass, see _buildZoneGrassBillboards/settingGrass's handler,
-      // neither of which this mesh is wired to), since it's meant to read as
-      // a landmark, not decorative ground cover. Reuses the same blade
-      // geometry/shader as ordinary grass — the visual distinction is
-      // entirely density (more blades, tighter spread) and height (roughly
-      // 2x), not a texture/color swap.
-      function _fillDenseTallBillboardInstances(mesh, dummy, startIdx, col, row, yOffset = 0) {
-        const rand = _mbRng(((col * 31337 + row * 1009) >>> 0) ^ 0x9e3779b9);
-        const baseY = tileSurfaceY(TileType.GRASS) + yOffset;
-        let idx = startIdx;
-        const BLADES = 24; // vs. _fillBillboardInstances' 14 — reads as packed rather than scattered
-        for (let b = 0; b < BLADES; b++) {
-          const ox = (rand() - 0.5) * 0.55; // tighter spread than the normal ±0.45 tile so blades overlap into a clump
-          const oz = (rand() - 0.5) * 0.55;
-          const w  = 0.16 + rand() * 0.10; // width matches ordinary grass
-          const h  = 0.48 + rand() * 0.26; // roughly 2x a normal blade's height
-          const rot = rand() * Math.PI;
-          const px = col + 0.5 + ox, pz = row + 0.5 + oz;
-          dummy.position.set(px, baseY, pz);
-          dummy.rotation.set(0, rot, 0);
-          dummy.scale.set(w, h, 1);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx++, dummy.matrix);
-          dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(idx++, dummy.matrix);
-        }
-        return idx;
-      }
-      function _buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0) {
-        if (!grassBillboardMat) return;
-        const richPatches = (zoneData?.foliagePatches || []).filter(p => p.rich);
-        if (!richPatches.length) return;
-        let tileCount = 0;
-        for (const patch of richPatches) tileCount += patch.tiles.length;
-        if (!tileCount) return;
-        const BLADES = 24;
-        const mesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, tileCount * BLADES * 2);
-        mesh.frustumCulled = false;
-        mesh.visible = true;
-        mesh.userData.isBillboard = true;
-        const dummy = new THREE.Object3D();
-        let idx = 0;
-        for (const patch of richPatches) {
-          for (const t of patch.tiles) {
-            const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * PLATEAU_UNIT;
-            idx = _fillDenseTallBillboardInstances(mesh, dummy, idx, t.x, t.y, zoneBaseElev + tierY);
-          }
-        }
-        mesh.count = idx;
-        mesh.instanceMatrix.needsUpdate = true;
-        zScene.add(mesh);
-      }
-
-      // Procedural cliff/border ring around a zone's playable area — same
-      // rugged-plain + distant-cliffs passes as buildTownBorderTerrain, parameterized
-      // by the zone's real size and a per-zone seed so each zone's border is distinct
-      // but stable across visits.
-      function buildZoneBorderTerrain(zScene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
-        const BASE        = NORMAL_TOP + zoneBaseElev;
-        const BORDER_W    = 18;
-        const SEED        = (mapId.split('').reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0)) || 1;
-        const BLEND_STEPS = 8;
-
-        const BV  = BORDER_W * 2;
-        const PVW = zcols * 2, PVH = zrows * 2;
-        const GW  = PVW + 2*BV + 1;
-        const GH  = PVH + 2*BV + 1;
-        const CW  = GW - 1, CH = GH - 1;
-
-        let _s = SEED >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
-        };
-
-        const hashDisp = (vi, vj) => {
-          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        const vSteps = (gi, gj) => {
-          const vi = gi - BV, vj = gj - BV;
-          const dx = Math.max(0, -vi, vi - PVW);
-          const dz = Math.max(0, -vj, vj - PVH);
-          return Math.sqrt(dx*dx + dz*dz);
-        };
-
-        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
-
-        // Seed height at each border vertex used to sit at one flat BASE
-        // everywhere, so the border only ever read as a flat plain/skybox
-        // wall with no relation to the actual zone it surrounds — obvious
-        // wherever a zone's playable edge itself has cliffs or plateaus.
-        // Weld the seam to the real playable-edge elevation instead (same
-        // elevTier lookup buildPlateauMesa's seedHeightAt uses), fading back
-        // to the flat BASE over SEAM_WELD_STEPS so only the near backdrop
-        // reads as a continuation of the zone and the far horizon still
-        // reads as generic distant terrain.
-        const SEAM_WELD_STEPS = 16; // 8 tiles
-        const nearestEdgeElevTier = (gi, gj) => {
-          if (!zGrid) return null;
-          const col = clamp(Math.floor((gi - BV) / 2), 0, zcols - 1);
-          const row = clamp(Math.floor((gj - BV) / 2), 0, zrows - 1);
-          const t = zGrid[row]?.[col];
-          return (t && typeof t.elevTier === 'number') ? t.elevTier : null;
-        };
-        const Y = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const jitter = hashDisp(gi-BV, gj-BV);
-            const edgeTier = nearestEdgeElevTier(gi, gj);
-            if (edgeTier === null) { Y[gj*GW+gi] = BASE + jitter; continue; }
-            const edgeY = NORMAL_TOP + edgeTier * PLATEAU_UNIT;
-            const weld = 1 - clamp(vSteps(gi, gj) / SEAM_WELD_STEPS, 0, 1);
-            Y[gj*GW+gi] = BASE + jitter + weld * (edgeY - BASE);
-          }
-
-        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
-
-        function pickGroup(ci0, cj0, maxSz) {
-          const group = [], seen = new Set([cj0*CW+ci0]);
-          const front = [[ci0, cj0]];
-          while (front.length && group.length < maxSz) {
-            const fi = Math.floor(rng() * front.length);
-            const [ci, cj] = front.splice(fi, 1)[0];
-            group.push([ci, cj]);
-            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const ni=ci+dc, nj=cj+dr;
-              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
-              const nk = nj*CW+ni;
-              if (seen.has(nk) || isPlayable(ni,nj)) continue;
-              seen.add(nk); front.push([ni,nj]);
-            }
-          }
-          return group;
-        }
-
-        function raiseGroup(group, amount) {
-          let maxY = -Infinity;
-          const verts = new Set();
-          for (const [ci,cj] of group)
-            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
-          const target = maxY + amount;
-          for (const vi of verts) {
-            const gi = vi%GW, gj = vi/GW|0;
-            const st = vSteps(gi, gj);
-            if (st === 0) continue;
-            const blend  = Math.min(1, st / BLEND_STEPS);
-            const raised = BASE + hashDisp(gi-BV, gj-BV) + blend*(target - BASE);
-            if (raised > Y[vi]) Y[vi] = raised;
-          }
-        }
-
-        function pickCell(outerBias) {
-          const rim = BV >> 2;
-          for (let attempt = 0; attempt < 300; attempt++) {
-            let ci, cj;
-            if (rng() < outerBias) {
-              const side = Math.floor(rng() * 4);
-              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
-              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
-              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
-              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
-            } else {
-              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
-            }
-            if (!isPlayable(ci,cj)) return [ci,cj];
-          }
-          return [0,0];
-        }
-
-        for (let p = 0; p < 55; p++) {
-          const [ci,cj] = pickCell(0.12);
-          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
-        }
-        for (let p = 0; p < 32; p++) {
-          const [ci,cj] = pickCell(0.88);
-          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
-        }
-
-        const RIM_V   = 20;
-        const RIM_MIN = BASE + 3.0;
-        for (let gj = 0; gj < GH; gj++) {
-          for (let gi = 0; gi < GW; gi++) {
-            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
-                gi >= RIM_V && gi <= GW-1-RIM_V) continue;
-            const k = gj * GW + gi;
-            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
-          }
-        }
-
-        const pos = new Float32Array(GW * GH * 3);
-        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
-            pos[k*3]   = wx;
-            pos[k*3+1] = Y[k];
-            pos[k*3+2] = wz;
-            uv[k*2] = wx; uv[k*2+1] = wz;
-          }
-
-        const idx = [];
-        for (let cj = 0; cj < CH; cj++) {
-          for (let ci = 0; ci < CW; ci++) {
-            if (isPlayable(ci, cj)) continue;
-            const [v00,v10,v01,v11] = cv4(ci,cj);
-            idx.push(v00, v01, v11, v00, v11, v10);
-          }
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, resolveTileMat(mapId, TileType.GRASS));
-        mesh.receiveShadow = true;
-        zScene.add(mesh);
-
-        // Stone cliff skin: same normal-based overlay rule as the farm/town border
-        // terrain — faces steeper than ~41° from horizontal get a stone skin instead
-        // of grass (cnx²+cnz² > 0.194 for a 0.5×0.5 cell, see buildBorderTerrain).
-        const cliffMat = resolveCliffMat(mapId);
-
-        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const skinPos = [], skinUv = [], idxArr = [];
-          let vi = 0;
-          for (let gj = gjMin; gj < gjMax; gj++) {
-            for (let gi = giMin; gi < giMax; gi++) {
-              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
-              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
-              const x0=(gi-BV)*0.5, x1=x0+0.5;
-              const z0=(gj-BV)*0.5, z1=z0+0.5;
-              skinPos.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
-              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
-            }
-          }
-          if (!skinPos.length) return;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(skinPos, 3));
-          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
-          g.setIndex(new THREE.BufferAttribute(idxArr.length > 65535 ? new Uint32Array(idxArr) : new Uint16Array(idxArr), 1));
-          g.computeVertexNormals();
-          zScene.add(new THREE.Mesh(g, cliffMat));
-        }
-
-        elevStoneSkin(0,           BV,          0,          GW - 1); // north strip
-        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1); // south strip
-        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);      // west strip
-        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1); // east strip
-      }
+      // Procedural cliff/border ring around a zone's playable area
+      // (buildZoneBorderTerrain) now lives in js/border-terrain.js — call
+      // via window.BorderTerrain.buildZoneBorderTerrain(...).
 
       function initWorldTravel(layout) {
         if (layout?.version === 3) {
@@ -9698,144 +8729,9 @@
         return group;
       }
 
-      // A den's cavern floor: an organic irregular blob (seeded RNG growth,
-      // biased toward rounder shapes, then a safe erosion pass that only ever
-      // trims dead-end spurs — removing a cell with exactly one neighbor can
-      // never disconnect the rest of the blob) — same reasoning as the
-      // wilderness generator's own plateau blobs, reimplemented standalone
-      // since this runs at den-entry time in the live game, not inside the
-      // map-generator tool. Deterministic per den id (see synthesizeCavernMapData).
-      function generateCavernFloor(seedText) {
-        const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(seedText) : Math.random;
-        const targetTiles = 40 + Math.floor(rng() * 41); // 40-80 tiles — room for a Den-Mother boss fight plus the nest chamber
-        const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-        // The entrance is always a straight 3-wide row (x=-1,0,1 at y=0) with
-        // an exit tile in the middle — not just wherever the organic blob
-        // happened to touch a boundary — so buildWallPanelsFromFloorSet
-        // always has 3 adjacent south-facing edges to skip (merged into one
-        // wide gap) instead of a single-tile doorway. y>0 (south of the
-        // entrance row) is never grown into, so this row stays the cavern's
-        // southern boundary and that gap reads as a real cave mouth.
-        const ENTRANCE_CELLS = ['-1,0', '0,0', '1,0'];
-        const cells = new Set(ENTRANCE_CELLS);
-        const frontier = new Map();
-        const addFrontier = (x, y) => {
-          for (const [dx, dy] of DIRS4) {
-            const nx = x + dx, ny = y + dy;
-            if (ny > 0) continue;
-            const key = `${nx},${ny}`;
-            if (!cells.has(key)) frontier.set(key, [nx, ny]);
-          }
-        };
-        for (const key of ENTRANCE_CELLS) addFrontier(...key.split(',').map(Number));
-        while (cells.size < targetTiles && frontier.size) {
-          const keys = [...frontier.keys()];
-          const weights = keys.map(k => {
-            const [x, y] = frontier.get(k);
-            let n = 0;
-            for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
-            return n * n + 0.2; // bias toward rounder growth over spindly arms
-          });
-          const total = weights.reduce((a, b) => a + b, 0);
-          let r = rng() * total, pick = keys[keys.length - 1];
-          for (let i = 0; i < keys.length; i++) { r -= weights[i]; if (r <= 0) { pick = keys[i]; break; } }
-          const [px, py] = frontier.get(pick);
-          frontier.delete(pick);
-          cells.add(pick);
-          addFrontier(px, py);
-        }
-        // Erode dead-end spurs only (leaves — safe to remove, can't disconnect anything).
-        // The entrance row is the cavern's entrance and is never eroded.
-        for (const key of [...cells]) {
-          if (ENTRANCE_CELLS.includes(key) || cells.size <= 6) continue;
-          const [x, y] = key.split(',').map(Number);
-          let n = 0;
-          for (const [dx, dy] of DIRS4) if (cells.has(`${x + dx},${y + dy}`)) n++;
-          if (n <= 1 && rng() < 0.5) cells.delete(key);
-        }
-        // Reserve a 2x2 nest chamber at the point farthest (by walk distance)
-        // from the entrance — the Den-Mother's territory, deliberately placed
-        // so the player has to cross the whole cavern to reach it. Forced in
-        // after erosion (never itself eroded) by adding whichever of its 4
-        // tiles the organic growth didn't already produce, so the nest always
-        // exists regardless of blob shape.
-        const dist = new Map([['0,0', 0]]);
-        const queue = ['0,0'];
-        let farKey = '0,0', farDist = 0;
-        while (queue.length) {
-          const key = queue.shift();
-          const d = dist.get(key);
-          const [x, y] = key.split(',').map(Number);
-          for (const [dx, dy] of DIRS4) {
-            const nk = `${x + dx},${y + dy}`;
-            if (cells.has(nk) && !dist.has(nk)) {
-              dist.set(nk, d + 1);
-              queue.push(nk);
-              if (d + 1 > farDist) { farDist = d + 1; farKey = nk; }
-            }
-          }
-        }
-        const [nfx, nfy] = farKey.split(',').map(Number);
-        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) cells.add(`${nfx + dx},${nfy + dy}`);
-
-        let minX = Infinity, minY = Infinity;
-        for (const key of cells) { const [x, y] = key.split(',').map(Number); if (x < minX) minX = x; if (y < minY) minY = y; }
-        const floor = [...cells].map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; });
-        const cols = Math.max(...floor.map(f => f[0])) + 2, rows = Math.max(...floor.map(f => f[1])) + 2;
-        return {
-          floor, cols, rows,
-          exitCol: 0 - minX + 1, exitRow: 0 - minY + 1,
-          // The full 3-wide entrance row, shifted the same way as floor —
-          // synthesizeCavernMapData hands all 3 to the exit's tiles[] so
-          // buildWallPanelsFromFloorSet skips all 3 south edges as one gap.
-          exitTiles: ENTRANCE_CELLS.map(key => { const [x, y] = key.split(',').map(Number); return [x - minX + 1, y - minY + 1]; }),
-          nestCol: nfx - minX + 1, nestRow: nfy - minY + 1,
-        };
-      }
-
-      // Synthesized in-memory map data for a den's cavern — no map_i_den_*.json
-      // is ever written to disk; loadBuildingScene builds this on the fly the
-      // first time the id is requested, exactly like a wilderness zone itself
-      // regenerates from a seed with nothing persisted (see performTothalShift).
-      // The seed is the mapId itself (already unique per zone+den, see
-      // performTothalShift's denTransitions), so re-entering the same den
-      // always reaches the same cavern.
-      // Deterministic per den (same mapId -> same pick every time): choose a
-      // Den-Mother only from the predator/herbivore species native to this
-      // cavern's exterior zone. DEN_MOTHER_DEFS maps each base species to its
-      // mother variant and nest reward, keeping Grehlr in the north and
-      // Drenkirra in the southern cloud forest all the way through the den.
-      function pickDenMotherKind(mapId) {
-        const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denmother') : Math.random;
-        const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId);
-        const zoneDef = EXTERIOR_ZONES[zoneId];
-        const nativeSpecies = [...(zoneDef?.packSpecies || []), ...(zoneDef?.herbivoreSpecies || [])];
-        const kinds = nativeSpecies.map(kind => DEN_MOTHER_DEFS[kind]?.creatureKey).filter(Boolean);
-        if (!kinds.length) {
-          window.__farmLog?.(`[wildlife] ${mapId}: no native Den-Mother configured for zone "${zoneId || 'unknown'}".`, 'warn');
-          return null;
-        }
-        return kinds[Math.floor(rng() * kinds.length)];
-      }
-
-      function synthesizeCavernMapData(mapId) {
-        const { floor, cols, rows, exitCol, exitRow, exitTiles, nestCol, nestRow } = generateCavernFloor(mapId);
-        return {
-          schema: 'hobunji_building_interior.v1',
-          id: mapId, name: 'A Dark Burrow',
-          cols, rows,
-          // All 3 entrance tiles share one exit id — checkTransitionSpots
-          // fires from any of them, and buildWallPanelsFromFloorSet skips
-          // all 3 south edges as a single merged 3-wide gap (see
-          // generateCavernFloor).
-          exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
-          colliders: [], floor, furniture: [],
-          wallStyle: 'cavern',
-          // Den-Mother/nest placement — read by loadBuildingScene after the
-          // scene/floor/walls are built (see its 'map_i_den_' handling).
-          nestCol, nestRow, denMotherKind: pickDenMotherKind(mapId),
-        };
-      }
+      // Procedural den-cavern floor generation (generateCavernFloor/
+      // pickDenMotherKind/synthesizeCavernMapData) now lives in
+      // js/cavern-generator.js — call via window.CavernGenerator.*.
 
       async function loadBuildingScene(mapId) {
         if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
@@ -9845,7 +8741,7 @@
         if (mapId.startsWith('map_i_den_')) {
           // A den's cavern is generated in-memory, never fetched/persisted
           // (see synthesizeCavernMapData).
-          mapData = synthesizeCavernMapData(mapId);
+          mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
           loadSource = 'cavern';
         } else {
         try {
@@ -10515,7 +9411,7 @@
         const oldGrass = _zoneGrassMeshes.get(mapId);
         if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
         _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
-        _zoneGrassMeshes.set(mapId, _buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
         // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
         // felled tree's mesh is gone after this rebuild, and leaving its stale
         // entries around would keep hard-limiting zoom / culling nothing over
@@ -10706,7 +9602,7 @@
         });
 
         _buildTownGrassBillboards(TCOLS, TROWS);
-        buildTownBorderTerrain();
+        window.BorderTerrain.buildTownBorderTerrain();
 
         // Gold ring markers for town transitions
         const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
@@ -11704,7 +10600,7 @@
 
         if (invSelectedKey && keys.includes(invSelectedKey)) selectInventoryItem(invSelectedKey, true);
         else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
-        buildPackClothingSection();
+        window.EquipmentPanel.buildPackClothingSection();
       }
 
       function selectInventoryItem(key, skipGridUpdate) {
@@ -11785,7 +10681,7 @@
           const toolDef = TOOL_ITEM_DEFS[key];
           if (toolDef && count > 0) {
             if (!gearInventory?.tools?.[key]) {
-              mkBtn('Transfer to Gear', 'equip', () => transferToolToGear(key));
+              mkBtn('Transfer to Gear', 'equip', () => window.EquipmentPanel.transferToolToGear(key));
             } else {
               mkBtn('Already in Gear (extra copy)', '', () => showToast('You already have this tool in your gear.', false));
             }
@@ -11807,115 +10703,10 @@
         }
       }
 
-      // Single choke point for mutating equipmentSlots — every caller below
-      // (and equipWhistle/unequipWhistle further down) goes through this
-      // instead of assigning equipmentSlots[slot] directly and remembering
-      // to call saveEquipmentSlots() itself, since exactly that got missed
-      // for tool/weapon slot assignment (equipItem/unequipItem never saved
-      // at all — a tool swapped there reverted to the last-saved default on
-      // reload) while every other equip path happened to get it right. A
-      // shared setter makes that whole class of "mutated but forgot to
-      // persist" bug structurally impossible to reintroduce.
-      function setEquipmentSlot(slot, itemKeyOrNull) {
-        equipmentSlots[slot] = itemKeyOrNull;
-        saveEquipmentSlots();
-      }
-
-      // Assign a tool item to a slot (tool must be in gear inventory)
-      function equipItem(itemKey, slot) {
-        const toolDef = TOOL_ITEM_DEFS[itemKey];
-        if (!toolDef || !toolDef.slots.includes(slot)) { showToast('Cannot assign that item to that slot.', false); return; }
-        if (!gearInventory?.tools?.[itemKey]) { showToast((TOOL_ITEM_DEFS[itemKey]?.label || itemKey) + ' is not in your gear. Transfer it first.', false); return; }
-        setEquipmentSlot(slot, itemKey);
-        rebuildToolMeshes();
-        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
-        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
-        showToast(`${toolDef.label} assigned as ${slot}.`, true);
-        refreshActionBar();
-      }
-
-      // Clear a slot assignment (tool remains in gear inventory)
-      function unequipItem(slot) {
-        const itemKey = equipmentSlots[slot];
-        if (!itemKey) return;
-        setEquipmentSlot(slot, null);
-        rebuildToolMeshes();
-        Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
-        if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
-        showToast(`${TOOL_ITEM_DEFS[itemKey]?.label || itemKey} unassigned from ${slot}.`, true);
-        buildInventoryGrid();
-        buildEquipmentSlots();
-        refreshActionBar();
-      }
-
-      function transferToolToGear(itemKey) {
-        const toolDef = TOOL_ITEM_DEFS[itemKey];
-        if (!toolDef) return;
-        if (gearInventory.tools[itemKey]) { showToast(toolDef.label + ' is already in your gear.', false); return; }
-        if ((inventory[itemKey] || 0) < 1) { showToast('No ' + toolDef.label + ' in pack.', false); return; }
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
-        gearInventory.tools[itemKey] = true;
-        saveGearInventory();
-        showToast(toolDef.label + ' transferred to gear!', true);
-        buildInventoryGrid(); buildEquipmentSlots(); clearInventoryDetail();
-      }
-
-
-      function makeClothingGearEntry(item) {
-        if (!item) return null;
-        return {
-          uid: item.uid || 'gcloth_' + Math.random().toString(36).slice(2, 10),
-          cosmeticId: item.cosmeticId,
-          slot: item.slot,
-          label: item.label,
-          baseLabel: item.baseLabel || item.label,
-          colorA: item.colorA,
-          colorB: item.colorB,
-          sprite: item.sprite || clothingSpriteForCosmetic(item.cosmeticId),
-          sellPrice: item.sellPrice || 0,
-        };
-      }
-
-      function clothingTintKeysForSlot(slot) {
-        if (slot === 'hat') return ['HAT'];
-        if (slot === 'hood') return ['HOOD', 'HOOD_B'];
-        if (slot === 'torso') return ['TORSO'];
-        if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
-        return [];
-      }
-
-      function applyGearClothingToPlayerData(playerData) {
-        const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
-        const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
-        const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
-        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
-          // Clear out whatever cosmetic previously occupied this category
-          // (character-creation's own pick, or a since-unequipped item)
-          // before considering the current gearInventory item — this used to
-          // only ever ADD an id here and never remove one, so unequipping a
-          // clothing slot in-game left the original character-creation
-          // cosmetic (and its stale tint) rendering underneath instead of
-          // actually clearing the slot.
-          for (const catItem of shopCatalog) {
-            if (catItem.category === slot) equippedCosmetics.delete(catItem.id);
-          }
-          const item = gearInventory?.clothing?.[slot];
-          if (!item) continue;
-          if (item.cosmeticId) equippedCosmetics.add(item.cosmeticId);
-          const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(slot);
-          if (primaryTintKey && item.colorA) bodyColors[primaryTintKey] = { ...item.colorA };
-          if (secondaryTintKey && item.colorB) bodyColors[secondaryTintKey] = { ...item.colorB };
-        }
-        return {
-          ...playerData,
-          equippedCosmetics: [...equippedCosmetics],
-          appearance: {
-            ...(playerData?.appearance || {}),
-            bodyColors,
-          },
-        };
-      }
+      // Tool/weapon equipment-slot assignment (setEquipmentSlot/equipItem/
+      // unequipItem/transferToolToGear) and gear clothing
+      // (applyGearClothingToPlayerData/clothingSpriteForCosmetic/etc) now
+      // live in js/equipment-panel.js — call via window.EquipmentPanel.*.
 
       function disposeAvatarGroup(group) {
         group?.traverse?.(node => {
@@ -12096,7 +10887,7 @@
         _petLayeringActive = false;
         _petLayeringPet = null;
         removePlayerAvatarChildren();
-        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(applyGearClothingToPlayerData(_playerData));
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.EquipmentPanel.applyGearClothingToPlayerData(_playerData));
         if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
         const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -12186,544 +10977,9 @@
         window.ImpactRagdollPlayback?.attach(playerMesh, playerLegs);
       }
 
-      function clothingSpriteForCosmetic(cosmeticId) {
-        return window.SCRATCHBONES_CONFIG?.game?.inventory?.clothingSprites?.[cosmeticId] || null;
-      }
-
-      function renderClothingIcon(parent, item, className = 'ies-cloth-sprite') {
-        const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
-        if (sprite) {
-          const img = document.createElement('img');
-          img.src = sprite;
-          img.className = className;
-          img.alt = item?.label || 'Clothing';
-          parent.appendChild(img);
-          return img;
-        }
-        const icon = document.createElement('span');
-        icon.className = className + ' ies-cloth-fallback';
-        icon.textContent = '👘';
-        parent.appendChild(icon);
-        return icon;
-      }
-
-      function setInventoryDetailClothingIcon(item) {
-        const iconEl = document.getElementById('iiIcon');
-        if (!iconEl) return;
-        const sprite = item?.sprite || clothingSpriteForCosmetic(item?.cosmeticId);
-        if (sprite) {
-          iconEl.innerHTML = '<img class="ii-cloth-sprite" src="' + esc(sprite) + '" alt="' + esc(item?.label || 'Clothing') + '">';
-        } else {
-          iconEl.textContent = '👘';
-        }
-      }
-
-      function ensureGearClothingCollection() {
-        if (!gearInventory) return;
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
-        if (!Array.isArray(gearInventory.clothingItems)) gearInventory.clothingItems = [];
-        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
-          const worn = gearInventory.clothing[slot];
-          if (!worn) continue;
-          const wornEntry = makeClothingGearEntry({ ...worn, slot });
-          if (!worn.uid) gearInventory.clothing[slot] = wornEntry;
-          const hasItem = gearInventory.clothingItems.some(item => item.uid === wornEntry.uid);
-          if (!hasItem) gearInventory.clothingItems.push(wornEntry);
-        }
-      }
-
-      function transferClothingToGear(uid) {
-        const idx = packClothing.findIndex(c => c.uid === uid);
-        if (idx < 0) return;
-        const item = makeClothingGearEntry(packClothing[idx]);
-        ensureGearClothingCollection();
-        gearInventory.clothingItems.push(item);
-        gearInventory.clothing[item.slot] = item;
-        packClothing.splice(idx, 1);
-        saveGearInventory();
-        saveMemberWorldData(); // packClothing (world-scoped) lost the item saveGearInventory just persisted to gear
-        refreshPlayerAvatar();
-        showToast(item.label + ' moved to gear and equipped!', true);
-        buildPackClothingSection(); buildEquipmentSlots(); clearInventoryDetail();
-      }
-
-      function selectGearTool(key) {
-        const def = TOOL_ITEM_DEFS[key];
-        if (!def) return;
-        invSelectedKey = null;
-        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
-        const emptyEl  = document.getElementById('iiEmpty');
-        const detailEl = document.getElementById('iiDetail');
-        if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) detailEl.style.display  = '';
-        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        set('iiIcon',  def.icon);
-        const iiIconEl2 = document.getElementById('iiIcon');
-        if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
-        set('iiName',  def.label + ' (Gear) — Mastery ' + toolMasteryLevel(key) + '/5');
-        set('iiPrice', 'Permanent — not sellable');
-        set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
-        set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
-        const actEl = document.getElementById('iiActions');
-        if (actEl) {
-          actEl.innerHTML = '';
-          const mkBtn = (label, cls, fn) => {
-            const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
-          };
-          for (const slot of def.slots) {
-            const isAssigned = equipmentSlots[slot] === key;
-            mkBtn(isAssigned ? 'Unassign from ' + slot : 'Assign as ' + slot, 'equip', () => {
-              if (isAssigned) unequipItem(slot); else equipItem(key, slot);
-              buildEquipmentSlots(); selectGearTool(key);
-            });
-          }
-          if (s_devMode && toolMasteryLevel(key) < 5) {
-            mkBtn('[Dev] +1 Mastery', '', () => {
-              devBumpToolMasteryLevel(key);
-              selectGearTool(key);
-            });
-          }
-        }
-      }
-
-      // Clicking a Tool Slot cell (instead of an Owned Tools item) shows
-      // every gear tool that fits THAT slot as one-click assign buttons —
-      // no need to separately pick a slot afterward, since it's already
-      // known from context. Shows each tool's own Mastery level too.
-      function selectEquipSlot(slot) {
-        invSelectedKey = null;
-        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
-        const emptyEl  = document.getElementById('iiEmpty');
-        const detailEl = document.getElementById('iiDetail');
-        if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) detailEl.style.display  = '';
-        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        const currentKey = equipmentSlots[slot];
-        const currentDef = currentKey ? TOOL_ITEM_DEFS[currentKey] : null;
-        const slotLabel = slot.charAt(0).toUpperCase() + slot.slice(1);
-        set('iiIcon', currentDef?.icon || '❔');
-        set('iiName', slotLabel + ' Slot');
-        set('iiPrice', currentDef ? 'Currently: ' + currentDef.label : 'Currently: empty');
-        set('iiTags', '');
-        set('iiDesc', 'Click a tool below to assign it to this slot.');
-        const actEl = document.getElementById('iiActions');
-        if (!actEl) return;
-        actEl.innerHTML = '';
-        const eligible = Object.keys(gearInventory?.tools || {})
-          .filter(k => gearInventory.tools[k] && TOOL_ITEM_DEFS[k]?.slots.includes(slot));
-        if (!eligible.length) {
-          const none = document.createElement('div');
-          none.className = 'ii-tag';
-          none.textContent = 'No tools in gear fit the ' + slotLabel + ' slot.';
-          actEl.appendChild(none);
-          return;
-        }
-        for (const key of eligible) {
-          const def = TOOL_ITEM_DEFS[key];
-          const isAssigned = equipmentSlots[slot] === key;
-          const b = document.createElement('button');
-          b.className = 'ii-btn equip';
-          b.textContent = `${def.label} — Mastery ${toolMasteryLevel(key)}/5` + (isAssigned ? ' (assigned)' : '');
-          b.onclick = () => {
-            if (isAssigned) unequipItem(slot); else equipItem(key, slot);
-            buildEquipmentSlots(); selectEquipSlot(slot);
-          };
-          actEl.appendChild(b);
-          if (s_devMode && toolMasteryLevel(key) < 5) {
-            const devBtn = document.createElement('button');
-            devBtn.className = 'ii-btn';
-            devBtn.textContent = `[Dev] +1 Mastery (${def.label})`;
-            devBtn.onclick = () => {
-              devBumpToolMasteryLevel(key);
-              selectEquipSlot(slot);
-            };
-            actEl.appendChild(devBtn);
-          }
-        }
-      }
-
-      function selectPackClothingItem(uid) {
-        const item = packClothing.find(c => c.uid === uid);
-        if (!item) return;
-        invSelectedKey = null;
-        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
-        const emptyEl  = document.getElementById('iiEmpty');
-        const detailEl = document.getElementById('iiDetail');
-        if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) detailEl.style.display  = '';
-        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        setInventoryDetailClothingIcon(item);
-        set('iiName',  item.label);
-        set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
-        set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + item.slot.charAt(0).toUpperCase() + item.slot.slice(1) + '</span>');
-        set('iiDesc',  'Transfer to gear to wear it (permanent). Can sell while in pack.');
-        const actEl = document.getElementById('iiActions');
-        if (actEl) {
-          actEl.innerHTML = '';
-          const mkBtn = (label, cls, fn) => {
-            const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
-          };
-          mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
-          if (item.sellPrice > 0) {
-            mkBtn('Sell (' + item.sellPrice + 'g)', 'sell', () => {
-              packClothing = packClothing.filter(c => c.uid !== uid);
-              inventory.gold = (inventory.gold || 0) + item.sellPrice;
-              showToast('Sold ' + item.label + ' for ' + item.sellPrice + 'g', true);
-              buildPackClothingSection(); buildInventoryGrid(); clearInventoryDetail();
-              saveMemberWorldData();
-            });
-          }
-        }
-      }
-
-      function equipGearClothing(uid) {
-        ensureGearClothingCollection();
-        const item = gearInventory.clothingItems.find(c => c.uid === uid);
-        if (!item) return;
-        gearInventory.clothing[item.slot] = item;
-        saveGearInventory();
-        refreshPlayerAvatar();
-        showToast(item.label + ' equipped!', true);
-        buildEquipmentSlots();
-        selectGearClothing(item.slot, item);
-      }
-
-      function selectGearClothing(slot, item) {
-        invSelectedKey = null;
-        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
-        const emptyEl  = document.getElementById('iiEmpty');
-        const detailEl = document.getElementById('iiDetail');
-        if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) detailEl.style.display  = '';
-        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        setInventoryDetailClothingIcon(item);
-        set('iiName',  item.label);
-        set('iiPrice', 'Permanent gear — not sellable');
-        set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
-        const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
-        set('iiDesc',  isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.');
-        const actEl = document.getElementById('iiActions');
-        if (actEl) {
-          actEl.innerHTML = '';
-          if (!isWorn) {
-            const equipBtn = document.createElement('button');
-            equipBtn.className = 'ii-btn equip';
-            equipBtn.textContent = 'Equip';
-            equipBtn.onclick = () => equipGearClothing(item.uid);
-            actEl.appendChild(equipBtn);
-          } else {
-            const btn = document.createElement('button');
-            btn.className = 'ii-btn';
-            btn.textContent = 'De-equip';
-            btn.onclick = () => {
-              gearInventory.clothing[slot] = null;
-              saveGearInventory();
-              refreshPlayerAvatar();
-              buildEquipmentSlots();
-              clearInventoryDetail();
-            };
-            actEl.appendChild(btn);
-          }
-          const redyeBtn = document.createElement('button');
-          redyeBtn.className = 'ii-btn redye';
-          redyeBtn.textContent = '🎨 Redye';
-          redyeBtn.onclick = () => openRedyePanel(slot, item);
-          actEl.appendChild(redyeBtn);
-        }
-      }
-
-      // ── Redye panel ──────────────────────────────────────────────────
-      // Opened from a clothing item's info panel (see selectGearClothing's
-      // Redye button). Lets the player freely re-apply any dye already in
-      // their collection (gearInventory.dyeCollection) to an owned clothing
-      // piece — permanent world dyes are what grow that collection (see
-      // useMysteryDye/rollTreasureDyeItemKeys); this panel only ever spends
-      // from it, never consumes anything itself.
-      function closeRedyePanel() {
-        const panel = document.getElementById('dyePanel');
-        if (!panel) return;
-        panel.classList.remove('open');
-        panel.setAttribute('aria-hidden', 'true');
-      }
-
-      function openRedyePanel(slot, item) {
-        window.DyeSystem.ensureCollection();
-        const panel = document.getElementById('dyePanel');
-        const titleEl = document.getElementById('dyePanelTitle');
-        const subslotsEl = document.getElementById('dyePanelSubslots');
-        const groupsEl = document.getElementById('dyePanelGroups');
-        const previewEl = document.getElementById('dyePanelPreview');
-        if (!panel || !titleEl || !subslotsEl || !groupsEl || !previewEl) return;
-
-        const tintKeys = clothingTintKeysForSlot(slot);
-        const hasSecondary = tintKeys.length > 1;
-        const originalColorA = item.colorA ? { ...item.colorA } : null;
-        const originalColorB = item.colorB ? { ...item.colorB } : null;
-        const originalLabel = item.label;
-        let activeSubslot = 'A';
-        let pendingDyeIdA = item.colorA?.dyeId || null;
-        let pendingDyeIdB = item.colorB?.dyeId || null;
-
-        const currentPendingId = () => (activeSubslot === 'B' ? pendingDyeIdB : pendingDyeIdA);
-        const setPendingId = (id) => { if (activeSubslot === 'B') pendingDyeIdB = id; else pendingDyeIdA = id; };
-        const isWorn = () => gearInventory?.clothing?.[slot]?.uid === item.uid;
-
-        function applyPreview() {
-          const dyeA = pendingDyeIdA ? window.DyeSystem.getById(pendingDyeIdA) : null;
-          const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
-          if (dyeA) item.colorA = window.DyeSystem.toClothingColor(dyeA);
-          if (hasSecondary && dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
-          const dyeLbl = hasSecondary && dyeB ? ((dyeA || {}).label + ' & ' + dyeB.label) : (dyeA || {}).label;
-          previewEl.innerHTML = '';
-          if (dyeA) {
-            const chipA = document.createElement('span');
-            chipA.className = 'dye-preview-chip';
-            chipA.style.background = dyeA.hex;
-            chipA.title = dyeA.label;
-            previewEl.appendChild(chipA);
-          }
-          if (hasSecondary && dyeB) {
-            const chipB = document.createElement('span');
-            chipB.className = 'dye-preview-chip';
-            chipB.style.background = dyeB.hex;
-            chipB.title = dyeB.label;
-            previewEl.appendChild(chipB);
-          }
-          const label = document.createElement('span');
-          label.className = 'dye-preview-label';
-          label.textContent = dyeLbl ? (dyeLbl + ' ' + (item.baseLabel || originalLabel)) : 'Pick a dye below';
-          previewEl.appendChild(label);
-          if (isWorn()) refreshPlayerAvatar();
-        }
-
-        function renderSubslots() {
-          subslotsEl.innerHTML = '';
-          if (!hasSecondary) return;
-          [['A', 'Primary'], ['B', 'Trim']].forEach(([which, label]) => {
-            const b = document.createElement('button');
-            b.className = 'dye-subslot-btn' + (activeSubslot === which ? ' active' : '');
-            b.textContent = label;
-            b.onclick = () => { activeSubslot = which; renderSubslots(); renderGroups(); };
-            subslotsEl.appendChild(b);
-          });
-        }
-
-        function renderGroups() {
-          groupsEl.innerHTML = '';
-          const groups = window.DyeSystem.ownedByHue();
-          if (!groups.length) {
-            groupsEl.innerHTML = '<div class="dye-panel-empty">No dyes collected yet.</div>';
-            return;
-          }
-          for (const group of groups) {
-            const section = document.createElement('div');
-            section.className = 'dye-hue-group';
-            const heading = document.createElement('div');
-            heading.className = 'dye-hue-heading';
-            heading.textContent = group.label;
-            section.appendChild(heading);
-            const row = document.createElement('div');
-            row.className = 'dye-swatch-row';
-            for (const dye of group.dyes) {
-              const sw = document.createElement('button');
-              sw.className = 'dye-swatch' + (currentPendingId() === dye.id ? ' selected' : '');
-              sw.style.background = dye.hex;
-              sw.title = dye.label;
-              sw.onclick = () => { setPendingId(dye.id); renderGroups(); applyPreview(); };
-              row.appendChild(sw);
-            }
-            section.appendChild(row);
-            groupsEl.appendChild(section);
-          }
-        }
-
-        titleEl.textContent = 'Redye — ' + (item.baseLabel || originalLabel);
-        renderSubslots();
-        renderGroups();
-        applyPreview();
-        panel.classList.add('open');
-        panel.setAttribute('aria-hidden', 'false');
-
-        const revert = () => {
-          item.colorA = originalColorA;
-          item.colorB = originalColorB;
-          item.label = originalLabel;
-          if (isWorn()) refreshPlayerAvatar();
-        };
-        document.getElementById('dyePanelCancel').onclick = () => { revert(); closeRedyePanel(); };
-        document.getElementById('dyePanelClose').onclick = () => { revert(); closeRedyePanel(); };
-        document.getElementById('dyePanelApply').onclick = () => {
-          if (!pendingDyeIdA) { showToast('Pick a dye first.', false); return; }
-          const dyeA = window.DyeSystem.getById(pendingDyeIdA);
-          const dyeB = hasSecondary && pendingDyeIdB ? window.DyeSystem.getById(pendingDyeIdB) : null;
-          const dyeLbl = hasSecondary && dyeB ? (dyeA.label + ' & ' + dyeB.label) : dyeA.label;
-          item.label = dyeLbl + ' ' + (item.baseLabel || originalLabel);
-          saveGearInventory();
-          if (isWorn()) refreshPlayerAvatar();
-          showToast('Redyed ' + item.label + '!', true);
-          closeRedyePanel();
-          selectGearClothing(slot, item);
-        };
-      }
-
-      function buildPackClothingSection() {
-        const sec = document.getElementById('invPackClothing');
-        if (!sec) return;
-        if (!packClothing.length) {
-          sec.innerHTML = '<div class="inv-pcloth-empty">No clothing in pack.</div>';
-          return;
-        }
-        sec.innerHTML = '';
-        packClothing.forEach(item => {
-          const btn = document.createElement('button');
-          btn.className = 'inv-pcloth-item';
-          renderClothingIcon(btn, item, 'ipc-sprite');
-          const name = document.createElement('span');
-          name.className = 'ipc-name';
-          name.textContent = item.label;
-          btn.appendChild(name);
-          btn.addEventListener('click', () => selectPackClothingItem(item.uid));
-          sec.appendChild(btn);
-        });
-      }
-
-      // Build the equipment slots panel inside #invEquipSection
-      function buildEquipmentSlots() {
-        const sec = document.getElementById('invEquipSection');
-        if (!sec) return;
-        sec.innerHTML = '';
-
-        // ── Tool Slot Assignments ─────────────────────────────
-        const slotHdr = document.createElement('div');
-        slotHdr.className = 'inv-equip-label';
-        slotHdr.textContent = 'Tool Slots';
-        sec.appendChild(slotHdr);
-
-        const toolRow = document.createElement('div');
-        toolRow.className = 'inv-equip-row';
-        const TOOL_SLOTS = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon'];
-        for (const slot of TOOL_SLOTS) {
-          const itemKey = equipmentSlots[slot];
-          const def = itemKey ? TOOL_ITEM_DEFS[itemKey] : null;
-          const cell = document.createElement('div');
-          cell.className = 'inv-equip-slot' + (activeTool === slot ? ' active-slot' : '') + (def ? ' occupied' : '');
-          cell.setAttribute('title', slot + (def ? ': ' + def.label : ' (empty)'));
-          if (def) {
-            const img = document.createElement('img');
-            img.src = metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
-            cell.appendChild(img);
-            const unBtn = document.createElement('button');
-            unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unassign ' + def.label;
-            unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
-            cell.appendChild(unBtn);
-          }
-          const lbl = document.createElement('span');
-          lbl.className = 'ies-label';
-          lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
-          cell.appendChild(lbl);
-          // Clicking the slot itself shows every tool that fits it as
-          // one-click assign buttons in the item-info panel — you don't
-          // need to separately pick an item then a slot for it, the way
-          // clicking an Owned Tools item (selectGearTool) still also works.
-          cell.addEventListener('click', () => { setActiveTool(slot); buildEquipmentSlots(); selectEquipSlot(slot); });
-          toolRow.appendChild(cell);
-        }
-        sec.appendChild(toolRow);
-
-        // ── Owned Tools (gear inventory) ──────────────────────
-        const ownedHdr = document.createElement('div');
-        ownedHdr.className = 'inv-equip-label';
-        ownedHdr.textContent = 'Owned Tools';
-        sec.appendChild(ownedHdr);
-
-        const gearTools = Object.keys(gearInventory?.tools || {}).filter(k => gearInventory.tools[k] && TOOL_ITEM_DEFS[k]);
-        if (gearTools.length) {
-          const gearRow = document.createElement('div');
-          gearRow.className = 'inv-equip-row';
-          for (const key of gearTools) {
-            const def = TOOL_ITEM_DEFS[key];
-            const cell = document.createElement('div');
-            cell.className = 'inv-equip-slot';
-            cell.setAttribute('title', def.label + ' (Mastery ' + toolMasteryLevel(key) + '/5) — click to assign');
-            const img = document.createElement('img');
-            img.src = metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
-            cell.appendChild(img);
-            const lbl = document.createElement('span');
-            lbl.className = 'ies-label';
-            lbl.textContent = def.label.split(' ')[0] + ' Lv' + toolMasteryLevel(key);
-            cell.appendChild(lbl);
-            cell.addEventListener('click', () => selectGearTool(key));
-            gearRow.appendChild(cell);
-          }
-          sec.appendChild(gearRow);
-        } else {
-          const empty = document.createElement('div');
-          empty.className = 'inv-equip-empty';
-          empty.textContent = 'No tools in gear.';
-          sec.appendChild(empty);
-        }
-
-        ensureGearClothingCollection();
-
-        // ── Clothing Slots ────────────────────────────────────
-        const clothHdr = document.createElement('div');
-        clothHdr.className = 'inv-equip-label';
-        clothHdr.textContent = 'Clothing';
-        sec.appendChild(clothHdr);
-
-        const clothRow = document.createElement('div');
-        clothRow.className = 'inv-equip-row';
-        for (const slot of ['hat', 'hood', 'torso', 'overwear']) {
-          const item = gearInventory?.clothing?.[slot];
-          const cell = document.createElement('div');
-          cell.className = 'inv-equip-slot clothing-slot' + (item ? ' occupied' : '');
-          cell.setAttribute('title', slot + (item ? ': ' + item.label : ' (empty)'));
-          if (item) {
-            renderClothingIcon(cell, item);
-            const nameEl = document.createElement('span');
-            nameEl.className = 'ies-cloth-name'; nameEl.textContent = item.label;
-            cell.appendChild(nameEl);
-          }
-          const lbl = document.createElement('span');
-          lbl.className = 'ies-label';
-          lbl.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
-          cell.appendChild(lbl);
-          if (item) cell.addEventListener('click', () => selectGearClothing(slot, item));
-          clothRow.appendChild(cell);
-        }
-        sec.appendChild(clothRow);
-
-        const ownedClothing = (gearInventory?.clothingItems || []).filter(Boolean);
-        const ownedClothHdr = document.createElement('div');
-        ownedClothHdr.className = 'inv-equip-label';
-        ownedClothHdr.textContent = 'Owned Clothing';
-        sec.appendChild(ownedClothHdr);
-        if (ownedClothing.length) {
-          const ownedClothRow = document.createElement('div');
-          ownedClothRow.className = 'inv-equip-row inv-owned-clothing-row';
-          for (const item of ownedClothing) {
-            const worn = gearInventory?.clothing?.[item.slot]?.uid === item.uid;
-            const cell = document.createElement('div');
-            cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
-            cell.setAttribute('title', item.label + (worn ? ' — currently worn' : ' — click to equip'));
-            renderClothingIcon(cell, item);
-            const lbl = document.createElement('span');
-            lbl.className = 'ies-label';
-            lbl.textContent = item.slot.charAt(0).toUpperCase() + item.slot.slice(1);
-            cell.appendChild(lbl);
-            cell.addEventListener('click', () => selectGearClothing(item.slot, item));
-            ownedClothRow.appendChild(cell);
-          }
-          sec.appendChild(ownedClothRow);
-        } else {
-          const empty = document.createElement('div');
-          empty.className = 'inv-equip-empty';
-          empty.textContent = 'No collected clothing in gear.';
-          sec.appendChild(empty);
-        }
-        window.WhistleEquip.build();
-      }
-
+      // Clothing-sprite lookup, redye panel, and equipment-slots panel
+      // (clothingSpriteForCosmetic/buildEquipmentSlots/etc) now live in
+      // js/equipment-panel.js — call via window.EquipmentPanel.*.
       // equipWhistle/unequipWhistle/buildWhistleEquipUI now live in
       // js/whistle-equip.js — call via window.WhistleEquip.build().
 
@@ -16519,565 +14775,9 @@
         return { dirtGeo: makeGeo(dirtIdx), grassGeo: makeGeo(grassIdx) };
       }
 
-
-      // Mirrors the procedural pipeline from HALandscapeGenV3:
-      //   1) Initialize all verts at seam height (same FNV hash as makeFloorGeo)
-      //   2) Rugged-plain passes: small connected-cell plateaus, low amplitude
-      //   3) Cliff passes: large edge-biased plateaus, tall amplitude
-      // Near-seam vertices are smoothly blended so the inner edge is gap-free.
-      function buildBorderTerrain() {
-        const BORDER_W   = 18;   // border tile width on each side
-        const SEED       = 2026;
-        const BLEND_STEPS = 8;   // seam-blend zone: 4 tiles = 8 vertex steps
-
-        // ── Grid dims (0.5-unit vertex spacing = makeFloorGeo 2×2 subdivision) ──
-        const BV  = BORDER_W * 2;
-        const PVW = COLS * 2, PVH = ROWS * 2;
-        const GW  = PVW + 2*BV + 1;       // 145 vertex columns
-        const GH  = PVH + 2*BV + 1;       // 125 vertex rows
-        const CW  = GW - 1, CH = GH - 1;
-
-        // ── Mulberry32 RNG ─────────────────────────────────────────────────────
-        let _s = SEED >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
-        };
-
-        // ── Seam hash — exact copy of makeFloorGeo ─────────────────────────────
-        const hashDisp = (vi, vj) => {
-          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        // Distance (in 0.5-unit vertex steps) of grid vertex (gi,gj) from playable boundary
-        const vSteps = (gi, gj) => {
-          const vi = gi - BV, vj = gj - BV;
-          const dx = Math.max(0, -vi, vi - PVW);
-          const dz = Math.max(0, -vj, vj - PVH);
-          return Math.sqrt(dx*dx + dz*dz);
-        };
-
-        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
-
-        // ── Height map initialised to exact seam heights ───────────────────────
-        const Y = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++)
-            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
-
-        // ── Plateau operations ─────────────────────────────────────────────────
-        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
-
-        // Random-frontier connected group expansion (border cells only)
-        function pickGroup(ci0, cj0, maxSz) {
-          const group = [], seen = new Set([cj0*CW+ci0]);
-          const front = [[ci0, cj0]];
-          while (front.length && group.length < maxSz) {
-            const fi = Math.floor(rng() * front.length);
-            const [ci, cj] = front.splice(fi, 1)[0];
-            group.push([ci, cj]);
-            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const ni=ci+dc, nj=cj+dr;
-              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
-              const nk = nj*CW+ni;
-              if (seen.has(nk) || isPlayable(ni,nj)) continue;
-              seen.add(nk); front.push([ni,nj]);
-            }
-          }
-          return group;
-        }
-
-        // Raise group verts to (max-in-group + amount).
-        // Verts within BLEND_STEPS of the seam are blended proportionally
-        // so the raised terrain ramps smoothly down to the seam edge.
-        function raiseGroup(group, amount) {
-          let maxY = -Infinity;
-          const verts = new Set();
-          for (const [ci,cj] of group)
-            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
-          const target = maxY + amount;
-          for (const vi of verts) {
-            const gi = vi%GW, gj = vi/GW|0;
-            const st = vSteps(gi, gj);
-            if (st === 0) continue;                          // seam — never touch
-            const blend  = Math.min(1, st / BLEND_STEPS);   // 0→1 over 4-tile zone
-            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
-            if (raised > Y[vi]) Y[vi] = raised;             // plateaus only go up
-          }
-        }
-
-        // Edge-biased seed cell picker (avoids playable area)
-        function pickCell(outerBias) {
-          const rim = BV >> 2; // outermost-quarter cells per side
-          for (let attempt = 0; attempt < 300; attempt++) {
-            let ci, cj;
-            if (rng() < outerBias) {
-              const side = Math.floor(rng() * 4);
-              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
-              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
-              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
-              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
-            } else {
-              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
-            }
-            if (!isPlayable(ci,cj)) return [ci,cj];
-          }
-          return [0,0];
-        }
-
-        // ── Pass 1: rugged plain — small, low plateaus spread across the border ─
-        for (let p = 0; p < 55; p++) {
-          const [ci,cj] = pickCell(0.12);
-          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
-        }
-
-        // ── Pass 2: distant cliffs — tall, strongly edge-biased plateaus ────────
-        for (let p = 0; p < 32; p++) {
-          const [ci,cj] = pickCell(0.88);
-          raiseGroup(pickGroup(ci, cj, 10 + Math.floor(rng()*38)), 0.9 + rng()*3.2);
-        }
-
-        // ── Pass 3: guarantee a continuous outer cliff ring ────────────────────
-        // Force-raise every vertex in the outermost RIM_V steps of each side
-        // so there are no skybox gaps regardless of where random groups landed.
-        const RIM_V   = 20;              // ~10 tile-widths from each outer edge
-        const RIM_MIN = NORMAL_TOP + 3.0;
-        for (let gj = 0; gj < GH; gj++) {
-          for (let gi = 0; gi < GW; gi++) {
-            if (gj >= RIM_V && gj <= GH-1-RIM_V &&
-                gi >= RIM_V && gi <= GW-1-RIM_V) continue; // interior — skip
-            const k = gj * GW + gi;
-            if (Y[k] < RIM_MIN) Y[k] = RIM_MIN;
-          }
-        }
-
-        // ── Build geometry (border ring only — playable interior skipped) ───────
-        const pos = new Float32Array(GW * GH * 3);
-        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
-            pos[k*3]   = wx;
-            pos[k*3+1] = Y[k];
-            pos[k*3+2] = wz;
-            uv[k*2] = wx; uv[k*2+1] = wz;
-          }
-
-        const indices = [];
-        for (let cj = 0; cj < GH-1; cj++)
-          for (let ci = 0; ci < GW-1; ci++) {
-            if (isPlayable(ci,cj)) continue;
-            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
-            indices.push(v00, v01, v11,  v00, v11, v10);
-          }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1));
-        geo.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(geo, resolveTileMat('farm', TileType.GRASS));
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-
-        // ── Stone cliff skin: normal-based overlay on border terrain ─────────────
-        // Matches the landscape generator's rule: faces with |normal.y| < 0.75
-        // (steeper than ~41° from horizontal) are stone; shallower faces are grass.
-        // For a 0.5×0.5 cell the diagonal cross product has cny=0.5 always, so the
-        // threshold reduces to cnx²+cnz² > 0.194 — no sqrt required.
-        const cliffMat = resolveCliffMat('farm');
-
-        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const positions = [], skinUv = [], idxArr = [];
-          let vi = 0;
-          for (let gj = gjMin; gj < gjMax; gj++) {
-            for (let gi = giMin; gi < giMax; gi++) {
-              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
-              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-              // Cross product of quad diagonals (SE-NW) × (NE-SW); cny = 0.5 always.
-              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-              if (cnx * cnx + cnz * cnz <= 0.194) continue;  // near-horizontal → grass
-              const x0=(gi-BV)*0.5, x1=x0+0.5;
-              const z0=(gj-BV)*0.5, z1=z0+0.5;
-              positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
-              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
-            }
-          }
-          if (!positions.length) return;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
-          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
-          g.computeVertexNormals();
-          scene.add(new THREE.Mesh(g, cliffMat));
-        }
-
-        // North border strip (full width)
-        elevStoneSkin(0,           BV,          0,          GW - 1);
-        // South border strip (full width)
-        elevStoneSkin(GH - 1 - BV, GH - 1,      0,          GW - 1);
-        // West border strip (middle rows — corners already covered by N/S)
-        elevStoneSkin(BV,          GH - 1 - BV, 0,          BV);
-        // East border strip (middle rows)
-        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);
-      }
-
-      // Town border terrain: same plateau-growth pipeline as the farm's
-      // buildBorderTerrain(), but dramatic cliffs (passes 2+3) are restricted
-      // to north/west/east — the south already reads as forest and is left
-      // low/rolling — and the north/west/east walls are notched with flat
-      // "canyon" gaps wherever a road crosses that edge, so paths continue
-      // unobstructed off the map instead of dead-ending into rock.
-      let _townBorderGrassPoints = [];
-      let townBorderGrassBillMesh = null;
-      function _buildTownBorderGrassBillboards() {
-        if (!grassBillboardMat) return;
-        if (townBorderGrassBillMesh) { townScene.remove(townBorderGrassBillMesh); townBorderGrassBillMesh = null; }
-        const pts = _townBorderGrassPoints;
-        if (!pts.length) return;
-        const BLADES = 6;
-        townBorderGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, pts.length * BLADES * 2);
-        townBorderGrassBillMesh.frustumCulled = false;
-        townBorderGrassBillMesh.visible = s_grass;
-        townBorderGrassBillMesh.userData.isBillboard = true;
-        const dummy = new THREE.Object3D();
-        let idx = 0;
-        for (const { px, pz, py, seed } of pts) {
-          const rand = _mbRng(seed);
-          for (let b = 0; b < BLADES; b++) {
-            const ox = (rand() - 0.5) * 0.7, oz = (rand() - 0.5) * 0.7;
-            const w  = 0.16 + rand() * 0.10, h = 0.22 + rand() * 0.14;
-            const rot = rand() * Math.PI;
-            dummy.position.set(px + ox, py, pz + oz);
-            dummy.rotation.set(0, rot, 0);
-            dummy.scale.set(w, h, 1);
-            dummy.updateMatrix();
-            townBorderGrassBillMesh.setMatrixAt(idx++, dummy.matrix);
-            dummy.rotation.set(0, rot + Math.PI * 0.5, 0);
-            dummy.updateMatrix();
-            townBorderGrassBillMesh.setMatrixAt(idx++, dummy.matrix);
-          }
-        }
-        townBorderGrassBillMesh.count = idx;
-        townBorderGrassBillMesh.instanceMatrix.needsUpdate = true;
-        townScene.add(townBorderGrassBillMesh);
-      }
-
-      function buildTownBorderTerrain() {
-        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-        const BORDER_W    = 18;
-        const SEED        = 4077;
-        const BLEND_STEPS = 8;
-
-        const BV  = BORDER_W * 2;
-        const PVW = TCOLS * 2, PVH = TROWS * 2;
-        const GW  = PVW + 2*BV + 1;
-        const GH  = PVH + 2*BV + 1;
-        const CW  = GW - 1, CH = GH - 1;
-
-        let _s = SEED >>> 0;
-        const rng = () => {
-          _s += 0x6D2B79F5;
-          let t = Math.imul(_s ^ _s>>>15, _s|1);
-          t ^= t + Math.imul(t ^ t>>>7, t|61);
-          return ((t ^ t>>>14) >>> 0) / 4294967296;
-        };
-
-        const hashDisp = (vi, vj) => {
-          let h = (2166136261 ^ (vi * 374761393) ^ (vj * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h / 4294967296 - 0.5) * 0.026;
-        };
-
-        const vSteps = (gi, gj) => {
-          const vi = gi - BV, vj = gj - BV;
-          const dx = Math.max(0, -vi, vi - PVW);
-          const dz = Math.max(0, -vj, vj - PVH);
-          return Math.sqrt(dx*dx + dz*dz);
-        };
-
-        const isPlayable = (ci, cj) => ci>=BV && ci<BV+PVW && cj>=BV && cj<BV+PVH;
-
-        const Y = new Float32Array(GW * GH);
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++)
-            Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
-
-        const cv4 = (ci, cj) => [cj*GW+ci, cj*GW+ci+1, (cj+1)*GW+ci, (cj+1)*GW+ci+1];
-
-        function pickGroup(ci0, cj0, maxSz) {
-          const group = [], seen = new Set([cj0*CW+ci0]);
-          const front = [[ci0, cj0]];
-          while (front.length && group.length < maxSz) {
-            const fi = Math.floor(rng() * front.length);
-            const [ci, cj] = front.splice(fi, 1)[0];
-            group.push([ci, cj]);
-            for (const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const ni=ci+dc, nj=cj+dr;
-              if (ni<0||ni>=CW||nj<0||nj>=CH) continue;
-              const nk = nj*CW+ni;
-              if (seen.has(nk) || isPlayable(ni,nj)) continue;
-              seen.add(nk); front.push([ni,nj]);
-            }
-          }
-          return group;
-        }
-
-        function raiseGroup(group, amount) {
-          let maxY = -Infinity;
-          const verts = new Set();
-          for (const [ci,cj] of group)
-            for (const vi of cv4(ci,cj)) { verts.add(vi); if(Y[vi]>maxY) maxY=Y[vi]; }
-          const target = maxY + amount;
-          for (const vi of verts) {
-            const gi = vi%GW, gj = vi/GW|0;
-            const st = vSteps(gi, gj);
-            if (st === 0) continue;
-            const blend  = Math.min(1, st / BLEND_STEPS);
-            const raised = NORMAL_TOP + hashDisp(gi-BV, gj-BV) + blend*(target - NORMAL_TOP);
-            if (raised > Y[vi]) Y[vi] = raised;
-          }
-        }
-
-        // Edge-biased seed cell picker restricted to a set of sides
-        // (0=north,1=south,2=west,3=east).
-        function pickCell(outerBias, sides) {
-          const rim = BV >> 2;
-          for (let attempt = 0; attempt < 300; attempt++) {
-            let ci, cj;
-            if (rng() < outerBias) {
-              const side = sides[Math.floor(rng() * sides.length)];
-              if (side===0) { ci=Math.floor(rng()*CW); cj=Math.floor(rng()*rim); }
-              else if(side===1){ ci=Math.floor(rng()*CW); cj=(CH-1-Math.floor(rng()*rim))|0; }
-              else if(side===2){ ci=Math.floor(rng()*rim); cj=Math.floor(rng()*CH); }
-              else              { ci=(CW-1-Math.floor(rng()*rim))|0; cj=Math.floor(rng()*CH); }
-            } else {
-              ci=Math.floor(rng()*CW); cj=Math.floor(rng()*CH);
-            }
-            if (!isPlayable(ci,cj)) return [ci,cj];
-          }
-          return [0,0];
-        }
-
-        // Pass 1: rugged plain on all four sides — keeps the south's forest
-        // floor gently uneven too, with no dramatic height.
-        for (let p = 0; p < 55; p++) {
-          const [ci,cj] = pickCell(0.12, [0,1,2,3]);
-          raiseGroup(pickGroup(ci, cj, 4 + Math.floor(rng()*18)), 0.05 + rng()*0.32);
-        }
-
-        // Pass 2: distant cliffs — tall, edge-biased plateaus, north/west/east
-        // only (side 1 = south is excluded so it stays low).
-        const cliffGroups = [];
-        for (let p = 0; p < 32; p++) {
-          const [ci,cj] = pickCell(0.88, [0,2,3]);
-          const group = pickGroup(ci, cj, 10 + Math.floor(rng()*38));
-          raiseGroup(group, 0.9 + rng()*3.2);
-          cliffGroups.push(group);
-        }
-
-        // Pass 2b: sub-plateauing — stack smaller, taller shelves onto the
-        // cliffs just raised (seeded from a random cell of the parent group,
-        // free to spill past its footprint) so tops break up into irregular,
-        // stepped terraces instead of flat single-height mesas. Two rounds
-        // of decreasing scale add coarse-then-fine jaggedness.
-        let subGroups = cliffGroups;
-        for (const [count, sizeRange, amtRange] of [[3, [3, 17], [0.4, 2.2]], [2, [2, 8], [0.2, 1.0]]]) {
-          const next = [];
-          for (const group of subGroups) {
-            const n = 1 + Math.floor(rng() * count);
-            for (let s = 0; s < n; s++) {
-              const [sci, scj] = group[Math.floor(rng() * group.length)];
-              const sub = pickGroup(sci, scj, sizeRange[0] + Math.floor(rng() * (sizeRange[1] - sizeRange[0])));
-              raiseGroup(sub, amtRange[0] + rng() * (amtRange[1] - amtRange[0]));
-              next.push(sub);
-            }
-          }
-          subGroups = next;
-        }
-
-        // Pass 3: guarantee a continuous cliff wall on north/west/east, with
-        // canyon gaps cut through wherever a road crosses that edge. The
-        // minimum ridge height itself is noisy (chunky, block-quantized) so
-        // the skyline isn't a dead-flat shelf.
-        const RIM_V   = 20;
-        const ridgeNoise = (gi, gj) => {
-          const qi = Math.round(gi / 5), qj = Math.round(gj / 5);
-          let h = (2166136261 ^ (qi * 374761393) ^ (qj * 668265263)) >>> 0;
-          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
-          return (h >>> 0) / 4294967296;
-        };
-        const rimMinAt = (gi, gj) => NORMAL_TOP + 2.2 + ridgeNoise(gi, gj) * 3.2;
-
-        // Tile col/row range -> vertex-index range (half-open), matching the
-        // 0.5-unit vertex spacing used throughout this generator.
-        const toViRange = (a, b) => [BV + a*2, BV + (b+1)*2];
-        const NORTH_GAP = toViRange(25, 35);   // sp_town_north  (col 30, row 1)
-        const WEST_GAP  = toViRange(20, 30);   // spot_2vsub     (col 0,  row 25)
-        const EAST_GAP  = toViRange(20, 30);   // spot_d33e9     (col 59, row 25)
-
-        for (let gj = 0; gj < GH; gj++) {
-          for (let gi = 0; gi < GW; gi++) {
-            const nearN = gj < RIM_V;
-            const nearS = gj > GH-1-RIM_V;
-            const nearW = gi < RIM_V;
-            const nearE = gi > GW-1-RIM_V;
-            if (!nearN && !nearW && !nearE) continue;  // south-only or interior — stays low
-            if (nearN && !nearW && !nearE && gi >= NORTH_GAP[0] && gi < NORTH_GAP[1]) continue;
-            if (nearW && !nearN && !nearS && gj >= WEST_GAP[0]  && gj < WEST_GAP[1])  continue;
-            if (nearE && !nearN && !nearS && gj >= EAST_GAP[0]  && gj < EAST_GAP[1])  continue;
-            const k = gj * GW + gi;
-            const rimMin = rimMinAt(gi, gj);
-            if (Y[k] < rimMin) Y[k] = rimMin;
-          }
-        }
-
-        // Carve the canyons clean through — full border depth on that side,
-        // regardless of anything passes 1/2 piled up in the corridor — so
-        // each road always has an open, flat path off the map edge.
-        const carve = (giMin, giMax, gjMin, gjMax) => {
-          for (let gj = gjMin; gj < gjMax; gj++)
-            for (let gi = giMin; gi < giMax; gi++)
-              Y[gj*GW+gi] = NORMAL_TOP + hashDisp(gi-BV, gj-BV);
-        };
-        carve(NORTH_GAP[0], NORTH_GAP[1], 0,           BV);
-        carve(0,             BV,         WEST_GAP[0],  WEST_GAP[1]);
-        carve(BV + PVW,      GW - 1,     EAST_GAP[0],  EAST_GAP[1]);
-
-        // ── Build geometry (border ring only — playable interior skipped) ──
-        const pos = new Float32Array(GW * GH * 3);
-        const uv = new Float32Array(GW * GH * 2); // world-space (X,Z), same convention as _mergeTileGeos
-        for (let gj = 0; gj < GH; gj++)
-          for (let gi = 0; gi < GW; gi++) {
-            const k = gj*GW+gi;
-            const wx = (gi-BV)*0.5, wz = (gj-BV)*0.5;
-            pos[k*3]   = wx;
-            pos[k*3+1] = Y[k];
-            pos[k*3+2] = wz;
-            uv[k*2] = wx; uv[k*2+1] = wz;
-          }
-
-        const indices = [];
-        for (let cj = 0; cj < GH-1; cj++)
-          for (let ci = 0; ci < GW-1; ci++) {
-            if (isPlayable(ci,cj)) continue;
-            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
-            indices.push(v00, v01, v11,  v00, v11, v10);
-          }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        geo.setIndex(new THREE.BufferAttribute(
-          (pos.length/3 > 65535) ? new Uint32Array(indices) : new Uint16Array(indices), 1));
-        geo.computeVertexNormals();
-
-        const mesh = new THREE.Mesh(geo, resolveTileMat('map_hobunji_town', TileType.GRASS));
-        mesh.receiveShadow = true;
-        townScene.add(mesh);
-
-        // ── Stone cliff skin — north/west/east strips, plus the SW/SE corner
-        // blocks where the west/east walls continue down to the south edge.
-        const cliffMat = resolveCliffMat('map_hobunji_town');
-
-        function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
-          const positions = [], skinUv = [], idxArr = [];
-          let vi = 0;
-          for (let gj = gjMin; gj < gjMax; gj++) {
-            for (let gi = giMin; gi < giMax; gi++) {
-              const y00=Y[gj*GW+gi],     y10=Y[gj*GW+gi+1];
-              const y01=Y[(gj+1)*GW+gi], y11=Y[(gj+1)*GW+gi+1];
-              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-              if (cnx * cnx + cnz * cnz <= 0.194) continue;
-              const x0=(gi-BV)*0.5, x1=x0+0.5;
-              const z0=(gj-BV)*0.5, z1=z0+0.5;
-              positions.push(x0,y00,z0, x1,y10,z0, x0,y01,z1, x1,y11,z1);
-              skinUv.push(x0,z0, x1,z0, x0,z1, x1,z1);
-              idxArr.push(vi,vi+2,vi+3, vi,vi+3,vi+1); vi+=4;
-            }
-          }
-          if (!positions.length) return;
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-          g.setAttribute('uv', new THREE.Float32BufferAttribute(skinUv, 2));
-          g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr), 1));
-          g.computeVertexNormals();
-          townScene.add(new THREE.Mesh(g, cliffMat));
-        }
-
-        elevStoneSkin(0,           BV,          0,           GW - 1);  // north strip (incl. NW/NE corners)
-        elevStoneSkin(BV,          GH - 1 - BV, 0,           BV);       // west strip (middle)
-        elevStoneSkin(BV,          GH - 1 - BV, GW - 1 - BV, GW - 1);   // east strip (middle)
-        elevStoneSkin(GH - 1 - BV, GH - 1,      0,           BV);       // SW corner
-        elevStoneSkin(GH - 1 - BV, GH - 1,      GW - 1 - BV, GW - 1);   // SE corner
-
-        // ── Sparse billboard grass on the flatter cells of the new terrain
-        // (skips steep cliff faces; denser on the gentle south/Pass-1 hills)
-        _townBorderGrassPoints = [];
-        for (let cj = 0; cj < CH; cj++) {
-          for (let ci = 0; ci < CW; ci++) {
-            if (isPlayable(ci, cj)) continue;
-            if (vSteps(ci, cj) > 16) continue;   // only near the playable edge
-            const y00=Y[cj*GW+ci],     y10=Y[cj*GW+ci+1];
-            const y01=Y[(cj+1)*GW+ci], y11=Y[(cj+1)*GW+ci+1];
-            const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-            const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-            if (cnx*cnx + cnz*cnz > 0.194) continue;   // cliff face — no grass
-            const seed = (ci * 7919 + cj * 104173) >>> 0;
-            // Halfway between the old (0.3, too sparse) and the first fix
-            // (0.58, too dense) — sits between the inside and outside look.
-            if (_mbRng(seed)() > 0.44) continue;
-            const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
-            const py = (y00+y10+y01+y11) / 4;
-            _townBorderGrassPoints.push({ px, pz, py, seed });
-          }
-        }
-        _buildTownBorderGrassBillboards();
-
-        // ── Inaccessible shrubs continuing the forest belt south of the map
-        // edge — purely decorative (no tile data out there), skipped over
-        // the two road corridors so both south exits stay visually clear,
-        // and skipped on the steep SW/SE corner cliff faces.
-        if (window.FoliageGenerator) {
-          const SOUTH_GAP_A = toViRange(15, 21);   // To Farm (col 18, row 49)
-          const SOUTH_GAP_B = toViRange(27, 33);   // To Cloud Forest (col 30, row 49)
-          const STEP = 4;   // 2-tile spacing — shrubs are heavy procedural meshes
-          for (let cj = BV + PVH; cj < CH; cj += STEP) {
-            const depth = cj - (BV + PVH);
-            if (depth > 22) continue;   // ~11 tiles south of the map edge
-            for (let ci = 0; ci < CW; ci += STEP) {
-              if (ci >= SOUTH_GAP_A[0] && ci < SOUTH_GAP_A[1]) continue;
-              if (ci >= SOUTH_GAP_B[0] && ci < SOUTH_GAP_B[1]) continue;
-              const seed = (777 + ci * 7919 + cj * 104173) >>> 0;
-              const r = _mbRng(seed);
-              if (r() > 0.22) continue;   // sparse clusters
-              const y00=Y[cj*GW+ci],     y10=Y[cj*GW+ci+1];
-              const y01=Y[(cj+1)*GW+ci], y11=Y[(cj+1)*GW+ci+1];
-              const cnx = -0.5 * ((y10 + y11) - (y00 + y01));
-              const cnz =  0.5 * ((y10 - y01) - (y11 - y00));
-              if (cnx*cnx + cnz*cnz > 0.194) continue;   // steep corner cliff — no shrub
-              const px = (ci-BV)*0.5 + 0.25, pz = (cj-BV)*0.5 + 0.25;
-              const py = (y00+y10+y01+y11) / 4;
-              const vegGroup = window.FoliageGenerator.buildShrubMesh(1000 + ci, 1000 + cj);
-              const sc = 1.6 + r() * 1.2;
-              vegGroup.scale.set(sc, sc, sc);
-              vegGroup.rotation.y = r() * Math.PI * 2;
-              vegGroup.position.set(px, py, pz);
-              townScene.add(vegGroup);
-              _markOutline(vegGroup);
-            }
-          }
-        }
-      }
+      // Procedural farm/town border terrain (buildBorderTerrain/
+      // buildTownBorderTerrain/its grass billboard belt) now lives in
+      // js/border-terrain.js — call via window.BorderTerrain.*.
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
       const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
@@ -18359,7 +16059,7 @@
         _rebuildFarmBillboards();
         if (_townSceneBuilt) {
           _buildTownGrassBillboards(_townZone?.cols || 60, _townZone?.rows || 50);
-          _buildTownBorderGrassBillboards();
+          window.BorderTerrain.buildTownBorderGrassBillboards();
         }
       });
 
@@ -19425,7 +17125,26 @@
       let _minimapRedrawAccum = 0;
 
       buildTileMeshes();
-      buildBorderTerrain();
+
+      // Called here (ahead of the other window.*?.init(...) calls near the
+      // bottom of this file, which run too late) since buildBorderTerrain()
+      // below needs it immediately — every other dep it captures by closure
+      // (COLS/ROWS/scene/NORMAL_TOP/resolveTileMat/resolveCliffMat/TileType/
+      // _mbRng/_markOutline/_grassBladeGeo/grassBillboardMat/s_grass/clamp)
+      // is already declared above this point, or (clamp, a function
+      // declaration) hoisted regardless of where it's written.
+      window.BorderTerrain?.init({
+        COLS, ROWS, NORMAL_TOP, scene, TileType, PLATEAU_UNIT,
+        resolveTileMat, resolveCliffMat, clamp,
+        mbRng: _mbRng,
+        markOutline: _markOutline,
+        grassBladeGeo: _grassBladeGeo,
+        getGrassBillboardMat: () => grassBillboardMat,
+        getGrassEnabled: () => s_grass,
+        getTownScene: () => townScene,
+        getTownZone: () => _townZone,
+      });
+      window.BorderTerrain.buildBorderTerrain();
 
       // ── Settings tab checkbox wiring ──────────────────────────────
       document.getElementById('settingOutlines').addEventListener('change', e => {
@@ -19447,7 +17166,7 @@
         s_grass = e.target.checked;
         if (farmGrassBillMesh) farmGrassBillMesh.visible = s_grass;
         if (townGrassBillMesh) townGrassBillMesh.visible = s_grass;
-        if (townBorderGrassBillMesh) townBorderGrassBillMesh.visible = s_grass;
+        window.BorderTerrain.setGrassVisible(s_grass);
       });
       document.getElementById('settingBillWind').addEventListener('change', e => {
         s_billWind = e.target.checked;
@@ -22941,9 +20660,9 @@
         calendar,
         esc,
         getPackClothing: () => packClothing,
-        buildPackClothingSection,
+        buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         seededRandom,
-        clothingSpriteForCosmetic,
+        clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
       });
 
       window.CarpenterShop?.init({
@@ -23056,8 +20775,40 @@
         getDeliveryLog: () => deliveryLog,
       });
 
+      window.EquipmentPanel?.init({
+        inventory,
+        clampInventoryStack,
+        equipmentSlots,
+        saveEquipmentSlots,
+        TOOL_ITEM_DEFS,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        getPackClothing: () => packClothing,
+        setPackClothing: (arr) => { packClothing = arr; },
+        saveMemberWorldData,
+        showToast,
+        rebuildToolMeshes,
+        toolMeshMap,
+        toolHolder,
+        getActiveTool: () => activeTool,
+        refreshActionBar,
+        setActiveTool,
+        isDevMode: () => s_devMode,
+        toolMasteryLevel,
+        devBumpToolMasteryLevel,
+        metalToolImgSrc,
+        esc,
+        refreshPlayerAvatar,
+        buildInventoryGrid,
+        clearInventoryDetail,
+        clearInvSelection: () => {
+          invSelectedKey = null;
+          document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        },
+      });
+
       window.WhistleEquip?.init({
-        setEquipmentSlot,
+        setEquipmentSlot: window.EquipmentPanel.setEquipmentSlot,
         getGearInventory: () => gearInventory,
         CREATURE_DB,
         equipmentSlots,
@@ -23171,12 +20922,46 @@
         buildZoneScene,
       });
 
+      window.CavernGenerator?.init({
+        EXTERIOR_ZONES,
+        DEN_MOTHER_DEFS,
+      });
+
+      window.ZonePlateauMesa?.init({
+        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
+        resolveTileMat, displaceZoneGeometry,
+      });
+
+      window.ZoneTerrainFeatures?.init({
+        TileType, NORMAL_TOP, PLATEAU_UNIT, RIVER_TOP,
+        displaceZoneGeometry, resolveTileMat,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        terrainCategoryFor: _terrainCategoryFor,
+        waterVertShader, waterFragShader,
+      });
+
+      window.ZoneDenTotemFeatures?.init({
+        NORMAL_TOP, PLATEAU_UNIT, TileType, ROCK_MOUND_CELLS_PER_TILE,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        terrainCategoryFor: _terrainCategoryFor,
+      });
+
+      window.ZoneGrassBillboards?.init({
+        TileType, PLATEAU_UNIT,
+        grassBladeGeo: _grassBladeGeo,
+        getGrassBillboardMat: () => grassBillboardMat,
+        getGrassEnabled: () => s_grass,
+        fillBillboardInstances: _fillBillboardInstances,
+        mbRng: _mbRng,
+        tileSurfaceY,
+      });
+
       window.MetalCraftShop?.init({
         inventory,
         showToast,
         clampInventoryStack,
         buildInventoryGrid,
-        buildEquipmentSlots,
+        buildEquipmentSlots: window.EquipmentPanel.buildEquipmentSlots,
         saveMemberWorldData,
         esc,
         getGearInventory: () => gearInventory,
@@ -23372,7 +21157,7 @@
         lootShopWorldState: _lootShopWorldState,
         MYSTERY_DYE_ITEM_KEY_BY_POOL,
         getStoreClothingPieces: () => STORE_CLOTHING_PIECES,
-        clothingSpriteForCosmetic,
+        clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
         _zoneScenes,
         _mbRng,
         _seedFromString,
@@ -23393,7 +21178,7 @@
         _zoneTreasurePersist,
         refreshItemScroll,
         buildInventoryGrid,
-        buildPackClothingSection,
+        buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         debugLog,
         isZoneArea: _isZoneArea,
         getCurrentArea: () => currentArea,
@@ -23587,10 +21372,10 @@
         refreshActionBar,
         saveMemberWorldData,
         despawnCreature,
-        buildPackClothingSection,
+        buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         getDyeCatalog: window.DyeSystem.getCatalog,
         dyeToClothingColor: window.DyeSystem.toClothingColor,
-        clothingSpriteForCosmetic,
+        clothingSpriteForCosmetic: window.EquipmentPanel.clothingSpriteForCosmetic,
         DEV_ARENA_ZONE_ID: window.DevSpawner.DEV_ARENA_ZONE_ID,
         activeBountyForZone: (zoneId) => window.BountyBoard.activeBountyForZone(zoneId),
         getCurrentArea: () => currentArea,
@@ -23744,7 +21529,7 @@
         }
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
-        ensureGearClothingCollection();
+        window.EquipmentPanel.ensureGearClothingCollection();
         window.DyeSystem.ensureCollection();
 
         // Personal stable — same lazy-seed pattern as the whistles block just
@@ -23816,7 +21601,7 @@
           Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
           if (toolMeshMap[activeTool]) toolHolder.add(toolMeshMap[activeTool]);
         }
-        buildEquipmentSlots();
+        window.EquipmentPanel.buildEquipmentSlots();
         try {
           await window.NpcAvatarPreview.ensurePortraitCosmetics({
             assetBase: './assets/',
