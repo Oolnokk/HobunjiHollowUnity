@@ -280,25 +280,45 @@
   // per-vertex UV by projecting each vertex onto whichever world axis its
   // normal points along least (dominant-normal-axis projection), same
   // technique the town-path preview tool used for its material painter.
-  // tileSize is world/local units per texture repeat, matching the tileSize
-  // convention already used by loadHousePieceFaceTexture/loadTerrainTileTexture.
-  // No-op if the geometry already has a `uv` attribute.
-  function ensureProjectedUv(geometry, tileSize) {
+  // opts.stretch=true fits the whole PNG once across each axis group's own
+  // bounding box (the preview's "stretch to bounds" mode) instead of tiling
+  // it — opts.tileSize (world/local units per repeat, matching the tileSize
+  // convention used by loadHousePieceFaceTexture/loadTerrainTileTexture) is
+  // ignored in that case. No-op if the geometry already has a `uv` attribute.
+  function ensureProjectedUv(geometry, opts) {
+    opts = opts || {};
     if (geometry.getAttribute('uv')) return geometry;
     if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
     const pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
     if (!pos || !normal) return geometry;
-    const stride = Math.max(0.001, Number(tileSize) || 1);
-    const uvs = new Float32Array(pos.count * 2);
-    for (let i = 0; i < pos.count; i++) {
-      const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const stride = Math.max(0.001, Number(opts.tileSize) || 1);
+    const axisOf = (i) => {
       const nx = Math.abs(normal.getX(i)), ny = Math.abs(normal.getY(i)), nz = Math.abs(normal.getZ(i));
-      const axis = ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
-      let u, v;
-      if (axis === 'x') { u = pz; v = py; }
-      else if (axis === 'z') { u = px; v = py; }
-      else { u = px; v = pz; }
-      uvs[i * 2] = u / stride; uvs[i * 2 + 1] = v / stride;
+      return ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
+    };
+    const rawUv = (i, axis) => {
+      const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      if (axis === 'x') return [pz, py];
+      if (axis === 'z') return [px, py];
+      return [px, pz];
+    };
+    const uvs = new Float32Array(pos.count * 2);
+    if (opts.stretch) {
+      const bounds = { x: [Infinity, -Infinity, Infinity, -Infinity], y: [Infinity, -Infinity, Infinity, -Infinity], z: [Infinity, -Infinity, Infinity, -Infinity] };
+      for (let i = 0; i < pos.count; i++) {
+        const axis = axisOf(i), [u, v] = rawUv(i, axis), b = bounds[axis];
+        b[0] = Math.min(b[0], u); b[1] = Math.max(b[1], u); b[2] = Math.min(b[2], v); b[3] = Math.max(b[3], v);
+      }
+      for (let i = 0; i < pos.count; i++) {
+        const axis = axisOf(i), [u, v] = rawUv(i, axis), b = bounds[axis];
+        const du = Math.max(1e-6, b[1] - b[0]), dv = Math.max(1e-6, b[3] - b[2]);
+        uvs[i * 2] = (u - b[0]) / du; uvs[i * 2 + 1] = (v - b[2]) / dv;
+      }
+    } else {
+      for (let i = 0; i < pos.count; i++) {
+        const axis = axisOf(i), [u, v] = rawUv(i, axis);
+        uvs[i * 2] = u / stride; uvs[i * 2 + 1] = v / stride;
+      }
     }
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     return geometry;
@@ -350,7 +370,7 @@
       const mesh = findFirstMesh(gltf.scene);
       if (!mesh) throw new Error('WallBuilder: no mesh in GLB "' + name + '"');
       const cloned = mesh.clone();
-      cloned.geometry = ensureProjectedUv(mesh.geometry.clone(), 1.5);
+      cloned.geometry = ensureProjectedUv(mesh.geometry.clone(), { stretch: true });
       cloned.material = cloneMaterial(mesh.material);
       cloned.name = name;
       self.glbLibrary.set(name, { mesh: cloned, perUnitScale: computePerUnitScale(cloned) });

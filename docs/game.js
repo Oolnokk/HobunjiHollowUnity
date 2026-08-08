@@ -14012,11 +14012,17 @@
       // as portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
       // loaded before this file) — keeps the texture's own shading/grain
       // instead of showing the raw PNG albedo untouched.
-      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor) {
+      // stretch, when given as [worldWidth, worldHeight], fits the whole PNG
+      // once across that world-unit span instead of tiling it (the preview
+      // tool's "stretch to bounds" mode) — since this ground UV is already
+      // raw world (X,Z) in 1-unit-per-tile units (see the comment above),
+      // that span is simply the map's own tile footprint, so this is just a
+      // texture.repeat change, no geometry/UV rebuild needed. Overrides
+      // tileSize when present.
+      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch) {
         const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
         const mat = new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
         new THREE.TextureLoader().load(path, (tex) => {
-          const ts = Math.max(0.05, tileSize || 1);
           let finalTex = tex;
           const rgb = fillColor && parseHexColor(fillColor);
           if (rgb) {
@@ -14026,7 +14032,12 @@
             finalTex = new THREE.CanvasTexture(canvas);
           }
           finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
-          finalTex.repeat.set(1 / ts, 1 / ts);
+          if (Array.isArray(stretch) && stretch.length === 2) {
+            finalTex.repeat.set(1 / Math.max(0.05, stretch[0]), 1 / Math.max(0.05, stretch[1]));
+          } else {
+            const ts = Math.max(0.05, tileSize || 1);
+            finalTex.repeat.set(1 / ts, 1 / ts);
+          }
           mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
         }, undefined, () => {});
         return mat;
@@ -14040,7 +14051,7 @@
         const cacheKey = mapId + ',' + matKey;
         let mat = _mapTileMatCache.get(cacheKey);
         if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor);
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch);
           _mapTileMatCache.set(cacheKey, mat);
         }
         return mat;

@@ -103,26 +103,47 @@
   // varying across it. Generates a simple per-vertex UV by projecting each
   // vertex onto whichever world axis its normal points along least
   // (dominant-normal-axis projection), same technique the town-path preview
-  // tool used for its material painter. tileSize is world/local units per
-  // texture repeat, matching the tileSize convention already used by
-  // loadHousePieceFaceTexture/loadTerrainTileTexture. No-op if the geometry
+  // tool used for its material painter. opts.stretch=true fits the whole PNG
+  // once across each axis group's own bounding box (the preview's "stretch to
+  // bounds" mode) instead of tiling it — opts.tileSize (world/local units per
+  // repeat, matching the tileSize convention used by loadHousePieceFaceTexture/
+  // loadTerrainTileTexture) is ignored in that case. No-op if the geometry
   // already has a `uv` attribute.
-  function _ensureProjectedUv(geometry, tileSize) {
+  function _ensureProjectedUv(geometry, opts) {
+    opts = opts || {};
     if (geometry.getAttribute('uv')) return;
     if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
     var pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
     if (!pos || !normal) return;
-    var stride = Math.max(0.001, Number(tileSize) || 1);
-    var uvs = new Float32Array(pos.count * 2);
-    for (var i = 0; i < pos.count; i++) {
-      var px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    var stride = Math.max(0.001, Number(opts.tileSize) || 1);
+    function axisOf(i) {
       var nx = Math.abs(normal.getX(i)), ny = Math.abs(normal.getY(i)), nz = Math.abs(normal.getZ(i));
-      var axis = ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
-      var u, v;
-      if (axis === 'x') { u = pz; v = py; }
-      else if (axis === 'z') { u = px; v = py; }
-      else { u = px; v = pz; }
-      uvs[i * 2] = u / stride; uvs[i * 2 + 1] = v / stride;
+      return ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
+    }
+    function rawUv(i, axis) {
+      var px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      if (axis === 'x') return [pz, py];
+      if (axis === 'z') return [px, py];
+      return [px, pz];
+    }
+    var uvs = new Float32Array(pos.count * 2);
+    if (opts.stretch) {
+      var bounds = { x: [Infinity, -Infinity, Infinity, -Infinity], y: [Infinity, -Infinity, Infinity, -Infinity], z: [Infinity, -Infinity, Infinity, -Infinity] };
+      var i, axis, uv, b;
+      for (i = 0; i < pos.count; i++) {
+        axis = axisOf(i); uv = rawUv(i, axis); b = bounds[axis];
+        b[0] = Math.min(b[0], uv[0]); b[1] = Math.max(b[1], uv[0]); b[2] = Math.min(b[2], uv[1]); b[3] = Math.max(b[3], uv[1]);
+      }
+      for (i = 0; i < pos.count; i++) {
+        axis = axisOf(i); uv = rawUv(i, axis); b = bounds[axis];
+        var du = Math.max(1e-6, b[1] - b[0]), dv = Math.max(1e-6, b[3] - b[2]);
+        uvs[i * 2] = (uv[0] - b[0]) / du; uvs[i * 2 + 1] = (uv[1] - b[2]) / dv;
+      }
+    } else {
+      for (var j = 0; j < pos.count; j++) {
+        var ax = axisOf(j), rv = rawUv(j, ax);
+        uvs[j * 2] = rv[0] / stride; uvs[j * 2 + 1] = rv[1] / stride;
+      }
     }
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   }
@@ -132,7 +153,7 @@
     var bone = null;
     sceneObj.traverse(function (o) {
       if (!bone && String(o.name || '').toLowerCase() === 'shinglebone') bone = o;
-      if (o.isMesh && o.geometry) _ensureProjectedUv(o.geometry, 1.5);
+      if (o.isMesh && o.geometry) _ensureProjectedUv(o.geometry, { stretch: true });
     });
     var boneLength = 1, boneFrameInverse = null;
     if (bone) {
