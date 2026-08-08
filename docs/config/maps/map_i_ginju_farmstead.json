@@ -55,104 +55,6 @@
   ],
   "colliders": [],
   "vendorZones": [],
-  "npcPaths": [
-    {
-      "id": "pth_gorobi",
-      "label": "Gorobi works",
-      "npcId": "gorobi_ginju",
-      "nodes": [
-        [
-          1,
-          2
-        ],
-        [
-          8,
-          2
-        ],
-        [
-          8,
-          4
-        ],
-        [
-          1,
-          4
-        ]
-      ]
-    },
-    {
-      "id": "pth_gikali",
-      "label": "Gikali cooks",
-      "npcId": "gikali_ginju",
-      "nodes": [
-        [
-          2,
-          3
-        ],
-        [
-          4,
-          3
-        ],
-        [
-          4,
-          7
-        ],
-        [
-          2,
-          7
-        ]
-      ]
-    },
-    {
-      "id": "pth_aliri",
-      "label": "Aliri routine",
-      "npcId": "aliri_ginju",
-      "nodes": [
-        [
-          6,
-          3
-        ],
-        [
-          8,
-          3
-        ],
-        [
-          8,
-          8
-        ],
-        [
-          6,
-          8
-        ],
-        [
-          4,
-          8
-        ]
-      ]
-    },
-    {
-      "id": "pth_gantami",
-      "label": "Gantami races around",
-      "npcId": "gantami_ginju",
-      "nodes": [
-        [
-          1,
-          2
-        ],
-        [
-          8,
-          2
-        ],
-        [
-          8,
-          8
-        ],
-        [
-          1,
-          8
-        ]
-      ]
-    }
-  ],
   "floor": [
     [
       0,
@@ -1910,7 +1812,9 @@
       "pose": "stand",
       "toolKey": "",
       "toolIntervalSec": 0,
-      "toolAnimStyle": ""
+      "toolAnimStyle": "",
+      "wanderMode": "radius",
+      "wanderRadiusTiles": 2
     }
   ]
 }
