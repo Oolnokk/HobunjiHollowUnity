@@ -9610,24 +9610,44 @@
         // are skipped below (pathNet.inBounds) except for TRENCH/RAISED/
         // SHRUB/ROCK, which keep their own geometry.
         const pathNet = buildPathNetworkGeo(townGrid, TCOLS, TROWS);
+        let _townPathFallbackMesh = null;
         if (pathNet) {
-          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          // Regular ground (grass) covers the path's own footprint too now —
+          // the brick surface below is meant to simply overlay ordinary
+          // ground, not sit on top of a separately-colored "path" patch.
+          _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP, 0);
           _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
+          // Old flat tan path quad — shares pathNet.pathGeo's geometry (a
+          // BufferGeometry can back more than one Mesh) but hidden by
+          // default now that the brick surface below provides the real path
+          // visual; only shown if that brick surface never manages to load
+          // (see ensurePathSurfaceReady's .catch and the no-route-matched
+          // case below), so there's still some path indication rather than
+          // the corridor reading as empty grass forever.
+          _townPathFallbackMesh = new THREE.Mesh(pathNet.pathGeo, resolveTileMat('map_hobunji_town', TileType.PATH));
+          _townPathFallbackMesh.name = 'TownPathFallback';
+          _townPathFallbackMesh.visible = false;
+          _townPathFallbackMesh.receiveShadow = true;
+          townScene.add(_townPathFallbackMesh);
+          _markTerrainEdgeId(_townPathFallbackMesh, _terrainCategoryFor(TileType.PATH));
         }
 
         // Paved brick surface over the path — see the "Path: paved brick
-        // surface" block below (preparePathSplineData/buildPathBrickChunk/
-        // updatePathBrickStreaming). Loads async (its own WallBuilder GLB +
-        // wall recipe) and only ever builds a window around the player
-        // (registerPathBrickStream, consumed by gameLoop's throttled tick),
-        // so it's layered on top of the flat pathGeo bucket above rather than
-        // replacing it — pathGeo stays as a same-colored fallback under any
-        // sliver the corridor test doesn't cover, or outside the streamed
-        // window entirely, so there's never a bare gap.
+        // surface" block below (preparePathSplineData/buildAllPathBrickChunks/
+        // updatePathBrickCulling). Loads async (its own WallBuilder GLB + wall
+        // recipe); every chunk along the corridor is built once ready
+        // (registerPathBrickChunks), then gameLoop's throttled tick just
+        // toggles each chunk's .visible by the same camera-aligned-corridor
+        // test already used for wilderness tree culling (updateZoneVegetationCulling)
+        // — cheap per-frame, no geometry rebuilding.
         ensurePathSurfaceReady().then(() => {
           const splineData = preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes);
-          if (splineData) registerPathBrickStream('town', townScene, splineData);
-        }).catch(err => debugLog('Town path brick surface error: ' + err.message, 'warn'));
+          if (splineData) registerPathBrickChunks('town', townScene, splineData);
+          else if (_townPathFallbackMesh) _townPathFallbackMesh.visible = true;
+        }).catch(err => {
+          debugLog('Town path brick surface error: ' + err.message, 'warn');
+          if (_townPathFallbackMesh) _townPathFallbackMesh.visible = true;
+        });
 
         const riverTiles = [];
 
@@ -14746,16 +14766,22 @@
       // upright.
       //
       // Paving the whole spline corridor in one WallBuilder panel is fine for a
-      // town-sized route but doesn't scale to a long wilderness road — bricks
-      // are real InstancedMesh geometry, not a cheap flat texture, so it's kept
-      // as a streaming window instead: only the corridor inside a radius around
-      // the player is ever built, rebuilt only when the player has actually
-      // moved far enough to matter (see updatePathBrickStreaming). The one-time
-      // spline math (route selection, Catmull-Rom sampling, corridor test) is
-      // prepared once per zone by preparePathSplineData and reused by every
-      // rebuild — only the small per-rebuild window panel is regenerated.
-      const PATH_BRICK_RADIUS = 16;      // world units (≈ tiles) around the player kept paved
-      const PATH_BRICK_REBUILD_STEP = 6; // rebuild once the player has moved this far from the last build center
+      // town-sized route but doesn't scale to a long wilderness road — so
+      // instead of one huge panel (or a streamed window rebuilt as the player
+      // moves, which still pays a geometry-generation cost on every rebuild),
+      // the corridor is chunked into fixed PATH_BRICK_CHUNK_SIZE cells and
+      // every chunk that actually overlaps the corridor is built ONCE, up
+      // front (buildAllPathBrickChunks) — empty cells (most of a route's own
+      // bounding box, since the corridor is a thin strip through it) are
+      // skipped entirely rather than paying to generate-then-discard. From
+      // then on nothing is ever rebuilt: gameLoop's throttled tick just
+      // toggles each chunk's .visible using the exact same camera-aligned-
+      // corridor test already used for wilderness tree culling
+      // (updateZoneVegetationCulling/VEG_CULL_* below) — see
+      // updatePathBrickCulling. The one-time spline math (route selection,
+      // Catmull-Rom sampling, corridor containment test) is prepared once per
+      // zone by preparePathSplineData and reused by every chunk.
+      const PATH_BRICK_CHUNK_SIZE = 10; // world units (≈ tiles) per pre-built chunk
       function _routeCurvePoints(route) {
         const pts = (route.nodes || [])
           .map(n => new THREE.Vector3(Number(n[0]) + 0.5, 0, Number(n[1]) + 0.5))
@@ -14826,21 +14852,17 @@
         }
         return { samples, containsPoint, bounds: { minX, maxX, minZ, maxZ } };
       }
-      // Builds one WallBuilder panel covering just the intersection of a
-      // player-centered square (±radius) and the spline's own bounding box,
-      // then prunes instances outside the actual corridor exactly like the
-      // full-corridor version used to (see preparePathSplineData.containsPoint).
-      // Returns null if that window doesn't overlap the corridor at all.
-      function buildPathBrickChunk(splineData, cx, cz, radius) {
-        const b = splineData.bounds;
-        const minX = Math.max(b.minX, cx - radius), maxX = Math.min(b.maxX, cx + radius);
-        const minZ = Math.max(b.minZ, cz - radius), maxZ = Math.min(b.maxZ, cz + radius);
-        if (maxX <= minX || maxZ <= minZ) return null;
-
+      // Builds one WallBuilder panel covering exactly one fixed grid cell
+      // (chunkMinX..chunkMinX+size, chunkMinZ..chunkMinZ+size), then prunes
+      // instances outside the actual corridor exactly like the original
+      // single-panel version did (see preparePathSplineData.containsPoint).
+      // Returns null if that cell has no corridor overlap at all — the
+      // caller uses that to skip empty cells rather than keep an empty group.
+      function buildPathBrickChunkAt(splineData, chunkMinX, chunkMinZ, size) {
+        const minX = chunkMinX, maxX = chunkMinX + size, minZ = chunkMinZ, maxZ = chunkMinZ + size;
         const y = NORMAL_TOP + 0.01; // small lift above the flat path/grass mesh beneath, avoids z-fighting
-        const w = Math.max(0.01, maxX - minX), d = Math.max(0.01, maxZ - minZ);
         const panel = {
-          id: 'path_surface_chunk', width: w, height: d, wallRecipeId: PATH_SURFACE_RECIPE_ID,
+          id: 'path_surface_chunk', width: size, height: size, wallRecipeId: PATH_SURFACE_RECIPE_ID,
           position: [(minX + maxX) / 2, y, (minZ + maxZ) / 2], rotationDeg: [0, 0, 0],
           corners: [[minX, y, maxZ], [maxX, y, maxZ], [maxX, y, minZ], [minX, y, minZ]],
         };
@@ -14873,28 +14895,63 @@
         if (!anyKept) { WallBuilder.disposeGroup(group); return null; }
         return group;
       }
-      // Per-zone streaming state: { splineData, scene, group, centerX, centerZ }.
-      // Keyed by mapId so town and (later) wilderness zones can each keep their
-      // own independent streamed window without fighting over one slot.
-      const _pathBrickStreams = new Map();
-      function registerPathBrickStream(mapId, scene, splineData) {
-        _pathBrickStreams.set(mapId, { splineData, scene, group: null, centerX: null, centerZ: null });
+      // Builds every non-empty chunk over the corridor's bounding box, once.
+      // Each surviving chunk is tagged with userData.cullSphere in the exact
+      // shape updateZoneVegetationCulling already expects ({x,z,radius}), so
+      // updatePathBrickCulling below can reuse that same corridor-visibility
+      // formula unmodified.
+      function buildAllPathBrickChunks(splineData, scene) {
+        const b = splineData.bounds, size = PATH_BRICK_CHUNK_SIZE;
+        const chunkRadius = Math.SQRT2 * size / 2; // half-diagonal of a size×size cell
+        const chunks = [];
+        for (let cz = Math.floor(b.minZ / size) * size; cz < b.maxZ; cz += size) {
+          for (let cx = Math.floor(b.minX / size) * size; cx < b.maxX; cx += size) {
+            const group = buildPathBrickChunkAt(splineData, cx, cz, size);
+            if (!group) continue;
+            group.visible = false; // first updatePathBrickCulling pass decides what's actually shown
+            group.userData.cullSphere = { x: cx + size / 2, z: cz + size / 2, radius: chunkRadius };
+            scene.add(group);
+            chunks.push(group);
+          }
+        }
+        return chunks;
+      }
+      // Per-zone chunk list: mapId -> THREE.Group[]. Keyed so town and (later)
+      // wilderness zones can each keep their own chunk set without fighting
+      // over one slot.
+      const _pathBrickChunkLists = new Map();
+      function registerPathBrickChunks(mapId, scene, splineData) {
+        _pathBrickChunkLists.set(mapId, buildAllPathBrickChunks(splineData, scene));
       }
       // Called from the throttled tick below for whichever zone is currently
-      // active — rebuilds the streamed chunk only once the player has moved
-      // PATH_BRICK_REBUILD_STEP world units from wherever it was last built.
-      function updatePathBrickStreaming(mapId, worldX, worldZ) {
-        const st = _pathBrickStreams.get(mapId);
-        if (!st) return;
-        if (st.centerX !== null) {
-          const dx = worldX - st.centerX, dz = worldZ - st.centerZ;
-          if (dx * dx + dz * dz < PATH_BRICK_REBUILD_STEP * PATH_BRICK_REBUILD_STEP) return;
+      // active. Identical corridor test to updateZoneVegetationCulling
+      // (camera-aligned forward/rear/width box around VEG_CULL_* tiles, with
+      // hysteresis so a chunk right at the boundary doesn't flicker every
+      // tick) — same technique, just toggling pre-built path chunks instead
+      // of pre-built tree groups, so it costs nothing beyond that dot-product
+      // test per chunk regardless of how long the corridor is.
+      function updatePathBrickCulling(mapId, force) {
+        const chunks = _pathBrickChunkLists.get(mapId);
+        if (!chunks || !chunks.length) return;
+        const camX = camera.position.x, camZ = camera.position.z;
+        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
+        let viewLen = Math.hypot(viewX, viewZ);
+        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
+        viewX /= viewLen; viewZ /= viewLen;
+        const rightX = viewZ, rightZ = -viewX;
+        const forwardRange = VEG_CULL_FORWARD_TILES, rearRange = VEG_CULL_REAR_TILES;
+        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5, hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        for (const chunk of chunks) {
+          const s = chunk.userData.cullSphere;
+          const dx = s.x - camX, dz = s.z - camZ;
+          const along = dx * viewX + dz * viewZ;
+          const side = Math.abs(dx * rightX + dz * rightZ);
+          const sticky = chunk.visible ? hysteresis : 0;
+          const expandedRadius = s.radius + sticky;
+          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+            && side <= halfWidth + expandedRadius;
+          if (force || show !== chunk.visible) chunk.visible = show;
         }
-        st.centerX = worldX; st.centerZ = worldZ;
-        const nextGroup = buildPathBrickChunk(st.splineData, worldX, worldZ, PATH_BRICK_RADIUS);
-        if (st.group) { st.scene.remove(st.group); WallBuilder.disposeGroup(st.group); }
-        st.group = nextGroup;
-        if (nextGroup) st.scene.add(nextGroup);
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
@@ -17478,7 +17535,7 @@
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
       let _minimapRedrawAccum = 0;
-      let _pathBrickStreamAccum = 0;
+      let _pathBrickCullAccum = 0;
 
       buildTileMeshes();
 
@@ -17851,17 +17908,6 @@
           window.WildernessMap.renderMinimap();
         }
 
-        // Streamed path-brick surface — only rebuilds the small window around
-        // the player (see updatePathBrickStreaming), so this throttle just
-        // keeps the cheap "has the player moved?" distance check from running
-        // every single frame; the expensive rebuild itself is separately
-        // gated on that check actually tripping.
-        _pathBrickStreamAccum += dt;
-        if (_pathBrickStreamAccum >= 0.5) {
-          _pathBrickStreamAccum = 0;
-          if (_pathBrickStreams.size) updatePathBrickStreaming(currentArea, player.x / TILE, player.y / TILE);
-        }
-
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
 
         window.Music?.updateRainAudio();
@@ -17965,6 +18011,16 @@
           updateZoneVegetationCulling(force);
         }
         updateTreeFadeAnimation(dt);
+
+        // Same camera-aligned-corridor visibility toggle, same throttle, for
+        // the path brick chunks built once by registerPathBrickChunks — see
+        // updatePathBrickCulling.
+        _pathBrickCullAccum += dt;
+        if (_pathBrickCullAccum >= 0.14) {
+          const force = _pathBrickCullAccum >= 900;
+          _pathBrickCullAccum = 0;
+          if (_pathBrickChunkLists.size) updatePathBrickCulling(currentArea, force);
+        }
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
