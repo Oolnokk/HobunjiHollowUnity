@@ -879,6 +879,7 @@
 <script src="../../js/procedural-furniture.js?v=20260712l"></script>
 <script src="../../js/foliage-generator.js?v=20260712l"></script>
 <script src="../../js/terrain-preview.js?v=20260712l"></script>
+<script src="../../js/interior-scene-builder.js?v=20260808a"></script>
 
 <!-- ── NPC avatar rendering (portrait rig → two-plane 3D avatar) ───────── -->
 <script src="../../config/scratchbones-config.js?v=20260712l"></script>
@@ -1770,51 +1771,42 @@
   }
 
   // Interiors have no wall geometry in their JSON — walls are derived from
-  // floor[]/exits[] at runtime. This is a simplified per-edge wall author
-  // (every floor-cell edge bordering a non-floor cell becomes a wall panel,
-  // with a gap left at any tile tagged by an exit) rather than the full
-  // run-merging algorithm docs/tools/building-interior-author/index.html
-  // uses, so tight diagonal nooks may look slightly boxier here than in the
-  // real interior — acceptable for staging a cutscene, not meant to be a
-  // architecture-accurate substitute for Building Interior Author.
+  // floor[]/exits[] at runtime, same as docs/game.js's loadBuildingScene and
+  // docs/tools/building-interior-author/index.html's own preview. Uses the
+  // shared InteriorSceneBuilder module (run-merged wall panels, wallStyle-
+  // aware brick/cavern/canvas walls, textured floor) so a den's cavern or a
+  // tent's canvas interior — and plain wall height — match the real game
+  // instead of a simplified always-brick, always-2.4-tall approximation.
+  const INTERIOR_WALL_HEIGHT = 1.75; // matches docs/game.js's own constant
   async function buildInteriorScene(myGen) {
     const three = state.three;
     const meta = state.mapMeta;
-    const cols = meta.cols, rows = meta.rows;
+    const wallStyle = meta.raw?.wallStyle;
 
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x5d4a37, side: THREE.DoubleSide });
-    const fPos=[], fIdx=[];
+    const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, wallStyle, ASSET_BASE + "assets/");
+    const fPos=[], fUv=[], fIdx=[];
     meta.floorSet.forEach(key => {
       const [c,r] = key.split(",").map(Number);
       const base = fPos.length/3;
       fPos.push(c,0,r, c+1,0,r, c+1,0,r+1, c,0,r+1);
+      fUv.push(c,r, c+1,r, c+1,r+1, c,r+1);
       fIdx.push(base,base+1,base+2, base,base+2,base+3);
     });
-    if (fIdx.length) three.terrainGroup.add(new THREE.Mesh(_terrainGeometryFromArrays(fPos,fIdx), floorMat));
+    if (fIdx.length) {
+      const fGeo = _terrainGeometryFromArrays(fPos,fIdx);
+      fGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(fUv), 2));
+      three.terrainGroup.add(new THREE.Mesh(fGeo, floorMat));
+    }
 
     const exitTileKeys = new Set();
     (meta.exits||[]).forEach(exit => (exit.tiles||[]).forEach(([c,r]) => exitTileKeys.add(`${c},${r}`)));
 
-    const panels = [];
-    const WALL_H = 2.4;
-    meta.floorSet.forEach(key => {
-      const [c,r] = key.split(",").map(Number);
-      const edges = [ [1,0, c+1,r, c+1,r+1], [-1,0, c,r, c,r+1], [0,1, c,r+1, c+1,r+1], [0,-1, c,r, c+1,r] ];
-      for (const [dc,dr, x1,z1, x2,z2] of edges) {
-        const nc = c+dc, nr = r+dr;
-        const neighborKey = `${nc},${nr}`;
-        if (meta.floorSet.has(neighborKey)) continue; // open interior — no wall
-        if (exitTileKeys.has(key) || exitTileKeys.has(neighborKey)) continue; // doorway gap
-        const mx = (x1+x2)/2, mz = (z1+z2)/2;
-        const rotY = (dc !== 0) ? 90 : 0;
-        panels.push({ id: `wall_${c}_${r}_${dc}_${dr}`, width: 1, height: WALL_H, position:[mx, WALL_H/2, mz], rotationDeg:[0, rotY, 0] });
-      }
-    });
-    if (panels.length && window.WallBuilder) {
+    const panels = InteriorSceneBuilder.buildWallPanels(meta.floorSet, exitTileKeys, INTERIOR_WALL_HEIGHT);
+    if (panels.length) {
       try {
         const wb = await ensureWallBuilder();
         if (myGen !== _buildGeneration) return;
-        const group = wb.build(panels, { unitMult: 0.5, usePlaceholder: true });
+        const group = InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, wallStyle, { usePlaceholder: true });
         three.buildingsGroup.add(group);
       } catch (e) { log(`Interior wall build failed: ${e.message}`, "ERROR"); }
     }

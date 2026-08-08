@@ -311,6 +311,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/building-door.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/GLTFLoader.js"></script>
+<script src="../../js/WallBuilder.js"></script>
+<script src="../../js/HousePieceGen.js"></script>
 <script src="../../js/terrain-preview.js"></script>
 <script>
 (() => {
@@ -3188,9 +3191,11 @@ function safeRebuild3D() {
   }
 }
 
+let _3dBuildGeneration = 0;
 function rebuild3D() {
   if (!three3d) return;
   _3dDirty = false;
+  const myGen = ++_3dBuildGeneration;
   const { group } = three3d;
   while (group.children.length) {
     const o = group.children.pop();
@@ -3328,30 +3333,88 @@ function rebuild3D() {
     if (wfGeo.idx.length) group.add(new THREE.Mesh(_terrainGeometryFromArrays(wfGeo.pos, wfGeo.idx), _previewWaterfallMat));
   } catch (e) { /* waterfall geometry is best-effort for the preview */ }
 
-  // Building footprint boxes, lifted to their anchor tile's resolved plateau
-  // tier (merged.buildings[].elevTier — see TerrainPreview.buildMergedZoneGrid)
-  // so it's visually obvious whether a placed building sits on its plateau or
-  // floats above/sinks into it. Just a footprint placeholder, not the real
-  // piece geometry — the live game renders the actual model at the same Y.
-  for (const b of (merged.buildings || [])) {
-    const rot = ((Math.round((b.rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
-    const swap = rot === 90 || rot === 270;
-    const w = swap ? (b.footprintD || 1) : (b.footprintW || 1);
-    const d = swap ? (b.footprintW || 1) : (b.footprintD || 1);
-    const h = TerrainPreview.PLATEAU_UNIT;
-    const y0 = TerrainPreview.NORMAL_TOP + (b.elevTier || 0) * TerrainPreview.PLATEAU_UNIT
-      + TerrainPreview.sampleVisualHeight(merged.visualHeights, b.gridX + 0.5, b.gridZ + 0.5, merged.cols, merged.rows);
-    const boxGeo = new THREE.BoxGeometry(w, h, d);
-    const mesh = new THREE.Mesh(boxGeo, _previewBldgMat);
-    mesh.position.set(b.gridX + w / 2, y0 + h / 2, b.gridZ + d / 2);
-    group.add(mesh);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), _previewBldgEdgeMat);
-    edges.position.copy(mesh.position);
-    group.add(edges);
-  }
+  // Real buildings via HousePieceGen (the same function + option defaults
+  // docs/game.js's spawnTownBuildings/spawnZoneBuildings use) — shows actual
+  // walls (WallBuilder bricks) and shingles instead of a footprint
+  // placeholder box, matching what the live game actually renders at the
+  // same anchor-tile plateau tier. Loads async (piece JSON fetch + optional
+  // GLB upgrade) so it pops in without blocking the rest of this synchronous
+  // rebuild; falls back to the old placeholder box per-building on
+  // fetch/parse/build failure.
+  spawnPreviewBuildings(group, merged, myGen);
 
   three3d.controls.target.set(merged.cols/2, 0, merged.rows/2);
   three3d.camera.lookAt(three3d.controls.target);
+}
+
+// Footprint placeholder box, lifted to the building's anchor tile's resolved
+// plateau tier (merged.buildings[].elevTier — see
+// TerrainPreview.buildMergedZoneGrid) so it's visually obvious whether a
+// placed building sits on its plateau or floats above/sinks into it. Used
+// only while the real piece geometry is loading, or if it fails to load.
+function addPlaceholderBuildingBox(group, merged, b) {
+  const rot = ((Math.round((b.rotationDeg || 0) / 90) * 90) % 360 + 360) % 360;
+  const swap = rot === 90 || rot === 270;
+  const w = swap ? (b.footprintD || 1) : (b.footprintW || 1);
+  const d = swap ? (b.footprintW || 1) : (b.footprintD || 1);
+  const h = TerrainPreview.PLATEAU_UNIT;
+  const y0 = TerrainPreview.NORMAL_TOP + (b.elevTier || 0) * TerrainPreview.PLATEAU_UNIT
+    + TerrainPreview.sampleVisualHeight(merged.visualHeights, b.gridX + 0.5, b.gridZ + 0.5, merged.cols, merged.rows);
+  const boxGeo = new THREE.BoxGeometry(w, h, d);
+  const mesh = new THREE.Mesh(boxGeo, _previewBldgMat);
+  mesh.position.set(b.gridX + w / 2, y0 + h / 2, b.gridZ + d / 2);
+  group.add(mesh);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), _previewBldgEdgeMat);
+  edges.position.copy(mesh.position);
+  group.add(edges);
+}
+
+const _MAP_EDITOR_WB_DEFAULTS = { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
+let _mapEditorWallBuilder = null;
+function ensureMapEditorWallBuilder() {
+  if (_mapEditorWallBuilder || typeof WallBuilder === 'undefined') return _mapEditorWallBuilder;
+  _mapEditorWallBuilder = new WallBuilder({ glbBasePath: '../../assets/models/' });
+  _mapEditorWallBuilder.loadDefaultGlb().catch(() => _mapEditorWallBuilder.ensurePlaceholderGlb());
+  return _mapEditorWallBuilder;
+}
+
+// Fetches each placed building's piece JSON then builds real Highland house
+// geometry via HousePieceGen.buildGroupFromPiece — same function + option
+// defaults docs/game.js's spawnTownBuildings/spawnZoneBuildings use — so
+// what's shown here (walls, shingles) matches the live game instead of a
+// footprint placeholder. Best-effort per building: falls back to the
+// placeholder box on fetch/parse/build failure. `myGen` guards against a
+// stale async result landing in the group after a newer rebuild3D() call.
+function spawnPreviewBuildings(group, merged, myGen) {
+  const buildings = merged.buildings || [];
+  if (!buildings.length) return;
+  if (typeof HousePieceGen === 'undefined') {
+    for (const b of buildings) addPlaceholderBuildingBox(group, merged, b);
+    return;
+  }
+  const wb = ensureMapEditorWallBuilder();
+  Promise.all(buildings.map(b => {
+    if (!b.pieceFile) return Promise.resolve({ b, piece: null });
+    return fetch('../../' + b.pieceFile).then(r => r.json()).then(piece => ({ b, piece })).catch(() => ({ b, piece: null }));
+  })).then(results => {
+    if (myGen !== _3dBuildGeneration) return;
+    for (const { b, piece } of results) {
+      if (!piece) { addPlaceholderBuildingBox(group, merged, b); continue; }
+      try {
+        const elevationY = TerrainPreview.NORMAL_TOP + (b.elevTier || 0) * TerrainPreview.PLATEAU_UNIT
+          + TerrainPreview.sampleVisualHeight(merged.visualHeights, b.gridX + 0.5, b.gridZ + 0.5, merged.cols, merged.rows);
+        const bgroup = HousePieceGen.buildGroupFromPiece(THREE, piece, b.gridX, b.gridZ, {
+          wallBuilder: wb, wbUsePlaceholder: true,
+          wbOpts: b.wbOpts || _MAP_EDITOR_WB_DEFAULTS, wbGableOpts: b.wbGableOpts,
+          rotationDeg: b.rotationDeg || 0, elevationY,
+        });
+        group.add(bgroup);
+      } catch (e) {
+        console.warn('Building preview failed for ' + (b.id || b.label || '') + ': ' + e.message);
+        addPlaceholderBuildingBox(group, merged, b);
+      }
+    }
+  });
 }
 
 function toggle3D(show) {

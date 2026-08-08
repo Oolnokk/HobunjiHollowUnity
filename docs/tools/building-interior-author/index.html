@@ -69,6 +69,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
       <div class="grid2">
         <div class="field"><label>Map ID</label><input id="mapId" value="map_i_building_01"></div>
         <div class="field"><label>Display name</label><input id="mapName" value="Building Interior"></div>
+        <div class="field"><label>Wall style</label>
+          <select id="wallStyle">
+            <option value="">Brick (default)</option>
+            <option value="cavern">Cavern (rock — dens)</option>
+            <option value="canvas">Canvas (tent cloth)</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -236,6 +243,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
+<script src="../../js/terrain-preview.js"></script>
+<script src="../../js/interior-scene-builder.js"></script>
 <script src="../../js/procedural-furniture.js"></script>
 
 <script>
@@ -836,7 +845,16 @@ scene3.add(new THREE.AmbientLight(0xb0c8e8,0.65));
 var dirL=new THREE.DirectionalLight(0xfff8e0,0.9); dirL.position.set(5,8,4); scene3.add(dirL);
 var fillL=new THREE.DirectionalLight(0x6080a0,0.3); fillL.position.set(-4,2,-3); scene3.add(fillL);
 
-var floorMat=new THREE.MeshLambertMaterial({color:0x3d2a18});
+// wallStyle-aware floor material (boards.png plank texture by default, flat
+// cavern/canvas colors otherwise) — matches docs/game.js's loadBuildingScene
+// exactly via the shared InteriorSceneBuilder module. Cached per wallStyle so
+// a rebuild3D() on every keystroke doesn't refetch the texture each time.
+var _floorMatCache = {};
+function resolveFloorMat(wallStyle){
+  var key = wallStyle || '';
+  if (!_floorMatCache[key]) _floorMatCache[key] = InteriorSceneBuilder.buildFloorMaterial(THREE, wallStyle, '../../assets/');
+  return _floorMatCache[key];
+}
 var exitMat =new THREE.MeshLambertMaterial({color:0xd08020});
 var wallFbkMat=new THREE.MeshLambertMaterial({color:0x8b7055});
 
@@ -946,10 +964,12 @@ function rebuild3D(){
   var floorSet=state.floorSet, interior=state.interior, furniture=interior.furniture;
   previewGroup=new THREE.Group();
 
-  // Floor tiles
+  // Floor tiles — wallStyle-aware material (boards.png plank texture by
+  // default, flat cavern/canvas colors otherwise), matching the real game.
+  var activeFloorMat = resolveFloorMat(interior.wallStyle);
   floorSet.forEach(function(key){
     var p=key.split(','), c=+p[0], r=+p[1];
-    var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),floorMat);
+    var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),activeFloorMat);
     fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
   });
 
@@ -978,15 +998,15 @@ function rebuild3D(){
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
   });
 
-  // Walls
+  // Walls — brick (WallBuilder)/cavern (rock)/canvas (cloth), dispatched by
+  // interior.wallStyle through the shared InteriorSceneBuilder so this
+  // matches docs/game.js's loadBuildingScene exactly (a den's cavern or a
+  // tent's canvas interior no longer shows generic brick in this preview).
   var panels=buildWallPanels(floorSet,interior.exits);
-  if(wb && panels.length){
+  if(panels.length){
     try{
-      var wbOpts={usePlaceholder:!wbReady,unitMult:0.5,rockScale:1.5,preScale:[1,1,0.6],brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03}};
-      previewGroup.add(wb.build(panels,wbOpts));
-    } catch(e){ log('WallBuilder error: '+e.message,'warn'); previewGroup.add(makeFallbackWalls(panels)); }
-  } else if(panels.length){
-    previewGroup.add(makeFallbackWalls(panels));
+      previewGroup.add(InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady}));
+    } catch(e){ log('Wall build error: '+e.message,'warn'); previewGroup.add(makeFallbackWalls(panels)); }
   }
 
   // Furniture — use real GLBs if cached, placeholder boxes otherwise
@@ -1179,6 +1199,7 @@ $('undoBtn').addEventListener('click',undo);
 $('redoBtn').addEventListener('click',redo);
 $('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
 $('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
+$('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.wallStyle=$('wallStyle').value||undefined; rebuild3D(); refreshExport();});
 
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
@@ -1199,6 +1220,7 @@ function afterLoad(){
     }
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
+  $('wallStyle').value=i.wallStyle||'';
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
   state.activeExitId=null; state.activeVendorId=null;
   $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');

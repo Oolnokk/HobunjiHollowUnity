@@ -14,7 +14,7 @@
 button,input,select,textarea{font:inherit} button,label.fileButton{border:1px solid #3b4c67;background:#243149;color:var(--text);border-radius:10px;padding:8px 10px;cursor:pointer;user-select:none} button:hover,label.fileButton:hover{background:#2d3d5b} button:disabled{opacity:.45;cursor:not-allowed} button.active{outline:2px solid var(--accent);background:#203c5c} button.danger{background:#43252d;border-color:#874850} button.ok{background:#23442d;border-color:#41724b}
 input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394a63;border-radius:8px;padding:7px 8px;min-width:0} input[type=checkbox]{width:auto}.hidden{display:none!important}
 .app{display:grid;grid-template-columns:minmax(320px,34vw) 1fr minmax(300px,24vw);grid-template-rows:auto 1fr 112px;height:100vh;gap:8px;padding:8px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;min-height:0;overflow:auto}.viewer{position:relative;padding:0;overflow:hidden;background:radial-gradient(circle at 50% 32%,#1b2638,#0b0f16 70%)}header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px}.title h1{font-size:16px;margin:0}.status{font-size:12px;color:var(--muted);margin-top:2px}.debug{grid-column:1/-1;background:#06090e;border:1px solid #26364d;border-radius:12px;padding:8px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#c7d8f2;white-space:pre-wrap}.section{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;margin-bottom:10px}.section h2{font-size:13px;margin:0 0 8px;color:#c9d8f3}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.field label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.field input,.field select,.field textarea{width:100%}.hint{color:var(--muted);font-size:12px;line-height:1.35}.pill{display:inline-flex;align-items:center;gap:6px;background:rgba(6,10,16,.78);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 10px;color:#cfe0fa;font-size:12px;backdrop-filter:blur(6px)}
-#gridCanvas{width:100%;aspect-ratio:1/1;background:#0b1018;border:1px solid #2b3548;border-radius:14px;touch-action:none;image-rendering:pixelated}#threeCanvas{display:block;width:100%;height:100%;min-height:360px;background:#0b0f16!important;background-color:#0b0f16!important}.viewer{background-color:#0b0f16!important}.overlayTop{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}.surfaceDebug{position:absolute;left:10px;top:52px;max-width:min(760px,calc(100% - 20px));white-space:normal;pointer-events:none}.modeButtons{position:absolute;right:12px;top:92px;display:flex;flex-direction:column;gap:8px;z-index:5}.modeButtons button{width:98px;background:rgba(7,11,18,.82);backdrop-filter:blur(6px)}.assetList,.pieceList{display:flex;flex-direction:column;gap:6px;margin-top:6px}.listItem{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;font-size:12px}.listItem.selected{outline:2px solid var(--accent)}.chip{font-size:11px;color:var(--muted)}textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}.swatch{width:16px;height:16px;border-radius:4px;display:inline-block;border:1px solid rgba(255,255,255,.35)}
+#gridCanvas{width:100%;aspect-ratio:1/1;background:#0b1018;border:1px solid #2b3548;border-radius:14px;touch-action:none;image-rendering:pixelated}#threeCanvas{display:block;width:100%;height:100%;min-height:360px;background:#0b0f16!important;background-color:#0b0f16!important}.viewer{background-color:#0b0f16!important}#gpCanvas{display:none;position:absolute;inset:0;width:100%;height:100%;background:#33404a}#gamePreviewBtn{pointer-events:auto}.overlayTop{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}.surfaceDebug{position:absolute;left:10px;top:52px;max-width:min(760px,calc(100% - 20px));white-space:normal;pointer-events:none}.modeButtons{position:absolute;right:12px;top:92px;display:flex;flex-direction:column;gap:8px;z-index:5}.modeButtons button{width:98px;background:rgba(7,11,18,.82);backdrop-filter:blur(6px)}.assetList,.pieceList{display:flex;flex-direction:column;gap:6px;margin-top:6px}.listItem{display:flex;justify-content:space-between;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:10px;padding:7px 8px;font-size:12px}.listItem.selected{outline:2px solid var(--accent)}.chip{font-size:11px;color:var(--muted)}textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}.swatch{width:16px;height:16px;border-radius:4px;display:inline-block;border:1px solid rgba(255,255,255,.35)}
 .listActions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.roofStatus{font-size:11px;color:var(--muted);line-height:1.3;margin-top:6px}
 @media(max-width:1050px){body{overflow:auto}.app{height:auto;min-height:100vh;grid-template-columns:1fr;grid-template-rows:auto auto 58vh auto 130px}.viewer{height:58vh}.debug{height:130px}}
 /* shared "?" help popover — see docs/tools/schedule-editor/index.html's copy for the full explanation; only QHELP's contents differ per tool */
@@ -28,6 +28,17 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 <script src="../../js/panel-ui.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<!-- Classic global-THREE (r128) build, loaded alongside the ES-module three
+     above purely for the optional "Game Preview" panel — WallBuilder.js/
+     HousePieceGen.js are plain scripts written against window.THREE (same
+     build docs/game.js uses), not the ES module. The two THREE instances
+     don't collide: the module script below binds its own `THREE` name from
+     the "three" import specifier, never reading window.THREE. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/GLTFLoader.js"></script>
+<script src="../../js/WallBuilder.js"></script>
+<script src="../../js/HousePieceGen.js"></script>
 </head>
 <body>
 <div class="app" id="hpaApp">
@@ -180,7 +191,8 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
 
   <main class="panel viewer">
     <canvas id="threeCanvas"></canvas>
-    <div class="overlayTop"><div class="pill" id="viewStats">No footprint</div><div class="pill" id="selectionStats">Selection: none</div></div>
+    <canvas id="gpCanvas"></canvas>
+    <div class="overlayTop"><div class="pill" id="viewStats">No footprint</div><button id="gamePreviewBtn" type="button" title="Show this piece with real WallBuilder brick walls and the shingle GLB, exactly as it renders in game — instead of the translucent tag-colored editing view">🎮 Game Preview</button><div class="pill" id="selectionStats">Selection: none</div></div>
     <div class="pill surfaceDebug" id="surfaceDebug">Surface hit: none yet</div>
     <div class="modeButtons">
       <button id="modeTranslate" class="active" type="button">Translate</button>
@@ -2204,7 +2216,7 @@ function deepCleanPiece(piece){ return JSON.parse(JSON.stringify(piece)); }
 function syncPieceFromInputs(){ state.piece.name=$('pieceName').value.trim()||'unnamed_piece'; state.piece.type=$('pieceType').value; state.piece.preset=$('basePreset')?.value || state.piece.preset || 'custom'; state.piece.gridSize=state.gridSize; state.piece.tileSize=state.tileSize; state.piece.base.height=finite($('baseHeight').value,2.6); state.piece.base.wallThickness=finite($('wallThickness').value,.15); state.piece.base.groundY=finite($('groundY').value,0); syncRoofFromInputs(); syncPieceFromSets(); }
 function exportPiecePayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v37', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece) }; }
 function exportPayload(){ syncPieceFromInputs(); return { schema:'modular-house-piece-author/v37', createdAt:new Date().toISOString(), currentPiece:deepCleanPiece(state.piece), library:state.library.map(deepCleanPiece) }; }
-function refreshExport(){ $('exportText').value=JSON.stringify(exportPiecePayload(),null,2); }
+function refreshExport(){ $('exportText').value=JSON.stringify(exportPiecePayload(),null,2); if (typeof scheduleGamePreviewRebuild === 'function') scheduleGamePreviewRebuild(); }
 function importPayload(payload){ if(!payload) throw new Error('Empty JSON.'); pushUndo('Import JSON'); if(payload.currentPiece) state.piece=payload.currentPiece; else if(payload.schema && payload.library?.[0]) state.piece=payload.library[0]; else if(payload.base && payload.footprint) state.piece=payload; else throw new Error('Unrecognized piece JSON.'); ensureFootprintExtensions(state.piece); state.library=Array.isArray(payload.library)?payload.library:[]; for(const p of state.library) ensureFootprintExtensions(p); loadPiece(state.piece); renderPieceList(); refreshExport(); log('Imported modular piece JSON. GLB binaries are represented as placeholders until re-imported.'); }
 function downloadJson(){ const blob=new Blob([JSON.stringify(exportPayload(),null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${(state.piece.name||'modular_house_piece').replace(/[^a-z0-9_-]+/gi,'_')}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -2259,6 +2271,121 @@ function addGlbFromUrl(url, name) {
     log(`Added furniture: ${name}`);
   }, undefined, err => log(`Furniture load failed for ${name}: ${err.message || err}`, 'error'));
 }
+
+// ── Game Preview ─────────────────────────────────────────────────────────────
+// Shows this piece with real WallBuilder brick walls and the shingle GLB —
+// the same HousePieceGen.buildGroupFromPiece function docs/game.js's
+// spawnTownBuildings calls to render a placed building — instead of the
+// translucent tag-colored faces + tube-repeater stand-ins the editing view
+// above uses for authoring. A second, independent classic-THREE (r128) scene
+// in its own canvas, since this editor's own three.js is the ES-module build
+// (see the importmap in <head>) while WallBuilder/HousePieceGen are plain
+// global-THREE scripts — RTHREE below is window.THREE (r128), a different
+// object from this module's own `THREE` import binding.
+// var, not let/const — refreshExport() (defined earlier, above) calls
+// scheduleGamePreviewRebuild() unconditionally, including during initial
+// boot before this point in the module has executed; var's hoisting (bound
+// to undefined immediately, no temporal dead zone) is required for that
+// early call to see gamePreviewOn as falsy instead of throwing.
+const RTHREE = window.THREE;
+var gamePreviewOn = false;
+var gp = null; // { renderer, scene, camera, controls, group, wallBuilder }
+var gpRebuildTimer = null;
+
+function ensureGamePreview() {
+  if (gp) return gp;
+  if (!RTHREE || !RTHREE.WebGLRenderer || !RTHREE.OrbitControls || typeof window.WallBuilder === 'undefined' || typeof window.HousePieceGen === 'undefined') {
+    log('Game Preview unavailable: classic three.js/WallBuilder/HousePieceGen did not load.', 'error');
+    return null;
+  }
+  const canvas = $('gpCanvas');
+  const renderer = new RTHREE.WebGLRenderer({ canvas, antialias: true });
+  const FOG_COLOR = 0x33404a; // matches the live game's zone fog — see docs/tools/map-editor/index.html's init3D
+  renderer.setClearColor(FOG_COLOR, 1);
+  const scene = new RTHREE.Scene();
+  scene.background = new RTHREE.Color(FOG_COLOR);
+  scene.fog = new RTHREE.FogExp2(FOG_COLOR, 0.02);
+  const camera = new RTHREE.PerspectiveCamera(50, 1, 0.05, 500);
+  scene.add(new RTHREE.AmbientLight(0xfff0e0, 0.7));
+  const sun = new RTHREE.DirectionalLight(0xffeedd, 1.1);
+  sun.position.set(4, 8, 2);
+  scene.add(sun);
+  const controls = new RTHREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  const group = new RTHREE.Group();
+  scene.add(group);
+  const wallBuilder = new window.WallBuilder({ glbBasePath: '../../assets/models/' });
+  wallBuilder.loadDefaultGlb().then(() => { if (gamePreviewOn) scheduleGamePreviewRebuild(); }).catch(() => wallBuilder.ensurePlaceholderGlb());
+  window.HousePieceGen.loadShingleGlb('../../assets/models/').then(() => { if (gamePreviewOn) scheduleGamePreviewRebuild(); }).catch(() => {});
+  gp = { renderer, scene, camera, controls, group, wallBuilder };
+  (function tick() {
+    gp.raf = requestAnimationFrame(tick);
+    resizeGamePreview();
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+  return gp;
+}
+
+function resizeGamePreview() {
+  if (!gp) return;
+  const canvas = gp.renderer.domElement;
+  const w = Math.max(2, canvas.clientWidth), h = Math.max(2, canvas.clientHeight);
+  if (canvas.width !== w || canvas.height !== h) {
+    gp.renderer.setSize(w, h, false);
+    gp.camera.aspect = w / h;
+    gp.camera.updateProjectionMatrix();
+  }
+}
+
+// Debounced so dragging a slider (roof settings etc. fire 'change' rapidly)
+// doesn't rebuild the full brick-instanced geometry on every tick.
+function scheduleGamePreviewRebuild() {
+  if (!gamePreviewOn) return;
+  clearTimeout(gpRebuildTimer);
+  gpRebuildTimer = setTimeout(rebuildGamePreview, 150);
+}
+
+function rebuildGamePreview() {
+  if (!gamePreviewOn || !gp) return;
+  while (gp.group.children.length) {
+    const o = gp.group.children.pop();
+    o.traverse?.(c => c.geometry?.dispose?.());
+  }
+  syncPieceFromInputs();
+  let piece;
+  try { piece = JSON.parse(JSON.stringify(state.piece)); }
+  catch (e) { log('Game Preview: could not snapshot piece — ' + e.message, 'error'); return; }
+  try {
+    const built = window.HousePieceGen.buildGroupFromPiece(RTHREE, piece, 0, 0, {
+      wallBuilder: gp.wallBuilder, wbUsePlaceholder: true,
+    });
+    gp.group.add(built);
+    const box = new RTHREE.Box3().setFromObject(built);
+    if (Number.isFinite(box.min.x)) {
+      const size = box.getSize(new RTHREE.Vector3()), center = box.getCenter(new RTHREE.Vector3());
+      const dist = Math.max(size.x, size.y, size.z, 1) * 1.7;
+      gp.camera.position.set(center.x + dist * 0.7, center.y + dist * 0.55, center.z + dist * 0.9);
+      gp.controls.target.copy(center);
+      gp.camera.lookAt(center);
+    }
+  } catch (e) {
+    log('Game Preview build failed: ' + e.message, 'error');
+  }
+}
+
+function setGamePreview(on) {
+  gamePreviewOn = on;
+  $('gpCanvas').style.display = on ? 'block' : 'none';
+  $('threeCanvas').style.display = on ? 'none' : 'block';
+  const btn = $('gamePreviewBtn');
+  if (btn) { btn.classList.toggle('active', on); btn.textContent = on ? '✏️ Back to edit view' : '🎮 Game Preview'; }
+  if (on) {
+    if (!ensureGamePreview()) { gamePreviewOn = false; $('gpCanvas').style.display = 'none'; $('threeCanvas').style.display = 'block'; if (btn) { btn.classList.remove('active'); btn.textContent = '🎮 Game Preview'; } return; }
+    scheduleGamePreviewRebuild();
+  }
+}
+$('gamePreviewBtn')?.addEventListener('click', () => setGamePreview(!gamePreviewOn));
 
 function setInteriorMode(on) {
   interiorMode = on;
