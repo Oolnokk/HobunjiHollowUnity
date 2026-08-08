@@ -3380,22 +3380,46 @@ function ensureMapEditorWallBuilder() {
 
 // Kicks off the real brick GLB + shingle GLB loads (both render as
 // placeholder-box/tube-repeater stand-ins until ready) and, once both
-// resolve, triggers one more rebuild so already-placed buildings upgrade in
-// place — same two-phase load docs/game.js's spawnTownBuildings/
+// resolve, triggers exactly one more rebuild so already-placed buildings
+// upgrade in place — same two-phase load docs/game.js's spawnTownBuildings/
 // spawnZoneBuildings and Cutscene Director's ensureWallBuilder use. Without
 // this, roof faces never get past HousePieceGen's tube-repeater fallback
-// since nothing ever calls HousePieceGen.loadShingleGlb().
+// since nothing ever calls HousePieceGen.loadShingleGlb(). Gated by
+// `_mapEditorAssetsUpgraded` (not just the in-flight `..Pending` flag) —
+// every rebuild3D() calls this again, and without a permanent "already
+// upgraded" latch the schedule3DRebuild() call below re-triggers this same
+// function on the next rebuild, which resolves near-instantly (both loads
+// are already cached) and reschedules again — an infinite ~150ms rebuild
+// loop that reads as every building flickering in and out forever.
+let _mapEditorAssetsUpgraded = false;
 let _mapEditorAssetsUpgradePending = false;
 function ensureMapEditorAssetsUpgrade(wb) {
-  if (_mapEditorAssetsUpgradePending) return;
+  if (_mapEditorAssetsUpgraded || _mapEditorAssetsUpgradePending) return;
   _mapEditorAssetsUpgradePending = true;
   Promise.all([
     wb ? wb.loadDefaultGlb().catch(() => wb.ensurePlaceholderGlb()) : Promise.resolve(),
     (typeof HousePieceGen !== 'undefined' && HousePieceGen.loadShingleGlb) ? HousePieceGen.loadShingleGlb('../../assets/models/').catch(() => {}) : Promise.resolve(),
   ]).then(() => {
     _mapEditorAssetsUpgradePending = false;
+    _mapEditorAssetsUpgraded = true;
     schedule3DRebuild();
   });
+}
+
+// Piece JSON is small and immutable once placed, but rebuild3D() (and so
+// spawnPreviewBuildings) reruns on every terrain/building edit — without
+// caching, each rebuild would re-fetch and re-parse every placed building's
+// piece file over the network before it can appear, so buildings would
+// visibly pop out and back in on every single edit. Cached by URL for the
+// life of the page; a building's pieceFile never changes without a full
+// page reload (changing which piece a building uses always creates/selects
+// a different placed building).
+const _mapEditorPieceCache = new Map(); // url -> Promise<piece|null>
+function fetchPieceCached(url) {
+  if (!_mapEditorPieceCache.has(url)) {
+    _mapEditorPieceCache.set(url, fetch(url).then(r => r.json()).catch(() => null));
+  }
+  return _mapEditorPieceCache.get(url);
 }
 
 // Fetches each placed building's piece JSON then builds real Highland house
@@ -3416,7 +3440,7 @@ function spawnPreviewBuildings(group, merged, myGen) {
   ensureMapEditorAssetsUpgrade(wb);
   Promise.all(buildings.map(b => {
     if (!b.pieceFile) return Promise.resolve({ b, piece: null });
-    return fetch('../../' + b.pieceFile).then(r => r.json()).then(piece => ({ b, piece })).catch(() => ({ b, piece: null }));
+    return fetchPieceCached('../../' + b.pieceFile).then(piece => ({ b, piece }));
   })).then(results => {
     if (myGen !== _3dBuildGeneration) return;
     for (const { b, piece } of results) {
