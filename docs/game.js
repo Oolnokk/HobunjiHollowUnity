@@ -9615,6 +9615,20 @@
           _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
         }
 
+        // Paved brick surface over the path — see the "Path: paved brick
+        // surface" block below (preparePathSplineData/buildPathBrickChunk/
+        // updatePathBrickStreaming). Loads async (its own WallBuilder GLB +
+        // wall recipe) and only ever builds a window around the player
+        // (registerPathBrickStream, consumed by gameLoop's throttled tick),
+        // so it's layered on top of the flat pathGeo bucket above rather than
+        // replacing it — pathGeo stays as a same-colored fallback under any
+        // sliver the corridor test doesn't cover, or outside the streamed
+        // window entirely, so there's never a bare gap.
+        ensurePathSurfaceReady().then(() => {
+          const splineData = preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes);
+          if (splineData) registerPathBrickStream('town', townScene, splineData);
+        }).catch(err => debugLog('Town path brick surface error: ' + err.message, 'warn'));
+
         const riverTiles = [];
 
         for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
@@ -13018,6 +13032,28 @@
         })
         .catch(err => debugLog('Interior walls GLB error: ' + err.message));
 
+      // Dedicated WallBuilder instance for the town's path-as-paved-surface
+      // (buildTownPathBrickSurface below) — kept separate from houseWallBuilder
+      // so it can carry its own tint (path.bricks' #545039, distinct from
+      // building walls' #4d4d4d) without both fighting over one shared
+      // GLB-library material object (build() hands every instanced wall the
+      // exact same material reference — see WallBuilder.js).
+      const pathWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
+      const PATH_SURFACE_RECIPE_ID = 'town_path_surface';
+      let _pathSurfaceReadyPromise = null;
+      function ensurePathSurfaceReady() {
+        if (!_pathSurfaceReadyPromise) {
+          _pathSurfaceReadyPromise = Promise.all([
+            pathWallBuilder.loadDefaultGlb(),
+            fetch('assets/models/recipes/walls/wallrecipe2.json').then(r => r.json()),
+          ]).then(([, recipe]) => {
+            pathWallBuilder.addRecipe(PATH_SURFACE_RECIPE_ID, recipe);
+            pathWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#545039');
+          });
+        }
+        return _pathSurfaceReadyPromise;
+      }
+
       // Wall panels derived from playerhouse_interior.json wallEdges, merged into rect panels.
       // Coord origin: editor cell (9,9) → interior (0,0).
       // N/S panels face along Z (rotY=0/180); W/E panels face along X (rotY=±90).
@@ -14046,7 +14082,10 @@
       const _mapTileMatCache = new Map(); // "mapId,tileMatsKey" -> THREE.Material
       function resolveTileMat(mapId, matKey) {
         const base = tileMats[matKey] || tileMats.grass;
-        const override = _terrainMaterialConfig.byMap?.[mapId]?.[matKey];
+        // '*' is a wildcard entry — applies to any map with no entry of its own
+        // (every wilderness zone, without having to list each zone's mapId),
+        // overridden by a map-specific entry (town/farm) when one exists.
+        const override = _terrainMaterialConfig.byMap?.[mapId]?.[matKey] || _terrainMaterialConfig.byMap?.['*']?.[matKey];
         if (!override?.texture) return base;
         const cacheKey = mapId + ',' + matKey;
         let mat = _mapTileMatCache.get(cacheKey);
@@ -14070,11 +14109,11 @@
       });
       const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
       function resolveCliffMat(mapId) {
-        const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff;
+        const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff || _terrainMaterialConfig.byMap?.['*']?.cliff;
         if (!override?.texture) return _defaultCliffMat;
         let mat = _mapCliffMatCache.get(mapId);
         if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize);
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize, override.fillColor, override.stretch);
           mat.side = THREE.DoubleSide;
           mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
           _mapCliffMatCache.set(mapId, mat);
@@ -14691,6 +14730,171 @@
           inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
           isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
         };
+      }
+
+      // ── Path: paved brick surface (WallBuilder "horizontal wall") ──────────────
+      // Ports the town-path-preview tool's "wall-generated surface" technique:
+      // WallBuilder normally stands its recipe's brick lattice up along a
+      // vertical quad (see panelCorners() in WallBuilder.js — width along local
+      // +X, height along local +Y). Passing an explicit `corners` array bypasses
+      // that vertical-quad derivation entirely, so 4 corners that all share one
+      // Y instead describe a FLAT quad lying in the XZ plane — build()'s own
+      // quadBasis() then derives a +Y-ish normal and u/v axes from those corners
+      // with no other change needed, so the exact same brick-placement math
+      // (generateWallMatricesFromRecipe, which only ever reasons in the panel's
+      // own local width×height grid) ends up laying bricks down flat instead of
+      // upright.
+      //
+      // Paving the whole spline corridor in one WallBuilder panel is fine for a
+      // town-sized route but doesn't scale to a long wilderness road — bricks
+      // are real InstancedMesh geometry, not a cheap flat texture, so it's kept
+      // as a streaming window instead: only the corridor inside a radius around
+      // the player is ever built, rebuilt only when the player has actually
+      // moved far enough to matter (see updatePathBrickStreaming). The one-time
+      // spline math (route selection, Catmull-Rom sampling, corridor test) is
+      // prepared once per zone by preparePathSplineData and reused by every
+      // rebuild — only the small per-rebuild window panel is regenerated.
+      const PATH_BRICK_RADIUS = 16;      // world units (≈ tiles) around the player kept paved
+      const PATH_BRICK_REBUILD_STEP = 6; // rebuild once the player has moved this far from the last build center
+      function _routeCurvePoints(route) {
+        const pts = (route.nodes || [])
+          .map(n => new THREE.Vector3(Number(n[0]) + 0.5, 0, Number(n[1]) + 0.5))
+          .filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
+        if (pts.length < 2) return [];
+        if (pts.length === 2) {
+          const out = [];
+          for (let i = 0; i <= 24; i++) out.push(pts[0].clone().lerp(pts[1], i / 24));
+          return out;
+        }
+        const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.45);
+        return curve.getPoints(Math.max(32, (pts.length - 1) * 28));
+      }
+      function _segDistSq(px, pz, a, b) {
+        const vx = b.x - a.x, vz = b.z - a.z, wx = px - a.x, wz = pz - a.z, c1 = vx * wx + vz * wz;
+        if (c1 <= 0) return wx * wx + wz * wz;
+        const c2 = vx * vx + vz * vz;
+        if (c2 <= c1) { const dx = px - b.x, dz = pz - b.z; return dx * dx + dz * dz; }
+        const t = c1 / c2, dx = px - (a.x + t * vx), dz = pz - (a.z + t * vz);
+        return dx * dx + dz * dz;
+      }
+      // One-time (per zone) spline prep: picks which route(s) to pave and bakes
+      // their sampled centerlines + a corridor containment test + the overall
+      // bounding box, all reused by every streamed rebuild below.
+      function preparePathSplineData(srcGrid, gcols, grows, routes) {
+        const width = 3.25, tol = 0.05; // matches the preview tool's exported path.pathWidth/edgeTolerance
+        const pathTiles = new Set();
+        for (let r = 0; r < grows; r++) for (let c = 0; c < gcols; c++)
+          if (srcGrid[r]?.[c]?.type === TileType.PATH) pathTiles.add(c + ',' + r);
+        if (!pathTiles.size) return null;
+
+        // Auto-pick whichever route(s) actually overlap the painted path tiles
+        // (same scoring as the preview's selectedRoutes/routeOverlapScore) —
+        // a route authored for something else (an NPC patrol, say) that
+        // happens to share the map shouldn't also get paved.
+        function pointNearPaintedPath(c, r, rad) {
+          for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++)
+            if (pathTiles.has((Math.floor(c) + dc) + ',' + (Math.floor(r) + dr))) return true;
+          return false;
+        }
+        const candidates = (routes || []).filter(r => Array.isArray(r.nodes) && r.nodes.length >= 2);
+        const scored = candidates.map(r => {
+          const nodes = r.nodes || [];
+          let hit = 0;
+          for (const n of nodes) if (Array.isArray(n) && pointNearPaintedPath(Number(n[0]) + 0.5, Number(n[1]) + 0.5, 2)) hit++;
+          return [r, nodes.length ? hit / nodes.length : 0];
+        }).sort((a, b) => b[1] - a[1]);
+        const good = scored.filter(x => x[1] >= 0.45).map(x => x[0]);
+        const selected = good.length ? good : (scored.length ? [scored[0][0]] : []);
+        if (!selected.length) return null;
+
+        const samples = selected.map(_routeCurvePoints).filter(s => s.length >= 2);
+        if (!samples.length) return null;
+
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (const arr of samples) for (const p of arr) {
+          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+          minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+        }
+        const margin = width / 2 + 0.8;
+        minX -= margin; maxX += margin; minZ -= margin; maxZ += margin;
+
+        const rr = (width / 2 + tol) * (width / 2 + tol);
+        function containsPoint(x, z) {
+          for (const arr of samples) for (let i = 0; i < arr.length - 1; i++)
+            if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
+          return false;
+        }
+        return { samples, containsPoint, bounds: { minX, maxX, minZ, maxZ } };
+      }
+      // Builds one WallBuilder panel covering just the intersection of a
+      // player-centered square (±radius) and the spline's own bounding box,
+      // then prunes instances outside the actual corridor exactly like the
+      // full-corridor version used to (see preparePathSplineData.containsPoint).
+      // Returns null if that window doesn't overlap the corridor at all.
+      function buildPathBrickChunk(splineData, cx, cz, radius) {
+        const b = splineData.bounds;
+        const minX = Math.max(b.minX, cx - radius), maxX = Math.min(b.maxX, cx + radius);
+        const minZ = Math.max(b.minZ, cz - radius), maxZ = Math.min(b.maxZ, cz + radius);
+        if (maxX <= minX || maxZ <= minZ) return null;
+
+        const y = NORMAL_TOP + 0.01; // small lift above the flat path/grass mesh beneath, avoids z-fighting
+        const w = Math.max(0.01, maxX - minX), d = Math.max(0.01, maxZ - minZ);
+        const panel = {
+          id: 'path_surface_chunk', width: w, height: d, wallRecipeId: PATH_SURFACE_RECIPE_ID,
+          position: [(minX + maxX) / 2, y, (minZ + maxZ) / 2], rotationDeg: [0, 0, 0],
+          corners: [[minX, y, maxZ], [maxX, y, maxZ], [maxX, y, minZ], [minX, y, minZ]],
+        };
+        const opts = {
+          usePlaceholder: true, unitMult: 0.55, densityMult: 1, rockScale: 1.15,
+          preScale: [1, 1, 0.32], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
+        };
+        const group = pathWallBuilder.build([panel], opts);
+        group.name = 'PathBrickSurfaceChunk';
+
+        const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+        let anyKept = false;
+        group.traverse(o => {
+          if (!o.isInstancedMesh) return;
+          const n = o.count;
+          let kept = 0;
+          for (let i = 0; i < n; i++) {
+            o.getMatrixAt(i, m);
+            m.decompose(p, q, s);
+            if (!splineData.containsPoint(p.x, p.z)) continue;
+            if (kept !== i) o.setMatrixAt(kept, m);
+            kept++;
+          }
+          o.count = kept;
+          o.instanceMatrix.needsUpdate = true;
+          o.castShadow = true;
+          o.receiveShadow = true;
+          if (kept) anyKept = true;
+        });
+        if (!anyKept) { WallBuilder.disposeGroup(group); return null; }
+        return group;
+      }
+      // Per-zone streaming state: { splineData, scene, group, centerX, centerZ }.
+      // Keyed by mapId so town and (later) wilderness zones can each keep their
+      // own independent streamed window without fighting over one slot.
+      const _pathBrickStreams = new Map();
+      function registerPathBrickStream(mapId, scene, splineData) {
+        _pathBrickStreams.set(mapId, { splineData, scene, group: null, centerX: null, centerZ: null });
+      }
+      // Called from the throttled tick below for whichever zone is currently
+      // active — rebuilds the streamed chunk only once the player has moved
+      // PATH_BRICK_REBUILD_STEP world units from wherever it was last built.
+      function updatePathBrickStreaming(mapId, worldX, worldZ) {
+        const st = _pathBrickStreams.get(mapId);
+        if (!st) return;
+        if (st.centerX !== null) {
+          const dx = worldX - st.centerX, dz = worldZ - st.centerZ;
+          if (dx * dx + dz * dz < PATH_BRICK_REBUILD_STEP * PATH_BRICK_REBUILD_STEP) return;
+        }
+        st.centerX = worldX; st.centerZ = worldZ;
+        const nextGroup = buildPathBrickChunk(st.splineData, worldX, worldZ, PATH_BRICK_RADIUS);
+        if (st.group) { st.scene.remove(st.group); WallBuilder.disposeGroup(st.group); }
+        st.group = nextGroup;
+        if (nextGroup) st.scene.add(nextGroup);
       }
 
       // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
@@ -17274,6 +17478,7 @@
       const fpsCounterEl = document.getElementById('fpsCounter');
       let _fpsFrames = 0, _fpsAccum = 0;
       let _minimapRedrawAccum = 0;
+      let _pathBrickStreamAccum = 0;
 
       buildTileMeshes();
 
@@ -17644,6 +17849,17 @@
         if (_minimapRedrawAccum >= 0.3) {
           _minimapRedrawAccum = 0;
           window.WildernessMap.renderMinimap();
+        }
+
+        // Streamed path-brick surface — only rebuilds the small window around
+        // the player (see updatePathBrickStreaming), so this throttle just
+        // keeps the cheap "has the player moved?" distance check from running
+        // every single frame; the expensive rebuild itself is separately
+        // gated on that check actually tripping.
+        _pathBrickStreamAccum += dt;
+        if (_pathBrickStreamAccum >= 0.5) {
+          _pathBrickStreamAccum = 0;
+          if (_pathBrickStreams.size) updatePathBrickStreaming(currentArea, player.x / TILE, player.y / TILE);
         }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
