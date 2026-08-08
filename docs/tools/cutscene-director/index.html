@@ -1584,7 +1584,16 @@
     if (!three || !window.WallBuilder) return null;
     if (three.wallBuilder) return three.wallBuilder;
     const wb = new WallBuilder({ glbBasePath: ASSET_BASE + "assets/models/" });
-    try { await wb.loadDefaultGlb(); } catch (e) { wb.ensurePlaceholderGlb(); }
+    // Awaited alongside the brick GLB (not just fire-and-forget) since every
+    // caller here awaits ensureWallBuilder() before building geometry — so
+    // roof faces get the real shingle GLB on first render instead of
+    // HousePieceGen's tube-repeater fallback. Without this,
+    // HousePieceGen.loadShingleGlb() is never called at all and every
+    // building's roof stays tubes forever, same bug the Map Editor had.
+    await Promise.all([
+      wb.loadDefaultGlb().catch(() => wb.ensurePlaceholderGlb()),
+      (window.HousePieceGen?.loadShingleGlb ? window.HousePieceGen.loadShingleGlb(ASSET_BASE + "assets/models/") : Promise.resolve()).catch(() => {}),
+    ]);
     three.wallBuilder = wb;
     return wb;
   }

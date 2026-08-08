@@ -189,12 +189,16 @@
   // Flat box panels — last-resort fallback when neither WallBuilder nor a
   // wallStyle-specific builder is available (e.g. WallBuilder.js failed to
   // load). Not part of any in-game visual, purely an editor safety net.
+  // BoxGeometry is center-anchored but panel.position is floor-referenced
+  // (same bottom-anchored convention as WallBuilder's panelCorners, y=0 at
+  // the floor) — offset by height/2 so the box actually spans [0, height]
+  // instead of floating half its own height above the floor.
   function buildFallbackBoxWalls(THREE, wallPanels, color) {
     const g = new THREE.Group();
     const mat = new THREE.MeshLambertMaterial({ color: color ?? 0x8a6a4a });
     wallPanels.forEach(p => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(p.width, p.height, 0.18), mat);
-      m.position.set(p.position[0], p.position[1], p.position[2]);
+      m.position.set(p.position[0], p.position[1] + p.height / 2, p.position[2]);
       const rd = p.rotationDeg || [0, 0, 0];
       m.rotation.set(THREE.MathUtils.degToRad(rd[0] || 0), THREE.MathUtils.degToRad(rd[1] || 0), THREE.MathUtils.degToRad(rd[2] || 0));
       g.add(m);

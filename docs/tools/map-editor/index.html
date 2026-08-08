@@ -3372,10 +3372,30 @@ function addPlaceholderBuildingBox(group, merged, b) {
 const _MAP_EDITOR_WB_DEFAULTS = { unitMult: 0.4375, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
 let _mapEditorWallBuilder = null;
 function ensureMapEditorWallBuilder() {
-  if (_mapEditorWallBuilder || typeof WallBuilder === 'undefined') return _mapEditorWallBuilder;
-  _mapEditorWallBuilder = new WallBuilder({ glbBasePath: '../../assets/models/' });
-  _mapEditorWallBuilder.loadDefaultGlb().catch(() => _mapEditorWallBuilder.ensurePlaceholderGlb());
+  if (!_mapEditorWallBuilder && typeof WallBuilder !== 'undefined') {
+    _mapEditorWallBuilder = new WallBuilder({ glbBasePath: '../../assets/models/' });
+  }
   return _mapEditorWallBuilder;
+}
+
+// Kicks off the real brick GLB + shingle GLB loads (both render as
+// placeholder-box/tube-repeater stand-ins until ready) and, once both
+// resolve, triggers one more rebuild so already-placed buildings upgrade in
+// place — same two-phase load docs/game.js's spawnTownBuildings/
+// spawnZoneBuildings and Cutscene Director's ensureWallBuilder use. Without
+// this, roof faces never get past HousePieceGen's tube-repeater fallback
+// since nothing ever calls HousePieceGen.loadShingleGlb().
+let _mapEditorAssetsUpgradePending = false;
+function ensureMapEditorAssetsUpgrade(wb) {
+  if (_mapEditorAssetsUpgradePending) return;
+  _mapEditorAssetsUpgradePending = true;
+  Promise.all([
+    wb ? wb.loadDefaultGlb().catch(() => wb.ensurePlaceholderGlb()) : Promise.resolve(),
+    (typeof HousePieceGen !== 'undefined' && HousePieceGen.loadShingleGlb) ? HousePieceGen.loadShingleGlb('../../assets/models/').catch(() => {}) : Promise.resolve(),
+  ]).then(() => {
+    _mapEditorAssetsUpgradePending = false;
+    schedule3DRebuild();
+  });
 }
 
 // Fetches each placed building's piece JSON then builds real Highland house
@@ -3393,6 +3413,7 @@ function spawnPreviewBuildings(group, merged, myGen) {
     return;
   }
   const wb = ensureMapEditorWallBuilder();
+  ensureMapEditorAssetsUpgrade(wb);
   Promise.all(buildings.map(b => {
     if (!b.pieceFile) return Promise.resolve({ b, piece: null });
     return fetch('../../' + b.pieceFile).then(r => r.json()).then(piece => ({ b, piece })).catch(() => ({ b, piece: null }));
