@@ -14007,14 +14007,27 @@
       // tileSize here just scales texture.repeat instead; that also means
       // the exact same merged geometry keeps working if the override's
       // tileSize is ever changed, no geometry rebuild required.
-      function loadTerrainTileTexture(path, fallbackColor, tileSize) {
+      // fillColor, when given, recolors the PNG's visible pixels to that
+      // target hex using the same adaptive luminance-preserving shade fill
+      // as portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
+      // loaded before this file) — keeps the texture's own shading/grain
+      // instead of showing the raw PNG albedo untouched.
+      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor) {
         const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
         const mat = new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
         new THREE.TextureLoader().load(path, (tex) => {
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
           const ts = Math.max(0.05, tileSize || 1);
-          tex.repeat.set(1 / ts, 1 / ts);
-          mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+          let finalTex = tex;
+          const rgb = fillColor && parseHexColor(fillColor);
+          if (rgb) {
+            const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
+              mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
+            });
+            finalTex = new THREE.CanvasTexture(canvas);
+          }
+          finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+          finalTex.repeat.set(1 / ts, 1 / ts);
+          mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
         }, undefined, () => {});
         return mat;
       }
@@ -14027,7 +14040,7 @@
         const cacheKey = mapId + ',' + matKey;
         let mat = _mapTileMatCache.get(cacheKey);
         if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize);
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor);
           _mapTileMatCache.set(cacheKey, mat);
         }
         return mat;
