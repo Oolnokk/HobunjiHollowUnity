@@ -24,12 +24,15 @@
 .dNodeType{font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;padding:2px 5px;border-radius:4px}
 .type-text{background:rgba(106,167,255,.18);color:var(--accent)}
 .type-choice{background:rgba(245,191,75,.18);color:var(--warn)}
+.type-accessShop{background:rgba(67,214,161,.16);color:var(--good)}
 .type-end{background:rgba(255,123,147,.15);color:var(--bad)}
 .type-sequence{background:rgba(54,216,207,.16);color:var(--seq)}
 .entryTag{font-size:8px;color:var(--good);border:1px solid rgba(67,214,161,.32);background:rgba(67,214,161,.1);border-radius:4px;padding:1px 4px}
 .dNodeId{flex:1;min-width:0;font:8px ui-monospace,Menlo,monospace;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dNodeBody{padding:8px 9px;font-size:10px;line-height:1.35;color:var(--text)}
 .dNodeText.empty{color:var(--muted);font-style:italic}
+.accessShopSummary{color:var(--good)}
+.accessShopSummary b{color:var(--text)}
 .dChoice{display:flex;align-items:flex-start;gap:5px;padding:3px 4px;border-bottom:1px solid color-mix(in srgb,var(--split-color,var(--line)) 24%,transparent);border-left:3px solid var(--split-color,var(--line));background:linear-gradient(90deg,color-mix(in srgb,var(--split-color,var(--accent)) 10%,transparent),transparent)}
 .dChoice:last-child{border-bottom:none}
 .dChoiceLabel{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;color:var(--split-color,var(--text));font-weight:720}

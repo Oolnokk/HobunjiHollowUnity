@@ -1,10 +1,14 @@
 {
   "schema": "hobunji_shop_stock.v1",
-  "note": "Single source of truth for every shop's stock — replaces the old hand-wired GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/BARN_TIERS/Jubmir constants and generalizes WARES_POOLS. Authored via docs/tools/loot-shop-editor/. Read by docs/game.js's loadLootShopConfig(). Conditions use the shared docs/js/condition-registry.js schema (weekdays/seasons/weather/timesOfDay/maps/playerSpecies only — shop stock has no NPC-relationship/dialogue-encounter/station concept).",
+  "note": "Single source of truth for every shop's stock — replaces the old hand-wired GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/BARN_TIERS/Jubmir constants and generalizes WARES_POOLS. Authored via docs/tools/loot-shop-editor/. Read by docs/game.js's loadLootShopConfig(). Conditions use the shared docs/js/condition-registry.js schema (weekdays/seasons/weather/timesOfDay/maps/playerSpecies only — shop stock has no NPC-relationship/dialogue-encounter/station concept). dialogueAccess identifies the NPCs who can sell each pool and the business maps where a Shop or Chat dialogue tree should be available; roaming sellers intentionally omit businessMaps.",
   "shops": {
     "generalStoreWares": {
       "label": "Funji & Son's General Store",
       "menuId": "generalStore",
+      "dialogueAccess": {
+        "sellerIds": ["furunji_funji", "foroji_funji"],
+        "businessMaps": ["map_i_general_store"]
+      },
       "goods": [
         { "key": "mulchBag",     "icon": "🍂", "name": "Mulch Bag",       "desc": "Boosts soil recovery and clears weeds.",       "price": 3,  "gives": { "mulch": 5 }, "conditions": {} }
       ],
@@ -25,6 +29,10 @@
     "carpenterBarnPlans": {
       "label": "Dzibim Khibu's Carpentry",
       "menuId": "carpenterShop",
+      "dialogueAccess": {
+        "sellerIds": ["dzibim_khibu"],
+        "businessMaps": ["map_i_carpenters"]
+      },
       "tiers": {
         "small":  { "label": "Little Barn", "slots": 4,  "price": 500,  "planItem": "barnPlanSmall",  "conditions": {} },
         "medium": { "label": "Medium Barn",  "slots": 8,  "price": 1000, "planItem": "barnPlanMedium", "conditions": {} },
@@ -34,6 +42,11 @@
     "jubmirWares": {
       "label": "Jubmir's Wares",
       "menuId": "jubmirShop",
+      "dialogueAccess": {
+        "sellerIds": ["jubmir"],
+        "businessMaps": [],
+        "roaming": true
+      },
       "goods": [
         {
           "key": "dabinggiHoundEgg", "icon": "🥚", "name": "Dabinggi-hound Egg",

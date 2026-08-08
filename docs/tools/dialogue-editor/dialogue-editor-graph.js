@@ -83,6 +83,7 @@ function layoutGraph(tree){
 function estimateLines(text,charsPerLine){return Math.max(1,String(text||'').split(/\n/).reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/charsPerLine)),0))}
 function nodeHeight(n,density,nodeW){
   const chars=Math.max(18,Math.floor((nodeW-28)/6.3));
+  if(nodeDisplayType(n)==='accessShop')return density==='compact'?62:72;
   if(n.type==='choice'){
     const rows=n.choices?.length?n.choices:[{label:'No choices'}];
     return 25+5+rows.reduce((sum,c)=>sum+Math.max(21,estimateLines(c.label||'Empty choice',chars-8)*14+6),0);
@@ -108,18 +109,22 @@ function renderGraph(){
 }
 function renderNode(n,p,tree,colorIndex=0,isRelated=false,allColorIndexes=new Map()){
   if(!p)return'';const density=state.settings.nodeDensity;let body='';
+  const displayType=nodeDisplayType(n); // Used to render editor-only macro nodes distinctly while preserving their runtime node type.
   const targetColor=targetId=>state.settings.colorCodeNodes&&targetId&&allColorIndexes.has(targetId)?branchColor(allColorIndexes.get(targetId)):'var(--muted)';
-  if(n.type==='choice')body=(n.choices||[]).map((c,i)=>`<div class="dChoice" data-choice-row="${i}" style="--split-color:${targetColor(c.next)}"><span class="dChoiceLabel">${esc(c.label||'Empty choice')}</span><span class="dChoiceTarget">${esc(c.next||'END')}</span></div>`).join('')||'<div class="dNodeText empty">No choices</div>';
+  if(displayType==='accessShop'){
+    const shop=shopRegistryEntry(accessShopPool(n)); // Used to show the selected wares pool instead of the macro node's fallback choice internals.
+    body=`<div class="dNodeText accessShopSummary">Open <b>${esc(shop?.label||accessShopPool(n))}</b></div>`;
+  }else if(n.type==='choice')body=(n.choices||[]).map((c,i)=>`<div class="dChoice" data-choice-row="${i}" style="--split-color:${targetColor(c.next)}"><span class="dChoiceLabel">${esc(c.label||'Empty choice')}</span><span class="dChoiceTarget">${esc(c.next||'END')}</span></div>`).join('')||'<div class="dNodeText empty">No choices</div>';
   else if(n.type==='sequence')body=`<div class="dSeq">${(n.slots||[]).slice(0,6).map((s,i)=>`<div class="dSeqRow" style="--split-color:${targetColor(s.nodeId)}"><b>${i+1}.</b><span>${esc(s.nodeId||'unset')} · depth ${s.depth??0}</span></div>`).join('')||'<span class="dNodeText empty">No slots</span>'}</div>`;
   else if(n.type==='end')body='<div class="dNodeText empty">— end of conversation —</div>';
   else body=`<div class="dNodeText${n.text?'':' empty'}">${esc(n.text||'No text')}</div>`;
-  const splitter=n.type==='choice'||n.type==='sequence';const selected=state.nodeId===n.id;
-  return `<div class="dNode ${density}${splitter?' splitter':''}${tree.entryNode===n.id?' entry':''}${selected?' selected':''}${isRelated?' related':''}" data-node-id="${esc(n.id)}" style="--node-accent:${state.settings.colorCodeNodes?branchColor(colorIndex):'var(--accent)'};left:${p.x}px;top:${p.y}px;width:${p.w}px;min-height:${p.h}px"><div class="dNodeHead"><span class="dNodeType type-${esc(n.type)}">${esc(n.type)}</span>${tree.entryNode===n.id?'<span class="entryTag">entry</span>':''}<span class="dNodeId">${esc(n.id)}</span></div><div class="dNodeBody">${body}</div></div>`;
+  const splitter=displayType==='choice'||displayType==='sequence';const selected=state.nodeId===n.id;
+  return `<div class="dNode ${density}${splitter?' splitter':''}${tree.entryNode===n.id?' entry':''}${selected?' selected':''}${isRelated?' related':''}" data-node-id="${esc(n.id)}" style="--node-accent:${state.settings.colorCodeNodes?branchColor(colorIndex):'var(--accent)'};left:${p.x}px;top:${p.y}px;width:${p.w}px;min-height:${p.h}px"><div class="dNodeHead"><span class="dNodeType type-${esc(displayType)}">${esc(displayType==='accessShop'?'access shop':displayType)}</span>${tree.entryNode===n.id?'<span class="entryTag">entry</span>':''}<span class="dNodeId">${esc(n.id)}</span></div><div class="dNodeBody">${body}</div></div>`;
 }
-function nodeTargetOptions(tree,current){return `<option value="">— END —</option>`+(tree.nodes||[]).map(n=>`<option value="${esc(n.id)}"${n.id===current?' selected':''}>${esc(n.id)} · ${esc(n.type)}</option>`).join('')}
+function nodeTargetOptions(tree,current){return `<option value="">— END —</option>`+(tree.nodes||[]).map(n=>`<option value="${esc(n.id)}"${n.id===current?' selected':''}>${esc(n.id)} · ${esc(nodeDisplayType(n))}</option>`).join('')}
 function selectNode(id){state.nodeId=id;state.editorMode='node';renderGraph();syncAuthoringButtons();logEvent('Selected node',id)}
 function updateVisibleNodeText(nodeId,text,selector){const el=document.querySelector(`.dNode[data-node-id="${cssEscape(nodeId)}"] ${selector}`);if(el){el.textContent=text||'No text';el.classList.toggle('empty',!text)}}
-function nodeTargetOptions(tree,current,excludeId=null){return `<option value="">— END —</option>`+(tree.nodes||[]).filter(n=>n.id!==excludeId).map(n=>`<option value="${esc(n.id)}"${n.id===current?' selected':''}>${esc(n.id)} · ${esc(n.type)}</option>`).join('')}
+function nodeTargetOptions(tree,current,excludeId=null){return `<option value="">— END —</option>`+(tree.nodes||[]).filter(n=>n.id!==excludeId).map(n=>`<option value="${esc(n.id)}"${n.id===current?' selected':''}>${esc(n.id)} · ${esc(nodeDisplayType(n))}</option>`).join('')}
 function insertAtCursor(textarea,value){const start=textarea.selectionStart??textarea.value.length,end=textarea.selectionEnd??textarea.value.length;textarea.value=textarea.value.slice(0,start)+value+textarea.value.slice(end);textarea.selectionStart=textarea.selectionEnd=start+value.length;textarea.dispatchEvent(new Event('input',{bubbles:true}));textarea.focus()}
 function buildTokenButtonsHtml(){const builtin=BUILT_IN_TOKENS.map(([token,hint])=>`<button type="button" class="tokenBtn" data-token="${esc(token)}" title="${esc(hint)}">${esc(token.replace(/[{}]/g,''))}</button>`).join('');const pools=(currentNpc()?.phrasePools||[]).map(p=>`<button type="button" class="tokenBtn poolTokenBtn" data-token="{{pool:${esc(p.name)}}}" title="Phrase pool: ${esc(p.name)}">pool: ${esc(p.name)}</button>`).join('');return builtin+pools}
 function wireTokenButtons(textarea,scope){scope.querySelectorAll('[data-token]').forEach(btn=>btn.addEventListener('click',()=>insertAtCursor(textarea,btn.dataset.token)))}

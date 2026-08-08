@@ -39,7 +39,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cae
 #historyLabel{max-width:170px;overflow:hidden;text-overflow:ellipsis}
 
 #body{flex:1;min-height:0;display:flex;position:relative}
-#controlPanel{width:var(--control-w);min-width:270px;max-width:42vw;display:flex;flex-direction:column;border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));z-index:12}
+#controlPanel{position:absolute;inset:0 auto 0 0;width:var(--control-w);min-width:270px;max-width:42vw;display:flex;flex-direction:column;border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));z-index:12;transform:translateX(-102%);transition:transform .18s ease;box-shadow:14px 0 36px rgba(0,0,0,.55)}
+#controlPanel.open{transform:translateX(0)}
 .panelHead{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.08);font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:800}
 #controlScroll{padding:10px;overflow:auto;overscroll-behavior:contain}
 .controlSection{border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.025);border-radius:12px;margin-bottom:9px;overflow:hidden}
