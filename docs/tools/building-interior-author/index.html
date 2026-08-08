@@ -69,6 +69,13 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
       <div class="grid2">
         <div class="field"><label>Map ID</label><input id="mapId" value="map_i_building_01"></div>
         <div class="field"><label>Display name</label><input id="mapName" value="Building Interior"></div>
+        <div class="field"><label>Wall style</label>
+          <select id="wallStyle">
+            <option value="">Brick (default)</option>
+            <option value="cavern">Cavern (rock — dens)</option>
+            <option value="canvas">Canvas (tent cloth)</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -236,6 +243,8 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
+<script src="../../js/terrain-preview.js"></script>
+<script src="../../js/interior-scene-builder.js"></script>
 <script src="../../js/procedural-furniture.js"></script>
 
 <script>
@@ -836,9 +845,17 @@ scene3.add(new THREE.AmbientLight(0xb0c8e8,0.65));
 var dirL=new THREE.DirectionalLight(0xfff8e0,0.9); dirL.position.set(5,8,4); scene3.add(dirL);
 var fillL=new THREE.DirectionalLight(0x6080a0,0.3); fillL.position.set(-4,2,-3); scene3.add(fillL);
 
-var floorMat=new THREE.MeshLambertMaterial({color:0x3d2a18});
+// wallStyle-aware floor material (boards.png plank texture by default, flat
+// cavern/canvas colors otherwise) — matches docs/game.js's loadBuildingScene
+// exactly via the shared InteriorSceneBuilder module. Cached per wallStyle so
+// a rebuild3D() on every keystroke doesn't refetch the texture each time.
+var _floorMatCache = {};
+function resolveFloorMat(wallStyle){
+  var key = wallStyle || '';
+  if (!_floorMatCache[key]) _floorMatCache[key] = InteriorSceneBuilder.buildFloorMaterial(THREE, wallStyle, '../../assets/');
+  return _floorMatCache[key];
+}
 var exitMat =new THREE.MeshLambertMaterial({color:0xd08020});
-var wallFbkMat=new THREE.MeshLambertMaterial({color:0x8b7055});
 
 var WALL_H=1.75;
 var furnMeshes={};
@@ -882,62 +899,15 @@ function furnGroupFor(f){
   return grp;
 }
 
-// ─── Wall panel generation from irregular footprint ──────────────────────────
-function mergeH(segs){
-  if(!segs.length) return [];
-  segs.sort(function(a,b){return a.x0-b.x0;});
-  var out=[{x0:segs[0].x0,x1:segs[0].x1}];
-  for(var i=1;i<segs.length;i++){
-    var L=out[out.length-1];
-    if(segs[i].x0<=L.x1) L.x1=Math.max(L.x1,segs[i].x1); else out.push({x0:segs[i].x0,x1:segs[i].x1});
-  }
-  return out;
-}
-function mergeV(segs){
-  if(!segs.length) return [];
-  segs.sort(function(a,b){return a.z0-b.z0;});
-  var out=[{z0:segs[0].z0,z1:segs[0].z1}];
-  for(var i=1;i<segs.length;i++){
-    var L=out[out.length-1];
-    if(segs[i].z0<=L.z1) L.z1=Math.max(L.z1,segs[i].z1); else out.push({z0:segs[i].z0,z1:segs[i].z1});
-  }
-  return out;
-}
-
-function buildWallPanels(floorSet, exits){
-  var exitTileSet=new Set();
-  (exits||[]).forEach(function(ez){ (ez.tiles||[]).forEach(function(p){ exitTileSet.add(p[0]+','+p[1]); }); });
-
-  var nMap={}, sMap={}, eMap={}, wMap={};
-  function push(map,k,seg){ if(!map[k]) map[k]=[]; map[k].push(seg); }
-
-  floorSet.forEach(function(key){
-    var p=key.split(','), c=+p[0], r=+p[1];
-    var isExit=exitTileSet.has(key);
-    if(!floorSet.has(c+','+(r-1)) && !isExit) push(nMap,r,    {x0:c,x1:c+1});
-    if(!floorSet.has(c+','+(r+1)) && !isExit) push(sMap,r+1,  {x0:c,x1:c+1});
-    if(!floorSet.has((c+1)+','+r) && !isExit) push(eMap,c+1,  {z0:r,z1:r+1});
-    if(!floorSet.has((c-1)+','+r) && !isExit) push(wMap,c,    {z0:r,z1:r+1});
-  });
-
-  var panels=[], H=WALL_H;
-  Object.keys(nMap).forEach(function(z){ mergeH(nMap[z]).forEach(function(m){ var w=m.x1-m.x0,cx=(m.x0+m.x1)/2; panels.push({width:w,height:H,position:[cx,H/2,+z],rotationDeg:[0,0,0]}); }); });
-  Object.keys(sMap).forEach(function(z){ mergeH(sMap[z]).forEach(function(m){ var w=m.x1-m.x0,cx=(m.x0+m.x1)/2; panels.push({width:w,height:H,position:[cx,H/2,+z],rotationDeg:[0,180,0]}); }); });
-  Object.keys(eMap).forEach(function(x){ mergeV(eMap[x]).forEach(function(m){ var d=m.z1-m.z0,cz=(m.z0+m.z1)/2; panels.push({width:d,height:H,position:[+x,H/2,cz],rotationDeg:[0,-90,0]}); }); });
-  Object.keys(wMap).forEach(function(x){ mergeV(wMap[x]).forEach(function(m){ var d=m.z1-m.z0,cz=(m.z0+m.z1)/2; panels.push({width:d,height:H,position:[+x,H/2,cz],rotationDeg:[0,90,0]}); }); });
-  return panels;
-}
-
-function makeFallbackWalls(panels){
-  var g=new THREE.Group();
-  panels.forEach(function(p){
-    var m=new THREE.Mesh(new THREE.BoxGeometry(p.width,p.height,0.18),wallFbkMat);
-    m.position.set(p.position[0],p.position[1],p.position[2]);
-    m.rotation.set(p.rotationDeg[0]*Math.PI/180,p.rotationDeg[1]*Math.PI/180,p.rotationDeg[2]*Math.PI/180);
-    g.add(m);
-  });
-  return g;
-}
+// Wall panel generation from irregular footprint (run-merged N/S/E/W edge
+// segments) now lives in js/interior-scene-builder.js as
+// window.InteriorSceneBuilder — same module docs/game.js and Cutscene
+// Director use, so panel Y-positioning (floor-referenced, position.y=0 —
+// WallBuilder's panelCorners is bottom-anchored, [0,height] locally) can
+// never drift out of sync between them again. The local copy this replaced
+// used position.y=height/2 — a leftover from when only the center-anchored
+// BoxGeometry fallback existed — which floated every wall half its own
+// height above the floor once real WallBuilder brick geometry was wired in.
 
 // ─── 3D rebuild ───────────────────────────────────────────────────────────────
 function rebuild3D(){
@@ -946,10 +916,12 @@ function rebuild3D(){
   var floorSet=state.floorSet, interior=state.interior, furniture=interior.furniture;
   previewGroup=new THREE.Group();
 
-  // Floor tiles
+  // Floor tiles — wallStyle-aware material (boards.png plank texture by
+  // default, flat cavern/canvas colors otherwise), matching the real game.
+  var activeFloorMat = resolveFloorMat(interior.wallStyle);
   floorSet.forEach(function(key){
     var p=key.split(','), c=+p[0], r=+p[1];
-    var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),floorMat);
+    var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),activeFloorMat);
     fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
   });
 
@@ -978,15 +950,17 @@ function rebuild3D(){
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
   });
 
-  // Walls
-  var panels=buildWallPanels(floorSet,interior.exits);
-  if(wb && panels.length){
+  // Walls — brick (WallBuilder)/cavern (rock)/canvas (cloth), dispatched by
+  // interior.wallStyle through the shared InteriorSceneBuilder so this
+  // matches docs/game.js's loadBuildingScene exactly (a den's cavern or a
+  // tent's canvas interior no longer shows generic brick in this preview).
+  var exitTileSet=new Set();
+  (interior.exits||[]).forEach(function(ez){ (ez.tiles||[]).forEach(function(p){ exitTileSet.add(p[0]+','+p[1]); }); });
+  var panels=InteriorSceneBuilder.buildWallPanels(floorSet,exitTileSet,WALL_H);
+  if(panels.length){
     try{
-      var wbOpts={usePlaceholder:!wbReady,unitMult:0.5,rockScale:1.5,preScale:[1,1,0.6],brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03}};
-      previewGroup.add(wb.build(panels,wbOpts));
-    } catch(e){ log('WallBuilder error: '+e.message,'warn'); previewGroup.add(makeFallbackWalls(panels)); }
-  } else if(panels.length){
-    previewGroup.add(makeFallbackWalls(panels));
+      previewGroup.add(InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady}));
+    } catch(e){ log('Wall build error: '+e.message,'warn'); previewGroup.add(InteriorSceneBuilder.buildFallbackBoxWalls(THREE, panels, 0x8b7055)); }
   }
 
   // Furniture — use real GLBs if cached, placeholder boxes otherwise
@@ -1179,6 +1153,7 @@ $('undoBtn').addEventListener('click',undo);
 $('redoBtn').addEventListener('click',redo);
 $('mapId').addEventListener('change',function(){state.interior.id=$('mapId').value.trim();});
 $('mapName').addEventListener('change',function(){state.interior.name=$('mapName').value.trim();});
+$('wallStyle').addEventListener('change',function(){pushUndo(); state.interior.wallStyle=$('wallStyle').value||undefined; rebuild3D(); refreshExport();});
 
 // ─── afterLoad ────────────────────────────────────────────────────────────────
 function afterLoad(){
@@ -1199,6 +1174,7 @@ function afterLoad(){
     }
   });
   $('mapId').value=i.id||''; $('mapName').value=i.name||'';
+  $('wallStyle').value=i.wallStyle||'';
   $('gridCols').value=i.cols||12; $('gridRows').value=i.rows||10;
   state.activeExitId=null; state.activeVendorId=null;
   $('exitZoneFields').classList.add('hidden'); $('vendorZoneFields').classList.add('hidden');

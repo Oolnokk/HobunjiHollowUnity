@@ -8572,162 +8572,12 @@
         splitV('we', cols, [0, -90,  0], 'E');
         return panels;
       }
-      function buildWallPanelsFromFloorSet(floorSet, exitTileSet, wallHeight) {
-        const nMap = {}, sMap = {}, eMap = {}, wMap = {};
-        function pushH(map, key, x0, x1) { if (!map[key]) map[key] = []; map[key].push({ x0, x1 }); }
-        function pushV(map, key, z0, z1) { if (!map[key]) map[key] = []; map[key].push({ z0, z1 }); }
-        function mergeH(segs) {
-          segs.sort((a, b) => a.x0 - b.x0);
-          const out = [];
-          for (const s of segs) {
-            if (out.length && out[out.length - 1].x1 >= s.x0) out[out.length - 1].x1 = Math.max(out[out.length - 1].x1, s.x1);
-            else out.push({ x0: s.x0, x1: s.x1 });
-          }
-          return out;
-        }
-        function mergeV(segs) {
-          segs.sort((a, b) => a.z0 - b.z0);
-          const out = [];
-          for (const s of segs) {
-            if (out.length && out[out.length - 1].z1 >= s.z0) out[out.length - 1].z1 = Math.max(out[out.length - 1].z1, s.z1);
-            else out.push({ z0: s.z0, z1: s.z1 });
-          }
-          return out;
-        }
-        for (const key of floorSet) {
-          const parts = key.split(',');
-          const c = Number(parts[0]), r = Number(parts[1]);
-          const isExit = exitTileSet.has(key);
-          if (!floorSet.has(`${c},${r - 1}`) && !isExit) pushH(nMap, r,     c, c + 1);
-          if (!floorSet.has(`${c},${r + 1}`) && !isExit) pushH(sMap, r + 1, c, c + 1);
-          if (!floorSet.has(`${c + 1},${r}`) && !isExit) pushV(eMap, c + 1, r, r + 1);
-          if (!floorSet.has(`${c - 1},${r}`) && !isExit) pushV(wMap, c,     r, r + 1);
-        }
-        const panels = [];
-        let pid = 0;
-        for (const [rStr, segs] of Object.entries(nMap)) {
-          const z = Number(rStr);
-          for (const seg of mergeH(segs)) {
-            const w = seg.x1 - seg.x0, cx = (seg.x0 + seg.x1) / 2;
-            panels.push({ id: `wn_${pid++}`, width: w, height: wallHeight, position: [cx, 0, z], rotationDeg: [0, 0, 0] });
-          }
-        }
-        for (const [rStr, segs] of Object.entries(sMap)) {
-          const z = Number(rStr);
-          for (const seg of mergeH(segs)) {
-            const w = seg.x1 - seg.x0, cx = (seg.x0 + seg.x1) / 2;
-            panels.push({ id: `ws_${pid++}`, width: w, height: wallHeight, position: [cx, 0, z], rotationDeg: [0, 180, 0] });
-          }
-        }
-        for (const [cStr, segs] of Object.entries(eMap)) {
-          const x = Number(cStr);
-          for (const seg of mergeV(segs)) {
-            const d = seg.z1 - seg.z0, cz = (seg.z0 + seg.z1) / 2;
-            panels.push({ id: `we_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, -90, 0] });
-          }
-        }
-        for (const [cStr, segs] of Object.entries(wMap)) {
-          const x = Number(cStr);
-          for (const seg of mergeV(segs)) {
-            const d = seg.z1 - seg.z0, cz = (seg.z0 + seg.z1) / 2;
-            panels.push({ id: `ww_${pid++}`, width: d, height: wallHeight, position: [x, 0, cz], rotationDeg: [0, 90, 0] });
-          }
-        }
-        return panels;
-      }
-
-      // Same corner math as WallBuilder.js's panelCorners/panelMatrix (kept
-      // duplicated rather than imported — WallBuilder's build() pipeline is
-      // built around scattering instanced brick props onto this quad, not
-      // exposing the quad itself; cavern walls need the bare quad instead).
-      function panelCornersFor(p) {
-        const w = p.width / 2, h = p.height;
-        const base = [
-          new THREE.Vector3(-w, 0, 0), new THREE.Vector3(w, 0, 0),
-          new THREE.Vector3(w, h, 0), new THREE.Vector3(-w, h, 0),
-        ];
-        const rd = p.rotationDeg || [0, 0, 0];
-        const euler = new THREE.Euler(THREE.MathUtils.degToRad(rd[0] || 0), THREE.MathUtils.degToRad(rd[1] || 0), THREE.MathUtils.degToRad(rd[2] || 0), 'XYZ');
-        const m = new THREE.Matrix4().compose(
-          new THREE.Vector3(p.position[0], p.position[1], p.position[2]),
-          new THREE.Quaternion().setFromEuler(euler),
-          new THREE.Vector3(1, 1, 1)
-        );
-        return base.map(v => v.applyMatrix4(m));
-      }
-
-      // Cavern interior walls: a solid, boulder-mound-bumped rock quad per
-      // boundary panel (buildWallPanelsFromFloorSet's own edge-detection,
-      // reused as-is) instead of houseWallBuilder's instanced-brick scatter —
-      // same buildRockMoundBumpField technique as buildAnimalDenMeshes (which
-      // in turn matches the farm's own loose rocks), so a den's cavern reads
-      // as the same rock as its mouth outside. Determinism comes for free
-      // from the panel positions themselves (derived from the den's seeded
-      // floor blob), not from any seed threaded in here.
-      function buildCavernWalls(wallPanels, wallHeight) {
-        const pos = [], idx = []; let vi = 0;
-        let panelSalt = 0;
-        for (const panel of wallPanels) {
-          const [bl, br, , tl] = panelCornersFor(panel);
-          const ux = { x: br.x - bl.x, y: br.y - bl.y, z: br.z - bl.z };
-          const vx = { x: tl.x - bl.x, y: tl.y - bl.y, z: tl.z - bl.z };
-          let nx = ux.y * vx.z - ux.z * vx.y, ny = ux.z * vx.x - ux.x * vx.z, nz = ux.x * vx.y - ux.y * vx.x;
-          const nlen = Math.hypot(nx, ny, nz) || 1; nx /= nlen; ny /= nlen; nz /= nlen;
-          const segsU = Math.max(4, Math.round(panel.width * ROCK_MOUND_CELLS_PER_TILE)), segsV = Math.max(4, Math.round(panel.height * ROCK_MOUND_CELLS_PER_TILE));
-          const bumpField = buildRockMoundBumpField(panel.width, panel.height, bl.x, bl.z, 200 + (panelSalt++));
-          const base = vi;
-          for (let j = 0; j <= segsV; j++) for (let i = 0; i <= segsU; i++) {
-            const u = i / segsU, v = j / segsV;
-            const x = bl.x + ux.x * u + vx.x * v, y = bl.y + ux.y * u + vx.y * v, z = bl.z + ux.z * u + vx.z * v;
-            const d = sampleRockMoundBump(bumpField, u, v);
-            pos.push(x + nx * d, y + ny * d, z + nz * d);
-          }
-          for (let j = 0; j < segsV; j++) for (let i = 0; i < segsU; i++) {
-            const a = base + j * (segsU + 1) + i, b = a + 1, c0 = a + (segsU + 1), d2 = c0 + 1;
-            idx.push(a, c0, d2, a, d2, b);
-          }
-          vi += (segsU + 1) * (segsV + 1);
-        }
-        const group = new THREE.Group();
-        if (!idx.length) return group;
-        const mat = new THREE.MeshLambertMaterial({ color: 0x5f5a56, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = true;
-        mesh.userData.cameraObstacle = true;
-        group.add(mesh);
-        return group;
-      }
-
-      // Flat cloth-colored wall panels for a canvas tent interior (see
-      // loadBuildingScene's mapData.wallStyle === 'canvas' handling) — same
-      // bare-quad approach as buildCavernWalls just above, minus the rock
-      // bump displacement, tinted to match the exterior tent piece's canvas
-      // material (HousePieceGen's matCanvas, 0xcbb489) instead of brick.
-      function buildCanvasWalls(wallPanels, wallHeight) {
-        const group = new THREE.Group();
-        if (!wallPanels.length) return group;
-        const mat = new THREE.MeshLambertMaterial({ color: 0xcbb489, side: THREE.DoubleSide });
-        const pos = [], idx = []; let vi = 0;
-        for (const panel of wallPanels) {
-          const [bl, br, tr, tl] = panelCornersFor(panel);
-          pos.push(bl.x, bl.y, bl.z, br.x, br.y, br.z, tr.x, tr.y, tr.z, tl.x, tl.y, tl.z);
-          idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
-          vi += 4;
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setIndex(idx);
-        geo.computeVertexNormals();
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = true;
-        mesh.userData.cameraObstacle = true;
-        group.add(mesh);
-        return group;
-      }
+      // Interior wall-panel derivation (run-merged brick/cavern/canvas quads),
+      // panel corner math, and the wallStyle-aware floor material now live in
+      // js/interior-scene-builder.js as window.InteriorSceneBuilder — shared
+      // with the Interior Editor and Cutscene Director so all three never
+      // drift out of visual sync (see loadBuildingScene below for the call
+      // sites: InteriorSceneBuilder.buildWallPanels/buildWallGroup/buildFloorMaterial).
 
       // Procedural den-cavern floor generation (generateCavernFloor/
       // pickDenMotherKind/synthesizeCavernMapData) now lives in
@@ -8816,17 +8666,7 @@
           const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
-          const floorMat = mapData.wallStyle === 'cavern'
-            ? new THREE.MeshLambertMaterial({ color: 0x4a463f }) // bare cavern dirt/stone, no plank texture
-            : mapData.wallStyle === 'canvas'
-            ? new THREE.MeshLambertMaterial({ color: 0x8a7a5c }) // packed dirt under the tent's groundsheet, no plank texture
-            : new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-          if (mapData.wallStyle !== 'cavern' && mapData.wallStyle !== 'canvas') {
-            new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
-              tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-              floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
-            }, undefined, () => {});
-          }
+          const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
           // Floor tiles only for defined floor set
           for (const [c, r] of (mapData.floor || [])) {
             const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
@@ -8838,13 +8678,9 @@
           // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
           // flat cloth-colored panels matching the exterior tent piece's
           // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
-          const wallPanels = buildWallPanelsFromFloorSet(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+          const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
           if (wallPanels.length) {
-            const wallGroup = mapData.wallStyle === 'cavern'
-              ? buildCavernWalls(wallPanels, INTERIOR_WALL_HEIGHT)
-              : mapData.wallStyle === 'canvas'
-              ? buildCanvasWalls(wallPanels, INTERIOR_WALL_HEIGHT)
-              : houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+            const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
             _markOutline(wallGroup);
             bScene.add(wallGroup);
           }

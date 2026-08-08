@@ -634,6 +634,15 @@
   //                  wbUsePlaceholder, matRoof, matFloor, matBoards, matStone, matTube)
   function buildGroupFromPiece(THREE, piece, bldgMinC, bldgMinR, opts) {
     opts = opts || {};
+    // Some piece files on disk are saved as the house editor's full export
+    // payload ({schema, currentPiece, library}, from "Download JSON"/"Copy
+    // full JSON") rather than the single flat piece object ("Copy piece"
+    // uses; see exportPiecePayload() in house-piece-author) — piece.base is
+    // undefined on the wrapper, so faces silently resolved to [] and the
+    // building built as an empty (invisible) group with no error. Unwrap
+    // once here so every caller (map editor, cutscene director, the live
+    // game's spawnTownBuildings/spawnZoneBuildings) accepts either shape.
+    if (piece && piece.currentPiece) piece = piece.currentPiece;
     var faces   = (piece.base && piece.base.faces) ? piece.base.faces : [];
     var pcells  = (piece.footprint && piece.footprint.cells) ? piece.footprint.cells : [];
     var gc      = Math.floor((piece.gridSize || 18) / 2);
