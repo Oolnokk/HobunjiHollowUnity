@@ -7538,9 +7538,20 @@
           toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
           toolAnimStyle: station.toolAnimStyle || '',
           // Multi-tile wander footprint around this station's root tile —
-          // see makeNpcWalker's _updateStationWander. 0 (the default) keeps
-          // today's behavior: an NPC freezes exactly at (c,r).
+          // see makeNpcWalker's _updateStationWander/_pickStationWanderTile.
+          // wanderMode 'radius' (default) samples a random offset within
+          // wanderRadiusTiles of (c,r); 'shape' instead picks uniformly
+          // among the hand-painted wanderShapeTiles (each a [dc,dr] offset
+          // from (c,r), authored in the Map Editor's station paint tool) —
+          // lets an author cover an irregular region a circle can't express
+          // (an L-shaped yard, a field that hugs a path, etc). Neither set
+          // (radius 0, empty shape) keeps today's behavior: an NPC freezes
+          // exactly at (c,r).
           wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
+          wanderMode: station.wanderMode === 'shape' ? 'shape' : 'radius',
+          wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
+            ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
+            : [],
         };
       }
       function registerNpcStations(stations, fallbackArea) {
@@ -8013,16 +8024,37 @@
           // tool-swing pose (see the frozen-idle branch in update()) —
           // those represent a fixed "working at this desk" pose that
           // doesn't make sense away from the authored root tile.
-          _updateStationWander(target, dt) {
+          // Picks the next wander tile: either uniformly among the
+          // hand-painted wanderShapeTiles (shuffled so a small region still
+          // gets fair coverage instead of always scanning authored order),
+          // or a random radius-bounded offset — see normalizeNpcStation's
+          // comment on wanderMode. Returns null if nothing walkable was
+          // found (empty/fully-blocked shape, or radius 0/all attempts
+          // blocked).
+          _pickStationWanderTile(target) {
+            if (target.wanderMode === 'shape' && target.wanderShapeTiles?.length) {
+              const candidates = target.wanderShapeTiles.map(([dc, dr]) => ({ c: target.c + dc, r: target.r + dr }));
+              for (let i = candidates.length - 1; i > 0; i--) {
+                const j = Math.floor(rnd() * (i + 1));
+                [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+              }
+              return candidates.find(t => isNpcTileWalkable(this.area, t.c, t.r)) || null;
+            }
             const radius = target.wanderRadiusTiles || 0;
+            if (radius <= 0) return null;
+            for (let attempt = 0; attempt < 8; attempt++) {
+              const dc = Math.round((rnd() * 2 - 1) * radius);
+              const dr = Math.round((rnd() * 2 - 1) * radius);
+              const nc = target.c + dc, nr = target.r + dr;
+              if (isNpcTileWalkable(this.area, nc, nr)) return { c: nc, r: nr };
+            }
+            return null;
+          },
+          _updateStationWander(target, dt) {
             if (this._wanderWaitT > 0) { this._wanderWaitT -= dt; return; }
             if (!this._wanderTarget) {
-              for (let attempt = 0; attempt < 8; attempt++) {
-                const dc = Math.round((rnd() * 2 - 1) * radius);
-                const dr = Math.round((rnd() * 2 - 1) * radius);
-                const nc = target.c + dc, nr = target.r + dr;
-                if (isNpcTileWalkable(this.area, nc, nr)) { this._wanderTarget = { c: nc, r: nr }; this._wanderGridPath = null; break; }
-              }
+              this._wanderTarget = this._pickStationWanderTile(target);
+              this._wanderGridPath = null;
               if (!this._wanderTarget) { this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; return; }
             }
             const cfg = npcMovementConfig();
@@ -8122,18 +8154,18 @@
             const cfg = npcMovementConfig();
             const tx = target.c + 0.5, tz = target.r + 0.5;
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
-            const wanderRadius = target.wanderRadiusTiles || 0;
+            const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
             // once entered, instead of the plain freeze-at-the-exact-tile
             // idle below — abandoned the instant the schedule moves this NPC
             // to a different target (a different station, or one with no
-            // wander radius set).
-            if (this.state === 'station-wander' && (wanderRadius <= 0 || this._stationWanderKey !== wanderKey)) {
+            // wander region set).
+            if (this.state === 'station-wander' && (!wanderEnabled || this._stationWanderKey !== wanderKey)) {
               this.state = 'idle';
               this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
             }
-            if (this.state !== 'station-wander' && wanderRadius > 0 && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+            if (this.state !== 'station-wander' && wanderEnabled && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               this.state = 'station-wander';
               this._stationWanderKey = wanderKey;
               this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
