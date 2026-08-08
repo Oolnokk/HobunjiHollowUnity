@@ -83,6 +83,108 @@
     });
   }
 
+  // Loads one database without any cross-database post-processing. Used by
+  // loadDatabase() itself so NPC/shop composition cannot recurse.
+  async function _loadRawDatabase(id) {
+    const def = dbById(id); // Used to resolve the repo path for this database id.
+    if (!def) throw new Error('Unknown database id: ' + id);
+    if (getSourceMode() === 'local') {
+      const override = getOverride(id); // Used as the opted-in local source when one exists.
+      if (override) return override;
+    }
+    const resp = await fetch(def.repoPath); // Used to fetch the repository source when no local override applies.
+    if (!resp.ok) throw new Error('Failed to fetch ' + def.repoPath + ' (' + resp.status + ')');
+    return resp.json();
+  }
+
+  function _dialogueConditionsForMaps(mapIds) {
+    return {
+      weekdays: [], seasons: [], weather: [], timesOfDay: [], encounter: [],
+      maps: Array.isArray(mapIds) ? [...mapIds] : [], stations: [], playerSpecies: [],
+      relationship: { min: null, max: null },
+    };
+  }
+
+  function _safeDialogueId(value) {
+    return String(value || 'shop').replace(/[^a-zA-Z0-9_]+/g, '_');
+  }
+
+  // Builds a runtime-compatible Shop or Chat tree. The Access Shop node is
+  // stored as a normal choice node plus editorType metadata, so old runtime
+  // builds still understand it. The parent Shop choice also carries openShop
+  // directly, making access a single click while retaining the visual graph edge.
+  function _buildShopOrChatTree(poolId, shop, sellerId) {
+    const idStem = `${_safeDialogueId(poolId)}_${_safeDialogueId(sellerId)}`; // Used to keep generated tree/node ids deterministic per seller and pool.
+    const choiceNodeId = `n_shop_or_chat_${idStem}`; // Used as the generated tree's entry choice node.
+    const accessNodeId = `n_access_shop_${idStem}`; // Used as the visible Access Shop graph node and fallback runtime target.
+    const access = shop?.dialogueAccess || {}; // Used to gate fixed shopkeepers to their business map.
+    const businessMaps = access.roaming ? [] : (access.businessMaps || []); // Used as map conditions; roaming merchants intentionally remain unrestricted.
+    return {
+      id: `tree_shop_or_chat_${idStem}`,
+      label: 'Shop or Chat',
+      trigger: 'interact',
+      priority: 50,
+      entryNode: choiceNodeId,
+      generatedFromShopAccess: true,
+      shopPool: poolId,
+      conditions: _dialogueConditionsForMaps(businessMaps),
+      excludeConditions: _dialogueConditionsForMaps([]),
+      nodes: [
+        {
+          id: choiceNodeId,
+          type: 'choice',
+          choices: [
+            {
+              label: 'Shop',
+              next: accessNodeId,
+              actions: [{ type: 'openShop', pool: poolId, sourceNodeId: accessNodeId }],
+            },
+            {
+              label: 'Chat',
+              actions: [{ type: 'startChat' }],
+            },
+          ],
+          tags: [],
+        },
+        {
+          id: accessNodeId,
+          type: 'choice',
+          editorType: 'accessShop',
+          shopPool: poolId,
+          choices: [{ label: 'Access shop', actions: [{ type: 'openShop', pool: poolId }] }],
+          tags: [],
+        },
+      ],
+    };
+  }
+
+  // Shop Stock owns the seller/pool/business relationship. Compose its
+  // deterministic authoring trees into the NPC database at load time instead
+  // of duplicating that relationship by hand in a second giant JSON file.
+  function applyShopDialogueAccess(npcDatabase, shopStock) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
+    const merged = JSON.parse(JSON.stringify(npcDatabase)); // Used as a non-mutating NPC database copy returned to the game/editor.
+    const npcById = new Map(merged.npcs.map(npc => [npc.id, npc])); // Used to resolve Shop Stock seller ids to NPC records efficiently.
+    const shops = shopStock?.shops || {}; // Used as the authoritative set of sale pools and dialogue-access metadata.
+
+    for (const [poolId, shop] of Object.entries(shops)) {
+      const access = shop?.dialogueAccess; // Used to decide whether this shop participates in NPC dialogue access.
+      if (!access || !Array.isArray(access.sellerIds)) continue;
+      if (!access.roaming && !(access.businessMaps || []).length) continue;
+      for (const sellerId of access.sellerIds) {
+        const npc = npcById.get(sellerId); // Used as the destination for this seller's generated Shop or Chat tree.
+        if (!npc) {
+          console.warn(`[LocalDBOverrides] Shop seller ${sellerId} for ${poolId} is missing from the NPC database.`);
+          continue;
+        }
+        if (!Array.isArray(npc.dialogueTrees)) npc.dialogueTrees = [];
+        const tree = _buildShopOrChatTree(poolId, shop, sellerId); // Used as the deterministic generated tree for this seller/pool pair.
+        if (!npc.dialogueTrees.some(existing => existing.id === tree.id)) npc.dialogueTrees.push(tree);
+      }
+    }
+    return merged;
+  }
+
   // What game.js/combat-config-loader.js actually call at boot in place of a
   // bare fetch(repoPath): local override wins only when the player has opted
   // into 'local' source mode AND actually saved one for this id; otherwise
@@ -90,15 +192,15 @@
   // normal fetch of the real file, so a fresh browser profile with no
   // overrides behaves identically to before this system existed.
   async function loadDatabase(id) {
-    const def = dbById(id);
-    if (!def) throw new Error('Unknown database id: ' + id);
-    if (getSourceMode() === 'local') {
-      const override = getOverride(id);
-      if (override) return override;
+    const data = await _loadRawDatabase(id); // Used as the selected raw local/repo database before optional composition.
+    if (id !== 'npcDatabase') return data;
+    try {
+      const shopStock = await _loadRawDatabase('shopStock'); // Used to compose shopkeeper access trees into the loaded NPC database.
+      return applyShopDialogueAccess(data, shopStock);
+    } catch (error) {
+      console.warn('[LocalDBOverrides] Could not compose Shop or Chat dialogue trees:', error);
+      return data;
     }
-    const resp = await fetch(def.repoPath);
-    if (!resp.ok) throw new Error('Failed to fetch ' + def.repoPath + ' (' + resp.status + ')');
-    return resp.json();
   }
 
   window.LocalDBOverrides = {
@@ -106,5 +208,6 @@
     getSourceMode, setSourceMode,
     hasOverride, getOverride, setOverride, clearOverride,
     listStatuses, loadDatabase,
+    applyShopDialogueAccess,
   };
 })();
