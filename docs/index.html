@@ -384,6 +384,13 @@
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
   <script src="js/zone-den-totem-features.js?v=20260807a"></script>
+  <!-- Wilderness-zone grass and rich-foliage-patch billboards
+       (window.ZoneGrassBillboards) — pure scene-graph generation, no
+       other window.* system reads; must load before game.js, which calls
+       window.ZoneGrassBillboards.init(...) alongside its sibling systems
+       and its build*(...) functions lazily, from buildZoneScene and
+       refreshZoneGroundVisuals, never synchronously during initial boot. -->
+  <script src="js/zone-grass-billboards.js?v=20260807a"></script>
 </head>
 <body>
   <!-- Game world -->
