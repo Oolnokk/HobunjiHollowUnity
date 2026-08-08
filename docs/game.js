@@ -6510,9 +6510,24 @@
           // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
           // don't z-fight; small enough to read as flush, not floating.
           const PATH_Z_FIGHT_LIFT = 0.004;
-          _addToBucket(TileType.PATH,  pathNet.pathGeo,  0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
+          // Regular ground (grass) covers the path's own footprint too —
+          // see the paved brick surface registered below, which is meant to
+          // simply overlay ordinary ground rather than sit on a separately-
+          // colored "path" patch (same treatment as the town path).
+          _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
           _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
         }
+
+        // Paved brick surface over this zone's path, if it has one — same
+        // technique as the town path (see "Path: paved brick surface"
+        // below): built once the shared recipe/GLB are ready, chunked and
+        // culled by camera corridor rather than tied to this zone's own
+        // scene-build timing.
+        ensurePathSurfaceReady().then(() => {
+          const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
+          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes);
+          if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
+        }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
 
         for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
           const tile = zGrid[r][c];
@@ -13975,8 +13990,19 @@
         const col = colorArg instanceof THREE.Color ? colorArg : new THREE.Color(colorArg);
         return new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
       }
+      // Unlit ground material — MeshBasicMaterial, same material family the
+      // player/NPC/animal sprite planes use (see makeSpriteMaterial in
+      // png-plane-avatar.js), so grass reads at one consistent painted
+      // brightness day or night/storm instead of dimming with ambientLight/
+      // sunLight like the rest of tileMats does. No emissive floor needed
+      // for the "black blob at night" problem floorMat's comment describes —
+      // an unlit material can't go dark in the first place.
+      function unlitFloorMat(colorArg) {
+        const col = colorArg instanceof THREE.Color ? colorArg : new THREE.Color(colorArg);
+        return new THREE.MeshBasicMaterial({ color: col });
+      }
       const tileMats = {
-        grass:  floorMat(new THREE.Color().setHSL(108/360, 0.58, 0.28)),
+        grass:  unlitFloorMat(new THREE.Color().setHSL(108/360, 0.58, 0.28)),
         weeds:  floorMat(0x247c3c),
         tilled: floorMat(0x8a5b34),
         trench: floorMat(0x3a2510),
@@ -14001,8 +14027,7 @@
       // any earlier than that.
       function applySeasonalGrassAppearance() {
         const season = window.CalendarSystem.currentSeason();
-        tileMats.grass.color.copy(season.grassColor);
-        tileMats.grass.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
+        tileMats.grass.color.copy(season.grassColor); // unlit — no .emissive to update, see unlitFloorMat
         vegFloorMat.color.copy(season.grassColor);
         vegFloorMat.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
         _grassTint.copy(season.grassColor);
@@ -14075,9 +14100,15 @@
       // that span is simply the map's own tile footprint, so this is just a
       // texture.repeat change, no geometry/UV rebuild needed. Overrides
       // tileSize when present.
-      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch) {
+      // unlit, when true, builds a MeshBasicMaterial (see unlitFloorMat)
+      // instead of the usual lit MeshLambertMaterial — used for grass so its
+      // textured ground override reads at one consistent brightness like the
+      // base tileMats.grass does, instead of dimming at night/in storms.
+      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch, unlit) {
         const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
-        const mat = new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
+        const mat = unlit
+          ? new THREE.MeshBasicMaterial({ color: col })
+          : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
         new THREE.TextureLoader().load(path, (tex) => {
           let finalTex = tex;
           const rgb = fillColor && parseHexColor(fillColor);
@@ -14110,7 +14141,7 @@
         const cacheKey = mapId + ',' + matKey;
         let mat = _mapTileMatCache.get(cacheKey);
         if (!mat) {
-          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch);
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, matKey === TileType.GRASS);
           _mapTileMatCache.set(cacheKey, mat);
         }
         return mat;
@@ -14809,8 +14840,13 @@
       function preparePathSplineData(srcGrid, gcols, grows, routes) {
         const width = 3.25, tol = 0.05; // matches the preview tool's exported path.pathWidth/edgeTolerance
         const pathTiles = new Set();
+        let tileMinC = Infinity, tileMaxC = -Infinity, tileMinR = Infinity, tileMaxR = -Infinity;
         for (let r = 0; r < grows; r++) for (let c = 0; c < gcols; c++)
-          if (srcGrid[r]?.[c]?.type === TileType.PATH) pathTiles.add(c + ',' + r);
+          if (srcGrid[r]?.[c]?.type === TileType.PATH) {
+            pathTiles.add(c + ',' + r);
+            if (c < tileMinC) tileMinC = c; if (c > tileMaxC) tileMaxC = c;
+            if (r < tileMinR) tileMinR = r; if (r > tileMaxR) tileMaxR = r;
+          }
         if (!pathTiles.size) return null;
 
         // Auto-pick whichever route(s) actually overlap the painted path tiles
@@ -14831,26 +14867,38 @@
         }).sort((a, b) => b[1] - a[1]);
         const good = scored.filter(x => x[1] >= 0.45).map(x => x[0]);
         const selected = good.length ? good : (scored.length ? [scored[0][0]] : []);
-        if (!selected.length) return null;
 
-        const samples = selected.map(_routeCurvePoints).filter(s => s.length >= 2);
-        if (!samples.length) return null;
+        const samples = selected.length ? selected.map(_routeCurvePoints).filter(s => s.length >= 2) : [];
+        if (samples.length) {
+          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          for (const arr of samples) for (const p of arr) {
+            minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+            minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+          }
+          const margin = width / 2 + 0.8;
+          minX -= margin; maxX += margin; minZ -= margin; maxZ += margin;
 
-        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-        for (const arr of samples) for (const p of arr) {
-          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-          minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+          const rr = (width / 2 + tol) * (width / 2 + tol);
+          function containsPoint(x, z) {
+            for (const arr of samples) for (let i = 0; i < arr.length - 1; i++)
+              if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
+            return false;
+          }
+          return { samples, containsPoint, bounds: { minX, maxX, minZ, maxZ } };
         }
-        const margin = width / 2 + 0.8;
-        minX -= margin; maxX += margin; minZ -= margin; maxZ += margin;
 
-        const rr = (width / 2 + tol) * (width / 2 + tol);
-        function containsPoint(x, z) {
-          for (const arr of samples) for (let i = 0; i < arr.length - 1; i++)
-            if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
-          return false;
-        }
-        return { samples, containsPoint, bounds: { minX, maxX, minZ, maxZ } };
+        // No authored route data overlaps this map's painted path tiles at
+        // all (e.g. the farm's hardcoded day-one path, or a hand-painted
+        // zone path with no route) — fall back to the preview tool's other
+        // mode, "tile-locked": the corridor is exactly the painted PATH
+        // cells themselves instead of a spline distance test. Blockier than
+        // the spline corridor on a curved route, but the farm's own path is
+        // a straight rectangular strip anyway, so it costs nothing there.
+        return {
+          samples: null,
+          containsPoint: (x, z) => pathTiles.has(Math.floor(x) + ',' + Math.floor(z)),
+          bounds: { minX: tileMinC, maxX: tileMaxC + 1, minZ: tileMinR, maxZ: tileMaxR + 1 },
+        };
       }
       // Builds one WallBuilder panel covering exactly one fixed grid cell
       // (chunkMinX..chunkMinX+size, chunkMinZ..chunkMinZ+size), then prunes
@@ -14916,11 +14964,18 @@
         }
         return chunks;
       }
-      // Per-zone chunk list: mapId -> THREE.Group[]. Keyed so town and (later)
-      // wilderness zones can each keep their own chunk set without fighting
+      // Per-zone chunk list: mapId -> THREE.Group[]. Keyed so town, farm, and
+      // every wilderness zone each keep their own chunk set without fighting
       // over one slot.
       const _pathBrickChunkLists = new Map();
       function registerPathBrickChunks(mapId, scene, splineData) {
+        // Disposes any previous chunk set for this mapId first — a zone can
+        // rebuild its scene (Tothal Shift, cache invalidation) and call this
+        // again, and a stale chunk set left in the scene would otherwise leak
+        // both the GPU buffers and a dangling reference this map's cull pass
+        // still walks every tick.
+        const prev = _pathBrickChunkLists.get(mapId);
+        if (prev) for (const g of prev) { scene.remove(g); WallBuilder.disposeGroup(g); }
         _pathBrickChunkLists.set(mapId, buildAllPathBrickChunks(splineData, scene));
       }
       // Called from the throttled tick below for whichever zone is currently
@@ -16873,10 +16928,14 @@
           const { pathGeo, grassGeo } = buildPathTileGeo(col, row);
           let primary = null;
           if (pathGeo) {
-            const m = new THREE.Mesh(pathGeo, resolveTileMat('farm', TileType.PATH));
+            // Regular ground (grass) under the path — the paved brick
+            // surface (see "Path: paved brick surface" / registerPathBrickChunks
+            // for 'farm') overlays ordinary ground rather than a separately-
+            // colored path patch, same treatment as the town path.
+            const m = new THREE.Mesh(pathGeo, resolveTileMat('farm', TileType.GRASS));
             m.castShadow = m.receiveShadow = true;
             m.position.set(col + 0.5, NORMAL_TOP, row + 0.5);
-            _markTerrainEdgeId(m, TileType.PATH);
+            _markTerrainEdgeId(m, TileType.GRASS);
             scene.add(m);
             primary = m;
           }
@@ -17538,6 +17597,18 @@
       let _pathBrickCullAccum = 0;
 
       buildTileMeshes();
+
+      // Paved brick surface over the farm's path, if it has one — same
+      // technique as the town path (see "Path: paved brick surface" below):
+      // built once the shared recipe/GLB are ready, chunked and culled by
+      // camera corridor. worldRoutes loads asynchronously at boot too, same
+      // as worldTownRoutes, so it's read fresh inside the .then() below
+      // rather than captured now.
+      ensurePathSurfaceReady().then(() => {
+        const farmRoutes = worldRoutes.filter(r => (r.area || 'farm') === 'farm');
+        const splineData = preparePathSplineData(grid, COLS, ROWS, farmRoutes);
+        if (splineData) registerPathBrickChunks('farm', scene, splineData);
+      }).catch(err => debugLog('Farm path brick surface error: ' + err.message, 'warn'));
 
       // Called here (ahead of the other window.*?.init(...) calls near the
       // bottom of this file, which run too late) since buildBorderTerrain()
