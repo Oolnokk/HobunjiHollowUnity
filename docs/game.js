@@ -7537,6 +7537,10 @@
           toolKey: station.toolKey || '',
           toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
           toolAnimStyle: station.toolAnimStyle || '',
+          // Multi-tile wander footprint around this station's root tile —
+          // see makeNpcWalker's _updateStationWander. 0 (the default) keeps
+          // today's behavior: an NPC freezes exactly at (c,r).
+          wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
         };
       }
       function registerNpcStations(stations, fallbackArea) {
@@ -7831,6 +7835,13 @@
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
 
+      // Station wander (see makeNpcWalker's _updateStationWander) — same
+      // pick-a-tile/path-there/wait/repeat rhythm as farm-animals.js's
+      // FARM_ANIMAL_WANDER_WAIT_MIN_SEC/MAX_SEC.
+      const NPC_STATION_WANDER_WAIT_MIN_S = 2;
+      const NPC_STATION_WANDER_WAIT_MAX_S = 6;
+      const NPC_STATION_WANDER_RETRY_S = 0.5;
+
       async function makeNpcWalker(rec, initialTarget) {
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
@@ -7990,7 +8001,61 @@
             if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) this._gridPath.shift();
             if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
           },
+          // Station wander — active once state === 'station-wander' (entered
+          // in update() the first time this NPC reaches a station whose
+          // target.wanderRadiusTiles > 0). Same pick-a-tile/path-there/wait/
+          // repeat rhythm as farm-animals.js's station wander, but riding
+          // this walker's own moveToward/beeline/grid-path machinery instead
+          // of reimplementing a separate greedy-hop mover — an NPC walker
+          // moves continuously (root.position), not tile-slot-discrete like
+          // a farm animal, so there's no equivalent worldObjects bookkeeping
+          // to duplicate. Deliberately skips the station's own rotY snap/
+          // tool-swing pose (see the frozen-idle branch in update()) —
+          // those represent a fixed "working at this desk" pose that
+          // doesn't make sense away from the authored root tile.
+          _updateStationWander(target, dt) {
+            const radius = target.wanderRadiusTiles || 0;
+            if (this._wanderWaitT > 0) { this._wanderWaitT -= dt; return; }
+            if (!this._wanderTarget) {
+              for (let attempt = 0; attempt < 8; attempt++) {
+                const dc = Math.round((rnd() * 2 - 1) * radius);
+                const dr = Math.round((rnd() * 2 - 1) * radius);
+                const nc = target.c + dc, nr = target.r + dr;
+                if (isNpcTileWalkable(this.area, nc, nr)) { this._wanderTarget = { c: nc, r: nr }; this._wanderGridPath = null; break; }
+              }
+              if (!this._wanderTarget) { this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; return; }
+            }
+            const cfg = npcMovementConfig();
+            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const wx = this._wanderTarget.c + 0.5, wz = this._wanderTarget.r + 0.5;
+            if (Math.hypot(root.position.x - wx, root.position.z - wz) <= arrival) {
+              this._wanderTarget = null; this._wanderGridPath = null;
+              this._wanderWaitT = NPC_STATION_WANDER_WAIT_MIN_S + rnd() * (NPC_STATION_WANDER_WAIT_MAX_S - NPC_STATION_WANDER_WAIT_MIN_S);
+              return;
+            }
+            if (this._wanderGridPath && this._wanderGridPath.length) {
+              const hop = this._wanderGridPath[0];
+              if (this.moveToward(hop.c + 0.5, hop.r + 0.5, dt)) this._wanderGridPath.shift();
+              return;
+            }
+            if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
+              this.moveToward(wx, wz, dt);
+              return;
+            }
+            const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
+            const path = window.TilePathfinding?.findPath(startCol, startRow, this._wanderTarget.c, this._wanderTarget.r,
+              (c, r) => isNpcTileWalkable(this.area, c, r),
+              { bounds: window.TilePathfinding.boxAround(startCol, startRow, this._wanderTarget.c, this._wanderTarget.r, 4) });
+            if (path && path.length) this._wanderGridPath = path;
+            else { this._wanderTarget = null; this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; } // unreachable — try a different wander tile shortly
+          },
           moveToward(tx, tz, dt) {
+            // See moveCreatureToward's matching guard: a non-finite target
+            // must never reach root.position — nothing downstream would
+            // catch a NaN position directly, and it'd only surface as a
+            // crash far away (e.g. footstep audio) or a permanently
+            // invisible/frozen NPC.
+            if (!Number.isFinite(tx) || !Number.isFinite(tz)) return false;
             const cfg = npcMovementConfig();
             const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
             const dx = tx - root.position.x, dz = tz - root.position.z;
@@ -8057,6 +8122,33 @@
             const cfg = npcMovementConfig();
             const tx = target.c + 0.5, tz = target.r + 0.5;
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const wanderRadius = target.wanderRadiusTiles || 0;
+            const wanderKey = target.stationId || target.id || null;
+            // Station wander (see _updateStationWander) takes over completely
+            // once entered, instead of the plain freeze-at-the-exact-tile
+            // idle below — abandoned the instant the schedule moves this NPC
+            // to a different target (a different station, or one with no
+            // wander radius set).
+            if (this.state === 'station-wander' && (wanderRadius <= 0 || this._stationWanderKey !== wanderKey)) {
+              this.state = 'idle';
+              this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
+            }
+            if (this.state !== 'station-wander' && wanderRadius > 0 && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+              this.state = 'station-wander';
+              this._stationWanderKey = wanderKey;
+              this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
+            }
+            if (this.state === 'station-wander') {
+              this._updateStationWander(target, dt);
+              const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y += (wty - root.position.y) * 0.2;
+              if (this._moveSpeedTiles > 0.05) {
+                const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              }
+              groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
+              return;
+            }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);

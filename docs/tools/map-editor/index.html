@@ -329,6 +329,7 @@ const QHELP = {
   'station-rot': { title: 'Rot Y°', body: 'Which way the NPC faces while standing at this station, in degrees (0 = default facing).' },
   'station-tool': { title: 'Tool', body: 'Optional tool item key (e.g. "hatchet") the NPC visibly swings/uses on a loop while at this station — leave blank for a plain stand/sit/idle pose.' },
   'station-id': { title: 'Station id', body: 'Referenced by NPC schedule rules (Schedule Editor tab) as stationId — renaming this id will break any rule that already points at it. Copy it from here when wiring up a schedule.' },
+  'station-wander': { title: 'Wander radius', body: '0 (default) keeps the NPC frozen exactly at this tile, matching a tool loop/fixed pose if set. Above 0, the NPC instead roams a region of this many tiles around the station: pick a random open tile in range, walk there, pause, repeat — the region only draws on the map while this station is selected.' },
 };
 let _qhelpBtn = null;
 function showHelp(btn) {
@@ -546,7 +547,7 @@ function buildBuildingInteriorMapV1(m) {
   });
   base.exits = Array.from(generated.values());
   base.routes = (m.routes || []).map(p => ({ id: p.id, label: p.label, nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
-  base.npcStations = (m.npcStations || []).map(st => ({ id: st.id, label: st.label || st.id, col: st.col, row: st.row, rotY: st.rotY || 0, pose: st.pose || 'stand', toolKey: st.toolKey || '', toolIntervalSec: st.toolIntervalSec || 0, toolAnimStyle: st.toolAnimStyle || '' }));
+  base.npcStations = (m.npcStations || []).map(st => ({ id: st.id, label: st.label || st.id, col: st.col, row: st.row, rotY: st.rotY || 0, pose: st.pose || 'stand', toolKey: st.toolKey || '', toolIntervalSec: st.toolIntervalSec || 0, toolAnimStyle: st.toolAnimStyle || '', wanderRadiusTiles: st.wanderRadiusTiles || 0 }));
   base.npcPaths = (m.npcPaths || []).map(p => ({ id: p.id, label: p.label, npcId: p.npcId || '', nodes: (p.nodes || []).map(n => [n[0], n[1]]) })).filter(p => p.nodes.length);
   return base;
 }
@@ -1933,9 +1934,12 @@ function renderPalette() {
         <div><label>Tool interval sec</label><input data-stationinterval="${st.id}" type="number" step="0.1" min="0" value="${st.toolIntervalSec||0}"></div>
         <div><label>Tool anim</label><input data-stationanim="${st.id}" value="${st.toolAnimStyle||''}" placeholder="sweep/chop/thrust"></div>
       </div>
+      <div class="g2" style="margin-top:4px">
+        <div><label>Wander radius (tiles) <span class="qhelp" data-help="station-wander">?</span></label><input data-stationwander="${st.id}" type="number" step="1" min="0" value="${st.wanderRadiusTiles||0}"></div>
+      </div>
       <div class="item-meta">id: ${st.id} · at (${st.col}, ${st.row}) <span class="qhelp" data-help="station-id">?</span></div>
     </div>`).join('') || '<p class="muted">No NPC stations yet.</p>';
-    html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. NPC schedules reference these by <code>stationId</code> instead of raw x/y — author time-window → station rules in the Schedule Editor tab. Rotation, pose, and optional tool loop metadata travel with the station.</p>';
+    html += '<p class="muted" style="margin-top:5px">Click the map to place a reusable NPC Station. NPC schedules reference these by <code>stationId</code> instead of raw x/y — author time-window → station rules in the Schedule Editor tab. Rotation, pose, and optional tool loop metadata travel with the station. Set a wander radius above 0 to have the NPC roam a region around this tile (pick a random tile in range → walk there → pause → repeat) instead of standing still — the region only draws on the map while its station is selected.</p>';
   } else if (mode === 'fill') {
     const set = TILE_SETS[m.category] || TILE_SETS.exterior;
     html = set.map(t => {
@@ -2205,6 +2209,7 @@ function renderPalette() {
   box.querySelectorAll('[data-stationtool]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationtool, { toolKey: el.value.trim() })));
   box.querySelectorAll('[data-stationinterval]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationinterval, { toolIntervalSec: Math.max(0, Number(el.value) || 0) })));
   box.querySelectorAll('[data-stationanim]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationanim, { toolAnimStyle: el.value.trim() })));
+  box.querySelectorAll('[data-stationwander]').forEach(el => el.addEventListener('change', () => updateStation(el.dataset.stationwander, { wanderRadiusTiles: Math.max(0, Math.floor(Number(el.value) || 0)) })));
   // Spot palette wiring
   box.querySelectorAll('[data-spotsel]').forEach(el => el.addEventListener('click', e => {
     if (e.target.closest('button,select,input')) return;
@@ -2583,6 +2588,20 @@ function draw() {
   (m.npcStations || []).forEach(st => {
     const p = w2s(st.col + .5, st.row + .5);
     const s = z * .36;
+    // Wander region — only drawn while THIS station is selected (mirrors
+    // Building mode's isSel-gated resize/rotate gizmos): the root tile
+    // marker below stays a single point exactly as before, this is purely
+    // an authoring aid for setting wanderRadiusTiles.
+    if (st.id === activeStationId && st.wanderRadiusTiles > 0) {
+      const rPx = z * (st.wanderRadiusTiles + .5);
+      ctx.save();
+      ctx.fillStyle = 'rgba(34,211,238,.12)';
+      ctx.strokeStyle = 'rgba(34,211,238,.55)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.arc(p.x, p.y, rPx, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate((st.rotY || 0) * Math.PI / 180);
     ctx.fillStyle = st.id === activeStationId ? 'rgba(34,211,238,.75)' : 'rgba(34,211,238,.42)';
     ctx.fillRect(-s, -s, s * 2, s * 2);
@@ -2724,7 +2743,7 @@ function applyAt(tile) {
     const existing = m.npcStations.find(st => st.col === c && st.row === r);
     if (existing) activeStationId = existing.id;
     else {
-      const st = { id: uid('station'), label: `Station ${m.npcStations.length+1}`, col: c, row: r, rotY: 0, pose: 'stand', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '' };
+      const st = { id: uid('station'), label: `Station ${m.npcStations.length+1}`, col: c, row: r, rotY: 0, pose: 'stand', toolKey: '', toolIntervalSec: 0, toolAnimStyle: '', wanderRadiusTiles: 0 };
       m.npcStations.push(st); activeStationId = st.id;
     }
     renderPalette(); updateBrushPill();
