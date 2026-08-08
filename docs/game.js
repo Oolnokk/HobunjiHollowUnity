@@ -3616,6 +3616,7 @@
       // creature movement path with a single footstep hook.
       function tickCreatureFootsteps(c, distPx) {
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
+        if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
@@ -3646,6 +3647,14 @@
       // slides along the obstacle's edge instead of freezing, exactly like
       // the player's own wall collision.
       function creatureCanEnterTile(def, wx, wy) {
+        // A NaN/Infinite coordinate compares false against every bound
+        // check below (NaN is never < or >= anything), so without this it
+        // would silently pass through as "allowed" and let a corrupted
+        // target position get written into c.x/c.y — from there it poisons
+        // every distance calc downstream (footstep falloff, aggro range,
+        // etc.), eventually crashing far away from where it actually went
+        // wrong (see audio-system.js's non-finite .volume guard).
+        if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
         const aC = getActiveCols(), aR = getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
@@ -3688,6 +3697,12 @@
       }
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
+        // A NaN/undefined target (e.g. a momentarily-gone companion master,
+        // a stale reference) must never reach the position math below — dist
+        // would come out NaN, every subsequent comparison against it is
+        // silently false rather than throwing, and c.x/c.y would end up
+        // permanently NaN with nothing downstream ever catching it directly.
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }

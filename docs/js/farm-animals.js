@@ -129,7 +129,7 @@
   // even though there's no literal fence data) rather than its current
   // position, so repeated station-hops can't slowly drift it across the
   // whole farm.
-  const FARM_ANIMAL_WANDER_RADIUS_TILES = 4;
+  const FARM_ANIMAL_WANDER_RADIUS_TILES = 5;
   const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
   const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
 
