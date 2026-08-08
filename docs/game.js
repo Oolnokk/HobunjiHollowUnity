@@ -11026,6 +11026,14 @@
         return col >= houseCol && col < houseCol + HOUSE_FOOTPRINT_W
             && row >= houseRow && row < houseRow + HOUSE_FOOTPRINT_D;
       }
+      // Barns (any tier, foundation or built) block movement over their
+      // whole registered footprint — stable.json's own footprint.cells is
+      // already a solid rectangle matching w×h, so the piece-less bbox
+      // fallback in _buildingFootprintBlocks (below) gives the identical
+      // result without needing the async-loaded piece JSON on hand here.
+      function isFarmBuildingCollisionTile(col, row) {
+        return farmBuildings.some(b => _buildingFootprintBlocks(b, null, col, row));
+      }
       // Rotation math lives once in js/building-door.js (shared with the Map
       // Editor and House Piece Author's door tooling) — this is just the
       // local name collision detection already used before that file existed.
@@ -12820,7 +12828,7 @@
         // for the matching attack-lockout.
         if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
-        if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
+        if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
         if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
@@ -20721,6 +20729,8 @@
         getGrid: () => grid,
         isHouseFootprint,
         processingFurnitureObjects,
+        interiorFurnitureObjects,
+        DECORATIVE_FURNITURE_DEFS,
         _loadWorldLivestock,
         worldObjects,
         animalObjects,
@@ -20747,6 +20757,7 @@
         _loadWorldStorage,
         _saveWorldStorage,
         ITEM_DEFS,
+        dewItemKey,
         clampInventoryStack,
         getActiveMountId: () => activeMountId,
         setActiveMountId: (v) => { activeMountId = v; },

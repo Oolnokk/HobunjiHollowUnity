@@ -916,6 +916,7 @@
     respawnWorldLivestock,
     refsEqual,
     currentCharacterId,
+    resolveBreedingParent,
     tickBreeding,
     clearAnimalObjects,
     updateAnimalMeshes,

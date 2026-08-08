@@ -173,6 +173,21 @@
     return true;
   }
 
+  // Scans the whole farm grid for dropped-but-uncollected dew piles — the
+  // Farm tab's Dew section uses this to show the player where to go dig,
+  // instead of them having to spot a tiny sprite while wandering the farm.
+  function listPiles() {
+    const grid = deps.getGrid();
+    const piles = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const colorKey = grid[r]?.[c]?.dewPile;
+        if (colorKey) piles.push({ col: c, row: r, colorKey });
+      }
+    }
+    return piles;
+  }
+
   // Used when a dew cooldown lands while the player isn't on the farm to
   // see the animal wander and drop it naturally (see game.js's
   // tickLivestockResources) — picks blindly rather than tracking actual
@@ -242,6 +257,7 @@
     updateMeshRotations,
     removeMesh,
     rebuildMeshesFromGrid,
+    listPiles,
     drop,
     dropOnRandomOpenTile,
     vatCanAccept,

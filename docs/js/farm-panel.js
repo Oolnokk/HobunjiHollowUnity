@@ -37,17 +37,19 @@
     renderFarmGridGlance();
     renderFarmBuildings();
     renderFarmProcessors();
+    renderFarmDew();
+    renderFarmFurniture();
     renderFarmLivestock();
     renderFarmStoragePane();
     renderFarmhandsSection();
 
     const addLivestockBtn = document.getElementById('farmAddLivestockBtn');
     if (addLivestockBtn) addLivestockBtn.onclick = () => {
-      const key = Object.keys(deps.LIVESTOCK_ITEM_KINDS).find(k => (deps.inventory[k] || 0) > 0);
-      if (!key) { deps.showToast('No livestock crates in your bag.', false); return; }
-      const result = window.FarmAnimals.addFromItem(key);
-      deps.showToast(result.message, result.ok);
-      if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); deps.buildInventoryGrid(); deps.refreshActionBar(); }
+      const picker = document.getElementById('farmAddLivestockPicker');
+      if (!picker) return;
+      if (!picker.hidden) { picker.hidden = true; return; }
+      renderFarmAddLivestockPicker();
+      picker.hidden = false;
     };
     const pairBtn = document.getElementById('farmPairBtn');
     if (pairBtn) pairBtn.onclick = () => {
@@ -80,6 +82,19 @@
 
   const FARM_GLANCE_PX = 10;
 
+  // Flat marker colors for worldObjects types on the Layout glance
+  // canvas, keyed by the same `type` tag each object carries (see
+  // farm-buildings.js's _makeWorldObject, game.js's registerSitWorldObject/
+  // makeSellCrate/makeSupplyBox). Processing furniture is excluded here —
+  // it gets its live status color instead (see farmProcessorStatus).
+  const WORLD_OBJECT_TYPE_COLORS = {
+    barn: 'rgba(200,80,60,0.9)',
+    sell_crate: 'rgba(230,190,80,0.9)',
+    supply_box: 'rgba(230,190,80,0.9)',
+    decorative_furniture: 'rgba(150,100,220,0.9)',
+    default: 'rgba(200,80,60,0.9)',
+  };
+
   // Read-only top-down status glance — modeled on the map-editor's canvas2d
   // cell-fill approach, but simplified: no camera controls, no editing,
   // just "what does the farm look like right now."
@@ -111,18 +126,30 @@
           ctx.fillStyle = 'rgba(120,90,60,0.9)';
           ctx.fillRect(c * PX, r * PX, PX, PX);
         }
+        // Dew piles are tile data, not a worldObjects entry (see
+        // dew-vats.js), so they'd otherwise never show up on this map at
+        // all — drawn as a small droplet marker instead of a flat fill so
+        // it doesn't get confused with a tile-type color underneath it.
+        if (tile?.dewPile) {
+          ctx.fillStyle = '#5fc9f5';
+          ctx.beginPath();
+          ctx.arc(c * PX + PX / 2, r * PX + PX / 2, PX * 0.28, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
     // Buildings / furniture / crates — everything occupying a farm tile
     // that isn't an animal (animals get their own marker below).
     // Processing furniture gets its actual status color (see
-    // farmProcessorStatus, shared with the Processors tile grid below)
-    // instead of the flat generic marker every other object still uses.
+    // farmProcessorStatus, shared with the Processors tile grid below);
+    // every other object type gets its own flat color so barns, crates,
+    // and placed decorative furniture read as distinct at a glance.
     const _glanceLivestock = deps.processingFurnitureObjects.size ? deps._loadWorldLivestock() : null;
     deps.worldObjects.forEach((obj, key) => {
       if (!obj || obj.type === 'animal') return;
       const [c, r] = key.split(',').map(Number);
-      ctx.fillStyle = obj.type === 'processing_furniture' ? FARM_PROCESSOR_STATUS_COLORS[farmProcessorStatus(obj, _glanceLivestock).status] : 'rgba(200,80,60,0.9)';
+      ctx.fillStyle = obj.type === 'processing_furniture' ? FARM_PROCESSOR_STATUS_COLORS[farmProcessorStatus(obj, _glanceLivestock).status]
+        : WORLD_OBJECT_TYPE_COLORS[obj.type] || WORLD_OBJECT_TYPE_COLORS.default;
       ctx.fillRect(c * PX, r * PX, PX, PX);
     });
     // Livestock
@@ -139,7 +166,9 @@
       legend.innerHTML = [
         ['#3c6e3f', 'Grass'], ['#6b4a30', 'Tilled'], ['#25445c', 'Trench'],
         ['#8fd66b', 'Growing crop'], ['#f9e28a', 'Ready crop'],
-        ['rgba(200,80,60,0.9)', 'Building/decor'], ['#6b6b6f', 'Rock/obstruction'],
+        [WORLD_OBJECT_TYPE_COLORS.barn, 'Barn'], [WORLD_OBJECT_TYPE_COLORS.sell_crate, 'Crate/box'],
+        [WORLD_OBJECT_TYPE_COLORS.decorative_furniture, 'Furniture'], ['#5fc9f5', 'Dew pile'],
+        ['#6b6b6f', 'Rock/obstruction'],
         ['#ffd27a', 'Livestock'],
         [FARM_PROCESSOR_STATUS_COLORS.idle, 'Processor: idle'],
         [FARM_PROCESSOR_STATUS_COLORS.working, 'Processor: working'],
@@ -295,21 +324,25 @@
   function renderFarmProcessors() {
     const grid = document.getElementById('farmProcessorsGrid');
     const note = document.getElementById('farmProcessorsNote');
+    const summary = document.getElementById('farmProcessorsSummary');
     if (!grid) return;
     const processors = [...deps.processingFurnitureObjects];
     if (note) note.textContent = processors.length ? '' : 'No processing stations placed yet.';
     const livestock = deps._loadWorldLivestock();
     grid.innerHTML = '';
+    const counts = { idle: 0, working: 0, ready: 0, livestock: 0 };
     processors.forEach(obj => {
       const def = deps.PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
       if (!def) return;
       const { status, label, worker } = farmProcessorStatus(obj, livestock);
+      counts[status] = (counts[status] || 0) + 1;
       const tile = document.createElement('div');
       tile.className = 'farm-processor-tile';
       tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
       tile.innerHTML = `
         <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
         <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
+        <div class="fp-loc">at (${obj.col}, ${obj.row})</div>
       `;
       if (status === 'ready' && deps.hasFarmPermission('alterFarm')) {
         const btn = document.createElement('button');
@@ -334,6 +367,98 @@
         tile.appendChild(btn);
       }
       grid.appendChild(tile);
+    });
+    if (summary) {
+      summary.textContent = processors.length
+        ? `${counts.working} working · ${counts.ready} ready to collect · ${counts.livestock} livestock-worked · ${counts.idle} idle`
+        : '';
+    }
+  }
+
+  // ── Farm tab: dropped dew piles ─────────────────────────────────
+  // A dew pile is tile data, not a worldObjects entry (see dew-vats.js),
+  // so it never shows up anywhere else in the menu — this is the only
+  // place a player can see where their uumkao'ii dropped one without
+  // having to walk the whole farm looking for a small sprite.
+  function renderFarmDew() {
+    const note = document.getElementById('farmDewNote');
+    const list = document.getElementById('farmDewList');
+    if (!list || !window.DewVats) return;
+    const piles = window.DewVats.listPiles();
+    if (note) note.textContent = piles.length ? `${piles.length} dew pile${piles.length === 1 ? '' : 's'} waiting to be dug up:` : 'No dew piles on the ground right now.';
+    list.innerHTML = '';
+    piles.forEach(p => {
+      const def = deps.ITEM_DEFS[deps.dewItemKey(p.colorKey)];
+      const row = document.createElement('div');
+      row.className = 'farm-row';
+      row.innerHTML =
+        `<span class="farm-row-icon">${def?.icon || '💧'}</span>` +
+        `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(def?.label || (p.colorKey + ' dew'))}</span>` +
+        `<span class="farm-note">at (${p.col}, ${p.row})</span>`;
+      list.appendChild(row);
+    });
+  }
+
+  // ── Farm tab: placed interactive furniture ──────────────────────
+  // Decorative furniture placed directly on the farm (sittable pieces
+  // register a worldObject; anything else — a statue, a crate stack —
+  // only ever lived in interiorFurnitureObjects and otherwise never
+  // appeared anywhere in the menu at all). Processing furniture already
+  // gets its own dedicated section above, so it's left out here to avoid
+  // listing every station twice.
+  function renderFarmFurniture() {
+    const note = document.getElementById('farmFurnitureNote');
+    const list = document.getElementById('farmFurnitureList');
+    if (!list) return;
+    const pieces = deps.interiorFurnitureObjects.filter(o => o.area === 'farm');
+    if (note) note.textContent = pieces.length ? '' : 'No furniture placed on the farm yet.';
+    list.innerHTML = '';
+    pieces.forEach(o => {
+      const def = deps.DECORATIVE_FURNITURE_DEFS[o.key];
+      if (!def) return;
+      const row = document.createElement('div');
+      row.className = 'farm-row';
+      row.innerHTML =
+        `<span class="farm-row-icon">${def.icon}</span>` +
+        `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(def.name)}</span>` +
+        (def.sit ? `<span class="farm-note">Sittable</span>` : '') +
+        `<span class="farm-note">at (${o.col}, ${o.row})</span>`;
+      list.appendChild(row);
+    });
+  }
+
+  // ── Farm tab: "Add Livestock" item picker ───────────────────────
+  // Replaces the old "grab whichever LIVESTOCK_ITEM_KINDS key happens to
+  // come first and the player owns at least 1 of" auto-pick with an
+  // explicit list of every livestock crate/egg/baby actually in the bag,
+  // so a player carrying more than one kind chooses which one hatches.
+  function renderFarmAddLivestockPicker() {
+    const list = document.getElementById('farmAddLivestockPicker');
+    if (!list) return;
+    const owned = Object.keys(deps.LIVESTOCK_ITEM_KINDS).filter(k => (deps.inventory[k] || 0) > 0);
+    list.innerHTML = '';
+    if (!owned.length) {
+      list.appendChild(Object.assign(document.createElement('div'), { className: 'farm-note', textContent: 'No livestock crates, eggs, or babies in your bag.' }));
+      return;
+    }
+    owned.forEach(key => {
+      const def = deps.ITEM_DEFS[key];
+      const row = document.createElement('div');
+      row.className = 'farm-row';
+      row.innerHTML =
+        `<span class="farm-row-icon">${def?.icon || '📦'}</span>` +
+        `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(def?.label || key)}</span>` +
+        `<span class="farm-note">×${deps.inventory[key]}</span>` +
+        `<button class="settings-small-btn">Add</button>`;
+      row.querySelector('button').addEventListener('click', () => {
+        const result = window.FarmAnimals.addFromItem(key);
+        deps.showToast(result.message, result.ok);
+        if (result.ok) {
+          renderFarmLivestock(); renderFarmGridGlance(); deps.buildInventoryGrid(); deps.refreshActionBar();
+          renderFarmAddLivestockPicker();
+        }
+      });
+      list.appendChild(row);
     });
   }
 
@@ -498,7 +623,33 @@
       pairBtn.textContent = farmPairPicks.size === 2 ? 'Set Breeding Pair' : 'Set Breeding Pair (select 2)';
     }
     const note = document.getElementById('farmBreedingPairsNote');
-    if (note) note.textContent = pairs.length ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} currently breeding.` : '';
+    if (note) note.textContent = pairs.length ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} currently breeding:` : '';
+    renderFarmBreedingPairsList(pairs, livestock);
+  }
+
+  // Per-pair breeding detail — which two animals, and how many days until
+  // the litter/clutch resolves (see tickBreeding's readyDay). Previously
+  // this was just an aggregate "N pairs breeding" count with no way to
+  // tell which animals were paired or how much longer to wait.
+  function _pairParentLabel(ref, livestock) {
+    const entry = window.FarmAnimals.resolveBreedingParent(ref, livestock);
+    if (!entry) return '❓ (removed)';
+    const icon = STABLE_KIND_ICONS[entry.kind] || '🦆';
+    return `${icon} ${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}`;
+  }
+  function renderFarmBreedingPairsList(pairs, livestock) {
+    const list = document.getElementById('farmBreedingPairsList');
+    if (!list) return;
+    list.innerHTML = '';
+    pairs.forEach(pair => {
+      const daysLeft = Math.max(0, pair.readyDay - deps.calendar.day);
+      const row = document.createElement('div');
+      row.className = 'farm-row';
+      row.innerHTML =
+        `<span class="farm-row-name" style="padding:2px 4px">${_pairParentLabel(pair.parentA, livestock)} × ${_pairParentLabel(pair.parentB, livestock)}</span>` +
+        `<span class="farm-note">${daysLeft > 0 ? `${daysLeft}d left` : 'Ready — resolves tonight'}</span>`;
+      list.appendChild(row);
+    });
   }
 
   function renameLivestock(id, name) {
