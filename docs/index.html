@@ -10,6 +10,7 @@
   <script src="js/HousePieceGen.js?v=20260712d"></script>
   <script src="js/interior-scene-builder.js?v=20260808a"></script>
   <script src="js/building-door.js?v=20260725a"></script>
+  <script src="js/tile-pathfinding.js?v=20260808a"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20260712d"></script>
@@ -757,18 +758,33 @@
           </div>
 
           <div class="farm-section">
-            <div class="settings-section-title">Processors</div>
+            <div class="settings-section-title">Food Processing</div>
             <div id="farmProcessorsNote" class="farm-note"></div>
+            <div id="farmProcessorsSummary" class="farm-note"></div>
             <div id="farmProcessorsGrid" class="farm-processor-grid"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Dew</div>
+            <div id="farmDewNote" class="farm-note"></div>
+            <div id="farmDewList" class="farm-list"></div>
+          </div>
+
+          <div class="farm-section">
+            <div class="settings-section-title">Furniture</div>
+            <div id="farmFurnitureNote" class="farm-note"></div>
+            <div id="farmFurnitureList" class="farm-list"></div>
           </div>
 
           <div class="farm-section">
             <div class="settings-section-title">Livestock</div>
             <div class="farm-toolbar">
-              <button id="farmAddLivestockBtn" class="settings-small-btn">Add Livestock</button>
+              <button id="farmAddLivestockBtn" class="settings-small-btn">Add Livestock ▾</button>
               <button id="farmPairBtn" class="settings-small-btn" disabled>Set Breeding Pair (select 2)</button>
             </div>
+            <div id="farmAddLivestockPicker" class="farm-list" hidden></div>
             <div id="farmBreedingPairsNote" class="farm-note"></div>
+            <div id="farmBreedingPairsList" class="farm-list"></div>
             <div id="farmLivestockList" class="farm-list"></div>
           </div>
 

@@ -3616,6 +3616,7 @@
       // creature movement path with a single footstep hook.
       function tickCreatureFootsteps(c, distPx) {
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
+        if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
         if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
@@ -3630,15 +3631,36 @@
         window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff, pan);
       }
 
-      // Narrow terrain gate for creature movement — unlike tileSpeedAt (used by
-      // the player), this only cares about map bounds; cliff faces and water
-      // crossings are no longer hard blocks for any creature, just speed
-      // penalties for the ones without canClimb/canSwim (see
+      // Terrain/structure gate for creature movement — unlike tileSpeedAt
+      // (used by the player), cliff faces and water crossings stay soft
+      // (speed penalties only, for creatures without canClimb/canSwim — see
       // isCreatureClimbing/isCreatureSwimming and moveCreatureToward's
-      // CLIMB_SPEED_MUL/SWIM_SPEED_MUL slowdowns).
+      // CLIMB_SPEED_MUL/SWIM_SPEED_MUL slowdowns), and scattered rock/shrub
+      // terrain stays unblocked too (deliberately out of scope — these are
+      // dense enough on wilderness terrain that hard-blocking them would be
+      // a much bigger wander/patrol behavior change than what was asked).
+      // What this DOES now block: real structures — farm buildings/
+      // furniture/crates (worldObjects) and the house, town buildings, and
+      // zone buildings/animal dens — the same "walked straight through a
+      // wall" gap the player's own tileSpeedAt never had. moveCreatureToward
+      // already does axis-separated movement, so a creature blocked here
+      // slides along the obstacle's edge instead of freezing, exactly like
+      // the player's own wall collision.
       function creatureCanEnterTile(def, wx, wy) {
+        // A NaN/Infinite coordinate compares false against every bound
+        // check below (NaN is never < or >= anything), so without this it
+        // would silently pass through as "allowed" and let a corrupted
+        // target position get written into c.x/c.y — from there it poisons
+        // every distance calc downstream (footstep falloff, aggro range,
+        // etc.), eventually crashing far away from where it actually went
+        // wrong (see audio-system.js's non-finite .volume guard).
+        if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
         const aC = getActiveCols(), aR = getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || isHouseFootprint(col, row))) return false;
+        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return false;
+        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return false;
         return true;
       }
 
@@ -3675,6 +3697,12 @@
       }
 
       function moveCreatureToward(c, tx, ty, speed, dt) {
+        // A NaN/undefined target (e.g. a momentarily-gone companion master,
+        // a stale reference) must never reach the position math below — dist
+        // would come out NaN, every subsequent comparison against it is
+        // silently false rather than throwing, and c.x/c.y would end up
+        // permanently NaN with nothing downstream ever catching it directly.
+        if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
@@ -3693,6 +3721,62 @@
         c.vx = nx * effectiveSpeed; c.vy = ny * effectiveSpeed;
         if (moved > 0) tickCreatureFootsteps(c, moved);
         return moved > 0;
+      }
+
+      // Grid-walkability predicate for TilePathfinding, expressed in tile
+      // coordinates — reuses creatureCanEnterTile at the tile's center so
+      // the pathfinder's notion of "blocked" always matches what actual
+      // movement will (and won't) let a creature step onto.
+      function creatureTileWalkable(col, row) {
+        return creatureCanEnterTile(null, (col + 0.5) * TILE, (row + 0.5) * TILE);
+      }
+
+      const CREATURE_STUCK_THRESHOLD_S = 0.6;
+      const CREATURE_PATH_REPLAN_DIST_PX = TILE * 3;
+      const CREATURE_PATH_SEARCH_PADDING_TILES = 6;
+
+      // Wraps moveCreatureToward for "travel to a fixed point" behaviors —
+      // returning home, patrol legs, grazing/drinking trips, a companion
+      // catching up to a far-off player — where getting stuck against a
+      // structure (now that creatureCanEnterTile actually blocks them)
+      // would be a visible regression with nothing to route around it.
+      // Direct combat chase/patrol-chase/wander deliberately keep calling
+      // moveCreatureToward directly instead of this: its axis-separated
+      // slide-along-the-wall is enough there, and rerouting mid-chase would
+      // perturb the carefully-tuned attack-range triggering built around a
+      // straight line to the target. Cheap in the unobstructed common case
+      // — a path is only computed once real movement stalls for
+      // CREATURE_STUCK_THRESHOLD_S, then followed hop-by-hop until the
+      // creature is close enough to fall back to the direct approach, the
+      // real target has moved far enough to invalidate it, or it goes stale.
+      function travelCreatureToward(c, tx, ty, speed, dt) {
+        const dist = Math.hypot(tx - c.x, ty - c.y);
+        if (dist < TILE * 0.5) { c._travelPath = null; c._travelStuckT = 0; return moveCreatureToward(c, tx, ty, speed, dt); }
+
+        if (c._travelPath && c._travelPath.length) {
+          if (!c._travelPathTarget || Math.hypot(tx - c._travelPathTarget.x, ty - c._travelPathTarget.y) > CREATURE_PATH_REPLAN_DIST_PX) {
+            c._travelPath = null; // real target moved on — stale path, fall through to a fresh attempt
+          } else {
+            const wp = c._travelPath[0];
+            const wx = (wp.col + 0.5) * TILE, wy = (wp.row + 0.5) * TILE;
+            const moving = moveCreatureToward(c, wx, wy, speed, dt);
+            if (Math.hypot(c.x - wx, c.y - wy) < TILE * 0.35) c._travelPath.shift();
+            return moving;
+          }
+        }
+
+        const moving = moveCreatureToward(c, tx, ty, speed, dt);
+        if (moving) { c._travelStuckT = 0; return moving; }
+        c._travelStuckT = (c._travelStuckT || 0) + dt;
+        if (c._travelStuckT < CREATURE_STUCK_THRESHOLD_S) return moving;
+        c._travelStuckT = 0;
+        const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
+        const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
+        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, creatureTileWalkable, {
+          bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
+        });
+        if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
+        return moving;
       }
 
       function wanderTick(c, dt, anchorX, anchorY, radiusPx) {
@@ -4144,7 +4228,7 @@
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = moveCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
+              moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
             }
           } else if (c.state === 'patrol-chase') {
@@ -4251,7 +4335,7 @@
               }
             }
           } else if (c.state === 'return') {
-            moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+            moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
           } else if (c.denKey && window.Music?.isNightTime()) {
             // Denned pack, off the clock — head back to the den and settle
@@ -4259,7 +4343,7 @@
             // homeX/homeY = the den's own anchor point).
             const distFromDen = Math.hypot(c.x - c.homeX, c.y - c.homeY);
             if (distFromDen > DEN_SETTLE_RADIUS_PX) {
-              moving = moveCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
+              moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
             } else {
               aimAngle = idleCreatureAimAngle(c.groupRot);
@@ -4281,7 +4365,7 @@
               const distToWater = Math.hypot(c.x - wx, c.y - wy);
               if (distToWater > DEN_SETTLE_RADIUS_PX) {
                 c.state = 'traveling-to-drink';
-                moving = moveCreatureToward(c, wx, wy, def.moveSpeed, dt);
+                moving = travelCreatureToward(c, wx, wy, def.moveSpeed, dt);
                 if (moving) aimAngle = Math.atan2(wy - c.y, wx - c.x);
               } else {
                 c.state = 'drinking';
@@ -4299,7 +4383,7 @@
                 const distToStation = Math.hypot(c.x - stationX, c.y - stationY);
                 if (distToStation > DEN_SETTLE_RADIUS_PX) {
                   c.state = 'scheduled-travel-to-station';
-                  moving = moveCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
+                  moving = travelCreatureToward(c, stationX, stationY, def.moveSpeed, dt);
                   if (moving) aimAngle = Math.atan2(stationY - c.y, stationX - c.x);
                 } else {
                   c.state = 'at-station-grazing';
@@ -4326,7 +4410,7 @@
               c.patrolIndex = ((c.patrolIndex || 0) + 1) % c.patrolPoints.length;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
-              moving = moveCreatureToward(c, targetX, targetY, def.moveSpeed, dt);
+              moving = travelCreatureToward(c, targetX, targetY, def.moveSpeed, dt);
               if (moving) aimAngle = Math.atan2(targetY - c.y, targetX - c.x);
             }
           } else {
@@ -4869,7 +4953,7 @@
               }
             }
           } else if (distToMaster > FOLLOW_FAR_PX) {
-            moving = moveCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
+            moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
             aimAngle = Math.atan2(dyp, dxp);
           } else {
             // Fable 2-style treasure hint: with nothing else to do, a
@@ -7453,6 +7537,21 @@
           toolKey: station.toolKey || '',
           toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
           toolAnimStyle: station.toolAnimStyle || '',
+          // Multi-tile wander footprint around this station's root tile —
+          // see makeNpcWalker's _updateStationWander/_pickStationWanderTile.
+          // wanderMode 'radius' (default) samples a random offset within
+          // wanderRadiusTiles of (c,r); 'shape' instead picks uniformly
+          // among the hand-painted wanderShapeTiles (each a [dc,dr] offset
+          // from (c,r), authored in the Map Editor's station paint tool) —
+          // lets an author cover an irregular region a circle can't express
+          // (an L-shaped yard, a field that hugs a path, etc). Neither set
+          // (radius 0, empty shape) keeps today's behavior: an NPC freezes
+          // exactly at (c,r).
+          wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
+          wanderMode: station.wanderMode === 'shape' ? 'shape' : 'radius',
+          wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
+            ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
+            : [],
         };
       }
       function registerNpcStations(stations, fallbackArea) {
@@ -7747,6 +7846,13 @@
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
 
+      // Station wander (see makeNpcWalker's _updateStationWander) — same
+      // pick-a-tile/path-there/wait/repeat rhythm as farm-animals.js's
+      // FARM_ANIMAL_WANDER_WAIT_MIN_SEC/MAX_SEC.
+      const NPC_STATION_WANDER_WAIT_MIN_S = 2;
+      const NPC_STATION_WANDER_WAIT_MAX_S = 6;
+      const NPC_STATION_WANDER_RETRY_S = 0.5;
+
       async function makeNpcWalker(rec, initialTarget) {
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
@@ -7873,7 +7979,115 @@
             const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
             window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
           },
+          // Ad-hoc grid pathfinding fallback — used when neither a direct
+          // beeline nor the authored route-node graph can get this NPC to
+          // its target (no route node within routeSnapRadiusTiles, or the
+          // route graph has no connecting path between two disconnected
+          // route islands). Previously either case just parked the NPC in
+          // 'idle'/'breakoff' forever with no way to actually reach its
+          // station. Searches the real collision grid (isNpcTileWalkable —
+          // the same solidity/worldObjects/building/interior checks
+          // beeline/route pathing already use) via the shared
+          // TilePathfinding utility, bounded to a padded box around start/
+          // target so a genuinely unreachable target (e.g. a different
+          // area, resolved separately above) fails fast instead of
+          // scanning the whole map.
+          _tryStartGridPath(target) {
+            if (!window.TilePathfinding) return false;
+            const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
+            const path = window.TilePathfinding.findPath(startCol, startRow, target.c, target.r,
+              (c, r) => isNpcTileWalkable(this.area, c, r),
+              { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, 6) });
+            if (!path || !path.length) return false;
+            this._gridPath = path;
+            this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
+            return true;
+          },
+          _stepGridPath(target, dt) {
+            const targetKey = target.routeId + '|' + target.c + ',' + target.r;
+            if (!this._gridPath || this._gridPathTargetKey !== targetKey) {
+              if (!this._tryStartGridPath(target)) { this.state = 'idle'; return; }
+            }
+            const nextHop = this._gridPath[0];
+            if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) this._gridPath.shift();
+            if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
+          },
+          // Station wander — active once state === 'station-wander' (entered
+          // in update() the first time this NPC reaches a station whose
+          // target.wanderRadiusTiles > 0). Same pick-a-tile/path-there/wait/
+          // repeat rhythm as farm-animals.js's station wander, but riding
+          // this walker's own moveToward/beeline/grid-path machinery instead
+          // of reimplementing a separate greedy-hop mover — an NPC walker
+          // moves continuously (root.position), not tile-slot-discrete like
+          // a farm animal, so there's no equivalent worldObjects bookkeeping
+          // to duplicate. Deliberately skips the station's own rotY snap/
+          // tool-swing pose (see the frozen-idle branch in update()) —
+          // those represent a fixed "working at this desk" pose that
+          // doesn't make sense away from the authored root tile.
+          // Picks the next wander tile: either uniformly among the
+          // hand-painted wanderShapeTiles (shuffled so a small region still
+          // gets fair coverage instead of always scanning authored order),
+          // or a random radius-bounded offset — see normalizeNpcStation's
+          // comment on wanderMode. Returns null if nothing walkable was
+          // found (empty/fully-blocked shape, or radius 0/all attempts
+          // blocked).
+          _pickStationWanderTile(target) {
+            if (target.wanderMode === 'shape' && target.wanderShapeTiles?.length) {
+              const candidates = target.wanderShapeTiles.map(([dc, dr]) => ({ c: target.c + dc, r: target.r + dr }));
+              for (let i = candidates.length - 1; i > 0; i--) {
+                const j = Math.floor(rnd() * (i + 1));
+                [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+              }
+              return candidates.find(t => isNpcTileWalkable(this.area, t.c, t.r)) || null;
+            }
+            const radius = target.wanderRadiusTiles || 0;
+            if (radius <= 0) return null;
+            for (let attempt = 0; attempt < 8; attempt++) {
+              const dc = Math.round((rnd() * 2 - 1) * radius);
+              const dr = Math.round((rnd() * 2 - 1) * radius);
+              const nc = target.c + dc, nr = target.r + dr;
+              if (isNpcTileWalkable(this.area, nc, nr)) return { c: nc, r: nr };
+            }
+            return null;
+          },
+          _updateStationWander(target, dt) {
+            if (this._wanderWaitT > 0) { this._wanderWaitT -= dt; return; }
+            if (!this._wanderTarget) {
+              this._wanderTarget = this._pickStationWanderTile(target);
+              this._wanderGridPath = null;
+              if (!this._wanderTarget) { this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; return; }
+            }
+            const cfg = npcMovementConfig();
+            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const wx = this._wanderTarget.c + 0.5, wz = this._wanderTarget.r + 0.5;
+            if (Math.hypot(root.position.x - wx, root.position.z - wz) <= arrival) {
+              this._wanderTarget = null; this._wanderGridPath = null;
+              this._wanderWaitT = NPC_STATION_WANDER_WAIT_MIN_S + rnd() * (NPC_STATION_WANDER_WAIT_MAX_S - NPC_STATION_WANDER_WAIT_MIN_S);
+              return;
+            }
+            if (this._wanderGridPath && this._wanderGridPath.length) {
+              const hop = this._wanderGridPath[0];
+              if (this.moveToward(hop.c + 0.5, hop.r + 0.5, dt)) this._wanderGridPath.shift();
+              return;
+            }
+            if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
+              this.moveToward(wx, wz, dt);
+              return;
+            }
+            const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
+            const path = window.TilePathfinding?.findPath(startCol, startRow, this._wanderTarget.c, this._wanderTarget.r,
+              (c, r) => isNpcTileWalkable(this.area, c, r),
+              { bounds: window.TilePathfinding.boxAround(startCol, startRow, this._wanderTarget.c, this._wanderTarget.r, 4) });
+            if (path && path.length) this._wanderGridPath = path;
+            else { this._wanderTarget = null; this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; } // unreachable — try a different wander tile shortly
+          },
           moveToward(tx, tz, dt) {
+            // See moveCreatureToward's matching guard: a non-finite target
+            // must never reach root.position — nothing downstream would
+            // catch a NaN position directly, and it'd only surface as a
+            // crash far away (e.g. footstep audio) or a permanently
+            // invisible/frozen NPC.
+            if (!Number.isFinite(tx) || !Number.isFinite(tz)) return false;
             const cfg = npcMovementConfig();
             const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
             const dx = tx - root.position.x, dz = tz - root.position.z;
@@ -7940,6 +8154,33 @@
             const cfg = npcMovementConfig();
             const tx = target.c + 0.5, tz = target.r + 0.5;
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
+            const wanderKey = target.stationId || target.id || null;
+            // Station wander (see _updateStationWander) takes over completely
+            // once entered, instead of the plain freeze-at-the-exact-tile
+            // idle below — abandoned the instant the schedule moves this NPC
+            // to a different target (a different station, or one with no
+            // wander region set).
+            if (this.state === 'station-wander' && (!wanderEnabled || this._stationWanderKey !== wanderKey)) {
+              this.state = 'idle';
+              this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
+            }
+            if (this.state !== 'station-wander' && wanderEnabled && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+              this.state = 'station-wander';
+              this._stationWanderKey = wanderKey;
+              this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
+            }
+            if (this.state === 'station-wander') {
+              this._updateStationWander(target, dt);
+              const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y += (wty - root.position.y) * 0.2;
+              if (this._moveSpeedTiles > 0.05) {
+                const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              }
+              groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
+              return;
+            }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);
@@ -7986,8 +8227,10 @@
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
-              this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = null; this._routePathTargetKey = null;
+              this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
+            } else if (this.state === 'grid-path') {
+              this._stepGridPath(target, dt);
             } else if (this.state !== 'on-route') {
               this.routeTarget = findNearestRouteNode(this.area, root.position.x, root.position.z, target);
               // Don't wade to the route node — if the direct line there crosses
@@ -7995,8 +8238,16 @@
               if (this.routeTarget && !canNpcBeeline(this.area, root.position.x, root.position.z, this.routeTarget.c, this.routeTarget.r)) {
                 this.routeTarget = null;
               }
-              this.state = this.routeTarget ? 'to-route' : 'idle';
-              if (this.routeTarget) this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt);
+              if (this.routeTarget) {
+                this.state = 'to-route';
+                this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt);
+              } else if (this._tryStartGridPath(target)) {
+                // No authored route node in range at all — fall back to a
+                // real grid-searched path instead of just parking idle.
+                this.state = 'grid-path';
+              } else {
+                this.state = 'idle';
+              }
             } else {
               // Walk a precomputed shortest path hop-by-hop instead of greedily
               // picking whichever neighbor looks closer right now — the greedy
@@ -8007,7 +8258,14 @@
                 this.routePath = computeRoutePathToTarget(this.routeNode, target);
                 this._routePathTargetKey = targetKey;
               }
-              if (!this.routePath || !this.routePath.length) { this.state = 'breakoff'; return; }
+              if (!this.routePath || !this.routePath.length) {
+                // The route graph has no connecting path between this NPC's
+                // current route island and the target's (e.g. two separately
+                // authored route networks that were never linked) — try a
+                // real grid search before giving up outright.
+                if (this._tryStartGridPath(target)) { this.state = 'grid-path'; return; }
+                this.state = 'breakoff'; return;
+              }
               const nextHop = this.routePath[0];
               if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) {
                 this.routeNode = nextHop;
@@ -10862,28 +11120,43 @@
         return col >= houseCol && col < houseCol + HOUSE_FOOTPRINT_W
             && row >= houseRow && row < houseRow + HOUSE_FOOTPRINT_D;
       }
+      // Barns (any tier, foundation or built) block movement over their
+      // whole registered footprint — stable.json's own footprint.cells is
+      // already a solid rectangle matching w×h, so the piece-less bbox
+      // fallback in _buildingFootprintBlocks (below) gives the identical
+      // result without needing the async-loaded piece JSON on hand here.
+      function isFarmBuildingCollisionTile(col, row) {
+        return farmBuildings.some(b => _buildingFootprintBlocks(b, null, col, row));
+      }
       // Rotation math lives once in js/building-door.js (shared with the Map
       // Editor and House Piece Author's door tooling) — this is just the
       // local name collision detection already used before that file existed.
       function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
         return BuildingDoor.rotateCell(localX, localY, width, depth, rotationDeg);
       }
+      // Axis-aligned bbox check using the building's own footprintW/D (or
+      // legacy w/h) — used both when no piece is loaded yet at all, and as
+      // a defensive fallback if a piece IS loaded but its footprint.cells
+      // came back empty (e.g. exported before the House Piece Author's
+      // footprint tool was used). Either way, a real placed/rendered
+      // building should never end up with silently zero collision.
+      function _buildingFootprintBbox(bldg, originX, originZ, col, row) {
+        const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
+        const fbSwap = fbRot === 90 || fbRot === 270;
+        const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
+        const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
+        return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
+      }
       function _buildingFootprintBlocks(bldg, piece, col, row) {
         const originX = bldg.gridX ?? bldg.col ?? 0;
         const originZ = bldg.gridZ ?? bldg.row ?? 0;
 
-        if (!piece?.footprint) {
-          const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
-          const fbSwap = fbRot === 90 || fbRot === 270;
-          const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
-          const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
-          return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
-        }
+        if (!piece?.footprint) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
 
         const structuralCells = piece.footprint.cells || [];
         const fencePostCells = piece.footprint.extensions?.railings || [];
         const collisionCells = structuralCells.concat(fencePostCells);
-        if (!collisionCells.length) return false;
+        if (!collisionCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
 
         const allBuildingCells = []
           .concat(piece.footprint.cells || [])
@@ -10918,16 +11191,23 @@
         if (area === 'town') {
           // Building-entrance transition tiles are always walkable (they ARE the door approach)
           if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
-          const loadedBuildingGroups = _townBuildingGroups.filter(entry => entry.piece?.footprint);
-          const buildingSources = loadedBuildingGroups.length
-            ? loadedBuildingGroups
+          // Every building must be checked regardless of whether ITS OWN piece
+          // has finished loading — _buildingFootprintBlocks already falls back
+          // to a bbox check per-entry when `piece` is null. Previously this
+          // filtered down to only piece-loaded entries once ANY building had
+          // loaded, which silently dropped collision entirely (not even the
+          // bbox fallback) for any building still fetching, whose fetch
+          // failed, or that the GLB-upgrade pass (town-zone-buildings.js)
+          // dropped for not having a piece — see that file's own upgrade loop.
+          const buildingSources = _townBuildingGroups.length
+            ? _townBuildingGroups
             : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
           return buildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
         }
 
-        const loadedZoneGroups = (_zoneBuildingGroups.get(area) || []).filter(entry => entry.piece?.footprint);
-        const zoneBuildingSources = loadedZoneGroups.length
-          ? loadedZoneGroups
+        const zoneGroups = _zoneBuildingGroups.get(area) || [];
+        const zoneBuildingSources = zoneGroups.length
+          ? zoneGroups
           : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
         if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
         return isAnimalDenCollisionTile(col, row, area);
@@ -12656,7 +12936,7 @@
         // for the matching attack-lockout.
         if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
         // Block structural building tiles on exterior maps (player must use doors/transitions).
-        if (currentArea === 'farm' && isHouseFootprint(col, row)) return null;
+        if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
         if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
@@ -13253,22 +13533,33 @@
       // Every mesh worth pulling the camera in front of, for whatever area is
       // currently active. Zones keep their existing tagged-mesh collection
       // (buildZoneScene's `occlusionMeshes`, built once per zone from
-      // `.userData.cameraObstacle` tags on cliff/mesa skins). Everywhere
-      // else has no such static collection — the farmhouse, barn, and any
-      // placed furniture can all sit between the camera and the player (the
-      // house/barn were the reported case for losing sight of animals
-      // behind them; furniture matters for the seated camera specifically,
-      // since a chair can easily have another piece of furniture right
-      // behind it) — so those are gathered fresh each call instead. Cheap
-      // in practice: a handful of structures/furniture pieces at most, and
-      // this only runs once a frame.
+      // `.userData.cameraObstacle` tags on cliff/mesa skins) as a base, but
+      // that snapshot is taken before spawnZoneBuildings' async piece-fetch
+      // (and later GLB-upgrade) resolves, so zone buildings can never join
+      // it by tagging alone — read _zoneBuildingGroups fresh each call
+      // instead, same as town/farm below. Town and farm buildings, and any
+      // placed furniture, have no static tagged collection at all — the
+      // farmhouse, barn, town buildings, and furniture can all sit between
+      // the camera and the player (the house/barn were the reported case
+      // for losing sight of animals behind them; furniture matters for the
+      // seated camera specifically, since a chair can easily have another
+      // piece of furniture right behind it) — so those are gathered fresh
+      // each call instead. Cheap in practice: a handful of structures/
+      // furniture pieces at most, and this only runs once a frame.
       function currentAreaOcclusionMeshes() {
-        if (_isZoneArea(currentArea)) return _zoneScenes.get(currentArea)?.occlusionMeshes || [];
+        if (_isZoneArea(currentArea)) {
+          const meshes = (_zoneScenes.get(currentArea)?.occlusionMeshes || []).slice();
+          for (const entry of (_zoneBuildingGroups.get(currentArea) || [])) if (entry.group) meshes.push(entry.group);
+          return meshes;
+        }
         const meshes = [];
         if (currentArea === 'farm') {
           if (_houseModel) meshes.push(_houseModel);
           else if (_houseFallbackMesh) meshes.push(_houseFallbackMesh);
           for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
+        }
+        if (currentArea === 'town') {
+          for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
         for (const obj of interiorFurnitureObjects) {
           if (obj.area === currentArea && obj.mesh) meshes.push(obj.mesh);
@@ -20557,6 +20848,8 @@
         getGrid: () => grid,
         isHouseFootprint,
         processingFurnitureObjects,
+        interiorFurnitureObjects,
+        DECORATIVE_FURNITURE_DEFS,
         _loadWorldLivestock,
         worldObjects,
         animalObjects,
@@ -20583,6 +20876,7 @@
         _loadWorldStorage,
         _saveWorldStorage,
         ITEM_DEFS,
+        dewItemKey,
         clampInventoryStack,
         getActiveMountId: () => activeMountId,
         setActiveMountId: (v) => { activeMountId = v; },

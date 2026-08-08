@@ -129,7 +129,7 @@
   // even though there's no literal fence data) rather than its current
   // position, so repeated station-hops can't slowly drift it across the
   // whole farm.
-  const FARM_ANIMAL_WANDER_RADIUS_TILES = 4;
+  const FARM_ANIMAL_WANDER_RADIUS_TILES = 5;
   const FARM_ANIMAL_WANDER_WAIT_MIN_SEC = 2;
   const FARM_ANIMAL_WANDER_WAIT_MAX_SEC = 6;
 
@@ -168,13 +168,35 @@
     const arrived = Math.abs(animal.wx - (animal.targetCol + 0.5)) < 0.04
       && Math.abs(animal.wz - (animal.targetRow + 0.5)) < 0.04;
     if (!arrived) return;
-    if (!_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn)) {
-      // Blocked in every direction — give up on this station and rest
-      // briefly before trying a new one, rather than spinning in place.
-      animal.wanderTargetCol = null;
-      animal.wanderTargetRow = null;
-      animal.wanderWaitT = 0.5 + deps.rnd() * 0.5;
+    if (_farmAnimalStepToward(animal, animal.wanderTargetCol, animal.wanderTargetRow, onStep, _tileTouchesAnyBarn)) {
+      animal._wanderPath = null;
+      return;
     }
+    // The direct/greedy hop is fully blocked (e.g. a barn now sits between
+    // here and the station) — try a real grid path around it before giving
+    // up on this station outright. Cheap: only runs once movement actually
+    // stalls, and is bounded to a small local box since farm wander targets
+    // are always nearby (see FARM_ANIMAL_WANDER_RADIUS_TILES).
+    if (!animal._wanderPath || !animal._wanderPath.length) {
+      const isWalkable = (c, r) => canSpawnAt(c, r) && !_tileTouchesAnyBarn(c, r);
+      const path = window.TilePathfinding?.findPath(animal.col, animal.row, animal.wanderTargetCol, animal.wanderTargetRow, isWalkable, {
+        bounds: window.TilePathfinding.boxAround(animal.col, animal.row, animal.wanderTargetCol, animal.wanderTargetRow, 5),
+      });
+      if (path && path.length) animal._wanderPath = path;
+    }
+    if (animal._wanderPath && animal._wanderPath.length) {
+      const hop = animal._wanderPath[0];
+      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn)) {
+        animal._wanderPath.shift();
+        return;
+      }
+    }
+    // Still nothing — give up on this station and rest briefly before
+    // trying a new one, rather than spinning in place.
+    animal._wanderPath = null;
+    animal.wanderTargetCol = null;
+    animal.wanderTargetRow = null;
+    animal.wanderWaitT = 0.5 + deps.rnd() * 0.5;
   }
 
   function _farmAnimalWakeUp(animal) {
@@ -916,6 +938,7 @@
     respawnWorldLivestock,
     refsEqual,
     currentCharacterId,
+    resolveBreedingParent,
     tickBreeding,
     clearAnimalObjects,
     updateAnimalMeshes,

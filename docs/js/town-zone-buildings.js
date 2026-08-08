@@ -169,7 +169,11 @@
           for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
             townScene3.remove(group);
             group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-            if (!piece) continue;
+            // A building whose piece never loaded still needs to stay in
+            // the tracked group list (empty placeholder group) — dropping
+            // it here previously meant isTownBuildingCollisionTile could
+            // never bbox-fallback for it again for the rest of the session.
+            if (!piece) { upgraded.push({ group: new THREE.Group(), bldg, piece: null, wbOpts, wbGableOpts }); continue; }
             const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
               wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: false,
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
@@ -253,7 +257,11 @@
           for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
             scene2.remove(group);
             group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-            if (!piece) continue;
+            // See spawnTownBuildings' matching upgrade loop: keep a
+            // never-loaded building's entry (empty placeholder group)
+            // instead of dropping it, so its collision bbox fallback
+            // keeps working for the rest of the session.
+            if (!piece) { groups.push({ group: new THREE.Group(), bldg, piece: null, wbOpts, wbGableOpts }); continue; }
             const elevationY = deps.NORMAL_TOP + (bldg.elevTier || 0) * deps.PLATEAU_UNIT;
             const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
               wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: false,

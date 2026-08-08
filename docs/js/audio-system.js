@@ -148,7 +148,11 @@
   // runs through playHeavyFilteredClip's dulling lowpass so it reads as
   // hitting the ground hard rather than an ordinary stride.
   function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
-    if (volume <= 0.002) return;
+    // A non-finite volume (NaN/Infinity — e.g. from a caller's distance
+    // falloff math going through a NaN position) throws a hard
+    // Uncaught TypeError the instant it's assigned to <audio>.volume,
+    // instead of just silently muting like an out-of-range number would.
+    if (!Number.isFinite(volume) || volume <= 0.002) return;
     const postFx = { ...FOOTSTEP_POST_FX[surfaceKey], ...(footstepCfg.surfaces?.[surfaceKey] || {}) };
     const urls = postFx.urls || (postFx.url ? [postFx.url] : null);
     const finalVolume = Math.min(1, volume * Math.max(0, Number(postFx.volumeMul) || 1));
