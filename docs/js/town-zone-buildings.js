@@ -16,6 +16,24 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Retints the shared wall-brick GLB (Roughbrick1.glb, via WallBuilder) and
+  // the shared shingle GLB (HighlandLongshingle_boned.glb, via HousePieceGen)
+  // from their baked textures to a repo PNG + shade-fill color, the same way
+  // loadHousePieceFaceTexture already does for the boards/stone/canvas faces
+  // above. Both GLB templates are shared singletons whose clones/instances
+  // reference the same material object (see WallBuilder.build's InstancedMesh
+  // and HousePieceGen's _tpl.scene.clone), so retinting each template's
+  // material once here covers every building anywhere, town or wilderness —
+  // no per-building or per-zone work needed. Runs once regardless of which
+  // upgrade path (town or a wilderness zone) finishes its GLB loads first.
+  let _glbTintApplied = false;
+  function _applyBuildingGlbTints() {
+    if (_glbTintApplied) return;
+    _glbTintApplied = true;
+    deps.houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
+    HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
+  }
+
   // ── Town building detection ──────────────────────────────────────
   // Reads explicit building entries from the town layout (placed by map editor).
   function detectTownBuildings() {
@@ -174,6 +192,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           _townBuildingsGlbUpgradePending = false;
+          _applyBuildingGlbTints();
           const townScene3 = deps.getTownScene();
           if (!townScene3) return;
           deps.debugLog('Town buildings: upgrading to real bricks + shingle GLB');
@@ -263,6 +282,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           deps.zoneBuildingsGlbUpgradePending.delete(mapId);
+          _applyBuildingGlbTints();
           const scene2 = deps.zoneScenes.get(mapId)?.scene;
           if (!scene2) return;
           deps.debugLog(`Zone buildings (${mapId}): upgrading to real bricks + shingle GLB`);

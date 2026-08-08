@@ -354,6 +354,35 @@
   };
 
   /**
+   * Recolors the default (Roughbrick1.glb) wall model's own material in place,
+   * replacing its baked brick texture with a repo PNG retinted via the same
+   * adaptive shade fill used for portrait/creature tinting (getShadeFillCanvas
+   * in portrait-utils.js, loaded before this file — called lazily here since
+   * script load order puts this file first). build() hands every instanced
+   * wall this exact material object (see WallBuilder.prototype.build below),
+   * so tinting it once retints every wall — already built or built later —
+   * anywhere the default GLB is used.
+   */
+  WallBuilder.prototype.tintDefaultGlb = function (pngPath, fillColor) {
+    const model = this.glbLibrary.get(WALL_DEFAULT_GLB_NAME);
+    if (!model) return;
+    const mats = Array.isArray(model.mesh.material) ? model.mesh.material : [model.mesh.material];
+    new THREE.TextureLoader().load(pngPath, (tex) => {
+      const rgb = fillColor && root.parseHexColor && root.parseHexColor(fillColor);
+      let finalTex = tex;
+      if (rgb) {
+        const canvas = root.getShadeFillCanvas(tex.image, pngPath + '|' + fillColor, {
+          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: root.getPortraitTintingConfig(),
+        });
+        finalTex = new THREE.CanvasTexture(canvas);
+      }
+      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      finalTex.needsUpdate = true;
+      mats.forEach((m) => { if (!m) return; m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
+    }, undefined, () => {});
+  };
+
+  /**
    * Generate instanced wall geometry for an array of panels.
    *
    * @param {Array}  panels  Each: { id, width, height, position:[x,y,z], rotationDeg:[rx,ry,rz], wallRecipeId? }

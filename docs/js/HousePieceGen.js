@@ -65,6 +65,37 @@
 
   function shingleReady() { return !!_tpl; }
 
+  // Recolors the shingle GLB's own baked material in place, replacing its
+  // texture with a repo PNG retinted via the same adaptive shade fill used
+  // for portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
+  // loaded after this file — called lazily here since script load order puts
+  // this file first). _makeShingle's `_tpl.scene.clone(true)` shares material
+  // references with the template (THREE's Object3D/Mesh clone does not deep-
+  // clone materials), so tinting the template's material once retints every
+  // shingle instance — already placed or placed later.
+  function tintShingleMaterial(pngPath, fillColor) {
+    if (!_tpl) return;
+    var mats = new Set();
+    _tpl.scene.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) mats.add(m); });
+    });
+    if (!mats.size) return;
+    new THREE.TextureLoader().load(pngPath, function (tex) {
+      var rgb = fillColor && global.parseHexColor && global.parseHexColor(fillColor);
+      var finalTex = tex;
+      if (rgb) {
+        var canvas = global.getShadeFillCanvas(tex.image, pngPath + '|' + fillColor, {
+          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: global.getPortraitTintingConfig(),
+        });
+        finalTex = new THREE.CanvasTexture(canvas);
+      }
+      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      finalTex.needsUpdate = true;
+      mats.forEach(function (m) { m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
+    }, undefined, function () {});
+  }
+
   // Exact port of analyzeShingleTemplate() from house-piece-author
   function _analyzeShingle(sceneObj) {
     var bone = null;
@@ -90,7 +121,7 @@
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
-  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady };
+  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial };
 
   /**
    * Build a Highland house group for one rectangular building footprint.
