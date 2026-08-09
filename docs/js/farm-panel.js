@@ -29,7 +29,7 @@
   // Farm tab "move/place" state — armed by a button in renderFarmBuildings(),
   // consumed by the farmGlanceCanvas click handler set up in
   // renderFarmGridGlance(). null when nothing is being moved/placed.
-  let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'place', tier }
+  let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'place', tier } | { type: 'placeHouseDeed', pieceKey }
 
   function renderFarmPanel() {
     if (!document.getElementById('mpFarm')) return;
@@ -89,6 +89,8 @@
   // it gets its live status color instead (see farmProcessorStatus).
   const WORLD_OBJECT_TYPE_COLORS = {
     barn: 'rgba(200,80,60,0.9)',
+    house_piece: 'rgba(120,90,60,0.9)',
+    house_entrance: 'rgba(120,90,60,0.9)',
     sell_crate: 'rgba(230,190,80,0.9)',
     supply_box: 'rgba(230,190,80,0.9)',
     decorative_furniture: 'rgba(150,100,220,0.9)',
@@ -188,7 +190,9 @@
         const col = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
         const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
         const mode = _farmPlacementMode;
-        const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row) : window.FarmBuildings.placePlan(mode.tier, col, row);
+        const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row)
+          : mode.type === 'placeHouseDeed' ? deps.placeHouseDeed(mode.pieceKey, col, row)
+          : window.FarmBuildings.placePlan(mode.tier, col, row);
         deps.showToast(result.message, result.ok);
         if (result.ok) _farmPlacementMode = null;
         renderFarmPanel();
@@ -197,11 +201,13 @@
     canvas.style.cursor = _farmPlacementMode ? 'crosshair' : '';
   }
 
-  // "Buildings" section of the Farm tab: lists the house + every barn with
-  // a Move button (owner/alterFarm-gated), and any owned-but-unplaced barn
-  // plans with a Place button. Both arm _farmPlacementMode and wait for a
-  // click on the glance canvas above (see renderFarmGridGlance()'s click
-  // handler).
+  // "Buildings" section of the Farm tab: lists every house piece (built or
+  // still a foundation — interact with a foundation in-world to build it)
+  // and every barn with a Move button (owner/alterFarm-gated), plus any
+  // owned-but-unplaced barn plans or house deeds with a Place button. All
+  // arm _farmPlacementMode and wait for a click on the glance canvas above
+  // (see renderFarmGridGlance()'s click handler). House pieces have no Move
+  // button — they're placed once, touching the existing house, and stay put.
   function renderFarmBuildings() {
     const list = document.getElementById('farmBuildingsList');
     const note = document.getElementById('farmBuildingsNote');
@@ -209,13 +215,16 @@
     if (!list) return;
     const canAlter = deps.hasFarmPermission('alterFarm');
     const BARN_TIERS = deps.getBarnTiers();
+    const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
     list.innerHTML = '';
 
     if (note) {
       note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can move or build here."
         : _farmPlacementMode
-          ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.' : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
-          : 'Move the house or a barn, or place an owned barn plan, by clicking the map above.';
+          ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.'
+            : _farmPlacementMode.type === 'placeHouseDeed' ? `Click a tile touching your house to place the ${HOUSE_PIECE_CATALOG[_farmPlacementMode.pieceKey].label} foundation.`
+            : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
+          : 'Move a barn, or place an owned barn plan or house deed, by clicking the map above.';
     }
     if (cancelBtn) {
       cancelBtn.hidden = !_farmPlacementMode;
@@ -236,8 +245,10 @@
       list.appendChild(row);
     };
 
-    addRow('🏠 Highland House', deps.HOUSE_FOOTPRINT_W, deps.HOUSE_FOOTPRINT_D,
-      () => { _farmPlacementMode = { type: 'move', buildingId: 'highland_house' }; renderFarmBuildings(); });
+    deps.getHousePieces().forEach(p => {
+      const pieceLabel = p.pieceKey === 'starter' ? '🏠 House' : `🏠 ${HOUSE_PIECE_CATALOG[p.pieceKey]?.label || 'House Wing'}`;
+      addRow(`${pieceLabel}${p.stage === 'foundation' ? ' (foundation)' : ''}`, p.w, p.h, null);
+    });
 
     deps.getFarmBuildings().filter(b => b.kind === 'barn').forEach(b => {
       const tier = BARN_TIERS[b.tier];
@@ -256,6 +267,20 @@
         btn.className = 'settings-small-btn';
         btn.textContent = 'Place';
         btn.addEventListener('click', () => { _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
+        row.appendChild(btn);
+        list.appendChild(row);
+      });
+      Object.entries(HOUSE_PIECE_CATALOG).forEach(([pieceKey, def]) => {
+        if (!def.deedItem) return;
+        const owned = deps.inventory[def.deedItem] || 0;
+        if (owned < 1) return;
+        const row = document.createElement('div');
+        row.className = 'farm-row';
+        row.innerHTML = `<span class="farm-row-name">📜 ${deps.esc(def.label)}</span><span class="farm-note">${owned} owned</span>`;
+        const btn = document.createElement('button');
+        btn.className = 'settings-small-btn';
+        btn.textContent = 'Place';
+        btn.addEventListener('click', () => { _farmPlacementMode = { type: 'placeHouseDeed', pieceKey }; renderFarmBuildings(); });
         row.appendChild(btn);
         list.appendChild(row);
       });

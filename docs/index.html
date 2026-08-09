@@ -167,6 +167,14 @@
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
   <script src="js/farm-buildings.js?v=20260807a"></script>
+  <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
+       build/demolish pipeline for house-piece deeds bought from the
+       Carpenter, replacing the old singular Highland House GLB. Depends on
+       HousePieceGen.js/building-door.js (loaded above) at build/demolish
+       time, not at load time, so script order relative to them doesn't
+       matter; must load before game.js, which calls
+       window.HousePieces.init(...) during its own setup. -->
+  <script src="js/house-pieces.js?v=20260809a"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load

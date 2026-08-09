@@ -1,12 +1,14 @@
 (() => {
   'use strict';
 
-  // Carpenter's shop: sells barn plans (see BARN_TIERS, game.js) and
-  // furniture blueprints (see FURNITURE_BLUEPRINT_CATALOG). Same shape as
-  // the General Store's goods list, just its own two catalogs. Extracted
-  // out of game.js following the same window.<Namespace> + init(deps)
-  // pattern as its sibling shop modules. getBarnTiers() is a getter since
-  // _applyLoadedShopStock (game.js) reassigns BARN_TIERS wholesale once
+  // Carpenter's shop: sells barn plans (see BARN_TIERS, game.js), house
+  // piece deeds (see HOUSE_PIECE_CATALOG, game.js), and furniture
+  // blueprints (see FURNITURE_BLUEPRINT_CATALOG). Same shape as the General
+  // Store's goods list, just its own three catalogs. Extracted out of
+  // game.js following the same window.<Namespace> + init(deps) pattern as
+  // its sibling shop modules. getBarnTiers()/getHousePieceDeeds() are
+  // getters since _applyLoadedShopStock (game.js) reassigns
+  // BARN_TIERS/HOUSE_PIECE_CATALOG wholesale once
   // docs/config/shops/shop-stock.json loads.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
@@ -19,6 +21,22 @@
     deps.inventory.gold = gold - tierDef.price;
     deps.inventory[tierDef.planItem] = Math.min(9, (deps.inventory[tierDef.planItem] || 0) + 1);
     deps.showToast(`Bought a ${tierDef.label} plan!`, true);
+    renderCarpenterShopPage();
+    deps.buildInventoryGrid();
+    deps.saveMemberWorldData();
+  }
+
+  // House piece deeds — bought here instead of built outright; place the
+  // owned deed touching the existing house from the Farm tab, then interact
+  // with the resulting foundation to build (see js/house-pieces.js).
+  function buyHousePieceDeed(pieceKey) {
+    const def = deps.getHousePieceDeeds()[pieceKey];
+    if (!def) return;
+    const gold = deps.inventory.gold || 0;
+    if (gold < def.price) { deps.showToast('Not enough gold.', false); return; }
+    deps.inventory.gold = gold - def.price;
+    deps.inventory[def.deedItem] = Math.min(9, (deps.inventory[def.deedItem] || 0) + 1);
+    deps.showToast(`Bought a ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
@@ -69,6 +87,28 @@
         <button class="shop-buy-btn" data-tier="${tier}">Buy</button>
       `;
       row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
+      list.appendChild(row);
+    });
+
+    const deedHdr = document.createElement('div');
+    deedHdr.className = 'shop-section-label';
+    deedHdr.textContent = '🏗 House Deeds';
+    list.appendChild(deedHdr);
+
+    Object.entries(deps.getHousePieceDeeds()).filter(([, def]) => window.ConditionRegistry.entryEligible(def, world)).forEach(([pieceKey, def]) => {
+      const owned = deps.inventory[def.deedItem] || 0;
+      const row = document.createElement('div');
+      row.className = 'shop-row';
+      row.innerHTML = `
+        <div class="sh-icon">🏗</div>
+        <div class="sh-info">
+          <div class="sh-name">${deps.esc(def.label)}</div>
+          <div class="sh-desc">A ${def.w}×${def.h} room, placed touching your house from the Farm tab. Owned: ${owned}</div>
+          <div class="sh-price">${def.price}g each</div>
+        </div>
+        <button class="shop-buy-btn" data-deed="${pieceKey}">Buy</button>
+      `;
+      row.querySelector('[data-deed]')?.addEventListener('click', () => buyHousePieceDeed(pieceKey));
       list.appendChild(row);
     });
 

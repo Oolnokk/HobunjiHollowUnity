@@ -549,43 +549,17 @@
       // code also read them, and are threaded into CalendarSystem.init(...)
       // below as deps.
 
-      // ── Highland House — adjust these to fit the GLB and position it on the farm ──
-      // Values sourced from Footprint_Highlandhouse_medium.json (footprint mapper v3)
-      const HOUSE_SCALE       = 1.854;  // uniform GLB scale from mapper
-      const HOUSE_ROTATION_Y  = 0;     // no rotation needed per mapper
-      const HOUSE_POS_X       = 27.741; // mapper translate.x (-1.259) + editor→game offset (29)
-      const HOUSE_POS_Y       = 0.915;  // mapper translate.y (ground lift)
-      const HOUSE_POS_Z       = 3.662;  // mapper translate.z (-0.338) + editor→game offset (4)
-      const HOUSE_COL         = 26;     // top-left column of house footprint on farm grid
-      const HOUSE_ROW         = 2;      // top-left row of house footprint on farm grid
-      const HOUSE_FOOTPRINT_W = 5;      // footprint width in tiles (cells x=9..13, 5 wide)
-      const HOUSE_FOOTPRINT_D = 4;      // footprint depth in tiles (cells y=10..13, 4 deep)
-      const DOOR_COL          = 28;     // farm grid col of door zone (mapper cell 11,14 → col 28)
-      const DOOR_ROW          = 6;      // farm grid row of door zone (mapper cell 11,14 → row 6)
-
-      // Mutable current top-left of the house footprint — defaults to the
-      // mapper-authored HOUSE_COL/HOUSE_ROW above, but the Farm tab's "Move
-      // Building" flow can relocate it. Every other house-position value
-      // (door tiles, GLB world position) is derived from the delta between
-      // this and the HOUSE_COL/HOUSE_ROW origin, since farm tiles map 1:1 to
-      // world units (see e.g. makeUumkaoiiAnimal's `col + 0.5` placement) —
-      // we don't need to know the mapper's original absolute offset math,
-      // just shift everything by the same amount the house moved.
-      let houseCol = HOUSE_COL;
-      let houseRow = HOUSE_ROW;
-      function currentDoorCol() { return houseCol + (DOOR_COL - HOUSE_COL); }
-      function currentDoorRow() { return houseRow + (DOOR_ROW - HOUSE_ROW); }
-      function currentHousePosX() { return HOUSE_POS_X + (houseCol - HOUSE_COL); }
-      function currentHousePosZ() { return HOUSE_POS_Z + (houseRow - HOUSE_ROW); }
-      // Interior dimensions — 12×12 (doubled from original 6×6).
-      // Layout: 12×10 main room (cols 0-11, rows 0-9) + 4-cell wide south corridor (cols 4-7, rows 10-11)
-      const INTERIOR_COLS        = 12;
-      const INTERIOR_ROWS        = 12;
-      const INTERIOR_ENTRY_COL   = 5;    // player spawns here when entering (center corridor col)
-      const INTERIOR_ENTRY_ROW   = 9;    // just inside the main room, north of the corridor
-      const INTERIOR_EXIT_COL    = 5;    // center col of south exit corridor
-      const INTERIOR_EXIT_ROW    = 11;   // last row of south exit corridor
-      const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units (30% shorter than original 2.5)
+      // ── Modular player house ────────────────────────────────────────
+      // Replaces the old singular Highland House GLB (see js/house-pieces.js,
+      // window.HousePieces). The interior grid is just the farm grid at 2x
+      // resolution — every exterior farm tile a built house piece occupies
+      // contributes a 2x2 interior cell block (see
+      // HousePieces.computeInteriorLayout()) — sized to the whole farm
+      // rather than tightly to the current house, since the merged interior
+      // grows as more pieces get built.
+      const INTERIOR_COLS        = COLS * 2;
+      const INTERIOR_ROWS        = ROWS * 2;
+      const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units
 
       // ── Voxel render constants ──
       // Each tile is drawn as a top-down oblique voxel stack.
@@ -2498,6 +2472,42 @@
         interiorFurnitureObjects.length = 0;
       }
 
+      // Removes every interior-area furniture piece whose footprint
+      // overlaps the given interior cell rect (a demolished house piece's
+      // own doubled block — see js/house-pieces.js's demolish()) and
+      // refunds each one to the farm's storage box (the same
+      // _loadWorldStorage/_saveWorldStorage the Farm tab's Storage pane
+      // already uses), rather than the player's personal inventory — this
+      // is the literal "farm storage" the modular house feature promises.
+      // Returns how many pieces were recovered.
+      function recoverFurnitureInInteriorRect(c0, r0, w, h) {
+        const c1 = c0 + w, r1 = r0 + h;
+        const toRemove = interiorFurnitureObjects.filter(o => {
+          if (o.area !== 'interior') return false;
+          const def = DECORATIVE_FURNITURE_DEFS[o.key];
+          const fw = def?.fw || 1, fd = def?.fd || 1;
+          return o.col < c1 && o.col + fw > c0 && o.row < r1 && o.row + fd > r0;
+        });
+        if (!toRemove.length) return 0;
+        const store = _loadWorldStorage();
+        toRemove.forEach(obj => {
+          interiorScene.remove(obj.mesh);
+          obj.mesh.traverse && obj.mesh.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+          });
+          if (obj.light) interiorScene.remove(obj.light);
+          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          if (itemKey) store[itemKey] = (store[itemKey] || 0) + 1;
+          const idx = interiorFurnitureObjects.indexOf(obj);
+          if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
+        });
+        _saveWorldStorage(store);
+        return toRemove.length;
+      }
+
       // ── Farm editor ───────────────────────────────────────────────
       let farmEditMode = false;
       let farmEditBrushType = 'terrain'; // 'terrain'|'crop'|'object'|'furniture'|'decor'|'erase'
@@ -2641,11 +2651,13 @@
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
           });
-          // Movable buildings — house position (only saved if moved from its
-          // default) and every barn (foundation or built). Added as extra
-          // fields on the same version-3 shape rather than bumping the
-          // version, so older saves without these fields still load fine.
-          if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) { layout.houseCol = houseCol; layout.houseRow = houseRow; }
+          // Movable buildings — every house piece (starter + built/
+          // foundation deeds) and every barn (foundation or built). Added
+          // as extra fields on the same version-3 shape rather than bumping
+          // the version, so older saves without these fields still load fine.
+          if (housePieces.length) {
+            layout.housePieces = housePieces.map(p => ({ id: p.id, pieceKey: p.pieceKey, col: p.col, row: p.row, w: p.w, h: p.h, stage: p.stage }));
+          }
           if (farmBuildings.length) {
             layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage }));
           }
@@ -2712,9 +2724,34 @@
           if (result && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
           if (result) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
         });
-        if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && (layout.houseCol !== houseCol || layout.houseRow !== houseRow)) {
-          repositionHouse(layout.houseCol, layout.houseRow);
+        // House pieces — initWorldObjects() already seeded the starter piece
+        // at its hard default position before this runs. A modern save's
+        // own housePieces array may have moved the starter (a legacy
+        // "Move Building" save carried forward) and/or built additional
+        // deed pieces; an old pre-modular-house save only ever has the
+        // legacy houseCol/houseRow fields, which just repositions the
+        // starter with nothing else to restore.
+        const starterEntry = housePieces.find(p => p.id === 'house_starter');
+        if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
+          const savedStarter = layout.housePieces.find(p => p.pieceKey === 'starter');
+          if (savedStarter && starterEntry && (savedStarter.col !== starterEntry.col || savedStarter.row !== starterEntry.row)) {
+            window.HousePieces.clearAll();
+            window.HousePieces.seedStarter(savedStarter.col, savedStarter.row);
+          }
+          layout.housePieces.forEach(saved => {
+            if (saved.pieceKey === 'starter' || !HOUSE_PIECE_CATALOG[saved.pieceKey]) return;
+            if (housePieces.some(p => p.id === saved.id)) return;
+            const def = HOUSE_PIECE_CATALOG[saved.pieceKey];
+            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row, w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation' };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+        } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
+                   && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
+          window.HousePieces.clearAll();
+          window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
         }
+        rebuildInteriorGeometry();
         (layout.buildings || []).forEach(saved => {
           if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
           if (farmBuildings.some(b => b.id === saved.id)) return;
@@ -9942,10 +9979,10 @@
       // ── Farm buildings: barns (movable, buildable via the Farm tab) ────
       // A barn instance: { id, kind:'barn', tier, col, row, w, h, stage }.
       // stage is 'foundation' (just placed, needs an interact-to-build) or
-      // 'built' (rendered as the highland-style stable.json piece). The
-      // house is tracked separately (houseCol/houseRow above) since its GLB
-      // rendering pipeline predates this system — farmBuildings only ever
-      // holds barns. Both share the same move/placement validation below.
+      // 'built' (rendered as the highland-style stable.json piece).
+      // farmBuildings only ever holds barns — the house is its own array
+      // (housePieces, see js/house-pieces.js) since it can hold several
+      // independently-built pieces rather than one fixed footprint.
       // Synchronous startup default — overwritten from docs/config/shops/
       // shop-stock.json's carpenterBarnPlans.tiers once it loads.
       let BARN_TIERS = {
@@ -9953,13 +9990,29 @@
         medium: { label: 'Medium Barn', slots: 8,  price: 1000, planItem: 'barnPlanMedium' },
         large:  { label: 'Large Barn',  slots: 12, price: 1500, planItem: 'barnPlanLarge'  },
       };
+      // House piece deeds — bought from the Carpenter (see
+      // js/carpenter-shop.js), placed touching the existing house cluster,
+      // then built the same foundation->built way as a barn (see
+      // js/house-pieces.js). 'starter' isn't purchasable (no price/deedItem)
+      // — it's the always-present piece every farm is seeded with, matching
+      // the old Highland House's 5x4 footprint via an already-authored piece
+      // file that already has a chimney + entry tunnel + porch baked in.
+      // Synchronous startup default — overwritten from docs/config/shops/
+      // shop-stock.json's carpenterHouseDeeds.pieces once it loads.
+      let HOUSE_PIECE_CATALOG = {
+        starter:    { label: 'House',            w: 5, h: 4, pieceFile: 'config/pieces/generic-house-medium.json' },
+        familyWing: { label: 'Family Wing Deed',  w: 6, h: 5, pieceFile: 'config/pieces/hobunjihouse1.json',       price: 1200, deedItem: 'houseDeedFamilyWing' },
+        simpleRoom: { label: 'Simple Room Deed',  w: 5, h: 4, pieceFile: 'config/pieces/placeholder-medium.json',  price: 700,  deedItem: 'houseDeedSimpleRoom' },
+        smallRoom:  { label: 'Small Room Deed',   w: 4, h: 4, pieceFile: 'config/pieces/placeholder-small.json',   price: 450,  deedItem: 'houseDeedSmallRoom'  },
+      };
       // Loaded config (docs/config/shops/shop-stock.json) replaces
       // WARES_POOLS/GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
-      // GENERAL_STORE_CLOTHING_SLOTS/BARN_TIERS wholesale once it resolves —
-      // called from loadLootShopConfig() above. Jubmir's stock isn't a
-      // simple catalog swap (it also drives genotype generation/one-shot
-      // purchase state), so window.JubmirShop reads _shopStock.jubmirWares
-      // (via deps.getShopStock()) directly instead of a mirrored variable.
+      // GENERAL_STORE_CLOTHING_SLOTS/BARN_TIERS/HOUSE_PIECE_CATALOG wholesale
+      // once it resolves — called from loadLootShopConfig() above. Jubmir's
+      // stock isn't a simple catalog swap (it also drives genotype
+      // generation/one-shot purchase state), so window.JubmirShop reads
+      // _shopStock.jubmirWares (via deps.getShopStock()) directly instead of
+      // a mirrored variable.
       function _applyLoadedShopStock() {
         WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
           [id, { label: shop.label, menuId: shop.menuId }]));
@@ -9967,8 +10020,10 @@
         if (_shopStock.generalStoreWares?.clothingRotation?.pieces) STORE_CLOTHING_PIECES = _shopStock.generalStoreWares.clothingRotation.pieces;
         if (_shopStock.generalStoreWares?.clothingRotation?.slots) GENERAL_STORE_CLOTHING_SLOTS = _shopStock.generalStoreWares.clothingRotation.slots;
         if (_shopStock.carpenterBarnPlans?.tiers) { BARN_TIERS = _shopStock.carpenterBarnPlans.tiers; _registerBarnPlanItemDefs(); }
+        if (_shopStock.carpenterHouseDeeds?.pieces) { HOUSE_PIECE_CATALOG = { starter: HOUSE_PIECE_CATALOG.starter, ..._shopStock.carpenterHouseDeeds.pieces }; _registerHousePieceDeedItemDefs(); }
       }
       let farmBuildings = []; // barns placed on this farm — persisted via saveFarmLayout
+      let housePieces = [];   // house pieces (starter + built/foundation deeds) — persisted via saveFarmLayout
 
       // Per-species farm-resource output: item produced + how many in-game
       // days the cooldown takes. A kind with no entry here can be housed but
@@ -10005,114 +10060,20 @@
         supplyBoxObject = sb;
         worldObjects.set(sc.col + ',' + sc.row, sc);
         worldObjects.set(sb.col + ',' + sb.row, sb);
-        // Highland House door object
-        const hh = makeHighlandHouse();
-        worldObjects.set(hh.col + ',' + hh.row, hh);
-        // Doorstep tiles — one row north of the door, also trigger entrance
-        const _doorstep = {
-          id: 'house_entrance', type: 'house_entrance',
-          getButtons() { return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }]; },
-          onAction(action) {
-            if (action === 'obj_enter_house') {
-              startSceneTransition(() => enterInterior());
-              return { ok: true, message: 'Entering the Highland House…' };
-            }
-            return { ok: false, message: 'Unknown house action.' };
-          },
-        };
-        worldObjects.set(currentDoorCol() + ',' + (currentDoorRow() - 1), _doorstep);
-        worldObjects.set((currentDoorCol() + 1) + ',' + (currentDoorRow() - 1), _doorstep);
-        _houseDoorstepObj = _doorstep;
+        // The starter house piece — always present, free, built immediately.
+        // Every other house piece (deeds bought from the Carpenter) and every
+        // barn is spawned later by applyFarmLayoutObjects() from the saved
+        // farm layout, same as a fresh farm's single starter piece here.
+        window.HousePieces.seedStarter(HOUSE_STARTER_COL, HOUSE_STARTER_ROW);
+        rebuildInteriorGeometry();
       }
 
-      // Kept so a "Move Building" relocation can reposition the already-loaded
-      // GLB/fallback box without reloading the model, and re-register the
-      // doorstep interaction tiles at their new location.
-      let _houseFallbackMesh = null;
-      let _houseModel = null;
-      let _houseDoorstepObj = null;
-
-      // ── Highland House world object + GLB loader ─────────────────
-      function makeHighlandHouse() {
-        // Load the GLB asynchronously; show fallback box until it arrives
-        const loader = new THREE.GLTFLoader();
-        const footprintCenterX = houseCol + HOUSE_FOOTPRINT_W / 2;
-        const footprintCenterZ = houseRow + HOUSE_FOOTPRINT_D / 2;
-
-        // Fallback box shown while GLB loads
-        const fallbackMat  = new THREE.MeshLambertMaterial({ color: 0x7a5030 });
-        const fallbackGeo  = new THREE.BoxGeometry(HOUSE_FOOTPRINT_W * 0.9, 2.0, HOUSE_FOOTPRINT_D * 0.9);
-        const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
-        fallbackMesh.position.set(footprintCenterX, 1.0, footprintCenterZ);
-        fallbackMesh.castShadow = true;
-        scene.add(fallbackMesh);
-        _houseFallbackMesh = fallbackMesh;
-
-        loader.load(
-          'assets/models/HighlandHouse_medium.glb',
-          (gltf) => {
-            scene.remove(fallbackMesh);
-            fallbackGeo.dispose(); fallbackMat.dispose();
-            _houseFallbackMesh = null;
-            const model = gltf.scene;
-            model.scale.setScalar(HOUSE_SCALE);
-            model.rotation.y = HOUSE_ROTATION_Y;
-            model.position.set(currentHousePosX(), HOUSE_POS_Y, currentHousePosZ());
-            model.traverse(m => {
-              if (m.isMesh) {
-                m.castShadow    = true;
-                m.receiveShadow = true;
-                m.layers.enable(1); // shell outline
-              }
-            });
-            scene.add(model);
-            _houseModel = model;
-            debugLog('Highland House GLB loaded');
-          },
-          undefined,
-          (err) => { debugLog('Highland House GLB load error: ' + err); }
-        );
-
-        return {
-          id: 'highland_house', type: 'highland_house',
-          get col() { return currentDoorCol(); }, get row() { return currentDoorRow(); },
-          label: '🏠 Highland House',
-          getButtons() {
-            return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action === 'obj_enter_house') {
-              startSceneTransition(() => enterInterior());
-              return { ok: true, message: 'Entering the Highland House…' };
-            }
-            return { ok: false, message: 'Unknown house action.' };
-          },
-        };
-      }
-
-      // Relocates the house to a new farm-grid top-left, moving the already-
-      // loaded GLB/fallback mesh and re-registering the door/doorstep world
-      // objects — used by the Farm tab's "Move Building" flow. Doesn't
-      // reload the GLB or touch HOUSE_SCALE/rotation; only translation is
-      // supported (no rotate-in-place for the house in this pass).
-      function repositionHouse(newCol, newRow) {
-        const houseObj = worldObjects.get(currentDoorCol() + ',' + currentDoorRow());
-        worldObjects.delete(currentDoorCol() + ',' + currentDoorRow());
-        worldObjects.delete(currentDoorCol() + ',' + (currentDoorRow() - 1));
-        worldObjects.delete((currentDoorCol() + 1) + ',' + (currentDoorRow() - 1));
-
-        houseCol = newCol;
-        houseRow = newRow;
-
-        if (_houseFallbackMesh) _houseFallbackMesh.position.set(houseCol + HOUSE_FOOTPRINT_W / 2, 1.0, houseRow + HOUSE_FOOTPRINT_D / 2);
-        if (_houseModel) _houseModel.position.set(currentHousePosX(), HOUSE_POS_Y, currentHousePosZ());
-
-        if (houseObj) worldObjects.set(currentDoorCol() + ',' + currentDoorRow(), houseObj);
-        if (_houseDoorstepObj) {
-          worldObjects.set(currentDoorCol() + ',' + (currentDoorRow() - 1), _houseDoorstepObj);
-          worldObjects.set((currentDoorCol() + 1) + ',' + (currentDoorRow() - 1), _houseDoorstepObj);
-        }
-      }
+      // Top-left of the starter house piece on a brand-new farm — matches
+      // the old Highland House's HOUSE_COL/HOUSE_ROW. Existing saves instead
+      // read this from their legacy houseCol/houseRow field (see
+      // applyFarmLayoutObjects' housePieces migration below).
+      const HOUSE_STARTER_COL = 26;
+      const HOUSE_STARTER_ROW = 2;
 
       // ── Scene transition fade ─────────────────────────────────────
       function startSceneTransition(callback) {
@@ -10148,13 +10109,21 @@
       }
 
       // ── Enter / exit the interior ─────────────────────────────────
-      function enterInterior() {
-        buildInteriorScene();  // no-op after first call
+      // pieceId identifies which house piece's door the player walked
+      // through (see js/house-pieces.js's door world-objects) — the player
+      // spawns just inside that piece's room. Falls back to any available
+      // door (or the interior's center, if somehow none exist yet) when
+      // called without one, e.g. legacy 'interior' travel transitions.
+      function enterInterior(pieceId) {
         const fromScene = currentArea === 'town' ? townScene : scene;
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
         currentArea    = 'interior';
-        player.x       = (INTERIOR_ENTRY_COL + 0.5) * TILE;
-        player.y       = (INTERIOR_ENTRY_ROW + 0.5) * TILE;
+        const layout = window.HousePieces.computeInteriorLayout();
+        const door = layout.doors.find(d => d.pieceId === pieceId) || layout.doors[0];
+        const entryCol = door ? door.enter.c : INTERIOR_COLS / 2;
+        const entryRow = door ? door.enter.r : INTERIOR_ROWS / 2;
+        player.x       = (entryCol + 0.5) * TILE;
+        player.y       = (entryRow + 0.5) * TILE;
         player.vx      = 0;  player.vy = 0;
         facingAngle    = Math.PI / 2;   // face south (into the room)
         player.angle   = facingAngle;
@@ -10543,6 +10512,27 @@
         });
       }
       _registerBarnPlanItemDefs();
+
+      // House piece deeds — bought from the Carpenter, placed touching the
+      // existing house from the Farm tab. Same auto-registration pattern as
+      // barn plans above; the 'starter' catalog entry has no deedItem (it's
+      // never bought) so Object.entries naturally skips it here.
+      function _registerHousePieceDeedItemDefs() {
+        Object.entries(HOUSE_PIECE_CATALOG).forEach(([, def]) => {
+          if (!def.deedItem) return;
+          if (!inventoryItems.some(item => item.key === def.deedItem)) {
+            inventoryItems.push({ key: def.deedItem, icon: '📜', label: def.label.toUpperCase(), max: 9 });
+          }
+          if (!ITEM_DEFS[def.deedItem]) {
+            ITEM_DEFS[def.deedItem] = {
+              icon: '📜', label: def.label, cat: 'buildingPlan', sellPrice: 0,
+              tags: ['Deed', 'Placeable', 'House'],
+              desc: `Place from the Farm tab to start a ${def.w}×${def.h} foundation touching your house. Interact with it on the farm to complete construction.`,
+            };
+          }
+        });
+      }
+      _registerHousePieceDeedItemDefs();
 
       // ── Fish catalog ────────────────────────────────────────────
       // Keyed by zone category. "town" is the only zone with real river/stream
@@ -11166,8 +11156,7 @@
 
       // Whether a farm-grid tile falls inside the house footprint
       function isHouseFootprint(col, row) {
-        return col >= houseCol && col < houseCol + HOUSE_FOOTPRINT_W
-            && row >= houseRow && row < houseRow + HOUSE_FOOTPRINT_D;
+        return housePieces.some(p => col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h);
       }
       // Barns (any tier, foundation or built) block movement over their
       // whole registered footprint — stable.json's own footprint.cells is
@@ -11271,23 +11260,17 @@
         }
         return false;
       }
-      // The two tiles immediately north of the door act as a second entrance
-      function isHouseEntranceTile(col, row) {
-        return row === currentDoorRow() - 1 && col >= currentDoorCol() && col <= currentDoorCol() + 1;
-      }
-
-      // Interior grid: 12×12 — main room cols 0-11 rows 0-9, south corridor cols 4-7 rows 10-11
-      const interiorGrid = (() => {
-        const floor = (c, r) =>
-          (r <= 9 && c >= 0 && c <= 11) || (r >= 10 && r <= 11 && c >= 4 && c <= 7);
-        return Array.from({ length: INTERIOR_ROWS }, (_, r) =>
-          Array.from({ length: INTERIOR_COLS }, (_, c) => ({
-            type: floor(c, r) ? TileType.GRASS : TileType.ROCK,
-            water: 0, flow: false, crop: CropType.NONE,
-            cropAge: 0, cropReady: false, stress: '', variation: 0,
-          }))
-        );
-      })();
+      // Interior grid: sized to the whole farm at 2x resolution (see
+      // INTERIOR_COLS/INTERIOR_ROWS above); every cell starts as ROCK
+      // (blocked) and rebuildInteriorGeometry() flips the currently-built
+      // house pieces' cells to GRASS (walkable) in place whenever the house
+      // changes — the array itself is never resized/reallocated.
+      const interiorGrid = Array.from({ length: INTERIOR_ROWS }, () =>
+        Array.from({ length: INTERIOR_COLS }, () => ({
+          type: TileType.ROCK, water: 0, flow: false, crop: CropType.NONE,
+          cropAge: 0, cropReady: false, stress: '', variation: 0,
+        }))
+      );
 
       let activeTool = 'shovel';
       let activeAction = 'dig';
@@ -11839,7 +11822,7 @@
         // solid-rock block below — everything else (cliff faces, boulders)
         // stays impassable/inert to every tool, mining included.
         if (tile.type === TileType.ROCK) return tool === 'pick' && action === 'mine' && isMineableRockTile(col, row);
-        if (currentArea === 'farm' && isHouseFootprint(col, row) && !isHouseEntranceTile(col, row)) return false;
+        if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
         // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are farm-only mechanics.
         if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe')) return false;
         if (tool === 'shovel') {
@@ -13050,20 +13033,14 @@
 
       // WallBuilder instance — loads Roughbrick1.glb eagerly in background
       const houseWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
-      let interiorSceneBuilt = false;
       let interiorWallGroup  = null;
+      let interiorFloorGroup = null;
+      let _interiorGeometryBuilt = false; // becomes true once the starter piece has spawned at least one rebuild
 
       houseWallBuilder.loadDefaultGlb()
         .then(() => {
           debugLog('Interior walls: Roughbrick1.glb loaded');
-          if (interiorSceneBuilt && interiorWallGroup) {
-            WallBuilder.disposeGroup(interiorWallGroup);
-            interiorScene.remove(interiorWallGroup);
-            interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
-            _markOutline(interiorWallGroup);
-            interiorScene.add(interiorWallGroup);
-            debugLog('Interior walls rebuilt with real GLB');
-          }
+          if (_interiorGeometryBuilt) rebuildInteriorGeometry(); // swap placeholder bricks for the real GLB
         })
         .catch(err => debugLog('Interior walls GLB error: ' + err.message));
 
@@ -13102,88 +13079,58 @@
         return _pathSurfaceReadyPromise;
       }
 
-      // Wall panels derived from playerhouse_interior.json wallEdges, merged into rect panels.
-      // Coord origin: editor cell (9,9) → interior (0,0).
-      // N/S panels face along Z (rotY=0/180); W/E panels face along X (rotY=±90).
-      const INTERIOR_WALL_PANELS = [
-        { id: 'n_wall',  width: 12, height: INTERIOR_WALL_HEIGHT, position: [6,  0, 0],    rotationDeg: [0,   0, 0] },
-        { id: 'w_wall',  width: 10, height: INTERIOR_WALL_HEIGHT, position: [0,  0, 5],    rotationDeg: [0,  90, 0] },
-        { id: 'e_wall',  width: 10, height: INTERIOR_WALL_HEIGHT, position: [12, 0, 5],    rotationDeg: [0, -90, 0] },
-        { id: 's_left',  width: 4,  height: INTERIOR_WALL_HEIGHT, position: [2,  0, 10],   rotationDeg: [0, 180, 0] },
-        { id: 's_right', width: 4,  height: INTERIOR_WALL_HEIGHT, position: [10, 0, 10],   rotationDeg: [0, 180, 0] },
-        // Corridor side walls — south end kept open (no exit_s)
-        { id: 'exit_w',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [4,  0, 11],   rotationDeg: [0,  90, 0] },
-        { id: 'exit_e',  width: 2,  height: INTERIOR_WALL_HEIGHT, position: [8,  0, 11],   rotationDeg: [0, -90, 0] },
-      ];
+      // Exit-threshold interior cells (3-wide nub just outside each built
+      // house piece's door) — walking onto one of these triggers
+      // exitInterior(); also the exitTileSet InteriorSceneBuilder needs so
+      // it doesn't wall off the opening. Rebuilt by rebuildInteriorGeometry()
+      // whenever a piece is built/demolished.
+      let _interiorExitTiles = new Set();
 
-      // Built lazily on first entry to avoid blocking startup; called by enterInterior().
-      function buildInteriorScene() {
-        if (interiorSceneBuilt) return;
-        interiorSceneBuilt = true;
+      // Rebuilds the merged house interior — floor tiles, walls, the
+      // interiorGrid walkability data, and the exit-trigger tile set — from
+      // every currently-built house piece (window.HousePieces.
+      // computeInteriorLayout()). Called once at farm init (after the
+      // starter piece spawns) and again every time a piece finishes
+      // building or gets demolished, replacing the old one-shot
+      // buildInteriorScene()/frozen INTERIOR_WALL_PANELS approach — this is
+      // the same InteriorSceneBuilder.buildWallPanels/buildWallGroup
+      // algorithm every other building interior in the game already uses
+      // (see loadBuildingScene's hobunji_building_interior.v1 branch).
+      function rebuildInteriorGeometry() {
+        _interiorGeometryBuilt = true;
+        const { floorSet, exitSet } = window.HousePieces.computeInteriorLayout();
+        _interiorExitTiles = exitSet;
 
-        // Floor — boards.png if present, warm brown placeholder otherwise
-        const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
-        new THREE.TextureLoader().load(
-          'assets/textures/boards.png',
-          (tex) => {
-            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-            floorMat.map = tex;
-            floorMat.color.set(0xffffff);
-            floorMat.needsUpdate = true;
-          },
-          undefined,
-          () => {}
-        );
+        for (let r = 0; r < INTERIOR_ROWS; r++) {
+          for (let c = 0; c < INTERIOR_COLS; c++) {
+            interiorGrid[r][c].type = floorSet.has(c + ',' + r) ? TileType.GRASS : TileType.ROCK;
+          }
+        }
 
-        // Floor tiles: main room 12×10 + corridor 4×2; exit tiles use same material
-        const floorCells = [];
-        for (let r = 0; r < 10; r++) for (let c = 0; c < 12; c++) floorCells.push([c, r]);
-        for (let r = 10; r <= 11; r++) for (let c = 4; c <= 7; c++) floorCells.push([c, r]);
-        for (const [c, r] of floorCells) {
-          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+        if (interiorFloorGroup) { interiorScene.remove(interiorFloorGroup); interiorFloorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+        if (interiorWallGroup)  { WallBuilder.disposeGroup(interiorWallGroup); interiorScene.remove(interiorWallGroup); }
+
+        interiorFloorGroup = new THREE.Group();
+        floorSet.forEach(key => {
+          const [c, r] = key.split(',').map(Number);
+          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), interiorFloorMaterial);
           fl.position.set(c + 0.5, -0.05, r + 0.5);
           fl.receiveShadow = true;
-          interiorScene.add(fl);
-        }
-
-        // Black backing planes — render first (renderOrder=-1), no depth write.
-        // Bricks overwrite them; pure black shows only through gaps between bricks.
-        // Each plane is slightly smaller than its panel to stay inside the brick boundary.
-        const _backingMat = new THREE.MeshBasicMaterial({
-          color: 0x000000, side: THREE.DoubleSide,
-          depthWrite: false, depthTest: false
+          interiorFloorGroup.add(fl);
         });
-        for (const p of INTERIOR_WALL_PANELS) {
-          const bw = Math.max(0.2, p.width  - (p.width <= 1.5 ? 0.08 : 0.3));
-          const bh = Math.max(0.2, p.height - 0.2);
-          const _bg = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), _backingMat);
-          _bg.renderOrder = -1;
-          _bg.position.set(0, p.height / 2, 0);
-          const _pg = new THREE.Group();
-          _pg.position.set(p.position[0], p.position[1], p.position[2]);
-          _pg.rotation.set(
-            THREE.MathUtils.degToRad(p.rotationDeg[0] || 0),
-            THREE.MathUtils.degToRad(p.rotationDeg[1] || 0),
-            THREE.MathUtils.degToRad(p.rotationDeg[2] || 0)
-          );
-          _pg.add(_bg);
-          interiorScene.add(_pg);
-        }
+        interiorScene.add(interiorFloorGroup);
 
-        // Outside ambient light seeping in through the corridor exit — cool daylight cone
-        const _exitSpot = new THREE.SpotLight(0xb4d8ff, 2.5, 12, 0.5, 0.7, 1.5);
-        _exitSpot.position.set(6, 3, 14);
-        _exitSpot.target.position.set(6, 0, 11);
-        interiorScene.add(_exitSpot);
-        interiorScene.add(_exitSpot.target);
-
-        // Instanced walls: 50% brick size, 4x density, 60% depth, micro-jitter
-        interiorWallGroup = houseWallBuilder.build(INTERIOR_WALL_PANELS, { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+        const panels = InteriorSceneBuilder.buildWallPanels(floorSet, exitSet, INTERIOR_WALL_HEIGHT);
+        interiorWallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, panels, '', { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
         _markOutline(interiorWallGroup);
         interiorScene.add(interiorWallGroup);
 
-        debugLog('buildInteriorScene complete');
+        debugLog(`rebuildInteriorGeometry: ${floorSet.size} floor cells, ${panels.length} wall panels`);
       }
+
+      // Floor material — boards.png if present, warm brown placeholder
+      // otherwise; shared by every rebuildInteriorGeometry() floor tile.
+      const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/');
 
       // ── Inverted shell outline ────────────────────────────────────
       // Second render pass: back faces only, vertices extruded along
@@ -13638,8 +13585,7 @@
         }
         const meshes = [];
         if (currentArea === 'farm') {
-          if (_houseModel) meshes.push(_houseModel);
-          else if (_houseFallbackMesh) meshes.push(_houseFallbackMesh);
+          for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
           for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
         }
         if (currentArea === 'town') {
@@ -18075,13 +18021,11 @@
           if (_isBuildingArea(currentArea)) updateNestInteraction(dt);
           if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
 
-          // Interior exit detection: player walks south through exit door
+          // Interior exit detection: player walks onto any door's exit-nub
+          // threshold (see js/house-pieces.js's computeInteriorLayout()).
           if (currentArea === 'interior' && sceneTransDir === 0) {
-            const iyTile = player.y / TILE;
-            const ixTile = player.x / TILE;
-            if (iyTile > INTERIOR_EXIT_ROW + 0.4 && ixTile > INTERIOR_EXIT_COL - 0.2 && ixTile < INTERIOR_EXIT_COL + 2.2) {
-              exitInterior();
-            }
+            const iCol = Math.floor(player.x / TILE), iRow = Math.floor(player.y / TILE);
+            if (_interiorExitTiles.has(iCol + ',' + iRow)) exitInterior();
           }
 
           // Transition spots (farm ↔ interior ↔ town ↔ building)
@@ -19184,10 +19128,10 @@
           return btns;
         }
 
-        // Interior: exit button near south door + interact button for interior world objects
+        // Interior: exit button near any door's exit threshold + interact button for interior world objects
         if (currentArea === 'interior') {
           const reticle  = getReticleTile();
-          const nearExit = reticle.row >= INTERIOR_EXIT_ROW && reticle.col >= INTERIOR_EXIT_COL && reticle.col < INTERIOR_EXIT_COL + 2;
+          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row);
           const btns     = [];
           if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
           // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
@@ -20829,6 +20773,7 @@
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         worldObjectAt: getWorldObjectAt,
+        farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
@@ -20844,8 +20789,11 @@
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
-        enterInterior: () => enterInterior(),
+        enterInterior: (pieceId) => enterInterior(pieceId),
+        exitInterior: () => exitInterior(),
+        getCurrentArea: () => currentArea,
         interiorFurnitureObjects: () => interiorFurnitureObjects,
+        loadWorldStorage: () => _loadWorldStorage(),
         setShowLegBones: (v) => window.ProceduralLegAnimation?.setShowBones(v),
         get showLegBones() { return !!window.ProceduralLegAnimation?.showBones; },
         get sitInteraction() { return sitInteraction; },
@@ -21217,6 +21165,7 @@
         buildInventoryGrid,
         saveMemberWorldData,
         getBarnTiers: () => BARN_TIERS,
+        getHousePieceDeeds: () => Object.fromEntries(Object.entries(HOUSE_PIECE_CATALOG).filter(([, def]) => def.deedItem)),
         FURNITURE_BLUEPRINT_CATALOG,
         lootShopWorldState: _lootShopWorldState,
         esc,
@@ -21275,8 +21224,9 @@
         esc,
         hasFarmPermission,
         getBarnTiers: () => BARN_TIERS,
-        HOUSE_FOOTPRINT_W,
-        HOUSE_FOOTPRINT_D,
+        getHousePieceCatalog: () => HOUSE_PIECE_CATALOG,
+        getHousePieces: () => housePieces,
+        placeHouseDeed: (pieceKey, col, row) => window.HousePieces.placeDeed(pieceKey, col, row),
         getFarmBuildings: () => farmBuildings,
         PROCESSING_FURNITURE_DEFS,
         AGING_METHODS,
@@ -21799,8 +21749,6 @@
         COLS,
         ROWS,
         TileType,
-        HOUSE_FOOTPRINT_W,
-        HOUSE_FOOTPRINT_D,
         animalObjects,
         clampInventoryStack,
         debugLog,
@@ -21810,7 +21758,6 @@
         markTileDirty,
         openMenu,
         recomputeWater,
-        repositionHouse,
         saveFarmLayout,
         saveMemberWorldData,
         scene,
@@ -21820,11 +21767,38 @@
         saveWorldLivestock: _saveWorldLivestock,
         getBarnTiers: () => BARN_TIERS,
         getGrid: () => grid,
-        getHouseCol: () => houseCol,
-        getHouseRow: () => houseRow,
+        getHousePieceRects: () => window.HousePieces.getPieceRects(),
         getFarmBuildings: () => farmBuildings,
         setFarmBuildings: (v) => { farmBuildings = v; },
         setFarmLivestockFocusBarnId: (v) => { _farmLivestockFocusBarnId = v; },
+      });
+
+      window.HousePieces?.init({
+        COLS,
+        ROWS,
+        TileType,
+        clampInventoryStack,
+        debugLog,
+        hasFarmPermission,
+        inventory,
+        loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
+        markTileDirty,
+        openMenu,
+        recomputeWater,
+        getGrid: () => grid,
+        saveFarmLayout,
+        saveMemberWorldData,
+        scene,
+        worldObjects,
+        houseWallBuilder,
+        startSceneTransition,
+        enterInterior,
+        onPieceGeometryChanged: () => rebuildInteriorGeometry(),
+        recoverFurnitureInInteriorRect: (c0, r0, w, h) => recoverFurnitureInInteriorRect(c0, r0, w, h),
+        getPieceCatalog: () => HOUSE_PIECE_CATALOG,
+        getHousePieces: () => housePieces,
+        setHousePieces: (v) => { housePieces = v; },
+        getFarmBuildings: () => farmBuildings,
       });
 
       window.CreatureDeath?.init({
@@ -21984,12 +21958,17 @@
         clearPlacedProcessingFurniture();
         clearInteriorFurniture();
         window.FarmBuildings.clearAll();
-        // Module init may have moved the house per the legacy-key layout —
-        // put it back to its hard default before applying (or not finding)
-        // this world's own saved position, same rationale as the sell
-        // crate/supply box reset immediately below.
-        if (houseCol !== HOUSE_COL || houseRow !== HOUSE_ROW) repositionHouse(HOUSE_COL, HOUSE_ROW);
+        // Module init may have placed house pieces per the legacy-key
+        // layout — clear them now (same as FarmBuildings.clearAll() just
+        // above) so the reset loop below doesn't call .reset() on a piece
+        // this world hasn't actually earned; the starter piece is reseeded
+        // fresh right after that loop, at its hard default, before applying
+        // (or not finding) this world's own saved position — same rationale
+        // as the sell crate/supply box reset immediately below.
+        window.HousePieces.clearAll();
         worldObjects.forEach(o => o.reset && o.reset());
+        window.HousePieces.seedStarter(HOUSE_STARTER_COL, HOUSE_STARTER_ROW);
+        rebuildInteriorGeometry();
         grid = createInitialGrid();
         // Module init already may have moved the shipping/supply crates per the
         // legacy-key layout — put them back to their hard defaults before
@@ -22022,9 +22001,13 @@
         // same per-world reload).
         if (!_worldLayout) {
           try {
-            const starterBed = makeDecorativeFurnitureMesh(1, 1, 'basicBed', interiorScene, 'interior');
+            // A cell just inside the starter piece's own doubled interior
+            // block (away from its door threshold) — see
+            // rebuildInteriorGeometry()/HOUSE_STARTER_COL/ROW above.
+            const bedCol = HOUSE_STARTER_COL * 2 + 1, bedRow = HOUSE_STARTER_ROW * 2 + 1;
+            const starterBed = makeDecorativeFurnitureMesh(bedCol, bedRow, 'basicBed', interiorScene, 'interior');
             if (starterBed) {
-              interiorFurnitureObjects.push({ key: 'basicBed', col: 1, row: 1, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
+              interiorFurnitureObjects.push({ key: 'basicBed', col: bedCol, row: bedRow, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
               saveFarmLayout();
             }
           } catch (e) { console.error('starter bed seed:', e); }
