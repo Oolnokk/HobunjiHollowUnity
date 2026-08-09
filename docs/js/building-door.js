@@ -262,9 +262,11 @@
     try {
       if (!hadSurfaces) footstepCfg.surfaces = surfaces;
       surfaces.gravel = { ...(originalGravel || {}), urls: [] };
-      return callback();
     } catch (error) {
       _runtimeDebugLog('[footsteps] Could not switch hard-surface step to procedural fallback: ' + error.message, 'warn');
+      return callback();
+    }
+    try {
       return callback();
     } finally {
       try {
@@ -302,7 +304,8 @@
     if (typeof originalPlayFootstepSfx === 'function') {
       system.playFootstepSfx = function (area, tile, volumeScale = 1, pan = 0, opts = {}) {
         const TileType = _runtimeAudioDeps?.TileType; // Used to identify authored PATH/optional PLAZA tiles without duplicating numeric tile ids.
-        const isInteriorFloor = area === 'interior' || !!_runtimeAudioDeps?._isBuildingArea?.(area); // Used to apply the requested procedural hard step to every building/interior floor.
+        const isInteriorFloor = area === 'interior'
+          || !!(_runtimeAudioDeps && _runtimeAudioDeps._isBuildingArea?.(area)); // Used to apply the requested procedural hard step to every building/interior floor.
         const isPath = !!TileType && (tile?.type === TileType.PATH || (TileType.PLAZA != null && tile?.type === TileType.PLAZA)); // Used to apply the requested procedural hard step to path/plaza terrain only, leaving other gravel-mapped terrain recordings alone.
         const isPorch = !!tile && _runtimePorchTileObjects.has(tile); // Used to override a porch's underlying grass tile with hard-surface audio semantics.
         if (!isInteriorFloor && !isPath && !isPorch) return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
