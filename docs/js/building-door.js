@@ -133,6 +133,18 @@
     return { col: eCol, row: eRow, bbox: { minC: wBMinC, maxC: wBMaxC, minR: wBMinR, maxR: wBMaxR } };
   }
 
+  // Returns the authored porch + porch-stair footprint as placed world tiles.
+  // Uses deriveDoorLocal's normalized bbox so this is guaranteed to rotate and
+  // translate the same way the shared door geometry does.
+  function porchWorldCells(pieceData, gridX = 0, gridZ = 0, rotationDeg = 0) {
+    const derived = deriveDoorLocal(pieceData); // Used as the normalized local porch geometry and rotation bbox.
+    if (!derived?.psCells?.length) return [];
+    return derived.psCells.map(cell => {
+      const rotated = rotateCell(cell.x, cell.y, derived.bboxW, derived.bboxD, rotationDeg); // Used to place this porch cell in the building's rotated footprint.
+      return { col: gridX + rotated.x, row: gridZ + rotated.y };
+    });
+  }
+
   // Piece-local (unrotated, unplaced) door point — used by House Piece
   // Author to seed/preview the default door position for a piece with no
   // authored door yet, and by the one-time migration script to backfill
@@ -142,6 +154,202 @@
     if (!geo) return null;
     const world = doorWorldFromBuilding(geo, 0, 0, 0, Infinity);
     return world ? { x: world.col, y: world.row } : null;
+  }
+
+  // ── Live-game porch surface integration ──────────────────────────
+  // BuildingDoor is loaded before the town-building and audio modules in the
+  // live game, so it is the one shared place that can turn the exact authored
+  // porch geometry into both rendering suppression (no grass through boards)
+  // and footstep surface semantics (porches use the old procedural hard-step).
+  // Tool pages do not install these runtime hooks.
+  let _runtimeTownBuildingDeps = null; // Used to read the live town scene/building groups and write porch diagnostics after TownZoneBuildings.init().
+  let _runtimeAudioDeps = null; // Used to resolve TILE/TileType/building-area semantics after AudioSystem.init().
+  let _runtimePorchTileKeys = new Set(); // Used as the authoritative live-town set of "col,row" porch + stair cells.
+  let _runtimePorchTileObjects = new WeakSet(); // Used to carry porch classification from footstepTileAt() to playFootstepSfx() without mutating grid data.
+  let _runtimeLastPorchSignature = ''; // Used to avoid repeating the same porch/grass summary in the debug log on delayed refreshes.
+  let _runtimeHardStepLogged = false; // Used to log the restored procedural hard-surface voice only once per session.
+
+  function _runtimeDebugLog(message, level = 'info') {
+    const injectedLog = _runtimeTownBuildingDeps?.debugLog; // Used to feed the existing in-game debug panel when the town module has initialized.
+    if (typeof injectedLog === 'function') { injectedLog(message, level); return; }
+    if (typeof global.debugLog === 'function') { global.debugLog(message, level); return; }
+    if (level === 'warn') console.warn(message); else console.info(message);
+  }
+
+  function _suppressRuntimeGrassUnderPorches() {
+    const townScene = _runtimeTownBuildingDeps?.getTownScene?.(); // Used as the scene containing the town's grass InstancedMesh billboards.
+    if (!townScene || !global.THREE || !_runtimePorchTileKeys.size) return 0;
+    const matrix = new global.THREE.Matrix4(); // Used to inspect and zero matching grass instance transforms in place.
+    const zeroScale = new global.THREE.Vector3(0, 0, 0); // Used to hide a grass blade without rebuilding or reallocating its InstancedMesh.
+    let hiddenInstances = 0; // Used for porch-render diagnostics and to confirm grass was actually suppressed.
+
+    townScene.traverse(obj => {
+      if (!obj?.isInstancedMesh || !obj.userData?.isBillboard) return;
+      let changed = false; // Used to avoid marking untouched instance buffers dirty.
+      for (let i = 0; i < obj.count; i++) {
+        obj.getMatrixAt(i, matrix);
+        const col = Math.floor(matrix.elements[12]); // Used to map this billboard instance's world X back to its town tile column.
+        const row = Math.floor(matrix.elements[14]); // Used to map this billboard instance's world Z back to its town tile row.
+        if (!_runtimePorchTileKeys.has(`${col},${row}`)) continue;
+        matrix.scale(zeroScale);
+        obj.setMatrixAt(i, matrix);
+        hiddenInstances++;
+        changed = true;
+      }
+      if (changed) obj.instanceMatrix.needsUpdate = true;
+    });
+    return hiddenInstances;
+  }
+
+  function _refreshRuntimePorchSurfaces() {
+    const groups = _runtimeTownBuildingDeps?.getTownBuildingGroups?.() || []; // Used as the loaded piece+placement source for exact porch world cells.
+    const nextKeys = new Set(); // Used to replace the porch registry atomically after each async building-load pass.
+    for (const entry of groups) {
+      if (!entry?.piece || !entry?.bldg) continue;
+      const rotationDeg = entry.bldg.rotationDeg || entry.bldg.rotation || 0; // Used to match the rotation passed into HousePieceGen for this building.
+      for (const cell of porchWorldCells(entry.piece, entry.bldg.gridX || 0, entry.bldg.gridZ || 0, rotationDeg)) {
+        nextKeys.add(`${cell.col},${cell.row}`);
+      }
+    }
+    _runtimePorchTileKeys = nextKeys;
+    _runtimePorchTileObjects = new WeakSet();
+    const hiddenInstances = _suppressRuntimeGrassUnderPorches(); // Used to hide any grass billboard instances already built beneath the refreshed porch set.
+    const signature = [...nextKeys].sort().join('|'); // Used to suppress duplicate debug messages from the delayed async refresh sequence.
+    if (signature && signature !== _runtimeLastPorchSignature) {
+      _runtimeLastPorchSignature = signature;
+      _runtimeDebugLog(`[porch] ${nextKeys.size} porch/stair tile(s) registered; ${hiddenInstances} grass billboard instance(s) hidden.`);
+    }
+  }
+
+  function _scheduleRuntimePorchRefresh() {
+    // Piece JSON and GLB upgrades are asynchronous. Re-running this cheap
+    // registry/suppression pass across their normal completion window keeps
+    // both first-load and rebuilt town scenes correct without polling forever.
+    for (const delayMs of [0, 50, 250, 1000, 2500]) setTimeout(_refreshRuntimePorchSurfaces, delayMs);
+  }
+
+  function _wrapTownZoneBuildings(system) {
+    if (!system || system.__buildingDoorPorchRuntimeWrapped) return system;
+    const originalInit = system.init; // Used to preserve TownZoneBuildings' own dependency initialization while retaining those deps for porch integration.
+    if (typeof originalInit === 'function') {
+      system.init = function (injectedDeps) {
+        _runtimeTownBuildingDeps = injectedDeps;
+        const result = originalInit.call(this, injectedDeps); // Used to preserve the module's existing initialization return value/behavior.
+        _scheduleRuntimePorchRefresh();
+        return result;
+      };
+    }
+    const originalSpawnTownBuildings = system.spawnTownBuildings; // Used to run the existing async building spawn before scheduling porch registration/grass suppression.
+    if (typeof originalSpawnTownBuildings === 'function') {
+      system.spawnTownBuildings = function (...args) {
+        const result = originalSpawnTownBuildings.apply(this, args); // Used to preserve the original building-spawn behavior and return value.
+        _scheduleRuntimePorchRefresh();
+        return result;
+      };
+    }
+    Object.defineProperty(system, '__buildingDoorPorchRuntimeWrapped', { value: true, configurable: true });
+    return system;
+  }
+
+  function _withProceduralGravel(audioSystem, callback) {
+    const audioCfg = audioSystem.gameAudioConfig?.(); // Used to temporarily mask the configured gravel recordings for exactly one hard-surface footfall.
+    const footstepCfg = audioCfg?.footsteps; // Used as the existing footstep configuration object consumed synchronously by playFootstepSfx().
+    if (!footstepCfg) return callback();
+    const hadSurfaces = Object.prototype.hasOwnProperty.call(footstepCfg, 'surfaces'); // Used to restore the config shape exactly after playback.
+    const surfaces = footstepCfg.surfaces || {}; // Used as the temporary surface-map container when a config omitted one.
+    const hadGravel = Object.prototype.hasOwnProperty.call(surfaces, 'gravel'); // Used to restore/delete the gravel entry exactly after playback.
+    const originalGravel = surfaces.gravel; // Used to restore the configured real gravel recordings after the procedural call returns.
+    try {
+      if (!hadSurfaces) footstepCfg.surfaces = surfaces;
+      surfaces.gravel = { ...(originalGravel || {}), urls: [] };
+      return callback();
+    } catch (error) {
+      _runtimeDebugLog('[footsteps] Could not switch hard-surface step to procedural fallback: ' + error.message, 'warn');
+      return callback();
+    } finally {
+      try {
+        if (hadGravel) surfaces.gravel = originalGravel;
+        else delete surfaces.gravel;
+        if (!hadSurfaces) delete footstepCfg.surfaces;
+      } catch (_) {}
+    }
+  }
+
+  function _wrapAudioSystem(system) {
+    if (!system || system.__buildingDoorHardSurfaceRuntimeWrapped) return system;
+    const originalInit = system.init; // Used to preserve AudioSystem initialization while retaining TILE/TileType/building-area deps for surface classification.
+    if (typeof originalInit === 'function') {
+      system.init = function (injectedDeps) {
+        _runtimeAudioDeps = injectedDeps;
+        return originalInit.call(this, injectedDeps);
+      };
+    }
+
+    const originalFootstepTileAt = system.footstepTileAt; // Used to preserve normal tile lookup while tagging exact town porch tiles by object identity.
+    if (typeof originalFootstepTileAt === 'function') {
+      system.footstepTileAt = function (area, wx, wy, grid) {
+        const tile = originalFootstepTileAt.call(this, area, wx, wy, grid); // Used as the unchanged terrain/moisture tile returned to existing callers.
+        if (tile && area === 'town' && _runtimeAudioDeps?.TILE > 0) {
+          const col = Math.floor(wx / _runtimeAudioDeps.TILE); // Used to compare this footfall's town column against the authored porch registry.
+          const row = Math.floor(wy / _runtimeAudioDeps.TILE); // Used to compare this footfall's town row against the authored porch registry.
+          if (_runtimePorchTileKeys.has(`${col},${row}`)) _runtimePorchTileObjects.add(tile);
+        }
+        return tile;
+      };
+    }
+
+    const originalPlayFootstepSfx = system.playFootstepSfx; // Used as the real footstep engine; wrapper only selects when its existing synth fallback should win.
+    if (typeof originalPlayFootstepSfx === 'function') {
+      system.playFootstepSfx = function (area, tile, volumeScale = 1, pan = 0, opts = {}) {
+        const TileType = _runtimeAudioDeps?.TileType; // Used to identify authored PATH/optional PLAZA tiles without duplicating numeric tile ids.
+        const isInteriorFloor = area === 'interior' || !!_runtimeAudioDeps?._isBuildingArea?.(area); // Used to apply the requested procedural hard step to every building/interior floor.
+        const isPath = !!TileType && (tile?.type === TileType.PATH || (TileType.PLAZA != null && tile?.type === TileType.PLAZA)); // Used to apply the requested procedural hard step to path/plaza terrain only, leaving other gravel-mapped terrain recordings alone.
+        const isPorch = !!tile && _runtimePorchTileObjects.has(tile); // Used to override a porch's underlying grass tile with hard-surface audio semantics.
+        if (!isInteriorFloor && !isPath && !isPorch) return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
+
+        const effectiveTile = isPorch && TileType ? { ...tile, type: TileType.PATH } : tile; // Used so porch grass resolves through AudioSystem's existing gravel/hard-surface post-FX while retaining its moisture field.
+        if (!_runtimeHardStepLogged) {
+          _runtimeHardStepLogged = true;
+          _runtimeDebugLog('[footsteps] Restored procedural hard-surface voice for paths, porches, and interior floors.');
+        }
+        return _withProceduralGravel(system, () => originalPlayFootstepSfx.call(this, area, effectiveTile, volumeScale, pan, opts));
+      };
+    }
+
+    // The module's internal heavy-landing helper closes over its original
+    // playFootstepSfx, so route the public heavy landing through the wrapped
+    // public function as well; otherwise a dodge landing on a porch/path would
+    // unexpectedly switch back to the recorded gravel clip.
+    if (typeof system.playHeavyLandingSfx === 'function') {
+      system.playHeavyLandingSfx = function (area, tile) {
+        return system.playFootstepSfx(area, tile, 2.0, 0, { heavy: true });
+      };
+    }
+
+    Object.defineProperty(system, '__buildingDoorHardSurfaceRuntimeWrapped', { value: true, configurable: true });
+    return system;
+  }
+
+  // BuildingDoor must tolerate either script order: if a live-game system is
+  // already present, wrap it now; otherwise intercept its first assignment,
+  // wrap synchronously, then restore an ordinary writable global property.
+  function _wrapRuntimeGlobalWhenAssigned(name, wrapper) {
+    const existing = global[name]; // Used to support pages where the target module loaded before BuildingDoor.
+    if (existing) { wrapper(existing); return; }
+    let assignedValue; // Used as temporary storage until the target module assigns its window global.
+    try {
+      Object.defineProperty(global, name, {
+        configurable: true,
+        enumerable: true,
+        get() { return assignedValue; },
+        set(value) {
+          assignedValue = wrapper(value) || value;
+          Object.defineProperty(global, name, {
+            configurable: true, enumerable: true, writable: true, value: assignedValue,
+          });
+        },
+      });
+    } catch (_) {}
   }
 
   // The game loads HousePieceGen before this module, and the Map Editor loads
@@ -179,10 +387,16 @@
   }
 
   global.BuildingDoor = {
-    normalizePieceData, rotateCell, footprintCells, porchCells,
+    normalizePieceData, rotateCell, footprintCells, porchCells, porchWorldCells,
     deriveDoorLocal, resolveDoorEntrance, doorWorldFromBuilding, computeDefaultDoorLocal,
   };
   installProjectExportCompatibility();
+
+  const isToolPage = typeof document !== 'undefined' && /\/tools\//.test(location.pathname); // Used to keep live-game surface hooks completely out of the authoring tools.
+  if (typeof document !== 'undefined' && !isToolPage) {
+    _wrapRuntimeGlobalWhenAssigned('TownZoneBuildings', _wrapTownZoneBuildings);
+    _wrapRuntimeGlobalWhenAssigned('AudioSystem', _wrapAudioSystem);
+  }
 })(typeof window !== 'undefined' ? window : this);
 
 // Editor-only companion controllers. The live game also loads this shared
