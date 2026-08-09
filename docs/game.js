@@ -14017,16 +14017,20 @@
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
       const SEATED_CAMERA_WALL_CLEARANCE = 0.25; // gap kept between a seated camera and the detected wall face (used by occlusionSafeCameraPosition)
       const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
+      const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
+      let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const obstacles = currentAreaOcclusionMeshes();
         const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
         const dist = Math.hypot(dx, dy, dz);
         if (dist >= 0.5) {
-          const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+          let dir = { x: dx / dist, y: dy / dist, z: dz / dist };
           let desiredSafeDist = dist;
+          let directHitDistance = null;
+          let chosenSideOffsetDeg = 0;
           if (obstacles && obstacles.length) {
             _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
             // A chair can put the seated target much closer than 0.3 tiles to
@@ -14039,6 +14043,7 @@
             // house/barn/furniture entries above are whole Groups.
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
+              directHitDistance = hits[0].distance;
               if (activeCameraMode === 'seated') {
                 // Never impose a minimum that lies beyond the wall. The old
                 // 0.85-tile minimum did exactly that for wall-backed chairs,
@@ -14047,6 +14052,38 @@
                   SEATED_CAMERA_MIN_DISTANCE,
                   hits[0].distance - SEATED_CAMERA_WALL_CLEARANCE,
                 ));
+
+                // If the wall leaves too little room to frame the seated
+                // avatar, collapsing to the target makes the avatar clip the
+                // near plane. Search progressively around the chair instead;
+                // this produces an over-the-shoulder slide along the wall
+                // while preserving the user's pitch and target.
+                if (desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
+                  let best = { dir, safeDist: desiredSafeDist, offsetDeg: 0 };
+                  for (const offsetDeg of [25, -25, 45, -45, 70, -70, 90, -90]) {
+                    const a = THREE.MathUtils.degToRad(offsetDeg);
+                    const candidateDir = {
+                      x: dir.x * Math.cos(a) + dir.z * Math.sin(a),
+                      y: dir.y,
+                      z: -dir.x * Math.sin(a) + dir.z * Math.cos(a),
+                    };
+                    _cameraOcclusionRaycaster.set(
+                      new THREE.Vector3(lookAtX, lookAtY, lookAtZ),
+                      new THREE.Vector3(candidateDir.x, candidateDir.y, candidateDir.z),
+                    );
+                    _cameraOcclusionRaycaster.near = 0.02;
+                    _cameraOcclusionRaycaster.far = dist;
+                    const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
+                    const candidateSafeDist = candidateHits.length
+                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - SEATED_CAMERA_WALL_CLEARANCE)
+                      : dist;
+                    if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
+                    if (best.safeDist >= dist - 1e-4) break;
+                  }
+                  dir = best.dir;
+                  desiredSafeDist = Math.min(dist, best.safeDist);
+                  chosenSideOffsetDeg = best.offsetDeg;
+                }
               } else {
                 desiredSafeDist = Math.min(dist, Math.max(3, hits[0].distance - 0.6));
               }
@@ -14070,13 +14107,24 @@
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
             safeDist = clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            _seatedCameraDebug = {
+              idealDistance: dist,
+              directHitDistance,
+              desiredDistance: desiredSafeDist,
+              solvedDistance: safeDist,
+              sideOffsetDeg: chosenSideOffsetDeg,
+            };
           } else {
             _seatedOcclusionDistance = null;
             _seatedOcclusionUpdatedAt = 0;
+            _seatedCameraDebug = null;
           }
           if (safeDist < dist - 1e-4) {
             const shrink = clamp(1 - safeDist / dist, 0, 1);
-            const lift = shrink * dist * 0.5;
+            // Side-sliding supplies seated clearance; lifting a billboard
+            // avatar makes it edge-on to the camera and was responsible for
+            // the wall-only frozen view in the Pixel Probe report.
+            const lift = activeCameraMode === 'seated' ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
             resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
@@ -14084,6 +14132,7 @@
         } else if (activeCameraMode !== 'seated') {
           _seatedOcclusionDistance = null;
           _seatedOcclusionUpdatedAt = 0;
+          _seatedCameraDebug = null;
         }
         // Floor guard — applies everywhere, not just zones (unlike the
         // mesh-obstacle pull-in above, which has nothing to raycast against
@@ -21416,6 +21465,7 @@
         getPetLayeringActive: () => _petLayeringActive,
         getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
         getSitInteraction: () => sitInteraction,
+        getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,
         SHOULDER_PET_PLANE_RENDER_ORDER,
         playerAttachmentAnchor,
