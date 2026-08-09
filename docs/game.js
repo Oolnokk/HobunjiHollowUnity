@@ -12068,7 +12068,7 @@
       function spawnActionParticles(col, row, action, ok) {
         const profile = actionFxProfile(action, ok);
         const agrid = getActiveGrid();
-        const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
+        const baseY = activeSurfaceYAtWorld(col + 0.5, row + 0.5) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
         if (activeTool === 'weapon' && action === 'cut') spawnWeaponTrailEffect(action, ok);
@@ -12246,6 +12246,15 @@
         };
       }
 
+      // Used by projected action FX, targeting guides, camera aiming, and
+      // other player-ground consumers so each shares the same ramp,
+      // plateau-tier, and subtle visual-height result as the player avatar.
+      function activeSurfaceYAtWorld(worldX, worldZ) {
+        if (_isZoneArea(currentArea)) return surfaceYAtWorld(currentArea, worldX, worldZ);
+        const tile = getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
+        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+      }
+
       function drawCombatConeReticle() {
         const cfg = combatConfig().combatConeReticle || {};
         if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
@@ -12254,7 +12263,7 @@
         const rangeTiles = abil.rangePx / TILE;
         const baseX = player.x / TILE;
         const baseZ = player.y / TILE;
-        const y = tileSurfaceY(getActiveTileAt(Math.floor(baseX), Math.floor(baseZ)).type) + 0.035;
+        const y = activeSurfaceYAtWorld(baseX, baseZ) + 0.035;
         const alpha = Number(cfg.alpha) || 0.24;
         const lineWidth = Number(cfg.lineWidth) || 2;
         const color = cfg.color || '#d9ffe0';
@@ -12609,7 +12618,7 @@
         for (const fx of actionTileEffects) {
           const t = fx.age / fx.maxAge;
           const tile = getActiveGrid()[fx.row][fx.col];
-          const y = tileSurfaceY(tile.type) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
+          const y = activeSurfaceYAtWorld(fx.col + 0.5, fx.row + 0.5) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
           const center = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.5);
           if (!center.visible) continue;
           const east = worldToOverlay(fx.col + 1.0, y + 0.02, fx.row + 0.5);
@@ -13646,9 +13655,7 @@
       // assuming a flat Y=0 ground plane, or a player standing on an elevated
       // tier renders far below where the camera is looking.
       function _playerGroundY() {
-        const col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
-        const tile = getActiveGrid()?.[row]?.[col];
-        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+        return activeSurfaceYAtWorld(player.x / TILE, player.y / TILE);
       }
       function _snapCameraTarget() {
         camTargetX = player.x / TILE;
@@ -21413,6 +21420,9 @@
         threeContainer,
         getCamX: () => camX,
         getCamY: () => camY,
+        // Used by WeatherFX's player lantern mask to follow the avatar's
+        // smoothed world elevation instead of projecting from flat Y=0.
+        getPlayerWorldY: () => playerMesh.position.y,
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
       });

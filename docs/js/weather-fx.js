@@ -72,26 +72,28 @@
   const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
   const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
 
-  function _lanternScreenRadius(tx, tz, tiles) {
-    const c = deps.worldToOverlay(tx, 0.5, tz);
-    const e = deps.worldToOverlay(tx + tiles, 0.5, tz);
+  function _lanternScreenRadius(tx, tz, worldY, tiles) {
+    const c = deps.worldToOverlay(tx, worldY, tz);
+    const e = deps.worldToOverlay(tx + tiles, worldY, tz);
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
   function drawLanternMasks() {
     const lctx = deps.lctx;
-    const carriers = [{ x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE }];
+    // Each carrier's y is used below to project its mask at avatar height;
+    // player/NPC movement code already keeps these world positions grounded.
+    const carriers = [{ x: deps.player.x / deps.TILE, y: deps.getPlayerWorldY() + 0.5, z: deps.player.y / deps.TILE }];
     const currentArea = deps.getCurrentArea();
     for (const w of deps.npcWalkers) {
       if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
-        carriers.push({ x: w.root.position.x, z: w.root.position.z });
+        carriers.push({ x: w.root.position.x, y: w.root.position.y + 0.5, z: w.root.position.z });
       }
     }
     lctx.globalCompositeOperation = 'destination-out';
     for (const c of carriers) {
-      const center = deps.worldToOverlay(c.x, 0.5, c.z);
+      const center = deps.worldToOverlay(c.x, c.y, c.z);
       if (!center.visible) continue;
-      const shineR = _lanternScreenRadius(c.x, c.z, LANTERN_SHINE_TILES);
+      const shineR = _lanternScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES);
       if (!(shineR > 0)) continue;
       const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
       const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
