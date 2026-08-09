@@ -4,20 +4,20 @@
   // Farm buildings: barns (movable, buildable via the Farm tab). A barn
   // instance: { id, kind:'barn', tier, col, row, w, h, stage }. stage is
   // 'foundation' (just placed, needs an interact-to-build) or 'built'
-  // (rendered as the highland-style stable.json piece). The house is
-  // tracked separately (game.js's houseCol/houseRow) since its GLB
-  // rendering pipeline predates this system — farmBuildings only ever
-  // holds barns. Both share the same move/placement validation
-  // (canPlaceFarmBuilding).
+  // (rendered as the highland-style stable.json piece). The player's house
+  // is tracked separately (js/house-pieces.js, window.HousePieces) since it
+  // can hold several independently-built pieces rather than one fixed
+  // footprint — farmBuildings only ever holds barns. canPlaceAt() avoids
+  // every registered house-piece rect via deps.getHousePieceRects().
   //
   // Extracted out of game.js following the same window.<Namespace> +
   // init(deps) pattern already used by js/farm-animals.js and
-  // js/dew-vats.js. BARN_TIERS/farmBuildings/houseCol/houseRow are all
-  // reassigned wholesale at various points in game.js (config load, farm
-  // reset, moving the house), so they're threaded through as getters
-  // (farmBuildings gets a setter too, for demolish/clear); _applyLoadedShopStock
-  // (general shop-config loading, not barn-specific) stays in game.js and
-  // keeps owning BARN_TIERS directly. findOpenTileNearBarn calls
+  // js/dew-vats.js. BARN_TIERS/farmBuildings are reassigned wholesale at
+  // various points in game.js (config load, farm reset), so they're
+  // threaded through as getters (farmBuildings gets a setter too, for
+  // demolish/clear); _applyLoadedShopStock (general shop-config loading,
+  // not barn-specific) stays in game.js and keeps owning BARN_TIERS
+  // directly. findOpenTileNearBarn calls
   // window.FarmAnimals.canSpawnAt at call time rather than through deps,
   // matching how other already-extracted modules reach each other (e.g.
   // js/wild-treasure.js reading window.AlchemySystem/window.DyeSystem).
@@ -47,12 +47,13 @@
     return aCol < bCol + bW && aCol + aW > bCol && aRow < bRow + bH && aRow + aH > bRow;
   }
 
-  // Shared validity check for moving/placing any farm building (house or
-  // barn): in bounds, no trench/tilled/raised/paddy/water tile or crop,
-  // no other world object (furniture, crates, animals — anything already
-  // occupying worldObjects) in the footprint, and no overlap with the
-  // house or any other farm building. `excludeId` lets the building
-  // being moved ignore its own current footprint/occupancy.
+  // Shared validity check for moving/placing a barn: in bounds, no trench/
+  // tilled/raised/paddy/water tile or crop, no other world object
+  // (furniture, crates, animals — anything already occupying worldObjects)
+  // in the footprint, and no overlap with any house piece (see
+  // js/house-pieces.js — getHousePieceRects()) or another farm building.
+  // `excludeId` lets the building being moved ignore its own current
+  // footprint/occupancy.
   function canPlaceAt(col, row, w, h, excludeId) {
     if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
     if (col < 0 || row < 0 || col + w > deps.COLS || row + h > deps.ROWS) return false;
@@ -65,7 +66,9 @@
         if (obj && obj.id !== excludeId) return false;
       }
     }
-    if (excludeId !== 'highland_house' && rectsOverlap(col, row, w, h, deps.getHouseCol(), deps.getHouseRow(), deps.HOUSE_FOOTPRINT_W, deps.HOUSE_FOOTPRINT_D)) return false;
+    for (const h2 of deps.getHousePieceRects()) {
+      if (rectsOverlap(col, row, w, h, h2.col, h2.row, h2.w, h2.h)) return false;
+    }
     for (const b of deps.getFarmBuildings()) {
       if (b.id === excludeId) continue;
       if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
@@ -259,20 +262,11 @@
     return { ok: true, message: 'Barn demolished — its livestock are back in stasis.' };
   }
 
-  // Moves the house or a barn to a new farm-grid top-left. `id` is
-  // either 'highland_house' or a barn's own id.
+  // Moves a barn to a new farm-grid top-left. (The house has no move
+  // capability — house pieces are placed once and stay put; see
+  // js/house-pieces.js.)
   function move(id, newCol, newRow) {
     if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move buildings." };
-    if (id === 'highland_house') {
-      if (!canPlaceAt(newCol, newRow, deps.HOUSE_FOOTPRINT_W, deps.HOUSE_FOOTPRINT_D, 'highland_house')) {
-        return { ok: false, message: 'Cannot move the house there — needs clear, untilled, un-trenched ground.' };
-      }
-      deps.repositionHouse(newCol, newRow);
-      clearFootprint(newCol, newRow, deps.HOUSE_FOOTPRINT_W, deps.HOUSE_FOOTPRINT_D);
-      deps.saveFarmLayout();
-      deps.saveMemberWorldData();
-      return { ok: true, message: 'Moved the house.' };
-    }
     const entry = deps.getFarmBuildings().find(b => b.id === id);
     if (!entry) return { ok: false, message: 'Building not found.' };
     if (!canPlaceAt(newCol, newRow, entry.w, entry.h, entry.id)) {

@@ -319,11 +319,16 @@
   // previously had NO visibility gating at all and stayed on screen in
   // every area (town, wilderness, indoors) even though the editor itself
   // only ever does anything on the farm — this is what actually hides it
-  // everywhere else, and reveals the spawner only inside the arena.
+  // everywhere else, and reveals the spawner only inside the arena. Both
+  // are unlimited free-spawn cheat tools (no inventory cost, no
+  // permission/ownership nuance beyond isFarmOwner), so both are also
+  // gated behind the player's own Dev Mode setting — a real player never
+  // sees either button, regardless of area or farm ownership.
   function refreshEditorButtonVisibility() {
     const currentArea = deps.getCurrentArea();
-    const showFarmEdit = currentArea === 'farm' && deps.isFarmOwner();
-    const showDevSpawn = currentArea === DEV_ARENA_ZONE_ID;
+    const devMode = deps.isDevMode();
+    const showFarmEdit = devMode && currentArea === 'farm' && deps.isFarmOwner();
+    const showDevSpawn = devMode && currentArea === DEV_ARENA_ZONE_ID;
     const farmBtn = document.getElementById('farmEditBtn');
     const spawnBtn = document.getElementById('devSpawnBtn');
     if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';

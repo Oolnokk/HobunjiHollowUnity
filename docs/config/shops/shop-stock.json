@@ -39,6 +39,18 @@
         "large":  { "label": "Large Barn",   "slots": 12, "price": 1500, "planItem": "barnPlanLarge",  "conditions": {} }
       }
     },
+    "carpenterHouseDeeds": {
+      "label": "Dzibim Khibu's Carpentry",
+      "menuId": "carpenterShop",
+      "dialogueAccess": {
+        "sellerIds": ["dzibim_khibu"],
+        "businessMaps": ["map_i_carpenters"]
+      },
+      "pieces": {
+        "largeWing": { "label": "Large Wing Deed", "w": 5, "h": 7, "price": 1300, "deedItem": "houseDeedLargeWing", "conditions": {} },
+        "smallRoom": { "label": "Small Room Deed", "w": 3, "h": 3, "price": 400,  "deedItem": "houseDeedSmallRoom",  "conditions": {} }
+      }
+    },
     "jubmirWares": {
       "label": "Jubmir's Wares",
       "menuId": "jubmirShop",

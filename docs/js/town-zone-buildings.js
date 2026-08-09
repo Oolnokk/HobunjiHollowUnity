@@ -24,12 +24,15 @@
   // reference the same material object (see WallBuilder.build's InstancedMesh
   // and HousePieceGen's _tpl.scene.clone), so retinting each template's
   // material once here covers every building anywhere, town or wilderness —
-  // no per-building or per-zone work needed. Runs once regardless of which
-  // upgrade path (town or a wilderness zone) finishes its GLB loads first.
-  let _glbTintApplied = false;
+  // no per-building or per-zone work needed. Gated on the same
+  // window.__hobunjiGlbTintApplied flag game.js's own early tint kickoff
+  // uses (it starts the identical retint as soon as its farm-scoped GLB
+  // loads resolve, so a farm-only session that never visits town still gets
+  // matching materials) — whichever path finishes its loads first does the
+  // retint exactly once; this path is a safe no-op if the other already ran.
   function _applyBuildingGlbTints() {
-    if (_glbTintApplied) return;
-    _glbTintApplied = true;
+    if (window.__hobunjiGlbTintApplied) return;
+    window.__hobunjiGlbTintApplied = true;
     deps.houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
     HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
   }
