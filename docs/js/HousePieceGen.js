@@ -65,11 +65,95 @@
 
   function shingleReady() { return !!_tpl; }
 
+  // Recolors the shingle GLB's own baked material in place, replacing its
+  // texture with a repo PNG retinted via the same adaptive shade fill used
+  // for portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
+  // loaded after this file — called lazily here since script load order puts
+  // this file first). _makeShingle's `_tpl.scene.clone(true)` shares material
+  // references with the template (THREE's Object3D/Mesh clone does not deep-
+  // clone materials), so tinting the template's material once retints every
+  // shingle instance — already placed or placed later.
+  function tintShingleMaterial(pngPath, fillColor) {
+    if (!_tpl) return;
+    var mats = new Set();
+    _tpl.scene.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) mats.add(m); });
+    });
+    if (!mats.size) return;
+    new THREE.TextureLoader().load(pngPath, function (tex) {
+      var rgb = fillColor && global.parseHexColor && global.parseHexColor(fillColor);
+      var finalTex = tex;
+      if (rgb) {
+        var canvas = global.getShadeFillCanvas(tex.image, pngPath + '|' + fillColor, {
+          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: global.getPortraitTintingConfig(),
+        });
+        finalTex = new THREE.CanvasTexture(canvas);
+      }
+      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      finalTex.needsUpdate = true;
+      mats.forEach(function (m) { m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
+    }, undefined, function () {});
+  }
+
+  // Some authored GLBs (e.g. HighlandLongshingle_boned.glb's shell meshes)
+  // carry no `uv` attribute at all — fine for their own baked/vertex-colored
+  // look, but a material.map assigned later (tintShingleMaterial above) would
+  // sample a fixed corner texel for the whole surface instead of actually
+  // varying across it. Generates a simple per-vertex UV by projecting each
+  // vertex onto whichever world axis its normal points along least
+  // (dominant-normal-axis projection), same technique the town-path preview
+  // tool used for its material painter. opts.stretch=true fits the whole PNG
+  // once across each axis group's own bounding box (the preview's "stretch to
+  // bounds" mode) instead of tiling it — opts.tileSize (world/local units per
+  // repeat, matching the tileSize convention used by loadHousePieceFaceTexture/
+  // loadTerrainTileTexture) is ignored in that case. No-op if the geometry
+  // already has a `uv` attribute.
+  function _ensureProjectedUv(geometry, opts) {
+    opts = opts || {};
+    if (geometry.getAttribute('uv')) return;
+    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+    var pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
+    if (!pos || !normal) return;
+    var stride = Math.max(0.001, Number(opts.tileSize) || 1);
+    function axisOf(i) {
+      var nx = Math.abs(normal.getX(i)), ny = Math.abs(normal.getY(i)), nz = Math.abs(normal.getZ(i));
+      return ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
+    }
+    function rawUv(i, axis) {
+      var px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      if (axis === 'x') return [pz, py];
+      if (axis === 'z') return [px, py];
+      return [px, pz];
+    }
+    var uvs = new Float32Array(pos.count * 2);
+    if (opts.stretch) {
+      var bounds = { x: [Infinity, -Infinity, Infinity, -Infinity], y: [Infinity, -Infinity, Infinity, -Infinity], z: [Infinity, -Infinity, Infinity, -Infinity] };
+      var i, axis, uv, b;
+      for (i = 0; i < pos.count; i++) {
+        axis = axisOf(i); uv = rawUv(i, axis); b = bounds[axis];
+        b[0] = Math.min(b[0], uv[0]); b[1] = Math.max(b[1], uv[0]); b[2] = Math.min(b[2], uv[1]); b[3] = Math.max(b[3], uv[1]);
+      }
+      for (i = 0; i < pos.count; i++) {
+        axis = axisOf(i); uv = rawUv(i, axis); b = bounds[axis];
+        var du = Math.max(1e-6, b[1] - b[0]), dv = Math.max(1e-6, b[3] - b[2]);
+        uvs[i * 2] = (uv[0] - b[0]) / du; uvs[i * 2 + 1] = (uv[1] - b[2]) / dv;
+      }
+    } else {
+      for (var j = 0; j < pos.count; j++) {
+        var ax = axisOf(j), rv = rawUv(j, ax);
+        uvs[j * 2] = rv[0] / stride; uvs[j * 2 + 1] = rv[1] / stride;
+      }
+    }
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  }
+
   // Exact port of analyzeShingleTemplate() from house-piece-author
   function _analyzeShingle(sceneObj) {
     var bone = null;
     sceneObj.traverse(function (o) {
       if (!bone && String(o.name || '').toLowerCase() === 'shinglebone') bone = o;
+      if (o.isMesh && o.geometry) _ensureProjectedUv(o.geometry, { stretch: true });
     });
     var boneLength = 1, boneFrameInverse = null;
     if (bone) {
@@ -90,7 +174,7 @@
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
-  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady };
+  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial };
 
   /**
    * Build a Highland house group for one rectangular building footprint.

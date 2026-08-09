@@ -230,7 +230,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
           <div class="sect-head"><b>Materials</b><span class="sect-tag" id="materialsMapTag">—</span></div>
           <div><label>Target map</label><select id="matTargetMap"></select></div>
           <div id="matRows" style="margin-top:8px"></div>
-          <p class="muted" style="margin-top:5px">Leaving a row's texture as "— default —" keeps that tile type on the game's single shared material, exactly as it rendered before this file existed. Tile size is world units per texture repeat.</p>
+          <p class="muted" style="margin-top:5px">Leaving a row's texture as "— default —" keeps that tile type on the game's single shared material, exactly as it rendered before this file existed. Tile size is world units per texture repeat. Recolor retints the PNG's own shading toward the picked color (same effect as portrait/creature tinting) instead of showing its raw albedo. Stretch fits the whole PNG once across a world-unit span instead of tiling it, and overrides tile size while checked. Pick "★ All Wilderness Zones" to set the fallback every zone with no override of its own inherits — this preview and the live game both fall back to it the same way.</p>
           <div class="row" style="margin-top:8px">
             <button class="sec" id="matReloadBtn">⟲ Reload from repo</button>
             <button class="ok" id="matDownloadBtn">⬇ Download terrain-materials.json</button>
@@ -306,6 +306,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <div id="qhelpPopover"></div>
 
 <script src="../../config/config.js"></script>
+<!-- getShadeFillCanvas/parseHexColor/getPortraitTintingConfig — used by resolvePreviewMat
+     below so the Materials tab's 3D preview matches the live game's recolor exactly
+     (see loadTerrainTileTexture in game.js). No THREE dependency of its own. -->
+<script src="../../js/portrait-utils.js"></script>
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script src="../../js/building-door.js"></script>
@@ -3260,13 +3264,31 @@ function resolvePreviewMat(mapId, key) {
   if (mat) return mat;
   const color = TERRAIN_DEFAULT_COLORS[key] ?? 0x888888;
   mat = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
-  const override = matConfig.byMap?.[mapId]?.[key];
+  // grass falls back to the wildcard entry too, exactly like game.js's
+  // resolveTileMat — otherwise this preview would show "no override" for a
+  // wilderness zone that's actually inheriting the '*' default in-game.
+  const override = matConfig.byMap?.[mapId]?.[key] || matConfig.byMap?.['*']?.[key];
   if (override?.texture) {
     new THREE.TextureLoader().load('../../assets/textures/' + override.texture, tex => {
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      const ts = Math.max(0.05, override.tileSize || 1);
-      tex.repeat.set(1 / ts, 1 / ts);
-      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+      // Same shade-fill recolor as loadTerrainTileTexture in game.js
+      // (getShadeFillCanvas, from portrait-utils.js) so this preview isn't
+      // showing the raw PNG when the live game would show it retinted.
+      let finalTex = tex;
+      const rgb = override.fillColor && window.parseHexColor?.(override.fillColor);
+      if (rgb) {
+        const canvas = window.getShadeFillCanvas(tex.image, override.texture + '|' + override.fillColor, {
+          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: window.getPortraitTintingConfig(),
+        });
+        finalTex = new THREE.CanvasTexture(canvas);
+      }
+      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      if (Array.isArray(override.stretch) && override.stretch.length === 2) {
+        finalTex.repeat.set(1 / Math.max(0.05, override.stretch[0]), 1 / Math.max(0.05, override.stretch[1]));
+      } else {
+        const ts = Math.max(0.05, override.tileSize || 1);
+        finalTex.repeat.set(1 / ts, 1 / ts);
+      }
+      mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
     }, undefined, () => {});
   }
   _previewMatCache.set(cacheKey, mat);
@@ -4261,26 +4283,33 @@ async function loadAudioCueIndexes() {
 // kept in sync by hand (same convention: docs/assets/textures/ has no
 // directory-listing mechanism on a static-hosted site, so both tools just
 // hardcode the filenames they know about).
-const MAT_TEXTURES = ['boards.png', 'canvas.png', 'carved_smooth.png', 'log.png'];
-// Only these four tileMats keys are exposed here for now (see
-// resolveTileMat's comment in game.js — trench/raised/river/etc. are wired
-// but not yet editable in this UI). 'cliff' isn't a tileMats key at all —
-// it's the standalone stone-skin material used by the plateau/border-terrain
+const MAT_TEXTURES = ['boards.png', 'canvas.png', 'carved_smooth.png', 'log.png', 'wavy_surface.png'];
+// Only these six tileMats keys are exposed here for now (see
+// resolveTileMat's comment in game.js — raised/river/etc. are wired but not
+// yet editable in this UI). 'cliff' isn't a tileMats key at all — it's the
+// standalone stone-skin material used by the plateau/border-terrain
 // heightfield meshes (resolveCliffMat), kept separate so a map can texture
 // its ore rock tiles differently from its distant cliff faces.
 const MAT_KEYS = [
-  { key: 'grass', label: 'Grass' },
-  { key: 'path',  label: 'Path' },
-  { key: 'rock',  label: 'Rock' },
-  { key: 'cliff', label: 'Cliffs' },
+  { key: 'grass',  label: 'Grass' },
+  { key: 'tilled', label: 'Tilled' },
+  { key: 'trench', label: 'Trench' },
+  { key: 'path',   label: 'Path' },
+  { key: 'rock',   label: 'Rock' },
+  { key: 'cliff',  label: 'Cliffs' },
 ];
 // Every render target the live game actually builds terrain for — the one
 // authored town map, the farm (not a map-editor map at all), and the four
 // procedurally-generated wilderness zones (see EXTERIOR_ZONES/
 // WildernessMapGenerator.zoneMapIds() in game.js) plus the dev testing arena.
+// '*' is the wildcard resolveTileMat/resolveCliffMat fall back to for any
+// mapId with no entry of its own — the one place to set a default for every
+// wilderness zone (including ones not individually listed below, e.g. a
+// future Tothal-Shift-only zone) without visiting each one.
 const MAT_TARGET_MAPS = [
   { id: 'map_hobunji_town', label: 'Hobunji Hollow — Town' },
   { id: 'farm', label: 'Farm' },
+  { id: '*', label: '★ All Wilderness Zones (default)' },
   { id: 'map_northern_cliffs', label: 'Northern Cliffs' },
   { id: 'map_southern_cloud_forest', label: 'Southern Cloud Forest' },
   { id: 'map_western_slope', label: 'Western Slope' },
@@ -4316,20 +4345,39 @@ function renderMaterialsSection() {
     const texOptions = ['<option value="">— default —</option>']
       .concat(MAT_TEXTURES.map(t => `<option value="${t}" ${cur.texture === t ? 'selected' : ''}>${t}</option>`))
       .join('');
+    const hasStretch = Array.isArray(cur.stretch) && cur.stretch.length === 2;
     return `
       <div class="g2" style="margin-top:4px;align-items:end">
         <div><label>${label}</label><select data-mat-key="${key}" class="matTexSel">${texOptions}</select></div>
-        <div><label>Tile size</label><input type="number" min="0.05" step="0.05" value="${cur.tileSize || 1}" data-mat-key="${key}" class="matSizeInput"></div>
+        <div><label>Tile size</label><input type="number" min="0.05" step="0.05" value="${cur.tileSize || 1}" data-mat-key="${key}" class="matSizeInput" ${hasStretch ? 'disabled' : ''}></div>
+      </div>
+      <div class="row" style="margin-top:4px;align-items:center;gap:8px">
+        <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" data-mat-key="${key}" class="matFillEnabled" style="width:auto" ${cur.fillColor ? 'checked' : ''}> Recolor
+        </label>
+        <input type="color" data-mat-key="${key}" class="matFillColor" value="${cur.fillColor || '#8a8a8a'}" style="width:40px;padding:1px">
+        <label style="display:flex;align-items:center;gap:5px;margin:0 0 0 10px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" data-mat-key="${key}" class="matStretchEnabled" style="width:auto" ${hasStretch ? 'checked' : ''}> Stretch to
+        </label>
+        <input type="number" min="1" step="1" placeholder="W" value="${hasStretch ? cur.stretch[0] : ''}" data-mat-key="${key}" class="matStretchW" style="width:52px">
+        <span class="muted">×</span>
+        <input type="number" min="1" step="1" placeholder="H" value="${hasStretch ? cur.stretch[1] : ''}" data-mat-key="${key}" class="matStretchH" style="width:52px">
       </div>`;
   }).join('');
-  $('matRows').querySelectorAll('.matTexSel, .matSizeInput').forEach(el => {
+  $('matRows').querySelectorAll('.matTexSel, .matSizeInput, .matFillEnabled, .matFillColor, .matStretchEnabled, .matStretchW, .matStretchH').forEach(el => {
     el.addEventListener('change', () => applyMaterialRow(el.dataset.matKey));
   });
 }
 
 function applyMaterialRow(key) {
-  const texSel  = $('matRows').querySelector(`.matTexSel[data-mat-key="${key}"]`);
-  const sizeInp = $('matRows').querySelector(`.matSizeInput[data-mat-key="${key}"]`);
+  const row = $('matRows');
+  const texSel      = row.querySelector(`.matTexSel[data-mat-key="${key}"]`);
+  const sizeInp     = row.querySelector(`.matSizeInput[data-mat-key="${key}"]`);
+  const fillChk     = row.querySelector(`.matFillEnabled[data-mat-key="${key}"]`);
+  const fillColor   = row.querySelector(`.matFillColor[data-mat-key="${key}"]`);
+  const stretchChk  = row.querySelector(`.matStretchEnabled[data-mat-key="${key}"]`);
+  const stretchW    = row.querySelector(`.matStretchW[data-mat-key="${key}"]`);
+  const stretchH    = row.querySelector(`.matStretchH[data-mat-key="${key}"]`);
   const texture = texSel.value;
   if (!matConfig.byMap[matTargetMapId]) matConfig.byMap[matTargetMapId] = {};
   const byMapEntry = matConfig.byMap[matTargetMapId];
@@ -4337,8 +4385,15 @@ function applyMaterialRow(key) {
     delete byMapEntry[key];
     if (!Object.keys(byMapEntry).length) delete matConfig.byMap[matTargetMapId];
   } else {
-    byMapEntry[key] = { texture, tileSize: Math.max(0.05, parseFloat(sizeInp.value) || 1) };
+    const entry = { texture, tileSize: Math.max(0.05, parseFloat(sizeInp.value) || 1) };
+    if (fillChk.checked) entry.fillColor = fillColor.value;
+    if (stretchChk.checked) {
+      const w = Math.max(1, parseFloat(stretchW.value) || 1), h = Math.max(1, parseFloat(stretchH.value) || 1);
+      entry.stretch = [w, h];
+    }
+    byMapEntry[key] = entry;
   }
+  sizeInp.disabled = stretchChk.checked;
   setStatus(`Materials: ${matTargetMapId}.${key} ${texture ? 'set to ' + texture : 'cleared'}.`);
   clearPreviewMatCache();
   schedule3DRebuild();

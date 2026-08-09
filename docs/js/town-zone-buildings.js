@@ -16,6 +16,24 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Retints the shared wall-brick GLB (Roughbrick1.glb, via WallBuilder) and
+  // the shared shingle GLB (HighlandLongshingle_boned.glb, via HousePieceGen)
+  // from their baked textures to a repo PNG + shade-fill color, the same way
+  // loadHousePieceFaceTexture already does for the boards/stone/canvas faces
+  // above. Both GLB templates are shared singletons whose clones/instances
+  // reference the same material object (see WallBuilder.build's InstancedMesh
+  // and HousePieceGen's _tpl.scene.clone), so retinting each template's
+  // material once here covers every building anywhere, town or wilderness —
+  // no per-building or per-zone work needed. Runs once regardless of which
+  // upgrade path (town or a wilderness zone) finishes its GLB loads first.
+  let _glbTintApplied = false;
+  function _applyBuildingGlbTints() {
+    if (_glbTintApplied) return;
+    _glbTintApplied = true;
+    deps.houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
+    HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
+  }
+
   // ── Town building detection ──────────────────────────────────────
   // Reads explicit building entries from the town layout (placed by map editor).
   function detectTownBuildings() {
@@ -33,12 +51,26 @@
   // reads it back off mat.userData.uvTileSize to scale each face's UVs so the
   // texture stretches proportionally to real face size instead of smearing a
   // whole image across every face regardless of size.
-  function loadHousePieceFaceTexture(path, fallbackColor, tileSize) {
+  //
+  // fillColor, when given, recolors the PNG's visible pixels to that target
+  // hex using the same adaptive luminance-preserving shade fill as portrait/
+  // creature tinting (getShadeFillCanvas in portrait-utils.js, loaded before
+  // this file) — the texture's own shading/grain is kept, just retinted,
+  // instead of the raw PNG albedo showing through untouched.
+  function loadHousePieceFaceTexture(path, fallbackColor, tileSize, fillColor) {
     const mat = new THREE.MeshLambertMaterial({ color: fallbackColor, side: THREE.DoubleSide });
     mat.userData.uvTileSize = tileSize;
     new THREE.TextureLoader().load(path, (tex) => {
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+      let finalTex = tex;
+      const rgb = fillColor && parseHexColor(fillColor);
+      if (rgb) {
+        const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
+          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
+        });
+        finalTex = new THREE.CanvasTexture(canvas);
+      }
+      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
     }, undefined, () => {});
     return mat;
   }
@@ -73,7 +105,7 @@
     // for porch/stair/railing faces, carved_smooth.png for stone-tagged
     // (chimney) faces, canvas.png for canvas-tagged (tent) faces.
     const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-    const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
+    const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5, '#4d4d4d');
     const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
 
     // Async-load all piece files in parallel, then build scene
@@ -160,6 +192,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           _townBuildingsGlbUpgradePending = false;
+          _applyBuildingGlbTints();
           const townScene3 = deps.getTownScene();
           if (!townScene3) return;
           deps.debugLog('Town buildings: upgrading to real bricks + shingle GLB');
@@ -210,7 +243,7 @@
                           preScale: [1, 1, 0.6],
                           brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } };
     const _boardsMat = loadHousePieceFaceTexture('assets/textures/boards.png', 0x8b6914, 1.2);
-    const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5);
+    const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5, '#4d4d4d');
     const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
 
     Promise.all(buildingDefs.map(bldg => {
@@ -249,6 +282,7 @@
           HousePieceGen.loadShingleGlb('assets/models/'),
         ]).then(() => {
           deps.zoneBuildingsGlbUpgradePending.delete(mapId);
+          _applyBuildingGlbTints();
           const scene2 = deps.zoneScenes.get(mapId)?.scene;
           if (!scene2) return;
           deps.debugLog(`Zone buildings (${mapId}): upgrading to real bricks + shingle GLB`);

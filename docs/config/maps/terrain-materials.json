@@ -1,5 +1,24 @@
 {
   "schema": "hobunji_terrain_materials.v1",
-  "note": "Per-map ground/cliff texture overrides — authored via the Map Editor's Materials tab. Read by docs/game.js's loadTerrainMaterialConfig()/resolveTileMat()/resolveCliffMat(). Empty (or a map/key simply missing) falls back to the game's single shared default material for that tile type, exactly as before this file existed. byMap.<mapId>.<key> where key is one of: grass, path, rock, cliff (more tileMats keys work too, but only these four are exposed in the Map Editor UI for now — trench/raised/river/stream/waterfall/weeds/tilled/paddy/shrub are wired in game.js's resolveTileMat but not yet editable here). Each entry: { texture: '<filename under docs/assets/textures/>', tileSize: <world units per texture repeat, default 1> }.",
-  "byMap": {}
+  "note": "Per-map ground/cliff texture overrides — authored via the Map Editor's Materials tab. Read by docs/game.js's loadTerrainMaterialConfig()/resolveTileMat()/resolveCliffMat(). Empty (or a map/key simply missing) falls back to the game's single shared default material for that tile type, exactly as before this file existed. byMap.<mapId>.<key> where key is one of: grass, path, rock, cliff (more tileMats keys work too, but only these four are exposed in the Map Editor UI for now — trench/raised/river/stream/waterfall/weeds/tilled/paddy/shrub are wired in game.js's resolveTileMat but not yet editable here). Each entry: { texture: '<filename under docs/assets/textures/>', tileSize: <world units per texture repeat, default 1>, fillColor: <optional '#rrggbb', recolors the PNG via the same adaptive shade-fill used for portrait/creature tinting instead of showing its raw albedo>, stretch: <optional [worldWidth, worldHeight], fits the PNG once across that span instead of tiling — overrides tileSize> }. byMap['*'] is a wildcard fallback applied to any mapId with no entry of its own — covers every wilderness zone (map_eastern_mire, map_southern_cloud_forest, procedurally-placed Tothal Shift zones, etc.) without listing each one by id; a map-specific entry below still wins over the wildcard for that map.",
+  "byMap": {
+    "*": {
+      "grass": { "texture": "wavy_surface.png", "tileSize": 8, "fillColor": "#2f7021" },
+      "tilled": { "texture": "canvas.png", "tileSize": 1, "fillColor": "#423d35" },
+      "trench": { "texture": "canvas.png", "tileSize": 4, "fillColor": "#423d35" },
+      "cliff": { "texture": "carved_smooth.png", "tileSize": 4, "fillColor": "#6a6460" }
+    },
+    "farm": {
+      "grass": { "texture": "wavy_surface.png", "stretch": [36, 26], "fillColor": "#2f7021" },
+      "tilled": { "texture": "canvas.png", "tileSize": 1, "fillColor": "#423d35" },
+      "trench": { "texture": "canvas.png", "tileSize": 4, "fillColor": "#423d35" },
+      "cliff": { "texture": "carved_smooth.png", "tileSize": 4, "fillColor": "#6a6460" }
+    },
+    "map_hobunji_town": {
+      "grass": { "texture": "wavy_surface.png", "stretch": [60, 50], "fillColor": "#2f7021" },
+      "tilled": { "texture": "canvas.png", "tileSize": 1, "fillColor": "#423d35" },
+      "trench": { "texture": "canvas.png", "tileSize": 4, "fillColor": "#423d35" },
+      "cliff": { "texture": "carved_smooth.png", "tileSize": 4, "fillColor": "#6a6460" }
+    }
+  }
 }

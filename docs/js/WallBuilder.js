@@ -273,6 +273,57 @@
     return new Promise((resolve, reject) => loader.parse(buffer, '', resolve, reject));
   }
 
+  // Some authored GLBs (e.g. Roughbrick1.glb) carry no `uv` attribute at all —
+  // fine for their own baked/vertex-colored look, but a material.map assigned
+  // later (tintDefaultGlb below) would sample a fixed corner texel for the
+  // whole surface instead of actually varying across it. Generates a simple
+  // per-vertex UV by projecting each vertex onto whichever world axis its
+  // normal points along least (dominant-normal-axis projection), same
+  // technique the town-path preview tool used for its material painter.
+  // opts.stretch=true fits the whole PNG once across each axis group's own
+  // bounding box (the preview's "stretch to bounds" mode) instead of tiling
+  // it — opts.tileSize (world/local units per repeat, matching the tileSize
+  // convention used by loadHousePieceFaceTexture/loadTerrainTileTexture) is
+  // ignored in that case. No-op if the geometry already has a `uv` attribute.
+  function ensureProjectedUv(geometry, opts) {
+    opts = opts || {};
+    if (geometry.getAttribute('uv')) return geometry;
+    if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
+    const pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
+    if (!pos || !normal) return geometry;
+    const stride = Math.max(0.001, Number(opts.tileSize) || 1);
+    const axisOf = (i) => {
+      const nx = Math.abs(normal.getX(i)), ny = Math.abs(normal.getY(i)), nz = Math.abs(normal.getZ(i));
+      return ny >= nx && ny >= nz ? 'y' : nx >= nz ? 'x' : 'z';
+    };
+    const rawUv = (i, axis) => {
+      const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      if (axis === 'x') return [pz, py];
+      if (axis === 'z') return [px, py];
+      return [px, pz];
+    };
+    const uvs = new Float32Array(pos.count * 2);
+    if (opts.stretch) {
+      const bounds = { x: [Infinity, -Infinity, Infinity, -Infinity], y: [Infinity, -Infinity, Infinity, -Infinity], z: [Infinity, -Infinity, Infinity, -Infinity] };
+      for (let i = 0; i < pos.count; i++) {
+        const axis = axisOf(i), [u, v] = rawUv(i, axis), b = bounds[axis];
+        b[0] = Math.min(b[0], u); b[1] = Math.max(b[1], u); b[2] = Math.min(b[2], v); b[3] = Math.max(b[3], v);
+      }
+      for (let i = 0; i < pos.count; i++) {
+        const axis = axisOf(i), [u, v] = rawUv(i, axis), b = bounds[axis];
+        const du = Math.max(1e-6, b[1] - b[0]), dv = Math.max(1e-6, b[3] - b[2]);
+        uvs[i * 2] = (u - b[0]) / du; uvs[i * 2 + 1] = (v - b[2]) / dv;
+      }
+    } else {
+      for (let i = 0; i < pos.count; i++) {
+        const axis = axisOf(i), [u, v] = rawUv(i, axis);
+        uvs[i * 2] = u / stride; uvs[i * 2 + 1] = v / stride;
+      }
+    }
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    return geometry;
+  }
+
   // ── WallBuilder ───────────────────────────────────────────────────────────
 
   /**
@@ -319,7 +370,7 @@
       const mesh = findFirstMesh(gltf.scene);
       if (!mesh) throw new Error('WallBuilder: no mesh in GLB "' + name + '"');
       const cloned = mesh.clone();
-      cloned.geometry = mesh.geometry.clone();
+      cloned.geometry = ensureProjectedUv(mesh.geometry.clone(), { stretch: true });
       cloned.material = cloneMaterial(mesh.material);
       cloned.name = name;
       self.glbLibrary.set(name, { mesh: cloned, perUnitScale: computePerUnitScale(cloned) });
@@ -351,6 +402,35 @@
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = WALL_DEFAULT_GLB_NAME;
     this.glbLibrary.set(WALL_DEFAULT_GLB_NAME, { mesh, perUnitScale: new THREE.Vector3(1, 1, 4) });
+  };
+
+  /**
+   * Recolors the default (Roughbrick1.glb) wall model's own material in place,
+   * replacing its baked brick texture with a repo PNG retinted via the same
+   * adaptive shade fill used for portrait/creature tinting (getShadeFillCanvas
+   * in portrait-utils.js, loaded before this file — called lazily here since
+   * script load order puts this file first). build() hands every instanced
+   * wall this exact material object (see WallBuilder.prototype.build below),
+   * so tinting it once retints every wall — already built or built later —
+   * anywhere the default GLB is used.
+   */
+  WallBuilder.prototype.tintDefaultGlb = function (pngPath, fillColor) {
+    const model = this.glbLibrary.get(WALL_DEFAULT_GLB_NAME);
+    if (!model) return;
+    const mats = Array.isArray(model.mesh.material) ? model.mesh.material : [model.mesh.material];
+    new THREE.TextureLoader().load(pngPath, (tex) => {
+      const rgb = fillColor && root.parseHexColor && root.parseHexColor(fillColor);
+      let finalTex = tex;
+      if (rgb) {
+        const canvas = root.getShadeFillCanvas(tex.image, pngPath + '|' + fillColor, {
+          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: root.getPortraitTintingConfig(),
+        });
+        finalTex = new THREE.CanvasTexture(canvas);
+      }
+      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+      finalTex.needsUpdate = true;
+      mats.forEach((m) => { if (!m) return; m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
+    }, undefined, () => {});
   };
 
   /**
