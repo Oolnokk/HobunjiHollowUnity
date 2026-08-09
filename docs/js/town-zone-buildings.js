@@ -164,8 +164,30 @@
           eRow = Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
         }
         const eid = 'bldg_entrance_' + bldg.id;
-        // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
         const worldTownTransitions = deps.getWorldTownTransitions();
+        // A linked transition can carry coordinates derived from an older
+        // piece shape. Snap it to the freshly loaded authored door and move
+        // its already-rendered marker too, eliminating both the dead doorway
+        // and the detached live teleport without duplicating either one.
+        const linkedEntry = worldTownTransitions.find(t =>
+          t.target === 'building' && t.buildingId === bldg.id);
+        if (linkedEntry && (linkedEntry.col !== eCol || linkedEntry.row !== eRow)) {
+          const oldCol = linkedEntry.col;
+          const oldRow = linkedEntry.row;
+          linkedEntry.col = eCol;
+          linkedEntry.row = eRow;
+          const linkedRing = townScene2.children.find(o => o.userData?.transitionId === linkedEntry.id);
+          if (linkedRing) {
+            const entranceTile = deps.getTownGrid()?.[eRow]?.[eCol];
+            linkedRing.position.set(
+              eCol + 0.5,
+              deps.tileSurfaceY(entranceTile?.type || deps.TileType.GRASS) + 0.02,
+              eRow + 0.5
+            );
+          }
+          deps.debugLog(`Building entrance ${bldg.id}: corrected (${oldCol},${oldRow}) -> (${eCol},${eRow})`);
+        }
+        // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
         const hasWorkspaceEntry = worldTownTransitions.some(t =>
           t.target === 'building' &&
           Number.isFinite(t.col) && Number.isFinite(t.row) &&

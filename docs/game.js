@@ -8872,7 +8872,14 @@
             if (!t.targetMapId) {
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
             } else if (_isBuildingArea(t.targetMapId)) {
-              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+              layout.transitions.push({
+                id: t.id, label: t.label, area: 'town', col: t.col, row: t.row,
+                target: 'building', targetMapId: t.targetMapId,
+                // Retained so the building renderer can keep this spot on
+                // the piece's authored door after rotations or old exports.
+                buildingId: t.buildingId || '',
+                targetSpotId: t.targetSpotId || '',
+              });
             } else if (allZoneMapIds.has(t.targetMapId)) {
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
             }
@@ -9876,6 +9883,9 @@
           const ring = new THREE.Mesh(ringGeo, ringMat);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
+          // Used by the async building pass to move a stale linked marker
+          // onto the door it belongs to without leaving an orphan ring.
+          ring.userData.transitionId = t.id;
           townScene.add(ring);
         }
 
@@ -21691,6 +21701,7 @@
         getTownBuildingGroups: () => _townBuildingGroups,
         setTownBuildingGroups: (v) => { _townBuildingGroups = v; },
         getWorldTownTransitions: () => worldTownTransitions,
+        getTownGrid: () => townGrid,
         houseWallBuilder,
         INTERIOR_COLS,
         INTERIOR_ROWS,
