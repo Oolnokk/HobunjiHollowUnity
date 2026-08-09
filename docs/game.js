@@ -12871,7 +12871,13 @@
         // the farm (town, zones) col/row index into a different grid entirely.
         if (currentArea === 'farm') {
           recomputeWater(false);
-          if (result.ok !== false) markTileDirty(col, row);
+          // dig/fill/raise/till/smooth/plant/harvest/place_* all land here —
+          // previously none of them ever called saveFarmLayout() (only the
+          // farm editor's brush path did), so any terraforming or planting
+          // done through ordinary gameplay was silently lost on reload, and
+          // could get wiped out mid-session by anything that re-applies the
+          // (stale, still-unsaved) layout on top of the live grid.
+          if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
         } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // Note: weapon/machete vegetation clears in a zone don't trigger this —
           // applyAction's weapon branch returns the same ok:true shape for a normal
@@ -15167,7 +15173,11 @@
       function buildTerrainTileGeo(col, row, type, srcGrid = grid) {
         const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
         const BLEND_V  = 2;
-        const PLATEAU  = type === TileType.RAISED ? 3.0 : 1.5;  // raised = wide flat top
+        // Trench is a dug pit meant to mirror the raised bed's wide flat top
+        // (just inverted) — same wide-plateau factor as RAISED. The natural
+        // waterway types (river/stream/waterfall) keep the narrower, more
+        // tapered 1.5 blend since those should still read as carved channels.
+        const PLATEAU  = (type === TileType.RAISED || type === TileType.TRENCH) ? 3.0 : 1.5;
         const depressionTop = DEPRESSION_TOP[type];
         const isDepression = depressionTop !== undefined;
         const targetDY = isDepression
@@ -15675,7 +15685,10 @@
         debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
         if (currentArea === 'farm') {
           recomputeWater(false);
-          if (result.ok !== false) markTileDirty(col, row);
+          // See the matching branch in firePendingAction — a completed dig/
+          // fill charge (new trench, fill-in) needs the same saveFarmLayout()
+          // fix, or it's just as silently lost as a single-tap action.
+          if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
         } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
@@ -18554,7 +18567,17 @@
               // trench reverts to plain grass (single-tap dig restores depth to 1).
               if (t.type === TileType.TRENCH) {
                 t.depth = Math.max(0, (t.depth ?? 1) - TRENCH_SILT_RATE * str);
-                if (t.depth <= 0) { t.type = TileType.GRASS; t.depth = 0; }
+                if (t.depth <= 0) {
+                  t.type = TileType.GRASS; t.depth = 0;
+                  // This mutates tile.type outside any of the normal
+                  // dig/fill/action paths, which are the only places that
+                  // otherwise call markTileDirty — without it, the trench's
+                  // dirt-pit mesh and grass billboards for this tile never
+                  // get rebuilt to match the new type, leaving a stale pit
+                  // mesh sitting under (or grass tufts sprouting through) a
+                  // tile the data now says is plain grass.
+                  if (!isTown) markTileDirty(col, row);
+                }
               }
             }
 
@@ -20265,8 +20288,15 @@
         useActiveAction();
       }
       function runInteractAction() {
+        // Excludes raw tool-swing actions (dig/till/chop/etc — those belong
+        // to the tool/item action-slot buttons, not the Interact key/button),
+        // but NOT plant_/place_/harvest: those are context actions exactly
+        // like "open this door" or "talk to this NPC", and a player holding
+        // a seed reasonably expects the same Interact input that does
+        // everything else to also plant it, instead of only the separate
+        // primary tool/item action button working.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action) && !String(b.action || '').startsWith('plant_') && !String(b.action || '').startsWith('place_') && b.action !== 'harvest');
+        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action));
         if (!btn) return;
         activeAction = btn.action;
         useActiveAction();
@@ -21251,6 +21281,7 @@
         getHousePieceCatalog: () => HOUSE_PIECE_CATALOG,
         getHousePieces: () => housePieces,
         placeHouseDeed: (pieceKey, col, row) => window.HousePieces.placeDeed(pieceKey, col, row),
+        moveHouse: (col, row) => window.HousePieces.moveHouse(col, row),
         getFarmBuildings: () => farmBuildings,
         PROCESSING_FURNITURE_DEFS,
         AGING_METHODS,

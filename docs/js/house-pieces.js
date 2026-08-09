@@ -58,10 +58,12 @@
   }
 
   // In bounds, no trench/tilled/raised/paddy/water tile or crop, no other
-  // world object in the footprint, no overlap with another house piece or a
-  // barn, and — unless this is the very first piece ever placed — must touch
-  // an already-placed piece along a real edge.
-  function canPlaceAt(col, row, w, h) {
+  // world object in the footprint, no overlap with a barn — shared by both
+  // a brand-new piece placement and a whole-house move (moveHouse below),
+  // which additionally needs to skip the piece-vs-piece/adjacency checks
+  // since every piece moves together and their relative arrangement (already
+  // valid) doesn't change.
+  function _footprintClearOfHazardsAndBarns(col, row, w, h) {
     if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
     if (col < 0 || row < 0 || col + w > deps.COLS || row + h > deps.ROWS) return false;
     const grid = deps.getGrid();
@@ -72,11 +74,20 @@
         if (deps.worldObjects.get(c + ',' + r)) return false;
       }
     }
-    const pieces = deps.getHousePieces();
-    for (const b of pieces) {
+    for (const b of deps.getFarmBuildings()) {
       if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
     }
-    for (const b of deps.getFarmBuildings()) {
+    return true;
+  }
+
+  // In bounds, no trench/tilled/raised/paddy/water tile or crop, no other
+  // world object in the footprint, no overlap with another house piece or a
+  // barn, and — unless this is the very first piece ever placed — must touch
+  // an already-placed piece along a real edge.
+  function canPlaceAt(col, row, w, h) {
+    if (!_footprintClearOfHazardsAndBarns(col, row, w, h)) return false;
+    const pieces = deps.getHousePieces();
+    for (const b of pieces) {
       if (rectsOverlap(col, row, w, h, b.col, b.row, b.w, b.h)) return false;
     }
     if (pieces.length && !pieces.some(b => rectsAdjacent(col, row, w, h, b.col, b.row, b.w, b.h))) return false;
@@ -399,6 +410,48 @@
     return { ok: true, message: msg };
   }
 
+  // Moves the whole house cluster (every piece, starter plus any built/
+  // foundation deeds) together by one rigid delta — mirrors FarmBuildings'
+  // per-barn move(), just applied to every piece at once so their existing
+  // relative arrangement (already valid — each piece was placed touching
+  // another) never needs re-validating against itself. `newStarterCol/Row`
+  // is the new position for the starter piece; every other piece keeps its
+  // offset from it.
+  function moveHouse(newStarterCol, newStarterRow) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move the house." };
+    const pieces = deps.getHousePieces();
+    const starter = pieces.find(p => p.pieceKey === 'starter');
+    if (!starter) return { ok: false, message: 'House not found.' };
+    const dCol = newStarterCol - starter.col, dRow = newStarterRow - starter.row;
+    if (!dCol && !dRow) return { ok: false, message: 'Already there.' };
+
+    // Unregister every piece's footprint/door first so the hazard/barn check
+    // below doesn't trip over the house's own current tiles, then validate
+    // every piece's new position before touching anything else.
+    pieces.forEach(p => { _unregisterFootprint(p); _unregisterDoor(p); });
+    const allClear = pieces.every(p => _footprintClearOfHazardsAndBarns(p.col + dCol, p.row + dRow, p.w, p.h));
+    if (!allClear) {
+      pieces.forEach(p => { _registerFootprint(p); _registerDoor(p); });
+      return { ok: false, message: 'Cannot move the house there — needs clear, untilled ground for every room.' };
+    }
+
+    pieces.forEach(p => { p.col += dCol; p.row += dRow; });
+    pieces.forEach(p => {
+      _registerFootprint(p);
+      clearFootprint(p.col, p.row, p.w, p.h);
+      if (p.stage === 'foundation' && p._mesh) {
+        p._mesh.position.set(p.col + p.w / 2, 0.07, p.row + p.h / 2);
+      } else if (p.stage === 'built') {
+        _disposeMesh(p._mesh); p._mesh = null;
+        _buildStructureMesh(p); // also re-resolves and re-registers this piece's door
+      }
+    });
+    deps.onPieceGeometryChanged();
+    deps.saveFarmLayout();
+    deps.saveMemberWorldData();
+    return { ok: true, message: 'Moved the house.' };
+  }
+
   function clearAll() {
     const pieces = deps.getHousePieces();
     pieces.forEach(entry => { _unregisterFootprint(entry); _unregisterDoor(entry); _disposeMesh(entry._mesh); });
@@ -478,6 +531,7 @@
     seedStarter,
     placeDeed,
     demolish,
+    moveHouse,
     clearAll,
     getPieceRects,
     computeInteriorLayout,
