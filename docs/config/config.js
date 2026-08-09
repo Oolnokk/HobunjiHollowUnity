@@ -333,4 +333,11 @@
       setTimeout(() => wrapHardSurfaceAudioSystem(root.AudioSystem), delayMs);
     }
   }
+
+  // One startup marker that appears after the debug panel exists; useful when
+  // testing exact GitHack commits to distinguish a stale/cached build from the
+  // branch head before chasing subsystem behavior.
+  if (typeof setTimeout === 'function') {
+    setTimeout(() => audioDebug('[runtime patches] lifecycle gate + direct hard steps + indoor BGS hook loaded.'), 3000);
+  }
 })(typeof self !== 'undefined' ? self : globalThis);
