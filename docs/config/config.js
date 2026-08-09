@@ -122,32 +122,114 @@
   }
   installRuntimeNpcSpawnGate();
 
-  // The old hard-surface footstep voice still lives in AudioSystem as the
-  // gravel fallback. Recorded gravel/path clips were later configured on top
-  // of it; disable those clips for the live game so paths, building floors,
-  // and BuildingDoor-classified porches consistently use the procedural voice.
-  // Run after synchronous config scripts have populated SCRATCHBONES_CONFIG;
-  // playback happens later, so AudioSystem sees this before any footfall.
-  function useProceduralHardSurfaceFootsteps() {
-    if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname)) return;
-    const directAudio = root.SCRATCHBONES_CONFIG?.game?.audio; // Used when the modern direct audio config is populated.
-    const audio = directAudio && Object.keys(directAudio).length
-      ? directAudio
-      : root.SCRATCHBONES_CONFIG?.game?.assets?.audio; // Used by older/current assets.audio config layouts.
-    const footsteps = audio?.footsteps; // Used as the same config object AudioSystem reads for each footfall.
-    if (!footsteps) return;
-    const surfaces = footsteps.surfaces || (footsteps.surfaces = {}); // Used to replace only the hard/gravel surface configuration.
-    const existingGravel = surfaces.gravel || {}; // Used to preserve any non-recording hard-surface tuning already authored in config.
-    surfaces.gravel = {
-      ...existingGravel,
-      urls: [],
-      url: null,
-      volumeMul: 1.65,
-    };
-    const message = '[footsteps] Recorded hard-surface clips disabled; procedural path/porch/interior voice active at volumeMul=1.65.'; // Used for mobile-visible confirmation in the existing debug log.
+  let _hardStepLogged = false; // Used to confirm the first actual hard-surface footfall reaches the direct procedural route.
+  let _footstepCadenceLogged = false; // Used to confirm the shared stride accumulator is firing after AudioSystem initialization.
+
+  function audioDebug(message) {
     if (typeof root.debugLog === 'function') root.debugLog(message, 'audio');
+    else if (typeof root.__farmLog === 'function') root.__farmLog(`[audio] ${message}`, 'info');
     else console.info(message);
   }
 
-  if (typeof setTimeout === 'function') setTimeout(useProceduralHardSurfaceFootsteps, 0);
+  // Exact pre-recording hard/path recipe: triangle + short band-passed noise,
+  // using the old path post-FX values. It deliberately bypasses
+  // AudioSystem.playFootstepSurface so no configured gravel recording can be
+  // selected. Gain is raised from the historical mix so rain/music cannot
+  // bury the player's own step.
+  function playLegacyHardSurfaceStep(audioSystem, volumeScale = 1, pan = 0, heavy = false) {
+    const audioCfg = audioSystem.gameAudioConfig?.() || {}; // Used for the same master/SFX/footstep settings as normal AudioSystem playback.
+    if (audioCfg.enabled === false) return;
+    const footstepCfg = audioCfg.footsteps || {}; // Used to honor the existing Footsteps enabled/volume settings.
+    if (footstepCfg.enabled === false) return;
+    const AudioCtx = root.AudioContext || root.webkitAudioContext; // Used to render the historical procedural path voice directly.
+    if (!AudioCtx) return;
+    const ctx = root._footstepAudioCtx || (root._footstepAudioCtx = new AudioCtx()); // Shared with AudioSystem so unlocking/resume behavior stays consistent.
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65)); // Used as the authored footsteps master level.
+    const sfxVolume = Math.max(0, Number(audioCfg.sfxVolume) || 1); // Used as the global SFX level.
+    const finalVolume = Math.min(1, baseVolume * sfxVolume * Math.max(0, Number(volumeScale) || 0) * (heavy ? 1 : 0.9)); // Used as a deliberately audible version of the old path voice.
+    if (finalVolume <= 0.002) return;
+
+    const now = ctx.currentTime;
+    const pitchMul = 1.2 * (heavy ? 0.55 : 1); // Used to match the old path pitch and AudioSystem's heavy-landing lowering.
+    const durationS = 0.055 * 0.6 * (heavy ? 2.2 : 1); // Used to match the old 55ms base × path decay multiplier.
+    const baseFreq = 55 * pitchMul; // Used by both the triangle fundamental and the path noise filter.
+    const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null; // Used for NPC/creature hard steps; player stays centered.
+    if (panNode) {
+      panNode.pan.value = Math.max(-1, Math.min(1, Number(pan) || 0));
+      panNode.connect(ctx.destination);
+    }
+    const outNode = panNode || ctx.destination;
+
+    const osc = ctx.createOscillator(); // Used as the 18% tonal component of the historical footstep voice.
+    const oscGain = ctx.createGain(); // Used to give the triangle component its short exponential decay.
+    osc.type = 'triangle';
+    osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * 16;
+    oscGain.gain.setValueAtTime(finalVolume * 0.18, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+    osc.connect(oscGain).connect(outNode);
+    osc.start(now);
+    osc.stop(now + durationS);
+
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * durationS)); // Used to size exactly one short noise burst per footfall.
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate); // Used as the 82% noisy component of the historical footstep voice.
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = ctx.createBiquadFilter(); // Used to recreate the old path/gravel band-pass character.
+    filter.type = 'bandpass';
+    filter.frequency.value = baseFreq * 4.6 * (heavy ? 0.45 : 1);
+    filter.Q.value = 2.4;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(finalVolume * 0.82, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+    noise.connect(filter).connect(noiseGain).connect(outNode);
+    noise.start(now);
+    noise.stop(now + durationS);
+  }
+
+  function wrapHardSurfaceAudioSystem(audioSystem) {
+    if (!audioSystem || audioSystem.__hobunjiDirectHardStepWrapped) return !!audioSystem;
+    if (typeof audioSystem.playFootstepSfx !== 'function' || typeof audioSystem.footstepSurfaceKey !== 'function') return false;
+
+    const originalPlayFootstepSfx = audioSystem.playFootstepSfx; // Used for grass/water and as the existing porch fallback path.
+    audioSystem.playFootstepSfx = function (area, tile, volumeScale = 1, pan = 0, opts = {}) {
+      let surfaceKey = null; // Used to ask AudioSystem itself for authoritative terrain/building classification.
+      try { surfaceKey = audioSystem.footstepSurfaceKey(area, tile?.type ?? null); } catch (_) {}
+      if (surfaceKey !== 'gravel') return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
+      if (!_hardStepLogged) {
+        _hardStepLogged = true;
+        audioDebug(`[footsteps] DIRECT legacy hard-step fired area=${area} tileType=${tile?.type ?? 'none'} ctx=${root._footstepAudioCtx?.state || 'new'}; recorded gravel clips bypassed.`);
+      }
+      return playLegacyHardSurfaceStep(audioSystem, volumeScale, pan, !!opts.heavy);
+    };
+
+    const originalAdvance = audioSystem.footstepAdvance; // Used only to add a one-time cadence diagnostic without changing movement timing.
+    if (typeof originalAdvance === 'function') {
+      audioSystem.footstepAdvance = function (state, distPx, stridePx) {
+        const fires = originalAdvance.call(this, state, distPx, stridePx);
+        if (fires && !_footstepCadenceLogged) {
+          _footstepCadenceLogged = true;
+          audioDebug(`[footsteps] cadence fired dist=${Number(distPx).toFixed(2)} stride=${Number(stridePx).toFixed(2)} playerStride=${Number(audioSystem.FOOTSTEP_PLAYER_STRIDE_PX).toFixed(2)}`);
+        }
+        return fires;
+      };
+    }
+
+    Object.defineProperty(audioSystem, '__hobunjiDirectHardStepWrapped', { value: true, configurable: true });
+    audioDebug('[footsteps] Direct legacy hard-surface route installed; gravel recordings cannot play through this route.');
+    return true;
+  }
+
+  // AudioSystem and BuildingDoor are parsed later in the page. Install after
+  // their final wrappers exist, but well before a player can unlock audio and
+  // start walking. Repeated short probes also make this resilient to future
+  // script-order changes without keeping a permanent polling loop alive.
+  if (typeof setTimeout === 'function') {
+    for (const delayMs of [0, 25, 100, 250, 500, 1000, 2500]) {
+      setTimeout(() => wrapHardSurfaceAudioSystem(root.AudioSystem), delayMs);
+    }
+  }
 })(typeof self !== 'undefined' ? self : globalThis);
