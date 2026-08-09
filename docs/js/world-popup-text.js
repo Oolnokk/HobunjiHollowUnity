@@ -12,8 +12,9 @@
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow',
     },
-    floatPlus: { textHeight: 0.075, lifetimeMs: 1150, maxRadius: 0.24 },
-    centeredFiveRow: { textHeight: 0.065, lifetimeMs: 1500, horizontalOffset: 0.08, rowSpacing: 1.08, maxRows: 5 },
+    placement: { worldHeight: 0.075, xOffsetPercent: 8, yOffsetPercent: 0 },
+    floatPlus: { lifetimeMs: 1150 },
+    centeredFiveRow: { lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5 },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
       masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff',
@@ -45,7 +46,7 @@
     return state.settings;
   }
 
-  function avatarCentroidWorld(root) {
+  function avatarMetrics(root) {
     const THREE = state.deps?.THREE;
     if (!THREE || !root) return null;
     let avatarRoot = null;
@@ -53,23 +54,46 @@
       if (!avatarRoot && Number.isFinite(child.userData?.portraitModelHeight)) avatarRoot = child;
     });
     if (avatarRoot) {
-      const center = new THREE.Vector3();
+      const height = Number(avatarRoot.userData.portraitModelHeight);
+      const width = Number(avatarRoot.userData.portraitModelWidth) || height;
+      const placementRatio = Number(avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5);
+      const verticalOffset = (placementRatio - 0.5) * height;
+      const combinedHeight = height * 0.5 + verticalOffset;
+      const center = new THREE.Vector3(0, verticalOffset, 0);
       avatarRoot.updateWorldMatrix(true, false);
-      avatarRoot.getWorldPosition(center);
-      const height = avatarRoot.userData.portraitModelHeight;
-      const placementRatio = avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5;
-      center.y += (placementRatio - 0.5) * height;
-      return center;
+      avatarRoot.localToWorld(center);
+      return { avatarRoot, center, height, width, combinedHeight };
     }
     const center = new THREE.Vector3();
     root.updateWorldMatrix?.(true, false);
     root.getWorldPosition?.(center);
-    return center;
+    return { avatarRoot: root, center, height: 1, width: 1, combinedHeight: 0.5 };
+  }
+
+  function avatarCentroidWorld(root) {
+    return avatarMetrics(root)?.center || null;
+  }
+
+  function popupAnchorWorld(root, mode) {
+    const metrics = avatarMetrics(root);
+    if (!metrics) return null;
+    const placement = state.settings.placement;
+    // Float+ is centered horizontally on the avatar centroid. The five-row
+    // list retains the uploaded prototype's default width-relative X offset.
+    const xOffset = mode === 'centeredFiveRow' ? metrics.width * placement.xOffsetPercent / 100 : 0;
+    const yOffset = metrics.combinedHeight * placement.yOffsetPercent / 100;
+    if (metrics.avatarRoot?.localToWorld) {
+      const placementRatio = Number(metrics.avatarRoot.userData?.portraitVerticalPlacementRatio ?? 0.5);
+      const local = new state.deps.THREE.Vector3(xOffset, (placementRatio - 0.5) * metrics.height + yOffset, 0);
+      metrics.avatarRoot.localToWorld(local);
+      return local;
+    }
+    return metrics.center.clone().add(new state.deps.THREE.Vector3(xOffset, yOffset, 0));
   }
 
   function makePlane(text, kind, layout) {
     const THREE = state.deps.THREE;
-    const size = layout.textHeight;
+    const size = state.settings.placement.worldHeight;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const fontPx = 64;
@@ -114,11 +138,12 @@
   }
 
   function claimFloatOffset(root, bounds) {
-    const cfg = state.settings.floatPlus;
+    const worldHeight = state.settings.placement.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
     for (let index = 0; index < 240; index++) {
       const angle = index * 2.399963229728653;
-      const radius = cfg.maxRadius * Math.sqrt(index / 239);
+      // Exact Float+ radius formula from the uploaded prototype.
+      const radius = Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
       const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius * 0.62 };
       const free = existing.every(event => Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.48 || Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.55);
       if (free) return point;
@@ -179,7 +204,7 @@
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
-      const center = avatarCentroidWorld(event.root);
+      const center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
         dispose(event);
         state.active.splice(index, 1);
@@ -192,14 +217,13 @@
         const list = listFor(event.root);
         list.forEach((item, slot) => { item.listSlot = slot; });
         const centerSlot = (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
-        center.addScaledVector(cameraRight, state.settings.centeredFiveRow.horizontalOffset);
         center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing;
       }
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = progress < 0.72 ? 1 : (1 - progress) / 0.28;
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
-      event.plane.scale.setScalar((event.mode === 'floatPlus' ? state.settings.floatPlus.textHeight : state.settings.centeredFiveRow.textHeight) * pop);
+      event.plane.scale.setScalar(state.settings.placement.worldHeight * pop);
     }
   }
 
@@ -209,6 +233,17 @@
     return api;
   }
 
-  const api = { init, update, showChange, queueReward, avatarCentroidWorld, loadSettings, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
+  function clear() {
+    state.active.splice(0).forEach(dispose);
+    state.pending.length = 0;
+  }
+
+  function applySettings(settings) {
+    state.settings = merge(DEFAULTS, settings);
+    clear();
+    return clone(state.settings);
+  }
+
+  const api = { init, update, showChange, queueReward, avatarCentroidWorld, loadSettings, applySettings, clear, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
   window.WorldPopupText = api;
 })();
