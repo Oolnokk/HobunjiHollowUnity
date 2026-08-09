@@ -15938,6 +15938,9 @@
       // Shared by the player's own equipped-tool mesh (rebuildToolMeshes), a
       // bandit's weapon (makeBanditToolHolder), and an NPC work station's
       // displayed tool.
+      // Used by both tool planes and held bag-item planes to keep them above
+      // resource-ring layers (<1.1) while remaining below avatar planes (2+).
+      const HELD_OBJECT_RENDER_ORDER = 1.5;
       function makeToolPlaneMesh(itemKey, opts = {}) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
@@ -15961,6 +15964,7 @@
         // bottom of the handle, meant to be thrust rather than swung like
         // the blade) faces forward instead when built for the pick slot.
         plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
+        plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
@@ -16037,7 +16041,7 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        plane.renderOrder = 3;
+        plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         return plane;
       }
 
