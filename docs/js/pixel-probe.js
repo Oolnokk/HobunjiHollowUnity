@@ -425,6 +425,12 @@
     const probedPlayerSitting = sitInteraction && sitInteraction.phase !== 'out'
       && hits.some(h => _pixelProbeOwnerInfo(h.object)?.kind === 'player');
     if (probedPlayerSitting) {
+      const cameraSolve = deps.getSeatedCameraDebug?.();
+      if (cameraSolve) {
+        const hit = cameraSolve.directHitDistance == null ? 'none' : cameraSolve.directHitDistance.toFixed(3);
+        lines.push('');
+        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg`);
+      }
       const seatedLines = _pixelProbeSeatedLegReadoutLines();
       if (seatedLines) { lines.push(''); lines.push(...seatedLines); }
     }

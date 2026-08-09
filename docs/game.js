@@ -2030,7 +2030,7 @@
         hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
-        rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
+        rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
@@ -2393,12 +2393,71 @@
         return entry ? entry[0] : null;
       }
 
-      function canPlaceDecorativeFurnitureAt(col, row) {
+      function decorativeFurnitureSize(furnitureKey, rotYDeg = 0) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+        const baseW = def?.fw || 1, baseD = def?.fd || 1;
+        const angle = (rotYDeg || 0) * Math.PI / 180;
+        const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle));
+        return {
+          fw: Math.max(1, Math.ceil(baseW * cos + baseD * sin - 1e-6)),
+          fd: Math.max(1, Math.ceil(baseW * sin + baseD * cos - 1e-6)),
+        };
+      }
+
+      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0) {
         const g = currentArea === 'interior' ? interiorGrid : grid;
-        const tile = g[row]?.[col];
-        if (!tile || tile.type === TileType.ROCK) return false;
-        if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
-        return !interiorFurnitureObjects.find(o => o.col === col && o.row === row);
+        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
+        for (let r = row; r < row + fd; r++) {
+          for (let c = col; c < col + fw; c++) {
+            const tile = g[r]?.[c];
+            if (!tile || tile.type === TileType.ROCK) return false;
+            if (currentArea === 'farm' && isHouseFootprint(c, r)) return false;
+          }
+        }
+        return !interiorFurnitureObjects.find(o => {
+          if (o.id === ignoreId || o.area !== currentArea) return false;
+          const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
+        });
+      }
+
+      function housePieceOwningInteriorCell(col, row) {
+        return housePieces.find(p => p.stage === 'built'
+          && col >= p.col * 2 && col < (p.col + p.w) * 2
+          && row >= p.row * 2 && row < (p.row + p.h) * 2) || null;
+      }
+
+      function furnitureOwnerFields(col, row) {
+        const owner = housePieceOwningInteriorCell(col, row);
+        return owner ? { ownerPieceId: owner.id, localCol: col - owner.col * 2, localRow: row - owner.row * 2 } : {};
+      }
+
+      // Exact oriented-footprint collision for furniture. Placement remains
+      // tile-snapped, but 45-degree rotations should not block the unused
+      // corners of their larger axis-aligned placement bounds. Floor pieces
+      // opt out through def.walkable (currently the woven rug).
+      function decorativeFurnitureBlocksPoint(obj, x, z) {
+        const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+        if (!def || def.walkable) return false;
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+        const cx = obj.col + bounds.fw * 0.5, cz = obj.row + bounds.fd * 0.5;
+        const angle = -(obj.rotYDeg || 0) * Math.PI / 180;
+        const dx = x - cx, dz = z - cz;
+        const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
+        const localZ = dx * Math.sin(angle) + dz * Math.cos(angle);
+        return Math.abs(localX) < (def.fw || 1) * 0.5 && Math.abs(localZ) < (def.fd || 1) * 0.5;
+      }
+
+      function furnitureBlocksMovementAt(area, x, z) {
+        if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
+        if (area === 'interior' && _derivedHearthMeshes.some(h => {
+          const dx = x - h.cx, dz = z - h.cz;
+          const cos = Math.cos(-h.yaw), sin = Math.sin(-h.yaw);
+          const localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos;
+          return Math.abs(localX) < 1 && Math.abs(localZ) < 0.5;
+        })) return true;
+        return area === 'farm' && [...processingFurnitureObjects].some(obj =>
+          x >= obj.col && x < obj.col + 1 && z >= obj.row && z < obj.row + 1);
       }
 
       // Which placed decorative-furniture keys the player can interact with
@@ -2421,15 +2480,20 @@
           };
         }
         const def = DECORATIVE_FURNITURE_DEFS[o.key];
-        if (def?.sit) return makeSitInteractable(o.key, o.col, o.row, def.fw, def.fd, 0);
+        if (def?.sit) {
+          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          return makeSitInteractable(o.key, o.col, o.row, fw, fd, o.rotYDeg || 0);
+        }
         return null;
       }
 
-      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
+      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea, rotYDeg = 0) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
+        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
-        group.position.set(col + (def.fw || 1) * 0.5, 0, row + (def.fd || 1) * 0.5);
+        group.position.set(col + fw * 0.5, 0, row + fd * 0.5);
+        group.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(group);
         _markFurnitureEdgeId(group);
         targetScene.add(group);
@@ -2440,7 +2504,7 @@
           light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
           targetScene.add(light);
         }
-        const sfxSource = window.Music?.registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, window.Music?.resolveFurnitureSfx(def));
+        const sfxSource = window.Music?.registerFurnitureSfxSource(area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
 
         return { mesh: group, light, sfxSource };
       }
@@ -2463,7 +2527,7 @@
         const isOnFarm = currentArea === 'farm';
         if (def.area === 'interior' && !isInInterior) return { ok: false, message: `${def.name} must be placed inside the house.` };
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
-        if (!canPlaceDecorativeFurnitureAt(col, row)) return { ok: false, message: 'Cannot place furniture here.' };
+        if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
         if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
         const targetScene = isInInterior ? interiorScene : scene;
@@ -2471,12 +2535,119 @@
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
         inventory[itemKey]--;
         clampInventoryStack(itemKey);
-        interiorFurnitureObjects.push({ key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea });
+        const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
+        interiorFurnitureObjects.push({ id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
+          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner });
         if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
         registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
         refreshItemScroll();
         saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
+      }
+
+      function disposeDecorativeFurniture(obj, refundToInventory = false) {
+        const targetScene = obj.area === 'interior' ? interiorScene : scene;
+        targetScene.remove(obj.mesh);
+        obj.mesh?.traverse?.(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+        if (obj.light) targetScene.remove(obj.light);
+        window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+        if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        const idx = interiorFurnitureObjects.indexOf(obj);
+        if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
+        if (refundToInventory) {
+          const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          if (itemKey) { inventory[itemKey] = (inventory[itemKey] || 0) + 1; clampInventoryStack(itemKey); }
+        }
+      }
+
+      function moveDecorativeFurniture(id, col, row) {
+        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
+        if (!obj) return { ok: false, message: 'Furniture not found.' };
+        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0)) return { ok: false, message: 'Cannot move furniture there.' };
+        const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        obj.col = col; obj.row = row;
+        obj.mesh.position.set(col + fw * 0.5, 0, row + fd * 0.5);
+        if (obj.light) obj.light.position.set(col + 0.5, def?.light?.height || 0.6, row + 0.5);
+        window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+        obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+        if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
+        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
+        registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+        saveFarmLayout();
+        return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
+      }
+
+      function removeDecorativeFurniture(id) {
+        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
+        if (!obj) return { ok: false, message: 'Furniture not found.' };
+        const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+        disposeDecorativeFurniture(obj, true);
+        saveFarmLayout();
+        refreshItemScroll();
+        return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} returned to inventory.` };
+      }
+
+      function rotateDecorativeFurniture(id, degrees = 45) {
+        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
+        if (!obj) return { ok: false, message: 'Furniture not found.' };
+        const nextRot = ((obj.rotYDeg || 0) + degrees + 360) % 360;
+        if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot)) {
+          return { ok: false, message: 'Cannot rotate here — the turned furniture would overlap a wall or another item.' };
+        }
+        const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+        const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot);
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        obj.rotYDeg = nextRot;
+        obj.mesh.rotation.y = nextRot * Math.PI / 180;
+        obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
+        if (obj.light) obj.light.position.set(obj.col + fw * 0.5, def?.light?.height || 0.6, obj.row + fd * 0.5);
+        window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+        obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+        if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
+        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, obj.col, obj.row, fw, fd, nextRot);
+        registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
+        saveFarmLayout();
+        return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
+      }
+
+      function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
+        interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
+          const insideOld = obj.col >= oldRect.col * 2 && obj.col < (oldRect.col + oldRect.w) * 2
+            && obj.row >= oldRect.row * 2 && obj.row < (oldRect.row + oldRect.h) * 2;
+          if (obj.ownerPieceId !== pieceId && !(obj.ownerPieceId == null && insideOld)) return;
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          const oldSize = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+          let fw = oldSize.fw, fd = oldSize.fd;
+          let localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - oldRect.col * 2;
+          let localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - oldRect.row * 2;
+          if (rotateClockwise) {
+            const nextCol = oldRect.h * 2 - (localRow + fd);
+            const nextRow = localCol;
+            localCol = nextCol; localRow = nextRow;
+            obj.rotYDeg = ((obj.rotYDeg || 0) + 90) % 360;
+            obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
+            const newSize = decorativeFurnitureSize(obj.key, obj.rotYDeg);
+            fw = newSize.fw; fd = newSize.fd;
+          }
+          localCol = Math.max(0, Math.min(newRect.w * 2 - fw, localCol));
+          localRow = Math.max(0, Math.min(newRect.h * 2 - fd, localRow));
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          obj.ownerPieceId = pieceId; obj.localCol = localCol; obj.localRow = localRow;
+          obj.col = newRect.col * 2 + localCol; obj.row = newRect.row * 2 + localRow;
+          obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
+          if (obj.light) obj.light.position.set(obj.col + 0.5, def?.light?.height || 0.6, obj.row + 0.5);
+          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+          obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+          registerChairNpcStation(obj.key, obj.col, obj.row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+        });
       }
 
       function clearInteriorFurniture() {
@@ -2507,8 +2678,7 @@
         const c1 = c0 + w, r1 = r0 + h;
         const toRemove = interiorFurnitureObjects.filter(o => {
           if (o.area !== 'interior') return false;
-          const def = DECORATIVE_FURNITURE_DEFS[o.key];
-          const fw = def?.fw || 1, fd = def?.fd || 1;
+          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
           return o.col < c1 && o.col + fw > c0 && o.row < r1 && o.row + fd > r0;
         });
         if (!toRemove.length) return 0;
@@ -2539,11 +2709,68 @@
       // panel (js/furniture-placer.js), consumed by the pointerdown handler
       // right after the farm editor's own.
       let furniturePlacementArmedKey = null;
+      let furnitureMoveArmedId = null;
+      let furniturePlacementGhost = null;
+      let furniturePlacementPointerId = null;
       function armFurniturePlacement(itemKey) {
         furniturePlacementArmedKey = itemKey || null;
+        if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
+        clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
       }
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
+      function armFurnitureMove(id) {
+        furnitureMoveArmedId = id || null;
+        if (furnitureMoveArmedId) furniturePlacementArmedKey = null;
+        clearFurniturePlacementGhost();
+        window.FurniturePlacer?.render();
+      }
+      function getArmedFurnitureMoveId() { return furnitureMoveArmedId; }
+
+      function clearFurniturePlacementGhost() {
+        if (!furniturePlacementGhost) return;
+        const targetScene = furniturePlacementGhost.area === 'interior' ? interiorScene : scene;
+        targetScene.remove(furniturePlacementGhost.group);
+        furniturePlacementGhost.group.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+        furniturePlacementGhost = null;
+      }
+
+      function furniturePlacementSpec() {
+        if (furnitureMoveArmedId) {
+          const obj = interiorFurnitureObjects.find(o => o.id === furnitureMoveArmedId && o.area === currentArea);
+          return obj ? { key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id } : null;
+        }
+        const key = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        return key ? { key, rotYDeg: 0, ignoreId: null } : null;
+      }
+
+      function showFurniturePlacementGhost(col, row) {
+        const spec = furniturePlacementSpec();
+        if (!spec) { clearFurniturePlacementGhost(); return; }
+        const valid = canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
+        if (!furniturePlacementGhost || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
+          clearFurniturePlacementGhost();
+          const group = buildFurnitureVisual(spec.key, 0x5cff7a);
+          const ghostMaterial = new THREE.MeshBasicMaterial({ color: 0x5cff7a, transparent: true, opacity: 0.58, depthWrite: false });
+          group.traverse(child => { if (child.isMesh) child.material = ghostMaterial.clone(); });
+          group.rotation.y = spec.rotYDeg * Math.PI / 180;
+          group.renderOrder = 1000;
+          (currentArea === 'interior' ? interiorScene : scene).add(group);
+          furniturePlacementGhost = { group, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
+        }
+        const { fw, fd } = decorativeFurnitureSize(spec.key, spec.rotYDeg);
+        furniturePlacementGhost.group.position.set(col + fw * 0.5, 0.04, row + fd * 0.5);
+        furniturePlacementGhost.group.visible = true;
+        furniturePlacementGhost.group.traverse(child => {
+          if (child.isMesh) child.material.color.set(valid ? 0x5cff7a : 0xff5555);
+        });
+        furniturePlacementGhost.col = col;
+        furniturePlacementGhost.row = row;
+        furniturePlacementGhost.valid = valid;
+      }
 
       // ── Farm editor ───────────────────────────────────────────────
       let farmEditMode = false;
@@ -2686,7 +2913,10 @@
             layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, ...(job ? { job } : {}) });
           });
           interiorFurnitureObjects.forEach(obj => {
-            layout.decor.push({ key: obj.key, col: obj.col, row: obj.row, area: obj.area });
+            layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
+              rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
+              localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
+              localRow: Number.isFinite(obj.localRow) ? obj.localRow : null });
           });
           // Movable buildings — every house piece (starter + built/
           // foundation deeds) and every barn (foundation or built). Added
@@ -2712,7 +2942,12 @@
           if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
           if (worldTransitions.length) layout.transitions = worldTransitions;
           localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
-        } catch {}
+          return true;
+        } catch (error) {
+          console.error('saveFarmLayout:', error);
+          debugLog('Farm layout save failed: ' + (error?.message || error), 'error');
+          return false;
+        }
       }
 
       function loadFarmLayout() {
@@ -2760,15 +2995,22 @@
             if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
           }
         });
-        (layout.decor || []).forEach(({ key, col, row, area }) => {
+        (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
           const def = DECORATIVE_FURNITURE_DEFS[key];
           if (!def) return;
           const decorArea = area || 'farm';
           const targetScene = decorArea === 'interior' ? interiorScene : scene;
-          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea);
-          if (result) interiorFurnitureObjects.push({ key, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea });
-          if (result && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
-          if (result) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
+          const result = makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
+          const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
+          if (result) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+            mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+            ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+            localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
+          if (result && decorArea === 'farm' && def.sit) {
+            const size = decorativeFurnitureSize(key, rotYDeg || 0);
+            registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+          }
+          if (result) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
         });
         // House pieces — initWorldObjects() already seeded the starter piece
         // at its hard default position before this runs. A modern save's
@@ -2777,42 +3019,40 @@
         // deed pieces; an old pre-modular-house save only ever has the
         // legacy houseCol/houseRow fields, which just repositions the
         // starter with nothing else to restore.
-        const starterEntry = housePieces.find(p => p.id === 'house_starter');
+        let starterEntry = housePieces.find(p => p.id === 'house_starter');
         if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
-          // Both starter pieces (main room + annex) share pieceKey 'starter'
-          // now — match by id specifically so this always finds the main
-          // room, not whichever of the two happens to sort first.
           const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
-          if (savedStarter && starterEntry && (savedStarter.col !== starterEntry.col || savedStarter.row !== starterEntry.row)) {
+          if (savedStarter) {
+            // Restore the saved records themselves instead of reseeding a
+            // default starter pair and skipping pieceKey:'starter'. The old
+            // path restored the main room but silently reset a rearranged
+            // starter annex to its default position on every reload.
             window.HousePieces.clearAll();
-            window.HousePieces.seedStarter(savedStarter.col, savedStarter.row);
+            layout.housePieces.forEach(saved => {
+              const def = saved.pieceKey === 'starter' ? HOUSE_PIECE_CATALOG.starter : HOUSE_PIECE_CATALOG[saved.pieceKey];
+              if (!def || !saved.id) return;
+              const entry = {
+                id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+                w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+                roofAxis: saved.roofAxis || null,
+                features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
+              };
+              housePieces.push(entry);
+              window.HousePieces.spawnEntry(entry);
+            });
+            starterEntry = housePieces.find(p => p.id === 'house_starter');
+          } else {
+            // Transitional saves with deeds but no explicit main-room record.
+            layout.housePieces.forEach(saved => {
+              if (saved.pieceKey === 'starter' || !HOUSE_PIECE_CATALOG[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
+              const def = HOUSE_PIECE_CATALOG[saved.pieceKey];
+              const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+                w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+                roofAxis: saved.roofAxis || null, features: saved.features || [] };
+              housePieces.push(entry);
+              window.HousePieces.spawnEntry(entry);
+            });
           }
-          layout.housePieces.forEach(saved => {
-            if (saved.pieceKey === 'starter' || !HOUSE_PIECE_CATALOG[saved.pieceKey]) return;
-            if (housePieces.some(p => p.id === saved.id)) return;
-            const def = HOUSE_PIECE_CATALOG[saved.pieceKey];
-            const entry = {
-              id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row, w: saved.w || def.w, h: saved.h || def.h,
-              stage: saved.stage || 'foundation', roofAxis: saved.roofAxis || null, features: saved.features || [],
-            };
-            housePieces.push(entry);
-            window.HousePieces.spawnEntry(entry);
-          });
-          // Restore each already-spawned piece's pinned roof axis and
-          // architectural features (main room/annex, which the block above
-          // repositions in place rather than recreating) — both independent
-          // of position, applied as one bulk rebuild rather than per piece.
-          let _needsRebuild = false;
-          layout.housePieces.forEach(saved => {
-            const entry = housePieces.find(p => p.id === saved.id);
-            if (!entry) return;
-            if (saved.roofAxis && entry.roofAxis !== saved.roofAxis) { window.HousePieces.setRoofAxis(saved.id, saved.roofAxis); _needsRebuild = true; }
-            if (Array.isArray(saved.features) && JSON.stringify(saved.features) !== JSON.stringify((entry.features || []).map(f => ({ id: f.id, type: f.type, lx: f.lx, ly: f.ly, side: f.side, edgeSlot: f.edgeSlot, autoGenerated: !!f.autoGenerated })))) {
-              window.HousePieces.setFeatures(saved.id, saved.features);
-              _needsRebuild = true;
-            }
-          });
-          if (_needsRebuild) window.HousePieces.rebuildStructureMeshes();
         } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
                    && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
           window.HousePieces.clearAll();
@@ -2822,6 +3062,14 @@
         // — independent of any one piece's position, so restored
         // unconditionally here rather than inside either branch above.
         window.HousePieces.loadFixtureInventory(layout.architecturalInventory);
+        // Re-derive global furniture coordinates from the room-local values
+        // only after every room has been restored. This is deliberately a
+        // no-op transform: it repairs old/global coordinates while keeping
+        // the saved local placement unchanged.
+        housePieces.filter(p => p.stage === 'built').forEach(piece => {
+          const rect = { col: piece.col, row: piece.row, w: piece.w, h: piece.h };
+          transformFurnitureWithHousePiece(piece.id, rect, rect, false);
+        });
         rebuildInteriorGeometry();
         (layout.buildings || []).forEach(saved => {
           if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
@@ -7608,7 +7856,7 @@
         const tile = g[r]?.[c];
         if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
-        if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
+        if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
         if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
         if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
@@ -13069,6 +13317,7 @@
         if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
         if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
+        if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
         // as snappy as town, matching the player's uniform GRASS speed there.
         if (currentArea === 'farm') return 1.00;
@@ -13256,7 +13505,7 @@
             light.position.set(h.cx, hearthDef.light.height || 0.6, h.cz);
             interiorScene.add(light);
           }
-          return { mesh, light };
+          return { ...h, mesh, light };
         });
 
         for (let r = 0; r < INTERIOR_ROWS; r++) {
@@ -13749,8 +13998,11 @@
         if (currentArea === 'town') {
           for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
+        if (currentArea === 'interior' && activeCameraMode === 'seated' && interiorWallGroup) meshes.push(interiorWallGroup);
         for (const obj of interiorFurnitureObjects) {
-          if (obj.area === currentArea && obj.mesh) meshes.push(obj.mesh);
+          const isActiveSeat = sitInteraction && obj.area === currentArea
+            && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
+          if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
         }
         return meshes;
       }
@@ -13763,42 +14015,124 @@
       // the player already eats most of the vertical slack a ~14-tile,
       // ~33°-elevation sightline allows).
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
+      const SEATED_CAMERA_WALL_CLEARANCE = 0.25; // gap kept between a seated camera and the detected wall face (used by occlusionSafeCameraPosition)
+      const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
+      const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
+      let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
+      let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
+      let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const obstacles = currentAreaOcclusionMeshes();
-        if (obstacles && obstacles.length) {
-          const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
-          const dist = Math.hypot(dx, dy, dz);
-          if (dist >= 0.5) {
-            const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist >= 0.5) {
+          let dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+          let desiredSafeDist = dist;
+          let directHitDistance = null;
+          let chosenSideOffsetDeg = 0;
+          if (obstacles && obstacles.length) {
             _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
-            _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+            // A chair can put the seated target much closer than 0.3 tiles to
+            // a wall. Use a short near plane there so the wall is not skipped;
+            // ordinary standing cameras retain the player-avoidance distance.
+            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' ? 0.02 : 0.3;
             _cameraOcclusionRaycaster.far = dist;
             // recursive:true — zone occlusion meshes are already individual
             // tagged leaf meshes (harmless either way there), but the
             // house/barn/furniture entries above are whole Groups.
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
-              // Stop a little short of the actual hit (not flush against it) so
-              // the camera doesn't clip into the cliff face it just pulled in
-              // behind.
-              const safeDist = Math.max(3, hits[0].distance - 0.6);
-              // Wilderness plateaus can tower many tiers higher than anything
-              // an authored map ever had, so a cliff can sit close enough to
-              // the player that safeDist collapses near its floor — sliding
-              // straight back along the same shallow ideal-camera ray then
-              // just jams the camera face-first into that wall (a screen-
-              // filling close-up). Lift the camera as it's pulled in, trading
-              // "close" for "more overhead," so a tall nearby cliff still
-              // leaves the player and their surroundings in view instead of
-              // one flat wall.
-              const shrink = clamp(1 - safeDist / dist, 0, 1);
-              const lift = shrink * dist * 0.5;
-              resultX = lookAtX + dir.x * safeDist;
-              resultY = lookAtY + dir.y * safeDist + lift;
-              resultZ = lookAtZ + dir.z * safeDist;
+              directHitDistance = hits[0].distance;
+              if (activeCameraMode === 'seated') {
+                // Never impose a minimum that lies beyond the wall. The old
+                // 0.85-tile minimum did exactly that for wall-backed chairs,
+                // leaving the camera embedded despite a correct ray hit.
+                desiredSafeDist = Math.min(dist, Math.max(
+                  SEATED_CAMERA_MIN_DISTANCE,
+                  hits[0].distance - SEATED_CAMERA_WALL_CLEARANCE,
+                ));
+
+                // If the wall leaves too little room to frame the seated
+                // avatar, collapsing to the target makes the avatar clip the
+                // near plane. Search progressively around the chair instead;
+                // this produces an over-the-shoulder slide along the wall
+                // while preserving the user's pitch and target.
+                if (desiredSafeDist < SEATED_CAMERA_MIN_FRAMING_DISTANCE) {
+                  let best = { dir, safeDist: desiredSafeDist, offsetDeg: 0 };
+                  for (const offsetDeg of [25, -25, 45, -45, 70, -70, 90, -90]) {
+                    const a = THREE.MathUtils.degToRad(offsetDeg);
+                    const candidateDir = {
+                      x: dir.x * Math.cos(a) + dir.z * Math.sin(a),
+                      y: dir.y,
+                      z: -dir.x * Math.sin(a) + dir.z * Math.cos(a),
+                    };
+                    _cameraOcclusionRaycaster.set(
+                      new THREE.Vector3(lookAtX, lookAtY, lookAtZ),
+                      new THREE.Vector3(candidateDir.x, candidateDir.y, candidateDir.z),
+                    );
+                    _cameraOcclusionRaycaster.near = 0.02;
+                    _cameraOcclusionRaycaster.far = dist;
+                    const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
+                    const candidateSafeDist = candidateHits.length
+                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - SEATED_CAMERA_WALL_CLEARANCE)
+                      : dist;
+                    if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
+                    if (best.safeDist >= dist - 1e-4) break;
+                  }
+                  dir = best.dir;
+                  desiredSafeDist = Math.min(dist, best.safeDist);
+                  chosenSideOffsetDeg = best.offsetDeg;
+                }
+              } else {
+                desiredSafeDist = Math.min(dist, Math.max(3, hits[0].distance - 0.6));
+              }
             }
           }
+          let safeDist = desiredSafeDist;
+          if (activeCameraMode === 'seated') {
+            // Smooth toward the freshly raycast distance every frame. The old
+            // direct assignment made the camera stick to whichever wall face
+            // happened to win one raycast, then snap when that face changed.
+            const now = performance.now();
+            const dt = _seatedOcclusionUpdatedAt ? Math.min(0.1, (now - _seatedOcclusionUpdatedAt) / 1000) : 0;
+            _seatedOcclusionUpdatedAt = now;
+            if (_seatedOcclusionDistance == null) _seatedOcclusionDistance = desiredSafeDist;
+            if (desiredSafeDist < _seatedOcclusionDistance) {
+              // Pull in immediately so no frame can remain inside a newly
+              // detected wall. Only the unobstructed move back out is eased.
+              _seatedOcclusionDistance = desiredSafeDist;
+            } else {
+              const alpha = 1 - Math.exp(-8 * dt);
+              _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
+            }
+            safeDist = clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            _seatedCameraDebug = {
+              idealDistance: dist,
+              directHitDistance,
+              desiredDistance: desiredSafeDist,
+              solvedDistance: safeDist,
+              sideOffsetDeg: chosenSideOffsetDeg,
+            };
+          } else {
+            _seatedOcclusionDistance = null;
+            _seatedOcclusionUpdatedAt = 0;
+            _seatedCameraDebug = null;
+          }
+          if (safeDist < dist - 1e-4) {
+            const shrink = clamp(1 - safeDist / dist, 0, 1);
+            // Side-sliding supplies seated clearance; lifting a billboard
+            // avatar makes it edge-on to the camera and was responsible for
+            // the wall-only frozen view in the Pixel Probe report.
+            const lift = activeCameraMode === 'seated' ? 0 : shrink * dist * 0.5;
+            resultX = lookAtX + dir.x * safeDist;
+            resultY = lookAtY + dir.y * safeDist + lift;
+            resultZ = lookAtZ + dir.z * safeDist;
+          }
+        } else if (activeCameraMode !== 'seated') {
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
+          _seatedCameraDebug = null;
         }
         // Floor guard — applies everywhere, not just zones (unlike the
         // mesh-obstacle pull-in above, which has nothing to raycast against
@@ -20120,15 +20454,22 @@
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
-            (_rl.decor || []).forEach(({ key, col, row, area }) => {
+            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
               const decorArea = area || 'farm';
               const tgt = decorArea === 'interior' ? interiorScene : scene;
-              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea);
-              if (r) interiorFurnitureObjects.push({ key, col, row, mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea });
-              if (r && decorArea === 'farm' && def.sit) registerSitWorldObject(key, col, row, def.fw, def.fd, 0);
-              if (r) registerChairNpcStation(key, col, row, 0, normalizeNpcArea(decorArea));
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0);
+              const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
+              if (r) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+                mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+                ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+                localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
+              if (r && decorArea === 'farm' && def.sit) {
+                const size = decorativeFurnitureSize(key, rotYDeg || 0);
+                registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+              }
+              if (r) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
             });
             (_rl.buildings || []).forEach(saved => {
               if (saved.kind !== 'barn' || !BARN_TIERS[saved.tier]) return;
@@ -20796,7 +21137,8 @@
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
+        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
       }
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
@@ -20889,6 +21231,7 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
           // move the cursor toward the target pixel — not rotate the camera
           // (Shift+drag, below) or spin the character's facing via mouse-
@@ -20936,29 +21279,64 @@
       // hotbar's "equip item, aim reticle, interact" flow — checked first
       // so an armed furniture placement always wins over the (dev-mode-
       // only, so rarely simultaneously active) farm editor brush.
+      function furniturePlacementPointerArmed() {
+        return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
+          && (currentArea === 'farm' || currentArea === 'interior');
+      }
       threeContainer.addEventListener('pointerdown', (e) => {
-        if (!furniturePlacementArmedKey || (currentArea !== 'farm' && currentArea !== 'interior')) return;
-        e.stopPropagation();
-        const t = _screenToActiveTile(e.clientX, e.clientY);
-        if (!t) return;
-        const decorKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
-        if (!decorKey) return;
-        const result = placeDecorativeFurniture(t.col, t.row, decorKey);
-        showToast(result.message, result.ok);
-        if (result.ok && (inventory[furniturePlacementArmedKey] || 0) <= 0) furniturePlacementArmedKey = null;
+        if (!furniturePlacementPointerArmed()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        furniturePlacementPointerId = e.pointerId;
+        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (_err) { /* preview still follows without capture */ }
+        const tile = _screenToActiveTile(e.clientX, e.clientY);
+        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
+      }, { capture: true });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!furniturePlacementPointerArmed()) return;
+        if (e.pointerType !== 'mouse' && e.pointerId !== furniturePlacementPointerId) return;
+        e.preventDefault();
+        const tile = _screenToActiveTile(e.clientX, e.clientY);
+        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
+      }, { capture: true });
+      function commitFurniturePlacementPointer(e) {
+        if (e.pointerId !== furniturePlacementPointerId) return;
+        furniturePlacementPointerId = null;
+        if (!furniturePlacementPointerArmed() || !furniturePlacementGhost) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const { col, row } = furniturePlacementGhost;
+        if (furnitureMoveArmedId) {
+          const result = moveDecorativeFurniture(furnitureMoveArmedId, col, row);
+          showToast(result.message, result.ok);
+          if (result.ok) furnitureMoveArmedId = null;
+        } else {
+          const itemKey = furniturePlacementArmedKey;
+          const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
+          const result = decorKey ? placeDecorativeFurniture(col, row, decorKey) : { ok: false, message: 'Furniture not found.' };
+          showToast(result.message, result.ok);
+          if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
+        }
+        clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
-      });
+      }
+      window.addEventListener('pointerup', commitFurniturePlacementPointer, { capture: true });
+      window.addEventListener('pointercancel', (e) => {
+        if (e.pointerId !== furniturePlacementPointerId) return;
+        furniturePlacementPointerId = null;
+        clearFurniturePlacementGhost();
+      }, { capture: true });
 
       // ── Farm editor pointer handlers ──────────────────────────────
       threeContainer.addEventListener('pointerdown', (e) => {
-        if (furniturePlacementArmedKey || !farmEditMode || currentArea !== 'farm') return;
+        if (furniturePlacementArmedKey || furnitureMoveArmedId || !farmEditMode || currentArea !== 'farm') return;
         e.stopPropagation();
         _editorPainting = true;
         const t = _screenToFarmTile(e.clientX, e.clientY);
         if (t) applyFarmEditBrush(t.col, t.row);
       });
       threeContainer.addEventListener('pointermove', (e) => {
-        if (furniturePlacementArmedKey || !farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
+        if (furniturePlacementArmedKey || furnitureMoveArmedId || !farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
         e.stopPropagation();
         const t = _screenToFarmTile(e.clientX, e.clientY);
         if (t) applyFarmEditBrush(t.col, t.row);
@@ -21087,6 +21465,7 @@
         getPetLayeringActive: () => _petLayeringActive,
         getPlayerAvatarFrontMaterial: () => _playerAvatarFrontMaterial,
         getSitInteraction: () => sitInteraction,
+        getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,
         SHOULDER_PET_PLANE_RENDER_ORDER,
         playerAttachmentAnchor,
@@ -21628,6 +22007,11 @@
         hasFarmPermission,
         armFurniturePlacement,
         getArmedFurniturePlacementKey,
+        armFurnitureMove,
+        getArmedFurnitureMoveId,
+        getPlacedFurniture: () => interiorFurnitureObjects.filter(o => o.area === currentArea),
+        removeFurniture: removeDecorativeFurniture,
+        rotateFurniture: rotateDecorativeFurniture,
         showToast,
         esc,
         isPaused: () => paused,
@@ -22054,6 +22438,7 @@
         startSceneTransition,
         enterInterior,
         onPieceGeometryChanged: () => rebuildInteriorGeometry(),
+        transformFurnitureWithHousePiece,
         recoverFurnitureInInteriorRect: (c0, r0, w, h) => recoverFurnitureInInteriorRect(c0, r0, w, h),
         getPieceCatalog: () => HOUSE_PIECE_CATALOG,
         getHousePieces: () => housePieces,
@@ -22268,7 +22653,9 @@
             const bedCol = HOUSE_STARTER_COL * 2 + 1, bedRow = HOUSE_STARTER_ROW * 2 + 1;
             const starterBed = makeDecorativeFurnitureMesh(bedCol, bedRow, 'basicBed', interiorScene, 'interior');
             if (starterBed) {
-              interiorFurnitureObjects.push({ key: 'basicBed', col: bedCol, row: bedRow, mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior' });
+              interiorFurnitureObjects.push({ id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
+                mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior', rotYDeg: 0,
+                ...furnitureOwnerFields(bedCol, bedRow) });
               saveFarmLayout();
             }
           } catch (e) { console.error('starter bed seed:', e); }
