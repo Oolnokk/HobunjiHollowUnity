@@ -274,61 +274,35 @@
     else console.info(message);
   }
 
-  let _runtimeHardStepPlayed = false; // Used to report the first actual hard-surface step through the Audio debug filter.
+  const HARDSTEP_PLACEHOLDER_URLS = [
+    'assets/audio/sfx/footsteps/sfx_footstep_hardstep1.mp3',
+    'assets/audio/sfx/footsteps/sfx_footstep_hardstep2.mp3',
+    'assets/audio/sfx/footsteps/sfx_footstep_hardstep3.mp3',
+  ]; // Used only for paths/ramps and authored building floors; the files intentionally do not exist yet.
+  let _runtimeHardStepPlayed = false; // Used to report the first hardstep placeholder request through the Audio debug filter.
   let _runtimeFootstepCadence = false; // Used to report the first cadence trigger through the Audio debug filter.
 
-  function playLegacyHardSurfaceStep(audioSystem, volumeScale = 1, pan = 0, heavy = false) {
-    const audioCfg = audioSystem.gameAudioConfig?.() || {}; // Used to honor the same global SFX/footstep controls as normal AudioSystem playback.
+  function isHardstepPlaceholderSurface(area, tile) {
+    const areaId = String(area || ''); // Used to recognize the current interior-area naming convention without needing AudioSystem's private deps.
+    const tileType = String(tile?.type ?? '').toLowerCase(); // Used to recognize map-authored path/ramp values; town workspace stores these as strings.
+    return areaId === 'interior' || /^map_i_/i.test(areaId)
+      || tileType === 'path' || tileType === 'ramp';
+  }
+
+  function playHardstepPlaceholder(audioSystem, volumeScale = 1, heavy = false) {
+    const audioCfg = audioSystem.gameAudioConfig?.() || {}; // Used to preserve the existing global SFX/footstep volume controls when the placeholder files are eventually added.
     if (audioCfg.enabled === false) return;
-    const footstepCfg = audioCfg.footsteps || {}; // Used to honor the existing footstep enable/volume config.
+    const footstepCfg = audioCfg.footsteps || {}; // Used to preserve the existing footstep enabled/volume controls.
     if (footstepCfg.enabled === false) return;
-    const AudioCtx = window.AudioContext || window.webkitAudioContext; // Used to render the pre-recording procedural path voice.
-    if (!AudioCtx) return;
-    const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx()); // Used as AudioSystem's shared footstep context.
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-
-    const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
+    const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65)); // Used to approximate the current gravel-path mix without procedural synthesis.
     const sfxVolume = Math.max(0, Number(audioCfg.sfxVolume) || 1);
-    const finalVolume = Math.min(1, baseVolume * sfxVolume * Math.max(0, Number(volumeScale) || 0) * (heavy ? 1 : 0.9));
-    if (finalVolume <= 0.002) return;
-
-    const now = ctx.currentTime;
-    const pitchMul = 1.2 * (heavy ? 0.55 : 1);
-    const durationS = 0.055 * 0.6 * (heavy ? 2.2 : 1);
-    const baseFreq = 55 * pitchMul;
-    const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
-    if (panNode) {
-      panNode.pan.value = Math.max(-1, Math.min(1, Number(pan) || 0));
-      panNode.connect(ctx.destination);
-    }
-    const outNode = panNode || ctx.destination;
-
-    const osc = ctx.createOscillator();
-    const oscGain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * 16;
-    oscGain.gain.setValueAtTime(finalVolume * 0.18, now);
-    oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
-    osc.connect(oscGain).connect(outNode);
-    osc.start(now);
-    osc.stop(now + durationS);
-
-    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * durationS));
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const noiseData = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) noiseData[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = baseFreq * 4.6 * (heavy ? 0.45 : 1);
-    filter.Q.value = 2.4;
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(finalVolume * 0.82, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
-    noise.connect(filter).connect(noiseGain).connect(outNode);
-    noise.start(now);
-    noise.stop(now + durationS);
+    const volume = Math.min(1, baseVolume * sfxVolume * Math.max(0, Number(volumeScale) || 0) * 0.54 * (heavy ? 2 : 1));
+    if (volume <= 0.002) return;
+    const url = HARDSTEP_PLACEHOLDER_URLS[Math.floor(Math.random() * HARDSTEP_PLACEHOLDER_URLS.length)]; // Used to rotate evenly enough among the three future hardstep recordings.
+    const snd = new Audio(url);
+    snd.volume = volume;
+    snd.playbackRate = heavy ? (0.60 + Math.random() * 0.10) : (0.92 + Math.random() * 0.16);
+    snd.play().catch(() => {}); // Missing placeholder files are intentionally silent; there is no synth or gravel fallback.
   }
 
   function wrapRuntimeAudioSystem(audioSystem) {
@@ -336,14 +310,14 @@
     if (typeof audioSystem.playFootstepSfx !== 'function' || typeof audioSystem.footstepSurfaceKey !== 'function') return audioSystem;
     const originalPlayFootstepSfx = audioSystem.playFootstepSfx;
     audioSystem.playFootstepSfx = function (area, tile, volumeScale = 1, pan = 0, opts = {}) {
-      let surfaceKey = null;
-      try { surfaceKey = audioSystem.footstepSurfaceKey(area, tile?.type ?? null); } catch (_) {}
-      if (surfaceKey !== 'gravel') return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
+      if (!isHardstepPlaceholderSurface(area, tile)) {
+        return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
+      }
       if (!_runtimeHardStepPlayed) {
         _runtimeHardStepPlayed = true;
-        runtimeAudioLog(`[footsteps] DIRECT legacy hard-step fired area=${area} tileType=${tile?.type ?? 'none'} context=${window._footstepAudioCtx?.state || 'new'}.`);
+        runtimeAudioLog(`[footsteps] hardstep placeholder route fired area=${area} tileType=${tile?.type ?? 'none'}; no fallback.`);
       }
-      return playLegacyHardSurfaceStep(audioSystem, volumeScale, pan, !!opts.heavy);
+      return playHardstepPlaceholder(audioSystem, volumeScale, !!opts.heavy);
     };
     const originalAdvance = audioSystem.footstepAdvance;
     if (typeof originalAdvance === 'function') {
@@ -351,13 +325,16 @@
         const fires = originalAdvance.call(this, state, distPx, stridePx);
         if (fires && !_runtimeFootstepCadence) {
           _runtimeFootstepCadence = true;
-          runtimeAudioLog(`[footsteps] cadence fired dist=${Number(distPx).toFixed(2)} stride=${Number(stridePx).toFixed(2)}.`);
+          const resolvedStride = stridePx ?? audioSystem.FOOTSTEP_PLAYER_STRIDE_PX; // Used so diagnostics report AudioSystem's default instead of NaN when callers omit the optional stride argument.
+          runtimeAudioLog(`[footsteps] cadence fired dist=${Number(distPx).toFixed(2)} stride=${Number(resolvedStride).toFixed(2)}.`);
         }
         return fires;
       };
     }
+    // Keep the legacy marker too: config.js's older delayed compatibility probe
+    // checks it and must not install its procedural-gravel wrapper on top of this route.
     Object.defineProperty(audioSystem, '__hobunjiDirectHardStepWrapped', { value: true, configurable: true });
-    runtimeAudioLog('[footsteps] Direct legacy hard-surface route installed from local-db-overrides.js.');
+    runtimeAudioLog('[footsteps] Path/floor hardstep placeholder route installed; procedural hard-step fallback disabled for those surfaces.');
     return audioSystem;
   }
 
