@@ -30,11 +30,15 @@
 
   // Only a normal ownership/permission check — NOT dev-mode gated, unlike
   // the farm editor/dev spawner buttons in the same top-right UI row.
+  // Hidden while the game is paused (the main menu overlay is open) since
+  // the button sits in the same fixed top-right corner the menu panel
+  // covers — a button you can still see/click behind the open menu is
+  // confusing, not useful.
   function refreshVisibility() {
     const btn = document.getElementById('furniturePlacerBtn');
-    if (!btn) return;
+    if (!btn || !deps) return;
     const area = deps.getCurrentArea();
-    const show = (area === 'farm' || area === 'interior') && deps.hasFarmPermission('placeFurniture');
+    const show = !deps.isPaused() && (area === 'farm' || area === 'interior') && deps.hasFarmPermission('placeFurniture');
     btn.style.display = show ? '' : 'none';
     if (!show && _open) toggle();
   }

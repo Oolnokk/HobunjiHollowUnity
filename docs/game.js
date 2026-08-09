@@ -154,6 +154,10 @@
         if (targetPanel === 'tasks') window.TasksPanel.render();
         if (targetPanel === 'relationships') window.RelationshipsPanel.render();
         auditInventorySizing();
+        // The furniture placer button sits in the same fixed top-right
+        // corner the open menu panel covers — hide it immediately rather
+        // than waiting for some other trigger to call refreshActionBar.
+        window.FurniturePlacer?.refreshVisibility();
       }
       function closeMenu() {
         menuOpen = false;
@@ -162,6 +166,7 @@
         menuBackdrop.classList.remove('open');
         menuPanel.classList.remove('open');
         paused = false;
+        window.FurniturePlacer?.refreshVisibility();
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
@@ -21477,6 +21482,7 @@
         selectItemForPlacement,
         showToast,
         esc,
+        isPaused: () => paused,
       });
 
       window.TownZoneBuildings?.init({
