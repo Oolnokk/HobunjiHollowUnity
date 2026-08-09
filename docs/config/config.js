@@ -60,6 +60,8 @@
     })
   });
 
+  const isToolPage = typeof location !== 'undefined' && /\/tools\//.test(location.pathname); // Used to keep every runtime-only compatibility hook out of authoring tools.
+
   // These legacy records have historically been authored as people who must
   // not participate in live town schedules. Two are deceased; Hammerhead was
   // previously represented as banished, and old/local database copies can
@@ -103,6 +105,7 @@
   // global assignment so the spawn gate is installed before game.js can ever
   // request the NPC database; this cannot lose a race to a startup schedule.
   function installRuntimeNpcSpawnGate() {
+    if (isToolPage) return;
     const existing = root.LocalDBOverrides;
     if (existing) { wrapRuntimeNpcDatabaseLoader(existing); return; }
     let assignedValue; // Used only until local-db-overrides.js assigns its API object.
@@ -212,7 +215,7 @@
   // config.js is parsed before music-system.js, so capture Music's assignment
   // synchronously and have the wrapper installed before game.js calls init().
   function installIndoorBgsHook() {
-    if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname)) return;
+    if (isToolPage) return;
     const existing = root.Music;
     if (existing) { wrapMusicForIndoorBgs(existing); return; }
     let assignedValue; // Used only until music-system.js assigns window.Music.
@@ -328,7 +331,7 @@
   // their final wrappers exist, but well before a player can unlock audio and
   // start walking. Repeated short probes also make this resilient to future
   // script-order changes without keeping a permanent polling loop alive.
-  if (typeof setTimeout === 'function') {
+  if (!isToolPage && typeof setTimeout === 'function') {
     for (const delayMs of [0, 25, 100, 250, 500, 1000, 2500]) {
       setTimeout(() => wrapHardSurfaceAudioSystem(root.AudioSystem), delayMs);
     }
@@ -337,7 +340,7 @@
   // One startup marker that appears after the debug panel exists; useful when
   // testing exact GitHack commits to distinguish a stale/cached build from the
   // branch head before chasing subsystem behavior.
-  if (typeof setTimeout === 'function') {
+  if (!isToolPage && typeof setTimeout === 'function') {
     setTimeout(() => audioDebug('[runtime patches] lifecycle gate + direct hard steps + indoor BGS hook loaded.'), 3000);
   }
 })(typeof self !== 'undefined' ? self : globalThis);
