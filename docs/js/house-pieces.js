@@ -240,12 +240,38 @@
     _loadPiece(def.pieceFile).then(piece => {
       if (!piece || entry.stage !== 'built' || !deps.getHousePieces().includes(entry)) return;
       _disposeMesh(entry._mesh);
-      entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, entry.col, entry.row, {
+      entry._doorWorld = resolvePieceDoor(piece, entry);
+      // A piece with no authored footprint.door (the south-biased automatic
+      // case — see resolvePieceDoor) has one uncut, full-length wall face
+      // per side and nothing visually open where the door tile lets you
+      // walk through. Cut a real portal into that side's wall — matching
+      // the reference modular-farmhouse demo's addWallWithEntrances() — and
+      // build the same demo's little entry-tunnel jamb/lintel/roof-cap
+      // structure over the opening. Authored pieces (town/NPC buildings)
+      // already have this baked into their own JSON at authoring time, so
+      // this is skipped whenever footprint.door is set.
+      const normalized = window.BuildingDoor?.normalizePieceData(piece);
+      const hasAuthoredDoor = !!normalized?.footprint?.door;
+      let buildPiece = piece;
+      if (!hasAuthoredDoor && entry._doorWorld) {
+        const { side, col, row } = entry._doorWorld;
+        const idx = (side === 'south' || side === 'north') ? col - entry.col : row - entry.row;
+        const len = (side === 'south' || side === 'north') ? entry.w : entry.h;
+        buildPiece = HousePieceGen.cutDoorPortal(piece, side, idx, len);
+      }
+      entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, buildPiece, entry.col, entry.row, {
         wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
         ..._faceMats(),
       });
+      if (!hasAuthoredDoor && entry._doorWorld) {
+        const wallTile = _doorWallTile(entry._doorWorld);
+        const tunnel = HousePieceGen.buildEntryTunnelGroup(THREE, wallTile.col, wallTile.row, entry._doorWorld.side, {
+          wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
+          ..._faceMats(),
+        });
+        entry._mesh.add(tunnel);
+      }
       deps.scene.add(entry._mesh);
-      entry._doorWorld = resolvePieceDoor(piece, entry);
       _registerDoor(entry);
       deps.onPieceGeometryChanged();
       // The real shingle GLB may still be loading (a cached singleton
@@ -452,6 +478,43 @@
     return { ok: true, message: 'Moved the house.' };
   }
 
+  // Moves one non-starter piece on its own (mirrors FarmBuildings' per-barn
+  // move()) — the starter/main room isn't movable this way since every other
+  // piece is placed relative to it; use moveHouse to reposition the whole
+  // cluster instead. Still must end up touching some other piece, same rule
+  // canPlaceAt enforces for a brand-new placement.
+  function movePiece(id, newCol, newRow) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move house pieces." };
+    const pieces = deps.getHousePieces();
+    const entry = pieces.find(p => p.id === id);
+    if (!entry) return { ok: false, message: 'House piece not found.' };
+    if (entry.pieceKey === 'starter') return { ok: false, message: 'Move the whole house instead of the main room on its own.' };
+    if (newCol === entry.col && newRow === entry.row) return { ok: false, message: 'Already there.' };
+
+    const others = pieces.filter(p => p.id !== id);
+    if (!_footprintClearOfHazardsAndBarns(newCol, newRow, entry.w, entry.h)
+      || others.some(b => rectsOverlap(newCol, newRow, entry.w, entry.h, b.col, b.row, b.w, b.h))
+      || !others.some(b => rectsAdjacent(newCol, newRow, entry.w, entry.h, b.col, b.row, b.w, b.h))) {
+      return { ok: false, message: 'Cannot move there — needs clear, untilled ground touching the rest of your house.' };
+    }
+
+    _unregisterFootprint(entry);
+    _unregisterDoor(entry);
+    entry.col = newCol; entry.row = newRow;
+    _registerFootprint(entry);
+    clearFootprint(entry.col, entry.row, entry.w, entry.h);
+    if (entry.stage === 'foundation' && entry._mesh) {
+      entry._mesh.position.set(entry.col + entry.w / 2, 0.07, entry.row + entry.h / 2);
+    } else if (entry.stage === 'built') {
+      _disposeMesh(entry._mesh); entry._mesh = null;
+      _buildStructureMesh(entry); // also re-resolves and re-registers this piece's door
+    }
+    deps.onPieceGeometryChanged();
+    deps.saveFarmLayout();
+    deps.saveMemberWorldData();
+    return { ok: true, message: `Moved ${label(entry)}.` };
+  }
+
   function clearAll() {
     const pieces = deps.getHousePieces();
     pieces.forEach(entry => { _unregisterFootprint(entry); _unregisterDoor(entry); _disposeMesh(entry._mesh); });
@@ -532,6 +595,7 @@
     placeDeed,
     demolish,
     moveHouse,
+    movePiece,
     clearAll,
     getPieceRects,
     computeInteriorLayout,

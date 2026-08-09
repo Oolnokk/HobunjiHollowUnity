@@ -21282,6 +21282,7 @@
         getHousePieces: () => housePieces,
         placeHouseDeed: (pieceKey, col, row) => window.HousePieces.placeDeed(pieceKey, col, row),
         moveHouse: (col, row) => window.HousePieces.moveHouse(col, row),
+        movePiece: (pieceId, col, row) => window.HousePieces.movePiece(pieceId, col, row),
         getFarmBuildings: () => farmBuildings,
         PROCESSING_FURNITURE_DEFS,
         AGING_METHODS,

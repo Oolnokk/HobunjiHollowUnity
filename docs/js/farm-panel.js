@@ -29,7 +29,7 @@
   // Farm tab "move/place" state — armed by a button in renderFarmBuildings(),
   // consumed by the farmGlanceCanvas click handler set up in
   // renderFarmGridGlance(). null when nothing is being moved/placed.
-  let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'moveHouse' } | { type: 'place', tier } | { type: 'placeHouseDeed', pieceKey }
+  let _farmPlacementMode = null; // { type: 'move', buildingId } | { type: 'moveHouse' } | { type: 'movePiece', pieceId } | { type: 'place', tier } | { type: 'placeHouseDeed', pieceKey }
 
   function renderFarmPanel() {
     if (!document.getElementById('mpFarm')) return;
@@ -192,6 +192,7 @@
         const mode = _farmPlacementMode;
         const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row)
           : mode.type === 'moveHouse' ? deps.moveHouse(col, row)
+          : mode.type === 'movePiece' ? deps.movePiece(mode.pieceId, col, row)
           : mode.type === 'placeHouseDeed' ? deps.placeHouseDeed(mode.pieceKey, col, row)
           : window.FarmBuildings.placePlan(mode.tier, col, row);
         deps.showToast(result.message, result.ok);
@@ -207,11 +208,11 @@
   // and every barn with a Move button (owner/alterFarm-gated), plus any
   // owned-but-unplaced barn plans or house deeds with a Place button. All
   // arm _farmPlacementMode and wait for a click on the glance canvas above
-  // (see renderFarmGridGlance()'s click handler). Only the starter row gets
-  // a Move button — it moves the whole house (every piece, rigidly, keeping
-  // their arrangement) via HousePieces.moveHouse, since individual wings
-  // must stay touching the rest of the cluster and can't be repositioned on
-  // their own.
+  // (see renderFarmGridGlance()'s click handler). The starter/main-room row's
+  // Move button repositions the whole house (every piece, rigidly, keeping
+  // their arrangement) via HousePieces.moveHouse; every other piece gets its
+  // own Move button (HousePieces.movePiece) as long as it still ends up
+  // touching the rest of the cluster.
   function renderFarmBuildings() {
     const list = document.getElementById('farmBuildingsList');
     const note = document.getElementById('farmBuildingsNote');
@@ -227,6 +228,7 @@
         : _farmPlacementMode
           ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.'
             : _farmPlacementMode.type === 'moveHouse' ? 'Click where the house\'s main room should go — the rest of the house moves with it.'
+            : _farmPlacementMode.type === 'movePiece' ? 'Click a tile touching the rest of your house to move this room there.'
             : _farmPlacementMode.type === 'placeHouseDeed' ? `Click a tile touching your house to place the ${HOUSE_PIECE_CATALOG[_farmPlacementMode.pieceKey].label} foundation.`
             : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
           : 'Move your house or a barn, or place an owned barn plan or house deed, by clicking the map above.';
@@ -254,7 +256,7 @@
       const pieceLabel = p.pieceKey === 'starter' ? '🏠 House' : `🏠 ${HOUSE_PIECE_CATALOG[p.pieceKey]?.label || 'House Wing'}`;
       const onMove = p.pieceKey === 'starter'
         ? () => { _farmPlacementMode = { type: 'moveHouse' }; renderFarmBuildings(); }
-        : null;
+        : () => { _farmPlacementMode = { type: 'movePiece', pieceId: p.id }; renderFarmBuildings(); };
       addRow(`${pieceLabel}${p.stage === 'foundation' ? ' (foundation)' : ''}`, p.w, p.h, onMove);
     });
 

@@ -173,8 +173,208 @@
     return { scene: sceneObj, bone: bone, boneLength: boneLength, boneFrameInverse: boneFrameInverse };
   }
 
+  // ── Door portal cutting + entry tunnel (ported from the reference
+  // hobunji_modular_farmhouse_join_demo — its addWallWithEntrances() /
+  // generatedEntryTunnelPiece(), adapted to run against a pre-baked piece
+  // JSON's already-generated whole-side wall faces instead of generating
+  // walls live from a rectangle). A piece authored with no footprint.door
+  // (see house-pieces.js's south-biased automatic door placement) has one
+  // single full-length 'wall' face per side and nothing to visually open —
+  // this splits that one face into solid/portal/solid segments at the
+  // resolved door's cell, then a separately-positioned 1x1 "entry tunnel"
+  // piece adds the jambs/lintel/roof-cap detail around the opening, exactly
+  // like the House Piece Author tool's own entryTunnel extension output.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  function _lerp3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+
+  // Body wall faces are the 4 single_rectangle 'wall' faces (excluding the
+  // triangular gableEnd faces) produced by the Highland generator — one per
+  // side, corners ordered [bottom(u=0), top(u=0), top(u=1), bottom(u=1)].
+  // Classifies each by comparing its bottom-edge midpoint against the whole
+  // set's own bounding box (no piece-level bbox/footprint lookup needed).
+  function _classifyBodyWalls(faces) {
+    var walls = faces.filter(function (f) { return f.tag === 'wall' && !f.gableEnd && f.highlandFrustumWall; });
+    var minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    walls.forEach(function (f) {
+      [f.v[0], f.v[3]].forEach(function (p) {
+        minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+        minZ = Math.min(minZ, p[2]); maxZ = Math.max(maxZ, p[2]);
+      });
+    });
+    var sideOf = new Map();
+    walls.forEach(function (f) {
+      var cx = (f.v[0][0] + f.v[3][0]) / 2, cz = (f.v[0][2] + f.v[3][2]) / 2;
+      var dN = Math.abs(cz - minZ), dS = Math.abs(cz - maxZ), dW = Math.abs(cx - minX), dE = Math.abs(cx - maxX);
+      var m = Math.min(dN, dS, dW, dE);
+      sideOf.set(f, m === dN ? 'north' : m === dS ? 'south' : m === dW ? 'west' : 'east');
+    });
+    return { walls: walls, bbox: { minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ }, sideOf: sideOf };
+  }
+
+  // Splits one whole-side wall face into up to 3 faces: solid run before the
+  // door cell, a near-full-height portal cut (90% Highland lintel only,
+  // matching the House Piece Author tool's own entryPortalCut convention)
+  // over the door cell, and solid run after it. idx/len are the door's
+  // 0-based cell position and the wall's total cell count along that side
+  // (e.g. idx=2,len=5 for a door on the 3rd of 5 columns).
+  function _splitWallFaceForPortal(f, side, bbox, idx, len) {
+    var lo = idx / len, hi = (idx + 1) / len;
+    var varyingIsX = (side === 'north' || side === 'south');
+    var v0 = varyingIsX ? f.v[0][0] : f.v[0][2];
+    var v3 = varyingIsX ? f.v[3][0] : f.v[3][2];
+    var minRef = varyingIsX ? bbox.minX : bbox.minZ;
+    var startIsMin = Math.abs(v0 - minRef) < Math.abs(v3 - minRef);
+    if (!startIsMin) { var nlo = 1 - hi, nhi = 1 - lo; lo = nlo; hi = nhi; }
+    lo = Math.max(0, Math.min(1, lo)); hi = Math.max(0, Math.min(1, hi));
+    if (hi <= lo) return null;
+
+    var b0 = f.v[0], t0 = f.v[1], t1 = f.v[2], b1 = f.v[3];
+    var bottom = function (u) { return _lerp3(b0, b1, u); };
+    var top    = function (u) { return _lerp3(t0, t1, u); };
+    var wallH  = Math.max(t0[1], t1[1]) - Math.min(b0[1], b1[1]);
+    var atHeight = function (u, y) { return _lerp3(bottom(u), top(u), Math.max(0, Math.min(1, y / wallH))); };
+    var portalH = wallH * 0.92; // exact House Editor near-full-height portal
+
+    var segs = [];
+    function full(ua, ub) {
+      if (ub - ua < 1e-5) return;
+      segs.push(Object.assign({}, f, { v: [bottom(ua), top(ua), top(ub), bottom(ub)] }));
+    }
+    full(0, lo);
+    segs.push(Object.assign({}, f, {
+      v: [atHeight(lo, portalH), top(lo), top(hi), atHeight(hi, portalH)],
+      entryPortalCut: true, entryPortalPart: 'nearFullHeightEntryLintel',
+    }));
+    full(hi, 1);
+    return segs;
+  }
+
+  // Returns a new piece object (the input is never mutated — _loadPiece's
+  // cache is shared across every instance of a given piece file, and
+  // different placements can resolve their auto-door to different sides)
+  // with the door's own side wall split into a real opening. No-ops
+  // (returns `piece` unchanged) if that side has no matching whole-side
+  // wall face to cut — e.g. a piece already authored with its own door.
+  function cutDoorPortal(piece, side, idx, len) {
+    var src = piece && piece.currentPiece ? piece.currentPiece : piece;
+    var faces = (src.base && src.base.faces) || [];
+    var classified = _classifyBodyWalls(faces);
+    var out = [], cut = false;
+    for (var i = 0; i < faces.length; i++) {
+      var f = faces[i];
+      if (!cut && classified.sideOf.get(f) === side) {
+        var segs = _splitWallFaceForPortal(f, side, classified.bbox, idx, len);
+        if (segs) { cut = true; out = out.concat(segs); continue; }
+      }
+      out.push(f);
+    }
+    if (!cut) return piece;
+    var faces2 = out.map(function (f, idx2) { return Object.assign({}, f, { id: idx2 + 1 }); });
+    var nextSrc = Object.assign({}, src, { base: Object.assign({}, src.base, { faces: faces2 }) });
+    // Preserve the input's own wrapped-vs-unwrapped shape (buildGroupFromPiece
+    // accepts either, but a consistent return shape avoids surprises for any
+    // other caller that inspects the result directly).
+    return (piece && piece.currentPiece) ? Object.assign({}, piece, { currentPiece: nextSrc }) : nextSrc;
+  }
+
+  var ENTRY_TUNNEL_H = Math.max(1.05, 1.4 * 0.82); // mirrors the demo's ENTRY_H (BODY_H=1.4)
+  var _entryTunnelPieceCache = null;
+
+  // addBoxFacesTo — exact port of the demo's editorBoxFaces(): 6 faces of an
+  // axis-aligned box (floor/top/north/east/south/west), used to build the
+  // entry tunnel's solid wall runs and doorway jamb/lintel pieces.
+  function _entryBoxFaces(faces, rect, y0, y1, tag, extra) {
+    var P = function (x, y, z) { return [x, y, z]; };
+    function F(v, ex) { faces.push(Object.assign({ id: faces.length + 1, tag: tag, v: v }, extra, ex)); }
+    F([P(rect.minX, y0, rect.minZ), P(rect.maxX, y0, rect.minZ), P(rect.maxX, y0, rect.maxZ), P(rect.minX, y0, rect.maxZ)], { extensionFace: 'floor' });
+    F([P(rect.minX, y1, rect.maxZ), P(rect.maxX, y1, rect.maxZ), P(rect.maxX, y1, rect.minZ), P(rect.minX, y1, rect.minZ)], { extensionFace: 'top' });
+    F([P(rect.minX, y0, rect.minZ), P(rect.minX, y1, rect.minZ), P(rect.maxX, y1, rect.minZ), P(rect.maxX, y0, rect.minZ)], { extensionFace: 'north' });
+    F([P(rect.maxX, y0, rect.minZ), P(rect.maxX, y1, rect.minZ), P(rect.maxX, y1, rect.maxZ), P(rect.maxX, y0, rect.maxZ)], { extensionFace: 'east' });
+    F([P(rect.maxX, y0, rect.maxZ), P(rect.maxX, y1, rect.maxZ), P(rect.minX, y1, rect.maxZ), P(rect.minX, y0, rect.maxZ)], { extensionFace: 'south' });
+    F([P(rect.minX, y0, rect.maxZ), P(rect.minX, y1, rect.maxZ), P(rect.minX, y1, rect.minZ), P(rect.minX, y0, rect.minZ)], { extensionFace: 'west' });
+  }
+  function _entrySolidWallRun(faces, rect, side, y0, y1, thickness, tag, extra) {
+    var tt = Math.max(0.01, thickness), wallRect;
+    if (side === 'north') wallRect = { minX: rect.minX, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.minZ + tt };
+    else if (side === 'south') wallRect = { minX: rect.minX, maxX: rect.maxX, minZ: rect.maxZ - tt, maxZ: rect.maxZ };
+    else if (side === 'east') wallRect = { minX: rect.maxX - tt, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.maxZ };
+    else wallRect = { minX: rect.minX, maxX: rect.minX + tt, minZ: rect.minZ, maxZ: rect.maxZ };
+    _entryBoxFaces(faces, wallRect, y0, y1, tag, Object.assign({ extensionFace: side, solidifiedWall: true, wallThickness: tt }, extra));
+  }
+  function _entryWallOpeningFrame(faces, rect, side, y0, y1, thickness, tag, extra) {
+    var tt = Math.max(0.01, thickness), openH = (y1 - y0) * 0.92, topY = y1, lintelBottom = y0 + openH;
+    var openW = (side === 'north' || side === 'south') ? (rect.maxX - rect.minX) * 0.82 : (rect.maxZ - rect.minZ) * 0.82;
+    var cx = (rect.minX + rect.maxX) / 2, cz = (rect.minZ + rect.maxZ) / 2;
+    function add(r, a, b, part) { _entryBoxFaces(faces, r, a, b, tag, Object.assign({ extensionFace: side, solidifiedWall: true, doorwayFrame: true, doorwayFramePart: part, wallThickness: tt }, extra)); }
+    if (side === 'north' || side === 'south') {
+      var z0 = side === 'north' ? rect.minZ : rect.maxZ - tt, z1 = side === 'north' ? rect.minZ + tt : rect.maxZ;
+      var o0 = cx - openW / 2, o1 = cx + openW / 2;
+      if (o0 > rect.minX) add({ minX: rect.minX, maxX: o0, minZ: z0, maxZ: z1 }, y0, topY, 'leftJamb');
+      if (o1 < rect.maxX) add({ minX: o1, maxX: rect.maxX, minZ: z0, maxZ: z1 }, y0, topY, 'rightJamb');
+      add({ minX: o0, maxX: o1, minZ: z0, maxZ: z1 }, lintelBottom, topY, 'lowLintel');
+    } else {
+      var x0 = side === 'west' ? rect.minX : rect.maxX - tt, x1 = side === 'west' ? rect.minX + tt : rect.maxX;
+      var p0 = cz - openW / 2, p1 = cz + openW / 2;
+      if (p0 > rect.minZ) add({ minX: x0, maxX: x1, minZ: rect.minZ, maxZ: p0 }, y0, topY, 'leftJamb');
+      if (p1 < rect.maxZ) add({ minX: x0, maxX: x1, minZ: p1, maxZ: rect.maxZ }, y0, topY, 'rightJamb');
+      add({ minX: x0, maxX: x1, minZ: p0, maxZ: p1 }, lintelBottom, topY, 'lowLintel');
+    }
+  }
+  function _entryRimCap(faces, rect, side, y, thickness, tag, extra) {
+    var tt = Math.max(0.01, thickness), cap;
+    if (side === 'north') cap = { minX: rect.minX, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.minZ + tt };
+    else if (side === 'south') cap = { minX: rect.minX, maxX: rect.maxX, minZ: rect.maxZ - tt, maxZ: rect.maxZ };
+    else if (side === 'east') cap = { minX: rect.maxX - tt, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.maxZ };
+    else cap = { minX: rect.minX, maxX: rect.minX + tt, minZ: rect.minZ, maxZ: rect.maxZ };
+    faces.push(Object.assign({ id: faces.length + 1, tag: tag, extensionFace: 'topRimCap', rimSide: side,
+      v: [[cap.minX, y, cap.maxZ], [cap.maxX, y, cap.maxZ], [cap.maxX, y, cap.minZ], [cap.minX, y, cap.minZ]] }, extra));
+  }
+
+  // Exact port of the demo's generatedEntryTunnelPiece(): a self-contained
+  // 1x1 piece, canonical opening SOUTH (rotationDeg maps it onto whichever
+  // side a piece's door actually resolved to — see house-pieces.js). Cached
+  // since it's pure/parameterless.
+  function buildEntryTunnelPiece() {
+    if (_entryTunnelPieceCache) return _entryTunnelPieceCache;
+    var faces = [], rect = { minX: 0, maxX: 1, minZ: 0, maxZ: 1 }, tt = 0.13, y0 = 0, y1 = ENTRY_TUNNEL_H;
+    faces.push({ id: faces.length + 1, tag: 'entryTunnel', extensionFace: 'floor', v: [[0, 0.006, 0], [1, 0.006, 0], [1, 0.006, 1], [0, 0.006, 1]] });
+    faces.push({ id: faces.length + 1, tag: 'entryTunnel', extensionFace: 'ceiling', v: [[0, y1 + 0.008, 1], [1, y1 + 0.008, 1], [1, y1 + 0.008, 0], [0, y1 + 0.008, 0]] });
+    _entryWallOpeningFrame(faces, rect, 'south', y0, y1, tt, 'entryTunnel', { exteriorEntryOpening: true });
+    _entryRimCap(faces, rect, 'south', y1 + 0.006, tt, 'entryTunnel', { exteriorEntryOpening: true });
+    ['north', 'east', 'west'].forEach(function (side) {
+      _entrySolidWallRun(faces, rect, side, y0, y1, tt, 'entryTunnel', {});
+      _entryRimCap(faces, rect, side, y1 + 0.002, tt, 'entryTunnel', {});
+    });
+    _entryTunnelPieceCache = {
+      schema: 'modular-house-piece-author/entry-tunnel-runtime', id: 'entry_tunnel_runtime', gridSize: 1, tileSize: 1,
+      footprint: { cells: [{ x: 0, y: 0 }], connectors: [], extensions: {} },
+      base: { height: y1, wallThickness: tt, groundY: 0, faces: faces }, assets: [],
+    };
+    return _entryTunnelPieceCache;
+  }
+
+  // Builds the entry tunnel's mesh group already positioned/rotated for a
+  // resolved door — col/row is the piece's OWN edge cell the door opens
+  // through (one step in from the world door tile, i.e. building.js's
+  // _doorWallTile), not the exterior door tile itself, matching where the
+  // wall portal cut above actually lives. side is 'north'|'south'|'east'|'west'.
+  var _ENTRY_ROTATION_DEG = { south: 0, west: 90, north: 180, east: 270 };
+  function buildEntryTunnelGroup(THREE, col, row, side, opts) {
+    opts = opts || {};
+    var built = buildGroupFromPiece(THREE, buildEntryTunnelPiece(), col, row, Object.assign({}, opts, {
+      rotationDeg: _ENTRY_ROTATION_DEG[side] || 0,
+    }));
+    built.userData.isEntryTunnel = true;
+    return built;
+  }
+
   // ── Public API ──────────────────────────────────────────────────────────────
-  global.HousePieceGen = { buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece, loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial };
+  global.HousePieceGen = {
+    buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
+    loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
+    cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
+  };
 
   /**
    * Build a Highland house group for one rectangular building footprint.
