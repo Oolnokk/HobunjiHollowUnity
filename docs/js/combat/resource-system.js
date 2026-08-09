@@ -347,6 +347,7 @@
     }
 
     enforceCaps(entity);
+    if (lost > 0) window.dispatchEvent(new CustomEvent('hobunji-resource-change', { detail: { entity, delta: -lost, reason: opts.reason || 'damage', immediate: true } }));
     return lost;
   }
 
@@ -367,6 +368,7 @@
   // surface a "you feel queasy" cue for the player without this module
   // needing to know about toasts/VFX.
   function tick(entity, dt, opts = {}) {
+    const healthBeforeTick = entity.health; // Used below to aggregate passive healing and DoT popup text.
     const cfg = resourceSystemConfig();
     const rest = getRestInfo(entity, cfg);
     const mul = rest.rested ? 2 : 1;
@@ -396,6 +398,8 @@
     const puked = maybeTriggerPuke(entity, dt, cfg);
 
     enforceCaps(entity);
+    const healthDelta = round1(entity.health - healthBeforeTick);
+    if (healthDelta) window.dispatchEvent(new CustomEvent('hobunji-resource-change', { detail: { entity, delta: healthDelta, reason: 'resource-tick', immediate: false } }));
     return { puked };
   }
 
