@@ -296,6 +296,14 @@
        .getArenaSpawnedCreatures() as deps for window.BanditCombatLog and
        window.BanditCamps at that same call-time point. -->
   <script src="js/dev-spawner.js?v=20260807a"></script>
+  <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
+       inventory-scoped alternative to scrolling the hotbar to a decor item:
+       picking a row here just calls selectItemForPlacement(itemKey), the
+       same "hold item, aim, interact" pipeline the action bar already
+       drives, so all placement validation/consumption logic lives in one
+       place. Must load before game.js, which calls
+       window.FurniturePlacer.init(...) during its own setup. -->
+  <script src="js/furniture-placer.js?v=20260809a"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load
@@ -465,6 +473,24 @@
   <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
        farm editor pencil, shown only while standing in the Testing Arena -->
   <button id="devSpawnBtn" aria-label="Toggle creature spawn menu" title="Spawn Menu" onclick="window.DevSpawner?.toggle()" style="display:none;">🐾</button>
+
+  <!-- Furniture placer toggle button — a normal-player feature (no cheats,
+       no dev mode gate), shown on the farm/in the house interior whenever
+       you own at least one placeable decorative furniture item; see
+       js/furniture-placer.js -->
+  <button id="furniturePlacerBtn" aria-label="Toggle furniture placer" title="Place Furniture" onclick="window.FurniturePlacer?.toggle()" style="display:none;">🪑</button>
+
+  <!-- Furniture Placer Panel -->
+  <div id="furniturePlacerPanel" style="display:none;" aria-label="Furniture placer">
+    <div class="fed-header">
+      <span>🪑 Place Furniture</span>
+      <button class="fed-close" onclick="window.FurniturePlacer?.toggle()" title="Close">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <div id="furniturePlacerHint" style="font-size:11px;color:var(--muted);padding:6px 10px;line-height:1.4;"></div>
+      <div id="furniturePlacerList" class="farm-list" style="padding:0 10px 10px;"></div>
+    </div>
+  </div>
 
   <!-- Farm Editor Panel -->
   <div id="farmEditorPanel" style="display:none;" aria-label="Farm editor">

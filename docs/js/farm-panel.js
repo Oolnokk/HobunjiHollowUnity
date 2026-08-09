@@ -485,6 +485,17 @@
     ghostMesh.geometry = new THREE.BoxGeometry(gw, 0.2, gh);
     ghostMesh.position.set(gCol + gw / 2, 1.7, gRow + gh / 2);
     ghostMesh.visible = true;
+    // Tint green/red for whether THIS exact drop would actually succeed —
+    // reuses movePiece's own validity check (not a separate, looser
+    // approximation) so the ghost's color can never disagree with what
+    // releasing the pointer here actually does. Whole-house drags skip the
+    // tint (stay gold) since there's no cheap non-mutating moveHouse check.
+    if (!drag.isWholeHouse) {
+      const valid = deps.canMovePieceTo(drag.entry.id, drag.candidateCol, drag.candidateRow);
+      ghostMesh.material.color.set(valid ? 0x8ef98a : 0xf95a5a);
+    } else {
+      ghostMesh.material.color.set(0xf9e28a);
+    }
   }
   function _hideGhost() {
     if (_houseLayout3d) _houseLayout3d.ghostMesh.visible = false;

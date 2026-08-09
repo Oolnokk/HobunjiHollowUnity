@@ -10678,6 +10678,23 @@
         return stacks[activeItemIndex];
       }
 
+      // Equips an inventory item as the active held ITEM (not tool) — the
+      // same state cycleActiveInventoryItem/the item-hold gesture already
+      // drive, just jumped to directly by key instead of by scrolling. Used
+      // by the Furniture Placer panel so picking an owned decor item there
+      // arms the exact same aim-and-interact placement flow the action bar
+      // already offers for a manually-selected item, instead of building a
+      // second, separate placement pipeline.
+      function selectItemForPlacement(key) {
+        const stacks = getInventoryStackItems();
+        const idx = stacks.findIndex(s => s.key === key);
+        if (idx < 0) return false;
+        activeItemIndex = idx;
+        heldMode = 'item';
+        refreshActionBar();
+        return true;
+      }
+
       function clampInventoryStack(key) {
         // Used after transfers/sales so zero-count stacks stop occupying item boxes.
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
@@ -17784,6 +17801,10 @@
         // (selectGearTool/selectEquipSlot both read s_devMode fresh) rather
         // than needing to track/re-render whichever panel might currently
         // be open.
+        // The farm editor / dev spawner cheat buttons are dev-mode-gated
+        // (see dev-spawner.js's refreshEditorButtonVisibility) — update them
+        // immediately instead of waiting for the next area change.
+        window.DevSpawner?.refreshEditorButtonVisibility();
       });
       // Cycles through a zone's dens in a shuffled, non-repeating order
       // (per zone) instead of an independent random pick every press —
@@ -19360,6 +19381,7 @@
 
       function refreshActionBar() {
         window.DevSpawner.refreshEditorButtonVisibility();
+        window.FurniturePlacer?.refreshVisibility();
         const reticle = getReticleTile();
         const tile    = getActiveTileAt(reticle.col, reticle.row);
 
@@ -21295,6 +21317,7 @@
         demolishHousePiece: (id) => window.HousePieces.demolish(id),
         moveHouse: (col, row) => window.HousePieces.moveHouse(col, row),
         movePiece: (pieceId, col, row) => window.HousePieces.movePiece(pieceId, col, row),
+        canMovePieceTo: (pieceId, col, row) => window.HousePieces.canMovePieceTo(pieceId, col, row),
         rotateHousePiece: (id) => window.HousePieces.rotatePiece(id),
         housePieceLabel: (entry) => window.HousePieces.label(entry),
         scene,
@@ -21443,6 +21466,17 @@
         isFarmOwner,
         getFarmEditMode: () => farmEditMode,
         toggleFarmEditMode,
+        isDevMode: () => s_devMode,
+      });
+
+      window.FurniturePlacer?.init({
+        getCurrentArea: () => currentArea,
+        getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
+        inventory,
+        hasFarmPermission,
+        selectItemForPlacement,
+        showToast,
+        esc,
       });
 
       window.TownZoneBuildings?.init({

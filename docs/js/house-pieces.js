@@ -575,6 +575,30 @@
     return { ok: true, message: 'Moved the house.' };
   }
 
+  // Read-only "would movePiece to (col,row) succeed" check — the piece's
+  // OWN footprint/door are unregistered before testing and always
+  // re-registered before returning, so a candidate spot that overlaps the
+  // piece's OWN current position (extremely common with a drag interface —
+  // most drags only nudge a piece a tile or two, so the new footprint
+  // almost always overlaps the old one) doesn't spuriously read as
+  // "occupied by something" and get rejected. Shared by movePiece's own
+  // commit path and the live drag-preview validity check in farm-panel.js,
+  // so the two can never disagree about what's actually a legal target.
+  function canMovePieceTo(id, col, row) {
+    const pieces = deps.getHousePieces();
+    const entry = pieces.find(p => p.id === id);
+    if (!entry || entry.id === 'house_starter') return false;
+    const others = pieces.filter(p => p.id !== id);
+    _unregisterFootprint(entry);
+    _unregisterDoor(entry);
+    const ok = _footprintClearOfHazardsAndBarns(col, row, entry.w, entry.h)
+      && !others.some(b => rectsOverlap(col, row, entry.w, entry.h, b.col, b.row, b.w, b.h))
+      && others.some(b => rectsAdjacent(col, row, entry.w, entry.h, b.col, b.row, b.w, b.h));
+    _registerFootprint(entry);
+    _registerDoor(entry);
+    return ok;
+  }
+
   // Moves one piece on its own (mirrors FarmBuildings' per-barn move()) —
   // only the main starter room ('house_starter') is excluded, since every
   // other piece (including the starter annex) is placed relative to it; use
@@ -590,11 +614,7 @@
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.id === 'house_starter') return { ok: false, message: 'Move the whole house instead of the main room on its own.' };
     if (newCol === entry.col && newRow === entry.row) return { ok: false, message: 'Already there.' };
-
-    const others = pieces.filter(p => p.id !== id);
-    if (!_footprintClearOfHazardsAndBarns(newCol, newRow, entry.w, entry.h)
-      || others.some(b => rectsOverlap(newCol, newRow, entry.w, entry.h, b.col, b.row, b.w, b.h))
-      || !others.some(b => rectsAdjacent(newCol, newRow, entry.w, entry.h, b.col, b.row, b.w, b.h))) {
+    if (!canMovePieceTo(id, newCol, newRow)) {
       return { ok: false, message: 'Cannot move there — needs clear, untilled ground touching the rest of your house.' };
     }
 
@@ -746,6 +766,7 @@
     demolish,
     moveHouse,
     movePiece,
+    canMovePieceTo,
     rotatePiece,
     clearAll,
     getPieceRects,
