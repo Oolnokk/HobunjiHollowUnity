@@ -1,0 +1,23 @@
+{
+  "assignments": {
+    "damage": "floatPlus",
+    "healing": "floatPlus",
+    "skillXp": "centeredFiveRow",
+    "masteryXp": "centeredFiveRow",
+    "favor": "centeredFiveRow",
+    "currency": "centeredFiveRow",
+    "loot": "centeredFiveRow"
+  },
+  "floatPlus": {
+    "textHeight": 0.075,
+    "lifetimeMs": 1150,
+    "maxRadius": 0.24
+  },
+  "centeredFiveRow": {
+    "textHeight": 0.065,
+    "lifetimeMs": 1500,
+    "horizontalOffset": 0.08,
+    "rowSpacing": 1.08,
+    "maxRows": 5
+  }
+}
