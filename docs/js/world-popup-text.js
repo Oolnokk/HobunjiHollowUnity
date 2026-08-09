@@ -164,7 +164,7 @@
   }
 
   function spawn(entry) {
-    const mode = state.settings.assignments[entry.kind];
+    const mode = entry.modeOverride || state.settings.assignments[entry.kind];
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
     const parts = makePlane(entry.text, entry.kind, cfg);
@@ -189,7 +189,7 @@
   }
 
   function queueReward(kind, text, options = {}) {
-    state.pending.push({ kind, text: String(text), root: options.root || state.deps?.playerRoot, scene: options.scene });
+    state.pending.push({ kind, text: String(text), root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode });
     if (state.flushQueued) return;
     state.flushQueued = true;
     queueMicrotask(() => {
@@ -204,7 +204,7 @@
     if (!value) return null;
     const sign = Number(amount) >= 0 ? '+' : '-';
     const text = options.text || `${sign}${value}`;
-    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene });
+    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode });
     queueReward(kind, text, options);
     return state.sequence;
   }
