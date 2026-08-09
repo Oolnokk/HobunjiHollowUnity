@@ -131,6 +131,106 @@
     else console.info(message);
   }
 
+  // Music's stock exterior/rain functions deliberately resolve building areas
+  // to zero outdoor BGS. For interiors, run those same mixers against a
+  // temporary exterior profile at a small fraction of their normal level so
+  // rain/wind/birds remain perceptible through the walls instead of vanishing.
+  const INDOOR_OUTDOOR_BGS_SCALE = 0.18;
+  let _musicRuntimeDeps = null; // Used by the Music wrappers to identify the actual current area before applying the temporary exterior profile.
+  let _lastIndoorBgsArea = ''; // Used to avoid repeating the same indoor-muffle diagnostic every audio tick.
+
+  function withIndoorOutdoorBgsProfile(callback) {
+    const musicDeps = _musicRuntimeDeps; // Used as Music's injected current-area/building-area dependency set.
+    const actualArea = musicDeps?.getCurrentArea?.(); // Used to decide whether this update is occurring inside a building.
+    const indoors = actualArea === 'interior' || !!musicDeps?._isBuildingArea?.(actualArea); // Used to leave every exterior update completely unchanged.
+    if (!indoors) { _lastIndoorBgsArea = ''; return callback(); }
+
+    const audioCfg = root.AudioSystem?.gameAudioConfig?.(); // Used as the live config object Music itself reads during the wrapped call.
+    const bgs = audioCfg?.bgs; // Used to temporarily scale only outdoor background layers, never furniture/interior SFX.
+    if (!bgs || typeof musicDeps.getCurrentArea !== 'function') return callback();
+
+    const originalGetCurrentArea = musicDeps.getCurrentArea; // Used to restore the real area immediately after the synchronous mixer update.
+    const volumeDefaults = {
+      birdsVolume: 0.25,
+      nightbugsVolume: 0.23,
+      wind1Volume: 0.20,
+      wind2Volume: 0.18,
+      gentlerainVolume: 0.45,
+      midrainVolume: 0.55,
+      heavyrainVolume: 0.65,
+    };
+    const saved = new Map(); // Used to restore every BGS config property exactly, including whether it originally existed.
+    try {
+      for (const [key, fallback] of Object.entries(volumeDefaults)) {
+        saved.set(key, { had: Object.prototype.hasOwnProperty.call(bgs, key), value: bgs[key] });
+        bgs[key] = Math.max(0, Number(bgs[key] ?? fallback) || 0) * INDOOR_OUTDOOR_BGS_SCALE;
+      }
+      // Music's existing mixers already know how to choose rain intensity,
+      // day/night birds/bugs, and wind. Present the building as an exterior
+      // only for this one mixer call, while retaining the real weather/time.
+      musicDeps.getCurrentArea = () => 'farm';
+      if (_lastIndoorBgsArea !== actualArea) {
+        _lastIndoorBgsArea = actualArea;
+        if (typeof root.debugLog === 'function') root.debugLog(`[bgs] Indoor outdoor-BGS bleed active area=${actualArea} scale=${INDOOR_OUTDOOR_BGS_SCALE}`, 'bgs');
+      }
+      return callback();
+    } finally {
+      musicDeps.getCurrentArea = originalGetCurrentArea;
+      for (const [key, state] of saved) {
+        if (state.had) bgs[key] = state.value;
+        else delete bgs[key];
+      }
+    }
+  }
+
+  function wrapMusicForIndoorBgs(musicSystem) {
+    if (!musicSystem || musicSystem.__hobunjiIndoorBgsWrapped) return musicSystem;
+    const originalInit = musicSystem.init; // Used to retain Music's injected area helpers without changing its initialization behavior.
+    if (typeof originalInit === 'function') {
+      musicSystem.init = function (injectedDeps) {
+        _musicRuntimeDeps = injectedDeps;
+        return originalInit.call(this, injectedDeps);
+      };
+    }
+    const originalExterior = musicSystem.updateExteriorBgs; // Used as the unchanged birds/nightbugs/wind mixer inside the temporary indoor profile.
+    if (typeof originalExterior === 'function') {
+      musicSystem.updateExteriorBgs = function (...args) {
+        return withIndoorOutdoorBgsProfile(() => originalExterior.apply(this, args));
+      };
+    }
+    const originalRain = musicSystem.updateRainAudio; // Used as the unchanged three-layer rain mixer inside the temporary indoor profile.
+    if (typeof originalRain === 'function') {
+      musicSystem.updateRainAudio = function (...args) {
+        return withIndoorOutdoorBgsProfile(() => originalRain.apply(this, args));
+      };
+    }
+    Object.defineProperty(musicSystem, '__hobunjiIndoorBgsWrapped', { value: true, configurable: true });
+    return musicSystem;
+  }
+
+  // config.js is parsed before music-system.js, so capture Music's assignment
+  // synchronously and have the wrapper installed before game.js calls init().
+  function installIndoorBgsHook() {
+    if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname)) return;
+    const existing = root.Music;
+    if (existing) { wrapMusicForIndoorBgs(existing); return; }
+    let assignedValue; // Used only until music-system.js assigns window.Music.
+    try {
+      Object.defineProperty(root, 'Music', {
+        configurable: true,
+        enumerable: true,
+        get() { return assignedValue; },
+        set(value) {
+          assignedValue = wrapMusicForIndoorBgs(value) || value;
+          Object.defineProperty(root, 'Music', {
+            configurable: true, enumerable: true, writable: true, value: assignedValue,
+          });
+        },
+      });
+    } catch (_) {}
+  }
+  installIndoorBgsHook();
+
   // Exact pre-recording hard/path recipe: triangle + short band-passed noise,
   // using the old path post-FX values. It deliberately bypasses
   // AudioSystem.playFootstepSurface so no configured gravel recording can be
