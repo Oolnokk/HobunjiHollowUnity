@@ -296,7 +296,8 @@
   }
 
   function wrapHardSurfaceAudioSystem(audioSystem) {
-    if (!audioSystem || audioSystem.__hobunjiDirectHardStepWrapped) return !!audioSystem;
+    if (!audioSystem) return false;
+    if (audioSystem.__hobunjiDirectHardStepWrapped) return true;
     if (typeof audioSystem.playFootstepSfx !== 'function' || typeof audioSystem.footstepSurfaceKey !== 'function') return false;
 
     const originalPlayFootstepSfx = audioSystem.playFootstepSfx; // Used for grass/water and as the existing porch fallback path.
