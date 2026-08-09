@@ -326,7 +326,7 @@
     Object.defineProperty(audioSystem, '__hobunjiDirectHardStepWrapped', { value: true, configurable: true });
     if (!_hardStepRouteInstallLogged) {
       _hardStepRouteInstallLogged = true;
-      audioDebug('[footsteps] Direct legacy hard-surface route installed; gravel recordings cannot play through this route.');
+      audioDebug('[footsteps] Direct legacy hard-surface route installed; gravel recordings are bypassed for AudioSystem gravel surfaces.');
     }
     return true;
   }
