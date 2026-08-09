@@ -60,6 +60,68 @@
     })
   });
 
+  // These legacy records have historically been authored as people who must
+  // not participate in live town schedules. Two are deceased; Hammerhead was
+  // previously represented as banished, and old/local database copies can
+  // therefore lack the newer lifecycle wording the generic filter expects.
+  const LEGACY_NONSPAWN_NPC_IDS = new Set([
+    'talisman_hatayap',
+    'bowstring_hatayap',
+    'hammerhead_tuhupnuk',
+  ]);
+
+  function isRuntimeNonspawnNpc(npc) {
+    if (!npc || typeof npc !== 'object') return false;
+    if (LEGACY_NONSPAWN_NPC_IDS.has(String(npc.id || ''))) return true;
+    if (npc.isDeceased === true || npc.spawnEnabled === false || npc.spawn === false) return true;
+    const status = String(npc.lifecycleStatus ?? npc.lifeStatus ?? npc.status ?? '').trim().toLowerCase(); // Used to catch explicit lifecycle fields in newer database exports.
+    if (status === 'deceased' || status === 'dead' || status === 'banished') return true;
+    const authoredSignals = [npc.role, npc.homeId, ...(Array.isArray(npc.tags) ? npc.tags : [])]; // Used to catch legacy structured naming without scanning biography/lore prose.
+    return authoredSignals.some(value => /(^|[^a-z])(deceased|dead|banished)([^a-z]|$)/i.test(String(value || '')));
+  }
+
+  function wrapRuntimeNpcDatabaseLoader(localDb) {
+    if (!localDb || localDb.__hobunjiRuntimeNonspawnWrapped) return localDb;
+    const originalLoadDatabase = localDb.loadDatabase; // Used to preserve the normal repo/local-source selection and dialogue composition.
+    if (typeof originalLoadDatabase !== 'function') return localDb;
+    localDb.loadDatabase = async function (id, ...args) {
+      const data = await originalLoadDatabase.call(this, id, ...args); // Used as the already-selected database result before final spawn admission filtering.
+      if (id !== 'npcDatabase' || !Array.isArray(data?.npcs)) return data;
+      const removed = data.npcs.filter(isRuntimeNonspawnNpc); // Used for both the authoritative final filter and startup diagnostics.
+      if (!removed.length) return data;
+      const filtered = { ...data, npcs: data.npcs.filter(npc => !isRuntimeNonspawnNpc(npc)) }; // Used so stale defaultPosition data can never reach spawnScheduledNpcs.
+      const message = `[NPC lifecycle] Runtime spawn gate removed ${removed.length} nonspawn NPC(s): ${removed.map(n => n.id || n.name || '<unnamed>').join(', ')}`;
+      if (typeof root.debugLog === 'function') root.debugLog(message, 'schedule');
+      else root.__farmLog?.(message, 'info');
+      return filtered;
+    };
+    Object.defineProperty(localDb, '__hobunjiRuntimeNonspawnWrapped', { value: true, configurable: true });
+    return localDb;
+  }
+
+  // config.js loads before local-db-overrides.js. Intercept that module's one
+  // global assignment so the spawn gate is installed before game.js can ever
+  // request the NPC database; this cannot lose a race to a startup schedule.
+  function installRuntimeNpcSpawnGate() {
+    const existing = root.LocalDBOverrides;
+    if (existing) { wrapRuntimeNpcDatabaseLoader(existing); return; }
+    let assignedValue; // Used only until local-db-overrides.js assigns its API object.
+    try {
+      Object.defineProperty(root, 'LocalDBOverrides', {
+        configurable: true,
+        enumerable: true,
+        get() { return assignedValue; },
+        set(value) {
+          assignedValue = wrapRuntimeNpcDatabaseLoader(value) || value;
+          Object.defineProperty(root, 'LocalDBOverrides', {
+            configurable: true, enumerable: true, writable: true, value: assignedValue,
+          });
+        },
+      });
+    } catch (_) {}
+  }
+  installRuntimeNpcSpawnGate();
+
   // The old hard-surface footstep voice still lives in AudioSystem as the
   // gravel fallback. Recorded gravel/path clips were later configured on top
   // of it; disable those clips for the live game so paths, building floors,
