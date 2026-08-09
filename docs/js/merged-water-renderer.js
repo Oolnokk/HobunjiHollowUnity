@@ -115,6 +115,7 @@
       uWaterTexture: { value: fallbackTexture },
       uDeepColor: { value: new THREE.Color(options.deepColor ?? 0x14658e) },
       uShallowColor: { value: new THREE.Color(options.shallowColor ?? 0x75d5df) },
+      uOpacity: { value: Math.max(0, Math.min(1, options.opacity ?? 0.8)) },
     };
     const material = new THREE.ShaderMaterial({
       name: 'merged_textured_water_material',
@@ -137,6 +138,7 @@
         uniform sampler2D uWaterTexture;
         uniform vec3 uDeepColor;
         uniform vec3 uShallowColor;
+        uniform float uOpacity;
         varying vec2 vUv;
         varying float vDepth;
         varying vec2 vFlow;
@@ -153,8 +155,10 @@
           float flowSheen = min(1.0, length(vFlow)) * 0.045
             * (sin((vUv.x + vUv.y) * 28.0 - uTime * 2.0) * 0.5 + 0.5);
           surfaceColor += flowSheen;
-          float alpha = mix(0.06, 0.78, smoothstep(0.0, 1.0, vDepth));
-          alpha = clamp(alpha + (pattern - 0.5) * 0.10, 0.025, 0.84);
+          // uOpacity is the authored maximum (80% in game.js); shallow film
+          // still fades with simulated depth instead of appearing suddenly
+          // as a fully opaque sheet after the first drop of rain.
+          float alpha = uOpacity * mix(0.075, 1.0, smoothstep(0.0, 1.0, vDepth));
           gl_FragColor = vec4(surfaceColor, alpha);
         }
       `,

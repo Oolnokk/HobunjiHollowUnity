@@ -14727,7 +14727,8 @@
       // attributes preserve the simulation's shallow/deep tint and motion
       // without returning to one ShaderMaterial (and one draw call) per tile.
       const mergedWaterMaterial = window.MergedWaterRenderer.createMaterial(THREE, {
-        textureUrl: 'assets/textures/wavy_surface.png',
+        textureUrl: 'assets/textures/wibbly_surface.png',
+        opacity: 0.8,
         log: debugLog,
       });
 
