@@ -12,7 +12,7 @@
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow',
     },
-    floatPlus: { worldHeight: 0.16, xOffsetPercent: 15, yOffsetPercent: -35, lifetimeMs: 1150 },
+    floatPlus: { worldHeight: 0.18, xOffsetPercent: 50, yOffsetPercent: 13, lifetimeMs: 1150 },
     centeredFiveRow: { worldHeight: 0.16, xOffsetPercent: 50, yOffsetPercent: -12, lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
@@ -154,15 +154,23 @@
   function claimFloatOffset(root, bounds) {
     const worldHeight = state.settings.floatPlus.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
-    for (let index = 0; index < 240; index++) {
+    const pathXClearance = worldHeight * 0.24; // Covers two popups' full Float+ horizontal wobble range.
+    const pathYClearance = 0.075; // Covers the maximum difference in Float+ upward travel.
+    const isFree = point => existing.every(event =>
+      Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
+      Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance
+    );
+    const searchCount = Math.max(240, (existing.length + 1) * 240); // Expands instead of reusing an occupied fallback point.
+    for (let index = 0; index < searchCount; index++) {
       const angle = index * 2.399963229728653;
-      // Exact Float+ radius formula from the uploaded prototype.
+      // Keeps the prototype's first 240-point radius, then grows outward as
+      // needed so simultaneous numbers always receive distinct clear space.
       const radius = Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
       const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius * 0.62 };
-      const free = existing.every(event => Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.48 || Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.55);
-      if (free) return point;
+      if (isFree(point)) return point;
     }
-    return { x: 0, y: 0 };
+    const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0); // Collision-safe last resort above every active popup.
+    return { x: 0, y: topEdge + bounds.height * 0.5 + pathYClearance };
   }
 
   function spawn(entry) {

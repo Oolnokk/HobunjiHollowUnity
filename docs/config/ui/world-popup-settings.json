@@ -9,9 +9,9 @@
     "loot": "centeredFiveRow"
   },
   "floatPlus": {
-    "worldHeight": 0.16,
-    "xOffsetPercent": 15,
-    "yOffsetPercent": -35,
+    "worldHeight": 0.18,
+    "xOffsetPercent": 50,
+    "yOffsetPercent": 13,
     "lifetimeMs": 1150
   },
   "centeredFiveRow": {
