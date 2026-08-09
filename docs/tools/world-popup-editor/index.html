@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Popup Text Editor</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}body{padding:18px}
+h1{font-size:20px;margin:0 0 5px}.help,.status{color:#9fb4cf;font-size:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;margin-top:16px}.panel{background:#111b28;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px}.panel h2{font-size:14px;margin:0 0 10px}label{display:grid;grid-template-columns:minmax(120px,1fr) minmax(110px,1fr);align-items:center;gap:10px;margin:8px 0;font-size:12px}input,select,button{width:100%;font:inherit;color:#edf5ff;background:#172638;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:8px}button{font-weight:700;cursor:pointer}.buttons{display:flex;gap:8px;margin-top:14px}.preview{position:relative;height:270px;overflow:hidden;background:radial-gradient(circle at 50% 65%,#27394a,#0a111b 68%);border-radius:10px}.avatar{position:absolute;left:50%;top:50%;width:80px;height:124px;transform:translate(-50%,-50%);background:#8e6f4e;border-radius:48% 48% 38% 38%;box-shadow:0 8px 0 #4a3828}.centroid{position:absolute;left:50%;top:50%;width:12px;height:12px;border:2px solid #6aa7ff;border-radius:50%;transform:translate(-50%,-50%)}.popup{position:absolute;font-weight:900;text-shadow:-2px -2px #211,2px -2px #211,-2px 2px #211,2px 2px #211;white-space:nowrap}.float{left:50%;top:50%;transform:translate(-50%,-50%);color:#fff4e2;animation:rise 1.15s infinite}.list{left:calc(50% + var(--x));top:calc(50% + var(--y));transform:translateY(-50%);color:#9de7ff}@keyframes rise{to{transform:translate(-35%,-120%);opacity:0}}pre{max-height:190px;overflow:auto;background:#08111b;padding:10px;border-radius:8px;font-size:11px}.status{margin-top:10px;min-height:18px}.ok{color:#68e0a5}.bad{color:#ff8798}
+</style>
+</head>
+<body>
+<h1>World Popup Text Editor</h1>
+<div class="help">Assign event families to Float+ or the centered five-row list, then tune their shared placement. Runtime defaults come from <code>config/ui/world-popup-settings.json</code>; “Apply locally” previews changes in this browser immediately.</div>
+<div class="grid">
+  <section class="panel"><h2>Mode assignments</h2><div id="assignments"></div></section>
+  <section class="panel"><h2>Float+</h2><label>Text height <input id="floatHeight" type="number" min=".02" max=".18" step=".005"></label><label>Lifetime (ms) <input id="floatLifetime" type="number" min="500" max="5000" step="50"></label><label>Collision radius <input id="floatRadius" type="number" min=".05" max="1" step=".01"></label></section>
+  <section class="panel"><h2>Centered Five Row List</h2><label>Text height <input id="listHeight" type="number" min=".02" max=".18" step=".005"></label><label>Lifetime (ms) <input id="listLifetime" type="number" min="500" max="5000" step="50"></label><label>Horizontal offset <input id="listX" type="number" min="-.5" max=".5" step=".01"></label><label>Row spacing <input id="rowSpacing" type="number" min=".8" max="2" step=".01"></label><label>Rows <input id="maxRows" type="number" min="1" max="9" step="1"></label></section>
+  <section class="panel"><h2>Preview</h2><div class="preview"><div class="avatar"></div><div class="centroid" title="Avatar centroid"></div><div class="popup float">-18</div><div id="previewList"></div></div></section>
+  <section class="panel"><h2>Current JSON</h2><pre id="json"></pre></section>
+</div>
+<div class="buttons"><button id="apply">Apply locally</button><button id="download">Download authored JSON</button><button id="reset">Reset to repository values</button></div>
+<div id="status" class="status" aria-live="polite"></div>
+<script>
+'use strict';
+const STORAGE_KEY='hobunjiWorldPopupSettings.v1';
+const EVENT_LABELS={damage:'Damage',healing:'Healing',skillXp:'Skill XP',masteryXp:'Tool Mastery XP',favor:'Favor changes',currency:'Currency acquisition/loss',loot:'Loot'};
+let repoSettings=null; // Used by resetToRepository() to restore the authored file exactly.
+let settings=null; // Shared editor model consumed by render(), collect(), save(), and export.
+const $=id=>document.getElementById(id);
+const status=(message,ok=true)=>{$('status').textContent=message;$('status').className='status '+(ok?'ok':'bad')};
+const clone=value=>JSON.parse(JSON.stringify(value));
+
+function assignmentRows(){
+  $('assignments').innerHTML=Object.entries(EVENT_LABELS).map(([key,label])=>`<label>${label}<select data-assignment="${key}"><option value="floatPlus">Float+</option><option value="centeredFiveRow">Centered Five Row List</option></select></label>`).join('');
+}
+function render(){
+  document.querySelectorAll('[data-assignment]').forEach(select=>select.value=settings.assignments[select.dataset.assignment]);
+  $('floatHeight').value=settings.floatPlus.textHeight;$('floatLifetime').value=settings.floatPlus.lifetimeMs;$('floatRadius').value=settings.floatPlus.maxRadius;
+  $('listHeight').value=settings.centeredFiveRow.textHeight;$('listLifetime').value=settings.centeredFiveRow.lifetimeMs;$('listX').value=settings.centeredFiveRow.horizontalOffset;$('rowSpacing').value=settings.centeredFiveRow.rowSpacing;$('maxRows').value=settings.centeredFiveRow.maxRows;
+  updateOutput();
+}
+function collect(){
+  document.querySelectorAll('[data-assignment]').forEach(select=>settings.assignments[select.dataset.assignment]=select.value);
+  settings.floatPlus={textHeight:Number($('floatHeight').value),lifetimeMs:Number($('floatLifetime').value),maxRadius:Number($('floatRadius').value)};
+  settings.centeredFiveRow={textHeight:Number($('listHeight').value),lifetimeMs:Number($('listLifetime').value),horizontalOffset:Number($('listX').value),rowSpacing:Number($('rowSpacing').value),maxRows:Math.round(Number($('maxRows').value))};
+  updateOutput();
+}
+function updateOutput(){
+  $('json').textContent=JSON.stringify(settings,null,2);
+  const cfg=settings.centeredFiveRow;
+  const rows=['+5 Farming XP','+1 Hatchet Mastery','+8 Favor','+24g','+2 Pine Log'];
+  $('previewList').innerHTML=rows.slice(0,cfg.maxRows).map((text,index)=>`<div class="popup list" style="--x:${cfg.horizontalOffset*100}px;--y:${(index-(cfg.maxRows-1)/2)*cfg.textHeight*cfg.rowSpacing*620}px;font-size:${Math.max(11,cfg.textHeight*250)}px">${text}</div>`).join('');
+}
+function validate(){
+  const numbers=[settings.floatPlus.textHeight,settings.floatPlus.lifetimeMs,settings.floatPlus.maxRadius,settings.centeredFiveRow.textHeight,settings.centeredFiveRow.lifetimeMs,settings.centeredFiveRow.horizontalOffset,settings.centeredFiveRow.rowSpacing,settings.centeredFiveRow.maxRows];
+  if(numbers.some(value=>!Number.isFinite(value)))throw new Error('Every numeric setting must contain a valid number.');
+  if(settings.centeredFiveRow.maxRows<1)throw new Error('The list needs at least one row.');
+}
+async function boot(){
+  assignmentRows();
+  try{const response=await fetch('../../config/ui/world-popup-settings.json');if(!response.ok)throw new Error(`HTTP ${response.status}`);repoSettings=await response.json();settings=clone(repoSettings);const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(saved)settings={...settings,...saved,assignments:{...settings.assignments,...saved.assignments},floatPlus:{...settings.floatPlus,...saved.floatPlus},centeredFiveRow:{...settings.centeredFiveRow,...saved.centeredFiveRow}};render();status('Popup settings loaded.');}catch(error){status(`Could not load popup settings: ${error.message}`,false);}
+}
+document.addEventListener('input',event=>{if(event.target.matches('input,select'))collect()});
+$('apply').onclick=()=>{try{collect();validate();localStorage.setItem(STORAGE_KEY,JSON.stringify(settings));window.parent?.document?.getElementById('if-world-popup-editor')?.contentWindow?.dispatchEvent(new Event('hobunji-popup-settings-saved'));status('Applied locally. Reload the game tab to use these values.');}catch(error){status(error.message,false)}};
+$('download').onclick=()=>{try{collect();validate();const blob=new Blob([JSON.stringify(settings,null,2)+'\n'],{type:'application/json'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='world-popup-settings.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);status('Downloaded world-popup-settings.json.');}catch(error){status(error.message,false)}};
+$('reset').onclick=()=>{if(!repoSettings)return;settings=clone(repoSettings);localStorage.removeItem(STORAGE_KEY);render();status('Restored repository settings.');};
+boot();
+</script>
+</body>
+</html>
