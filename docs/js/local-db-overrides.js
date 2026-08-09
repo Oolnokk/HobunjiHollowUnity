@@ -50,6 +50,11 @@
   ];
 
   let _runtimeSuppressedNpcIds = []; // Used by runtime/debug inspection to report NPC records intentionally excluded from live spawning.
+  const LEGACY_NONSPAWN_NPC_IDS = new Set([
+    'talisman_hatayap',
+    'bowstring_hatayap',
+    'hammerhead_tuhupnuk',
+  ]); // Used to keep historically deceased/banished records out of the live scheduler even when an old local override lacks lifecycle metadata.
 
   function dbById(id) { return DATABASES.find(d => d.id === id) || null; }
   function overrideKey(id) { return OVERRIDE_KEY_PREFIX + id; }
@@ -195,11 +200,12 @@
   // living widow/widower can mention a deceased spouse without being dead.
   function isNpcMarkedDeceased(npc) {
     if (!npc || typeof npc !== 'object') return false;
+    if (LEGACY_NONSPAWN_NPC_IDS.has(String(npc.id || ''))) return true;
     if (npc.isDeceased === true || npc.spawnEnabled === false || npc.spawn === false) return true;
     const status = String(npc.lifecycleStatus ?? npc.lifeStatus ?? npc.status ?? '').trim().toLowerCase(); // Used for newer/explicit lifecycle fields if the schema gains them.
-    if (status === 'deceased' || status === 'dead') return true;
-    const authoredSignals = [npc.role, npc.homeId, ...(Array.isArray(npc.tags) ? npc.tags : [])]; // Used to recognize the database's existing deceased naming convention without reading prose fields.
-    return authoredSignals.some(value => /(^|[^a-z])(deceased|dead)([^a-z]|$)/i.test(String(value || '')));
+    if (status === 'deceased' || status === 'dead' || status === 'banished') return true;
+    const authoredSignals = [npc.role, npc.homeId, ...(Array.isArray(npc.tags) ? npc.tags : [])]; // Used to recognize the database's existing deceased/banished naming convention without reading prose fields.
+    return authoredSignals.some(value => /(^|[^a-z])(deceased|dead|banished)([^a-z]|$)/i.test(String(value || '')));
   }
 
   // Editors must continue to see deceased people for family history, dialogue,
@@ -218,8 +224,8 @@
     _runtimeSuppressedNpcIds = suppressed.map(npc => npc.id || npc.name || '<unnamed>');
     if (!_runtimeSuppressedNpcIds.length) return npcDatabase;
 
-    const message = `[NPC lifecycle] Suppressed ${_runtimeSuppressedNpcIds.length} deceased NPC(s): ${_runtimeSuppressedNpcIds.join(', ')}`; // Used by the in-game debug logger when globally exposed, with console as a fallback.
-    if (typeof window.debugLog === 'function') window.debugLog(message, 'schedule');
+    const message = `[schedule] [NPC lifecycle] Suppressed ${_runtimeSuppressedNpcIds.length} nonspawn NPC(s): ${_runtimeSuppressedNpcIds.join(', ')}`; // Used by the in-game schedule filter and console fallback.
+    if (typeof window.__farmLog === 'function') window.__farmLog(message, 'info');
     else console.info(message);
     return { ...npcDatabase, npcs: npcDatabase.npcs.filter(npc => !isNpcMarkedDeceased(npc)) };
   }
@@ -255,4 +261,190 @@
     applyShopDialogueAccess,
     isNpcMarkedDeceased, filterRuntimeNpcDatabase, getRuntimeSuppressedNpcIds,
   };
+
+  // Live-game compatibility hooks belong on this guaranteed-loaded script path
+  // rather than config/config.js. index.html loads this module synchronously
+  // before AudioSystem/Music, so their first assignment can be wrapped without
+  // timers or script-order races. Tool pages are intentionally untouched.
+  const _runtimeToolPage = typeof location !== 'undefined' && /\/tools\//.test(location.pathname);
+  if (_runtimeToolPage) return;
+
+  function runtimeAudioLog(message, level = 'audio') {
+    if (typeof window.__farmLog === 'function') window.__farmLog(message, level);
+    else console.info(message);
+  }
+
+  let _runtimeHardStepPlayed = false; // Used to report the first actual hard-surface step through the Audio debug filter.
+  let _runtimeFootstepCadence = false; // Used to report the first cadence trigger through the Audio debug filter.
+
+  function playLegacyHardSurfaceStep(audioSystem, volumeScale = 1, pan = 0, heavy = false) {
+    const audioCfg = audioSystem.gameAudioConfig?.() || {}; // Used to honor the same global SFX/footstep controls as normal AudioSystem playback.
+    if (audioCfg.enabled === false) return;
+    const footstepCfg = audioCfg.footsteps || {}; // Used to honor the existing footstep enable/volume config.
+    if (footstepCfg.enabled === false) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext; // Used to render the pre-recording procedural path voice.
+    if (!AudioCtx) return;
+    const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx()); // Used as AudioSystem's shared footstep context.
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
+    const sfxVolume = Math.max(0, Number(audioCfg.sfxVolume) || 1);
+    const finalVolume = Math.min(1, baseVolume * sfxVolume * Math.max(0, Number(volumeScale) || 0) * (heavy ? 1 : 0.9));
+    if (finalVolume <= 0.002) return;
+
+    const now = ctx.currentTime;
+    const pitchMul = 1.2 * (heavy ? 0.55 : 1);
+    const durationS = 0.055 * 0.6 * (heavy ? 2.2 : 1);
+    const baseFreq = 55 * pitchMul;
+    const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panNode) {
+      panNode.pan.value = Math.max(-1, Math.min(1, Number(pan) || 0));
+      panNode.connect(ctx.destination);
+    }
+    const outNode = panNode || ctx.destination;
+
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = baseFreq + (Math.random() * 2 - 1) * 16;
+    oscGain.gain.setValueAtTime(finalVolume * 0.18, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+    osc.connect(oscGain).connect(outNode);
+    osc.start(now);
+    osc.stop(now + durationS);
+
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * durationS));
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const noiseData = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) noiseData[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = baseFreq * 4.6 * (heavy ? 0.45 : 1);
+    filter.Q.value = 2.4;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(finalVolume * 0.82, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0008, now + durationS);
+    noise.connect(filter).connect(noiseGain).connect(outNode);
+    noise.start(now);
+    noise.stop(now + durationS);
+  }
+
+  function wrapRuntimeAudioSystem(audioSystem) {
+    if (!audioSystem || audioSystem.__hobunjiDirectHardStepWrapped) return audioSystem;
+    if (typeof audioSystem.playFootstepSfx !== 'function' || typeof audioSystem.footstepSurfaceKey !== 'function') return audioSystem;
+    const originalPlayFootstepSfx = audioSystem.playFootstepSfx;
+    audioSystem.playFootstepSfx = function (area, tile, volumeScale = 1, pan = 0, opts = {}) {
+      let surfaceKey = null;
+      try { surfaceKey = audioSystem.footstepSurfaceKey(area, tile?.type ?? null); } catch (_) {}
+      if (surfaceKey !== 'gravel') return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
+      if (!_runtimeHardStepPlayed) {
+        _runtimeHardStepPlayed = true;
+        runtimeAudioLog(`[footsteps] DIRECT legacy hard-step fired area=${area} tileType=${tile?.type ?? 'none'} context=${window._footstepAudioCtx?.state || 'new'}.`);
+      }
+      return playLegacyHardSurfaceStep(audioSystem, volumeScale, pan, !!opts.heavy);
+    };
+    const originalAdvance = audioSystem.footstepAdvance;
+    if (typeof originalAdvance === 'function') {
+      audioSystem.footstepAdvance = function (state, distPx, stridePx) {
+        const fires = originalAdvance.call(this, state, distPx, stridePx);
+        if (fires && !_runtimeFootstepCadence) {
+          _runtimeFootstepCadence = true;
+          runtimeAudioLog(`[footsteps] cadence fired dist=${Number(distPx).toFixed(2)} stride=${Number(stridePx).toFixed(2)}.`);
+        }
+        return fires;
+      };
+    }
+    Object.defineProperty(audioSystem, '__hobunjiDirectHardStepWrapped', { value: true, configurable: true });
+    runtimeAudioLog('[footsteps] Direct legacy hard-surface route installed from local-db-overrides.js.');
+    return audioSystem;
+  }
+
+  function interceptRuntimeGlobal(name, wrapper) {
+    const existing = window[name]; // Used when a future script-order change defines the system before this module.
+    if (existing) { wrapper(existing); return; }
+    let assignedValue; // Used until the owning script performs its normal window.<System> assignment.
+    try {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: true,
+        get() { return assignedValue; },
+        set(value) {
+          assignedValue = wrapper(value) || value;
+          Object.defineProperty(window, name, { configurable: true, enumerable: true, writable: true, value: assignedValue });
+        },
+      });
+    } catch (_) {}
+  }
+
+  interceptRuntimeGlobal('AudioSystem', wrapRuntimeAudioSystem);
+
+  const INDOOR_OUTDOOR_BGS_SCALE = 0.18;
+  let _runtimeMusicDeps = null; // Used to identify building interiors in Music's own injected area helpers.
+  let _runtimeIndoorBgsArea = ''; // Used to keep the BGS diagnostic one-shot per entered building.
+
+  function withIndoorOutdoorBgsProfile(callback) {
+    const musicDeps = _runtimeMusicDeps;
+    const actualArea = musicDeps?.getCurrentArea?.();
+    const indoors = actualArea === 'interior' || !!(musicDeps && musicDeps._isBuildingArea?.(actualArea));
+    if (!indoors) { _runtimeIndoorBgsArea = ''; return callback(); }
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.();
+    const bgs = audioCfg?.bgs;
+    if (!bgs || typeof musicDeps.getCurrentArea !== 'function') return callback();
+
+    const originalGetCurrentArea = musicDeps.getCurrentArea;
+    const defaults = {
+      birdsVolume: 0.25, nightbugsVolume: 0.23, wind1Volume: 0.20, wind2Volume: 0.18,
+      gentlerainVolume: 0.45, midrainVolume: 0.55, heavyrainVolume: 0.65,
+    };
+    const saved = new Map();
+    try {
+      for (const [key, fallback] of Object.entries(defaults)) {
+        saved.set(key, { had: Object.prototype.hasOwnProperty.call(bgs, key), value: bgs[key] });
+        bgs[key] = Math.max(0, Number(bgs[key] ?? fallback) || 0) * INDOOR_OUTDOOR_BGS_SCALE;
+      }
+      musicDeps.getCurrentArea = () => 'farm';
+      if (_runtimeIndoorBgsArea !== actualArea) {
+        _runtimeIndoorBgsArea = actualArea;
+        runtimeAudioLog(`[bgs] Indoor outdoor-BGS bleed active area=${actualArea} scale=${INDOOR_OUTDOOR_BGS_SCALE}`, 'bgs');
+      }
+      return callback();
+    } finally {
+      musicDeps.getCurrentArea = originalGetCurrentArea;
+      for (const [key, state] of saved) {
+        if (state.had) bgs[key] = state.value;
+        else delete bgs[key];
+      }
+    }
+  }
+
+  function wrapRuntimeMusic(musicSystem) {
+    if (!musicSystem || musicSystem.__hobunjiIndoorBgsWrapped) return musicSystem;
+    const originalInit = musicSystem.init;
+    if (typeof originalInit === 'function') {
+      musicSystem.init = function (injectedDeps) {
+        _runtimeMusicDeps = injectedDeps;
+        return originalInit.call(this, injectedDeps);
+      };
+    }
+    const originalExterior = musicSystem.updateExteriorBgs;
+    if (typeof originalExterior === 'function') {
+      musicSystem.updateExteriorBgs = function (...args) {
+        return withIndoorOutdoorBgsProfile(() => originalExterior.apply(this, args));
+      };
+    }
+    const originalRain = musicSystem.updateRainAudio;
+    if (typeof originalRain === 'function') {
+      musicSystem.updateRainAudio = function (...args) {
+        return withIndoorOutdoorBgsProfile(() => originalRain.apply(this, args));
+      };
+    }
+    Object.defineProperty(musicSystem, '__hobunjiIndoorBgsWrapped', { value: true, configurable: true });
+    runtimeAudioLog('[bgs] Indoor outdoor-BGS hook installed from local-db-overrides.js.', 'bgs');
+    return musicSystem;
+  }
+
+  interceptRuntimeGlobal('Music', wrapRuntimeMusic);
+  runtimeAudioLog('[runtime patches] guaranteed-loaded lifecycle/audio hooks armed from local-db-overrides.js.');
 })();
