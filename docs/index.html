@@ -1533,6 +1533,8 @@
        openNpcDialogue/closeNpcDialogue (camera/staging/save) stay in
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260806a"></script>
+  <!-- World-space Float+ combat text and centered five-row reward lists. -->
+  <script src="js/world-popup-text.js?v=20260809a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
@@ -1575,7 +1577,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260801b"></script>
+  <script src="game.js?v=20260809a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
