@@ -6525,7 +6525,7 @@
         // scene-build timing.
         ensurePathSurfaceReady().then(() => {
           const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
-          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes);
+          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
           if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
         }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
 
@@ -9656,7 +9656,7 @@
         // test already used for wilderness tree culling (updateZoneVegetationCulling)
         // — cheap per-frame, no geometry rebuilding.
         ensurePathSurfaceReady().then(() => {
-          const splineData = preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes);
+          const splineData = preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes, 'town');
           if (splineData) registerPathBrickChunks('town', townScene, splineData);
           else if (_townPathFallbackMesh) _townPathFallbackMesh.visible = true;
         }).catch(err => {
@@ -13080,10 +13080,23 @@
         if (!_pathSurfaceReadyPromise) {
           _pathSurfaceReadyPromise = Promise.all([
             pathWallBuilder.loadDefaultGlb(),
-            fetch('assets/models/recipes/walls/wallrecipe2.json').then(r => r.json()),
+            fetch('assets/models/recipes/walls/wallrecipe2.json').then(r => {
+              if (!r.ok) throw new Error('HTTP ' + r.status + ' fetching wallrecipe2.json');
+              return r.json();
+            }),
           ]).then(([, recipe]) => {
             pathWallBuilder.addRecipe(PATH_SURFACE_RECIPE_ID, recipe);
             pathWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#545039');
+            debugLog('Path brick surface: recipe + GLB ready.');
+          }).catch(err => {
+            // Logged here too, not just at each call site's own .catch — this
+            // promise is cached and reused by every zone/farm/town caller
+            // (see the singleton guard above), so a failure here otherwise
+            // only ever surfaces as "no bricks anywhere, silently" instead of
+            // pointing at the actual cause (bad fetch, malformed recipe, GLB
+            // load failure).
+            debugLog('Path brick surface: recipe/GLB load failed — ' + err.message, 'warn');
+            throw err;
           });
         }
         return _pathSurfaceReadyPromise;
@@ -14015,8 +14028,11 @@
         stream: floorMat(0x6b5a3a), // sandy streambed
         waterfall: floorMat(0x3a4a3f), // same bed as river — seen at the base of the curtain
       };
-      // Floor material for vegetation tiles — matches weed foliage HSL color
-      const vegFloorMat = floorMat(new THREE.Color().setHSL(108 / 360, 0.58, 0.28));
+      // Floor material for vegetation tiles — matches weed foliage HSL color.
+      // Unlit (see unlitFloorMat/tileMats.grass) — the ground under a shrub/
+      // weed clump is still ground, so it reacts to light the same way the
+      // rest of the grass surface does now instead of dimming independently.
+      const vegFloorMat = unlitFloorMat(new THREE.Color().setHSL(108 / 360, 0.58, 0.28));
 
       // Recolors the grass ground material and the grass billboard tufts
       // (color + density) to the current regional season — vibrant/full for
@@ -14028,8 +14044,7 @@
       function applySeasonalGrassAppearance() {
         const season = window.CalendarSystem.currentSeason();
         tileMats.grass.color.copy(season.grassColor); // unlit — no .emissive to update, see unlitFloorMat
-        vegFloorMat.color.copy(season.grassColor);
-        vegFloorMat.emissive.copy(season.grassColor).multiplyScalar(TILE_EMISSIVE_FLOOR);
+        vegFloorMat.color.copy(season.grassColor); // also unlit — see its own declaration comment
         _grassTint.copy(season.grassColor);
         if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
       }
@@ -14837,7 +14852,7 @@
       // One-time (per zone) spline prep: picks which route(s) to pave and bakes
       // their sampled centerlines + a corridor containment test + the overall
       // bounding box, all reused by every streamed rebuild below.
-      function preparePathSplineData(srcGrid, gcols, grows, routes) {
+      function preparePathSplineData(srcGrid, gcols, grows, routes, mapId) {
         const width = 3.25, tol = 0.05; // matches the preview tool's exported path.pathWidth/edgeTolerance
         const pathTiles = new Set();
         let tileMinC = Infinity, tileMaxC = -Infinity, tileMinR = Infinity, tileMaxR = -Infinity;
@@ -14847,7 +14862,21 @@
             if (c < tileMinC) tileMinC = c; if (c > tileMaxC) tileMaxC = c;
             if (r < tileMinR) tileMinR = r; if (r > tileMaxR) tileMaxR = r;
           }
-        if (!pathTiles.size) return null;
+        // Plateau zones (Northern Cliffs, Southern Cloud Forest, ...) carve a
+        // road across multiple elevation tiers — buildPathNetworkGeo's own
+        // flat mesh already bakes each vertex's owning tile's elevTier into
+        // its Y (see its "positions[] is what actually renders" comment), so
+        // a WallBuilder brick corridor built at one single flat Y would land
+        // underground/off in the air the moment the route crosses onto a
+        // raised tier. Snapped per-instance in buildPathBrickChunkAt below.
+        const elevTierAt = (x, z) => srcGrid[Math.floor(z)]?.[Math.floor(x)]?.elevTier || 0;
+        if (!pathTiles.size) {
+          // Not necessarily a bug — plenty of zones legitimately have no
+          // TileType.PATH tiles at all — but worth a trace-level note since
+          // "why are there no bricks here" always starts by ruling this out.
+          debugLog(`Path brick surface (${mapId}): no PATH tiles in this grid, skipping.`);
+          return null;
+        }
 
         // Auto-pick whichever route(s) actually overlap the painted path tiles
         // (same scoring as the preview's selectedRoutes/routeOverlapScore) —
@@ -14884,7 +14913,8 @@
               if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
             return false;
           }
-          return { samples, containsPoint, bounds: { minX, maxX, minZ, maxZ } };
+          debugLog(`Path brick surface (${mapId}): spline mode, ${selected.length} route(s), ${pathTiles.size} PATH tile(s).`);
+          return { samples, containsPoint, elevTierAt, bounds: { minX, maxX, minZ, maxZ } };
         }
 
         // No authored route data overlaps this map's painted path tiles at
@@ -14894,9 +14924,11 @@
         // cells themselves instead of a spline distance test. Blockier than
         // the spline corridor on a curved route, but the farm's own path is
         // a straight rectangular strip anyway, so it costs nothing there.
+        debugLog(`Path brick surface (${mapId}): no route matched ${pathTiles.size} painted PATH tile(s) (${candidates.length} candidate route(s) checked) — falling back to tile-locked mode.`, candidates.length ? 'warn' : 'info');
         return {
           samples: null,
           containsPoint: (x, z) => pathTiles.has(Math.floor(x) + ',' + Math.floor(z)),
+          elevTierAt,
           bounds: { minX: tileMinC, maxX: tileMaxC + 1, minZ: tileMinR, maxZ: tileMaxR + 1 },
         };
       }
@@ -14931,6 +14963,13 @@
             o.getMatrixAt(i, m);
             m.decompose(p, q, s);
             if (!splineData.containsPoint(p.x, p.z)) continue;
+            // Re-lift this one instance onto its own tile's elevation tier —
+            // see elevTierAt's comment in preparePathSplineData. The panel
+            // itself was built flat at the zone's base Y, so every brick
+            // needs its own per-instance correction rather than one offset
+            // for the whole chunk.
+            const tier = splineData.elevTierAt ? splineData.elevTierAt(p.x, p.z) : 0;
+            if (tier) { p.y += tier * PLATEAU_UNIT; m.compose(p, q, s); }
             if (kept !== i) o.setMatrixAt(kept, m);
             kept++;
           }
@@ -14976,7 +15015,20 @@
         // still walks every tick.
         const prev = _pathBrickChunkLists.get(mapId);
         if (prev) for (const g of prev) { scene.remove(g); WallBuilder.disposeGroup(g); }
-        _pathBrickChunkLists.set(mapId, buildAllPathBrickChunks(splineData, scene));
+        const chunks = buildAllPathBrickChunks(splineData, scene);
+        _pathBrickChunkLists.set(mapId, chunks);
+        if (chunks.length) {
+          const total = chunks.reduce((sum, g) => sum + g.children.reduce((s2, o) => s2 + (o.isInstancedMesh ? o.count : 0), 0), 0);
+          debugLog(`Path brick surface (${mapId}): ${chunks.length} chunk(s), ${total} brick instance(s).`);
+        } else {
+          // splineData always has a real corridor by this point (see
+          // preparePathSplineData — it only ever returns null, which callers
+          // check before reaching here) — zero chunks means every single
+          // per-chunk WallBuilder generate-then-filter pass came up empty,
+          // which points at the corridor math or recipe/unitMult, not at
+          // "this map just has no path."
+          debugLog(`Path brick surface (${mapId}): corridor bounds ${JSON.stringify(splineData.bounds)} produced 0 chunks — recipe/corridor mismatch?`, 'warn');
+        }
       }
       // Called from the throttled tick below for whichever zone is currently
       // active. Identical corridor test to updateZoneVegetationCulling
@@ -17606,7 +17658,7 @@
       // rather than captured now.
       ensurePathSurfaceReady().then(() => {
         const farmRoutes = worldRoutes.filter(r => (r.area || 'farm') === 'farm');
-        const splineData = preparePathSplineData(grid, COLS, ROWS, farmRoutes);
+        const splineData = preparePathSplineData(grid, COLS, ROWS, farmRoutes, 'farm');
         if (splineData) registerPathBrickChunks('farm', scene, splineData);
       }).catch(err => debugLog('Farm path brick surface error: ' + err.message, 'warn'));
 
