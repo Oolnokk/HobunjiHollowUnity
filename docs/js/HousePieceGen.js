@@ -250,15 +250,11 @@
     return segs;
   }
 
-  // Returns a new piece object (the input is never mutated — _loadPiece's
-  // cache is shared across every instance of a given piece file, and
-  // different placements can resolve their auto-door to different sides)
-  // with the door's own side wall split into a real opening. No-ops
-  // (returns `piece` unchanged) if that side has no matching whole-side
-  // wall face to cut — e.g. a piece already authored with its own door.
-  function cutDoorPortal(piece, side, idx, len) {
-    var src = piece && piece.currentPiece ? piece.currentPiece : piece;
-    var faces = (src.base && src.base.faces) || [];
+  // Core cut: given a flat faces array, splits whichever whole-side wall
+  // face matches `side` into solid/portal/solid segments. Returns the SAME
+  // array reference unchanged if nothing matched (e.g. no wall face on that
+  // side) — callers can cheaply tell "did anything change" via `!==`.
+  function _cutFacesForDoor(faces, side, idx, len) {
     var classified = _classifyBodyWalls(faces);
     var out = [], cut = false;
     for (var i = 0; i < faces.length; i++) {
@@ -269,8 +265,21 @@
       }
       out.push(f);
     }
-    if (!cut) return piece;
-    var faces2 = out.map(function (f, idx2) { return Object.assign({}, f, { id: idx2 + 1 }); });
+    if (!cut) return faces;
+    return out.map(function (f, idx2) { return Object.assign({}, f, { id: idx2 + 1 }); });
+  }
+
+  // Returns a new piece object (the input is never mutated — a cached piece
+  // JSON can be shared across multiple placements that resolve their door to
+  // different sides) with the door's own side wall split into a real
+  // opening. No-ops (returns `piece` unchanged) if that side has no
+  // matching whole-side wall face to cut — e.g. a piece already authored
+  // with its own door.
+  function cutDoorPortal(piece, side, idx, len) {
+    var src = piece && piece.currentPiece ? piece.currentPiece : piece;
+    var faces = (src.base && src.base.faces) || [];
+    var faces2 = _cutFacesForDoor(faces, side, idx, len);
+    if (faces2 === faces) return piece;
     var nextSrc = Object.assign({}, src, { base: Object.assign({}, src.base, { faces: faces2 }) });
     // Preserve the input's own wrapped-vs-unwrapped shape (buildGroupFromPiece
     // accepts either, but a consistent return shape avoids surprises for any
@@ -404,11 +413,26 @@
     var eaveRect   = _scaleRect(bottomRect, HIGHLAND_BODY_TOP_SCALE, HIGHLAND_BODY_TOP_SCALE);
 
     var W    = maxC - minC + 1, D = maxR - minR + 1;
-    var axis = (W >= D) ? 'x' : 'z';
+    // axisOverride lets a caller force the ridge direction instead of the
+    // natural long-axis default — used by house-pieces.js's roof-axis vote
+    // (see _roofAxisDecision), so a cluster's connected gables actively
+    // point at each other instead of each piece resolving independently.
+    var axis = opts.axisOverride || ((W >= D) ? 'x' : 'z');
 
     var faces = [];
     _addFrustumBody(faces, bottomRect, eaveRect, y0, yEave);
     _addGableRoof(faces, eaveRect, bottomRect, yEave, baseH, roofH, axis, tile);
+
+    // doorSide/doorIdx/doorLen (see house-pieces.js's south-biased automatic
+    // door) cut a real portal into that side's wall instead of leaving a
+    // solid one — the walkable door tile would otherwise have nothing
+    // visually open where a player can enter.
+    var doorCut = false;
+    if (opts.doorSide) {
+      var cutFaces = _cutFacesForDoor(faces, opts.doorSide, opts.doorIdx, opts.doorLen);
+      doorCut = cutFaces !== faces;
+      faces = cutFaces;
+    }
 
     var group = new THREE.Group();
     _buildFaceMeshes(group, faces, opts);
@@ -418,7 +442,15 @@
 
     // WallBuilder bricks on frustum body walls + gable end triangles
     if (opts.wallBuilder) {
-      var bodyPanels  = _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
+      // A door cut split one whole-side panel into several — build bricks
+      // per actual face instead of the old fixed one-panel-per-side spec so
+      // each segment (including the portal cut) gets its own panel. Plain,
+      // uncut pieces (doorCut false — every current buildGroup caller other
+      // than a house piece with a door, e.g. barns) keep the exact original
+      // whole-side panels, unchanged.
+      var bodyPanels = doorCut
+        ? faces.filter(function (f) { return f.tag === 'wall' && !f.gableEnd; }).map(_faceToPanel)
+        : _wallPanels(minC, maxC, minR, maxR, y0, baseH, tile);
       var gablePanels = _gablePanels(faces);
       var wbUse   = opts.wbUsePlaceholder !== false;
       var wbExtra = opts.wbOpts || { unitMult: 0.4375, rockScale: 1.5,

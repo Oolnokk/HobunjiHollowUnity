@@ -1,29 +1,39 @@
 (() => {
   'use strict';
 
-  // Modular player house: a growing cluster of authored "house piece" JSON
-  // structures — the exact same config/pieces/*.json format + HousePieceGen.js
-  // renderer already used for barns (js/farm-buildings.js) and NPC/town
-  // buildings — replacing the old singular Highland House GLB.
+  // Modular player house: a growing cluster of live-generated Highland
+  // rectangles (HousePieceGen.buildGroup — the exact same generator/renderer
+  // already used for barns, js/farm-buildings.js) — replacing the old
+  // singular Highland House GLB.
   //
-  // The farm always starts with one 'starter' piece (seeded for free at farm
-  // init, stage 'built' immediately, matching the old Highland House's
-  // footprint via config/pieces/house-section-5x4.json). Additional pieces
-  // are bought as deeds from the Carpenter (see HOUSE_PIECE_CATALOG in
-  // game.js), placed
-  // touching the existing cluster, then built via an in-world interact-to-
-  // build step — the same foundation->built staging farm-buildings.js uses
-  // for barns, which this module closely mirrors.
+  // The farm always starts with a free 4x3 main room plus a 3x3 annex
+  // touching it (see seedStarter), both built immediately, no foundation
+  // step. Additional pieces are bought as deeds from the Carpenter (see
+  // HOUSE_PIECE_CATALOG in game.js), placed touching the existing cluster,
+  // then built via an in-world interact-to-build step — the same
+  // foundation->built staging farm-buildings.js uses for barns, which this
+  // module closely mirrors.
+  //
+  // Unlike barns, every house piece is rendered together as one pass
+  // (_rebuildAllStructureMeshes) rather than independently: touching pieces
+  // vote on a shared roof ridge axis and same-axis full-edge neighbors
+  // visually penetrate one tile into each other, exactly like the reference
+  // hobunji_modular_farmhouse_join_demo's roofAxisDecision/
+  // sameDirectionExtensions — so a cluster's gables actually point at each
+  // other and read as one continuous roof instead of independent boxes.
+  // Each piece's automatic door (still south-biased with a same-side-blocked
+  // fallback) gets a real wall-portal cut plus a small jamb/lintel/roof-cap
+  // entry tunnel, also ported from that demo — see HousePieceGen.js's
+  // cutDoorPortal/buildEntryTunnelGroup and buildGroup's doorSide option.
   //
   // All built pieces share ONE continuous interior (see game.js's
   // rebuildInteriorGeometry()): every piece contributes a 2x2-interior-cell
   // block per exterior farm tile, anchored directly at (farmCol*2, farmRow*2)
   // — the interior grid is just the farm grid at 2x resolution, so no
-  // separate per-house coordinate origin bookkeeping is needed. Each piece's
-  // authored door (resolved via BuildingDoor, docs/js/building-door.js)
+  // separate per-house coordinate origin bookkeeping is needed. Each door
   // punches a 3-interior-cell-wide exit threshold through the boundary wall
   // on whichever farm-tile side it faces — the same convention proven by the
-  // reference modular-farmhouse join demo's entranceNubCells().
+  // reference demo's entranceNubCells().
   //
   // Furniture is not piece-owned data — demolish() locates furniture inside
   // a piece's own doubled interior cell block purely by position and hands
@@ -42,6 +52,15 @@
       deps.TileType.TRENCH, deps.TileType.TILLED, deps.TileType.RAISED, deps.TileType.PADDY,
       deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.WATERFALL, deps.TileType.RAMP,
     ]);
+    // The shingle GLB is a shared singleton (see game.js's own early
+    // kickoff) that may still be loading the first time any piece builds —
+    // HousePieceGen falls back to tube-mesh roofs until then. Rebuild once
+    // it's actually ready so roofs don't stay stuck on the fallback.
+    if (typeof HousePieceGen !== 'undefined' && !HousePieceGen.shingleReady()) {
+      HousePieceGen.loadShingleGlb('assets/models/').then(() => {
+        if (deps.getHousePieces().some(p => p.stage === 'built')) _rebuildAllStructureMeshes();
+      }).catch(() => {});
+    }
   }
 
   function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
@@ -108,15 +127,6 @@
     deps.recomputeWater(false);
   }
 
-  // ── Piece JSON + face-texture caches ────────────────────────────────
-  const _piecePromises = new Map();
-  function _loadPiece(file) {
-    if (!_piecePromises.has(file)) {
-      _piecePromises.set(file, fetch(file).then(r => r.json())
-        .catch(e => { deps.debugLog('House piece load error: ' + e, 'warn'); return null; }));
-    }
-    return _piecePromises.get(file);
-  }
   let _boardsMat = null, _stoneMat = null, _canvasMat = null;
   function _faceMats() {
     if (!_boardsMat) {
@@ -172,15 +182,13 @@
     if (occupant && occupant !== entry._worldObj) return true;
     return false;
   }
-  // Automatic (no authored footprint.door) entrance placement is biased
-  // toward the south face — matching the old single-answer south-only
-  // fallback every piece used to get from BuildingDoor.doorWorldFromBuilding
-  // — but tries east/west/north in turn if south is blocked (typically by a
-  // neighboring piece placed against that edge), so an automatic piece still
-  // gets a usable door instead of silently losing its entrance (see
-  // _registerDoor, which no-ops when the resolved door tile falls inside
-  // another piece's footprint). Falls back to south (registering nothing,
-  // same as before) only if every side is blocked.
+  // Automatic entrance placement is biased toward the south face, but tries
+  // east/west/north in turn if south is blocked (typically by a neighboring
+  // piece placed against that edge), so a piece still gets a usable door
+  // instead of silently losing its entrance (see _registerDoor, which
+  // no-ops when the resolved door tile falls inside another piece's
+  // footprint). Falls back to south (registering nothing, same as before)
+  // only if every side is blocked.
   function _deriveSouthBiasedDoor(entry) {
     for (const side of DOOR_SIDE_ORDER) {
       const tile = _doorTileForSide(entry, side);
@@ -190,100 +198,158 @@
     return fallback ? { col: fallback.col, row: fallback.row, side: 'south' } : null;
   }
 
-  // Resolves a piece's single authored door (footprint.door, or the
-  // porch/south-edge geometric fallback) through this entry's placement into
-  // a world farm tile + which side of the footprint it opens through. Pieces
-  // with no authored door (footprint.door === null) use the south-biased
-  // multi-side trial above instead, since BuildingDoor's own south-only
-  // fallback has no concept of an attached neighbor blocking that edge.
-  function resolvePieceDoor(piece, entry) {
-    if (!window.BuildingDoor) return null;
-    const normalized = window.BuildingDoor.normalizePieceData(piece);
-    if (!normalized?.footprint?.door) return _deriveSouthBiasedDoor(entry);
-    let doorEnt = window.BuildingDoor.resolveDoorEntrance(piece);
-    // Some catalog pieces can carry a stale footprint.door authored before
-    // this piece existed in its current footprint — resolveDoorEntrance
-    // trusts it blindly, producing
-    // a cell outside the piece's own normalized bbox. Fall back to the pure
-    // geometric porch/south-edge heuristic (deriveDoorLocal, ignoring the
-    // bogus authored point) whenever that happens.
-    if (doorEnt && doorEnt.cells?.[0]) {
-      const c = doorEnt.cells[0];
-      if (c.x < 0 || c.x >= doorEnt.bboxW || c.y < 0 || c.y >= doorEnt.bboxD) {
-        doorEnt = window.BuildingDoor.deriveDoorLocal(piece);
+  // ── Roof-axis voting + same-direction extension ────────────────────────
+  // Ported from the reference hobunji_modular_farmhouse_join_demo. A
+  // disconnected piece defaults to HousePieceGen's own long-axis roof rule
+  // (w>=h -> x-ridge, else z-ridge). Once two pieces' footprints touch,
+  // though, their shared edge votes for whichever ridge axis actually points
+  // INTO the neighbor — so a cluster's gables actively point at each other
+  // instead of resolving independently and (often) reading as visually
+  // disconnected boxes. When two adjacent pieces settle on the SAME axis,
+  // the smaller one's RENDERED footprint (never its actual gameplay
+  // footprint/save data) also penetrates 1 tile into the larger one so
+  // there's no seam down the middle of one continuous roof; equal-area
+  // pieces penetrate into each other by 1 tile each. A partial (not
+  // full-length) shared edge can't be represented that way without
+  // spilling outside the neighbor, so it gets its own small 1-tile-deep
+  // bridging piece instead (see _rebuildExtensionProxies).
+  function _rectAdjacency(a, b) {
+    if (a.col + a.w === b.col || b.col + b.w === a.col) {
+      const start = Math.max(a.row, b.row), end = Math.min(a.row + a.h, b.row + b.h);
+      if (end > start) return { orientation: 'vertical', start, end };
+    }
+    if (a.row + a.h === b.row || b.row + b.h === a.row) {
+      const start = Math.max(a.col, b.col), end = Math.min(a.col + a.w, b.col + b.w);
+      if (end > start) return { orientation: 'horizontal', start, end };
+    }
+    return null;
+  }
+  function _naturalRoofAxis(m) { return m.w >= m.h ? 'x' : 'z'; }
+  function _roofAxisDecision(m, all) {
+    let xScore = 0, zScore = 0;
+    for (const other of all) {
+      if (other === m) continue;
+      const ad = _rectAdjacency(m, other);
+      if (!ad) continue;
+      const shared = ad.end - ad.start;
+      const desired = ad.orientation === 'vertical' ? 'x' : 'z';
+      const ridgeCenterAlongEdge = ad.orientation === 'vertical' ? m.row + m.h / 2 : m.col + m.w / 2;
+      const centerHitsShared = ridgeCenterAlongEdge >= ad.start && ridgeCenterAlongEdge <= ad.end;
+      const weight = shared * (centerHitsShared ? 2 : 1);
+      if (desired === 'x') xScore += weight; else zScore += weight;
+    }
+    const natural = _naturalRoofAxis(m);
+    return xScore === zScore ? natural : (xScore > zScore ? 'x' : 'z');
+  }
+  function _sameDirectionExtensions(all) {
+    const out = [];
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const a = all[i], b = all[j];
+        const ad = _rectAdjacency(a, b);
+        if (!ad) continue;
+        const axisA = _roofAxisDecision(a, all), axisB = _roofAxisDecision(b, all);
+        if (axisA !== axisB) continue;
+        const aa = a.w * a.h, ba = b.w * b.h;
+        const sources = aa === ba ? [[a, b], [b, a]] : (aa < ba ? [[a, b]] : [[b, a]]);
+        for (const [source, host] of sources) {
+          let side, fullSourceSide;
+          if (ad.orientation === 'vertical') {
+            side = (source.col + source.w === host.col) ? 'east' : 'west';
+            fullSourceSide = ad.start === source.row && ad.end === source.row + source.h;
+          } else {
+            side = (source.row + source.h === host.row) ? 'south' : 'north';
+            fullSourceSide = ad.start === source.col && ad.end === source.col + source.w;
+          }
+          out.push({ sourceId: source.id, hostId: host.id, axis: axisA, orientation: ad.orientation, side, start: ad.start, end: ad.end, fullSourceSide });
+        }
       }
     }
-    if (!doorEnt) return null;
-    const world = window.BuildingDoor.doorWorldFromBuilding(doorEnt, entry.col, entry.row, 0, deps.ROWS - 1);
-    if (!world) return null;
-    const { col, row } = world;
-    let side;
-    if (row < entry.row) side = 'north';
-    else if (row >= entry.row + entry.h) side = 'south';
-    else if (col < entry.col) side = 'west';
-    else if (col >= entry.col + entry.w) side = 'east';
-    else {
-      // Authored door resolved inside the piece's own bbox (e.g. a porch
-      // cell tucked against the wall rather than projecting past it) —
-      // fall back to whichever edge it's nearest.
-      const distN = row - entry.row, distS = (entry.row + entry.h - 1) - row;
-      const distW = col - entry.col, distE = (entry.col + entry.w - 1) - col;
-      const min = Math.min(distN, distS, distW, distE);
-      side = min === distN ? 'north' : min === distS ? 'south' : min === distW ? 'west' : 'east';
+    return out;
+  }
+  // Render-only rectangle for a piece — expanded 1 tile into a same-axis
+  // full-shared-edge neighbor per _sameDirectionExtensions. Never mutates
+  // the piece's own col/row/w/h (footprint, door resolution, save data).
+  function _renderRectFor(entry, exts) {
+    let col = entry.col, row = entry.row, w = entry.w, h = entry.h;
+    for (const e of exts) {
+      if (e.sourceId !== entry.id || !e.fullSourceSide) continue;
+      if (e.side === 'east') w += 1;
+      else if (e.side === 'west') { col -= 1; w += 1; }
+      else if (e.side === 'south') h += 1;
+      else if (e.side === 'north') { row -= 1; h += 1; }
     }
-    return { col, row, side };
+    return { col, row, w, h };
+  }
+  // A partial (not full-length) same-axis shared edge can't expand the whole
+  // source rectangle without spilling past the neighbor — just the 1-tile-
+  // deep shared run gets its own small bridging piece instead.
+  function _partialExtensionRect(e, all) {
+    const host = all.find(p => p.id === e.hostId);
+    if (!host) return null;
+    if (e.orientation === 'vertical') {
+      const col = e.side === 'east' ? host.col : host.col + host.w - 1;
+      return { col, row: e.start, w: 1, h: e.end - e.start };
+    }
+    const row = e.side === 'south' ? host.row : host.row + host.h - 1;
+    return { col: e.start, row, w: e.end - e.start, h: 1 };
   }
 
-  function _buildStructureMesh(entry) {
-    const def = deps.getPieceCatalog()[entry.pieceKey];
-    if (!def || typeof HousePieceGen === 'undefined') { deps.debugLog('HousePieceGen not loaded — house piece shown as foundation slab', 'warn'); return; }
-    _loadPiece(def.pieceFile).then(piece => {
-      if (!piece || entry.stage !== 'built' || !deps.getHousePieces().includes(entry)) return;
+  // Rebuilds every BUILT piece's mesh together in one pass — roof-axis
+  // decisions and same-direction extensions are inherently global (a single
+  // piece's roof can depend on every neighbor it touches), so an individual
+  // build/move/demolish always recomputes the whole cluster rather than
+  // patching just the one piece that changed.
+  let _extensionProxyMeshes = [];
+  function _rebuildAllStructureMeshes() {
+    if (typeof HousePieceGen === 'undefined') { deps.debugLog('HousePieceGen not loaded — house pieces shown as foundation slabs', 'warn'); return; }
+    const built = deps.getHousePieces().filter(p => p.stage === 'built');
+    // Clear every stale door registration up front — otherwise the first
+    // few pieces processed below would still see their OWN previous door
+    // sitting in deps.worldObjects (not yet reached in this loop to be
+    // re-registered) and _doorSideBlocked would read that leftover
+    // registration as "someone else is standing here," pushing the door
+    // off its actual preferred side for no real reason.
+    built.forEach(entry => _unregisterDoor(entry));
+    const exts = _sameDirectionExtensions(built);
+    for (const entry of built) {
       _disposeMesh(entry._mesh);
-      entry._doorWorld = resolvePieceDoor(piece, entry);
-      // A piece with no authored footprint.door (the south-biased automatic
-      // case — see resolvePieceDoor) has one uncut, full-length wall face
-      // per side and nothing visually open where the door tile lets you
-      // walk through. Cut a real portal into that side's wall — matching
-      // the reference modular-farmhouse demo's addWallWithEntrances() — and
-      // build the same demo's little entry-tunnel jamb/lintel/roof-cap
-      // structure over the opening. Authored pieces (town/NPC buildings)
-      // already have this baked into their own JSON at authoring time, so
-      // this is skipped whenever footprint.door is set.
-      const normalized = window.BuildingDoor?.normalizePieceData(piece);
-      const hasAuthoredDoor = !!normalized?.footprint?.door;
-      let buildPiece = piece;
-      if (!hasAuthoredDoor && entry._doorWorld) {
-        const { side, col, row } = entry._doorWorld;
-        const idx = (side === 'south' || side === 'north') ? col - entry.col : row - entry.row;
-        const len = (side === 'south' || side === 'north') ? entry.w : entry.h;
-        buildPiece = HousePieceGen.cutDoorPortal(piece, side, idx, len);
-      }
-      entry._mesh = HousePieceGen.buildGroupFromPiece(THREE, buildPiece, entry.col, entry.row, {
-        wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
+      entry._doorWorld = _deriveSouthBiasedDoor(entry);
+      const axis = _roofAxisDecision(entry, built);
+      const render = _renderRectFor(entry, exts);
+      const buildOpts = {
+        axisOverride: axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
         ..._faceMats(),
-      });
-      if (!hasAuthoredDoor && entry._doorWorld) {
+      };
+      if (entry._doorWorld) {
+        const { side, col, row } = entry._doorWorld;
+        buildOpts.doorSide = side;
+        buildOpts.doorIdx  = (side === 'south' || side === 'north') ? col - render.col : row - render.row;
+        buildOpts.doorLen  = (side === 'south' || side === 'north') ? render.w : render.h;
+      }
+      entry._mesh = HousePieceGen.buildGroup(THREE, render.col, render.col + render.w - 1, render.row, render.row + render.h - 1, buildOpts);
+      if (entry._doorWorld) {
         const wallTile = _doorWallTile(entry._doorWorld);
         const tunnel = HousePieceGen.buildEntryTunnelGroup(THREE, wallTile.col, wallTile.row, entry._doorWorld.side, {
-          wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
-          ..._faceMats(),
+          wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
         });
         entry._mesh.add(tunnel);
       }
       deps.scene.add(entry._mesh);
       _registerDoor(entry);
-      deps.onPieceGeometryChanged();
-      // The real shingle GLB may still be loading (a cached singleton
-      // kicked off once at startup — see game.js) — the roof above just
-      // rendered with the tube-mesh fallback in that case. Rebuild once
-      // real shingles are ready so the roof doesn't stay stuck on it.
-      if (!HousePieceGen.shingleReady()) {
-        HousePieceGen.loadShingleGlb('assets/models/').then(() => {
-          if (entry.stage === 'built' && deps.getHousePieces().includes(entry)) _buildStructureMesh(entry);
-        }).catch(() => {});
-      }
-    }).catch(err => deps.debugLog(`House piece build error (${entry.id}): ${err?.message || err}`, 'warn'));
+    }
+    _extensionProxyMeshes.forEach(m => _disposeMesh(m));
+    _extensionProxyMeshes = [];
+    exts.filter(e => !e.fullSourceSide).forEach(e => {
+      const rect = _partialExtensionRect(e, built);
+      if (!rect || rect.w <= 0 || rect.h <= 0) return;
+      const mesh = HousePieceGen.buildGroup(THREE, rect.col, rect.col + rect.w - 1, rect.row, rect.row + rect.h - 1, {
+        axisOverride: e.axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
+      });
+      deps.scene.add(mesh);
+      _extensionProxyMeshes.push(mesh);
+    });
+    deps.onPieceGeometryChanged();
   }
 
   function label(entry) {
@@ -304,13 +370,8 @@
   }
 
   // A door's world tile is usually just outside its own piece's footprint
-  // (the same convention the old hardcoded DOOR_COL/DOOR_ROW used), but a
-  // porch-authored piece (e.g. generic-house-medium.json) can resolve its
-  // door to a tile that's already INSIDE its own footprint — that tile's
-  // generic footprint marker is deliberately overwritten with the door
-  // object below, since triggering Enter there is strictly more useful than
-  // the inert "you're standing on part of the house" marker it replaces.
-  // Registered on its own so it's approachable/interactable like any other
+  // (the same convention the old hardcoded DOOR_COL/DOOR_ROW used). It's
+  // registered on its own so it's approachable/interactable like any other
   // world object (crates, barns) via the reticle, not by literally standing
   // on it. If a later-built neighboring piece ends up sitting directly on
   // this door's outward tile, the door is silently left unregistered rather
@@ -364,8 +425,7 @@
           if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
           if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
           entry.stage = 'built';
-          _disposeMesh(entry._mesh); entry._mesh = null;
-          _buildStructureMesh(entry);
+          _rebuildAllStructureMeshes();
           deps.saveFarmLayout();
           return { ok: true, message: `🔨 ${label(entry)} construction complete!` };
         }
@@ -382,18 +442,24 @@
   function spawnEntry(entry) {
     entry._worldObj = _makeWorldObject(entry);
     entry._mesh = entry.stage === 'built' ? null : _buildFoundationMesh(entry.col, entry.row, entry.w, entry.h);
-    if (entry.stage === 'built') _buildStructureMesh(entry);
     _registerFootprint(entry);
+    if (entry.stage === 'built') _rebuildAllStructureMeshes();
   }
 
-  // Seeds the always-present starter piece — free, built immediately, no
+  // Seeds the always-present starter house — free, built immediately, no
   // foundation step (it's given, not bought). Called once per fresh farm.
+  // Two pieces rather than one: a 4x3 main room plus a 3x3 annex touching
+  // its full-height east edge, so a fresh farm already has two pieces for
+  // the roof-axis vote / same-direction extension system above to resolve,
+  // instead of needing a purchased deed before any of that is ever visible.
   function seedStarter(col, row) {
-    const entry = { id: 'house_starter', pieceKey: 'starter', col, row,
-                     w: deps.getPieceCatalog().starter.w, h: deps.getPieceCatalog().starter.h, stage: 'built' };
-    deps.getHousePieces().push(entry);
-    spawnEntry(entry);
-    return entry;
+    const pieces = deps.getHousePieces();
+    const main  = { id: 'house_starter', pieceKey: 'starter', col, row, w: 4, h: 3, stage: 'built' };
+    const annex = { id: 'house_starter_annex', pieceKey: 'starter', col: col + main.w, row, w: 3, h: 3, stage: 'built' };
+    pieces.push(main, annex);
+    [main, annex].forEach(entry => { entry._worldObj = _makeWorldObject(entry); _registerFootprint(entry); });
+    _rebuildAllStructureMeshes();
+    return main;
   }
 
   function placeDeed(pieceKey, col, row) {
@@ -427,7 +493,9 @@
     _unregisterDoor(entry);
     _disposeMesh(entry._mesh);
     deps.setHousePieces(pieces.filter(p => p.id !== id));
-    deps.onPieceGeometryChanged();
+    // Removing this piece can change its former neighbors' roof-axis vote
+    // and/or same-direction extensions, not just its own geometry.
+    _rebuildAllStructureMeshes();
     deps.saveFarmLayout();
     deps.saveMemberWorldData();
     const msg = recovered > 0
@@ -441,12 +509,12 @@
   // per-barn move(), just applied to every piece at once so their existing
   // relative arrangement (already valid — each piece was placed touching
   // another) never needs re-validating against itself. `newStarterCol/Row`
-  // is the new position for the starter piece; every other piece keeps its
-  // offset from it.
+  // is the new position for the (main) starter piece; every other piece
+  // keeps its offset from it.
   function moveHouse(newStarterCol, newStarterRow) {
     if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move the house." };
     const pieces = deps.getHousePieces();
-    const starter = pieces.find(p => p.pieceKey === 'starter');
+    const starter = pieces.find(p => p.id === 'house_starter');
     if (!starter) return { ok: false, message: 'House not found.' };
     const dCol = newStarterCol - starter.col, dRow = newStarterRow - starter.row;
     if (!dCol && !dRow) return { ok: false, message: 'Already there.' };
@@ -467,22 +535,19 @@
       clearFootprint(p.col, p.row, p.w, p.h);
       if (p.stage === 'foundation' && p._mesh) {
         p._mesh.position.set(p.col + p.w / 2, 0.07, p.row + p.h / 2);
-      } else if (p.stage === 'built') {
-        _disposeMesh(p._mesh); p._mesh = null;
-        _buildStructureMesh(p); // also re-resolves and re-registers this piece's door
       }
     });
-    deps.onPieceGeometryChanged();
+    _rebuildAllStructureMeshes(); // rebuilds every built piece at its new position; also re-resolves/re-registers doors
     deps.saveFarmLayout();
     deps.saveMemberWorldData();
     return { ok: true, message: 'Moved the house.' };
   }
 
   // Moves one non-starter piece on its own (mirrors FarmBuildings' per-barn
-  // move()) — the starter/main room isn't movable this way since every other
-  // piece is placed relative to it; use moveHouse to reposition the whole
-  // cluster instead. Still must end up touching some other piece, same rule
-  // canPlaceAt enforces for a brand-new placement.
+  // move()) — the starter (main room + annex) isn't movable this way since
+  // every other piece is placed relative to it; use moveHouse to reposition
+  // the whole cluster instead. Still must end up touching some other piece,
+  // same rule canPlaceAt enforces for a brand-new placement.
   function movePiece(id, newCol, newRow) {
     if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move house pieces." };
     const pieces = deps.getHousePieces();
@@ -506,10 +571,11 @@
     if (entry.stage === 'foundation' && entry._mesh) {
       entry._mesh.position.set(entry.col + entry.w / 2, 0.07, entry.row + entry.h / 2);
     } else if (entry.stage === 'built') {
-      _disposeMesh(entry._mesh); entry._mesh = null;
-      _buildStructureMesh(entry); // also re-resolves and re-registers this piece's door
+      // Rebuilds every built piece, not just this one — moving it can change
+      // the roof-axis vote/same-direction extensions for whichever pieces it
+      // used to (or now does) touch.
+      _rebuildAllStructureMeshes();
     }
-    deps.onPieceGeometryChanged();
     deps.saveFarmLayout();
     deps.saveMemberWorldData();
     return { ok: true, message: `Moved ${label(entry)}.` };
@@ -518,6 +584,8 @@
   function clearAll() {
     const pieces = deps.getHousePieces();
     pieces.forEach(entry => { _unregisterFootprint(entry); _unregisterDoor(entry); _disposeMesh(entry._mesh); });
+    _extensionProxyMeshes.forEach(m => _disposeMesh(m));
+    _extensionProxyMeshes = [];
     deps.setHousePieces([]);
   }
 

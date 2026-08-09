@@ -2733,7 +2733,10 @@
         // starter with nothing else to restore.
         const starterEntry = housePieces.find(p => p.id === 'house_starter');
         if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
-          const savedStarter = layout.housePieces.find(p => p.pieceKey === 'starter');
+          // Both starter pieces (main room + annex) share pieceKey 'starter'
+          // now — match by id specifically so this always finds the main
+          // room, not whichever of the two happens to sort first.
+          const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
           if (savedStarter && starterEntry && (savedStarter.col !== starterEntry.col || savedStarter.row !== starterEntry.row)) {
             window.HousePieces.clearAll();
             window.HousePieces.seedStarter(savedStarter.col, savedStarter.row);
@@ -9994,15 +9997,22 @@
       // js/carpenter-shop.js), placed touching the existing house cluster,
       // then built the same foundation->built way as a barn (see
       // js/house-pieces.js). 'starter' isn't purchasable (no price/deedItem)
-      // — it's the always-present piece every farm is seeded with, matching
-      // the old Highland House's 5x4 footprint via an already-authored piece
-      // file that already has a chimney + entry tunnel + porch baked in.
-      // Synchronous startup default — overwritten from docs/config/shops/
-      // shop-stock.json's carpenterHouseDeeds.pieces once it loads.
+      // — it's the always-present piece(s) every farm is seeded with (see
+      // HousePieces.seedStarter, which actually spawns a 4x3 main room plus
+      // a 3x3 annex touching it — HOUSE_PIECE_CATALOG.starter's own w/h
+      // below is otherwise unused, kept only for shape/documentation
+      // consistency with the rest of this catalog). Every house piece
+      // (starter and deeds alike) is generated live by HousePieceGen.build
+      // Group with a real roof-axis vote + door portal cut against its
+      // current neighbors — see house-pieces.js's _rebuildAllStructureMeshes
+      // — rather than loaded from an authored piece JSON file, so any w×h
+      // works without needing a matching file. Synchronous startup default —
+      // overwritten from docs/config/shops/shop-stock.json's
+      // carpenterHouseDeeds.pieces once it loads.
       let HOUSE_PIECE_CATALOG = {
-        starter:   { label: 'House',           w: 4, h: 5, pieceFile: 'config/pieces/house-section-5x4.json' },
-        largeWing: { label: 'Large Wing Deed', w: 5, h: 7, pieceFile: 'config/pieces/house-section-7x5.json', price: 1300, deedItem: 'houseDeedLargeWing' },
-        smallRoom: { label: 'Small Room Deed', w: 3, h: 3, pieceFile: 'config/pieces/house-section-3x3.json', price: 400,  deedItem: 'houseDeedSmallRoom'  },
+        starter:   { label: 'House',           w: 4, h: 3 },
+        largeWing: { label: 'Large Wing Deed', w: 5, h: 7, price: 1300, deedItem: 'houseDeedLargeWing' },
+        smallRoom: { label: 'Small Room Deed', w: 3, h: 3, price: 400,  deedItem: 'houseDeedSmallRoom'  },
       };
       // Loaded config (docs/config/shops/shop-stock.json) replaces
       // WARES_POOLS/GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
