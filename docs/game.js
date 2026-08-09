@@ -2513,6 +2513,20 @@
         return toRemove.length;
       }
 
+      // ── Furniture placer ─────────────────────────────────────────
+      // Item key of an owned decor furniture piece armed for click-to-place
+      // — same shape as the farm editor's own brush toggle (see
+      // farmEditMode/farmEditBrush below), just for a single furniture
+      // item instead of a terrain/crop type. Set by the Furniture Placer
+      // panel (js/furniture-placer.js), consumed by the pointerdown handler
+      // right after the farm editor's own.
+      let furniturePlacementArmedKey = null;
+      function armFurniturePlacement(itemKey) {
+        furniturePlacementArmedKey = itemKey || null;
+        window.FurniturePlacer?.render();
+      }
+      function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
+
       // ── Farm editor ───────────────────────────────────────────────
       let farmEditMode = false;
       let farmEditBrushType = 'terrain'; // 'terrain'|'crop'|'object'|'furniture'|'decor'|'erase'
@@ -10714,23 +10728,6 @@
         return stacks[activeItemIndex];
       }
 
-      // Equips an inventory item as the active held ITEM (not tool) — the
-      // same state cycleActiveInventoryItem/the item-hold gesture already
-      // drive, just jumped to directly by key instead of by scrolling. Used
-      // by the Furniture Placer panel so picking an owned decor item there
-      // arms the exact same aim-and-interact placement flow the action bar
-      // already offers for a manually-selected item, instead of building a
-      // second, separate placement pipeline.
-      function selectItemForPlacement(key) {
-        const stacks = getInventoryStackItems();
-        const idx = stacks.findIndex(s => s.key === key);
-        if (idx < 0) return false;
-        activeItemIndex = idx;
-        heldMode = 'item';
-        refreshActionBar();
-        return true;
-      }
-
       function clampInventoryStack(key) {
         // Used after transfers/sales so zero-count stacks stop occupying item boxes.
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
@@ -11390,6 +11387,21 @@
         _edRay.setFromCamera(_edNDC, camera);
         if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
           return { col: clamp(Math.floor(_edHit.x), 0, COLS - 1), row: clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
+        }
+        return null;
+      }
+      // Same screen->ground-plane raycast as _screenToFarmTile, generalized
+      // to whichever area is actually active (farm or interior — the only
+      // two areas furniture placement supports) via getActiveCols/Rows
+      // instead of hardcoded farm COLS/ROWS. Shares the same camera/scratch
+      // raycast objects since only one area ever renders at a time.
+      function _screenToActiveTile(clientX, clientY) {
+        const rect = threeContainer.getBoundingClientRect();
+        _edNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        _edRay.setFromCamera(_edNDC, camera);
+        if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
+          return { col: clamp(Math.floor(_edHit.x), 0, getActiveCols() - 1), row: clamp(Math.floor(_edHit.z), 0, getActiveRows() - 1) };
         }
         return null;
       }
@@ -17867,8 +17879,11 @@
         // be open.
         // The farm editor / dev spawner cheat buttons are dev-mode-gated
         // (see dev-spawner.js's refreshEditorButtonVisibility) — update them
-        // immediately instead of waiting for the next area change.
+        // immediately instead of waiting for the next area change. The
+        // furniture placer button shares that same slot when dev mode is
+        // off (see .fp-shifted), so it also needs an immediate refresh.
         window.DevSpawner?.refreshEditorButtonVisibility();
+        window.FurniturePlacer?.refreshVisibility();
       });
       // Cycles through a zone's dens in a shuffled, non-repeating order
       // (per zone) instead of an independent random pick every press —
@@ -20883,16 +20898,35 @@
           }
         });
       }
+      // ── Furniture placer pointer handler ───────────────────────────
+      // Click-to-place, same interaction model as the farm editor's own
+      // brush below (tap a tile, it applies immediately) rather than the
+      // hotbar's "equip item, aim reticle, interact" flow — checked first
+      // so an armed furniture placement always wins over the (dev-mode-
+      // only, so rarely simultaneously active) farm editor brush.
+      threeContainer.addEventListener('pointerdown', (e) => {
+        if (!furniturePlacementArmedKey || (currentArea !== 'farm' && currentArea !== 'interior')) return;
+        e.stopPropagation();
+        const t = _screenToActiveTile(e.clientX, e.clientY);
+        if (!t) return;
+        const decorKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        if (!decorKey) return;
+        const result = placeDecorativeFurniture(t.col, t.row, decorKey);
+        showToast(result.message, result.ok);
+        if (result.ok && (inventory[furniturePlacementArmedKey] || 0) <= 0) furniturePlacementArmedKey = null;
+        window.FurniturePlacer?.render();
+      });
+
       // ── Farm editor pointer handlers ──────────────────────────────
       threeContainer.addEventListener('pointerdown', (e) => {
-        if (!farmEditMode || currentArea !== 'farm') return;
+        if (furniturePlacementArmedKey || !farmEditMode || currentArea !== 'farm') return;
         e.stopPropagation();
         _editorPainting = true;
         const t = _screenToFarmTile(e.clientX, e.clientY);
         if (t) applyFarmEditBrush(t.col, t.row);
       });
       threeContainer.addEventListener('pointermove', (e) => {
-        if (!farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
+        if (furniturePlacementArmedKey || !farmEditMode || currentArea !== 'farm' || !_editorPainting) return;
         e.stopPropagation();
         const t = _screenToFarmTile(e.clientX, e.clientY);
         if (t) applyFarmEditBrush(t.col, t.row);
@@ -21543,10 +21577,12 @@
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
         inventory,
         hasFarmPermission,
-        selectItemForPlacement,
+        armFurniturePlacement,
+        getArmedFurniturePlacementKey,
         showToast,
         esc,
         isPaused: () => paused,
+        isDevMode: () => s_devMode,
       });
 
       window.TownZoneBuildings?.init({

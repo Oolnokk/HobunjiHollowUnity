@@ -320,12 +320,14 @@
     #devSpawnBtn:hover { background: rgba(255,255,255,0.12); }
     #devSpawnBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
 
-    /* ── Furniture placer toggle button (own slot, left of the farm editor/
-       dev spawn slot — the two can be visible at once: a dev-mode farm
-       owner sees both the cheat pencil and the normal furniture placer) ── */
+    /* ── Furniture placer toggle button — takes the SAME slot the farm
+       editor pencil uses (dev mode is off for virtually every player, so
+       that slot is normally empty). Only shifts one slot further left
+       (.fp-shifted, toggled in refreshVisibility) while dev mode is on and
+       the cheat pencil/spawn menu buttons are also occupying that slot. ── */
     #furniturePlacerBtn {
       position: fixed;
-      left: calc(var(--play-right) - 15 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
+      left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
       width: calc(4 * var(--col)); height: calc(2 * var(--row));
       z-index: 60;
       border-radius: 0 0 14px 14px;
@@ -338,6 +340,7 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.35);
       transition: background 0.15s; cursor: pointer;
     }
+    #furniturePlacerBtn.fp-shifted { left: calc(var(--play-right) - 15 * var(--col)); }
     #furniturePlacerBtn:hover { background: rgba(255,255,255,0.12); }
     #furniturePlacerBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
 
@@ -2538,6 +2541,7 @@
       padding: 6px 8px; border-radius: 8px;
       background: rgba(255,255,255,0.025); border: 1px solid var(--border);
     }
+    .farm-row.selected { outline: 2px solid var(--accent, #f9e28a); background: rgba(249,226,138,0.08); }
     /* Ownership-transfer/marketplace controls — full-width so they wrap onto
        their own line under the main pick/name/value row instead of cramming
        into it. */
