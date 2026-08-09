@@ -142,7 +142,8 @@
   function withIndoorOutdoorBgsProfile(callback) {
     const musicDeps = _musicRuntimeDeps; // Used as Music's injected current-area/building-area dependency set.
     const actualArea = musicDeps?.getCurrentArea?.(); // Used to decide whether this update is occurring inside a building.
-    const indoors = actualArea === 'interior' || !!musicDeps?._isBuildingArea?.(actualArea); // Used to leave every exterior update completely unchanged.
+    const indoors = actualArea === 'interior'
+      || !!(musicDeps && musicDeps._isBuildingArea?.(actualArea)); // Used to leave every exterior update completely unchanged.
     if (!indoors) { _lastIndoorBgsArea = ''; return callback(); }
 
     const audioCfg = root.AudioSystem?.gameAudioConfig?.(); // Used as the live config object Music itself reads during the wrapped call.
