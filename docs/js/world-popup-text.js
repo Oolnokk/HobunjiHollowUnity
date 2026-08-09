@@ -13,8 +13,8 @@
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow',
     },
-    floatPlus: { worldHeight: 0.18, xOffsetPercent: 50, yOffsetPercent: 13, lifetimeMs: 1150 },
-    centeredFiveRow: { worldHeight: 0.16, xOffsetPercent: 50, yOffsetPercent: -12, lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
+    floatPlus: { worldHeight: 0.18, xOffsetPercent: 10, yOffsetPercent: 13, lifetimeMs: 1150 },
+    centeredFiveRow: { worldHeight: 0.16, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
       masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff',

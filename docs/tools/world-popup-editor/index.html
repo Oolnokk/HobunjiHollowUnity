@@ -148,7 +148,7 @@ function setEditingMode(mode){
 }
 function replayBurst(){
   if(!avatarModel)return;popupRuntime.clear();
-  if(editingMode==='floatPlus'){popupRuntime.showChange('damage',-18,{root:avatarHolder,mode:'floatPlus'});popupRuntime.showChange('healing',7,{root:avatarHolder,mode:'floatPlus'});return}
+  if(editingMode==='floatPlus'){popupRuntime.showChange('damage',-18,{root:avatarHolder,mode:'floatPlus'});return}
   popupRuntime.queueReward('loot','+2 Pine Log',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('currency','+24g',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('favor','+8 Favor',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('masteryXp','+1 Hatchet Mastery',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('skillXp','+5 Farming XP',{root:avatarHolder,mode:'centeredFiveRow'});
 }
 function setCamera(view){const distance=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance)||3.2;const position=view==='front'?[0,distance*.12,distance]:[distance*.55,distance*.28,distance*.88];camera.position.set(...position);camera.lookAt(0,0,0);controls?.target.set(0,0,0);controls?.update()}
