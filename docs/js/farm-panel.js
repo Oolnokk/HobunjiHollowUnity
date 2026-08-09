@@ -294,17 +294,17 @@
   }
 
   // ── House Layout editor ─────────────────────────────────────────────
-  // Opened from the consolidated "House" row's Edit Layout button (the
-  // whole-farm glance canvas above is 10px/tile — fine for spotting a barn,
-  // too coarse to click reliably between two touching house pieces). Own
-  // zoomed-in canvas (HOUSE_LAYOUT_PX px/tile, cropped to the house's own
-  // bounding box + margin) for precise move/place clicks, a piece list with
-  // direct Move/Build/Demolish buttons (no need to walk to a foundation
-  // in-world first), and a locked-camera top-down 3D snapshot of the same
-  // live scene for a clearer read on the actual roof shapes than the flat
-  // 2D canvas alone.
-  let _houseLayoutPlacementMode = null; // { type: 'moveHouse' } | { type: 'movePiece', pieceId } | { type: 'placeHouseDeed', pieceKey }
-  const HOUSE_LAYOUT_PX = 32;
+  // A full-screen "hidden tab" opened from the consolidated "House" row's
+  // Edit Layout button — not a small popup. Mirrors the reference
+  // hobunji_modular_farmhouse_join_demo's own Exterior 3D viewport: a
+  // locked (no orbit/rotate) top-down orthographic camera over the live
+  // farm scene, and you MOVE a piece by dragging it directly in that
+  // viewport instead of arming a mode and clicking a separate flat 2D map.
+  // Actions with no natural drag gesture (select/build/demolish/rotate a
+  // piece, place a new owned deed) live in the side panel instead.
+  let _houseLayoutSelectedId = null;         // piece id whose actions show in the side panel
+  let _houseLayoutPlacementMode = null;      // { type: 'placeHouseDeed', pieceKey } — armed by a Deeds Place button, consumed by the next plain (non-drag) tap
+  let _houseLayoutDrag = null;               // { entry, moved, grabDX, grabDZ, candidateCol, candidateRow, isWholeHouse } while a pointer is down on a piece
   const HOUSE_LAYOUT_MARGIN = 2;
 
   function openHouseLayoutModal() {
@@ -317,7 +317,14 @@
       closeBtn.dataset.bound = '1';
       closeBtn.addEventListener('click', closeHouseLayoutModal);
     }
+    if (!window.__houseLayoutResizeBound) {
+      window.__houseLayoutResizeBound = true;
+      window.addEventListener('resize', () => {
+        if (document.getElementById('houseLayoutModal')?.classList.contains('open')) _renderHouseLayout3d();
+      });
+    }
     renderHouseLayoutModal();
+    if (_houseLayoutRafId === null) _houseLayoutTick();
   }
   function closeHouseLayoutModal() {
     const modal = document.getElementById('houseLayoutModal');
@@ -325,11 +332,15 @@
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
     _houseLayoutPlacementMode = null;
+    _houseLayoutDrag = null;
+    _houseLayoutSelectedId = null;
+    _hideGhost();
+    if (_houseLayoutRafId !== null) { cancelAnimationFrame(_houseLayoutRafId); _houseLayoutRafId = null; }
   }
 
   // House pieces' own bounding box (every current piece, foundation or
   // built) plus a fixed margin, clamped to the farm's own bounds — defines
-  // both the zoomed 2D canvas's crop window and the 3D camera framing.
+  // the 3D camera's framing.
   function _houseLayoutViewBounds() {
     const pieces = deps.getHousePieces();
     if (!pieces.length) return { col: 0, row: 0, w: Math.min(deps.COLS, 10), h: Math.min(deps.ROWS, 10) };
@@ -345,183 +356,305 @@
     return { col, row, w, h };
   }
 
-  function _renderHouseLayoutCanvas(bounds) {
-    const canvas = document.getElementById('houseLayoutCanvas');
-    if (!canvas) return;
-    const PX = HOUSE_LAYOUT_PX;
-    const TILE_COLORS = _tileColors();
-    canvas.width = bounds.w * PX;
-    canvas.height = bounds.h * PX;
-    const ctx = canvas.getContext('2d');
-    const grid = deps.getGrid();
-    for (let r = 0; r < bounds.h; r++) {
-      for (let c = 0; c < bounds.w; c++) {
-        const gc = bounds.col + c, gr = bounds.row + r;
-        const tile = grid[gr]?.[gc];
-        ctx.fillStyle = tile ? (TILE_COLORS[tile.type] || '#3c6e3f') : '#1a1a1a';
-        ctx.fillRect(c * PX, r * PX, PX, PX);
-        if (deps.isHouseFootprint(gc, gr)) {
-          ctx.fillStyle = 'rgba(120,90,60,0.9)';
-          ctx.fillRect(c * PX, r * PX, PX, PX);
-        }
-      }
-    }
-    // Grid lines, then a bright outline per piece (dashed while still a
-    // foundation) so touching pieces still read as distinct rooms.
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
-    for (let c = 0; c <= bounds.w; c++) { ctx.beginPath(); ctx.moveTo(c * PX, 0); ctx.lineTo(c * PX, bounds.h * PX); ctx.stroke(); }
-    for (let r = 0; r <= bounds.h; r++) { ctx.beginPath(); ctx.moveTo(0, r * PX); ctx.lineTo(bounds.w * PX, r * PX); ctx.stroke(); }
-    deps.getHousePieces().forEach(p => {
-      const x = (p.col - bounds.col) * PX, y = (p.row - bounds.row) * PX;
-      ctx.setLineDash(p.stage === 'foundation' ? [5, 4] : []);
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, y + 1, p.w * PX - 2, p.h * PX - 2);
-    });
-    ctx.setLineDash([]);
-    canvas.style.cursor = _houseLayoutPlacementMode ? 'crosshair' : '';
-  }
-
-  function _bindHouseLayoutCanvasClick() {
-    const canvas = document.getElementById('houseLayoutCanvas');
-    if (!canvas || canvas.dataset.clickBound) return;
-    canvas.dataset.clickBound = '1';
-    canvas.addEventListener('click', (e) => {
-      if (!_houseLayoutPlacementMode || !deps.hasFarmPermission('alterFarm')) return;
-      const bounds = _houseLayoutViewBounds();
-      const rect = canvas.getBoundingClientRect();
-      const PX = HOUSE_LAYOUT_PX;
-      const col = bounds.col + Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / PX);
-      const row = bounds.row + Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
-      const mode = _houseLayoutPlacementMode;
-      const result = mode.type === 'moveHouse' ? deps.moveHouse(col, row)
-        : mode.type === 'movePiece' ? deps.movePiece(mode.pieceId, col, row)
-        : deps.placeHouseDeed(mode.pieceKey, col, row);
-      deps.showToast(result.message, result.ok);
-      if (result.ok) _houseLayoutPlacementMode = null;
-      renderHouseLayoutModal();
-      renderFarmBuildings(); // keep the main list's room-count note in sync
-    });
-  }
-
-  function _renderHouseLayoutList() {
-    const list = document.getElementById('houseLayoutList');
-    const note = document.getElementById('houseLayoutNote');
-    const cancelBtn = document.getElementById('houseLayoutCancelBtn');
-    if (!list) return;
-    const canAlter = deps.hasFarmPermission('alterFarm');
-    const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
-    list.innerHTML = '';
-
-    if (note) {
-      note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can edit the house."
-        : _houseLayoutPlacementMode
-          ? (_houseLayoutPlacementMode.type === 'moveHouse' ? 'Click where the main room should go — the rest of the house moves with it.'
-            : _houseLayoutPlacementMode.type === 'movePiece' ? 'Click a tile touching the rest of your house to move this room there.'
-            : `Click a tile touching your house to place the ${HOUSE_PIECE_CATALOG[_houseLayoutPlacementMode.pieceKey].label} foundation.`)
-          : 'Move or Build a room, or place an owned house deed, then click the grid above.';
-    }
-    if (cancelBtn) {
-      cancelBtn.hidden = !_houseLayoutPlacementMode;
-      cancelBtn.onclick = () => { _houseLayoutPlacementMode = null; renderHouseLayoutModal(); };
-    }
-
-    const addRow = (labelText, note2, buttons) => {
-      const row = document.createElement('div');
-      row.className = 'farm-row';
-      row.innerHTML = `<span class="farm-row-name">${deps.esc(labelText)}</span><span class="farm-note">${deps.esc(note2)}</span>`;
-      buttons.forEach(({ text, onClick }) => {
-        const btn = document.createElement('button');
-        btn.className = 'settings-small-btn';
-        btn.textContent = text;
-        btn.addEventListener('click', onClick);
-        row.appendChild(btn);
-      });
-      list.appendChild(row);
-    };
-
-    deps.getHousePieces().forEach(p => {
-      const pieceLabel = '🏠 ' + deps.housePieceLabel(p);
-      const buttons = [];
-      if (canAlter) {
-        if (p.stage === 'foundation') {
-          buttons.push({ text: 'Build', onClick: () => {
-            const result = deps.buildHousePiece(p.id);
-            deps.showToast(result.message, result.ok);
-            renderHouseLayoutModal(); renderFarmBuildings();
-          } });
-          buttons.push({ text: 'Demolish', onClick: () => {
-            const result = deps.demolishHousePiece(p.id);
-            deps.showToast(result.message, result.ok);
-            renderHouseLayoutModal(); renderFarmBuildings();
-          } });
-        } else {
-          buttons.push({ text: 'Move', onClick: () => {
-            _houseLayoutPlacementMode = p.pieceKey === 'starter' ? { type: 'moveHouse' } : { type: 'movePiece', pieceId: p.id };
-            renderHouseLayoutModal();
-          } });
-          if (p.pieceKey !== 'starter') {
-            buttons.push({ text: 'Demolish', onClick: () => {
-              const result = deps.demolishHousePiece(p.id);
-              deps.showToast(result.message, result.ok);
-              renderHouseLayoutModal(); renderFarmBuildings();
-            } });
-          }
-        }
-      }
-      addRow(`${pieceLabel}${p.stage === 'foundation' ? ' (foundation)' : ''}`, `${p.w}×${p.h}`, buttons);
-    });
-
-    if (canAlter) {
-      Object.entries(HOUSE_PIECE_CATALOG).forEach(([pieceKey, def]) => {
-        if (!def.deedItem) return;
-        const owned = deps.inventory[def.deedItem] || 0;
-        if (owned < 1) return;
-        addRow(`📜 ${def.label}`, `${owned} owned`, [{ text: 'Place', onClick: () => {
-          _houseLayoutPlacementMode = { type: 'placeHouseDeed', pieceKey };
-          renderHouseLayoutModal();
-        } }]);
-      });
-    }
-  }
-
-  // Locked-camera top-down orthographic snapshot of the live farm scene,
-  // cropped/centered on the house's current bounding box — reuses the same
-  // scene every other farm/house rendering already lives in (deps.scene),
-  // so lighting, terrain, and every other piece/building show up exactly
-  // as they do in the real 3D world. Renderer/camera are created once and
-  // reused across opens; no per-frame render loop or user camera control —
-  // just re-rendered on open and after every layout-changing action.
+  // Locked-camera top-down orthographic view of the live farm scene, framed
+  // on the house's current bounding box — reuses the same scene every other
+  // farm/house rendering already lives in (deps.scene), so lighting,
+  // terrain, and every other piece/building show up exactly as they do in
+  // the real 3D world. Renderer/camera/overlay scene (for the drag-ghost
+  // and selection outline — kept out of the real scene so they never affect
+  // normal gameplay rendering) are created once and reused across opens.
   let _houseLayout3d = null;
   function _ensureHouseLayout3d() {
     if (_houseLayout3d) return _houseLayout3d;
     const canvas = document.getElementById('houseLayout3dCanvas');
     if (!canvas || !deps.scene || typeof THREE === 'undefined') return null;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(canvas.width, canvas.height, false);
+    renderer.autoClear = false; // manual clear() once per frame, see _renderHouseLayout3d — lets the overlay scene draw over the real one without a second clear
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
     camera.up.set(0, 0, -1); // straight down would leave the default (0,1,0) up parallel to the view direction
-    _houseLayout3d = { renderer, camera };
+
+    const overlayScene = new THREE.Scene();
+    const ghostMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xf9e28a, transparent: true, opacity: 0.4, depthTest: false })
+    );
+    ghostMesh.visible = false;
+    overlayScene.add(ghostMesh);
+    const selectBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false })
+    );
+    selectBox.visible = false;
+    overlayScene.add(selectBox);
+
+    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox };
     return _houseLayout3d;
   }
-  function _renderHouseLayout3d(bounds) {
+  // Sizes the renderer to the viewport container's actual CSS size and
+  // frames the locked top-down camera on the house's bounding box, fit to
+  // whichever axis (width/height) is tighter for the container's aspect
+  // ratio so the house is never cropped.
+  function _resizeAndFrameHouseLayout3d() {
     const ctx3d = _ensureHouseLayout3d();
-    if (!ctx3d) return;
-    const { renderer, camera } = ctx3d;
+    if (!ctx3d) return null;
+    const canvas = document.getElementById('houseLayout3dCanvas');
+    const wrap = canvas?.parentElement;
+    if (!wrap) return null;
+    const w = Math.max(50, wrap.clientWidth), h = Math.max(50, wrap.clientHeight);
+    if (canvas.width !== w || canvas.height !== h) ctx3d.renderer.setSize(w, h, false);
+    const bounds = _houseLayoutViewBounds();
     const cx = bounds.col + bounds.w / 2, cz = bounds.row + bounds.h / 2;
-    const halfW = Math.max(2, bounds.w / 2), halfH = Math.max(2, bounds.h / 2);
+    const aspect = w / h;
+    let halfH = Math.max(3, bounds.h / 2 + 1), halfW = halfH * aspect;
+    if (halfW < bounds.w / 2 + 1) { halfW = Math.max(3, bounds.w / 2 + 1); halfH = halfW / aspect; }
+    const { camera } = ctx3d;
     camera.left = -halfW; camera.right = halfW; camera.top = halfH; camera.bottom = -halfH;
     camera.position.set(cx, 30, cz);
     camera.lookAt(cx, 0, cz);
     camera.updateProjectionMatrix();
+    return bounds;
+  }
+  function _renderHouseLayout3d() {
+    const ctx3d = _ensureHouseLayout3d();
+    if (!ctx3d) return;
+    _resizeAndFrameHouseLayout3d();
+    const { renderer, camera, overlayScene, selectBox } = ctx3d;
+    const selected = deps.getHousePieces().find(p => p.id === _houseLayoutSelectedId);
+    if (selected) {
+      selectBox.visible = true;
+      selectBox.geometry.dispose();
+      selectBox.geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(selected.w, 1.6, selected.h));
+      selectBox.position.set(selected.col + selected.w / 2, 0.8, selected.row + selected.h / 2);
+    } else {
+      selectBox.visible = false;
+    }
+    renderer.clear();
     renderer.render(deps.scene, camera);
+    renderer.render(overlayScene, camera);
+  }
+  let _houseLayoutRafId = null;
+  function _houseLayoutTick() {
+    _renderHouseLayout3d();
+    _houseLayoutRafId = requestAnimationFrame(_houseLayoutTick);
+  }
+
+  function _updateGhost(drag) {
+    const ctx3d = _ensureHouseLayout3d();
+    if (!ctx3d) return;
+    let gw = drag.entry.w, gh = drag.entry.h, gCol = drag.candidateCol, gRow = drag.candidateRow;
+    if (drag.isWholeHouse) {
+      // Dragging any starter-tagged piece previews the WHOLE house cluster's
+      // move (matches moveHouse, which relocates every starter piece
+      // together), not just the one piece the pointer happens to be over.
+      const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
+      let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+      deps.getHousePieces().filter(p => p.pieceKey === 'starter').forEach(p => {
+        minC = Math.min(minC, p.col); minR = Math.min(minR, p.row);
+        maxC = Math.max(maxC, p.col + p.w); maxR = Math.max(maxR, p.row + p.h);
+      });
+      gCol = minC + dCol; gRow = minR + dRow; gw = maxC - minC; gh = maxR - minR;
+    }
+    const { ghostMesh } = ctx3d;
+    ghostMesh.geometry.dispose();
+    ghostMesh.geometry = new THREE.BoxGeometry(gw, 0.2, gh);
+    ghostMesh.position.set(gCol + gw / 2, 1.7, gRow + gh / 2);
+    ghostMesh.visible = true;
+  }
+  function _hideGhost() {
+    if (_houseLayout3d) _houseLayout3d.ghostMesh.visible = false;
+  }
+
+  // Locked orthographic top-down camera: any (ndcX,ndcY) unprojects to the
+  // same world (X,Z) regardless of depth (parallel projection), so this is
+  // an exact screen->ground conversion with no raycasting against real
+  // geometry needed at all.
+  function _screenToWorldXZ(clientX, clientY) {
+    const ctx3d = _ensureHouseLayout3d();
+    const canvas = document.getElementById('houseLayout3dCanvas');
+    if (!ctx3d || !canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    const world = new THREE.Vector3(ndcX, ndcY, 0).unproject(ctx3d.camera);
+    return { x: world.x, z: world.z };
+  }
+  function _housePieceAt(worldX, worldZ) {
+    const pieces = deps.getHousePieces();
+    for (let i = pieces.length - 1; i >= 0; i--) {
+      const p = pieces[i];
+      if (worldX >= p.col && worldX < p.col + p.w && worldZ >= p.row && worldZ < p.row + p.h) return p;
+    }
+    return null;
+  }
+
+  function _bindHouseLayoutPointer() {
+    const canvas = document.getElementById('houseLayout3dCanvas');
+    if (!canvas || canvas.dataset.pointerBound) return;
+    canvas.dataset.pointerBound = '1';
+    let ptrId = null, startX = 0, startY = 0;
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (ptrId !== null) return;
+      ptrId = e.pointerId; startX = e.clientX; startY = e.clientY;
+      try { canvas.setPointerCapture(e.pointerId); } catch (_e) { /* degrade gracefully */ }
+      if (_houseLayoutPlacementMode || !deps.hasFarmPermission('alterFarm')) return;
+      const world = _screenToWorldXZ(e.clientX, e.clientY);
+      const piece = world && _housePieceAt(world.x, world.z);
+      if (!piece) return;
+      _houseLayoutDrag = {
+        entry: piece, moved: false,
+        grabDX: world.x - piece.col, grabDZ: world.z - piece.row,
+        candidateCol: piece.col, candidateRow: piece.row,
+        isWholeHouse: piece.pieceKey === 'starter',
+      };
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== ptrId || !_houseLayoutDrag) return;
+      if (!_houseLayoutDrag.moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;
+      _houseLayoutDrag.moved = true;
+      const world = _screenToWorldXZ(e.clientX, e.clientY);
+      if (!world) return;
+      _houseLayoutDrag.candidateCol = Math.round(world.x - _houseLayoutDrag.grabDX);
+      _houseLayoutDrag.candidateRow = Math.round(world.z - _houseLayoutDrag.grabDZ);
+      _updateGhost(_houseLayoutDrag);
+    });
+
+    canvas.addEventListener('pointerup', (e) => {
+      if (e.pointerId !== ptrId) return;
+      ptrId = null;
+      const drag = _houseLayoutDrag; _houseLayoutDrag = null;
+      _hideGhost();
+      if (drag && drag.moved) {
+        let result;
+        if (drag.isWholeHouse) {
+          // drag.candidateCol/Row track whichever starter-tagged piece was
+          // actually grabbed (main room or annex) — moveHouse always wants
+          // the MAIN room's new position, so translate by the same delta
+          // _updateGhost already uses for the preview, not the raw grabbed
+          // piece's own candidate position.
+          const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
+          const starter = deps.getHousePieces().find(p => p.id === 'house_starter');
+          result = starter ? deps.moveHouse(starter.col + dCol, starter.row + dRow) : { ok: false, message: 'House not found.' };
+        } else {
+          result = deps.movePiece(drag.entry.id, drag.candidateCol, drag.candidateRow);
+        }
+        deps.showToast(result.message, result.ok);
+        renderHouseLayoutModal();
+        renderFarmBuildings(); // keep the main list's room-count note in sync
+        return;
+      }
+      // A plain tap (no meaningful drag): commit an armed deed placement,
+      // or select whatever piece (if any) sits under the tap.
+      const world = _screenToWorldXZ(e.clientX, e.clientY);
+      if (!world) return;
+      if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
+        if (!deps.hasFarmPermission('alterFarm')) return;
+        const result = deps.placeHouseDeed(_houseLayoutPlacementMode.pieceKey, Math.floor(world.x), Math.floor(world.z));
+        deps.showToast(result.message, result.ok);
+        if (result.ok) _houseLayoutPlacementMode = null;
+        renderHouseLayoutModal();
+        renderFarmBuildings();
+        return;
+      }
+      const piece = _housePieceAt(world.x, world.z);
+      _houseLayoutSelectedId = piece ? piece.id : null;
+      renderHouseLayoutModal();
+    });
+
+    canvas.addEventListener('pointercancel', (e) => {
+      if (e.pointerId !== ptrId) return;
+      ptrId = null; _houseLayoutDrag = null; _hideGhost();
+    });
+  }
+
+  function _renderHouseLayoutHint() {
+    const hint = document.getElementById('houseLayoutHint');
+    if (!hint) return;
+    const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
+    hint.textContent = !deps.hasFarmPermission('alterFarm') ? "Only the farm's owner (or a granted farmhand) can edit the house."
+      : _houseLayoutPlacementMode ? `Tap where the ${HOUSE_PIECE_CATALOG[_houseLayoutPlacementMode.pieceKey]?.label || 'piece'} should go.`
+      : 'Drag a room to move it. Tap a room to select it and see its options.';
+  }
+
+  function _renderHouseLayoutPieceList() {
+    const list = document.getElementById('houseLayoutPieceList');
+    if (!list) return;
+    list.innerHTML = '';
+    deps.getHousePieces().forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'house-layout-piece-row' + (p.id === _houseLayoutSelectedId ? ' selected' : '');
+      const nameText = deps.housePieceLabel(p) + (p.stage === 'foundation' ? ' (foundation)' : '');
+      row.innerHTML = `<span class="name">🏠 ${deps.esc(nameText)}</span><span class="size">${p.w}×${p.h}</span>`;
+      row.addEventListener('click', () => { _houseLayoutSelectedId = p.id; renderHouseLayoutModal(); });
+      list.appendChild(row);
+    });
+  }
+
+  function _renderHouseLayoutSelectedActions() {
+    const wrap = document.getElementById('houseLayoutSelectedActions');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const entry = deps.getHousePieces().find(p => p.id === _houseLayoutSelectedId);
+    if (!entry || !deps.hasFarmPermission('alterFarm')) return;
+    const mk = (text, onClick) => {
+      const btn = document.createElement('button');
+      btn.className = 'settings-small-btn';
+      btn.textContent = text;
+      btn.addEventListener('click', onClick);
+      wrap.appendChild(btn);
+    };
+    const afterAction = (result) => {
+      deps.showToast(result.message, result.ok);
+      renderHouseLayoutModal();
+      renderFarmBuildings();
+    };
+    if (entry.stage === 'foundation') {
+      mk('Build', () => afterAction(deps.buildHousePiece(entry.id)));
+      mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
+    } else if (entry.pieceKey !== 'starter') {
+      mk('Rotate 90°', () => afterAction(deps.rotateHousePiece(entry.id)));
+      mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
+    }
+  }
+
+  function _renderHouseLayoutDeeds() {
+    const wrap = document.getElementById('houseLayoutDeeds');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!deps.hasFarmPermission('alterFarm')) return;
+    const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
+    const owned = Object.entries(HOUSE_PIECE_CATALOG).filter(([, def]) => def.deedItem && (deps.inventory[def.deedItem] || 0) > 0);
+    if (!owned.length) return;
+    const title = document.createElement('div');
+    title.className = 'house-layout-section-title';
+    title.textContent = 'Deeds';
+    wrap.appendChild(title);
+    owned.forEach(([pieceKey, def]) => {
+      const count = deps.inventory[def.deedItem] || 0;
+      const armed = _houseLayoutPlacementMode?.type === 'placeHouseDeed' && _houseLayoutPlacementMode.pieceKey === pieceKey;
+      const row = document.createElement('div');
+      row.className = 'farm-row';
+      row.innerHTML = `<span class="farm-row-name">📜 ${deps.esc(def.label)}</span><span class="farm-note">${count} owned</span>`;
+      const btn = document.createElement('button');
+      btn.className = 'settings-small-btn';
+      btn.textContent = armed ? 'Cancel' : 'Place';
+      btn.addEventListener('click', () => {
+        _houseLayoutPlacementMode = armed ? null : { type: 'placeHouseDeed', pieceKey };
+        renderHouseLayoutModal();
+      });
+      row.appendChild(btn);
+      wrap.appendChild(row);
+    });
   }
 
   function renderHouseLayoutModal() {
-    const bounds = _houseLayoutViewBounds();
-    _renderHouseLayoutCanvas(bounds);
-    _bindHouseLayoutCanvasClick();
-    _renderHouseLayoutList();
-    _renderHouseLayout3d(bounds);
+    _bindHouseLayoutPointer();
+    _renderHouseLayoutHint();
+    _renderHouseLayoutPieceList();
+    _renderHouseLayoutSelectedActions();
+    _renderHouseLayoutDeeds();
   }
 
   // Builds one pickable livestock/stable row. `ref` identifies it for

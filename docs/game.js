@@ -21295,6 +21295,7 @@
         demolishHousePiece: (id) => window.HousePieces.demolish(id),
         moveHouse: (col, row) => window.HousePieces.moveHouse(col, row),
         movePiece: (pieceId, col, row) => window.HousePieces.movePiece(pieceId, col, row),
+        rotateHousePiece: (id) => window.HousePieces.rotatePiece(id),
         housePieceLabel: (entry) => window.HousePieces.label(entry),
         scene,
         getFarmBuildings: () => farmBuildings,

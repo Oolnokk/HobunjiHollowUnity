@@ -1392,27 +1392,28 @@
     </div>
   </div>
 
-  <!-- House layout editor: opened from the Farm tab's consolidated "House"
-       row (see openHouseLayoutModal in js/farm-panel.js) — the main
-       whole-farm glance canvas is too zoomed out to click precisely
-       between touching house pieces, so this gives per-piece move/place/
-       build/demolish its own zoomed-in canvas, plus a locked-camera
-       birds-eye 3D snapshot of the live scene for a clearer read on the
-       actual roof layout than the flat 2D canvas alone. -->
+  <!-- House layout editor: a full-screen "hidden tab" opened from the Farm
+       tab's consolidated "House" row (see openHouseLayoutModal in
+       js/farm-panel.js) — not a small popup. A locked top-down 3D viewport
+       (mirrors the reference modular-farmhouse demo's own Exterior 3D view)
+       you drag pieces around in directly, plus a side panel for the
+       controls that don't have a natural drag gesture: select/build/
+       demolish/rotate a piece, or place a new owned house deed. -->
   <div id="houseLayoutModal" class="house-layout-modal" role="dialog" aria-modal="true" aria-label="House Layout" aria-hidden="true">
-    <div class="house-layout-inner">
-      <div class="house-layout-header">
-        <div class="house-layout-title">House Layout</div>
-        <button class="house-layout-close" id="houseLayoutClose" aria-label="Close">✕</button>
+    <div class="house-layout-header">
+      <div class="house-layout-title">House Layout</div>
+      <button class="house-layout-close" id="houseLayoutClose" aria-label="Close">✕</button>
+    </div>
+    <div class="house-layout-body">
+      <div class="house-layout-viewport">
+        <canvas id="houseLayout3dCanvas"></canvas>
+        <div id="houseLayoutHint" class="house-layout-hint"></div>
       </div>
-      <div class="house-layout-views">
-        <canvas id="houseLayout3dCanvas" width="240" height="240"></canvas>
-        <canvas id="houseLayoutCanvas"></canvas>
-      </div>
-      <div id="houseLayoutNote" class="farm-note"></div>
-      <div id="houseLayoutList" class="farm-list"></div>
-      <div class="farm-toolbar">
-        <button id="houseLayoutCancelBtn" class="settings-small-btn" hidden>Cancel</button>
+      <div class="house-layout-side">
+        <div class="house-layout-section-title">Rooms</div>
+        <div id="houseLayoutPieceList" class="farm-list"></div>
+        <div id="houseLayoutSelectedActions" class="house-layout-actions"></div>
+        <div id="houseLayoutDeeds"></div>
       </div>
     </div>
   </div>

@@ -585,6 +585,51 @@
     return { ok: true, message: `Moved ${label(entry)}.` };
   }
 
+  // Rotates one non-starter piece 90° in place. Since every piece is a
+  // simple axis-aligned rectangle rendered live by HousePieceGen.buildGroup
+  // (roof direction is independently resolved per-cluster by the roof-axis
+  // vote, never baked into oriented content), a 90° turn is exactly a w/h
+  // swap around the piece's own footprint origin — no mesh/quaternion
+  // rotation needed. Still re-validates against hazards/other pieces exactly
+  // like movePiece, since swapping w/h can newly overlap a neighbor or push
+  // the piece off clear ground even though its (col,row) origin is unchanged.
+  function rotatePiece(id) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can rotate house pieces." };
+    const pieces = deps.getHousePieces();
+    const entry = pieces.find(p => p.id === id);
+    if (!entry) return { ok: false, message: 'House piece not found.' };
+    if (entry.pieceKey === 'starter') return { ok: false, message: "The original house can't be rotated." };
+    const newW = entry.h, newH = entry.w;
+
+    const others = pieces.filter(p => p.id !== id);
+    _unregisterFootprint(entry);
+    _unregisterDoor(entry);
+    const clear = _footprintClearOfHazardsAndBarns(entry.col, entry.row, newW, newH)
+      && !others.some(b => rectsOverlap(entry.col, entry.row, newW, newH, b.col, b.row, b.w, b.h))
+      && others.some(b => rectsAdjacent(entry.col, entry.row, newW, newH, b.col, b.row, b.w, b.h));
+    if (!clear) {
+      _registerFootprint(entry);
+      _registerDoor(entry);
+      return { ok: false, message: 'Cannot rotate here — the turned footprint needs clear ground touching the rest of your house.' };
+    }
+
+    entry.w = newW; entry.h = newH;
+    _registerFootprint(entry);
+    clearFootprint(entry.col, entry.row, entry.w, entry.h);
+    if (entry.stage === 'foundation' && entry._mesh) {
+      _disposeMesh(entry._mesh);
+      entry._mesh = _buildFoundationMesh(entry.col, entry.row, entry.w, entry.h);
+    } else if (entry.stage === 'built') {
+      // Rebuilds every built piece, not just this one — a rotated footprint
+      // can change the roof-axis vote/same-direction extensions for whichever
+      // pieces it used to (or now does) touch.
+      _rebuildAllStructureMeshes();
+    }
+    deps.saveFarmLayout();
+    deps.saveMemberWorldData();
+    return { ok: true, message: `Rotated ${label(entry)}.` };
+  }
+
   function clearAll() {
     const pieces = deps.getHousePieces();
     pieces.forEach(entry => { _unregisterFootprint(entry); _unregisterDoor(entry); _disposeMesh(entry._mesh); });
@@ -669,6 +714,7 @@
     demolish,
     moveHouse,
     movePiece,
+    rotatePiece,
     clearAll,
     getPieceRects,
     computeInteriorLayout,

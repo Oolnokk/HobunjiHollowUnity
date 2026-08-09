@@ -2029,32 +2029,60 @@
     .dye-panel-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 4px; }
     .dye-panel-actions .ii-btn { min-height: 34px; padding: 0 16px; font-size: 13px; border-radius: 8px; }
 
-    /* ── House layout editor: opened from the Farm tab's consolidated
-       "House" row — same overlay shell as the redye panel above. ────── */
+    /* ── House layout editor: a full-screen "hidden tab" opened from the
+       Farm tab's consolidated "House" row, not a small centered popup — a
+       locked top-down 3D viewport you drag pieces around in directly
+       (mirrors the reference modular-farmhouse demo's own Exterior 3D
+       viewport/drag interaction), with a side panel for the controls that
+       don't have a natural drag gesture (select/build/demolish/rotate/
+       place-new-deed). Row-flex that wraps to stacked (viewport on top,
+       controls below) on narrow/mobile screens. ─────────────────────── */
     .house-layout-modal {
       position: fixed; inset: 0; z-index: 60;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.55);
+      display: flex; flex-direction: column;
+      background: #0b0f16;
       opacity: 0; pointer-events: none;
       transition: opacity 0.15s;
     }
     .house-layout-modal.open { opacity: 1; pointer-events: auto; }
-    .house-layout-inner {
-      width: min(560px, 92vw); max-height: 88vh; overflow-y: auto;
-      display: flex; flex-direction: column; gap: 10px;
-      background: var(--glass-2); border: 1.5px solid var(--border-bright);
-      border-radius: var(--r); padding: 16px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    .house-layout-header {
+      flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: var(--glass-2); border-bottom: 1px solid var(--border-bright);
     }
-    .house-layout-header { display: flex; align-items: center; justify-content: space-between; }
     .house-layout-title { font-size: 15px; font-weight: bold; color: var(--text); }
     .house-layout-close {
-      width: 28px; height: 28px; border-radius: 8px; color: var(--muted);
+      width: 32px; height: 32px; border-radius: 8px; color: var(--muted);
       border: 1px solid var(--border); background: rgba(255,255,255,0.05);
     }
     .house-layout-close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
-    .house-layout-views { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-    .house-layout-views canvas { border-radius: 8px; border: 1px solid var(--border); background: #0b0f16; max-width: 100%; }
+    .house-layout-body { flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; }
+    .house-layout-viewport { flex: 1 1 60%; min-width: 260px; min-height: 240px; position: relative; background: #0b0f16; }
+    .house-layout-viewport canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    .house-layout-hint {
+      position: absolute; left: 8px; bottom: 8px; right: 8px; pointer-events: none;
+      padding: 6px 9px; border: 1px solid var(--border); border-radius: 9px;
+      background: rgba(5,12,8,0.72); color: #dcebdc; font-size: 10px; line-height: 1.35;
+    }
+    .house-layout-side {
+      flex: 0 0 280px; max-width: 100%; overflow-y: auto;
+      background: var(--glass-2); border-left: 1px solid var(--border-bright);
+      padding: 12px; display: flex; flex-direction: column; gap: 10px;
+    }
+    @media (max-width: 720px) {
+      .house-layout-viewport { flex-basis: 55vh; min-height: 55vh; }
+      .house-layout-side { flex: 1 1 auto; border-left: none; border-top: 1px solid var(--border-bright); }
+    }
+    .house-layout-section-title { font-size: 11px; font-weight: 800; color: #cfe4cf; text-transform: uppercase; letter-spacing: 0.04em; }
+    .house-layout-piece-row {
+      display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+      border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,0.03);
+      cursor: pointer;
+    }
+    .house-layout-piece-row.selected { outline: 2px solid var(--accent, #f9e28a); background: rgba(249,226,138,0.08); }
+    .house-layout-piece-row .name { flex: 1 1 auto; font-size: 12px; color: var(--text); }
+    .house-layout-piece-row .size { font-size: 10px; color: var(--muted); }
+    .house-layout-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .house-layout-actions button { flex: 1 1 auto; min-width: 70px; }
 
     /* ── Shipping box transfer pane ─────────────────────────────
        Based on HHItemTransferLayoutV1: parent 60×32 transfer grid.
