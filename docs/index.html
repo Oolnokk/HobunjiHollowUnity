@@ -303,7 +303,7 @@
        drives, so all placement validation/consumption logic lives in one
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
-  <script src="js/furniture-placer.js?v=20260809b"></script>
+  <script src="js/furniture-placer.js?v=20260809c"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load
@@ -1681,7 +1681,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260809b"></script>
+  <script src="game.js?v=20260809c"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
