@@ -1392,6 +1392,31 @@
     </div>
   </div>
 
+  <!-- House layout editor: opened from the Farm tab's consolidated "House"
+       row (see openHouseLayoutModal in js/farm-panel.js) — the main
+       whole-farm glance canvas is too zoomed out to click precisely
+       between touching house pieces, so this gives per-piece move/place/
+       build/demolish its own zoomed-in canvas, plus a locked-camera
+       birds-eye 3D snapshot of the live scene for a clearer read on the
+       actual roof layout than the flat 2D canvas alone. -->
+  <div id="houseLayoutModal" class="house-layout-modal" role="dialog" aria-modal="true" aria-label="House Layout" aria-hidden="true">
+    <div class="house-layout-inner">
+      <div class="house-layout-header">
+        <div class="house-layout-title">House Layout</div>
+        <button class="house-layout-close" id="houseLayoutClose" aria-label="Close">✕</button>
+      </div>
+      <div class="house-layout-views">
+        <canvas id="houseLayout3dCanvas" width="240" height="240"></canvas>
+        <canvas id="houseLayoutCanvas"></canvas>
+      </div>
+      <div id="houseLayoutNote" class="farm-note"></div>
+      <div id="houseLayoutList" class="farm-list"></div>
+      <div class="farm-toolbar">
+        <button id="houseLayoutCancelBtn" class="settings-small-btn" hidden>Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Joystick -->
   <div id="joystickZone" class="control-zone" aria-label="Movement joystick">
     <div id="joystickBase"></div>

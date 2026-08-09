@@ -421,22 +421,26 @@
         return [{ icon: '💥', label: 'Demolish', action: 'obj_house_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') }];
       },
       onAction(action) {
-        if (action === 'obj_house_build_' + entry.id) {
-          if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-          if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
-          entry.stage = 'built';
-          _rebuildAllStructureMeshes();
-          deps.saveFarmLayout();
-          return { ok: true, message: `🔨 ${label(entry)} construction complete!` };
-        }
-        if (action === 'obj_house_demolish_' + entry.id) {
-          if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
-          return demolish(entry.id);
-        }
+        if (action === 'obj_house_build_' + entry.id) return build(entry.id);
+        if (action === 'obj_house_demolish_' + entry.id) return demolish(entry.id);
         return { ok: false, message: 'Unknown house action.' };
       },
       reset() { _disposeMesh(entry._mesh); entry._mesh = null; },
     };
+  }
+
+  // Completes a foundation's construction — shared by the in-world "Build"
+  // interaction and the House Layout editor's own Build button, so building
+  // doesn't require walking up to the foundation slab first.
+  function build(id) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can do that." };
+    const entry = deps.getHousePieces().find(p => p.id === id);
+    if (!entry) return { ok: false, message: 'House piece not found.' };
+    if (entry.stage !== 'foundation') return { ok: false, message: 'Already built.' };
+    entry.stage = 'built';
+    _rebuildAllStructureMeshes();
+    deps.saveFarmLayout();
+    return { ok: true, message: `🔨 ${label(entry)} construction complete!` };
   }
 
   function spawnEntry(entry) {
@@ -661,6 +665,7 @@
     spawnEntry,
     seedStarter,
     placeDeed,
+    build,
     demolish,
     moveHouse,
     movePiece,

@@ -2029,6 +2029,33 @@
     .dye-panel-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 4px; }
     .dye-panel-actions .ii-btn { min-height: 34px; padding: 0 16px; font-size: 13px; border-radius: 8px; }
 
+    /* ── House layout editor: opened from the Farm tab's consolidated
+       "House" row — same overlay shell as the redye panel above. ────── */
+    .house-layout-modal {
+      position: fixed; inset: 0; z-index: 60;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55);
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    .house-layout-modal.open { opacity: 1; pointer-events: auto; }
+    .house-layout-inner {
+      width: min(560px, 92vw); max-height: 88vh; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 10px;
+      background: var(--glass-2); border: 1.5px solid var(--border-bright);
+      border-radius: var(--r); padding: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    .house-layout-header { display: flex; align-items: center; justify-content: space-between; }
+    .house-layout-title { font-size: 15px; font-weight: bold; color: var(--text); }
+    .house-layout-close {
+      width: 28px; height: 28px; border-radius: 8px; color: var(--muted);
+      border: 1px solid var(--border); background: rgba(255,255,255,0.05);
+    }
+    .house-layout-close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+    .house-layout-views { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .house-layout-views canvas { border-radius: 8px; border: 1px solid var(--border); background: #0b0f16; max-width: 100%; }
+
     /* ── Shipping box transfer pane ─────────────────────────────
        Based on HHItemTransferLayoutV1: parent 60×32 transfer grid.
        Left inventory x:1 y:1 w:24 h:21; control column x:26 y:1 w:8 h:21;
