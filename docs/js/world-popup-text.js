@@ -12,9 +12,8 @@
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow',
     },
-    placement: { worldHeight: 0.075, xOffsetPercent: 8, yOffsetPercent: 0 },
-    floatPlus: { lifetimeMs: 1150 },
-    centeredFiveRow: { lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5 },
+    floatPlus: { worldHeight: 0.075, xOffsetPercent: 0, yOffsetPercent: 0, lifetimeMs: 1150 },
+    centeredFiveRow: { worldHeight: 0.075, xOffsetPercent: 8, yOffsetPercent: 0, lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5 },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
       masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff',
@@ -34,6 +33,21 @@
     return out;
   };
 
+  function normalizeSettings(value) {
+    const normalized = merge(DEFAULTS, value);
+    // Migrates settings saved by the first editor, when both modes shared
+    // one placement object. Float+ intentionally keeps its centroid X=0.
+    if (value?.placement) {
+      normalized.floatPlus.worldHeight = value.placement.worldHeight ?? normalized.floatPlus.worldHeight;
+      normalized.floatPlus.yOffsetPercent = value.placement.yOffsetPercent ?? normalized.floatPlus.yOffsetPercent;
+      normalized.centeredFiveRow.worldHeight = value.placement.worldHeight ?? normalized.centeredFiveRow.worldHeight;
+      normalized.centeredFiveRow.xOffsetPercent = value.placement.xOffsetPercent ?? normalized.centeredFiveRow.xOffsetPercent;
+      normalized.centeredFiveRow.yOffsetPercent = value.placement.yOffsetPercent ?? normalized.centeredFiveRow.yOffsetPercent;
+      delete normalized.placement;
+    }
+    return normalized;
+  }
+
   async function loadSettings() {
     let authored = {};
     try {
@@ -42,7 +56,7 @@
     } catch (_) {}
     let local = {};
     try { local = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (_) {}
-    state.settings = merge(merge(DEFAULTS, authored), local);
+    state.settings = normalizeSettings(merge(authored, local));
     return state.settings;
   }
 
@@ -77,10 +91,8 @@
   function popupAnchorWorld(root, mode) {
     const metrics = avatarMetrics(root);
     if (!metrics) return null;
-    const placement = state.settings.placement;
-    // Float+ is centered horizontally on the avatar centroid. The five-row
-    // list retains the uploaded prototype's default width-relative X offset.
-    const xOffset = mode === 'centeredFiveRow' ? metrics.width * placement.xOffsetPercent / 100 : 0;
+    const placement = state.settings[mode];
+    const xOffset = metrics.width * placement.xOffsetPercent / 100;
     const yOffset = metrics.combinedHeight * placement.yOffsetPercent / 100;
     if (metrics.avatarRoot?.localToWorld) {
       const placementRatio = Number(metrics.avatarRoot.userData?.portraitVerticalPlacementRatio ?? 0.5);
@@ -93,7 +105,7 @@
 
   function makePlane(text, kind, layout) {
     const THREE = state.deps.THREE;
-    const size = state.settings.placement.worldHeight;
+    const size = layout.worldHeight;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const fontPx = 64;
@@ -138,7 +150,7 @@
   }
 
   function claimFloatOffset(root, bounds) {
-    const worldHeight = state.settings.placement.worldHeight;
+    const worldHeight = state.settings.floatPlus.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
     for (let index = 0; index < 240; index++) {
       const angle = index * 2.399963229728653;
@@ -223,7 +235,7 @@
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = progress < 0.72 ? 1 : (1 - progress) / 0.28;
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
-      event.plane.scale.setScalar(state.settings.placement.worldHeight * pop);
+      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * pop);
     }
   }
 
@@ -239,7 +251,7 @@
   }
 
   function applySettings(settings) {
-    state.settings = merge(DEFAULTS, settings);
+    state.settings = normalizeSettings(settings);
     clear();
     return clone(state.settings);
   }
