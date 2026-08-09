@@ -21,10 +21,13 @@
   // hobunji_modular_farmhouse_join_demo's roofAxisDecision/
   // sameDirectionExtensions — so a cluster's gables actually point at each
   // other and read as one continuous roof instead of independent boxes.
-  // Each piece's automatic door (still south-biased with a same-side-blocked
-  // fallback) gets a real wall-portal cut plus a small jamb/lintel/roof-cap
-  // entry tunnel, also ported from that demo — see HousePieceGen.js's
-  // cutDoorPortal/buildEntryTunnelGroup and buildGroup's doorSide option.
+  // The whole cluster gets exactly ONE automatic door (south-biased with a
+  // same-side-blocked fallback, see _deriveSingleHouseDoor) — every built
+  // piece shares one continuous interior, so a door per piece would just be
+  // redundant holes into the same room. That one door gets a real
+  // wall-portal cut plus a small jamb/lintel/roof-cap entry tunnel, ported
+  // from that demo — see HousePieceGen.js's cutDoorPortal/
+  // buildEntryTunnelGroup and buildGroup's doorSide option.
   //
   // All built pieces share ONE continuous interior (see game.js's
   // rebuildInteriorGeometry()): every piece contributes a 2x2-interior-cell
@@ -182,20 +185,39 @@
     if (occupant && occupant !== entry._worldObj) return true;
     return false;
   }
-  // Automatic entrance placement is biased toward the south face, but tries
-  // east/west/north in turn if south is blocked (typically by a neighboring
-  // piece placed against that edge), so a piece still gets a usable door
-  // instead of silently losing its entrance (see _registerDoor, which
-  // no-ops when the resolved door tile falls inside another piece's
-  // footprint). Falls back to south (registering nothing, same as before)
-  // only if every side is blocked.
-  function _deriveSouthBiasedDoor(entry) {
-    for (const side of DOOR_SIDE_ORDER) {
-      const tile = _doorTileForSide(entry, side);
-      if (tile && !_doorSideBlocked(entry, tile.col, tile.row)) return { col: tile.col, row: tile.row, side };
+  // Every built piece shares ONE continuous merged interior (see
+  // computeInteriorLayout/game.js's rebuildInteriorGeometry), so the whole
+  // cluster gets exactly ONE automatic entrance, not one per piece — a
+  // second or third auto-door would just be a redundant hole into the same
+  // room. Decoupled from the per-piece build loop in
+  // _rebuildAllStructureMeshes on purpose (computed once up front, same as
+  // _sameDirectionExtensions already is, and just consulted by ID inside
+  // the loop) so "which piece owns the door" is a single, cluster-level
+  // decision instead of N independent per-piece ones that happen to collide.
+  //
+  // The main starter room is tried first (it's the house's original front
+  // door and the one piece every other piece is ultimately placed relative
+  // to, so keeping the door there is the most stable choice — moving some
+  // OTHER piece around won't relocate the entrance as long as its south
+  // side stays clear); every other built piece is tried next, in whatever
+  // order they appear in `built`. Each candidate tries south/east/west/north
+  // in turn (typically blocked by a neighboring piece placed against that
+  // edge — see _doorSideBlocked). If literally no piece has any clear side
+  // (every one is boxed in on all four sides by neighbors), fall back to
+  // forcing a south door on the first candidate anyway — a wrong-looking
+  // door is still better than a house nobody can enter.
+  function _deriveSingleHouseDoor(built) {
+    const ordered = [...built].sort((a, b) => (a.id === 'house_starter' ? -1 : b.id === 'house_starter' ? 1 : 0));
+    for (const entry of ordered) {
+      for (const side of DOOR_SIDE_ORDER) {
+        const tile = _doorTileForSide(entry, side);
+        if (tile && !_doorSideBlocked(entry, tile.col, tile.row)) return { entryId: entry.id, col: tile.col, row: tile.row, side };
+      }
     }
-    const fallback = _doorTileForSide(entry, 'south');
-    return fallback ? { col: fallback.col, row: fallback.row, side: 'south' } : null;
+    const first = ordered[0];
+    if (!first) return null;
+    const fallback = _doorTileForSide(first, 'south');
+    return fallback ? { entryId: first.id, col: fallback.col, row: fallback.row, side: 'south' } : null;
   }
 
   // ── Roof-axis voting + same-direction extension ────────────────────────
@@ -312,9 +334,15 @@
     // off its actual preferred side for no real reason.
     built.forEach(entry => _unregisterDoor(entry));
     const exts = _sameDirectionExtensions(built);
+    // One door for the whole cluster, decided once — see
+    // _deriveSingleHouseDoor's own comment for why this can't be resolved
+    // independently per piece.
+    const doorChoice = _deriveSingleHouseDoor(built);
     for (const entry of built) {
       _disposeMesh(entry._mesh);
-      entry._doorWorld = _deriveSouthBiasedDoor(entry);
+      entry._doorWorld = (doorChoice && doorChoice.entryId === entry.id)
+        ? { col: doorChoice.col, row: doorChoice.row, side: doorChoice.side }
+        : null;
       const axis = _roofAxisDecision(entry, built);
       const render = _renderRectFor(entry, exts);
       const buildOpts = {
