@@ -303,13 +303,41 @@
     F([P(rect.maxX, y0, rect.maxZ), P(rect.maxX, y1, rect.maxZ), P(rect.minX, y1, rect.maxZ), P(rect.minX, y0, rect.maxZ)], { extensionFace: 'south' });
     F([P(rect.minX, y0, rect.maxZ), P(rect.minX, y1, rect.maxZ), P(rect.minX, y1, rect.minZ), P(rect.minX, y0, rect.minZ)], { extensionFace: 'west' });
   }
+  // Deterministic string hash -> [0,1) and a seeded range/rect-jitter helper
+  // — exact port of the demo's editorSeededUnit/editorSeededRange/
+  // editorJitteredRect, used only by the chimney's "wonky" wall runs below
+  // (entry tunnel walls never pass a wonkySeed, so they're unaffected).
+  function _seededUnit(seed) {
+    var h = 2166136261, str = String(seed);
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
+    return (h >>> 0) / 4294967295;
+  }
+  function _seededRange(seed, min, max) { return min + (max - min) * _seededUnit(seed); }
+  function _jitterRect(rect, amount, seed) {
+    return {
+      minX: rect.minX + _seededRange(seed + ':minX', -amount, amount),
+      maxX: rect.maxX + _seededRange(seed + ':maxX', -amount, amount),
+      minZ: rect.minZ + _seededRange(seed + ':minZ', -amount, amount),
+      maxZ: rect.maxZ + _seededRange(seed + ':maxZ', -amount, amount),
+    };
+  }
   function _entrySolidWallRun(faces, rect, side, y0, y1, thickness, tag, extra) {
     var tt = Math.max(0.01, thickness), wallRect;
     if (side === 'north') wallRect = { minX: rect.minX, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.minZ + tt };
     else if (side === 'south') wallRect = { minX: rect.minX, maxX: rect.maxX, minZ: rect.maxZ - tt, maxZ: rect.maxZ };
     else if (side === 'east') wallRect = { minX: rect.maxX - tt, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.maxZ };
     else wallRect = { minX: rect.minX, maxX: rect.minX + tt, minZ: rect.minZ, maxZ: rect.maxZ };
-    _entryBoxFaces(faces, wallRect, y0, y1, tag, Object.assign({ extensionFace: side, solidifiedWall: true, wallThickness: tt }, extra));
+    var topY = y1;
+    // Chimney walls pass a per-tile wonkySeed for a deterministic hand-built
+    // look (each wall run jittered slightly in extent and top height) —
+    // exact port of the demo's editorSolidWallRun; entry tunnel walls never
+    // set this, so their geometry is completely unaffected.
+    if (extra && extra.wonkySeed) {
+      wallRect = _jitterRect(wallRect, tt * 0.28, extra.wonkySeed + ':wall:' + side);
+      topY = y1 + _seededRange(extra.wonkySeed + ':top:' + side, -tt * 0.18, tt * 0.34);
+    }
+    _entryBoxFaces(faces, wallRect, y0, topY, tag, Object.assign({ extensionFace: side, solidifiedWall: true, wallThickness: tt }, extra));
   }
   function _entryWallOpeningFrame(faces, rect, side, y0, y1, thickness, tag, extra) {
     var tt = Math.max(0.01, thickness), openH = (y1 - y0) * 0.92, topY = y1, lintelBottom = y0 + openH;
@@ -378,11 +406,49 @@
     return built;
   }
 
+  // Mirrors the demo's CHIMNEY_TOP=BODY_H+RIDGE_RISE+.9 (its own local
+  // branch-roof constants) — the exact same baseH/roofH this file's own
+  // buildGroup() already uses for the Highland body/roof, plus the same
+  // 0.9-tile reach above the eave/ridge so the flue clears the roofline.
+  var CHIMNEY_TOP = 1.4 + 1.18 + 0.9;
+  var CHIMNEY_WALL_THICKNESS = 0.15;
+
+  // Exact port of the demo's generatedChimneyPiece(): four individually
+  // "wonky" (deterministically jittered per seed) solid wall runs, no
+  // floor, open top, flue reaching to the ground — unlike the entry tunnel,
+  // this has no opening on any side (a chimney stack, not a doorway) so it
+  // never needs rotationDeg. Not cached like the entry tunnel piece is,
+  // since its geometry is itself seeded per placement (each chimney tile
+  // gets its own distinct wonk).
+  function buildChimneyPiece(seed) {
+    var faces = [], rect = { minX: 0, maxX: 1, minZ: 0, maxZ: 1 };
+    ['north', 'east', 'south', 'west'].forEach(function (side) {
+      _entrySolidWallRun(faces, rect, side, 0, CHIMNEY_TOP, CHIMNEY_WALL_THICKNESS, 'chimney', {
+        wonkySeed: seed, flueContinuesToGround: true, openTop: true,
+      });
+    });
+    return {
+      schema: 'modular-house-piece-author/chimney-runtime', id: 'chimney_runtime', gridSize: 1, tileSize: 1,
+      footprint: { cells: [{ x: 0, y: 0 }], connectors: [], extensions: {} },
+      base: { height: CHIMNEY_TOP, wallThickness: CHIMNEY_WALL_THICKNESS, groundY: 0, faces: faces }, assets: [],
+    };
+  }
+  // col/row is the piece's own edge cell the chimney stands on (same
+  // "one step in from the exterior tile" convention buildEntryTunnelGroup
+  // uses) — see house-pieces.js's chimney feature placement.
+  function buildChimneyGroup(THREE, col, row, opts) {
+    opts = opts || {};
+    var built = buildGroupFromPiece(THREE, buildChimneyPiece('chimney:' + col + ',' + row), col, row, opts);
+    built.userData.isChimney = true;
+    return built;
+  }
+
   // ── Public API ──────────────────────────────────────────────────────────────
   global.HousePieceGen = {
     buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
+    buildChimneyGroup: buildChimneyGroup,
   };
 
   /**
@@ -423,16 +489,25 @@
     _addFrustumBody(faces, bottomRect, eaveRect, y0, yEave);
     _addGableRoof(faces, eaveRect, bottomRect, yEave, baseH, roofH, axis, tile);
 
-    // doorSide/doorIdx/doorLen (see house-pieces.js's south-biased automatic
-    // door) cut a real portal into that side's wall instead of leaving a
-    // solid one — the walkable door tile would otherwise have nothing
-    // visually open where a player can enter.
+    // doorSide/doorIdx/doorLen cut a real portal into that side's wall
+    // instead of leaving a solid one — the walkable door tile would
+    // otherwise have nothing visually open where a player can enter.
+    // opts.doorCuts (array of {side,idx,len}) supports more than one
+    // entrance on the same piece (see house-pieces.js's architectural
+    // features, which can place several manual entrances) — doorSide/Idx/Len
+    // is still accepted directly as the single-cut shorthand every other
+    // caller (barns, the automatic south-biased door) already uses. Cuts
+    // are applied in sequence; a second cut on the SAME side as an earlier
+    // one may find nothing left to split (the first cut already fragmented
+    // that side's whole-face) and is silently skipped rather than erroring
+    // — an accepted limit for the rare case of two entrances on one wall.
     var doorCut = false;
-    if (opts.doorSide) {
-      var cutFaces = _cutFacesForDoor(faces, opts.doorSide, opts.doorIdx, opts.doorLen);
-      doorCut = cutFaces !== faces;
+    var doorCuts = opts.doorCuts || (opts.doorSide ? [{ side: opts.doorSide, idx: opts.doorIdx, len: opts.doorLen }] : []);
+    doorCuts.forEach(function (dc) {
+      var cutFaces = _cutFacesForDoor(faces, dc.side, dc.idx, dc.len);
+      if (cutFaces !== faces) doorCut = true;
       faces = cutFaces;
-    }
+    });
 
     var group = new THREE.Group();
     _buildFaceMeshes(group, faces, opts);

@@ -305,6 +305,7 @@
   let _houseLayoutSelectedId = null;         // piece id whose actions show in the side panel
   let _houseLayoutPlacementMode = null;      // { type: 'placeHouseDeed', pieceKey } — armed by a Deeds Place button, consumed by the next plain (non-drag) tap
   let _houseLayoutDrag = null;               // { entry, moved, grabDX, grabDZ, candidateCol, candidateRow, isWholeHouse } while a pointer is down on a piece
+  let _houseLayoutFeatureMode = null;        // 'entrance' | 'chimney' | 'remove' — armed by an Architecture toggle button, consumed by the next plain (non-drag) tap; stays armed across multiple taps (unlike deed placement) so placing several fixtures doesn't need re-arming each time
   const HOUSE_LAYOUT_MARGIN = 2;
 
   function openHouseLayoutModal() {
@@ -332,6 +333,7 @@
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
     _houseLayoutPlacementMode = null;
+    _houseLayoutFeatureMode = null;
     _houseLayoutDrag = null;
     _houseLayoutSelectedId = null;
     _hideGhost();
@@ -535,7 +537,7 @@
       if (ptrId !== null) return;
       ptrId = e.pointerId; startX = e.clientX; startY = e.clientY;
       try { canvas.setPointerCapture(e.pointerId); } catch (_e) { /* degrade gracefully */ }
-      if (_houseLayoutPlacementMode || !deps.hasFarmPermission('alterFarm')) return;
+      if (_houseLayoutPlacementMode || _houseLayoutFeatureMode || !deps.hasFarmPermission('alterFarm')) return;
       const world = _screenToWorldXZ(e.clientX, e.clientY);
       const piece = world && _housePieceAt(world.x, world.z);
       if (!piece) return;
@@ -586,8 +588,9 @@
         renderFarmBuildings(); // keep the main list's room-count note in sync
         return;
       }
-      // A plain tap (no meaningful drag): commit an armed deed placement,
-      // or select whatever piece (if any) sits under the tap.
+      // A plain tap (no meaningful drag): commit an armed deed placement or
+      // architecture-feature action, or select whatever piece (if any) sits
+      // under the tap.
       const world = _screenToWorldXZ(e.clientX, e.clientY);
       if (!world) return;
       if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
@@ -597,6 +600,19 @@
         if (result.ok) _houseLayoutPlacementMode = null;
         renderHouseLayoutModal();
         renderFarmBuildings();
+        return;
+      }
+      if (_houseLayoutFeatureMode) {
+        if (!deps.hasFarmPermission('alterFarm')) return;
+        const col = Math.floor(world.x), row = Math.floor(world.z);
+        const result = _houseLayoutFeatureMode === 'remove'
+          ? deps.removeHouseFeatureAt(col, row)
+          : deps.placeHouseFeature(col, row, world.x, world.z, _houseLayoutFeatureMode);
+        deps.showToast(result.message, result.ok);
+        // Stays armed on success too — placing/removing several fixtures in
+        // a row shouldn't need re-toggling the mode each time; only a
+        // failure or the explicit toggle button clears it.
+        renderHouseLayoutModal();
         return;
       }
       const piece = _housePieceAt(world.x, world.z);
@@ -614,8 +630,14 @@
     const hint = document.getElementById('houseLayoutHint');
     if (!hint) return;
     const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
+    const featureHints = {
+      entrance: 'Tap an outer wall tile to place an entrance. Tap an existing one to swap it there instead.',
+      chimney: 'Tap an outer wall tile to place a chimney — it derives a hearth on the wall behind it.',
+      remove: 'Tap an entrance or chimney to remove it and store it for later.',
+    };
     hint.textContent = !deps.hasFarmPermission('alterFarm') ? "Only the farm's owner (or a granted farmhand) can edit the house."
       : _houseLayoutPlacementMode ? `Tap where the ${HOUSE_PIECE_CATALOG[_houseLayoutPlacementMode.pieceKey]?.label || 'piece'} should go.`
+      : _houseLayoutFeatureMode ? featureHints[_houseLayoutFeatureMode]
       : 'Drag a room to move it. Tap a room to select it and see its options.';
   }
 
@@ -718,11 +740,54 @@
     });
   }
 
+  // Entrance/chimney placement toggles + the recovered-fixture inventory —
+  // separate from per-piece Rooms/Deeds since a feature belongs to the
+  // house as a whole (tap any exposed exterior tile, not a specific
+  // selected room) rather than to whichever piece happens to be selected.
+  function _renderHouseLayoutArchitecture() {
+    const wrap = document.getElementById('houseLayoutArchitecture');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!deps.hasFarmPermission('alterFarm')) return;
+    const title = document.createElement('div');
+    title.className = 'house-layout-section-title';
+    title.textContent = 'Architecture';
+    wrap.appendChild(title);
+    const toggles = document.createElement('div');
+    toggles.className = 'house-layout-actions';
+    [['entrance', '🚪 Entrance'], ['chimney', '🧱 Chimney'], ['remove', '🗑 Remove']].forEach(([mode, label]) => {
+      const btn = document.createElement('button');
+      btn.className = 'settings-small-btn';
+      const armed = _houseLayoutFeatureMode === mode;
+      btn.textContent = armed ? 'Cancel' : label;
+      btn.addEventListener('click', () => {
+        _houseLayoutFeatureMode = armed ? null : mode;
+        renderHouseLayoutModal();
+      });
+      toggles.appendChild(btn);
+    });
+    wrap.appendChild(toggles);
+    const fixtures = deps.getHouseFixtureInventory();
+    if (fixtures.length) {
+      const entranceCount = fixtures.filter(f => f.type === 'entrance').length;
+      const chimneyCount = fixtures.filter(f => f.type === 'chimney').length;
+      const note = document.createElement('div');
+      note.className = 'farm-note';
+      note.style.cssText = 'padding:4px 2px;';
+      const parts = [];
+      if (entranceCount) parts.push(`${entranceCount} entrance${entranceCount === 1 ? '' : 's'}`);
+      if (chimneyCount) parts.push(`${chimneyCount} chimney${chimneyCount === 1 ? '' : 's'}`);
+      note.textContent = `📦 In storage: ${parts.join(', ')} — placed first the next time you place that type.`;
+      wrap.appendChild(note);
+    }
+  }
+
   function renderHouseLayoutModal() {
     _bindHouseLayoutPointer();
     _renderHouseLayoutHint();
     _renderHouseLayoutPieceList();
     _renderHouseLayoutSelectedActions();
+    _renderHouseLayoutArchitecture();
     _renderHouseLayoutDeeds();
   }
 
