@@ -18319,6 +18319,9 @@
           grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
         }
 
+        // Constant-cost world rain: three UV/yaw updates regardless of density.
+        window.RainPlanes?.update(dt);
+
         // ── Render active scene ──────────────────────────────────
         const activeScene = getActiveScene();
         if (s_outlines) {
@@ -18412,7 +18415,7 @@
           }
         }
 
-        // ── 2D overlays (rain, lighting) ─────────────────────────
+        // ── 2D overlays (combat/debug/lightning, plus lighting) ──
         drawOverlays();
         window.WeatherFX.drawLightingOverlay();
 
@@ -18424,7 +18427,7 @@
       // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
       // now lives in js/debug-hitboxes.js — call via window.DebugHitboxes.draw().
 
-      // ── 2D overlay draw (rain curtain + ripples on overlay canvas) ─
+      // ── 2D overlay draw (world rain is rendered by RainPlanes) ─
       function drawOverlays() {
         const rect = _threeRect;
         const W = rect.width, H = rect.height;
@@ -18438,30 +18441,11 @@
         if (calendar.isRaining) {
           const str = calendar.rainStrength || 1;
           const isStorm = str >= 3;
-          const t = waterFlowPhase;
 
-          // Mist
+          // Keep the cheap weather tint here; individual streaks now live on
+          // three world-space planes in the existing WebGL renderer.
           octx.fillStyle = isStorm ? 'rgba(30,50,80,0.10)' : 'rgba(60,80,100,0.05)';
           octx.fillRect(0, 0, W, H);
-
-          const layers = isStorm
-            ? [{a:0.14,w:1.0,sp:22,len:22,spd:1.0,sl:-9},{a:0.22,w:1.5,sp:14,len:30,spd:1.5,sl:-12}]
-            : [{a:0.07,w:0.8,sp:28,len:16,spd:0.7,sl:-6},{a:0.12,w:1.2,sp:20,len:22,spd:1.0,sl:-9}];
-
-          for (const l of layers) {
-            octx.globalAlpha = l.a;
-            octx.strokeStyle = '#cce8ff';
-            octx.lineWidth = l.w;
-            const ph = (t * l.spd * 40) % l.sp;
-            for (let gx = -40; gx < W+60; gx += l.sp) {
-              for (let gy = -60; gy < H+80; gy += l.sp*2.2) {
-                const rx = gx + ((gy/11) % l.sp);
-                const ry = (gy + ph) % (H+80) - 40;
-                octx.beginPath(); octx.moveTo(rx, ry); octx.lineTo(rx+l.sl, ry+l.len); octx.stroke();
-              }
-            }
-          }
-          octx.globalAlpha = 1;
         }
 
         drawCombatConeReticle();
@@ -21385,6 +21369,19 @@
         RAIN_PITY_DAYS,
       });
 
+      window.RainPlanes?.init({
+        THREE,
+        renderer,
+        camera,
+        calendar,
+        player,
+        TILE,
+        getPlayerGroundY: _playerGroundY,
+        getActiveScene,
+        getCurrentArea: () => currentArea,
+        isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
+      });
+
       window.FarmPanel?.init({
         LIVESTOCK_ITEM_KINDS,
         inventory,
@@ -21569,6 +21566,10 @@
         isFarmOwner,
         getFarmEditMode: () => farmEditMode,
         toggleFarmEditMode,
+        setDebugWeather: window.WeatherFX.setDebugWeather,
+        getDebugWeather: window.WeatherFX.getDebugWeather,
+        getRainPlaneSettings: window.RainPlanes.getSettings,
+        setRainPlaneSettings: window.RainPlanes.setSettings,
         isDevMode: () => s_devMode,
       });
 

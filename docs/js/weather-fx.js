@@ -21,6 +21,7 @@
   // preserved as-is rather than "fixed" here).
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
+  let debugWeatherOverride = null; // Read by updateRainState while Testing Arena weather buttons are active.
 
   const STORM_NAMES = [
     'Squall Ashgrave', 'Tempest Hollowbell', 'Gale Duskmire', 'Storm Fenwrack',
@@ -377,10 +378,25 @@
 
   function updateRainState() {
     const calendar = deps.calendar;
+    if (debugWeatherOverride) {
+      calendar.weather = debugWeatherOverride;
+      calendar.isRaining = debugWeatherOverride !== 'clear';
+      calendar.rainStrength = debugWeatherOverride === 'storm' ? 3 : debugWeatherOverride === 'rain' ? 2 : 0;
+      return;
+    }
     const hour = window.CalendarSystem.getHour();
     const activeWindow = calendar.nextRainWindows.find((window) => hour >= window.start && hour < window.end);
     calendar.isRaining = Boolean(activeWindow);
     calendar.rainStrength = activeWindow ? activeWindow.strength : 0;
+  }
+
+  function setDebugWeather(mode = null) {
+    debugWeatherOverride = ['clear', 'rain', 'storm'].includes(mode) ? mode : null;
+    updateRainState();
+  }
+
+  function getDebugWeather() {
+    return debugWeatherOverride;
   }
 
   window.WeatherFX = {
@@ -395,5 +411,7 @@
     updateLightningFlash,
     chooseWeatherForDay,
     updateRainState,
+    setDebugWeather,
+    getDebugWeather,
   };
 })();

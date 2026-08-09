@@ -311,6 +311,8 @@
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
   <script src="js/weather-fx.js?v=20260807a"></script>
+  <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
+  <script src="js/rain-planes.js?v=20260809f"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -584,6 +586,47 @@
       </div>
       <div class="fed-section">
         <div class="fed-label">Objects from this panel: <span id="devArenaFoliageCount">0</span></div>
+      </div>
+      <div class="fed-section">
+        <div class="fed-label">Weather override — remains active in the arena and restores the real forecast when you leave</div>
+        <div class="fed-grid" id="devArenaWeatherGrid">
+          <button type="button" class="fed-btn" data-weather="clear">☀️ Clear</button>
+          <button type="button" class="fed-btn" data-weather="rain">🌧️ Rain</button>
+          <button type="button" class="fed-btn" data-weather="storm">⛈️ Storm</button>
+        </div>
+        <div class="fed-label" style="margin-top:8px">Rain plane placement</div>
+        <div class="fed-grid" id="devRainPlaneModeGrid">
+          <button type="button" class="fed-btn" data-rain-mode="camera">Camera Relative</button>
+          <button type="button" class="fed-btn" data-rain-mode="rows">Row Bands</button>
+        </div>
+        <div class="fed-label" style="margin-top:6px">Position</div>
+        <div class="fed-grid" id="devRainPositionRuleGrid">
+          <button type="button" class="fed-btn" data-rain-rule="followScreenX">X · Follow Screen</button>
+          <button type="button" class="fed-btn" data-rain-rule="followCameraY">Y · Follow Camera</button>
+          <button type="button" class="fed-btn" data-rain-rule="lockRowZ">Z · Lock to Rows</button>
+        </div>
+        <div class="fed-label" style="margin-top:6px">Rotation</div>
+        <div class="fed-grid" id="devRainRotationRuleGrid">
+          <button type="button" class="fed-btn" data-rain-rule="inheritRotationX">X · Camera Pitch</button>
+          <button type="button" class="fed-btn" data-rain-rule="inheritRotationY">Y · Camera Yaw</button>
+          <button type="button" class="fed-btn" data-rain-rule="inheritRotationZ">Z · Camera Roll</button>
+        </div>
+        <div class="fed-label" style="margin-top:6px">Scale</div>
+        <div class="fed-grid" id="devRainScaleRuleGrid">
+          <button type="button" class="fed-btn" data-rain-rule="scaleWithCameraDistance">Scale · Follow Camera Distance</button>
+        </div>
+        <label class="fed-label" style="margin-top:8px">Row distance (tiles)
+          <input type="number" id="devRainRowSpacing" min="0.5" max="24" step="0.5" value="3" style="width:72px">
+        </label>
+        <label class="fed-label">Visible toward camera
+          <input type="number" id="devRainFrontCount" min="0" max="12" step="1" value="3" style="width:72px">
+        </label>
+        <label class="fed-label">Visible behind player
+          <input type="number" id="devRainBehindCount" min="0" max="12" step="1" value="1" style="width:72px">
+        </label>
+        <label class="fed-label">Rain speed multiplier
+          <input type="number" id="devRainSpeedMultiplier" min="0.25" max="12" step="0.25" value="3" style="width:72px">
+        </label>
       </div>
       <div class="fed-section fed-actions">
         <button class="fed-action-btn" id="devCombatLogBtn">📋 Copy Combat Log (last 7s, for AI review)</button>
