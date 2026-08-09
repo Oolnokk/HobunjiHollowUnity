@@ -21,11 +21,18 @@
     <div class="help">Uses the game’s real NPC database, portrait compositor, PNG-plane avatar builder, centroid metadata, and popup renderer.</div>
     <section class="section"><h2>Mode assignments</h2><div id="assignments"></div></section>
     <section class="section">
-      <h2>Uploaded-prototype placement controls</h2>
-      <div class="sliderRow"><label for="worldHeight">Combat text world size</label><output id="worldHeightValue"></output><small>Standard line height in world metres.</small><input id="worldHeight" type="range" min="0.02" max="0.18" step="0.005"></div>
-      <div class="sliderRow"><label for="xOffset">List horizontal avatar offset</label><output id="xOffsetValue"></output><small>Avatar-plane width × percentage. Float+ remains centered horizontally on the centroid; the five-row list retains this offset.</small><input id="xOffset" type="range" min="-50" max="50" step="1"></div>
-      <div class="sliderRow"><label for="yOffset">Vertical avatar offset</label><output id="yOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage, added to the calculated avatar centroid.</small><input id="yOffset" type="range" min="-50" max="50" step="1"></div>
-      <div class="help">Float+ radius is exactly <code>max(0.18m, size × 3.2)</code>. List row spacing is exactly <code>size × 1.08</code>, with five rows centered on the centroid Y.</div>
+      <h2>Float+ placement</h2>
+      <div class="sliderRow"><label for="floatWorldHeight">Text world size</label><output id="floatWorldHeightValue"></output><small>Float+ line height in world metres.</small><input id="floatWorldHeight" type="range" min="0.02" max="0.18" step="0.005"></div>
+      <div class="sliderRow"><label for="floatXOffset">Horizontal avatar offset</label><output id="floatXOffsetValue"></output><small>Avatar-plane width × percentage; default 0% centers Float+ on the centroid.</small><input id="floatXOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="sliderRow"><label for="floatYOffset">Vertical avatar offset</label><output id="floatYOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage.</small><input id="floatYOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="help">Collision radius is exactly <code>max(0.18m, Float+ size × 3.2)</code>.</div>
+    </section>
+    <section class="section">
+      <h2>Centered Five Row List placement</h2>
+      <div class="sliderRow"><label for="listWorldHeight">Text world size</label><output id="listWorldHeightValue"></output><small>Each list row’s line height in world metres.</small><input id="listWorldHeight" type="range" min="0.02" max="0.18" step="0.005"></div>
+      <div class="sliderRow"><label for="listXOffset">Horizontal avatar offset</label><output id="listXOffsetValue"></output><small>Avatar-plane width × percentage; default 8% retains the uploaded prototype’s offset.</small><input id="listXOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="sliderRow"><label for="listYOffset">Vertical avatar offset</label><output id="listYOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage.</small><input id="listYOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="help">Row spacing is exactly <code>list size × 1.08</code>, with five rows centered around the configured centroid Y.</div>
     </section>
     <section class="section"><h2>Current JSON</h2><pre id="json" class="json"></pre></section>
     <div class="buttons"><button id="apply">Apply locally</button><button id="download">Download JSON</button><button id="reset">Reset repository values</button></div>
@@ -111,16 +118,21 @@ function fillNpcSelect(){
 function assignmentRows(){$('assignments').innerHTML=Object.entries(EVENT_LABELS).map(([key,label])=>`<div class="assignment"><span>${label}</span><select data-assignment="${key}"><option value="floatPlus">Float+</option><option value="centeredFiveRow">Centered Five Row List</option></select></div>`).join('')}
 function renderControls(){
   document.querySelectorAll('[data-assignment]').forEach(select=>select.value=settings.assignments[select.dataset.assignment]);
-  $('worldHeight').value=settings.placement.worldHeight;$('xOffset').value=settings.placement.xOffsetPercent;$('yOffset').value=settings.placement.yOffsetPercent;updateOutput();
+  $('floatWorldHeight').value=settings.floatPlus.worldHeight;$('floatXOffset').value=settings.floatPlus.xOffsetPercent;$('floatYOffset').value=settings.floatPlus.yOffsetPercent;
+  $('listWorldHeight').value=settings.centeredFiveRow.worldHeight;$('listXOffset').value=settings.centeredFiveRow.xOffsetPercent;$('listYOffset').value=settings.centeredFiveRow.yOffsetPercent;updateOutput();
 }
 function collect(){
   document.querySelectorAll('[data-assignment]').forEach(select=>settings.assignments[select.dataset.assignment]=select.value);
-  settings.placement={worldHeight:Math.max(.02,Math.min(.18,Math.round(Number($('worldHeight').value)*1000)/1000)),xOffsetPercent:Math.max(-50,Math.min(50,Math.round(Number($('xOffset').value)))),yOffsetPercent:Math.max(-50,Math.min(50,Math.round(Number($('yOffset').value))))};updateOutput();
+  settings.floatPlus={...settings.floatPlus,worldHeight:clampWorldHeight($('floatWorldHeight').value),xOffsetPercent:clampPercent($('floatXOffset').value),yOffsetPercent:clampPercent($('floatYOffset').value)};
+  settings.centeredFiveRow={...settings.centeredFiveRow,worldHeight:clampWorldHeight($('listWorldHeight').value),xOffsetPercent:clampPercent($('listXOffset').value),yOffsetPercent:clampPercent($('listYOffset').value)};updateOutput();
 }
+function clampWorldHeight(value){return Math.max(.02,Math.min(.18,Math.round(Number(value)*1000)/1000))}
+function clampPercent(value){return Math.max(-50,Math.min(50,Math.round(Number(value))))}
 function updateOutput(){
-  $('worldHeightValue').textContent=`${settings.placement.worldHeight.toFixed(3)}m`;$('xOffsetValue').textContent=`${settings.placement.xOffsetPercent}%`;$('yOffsetValue').textContent=`${settings.placement.yOffsetPercent}%`;$('json').textContent=JSON.stringify(settings,null,2);
+  $('floatWorldHeightValue').textContent=`${settings.floatPlus.worldHeight.toFixed(3)}m`;$('floatXOffsetValue').textContent=`${settings.floatPlus.xOffsetPercent}%`;$('floatYOffsetValue').textContent=`${settings.floatPlus.yOffsetPercent}%`;
+  $('listWorldHeightValue').textContent=`${settings.centeredFiveRow.worldHeight.toFixed(3)}m`;$('listXOffsetValue').textContent=`${settings.centeredFiveRow.xOffsetPercent}%`;$('listYOffsetValue').textContent=`${settings.centeredFiveRow.yOffsetPercent}%`;$('json').textContent=JSON.stringify(settings,null,2);
 }
-function previewSettings(){collect();popupRuntime.applySettings(settings);replayBurst()}
+function previewSettings(){collect();settings=popupRuntime.applySettings(settings);replayBurst()}
 function replayBurst(){
   if(!avatarModel)return;popupRuntime.clear();popupRuntime.showChange('damage',-18,{root:avatarHolder});popupRuntime.showChange('healing',7,{root:avatarHolder});popupRuntime.queueReward('loot','+2 Pine Log',{root:avatarHolder});popupRuntime.queueReward('currency','+24g',{root:avatarHolder});popupRuntime.queueReward('favor','+8 Favor',{root:avatarHolder});popupRuntime.queueReward('masteryXp','+1 Hatchet Mastery',{root:avatarHolder});popupRuntime.queueReward('skillXp','+5 Farming XP',{root:avatarHolder});
 }
@@ -130,16 +142,16 @@ function animate(now){controls?.update();popupRuntime.update(now);const centroid
 async function boot(){
   assignmentRows();await initThreePreview();
   const [settingsResponse,npcResponse]=await Promise.all([fetch('../../config/ui/world-popup-settings.json'),fetch(NPC_DB_URL)]);if(!settingsResponse.ok||!npcResponse.ok)throw new Error(`Repository load failed (${settingsResponse.status}/${npcResponse.status}).`);
-  repoSettings=await settingsResponse.json();const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');settings=mergeSettings(repoSettings,saved);renderControls();popupRuntime.applySettings(settings);
+  repoSettings=await settingsResponse.json();const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');settings=popupRuntime.applySettings(mergeSettings(repoSettings,saved));renderControls();
   await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});npcs=normalizeDatabase(await npcResponse.json()).filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0]);requestAnimationFrame(animate);
 }
-document.addEventListener('input',event=>{if(event.target.matches('[data-assignment],#worldHeight,#xOffset,#yOffset'))previewSettings()});
+document.addEventListener('input',event=>{if(event.target.matches('[data-assignment],#floatWorldHeight,#floatXOffset,#floatYOffset,#listWorldHeight,#listXOffset,#listYOffset'))previewSettings()});
 $('npcSelect').onchange=()=>renderAvatar(npcs[Number($('npcSelect').value)]).catch(error=>status(error.message,'bad'));
 $('npcFile').onchange=async event=>{try{const imported=normalizeDatabase(JSON.parse(await event.target.files[0].text()));npcs=imported.filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0])}catch(error){status(`NPC import failed: ${error.message}`,'bad')}finally{event.target.value=''}};
 $('burst').onclick=replayBurst;$('front').onclick=()=>setCamera('front');$('angle').onclick=()=>setCamera('angle');
-$('apply').onclick=()=>{collect();localStorage.setItem(STORAGE_KEY,JSON.stringify(settings));popupRuntime.applySettings(settings);replayBurst();status('Applied locally. Reload an already-open game tab to refresh it.')};
+$('apply').onclick=()=>{collect();settings=popupRuntime.applySettings(settings);localStorage.setItem(STORAGE_KEY,JSON.stringify(settings));replayBurst();status('Applied locally. Reload an already-open game tab to refresh it.')};
 $('download').onclick=()=>{collect();const blob=new Blob([JSON.stringify(settings,null,2)+'\n'],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='world-popup-settings.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000)};
-$('reset').onclick=()=>{settings=clone(repoSettings);localStorage.removeItem(STORAGE_KEY);renderControls();popupRuntime.applySettings(settings);replayBurst();status('Restored repository settings.')};
+$('reset').onclick=()=>{settings=popupRuntime.applySettings(repoSettings);localStorage.removeItem(STORAGE_KEY);renderControls();replayBurst();status('Restored repository settings.')};
 boot().catch(error=>status(error.stack||error.message,'bad'));
 </script>
 </body>
