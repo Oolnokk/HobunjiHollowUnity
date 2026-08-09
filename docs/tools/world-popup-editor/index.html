@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Hobunji Hollow — Popup Text Editor</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
@@ -53,20 +52,25 @@ let settings=null; // Editor model consumed by the controls and the real popup r
 let npcs=[]; // Repository or user-imported NPC records available to the avatar selector.
 let avatarModel=null; // Current PNG-plane model used by popup anchoring and visual preview.
 let renderGeneration=0; // Prevents a slower earlier avatar render replacing a later selection.
+let THREE=null,renderer=null,scene=null,camera=null,controls=null; // Exact repository Three.js preview runtime, loaded by PNGPlaneAvatar.
+let avatarHolder=null,centroidMarker=null,popupRuntime=null; // Scene objects created once by initThreePreview().
 const $=id=>document.getElementById(id);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const status=(message,tone='good')=>{$('status').textContent=message;$('status').className='status '+tone};
 
-const renderer=new THREE.WebGLRenderer({canvas:$('view3d'),antialias:true,alpha:false});
-renderer.outputEncoding=THREE.sRGBEncoding;
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x060c14);
-const camera=new THREE.PerspectiveCamera(45,1,.01,100);
-scene.add(new THREE.HemisphereLight(0xffffff,0x182435,1.8));
-const keyLight=new THREE.DirectionalLight(0xffffff,1.2);keyLight.position.set(2.5,3.5,4);scene.add(keyLight);
-const grid=new THREE.GridHelper(5,10,0x33538a,0x1a2638);grid.position.y=-.55;scene.add(grid);
-const avatarHolder=new THREE.Group();avatarHolder.name='popup_editor_avatar_holder';scene.add(avatarHolder);
-const centroidMarker=new THREE.Mesh(new THREE.RingGeometry(.035,.052,32),new THREE.MeshBasicMaterial({color:0x6aa7ff,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));centroidMarker.renderOrder=1300;scene.add(centroidMarker);
-const popupRuntime=window.WorldPopupText.init({THREE,camera,playerRoot:avatarHolder,getActiveScene:()=>scene});
+async function initThreePreview(){
+  const modules=await window.PNGPlaneAvatar.loadThreeModules();THREE=modules.THREE;
+  const canvas=$('view3d');renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;
+  scene=new THREE.Scene();scene.background=new THREE.Color(0x060c14);
+  const cfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar||{};camera=new THREE.PerspectiveCamera(cfg.previewCameraFovDeg||45,1,.01,100);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x182435,1.8));const keyLight=new THREE.DirectionalLight(0xffffff,1.2);keyLight.position.set(2.5,3.5,4);scene.add(keyLight);
+  const grid=new THREE.GridHelper(cfg.previewGridSize||5,cfg.previewGridDivisions||10,0x33538a,0x1a2638);grid.position.y=-.55;scene.add(grid);
+  if(modules.OrbitControls){controls=new modules.OrbitControls(camera,canvas);controls.enableDamping=true;controls.dampingFactor=.08;controls.target.set(0,0,0)}
+  avatarHolder=new THREE.Group();avatarHolder.name='popup_editor_avatar_holder';scene.add(avatarHolder);
+  centroidMarker=new THREE.Mesh(new THREE.RingGeometry(.035,.052,32),new THREE.MeshBasicMaterial({color:0x6aa7ff,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));centroidMarker.renderOrder=1300;scene.add(centroidMarker);
+  popupRuntime=window.WorldPopupText.init({THREE,camera,playerRoot:avatarHolder,getActiveScene:()=>scene});setCamera('angle');resizeThree();
+  new ResizeObserver(resizeThree).observe($('preview'));window.addEventListener('resize',resizeThree);
+}
 
 function mergeSettings(base,extra){
   const result=clone(base);
@@ -120,11 +124,11 @@ function previewSettings(){collect();popupRuntime.applySettings(settings);replay
 function replayBurst(){
   if(!avatarModel)return;popupRuntime.clear();popupRuntime.showChange('damage',-18,{root:avatarHolder});popupRuntime.showChange('healing',7,{root:avatarHolder});popupRuntime.queueReward('loot','+2 Pine Log',{root:avatarHolder});popupRuntime.queueReward('currency','+24g',{root:avatarHolder});popupRuntime.queueReward('favor','+8 Favor',{root:avatarHolder});popupRuntime.queueReward('masteryXp','+1 Hatchet Mastery',{root:avatarHolder});popupRuntime.queueReward('skillXp','+5 Farming XP',{root:avatarHolder});
 }
-function setCamera(view){const distance=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance)||3.2;const position=view==='front'?[0,distance*.12,distance]:[distance*.55,distance*.28,distance*.88];camera.position.set(...position);camera.lookAt(0,0,0)}
-function resize(){const rect=$('preview').getBoundingClientRect(),width=Math.max(1,Math.floor(rect.width)),height=Math.max(1,Math.floor(rect.height));renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix()}
-function animate(now){resize();popupRuntime.update(now);const centroid=avatarModel?popupRuntime.avatarCentroidWorld(avatarHolder):null;centroidMarker.visible=!!centroid;if(centroid){centroidMarker.position.copy(centroid);centroidMarker.quaternion.copy(camera.quaternion)}renderer.render(scene,camera);requestAnimationFrame(animate)}
+function setCamera(view){const distance=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance)||3.2;const position=view==='front'?[0,distance*.12,distance]:[distance*.55,distance*.28,distance*.88];camera.position.set(...position);camera.lookAt(0,0,0);controls?.target.set(0,0,0);controls?.update()}
+function resizeThree(){if(!renderer||!camera)return;const rect=$('view3d').getBoundingClientRect(),width=Math.max(1,Math.floor(rect.width)),height=Math.max(1,Math.floor(rect.height));renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix()}
+function animate(now){controls?.update();popupRuntime.update(now);const centroid=avatarModel?popupRuntime.avatarCentroidWorld(avatarHolder):null;centroidMarker.visible=!!centroid;if(centroid){centroidMarker.position.copy(centroid);centroidMarker.quaternion.copy(camera.quaternion)}renderer.render(scene,camera);requestAnimationFrame(animate)}
 async function boot(){
-  assignmentRows();setCamera('angle');
+  assignmentRows();await initThreePreview();
   const [settingsResponse,npcResponse]=await Promise.all([fetch('../../config/ui/world-popup-settings.json'),fetch(NPC_DB_URL)]);if(!settingsResponse.ok||!npcResponse.ok)throw new Error(`Repository load failed (${settingsResponse.status}/${npcResponse.status}).`);
   repoSettings=await settingsResponse.json();const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');settings=mergeSettings(repoSettings,saved);renderControls();popupRuntime.applySettings(settings);
   await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});npcs=normalizeDatabase(await npcResponse.json()).filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0]);requestAnimationFrame(animate);
