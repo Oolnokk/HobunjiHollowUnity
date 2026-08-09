@@ -2030,7 +2030,7 @@
         hearth:        { itemKey: 'hearthFurniture',        icon: '🔥', name: 'Hearth Fireplace',     modelFile: 'hearth_fireplace.glb',         price: 60, fw: 2, fd: 1, color: 0x5a4a3a, area: 'interior', desc: 'A stone fireplace for warmth and cooking.', light: { color: 0xff7722, intensity: 1.4, distance: 7, height: 0.4 }, sfxKey: 'fireplace' },
         loom:          { itemKey: 'loomFurniture',          icon: '🧶', name: 'Small Loom',           modelFile: 'loom_small.glb',               price: 45, fw: 1, fd: 2, color: 0x8a6a3a, area: 'interior', desc: 'A small loom for weaving cloth.' },
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
-        rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', desc: 'A small decorative woven rug.' },
+        rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
         stool:         { itemKey: 'stoolFurniture',         icon: '🪑', name: 'Round Stool',          modelFile: 'stool_round.glb',              price: 10, fw: 1, fd: 1, color: 0x7a5c3a, area: 'any',      desc: 'A simple round stool.', sit: true },
@@ -2430,6 +2430,34 @@
       function furnitureOwnerFields(col, row) {
         const owner = housePieceOwningInteriorCell(col, row);
         return owner ? { ownerPieceId: owner.id, localCol: col - owner.col * 2, localRow: row - owner.row * 2 } : {};
+      }
+
+      // Exact oriented-footprint collision for furniture. Placement remains
+      // tile-snapped, but 45-degree rotations should not block the unused
+      // corners of their larger axis-aligned placement bounds. Floor pieces
+      // opt out through def.walkable (currently the woven rug).
+      function decorativeFurnitureBlocksPoint(obj, x, z) {
+        const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+        if (!def || def.walkable) return false;
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+        const cx = obj.col + bounds.fw * 0.5, cz = obj.row + bounds.fd * 0.5;
+        const angle = -(obj.rotYDeg || 0) * Math.PI / 180;
+        const dx = x - cx, dz = z - cz;
+        const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
+        const localZ = dx * Math.sin(angle) + dz * Math.cos(angle);
+        return Math.abs(localX) < (def.fw || 1) * 0.5 && Math.abs(localZ) < (def.fd || 1) * 0.5;
+      }
+
+      function furnitureBlocksMovementAt(area, x, z) {
+        if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
+        if (area === 'interior' && _derivedHearthMeshes.some(h => {
+          const dx = x - h.cx, dz = z - h.cz;
+          const cos = Math.cos(-h.yaw), sin = Math.sin(-h.yaw);
+          const localX = dx * cos - dz * sin, localZ = dx * sin + dz * cos;
+          return Math.abs(localX) < 1 && Math.abs(localZ) < 0.5;
+        })) return true;
+        return area === 'farm' && [...processingFurnitureObjects].some(obj =>
+          x >= obj.col && x < obj.col + 1 && z >= obj.row && z < obj.row + 1);
       }
 
       // Which placed decorative-furniture keys the player can interact with
@@ -7817,7 +7845,7 @@
         const tile = g[r]?.[c];
         if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
         if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
-        if (area !== 'town' && interiorFurnitureObjects.some(o => o.area === area && o.col === c && o.row === r)) return false;
+        if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
         if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
         if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
@@ -13278,6 +13306,7 @@
         if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
         if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
         if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
+        if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
         // Farm terrain no longer slows movement — keeps farm traversal feeling
         // as snappy as town, matching the player's uniform GRASS speed there.
         if (currentArea === 'farm') return 1.00;
@@ -13465,7 +13494,7 @@
             light.position.set(h.cx, hearthDef.light.height || 0.6, h.cz);
             interiorScene.add(light);
           }
-          return { mesh, light };
+          return { ...h, mesh, light };
         });
 
         for (let r = 0; r < INTERIOR_ROWS; r++) {
@@ -13975,14 +14004,17 @@
       // the player already eats most of the vertical slack a ~14-tile,
       // ~33°-elevation sightline allows).
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
+      let _seatedOcclusionDistance = null;
+      let _seatedOcclusionUpdatedAt = 0;
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const obstacles = currentAreaOcclusionMeshes();
-        if (obstacles && obstacles.length) {
-          const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
-          const dist = Math.hypot(dx, dy, dz);
-          if (dist >= 0.5) {
-            const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist >= 0.5) {
+          const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+          let desiredSafeDist = dist;
+          if (obstacles && obstacles.length) {
             _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
             _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
             _cameraOcclusionRaycaster.far = dist;
@@ -13991,30 +14023,36 @@
             // house/barn/furniture entries above are whole Groups.
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
-              // Stop a little short of the actual hit (not flush against it) so
-              // the camera doesn't clip into the cliff face it just pulled in
-              // behind.
-              // A chair directly against a wall needs a much tighter pull-in:
-              // the ordinary three-tile floor can remain beyond a nearby
-              // wall and leave that wall filling the seated view.
               const minSafeDistance = activeCameraMode === 'seated' ? 0.85 : 3;
-              const safeDist = Math.max(minSafeDistance, hits[0].distance - 0.6);
-              // Wilderness plateaus can tower many tiers higher than anything
-              // an authored map ever had, so a cliff can sit close enough to
-              // the player that safeDist collapses near its floor — sliding
-              // straight back along the same shallow ideal-camera ray then
-              // just jams the camera face-first into that wall (a screen-
-              // filling close-up). Lift the camera as it's pulled in, trading
-              // "close" for "more overhead," so a tall nearby cliff still
-              // leaves the player and their surroundings in view instead of
-              // one flat wall.
-              const shrink = clamp(1 - safeDist / dist, 0, 1);
-              const lift = shrink * dist * 0.5;
-              resultX = lookAtX + dir.x * safeDist;
-              resultY = lookAtY + dir.y * safeDist + lift;
-              resultZ = lookAtZ + dir.z * safeDist;
+              desiredSafeDist = Math.min(dist, Math.max(minSafeDistance, hits[0].distance - 0.6));
             }
           }
+          let safeDist = desiredSafeDist;
+          if (activeCameraMode === 'seated') {
+            // Smooth toward the freshly raycast distance every frame. The old
+            // direct assignment made the camera stick to whichever wall face
+            // happened to win one raycast, then snap when that face changed.
+            const now = performance.now();
+            const dt = _seatedOcclusionUpdatedAt ? Math.min(0.1, (now - _seatedOcclusionUpdatedAt) / 1000) : 0;
+            _seatedOcclusionUpdatedAt = now;
+            if (_seatedOcclusionDistance == null) _seatedOcclusionDistance = dist;
+            const alpha = 1 - Math.exp(-8 * dt);
+            _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
+            safeDist = clamp(_seatedOcclusionDistance, 0.85, dist);
+          } else {
+            _seatedOcclusionDistance = null;
+            _seatedOcclusionUpdatedAt = 0;
+          }
+          if (safeDist < dist - 1e-4) {
+            const shrink = clamp(1 - safeDist / dist, 0, 1);
+            const lift = shrink * dist * 0.5;
+            resultX = lookAtX + dir.x * safeDist;
+            resultY = lookAtY + dir.y * safeDist + lift;
+            resultZ = lookAtZ + dir.z * safeDist;
+          }
+        } else if (activeCameraMode !== 'seated') {
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
         }
         // Floor guard — applies everywhere, not just zones (unlike the
         // mesh-obstacle pull-in above, which has nothing to raycast against
