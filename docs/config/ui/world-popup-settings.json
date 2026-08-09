@@ -8,15 +8,16 @@
     "currency": "centeredFiveRow",
     "loot": "centeredFiveRow"
   },
-  "placement": {
-    "worldHeight": 0.075,
-    "xOffsetPercent": 8,
-    "yOffsetPercent": 0
-  },
   "floatPlus": {
+    "worldHeight": 0.075,
+    "xOffsetPercent": 0,
+    "yOffsetPercent": 0,
     "lifetimeMs": 1150
   },
   "centeredFiveRow": {
+    "worldHeight": 0.075,
+    "xOffsetPercent": 8,
+    "yOffsetPercent": 0,
     "lifetimeMs": 1500,
     "rowSpacing": 1.08,
     "maxRows": 5
