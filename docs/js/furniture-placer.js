@@ -110,6 +110,14 @@
       moveBtn.className = 'settings-small-btn';
       moveBtn.textContent = isMoveArmed ? 'Cancel' : 'Move';
       moveBtn.addEventListener('click', () => deps.armFurnitureMove(isMoveArmed ? null : obj.id));
+      const rotateBtn = document.createElement('button');
+      rotateBtn.className = 'settings-small-btn';
+      rotateBtn.textContent = 'Rotate 45°';
+      rotateBtn.addEventListener('click', () => {
+        const result = deps.rotateFurniture(obj.id, 45);
+        deps.showToast(result.message, result.ok);
+        render();
+      });
       const removeBtn = document.createElement('button');
       removeBtn.className = 'settings-small-btn';
       removeBtn.textContent = 'Remove';
@@ -118,7 +126,7 @@
         deps.showToast(result.message, result.ok);
         render();
       });
-      row.append(moveBtn, removeBtn);
+      row.append(moveBtn, rotateBtn, removeBtn);
       list.appendChild(row);
     });
   }
