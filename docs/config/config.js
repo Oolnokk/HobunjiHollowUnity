@@ -127,6 +127,7 @@
 
   let _hardStepLogged = false; // Used to confirm the first actual hard-surface footfall reaches the direct procedural route.
   let _footstepCadenceLogged = false; // Used to confirm the shared stride accumulator is firing after AudioSystem initialization.
+  let _hardStepRouteInstallLogged = false; // Used to emit the route-install diagnostic only once across delayed install probes.
 
   function audioDebug(message) {
     if (typeof root.debugLog === 'function') root.debugLog(message, 'audio');
@@ -323,7 +324,10 @@
     }
 
     Object.defineProperty(audioSystem, '__hobunjiDirectHardStepWrapped', { value: true, configurable: true });
-    audioDebug('[footsteps] Direct legacy hard-surface route installed; gravel recordings cannot play through this route.');
+    if (!_hardStepRouteInstallLogged) {
+      _hardStepRouteInstallLogged = true;
+      audioDebug('[footsteps] Direct legacy hard-surface route installed; gravel recordings cannot play through this route.');
+    }
     return true;
   }
 
