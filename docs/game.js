@@ -14015,8 +14015,10 @@
       // the player already eats most of the vertical slack a ~14-tile,
       // ~33°-elevation sightline allows).
       const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
-      let _seatedOcclusionDistance = null;
-      let _seatedOcclusionUpdatedAt = 0;
+      const SEATED_CAMERA_WALL_CLEARANCE = 0.25; // gap kept between a seated camera and the detected wall face (used by occlusionSafeCameraPosition)
+      const SEATED_CAMERA_MIN_DISTANCE = 0.04; // emergency near-target limit used when a chair is almost flush against a wall
+      let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
+      let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
         const obstacles = currentAreaOcclusionMeshes();
@@ -14027,15 +14029,27 @@
           let desiredSafeDist = dist;
           if (obstacles && obstacles.length) {
             _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
-            _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+            // A chair can put the seated target much closer than 0.3 tiles to
+            // a wall. Use a short near plane there so the wall is not skipped;
+            // ordinary standing cameras retain the player-avoidance distance.
+            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' ? 0.02 : 0.3;
             _cameraOcclusionRaycaster.far = dist;
             // recursive:true — zone occlusion meshes are already individual
             // tagged leaf meshes (harmless either way there), but the
             // house/barn/furniture entries above are whole Groups.
             const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
             if (hits.length) {
-              const minSafeDistance = activeCameraMode === 'seated' ? 0.85 : 3;
-              desiredSafeDist = Math.min(dist, Math.max(minSafeDistance, hits[0].distance - 0.6));
+              if (activeCameraMode === 'seated') {
+                // Never impose a minimum that lies beyond the wall. The old
+                // 0.85-tile minimum did exactly that for wall-backed chairs,
+                // leaving the camera embedded despite a correct ray hit.
+                desiredSafeDist = Math.min(dist, Math.max(
+                  SEATED_CAMERA_MIN_DISTANCE,
+                  hits[0].distance - SEATED_CAMERA_WALL_CLEARANCE,
+                ));
+              } else {
+                desiredSafeDist = Math.min(dist, Math.max(3, hits[0].distance - 0.6));
+              }
             }
           }
           let safeDist = desiredSafeDist;
@@ -14046,10 +14060,16 @@
             const now = performance.now();
             const dt = _seatedOcclusionUpdatedAt ? Math.min(0.1, (now - _seatedOcclusionUpdatedAt) / 1000) : 0;
             _seatedOcclusionUpdatedAt = now;
-            if (_seatedOcclusionDistance == null) _seatedOcclusionDistance = dist;
-            const alpha = 1 - Math.exp(-8 * dt);
-            _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
-            safeDist = clamp(_seatedOcclusionDistance, 0.85, dist);
+            if (_seatedOcclusionDistance == null) _seatedOcclusionDistance = desiredSafeDist;
+            if (desiredSafeDist < _seatedOcclusionDistance) {
+              // Pull in immediately so no frame can remain inside a newly
+              // detected wall. Only the unobstructed move back out is eased.
+              _seatedOcclusionDistance = desiredSafeDist;
+            } else {
+              const alpha = 1 - Math.exp(-8 * dt);
+              _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
+            }
+            safeDist = clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
           } else {
             _seatedOcclusionDistance = null;
             _seatedOcclusionUpdatedAt = 0;
