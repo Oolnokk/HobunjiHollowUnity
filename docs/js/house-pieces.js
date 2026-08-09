@@ -42,11 +42,11 @@
   // on whichever farm-tile side it faces — the same convention proven by the
   // reference demo's entranceNubCells().
   //
-  // Furniture is not piece-owned data — demolish() locates furniture inside
-  // a piece's own doubled interior cell block purely by position and hands
-  // it to deps.recoverFurnitureInInteriorRect(), which refunds it to the
-  // farm's storage box (the same _loadWorldStorage/_saveWorldStorage system
-  // the Farm tab's Storage pane already uses) rather than any new UI.
+  // Interior furniture records the room piece and piece-local cell offset,
+  // so moving or rotating a room carries its contents with it. demolish()
+  // still locates furniture in that piece's doubled interior block and hands
+  // it to deps.recoverFurnitureInInteriorRect(), which refunds it to farm
+  // storage rather than deleting it.
   //
   // Pieces are always placed unrotated (rotationDeg 0) in this pass — no
   // in-world rotate-before-place control — keeping canPlaceAt/footprint math
@@ -410,6 +410,97 @@
     return { col: e.start, row, w: e.end - e.start, h: 1 };
   }
 
+  // Perpendicular ridges need a different join from the one-tile rectangle
+  // penetration above. When a smaller roof's gable points into the eave of a
+  // crossing host roof, continue that gable all the way to the host ridge.
+  // The returned records are render-only and never alter room footprints.
+  function _crossGableConnections(all) {
+    const out = [];
+    const roofSpan = (piece, axis) => axis === 'x' ? piece.h : piece.w;
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const a = all[i], b = all[j];
+        const ad = _rectAdjacency(a, b);
+        if (!ad) continue;
+        const axisA = _roofAxisDecision(a, all), axisB = _roofAxisDecision(b, all);
+        if (axisA === axisB) continue;
+        const spanA = roofSpan(a, axisA), spanB = roofSpan(b, axisB);
+        let source = a, host = b, sourceAxis = axisA, hostAxis = axisB;
+        if (spanA > spanB || (spanA === spanB && a.w * a.h > b.w * b.h)) {
+          source = b; host = a; sourceAxis = axisB; hostAxis = axisA;
+        }
+        const desiredAxis = ad.orientation === 'vertical' ? 'x' : 'z';
+        const hostCrosses = ad.orientation === 'vertical' ? hostAxis === 'z' : hostAxis === 'x';
+        const sourceCenter = ad.orientation === 'vertical'
+          ? source.row + source.h / 2
+          : source.col + source.w / 2;
+        const hostStart = ad.orientation === 'vertical' ? host.row : host.col;
+        const hostEnd = ad.orientation === 'vertical' ? host.row + host.h : host.col + host.w;
+        if (sourceAxis !== desiredAxis || !hostCrosses) continue;
+        if (sourceCenter < ad.start || sourceCenter > ad.end || sourceCenter < hostStart || sourceCenter > hostEnd) continue;
+        const boundary = ad.orientation === 'vertical'
+          ? (source.col + source.w === host.col ? host.col : source.col)
+          : (source.row + source.h === host.row ? host.row : source.row);
+        const target = ad.orientation === 'vertical'
+          ? host.col + host.w / 2
+          : host.row + host.h / 2;
+        if (Math.abs(target - boundary) < 1e-6) continue;
+        out.push({ sourceId: source.id, hostId: host.id, orientation: ad.orientation,
+          start: ad.start, end: ad.end, boundary, target });
+      }
+    }
+    return out;
+  }
+
+  // Builds the roof-only authored-piece payload used by HousePieceGen's real
+  // shingle renderer. Its two slopes begin at the shared eave and terminate
+  // at the crossing roof's spine, matching the reference demo geometry.
+  function _crossGablePiece(join, all) {
+    const source = all.find(p => p.id === join.sourceId);
+    if (!source) return null;
+    const BODY_TOP_SCALE = 0.85;
+    const Y_EAVE = 1.4;
+    const Y_RIDGE = Y_EAVE + 1.19;
+    const EPSILON = 0.04;
+    const cx = source.col + source.w / 2, cz = source.row + source.h / 2;
+    const e = {
+      minX: cx - source.w * BODY_TOP_SCALE / 2, maxX: cx + source.w * BODY_TOP_SCALE / 2,
+      minZ: cz - source.h * BODY_TOP_SCALE / 2, maxZ: cz + source.h * BODY_TOP_SCALE / 2,
+    };
+    const faces = [];
+    const face = (v, tag, extra = {}) => faces.push({
+      id: faces.length + 1, tag, v, ...extra,
+    });
+    if (join.orientation === 'vertical') {
+      const dir = cx < join.target ? 1 : -1;
+      const longShrink = (e.maxX - e.minX) * (1 - BODY_TOP_SCALE) / 2;
+      const ridgeStart = dir > 0 ? e.maxX - longShrink : e.minX + longShrink;
+      const lowMin = dir > 0 ? join.boundary : join.target;
+      const lowMax = dir > 0 ? join.target : join.boundary;
+      const ridgeMin = dir > 0 ? ridgeStart : join.target;
+      const ridgeMax = dir > 0 ? join.target : ridgeStart;
+      const z0 = Math.max(join.start, e.minZ), z1 = Math.min(join.end, e.maxZ);
+      face([[lowMin,Y_EAVE,z0],[ridgeMin,Y_RIDGE,cz-EPSILON],[ridgeMax,Y_RIDGE,cz-EPSILON],[lowMax,Y_EAVE,z0]], 'roof', { roofAcrossOffset: -0.25, roofOffsetRole: 'cross_gable_edgeward' });
+      face([[lowMax,Y_EAVE,z1],[ridgeMax,Y_RIDGE,cz+EPSILON],[ridgeMin,Y_RIDGE,cz+EPSILON],[lowMin,Y_EAVE,z1]], 'roof', { roofAcrossOffset: 0, roofOffsetRole: 'cross_gable_reference' });
+      face([[ridgeMin,Y_RIDGE,cz+EPSILON],[ridgeMax,Y_RIDGE,cz+EPSILON],[ridgeMax,Y_RIDGE,cz-EPSILON],[ridgeMin,Y_RIDGE,cz-EPSILON]], 'ceiling', { roofRidgeCap: true });
+    } else {
+      const dir = cz < join.target ? 1 : -1;
+      const longShrink = (e.maxZ - e.minZ) * (1 - BODY_TOP_SCALE) / 2;
+      const ridgeStart = dir > 0 ? e.maxZ - longShrink : e.minZ + longShrink;
+      const lowMin = dir > 0 ? join.boundary : join.target;
+      const lowMax = dir > 0 ? join.target : join.boundary;
+      const ridgeMin = dir > 0 ? ridgeStart : join.target;
+      const ridgeMax = dir > 0 ? join.target : ridgeStart;
+      const x0 = Math.max(join.start, e.minX), x1 = Math.min(join.end, e.maxX);
+      face([[x1,Y_EAVE,lowMin],[cx+EPSILON,Y_RIDGE,ridgeMin],[cx+EPSILON,Y_RIDGE,ridgeMax],[x1,Y_EAVE,lowMax]], 'roof', { roofAcrossOffset: -0.25, roofOffsetRole: 'cross_gable_edgeward' });
+      face([[x0,Y_EAVE,lowMax],[cx-EPSILON,Y_RIDGE,ridgeMax],[cx-EPSILON,Y_RIDGE,ridgeMin],[x0,Y_EAVE,lowMin]], 'roof', { roofAcrossOffset: 0, roofOffsetRole: 'cross_gable_reference' });
+      face([[cx-EPSILON,Y_RIDGE,ridgeMax],[cx+EPSILON,Y_RIDGE,ridgeMax],[cx+EPSILON,Y_RIDGE,ridgeMin],[cx-EPSILON,Y_RIDGE,ridgeMin]], 'ceiling', { roofRidgeCap: true });
+    }
+    return { schema: 'modular-house-piece-author/cross-gable-runtime', id: 'cross_gable_' + join.sourceId,
+      gridSize: 1, tileSize: 1, footprint: { cells: [{ x: 0, y: 0 }], connectors: [], extensions: {} },
+      base: { height: Y_EAVE, wallThickness: 0, groundY: 0, faces }, assets: [] };
+  }
+
   // Rebuilds every BUILT piece's mesh together in one pass — roof-axis
   // decisions and same-direction extensions are inherently global (a single
   // piece's roof can depend on every neighbor it touches), so an individual
@@ -427,6 +518,7 @@
     built.forEach(entry => _unregisterFeatureDoors(entry));
     _refreshArchitecturalFeatures(built);
     const exts = _sameDirectionExtensions(built);
+    const crossGables = _crossGableConnections(built);
     for (const entry of built) {
       _disposeMesh(entry._mesh);
       const axis = _roofAxisDecision(entry, built);
@@ -471,6 +563,16 @@
       const mesh = HousePieceGen.buildGroup(THREE, rect.col, rect.col + rect.w - 1, rect.row, rect.row + rect.h - 1, {
         axisOverride: e.axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
       });
+      deps.scene.add(mesh);
+      _extensionProxyMeshes.push(mesh);
+    });
+    crossGables.forEach(join => {
+      const piece = _crossGablePiece(join, built);
+      if (!piece) return;
+      const mesh = HousePieceGen.buildGroupFromPiece(THREE, piece, 0, 0, {
+        wallBuilder: null, ..._faceMats(),
+      });
+      mesh.userData.generatedCrossGable = true;
       deps.scene.add(mesh);
       _extensionProxyMeshes.push(mesh);
     });
@@ -672,7 +774,11 @@
       return { ok: false, message: 'Cannot move the house there — needs clear, untilled ground for every room.' };
     }
 
-    pieces.forEach(p => { p.col += dCol; p.row += dRow; });
+    pieces.forEach(p => {
+      const oldRect = { col: p.col, row: p.row, w: p.w, h: p.h };
+      p.col += dCol; p.row += dRow;
+      deps.transformFurnitureWithHousePiece?.(p.id, oldRect, { col: p.col, row: p.row, w: p.w, h: p.h }, false);
+    });
     pieces.forEach(p => {
       _registerFootprint(p);
       clearFootprint(p.col, p.row, p.w, p.h);
@@ -731,7 +837,9 @@
 
     _unregisterFootprint(entry);
     _unregisterFeatureDoors(entry);
+    const oldRect = { col: entry.col, row: entry.row, w: entry.w, h: entry.h };
     entry.col = newCol; entry.row = newRow;
+    deps.transformFurnitureWithHousePiece?.(entry.id, oldRect, { col: entry.col, row: entry.row, w: entry.w, h: entry.h }, false);
     _registerFootprint(entry);
     clearFootprint(entry.col, entry.row, entry.w, entry.h);
     if (entry.stage === 'foundation' && entry._mesh) {
@@ -776,7 +884,9 @@
       return { ok: false, message: 'Cannot rotate here — the turned footprint needs clear ground touching the rest of your house.' };
     }
 
+    const oldRect = { col: entry.col, row: entry.row, w: entry.w, h: entry.h };
     entry.w = newW; entry.h = newH;
+    deps.transformFurnitureWithHousePiece?.(entry.id, oldRect, { col: entry.col, row: entry.row, w: entry.w, h: entry.h }, true);
     _registerFootprint(entry);
     clearFootprint(entry.col, entry.row, entry.w, entry.h);
     if (entry.stage === 'foundation' && entry._mesh) {
