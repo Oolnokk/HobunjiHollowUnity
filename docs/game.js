@@ -1384,7 +1384,24 @@
       };
 
       // Used by inventoryHud and planting/harvesting actions.
-      const inventory = { ...STARTING_INVENTORY };
+      // inventoryProxy reports live item gains and gold changes to WorldPopupText;
+      // boot/save restoration is ignored until window.__hobunjiGameStarted is true.
+      const inventory = new Proxy({ ...STARTING_INVENTORY }, {
+        set(target, key, value) {
+          const before = Number(target[key]) || 0;
+          const applied = Reflect.set(target, key, value);
+          const delta = (Number(value) || 0) - before;
+          if (applied && delta && window.__hobunjiGameStarted && window.WorldPopupText) {
+            if (key === 'gold') {
+              window.WorldPopupText.queueReward('currency', `${delta > 0 ? '+' : '-'}${Math.abs(delta)}g`);
+            } else if (delta > 0) {
+              const def = ITEM_DEFS[key];
+              window.WorldPopupText.queueReward('loot', `+${delta} ${def?.label || key}`);
+            }
+          }
+          return applied;
+        },
+      });
 
       let gearInventory = null; // Loaded from player profile — character-scoped
       let packClothing  = [];   // Clothing items in world/pack inventory
@@ -1597,6 +1614,7 @@
         if (!itemKey || !TOOL_ITEM_DEFS[itemKey] || !(amount > 0) || !gearInventory) return;
         if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
         gearInventory.toolMastery[itemKey].xp += amount;
+        window.WorldPopupText?.queueReward('masteryXp', `+${amount} ${TOOL_ITEM_DEFS[itemKey].label} Mastery`);
         saveGearInventory();
       }
 
@@ -15457,6 +15475,34 @@
       const playerMesh = new THREE.Group();
       playerMesh.name = 'player_root';
       scene.add(playerMesh);
+      // worldPopupRuntime is updated by gameLoop and anchors every popup to
+      // the same portrait centroid already used by dialogue camera framing.
+      const worldPopupRuntime = window.WorldPopupText?.init({
+        THREE,
+        camera,
+        playerRoot: playerMesh,
+        getActiveScene,
+      });
+      // healthPopupAccumulator merges frame-by-frame regen/DoT into readable
+      // Float+ events instead of emitting one plane every animation frame.
+      const healthPopupAccumulator = new Map();
+      window.addEventListener('hobunji-resource-change', event => {
+        const detail = event.detail || {};
+        const root = detail.entity === player ? playerMesh : detail.entity?.avatarRef?.group || detail.entity?.root;
+        if (!root || !detail.delta) return;
+        if (detail.immediate) {
+          window.WorldPopupText?.showChange(detail.delta < 0 ? 'damage' : 'healing', detail.delta, { root });
+          return;
+        }
+        const current = healthPopupAccumulator.get(root) || { delta: 0, timer: null };
+        current.delta += detail.delta;
+        clearTimeout(current.timer);
+        current.timer = setTimeout(() => {
+          healthPopupAccumulator.delete(root);
+          if (Math.abs(current.delta) >= 0.5) window.WorldPopupText?.showChange(current.delta < 0 ? 'damage' : 'healing', current.delta, { root });
+        }, 240);
+        healthPopupAccumulator.set(root, current);
+      });
       const playerGroundShadow = makeCharacterGroundShadow('player_ground_shadow');
       scene.add(playerGroundShadow);
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
@@ -18113,6 +18159,8 @@
           requestAnimationFrame(gameLoop);
           return;
         }
+
+        worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
 
@@ -22139,6 +22187,7 @@
 
       // ── Onboarding gate ────────────────────────────────────────────
       let gameStarted = false;
+      window.__hobunjiGameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
         // Restore this world's saved date/time/weather (see
@@ -22358,6 +22407,7 @@
           console.warn('spawnPlayerAvatar failed, continuing without avatar:', err);
         }
         gameStarted = true;
+        window.__hobunjiGameStarted = true;
       }
 
       document.addEventListener('hobunjiPlayerReady', (e) => {

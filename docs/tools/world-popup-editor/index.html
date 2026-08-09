@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Hobunji Hollow — Popup Text Editor</title>
+<link rel="preload" href="../../assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf" as="font" type="font/ttf" crossorigin>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/world-popup-text.js"></script>
+<style>
+@font-face{font-family:'KhymeryyanRomanLetters+Numbers';src:url('../../assets/hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');font-weight:normal;font-style:normal;font-display:swap;size-adjust:115%}
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:13px}:root{--panel:#111b28;--border:rgba(255,255,255,.13);--accent:#6aa7ff;--muted:#9fb4cf;--good:#68e0a5;--bad:#ff8798}button,input,select{font:inherit;color:inherit}button,select,input[type=file]{background:#172638;border:1px solid var(--border);border-radius:8px;padding:8px}button{font-weight:700;cursor:pointer}input[type=range]{width:100%;accent-color:var(--accent)}#app{display:grid;grid-template-columns:minmax(320px,42%) 1fr;height:100%}#controls{overflow:auto;padding:14px;background:var(--panel);border-right:1px solid var(--border)}h1{font-size:18px;margin:0 0 5px}.help,.status,small{color:var(--muted);font-size:11px}.section{border:1px solid var(--border);border-radius:11px;padding:11px;margin-top:11px;background:rgba(0,0,0,.12)}.section h2{font-size:13px;margin:0 0 8px}.assignment{display:grid;grid-template-columns:1fr 150px;align-items:center;gap:8px;margin:6px 0}.assignment select{width:100%}.modeTabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}.modeTab.active{background:var(--accent);color:#07101a;border-color:var(--accent)}[data-mode-panel][hidden]{display:none}.sliderRow{display:grid;grid-template-columns:1fr auto;gap:5px 10px;margin:10px 0}.sliderRow label{font-weight:700}.sliderRow output{color:#dceaff;font-variant-numeric:tabular-nums}.sliderRow small{grid-column:1/-1}.sliderRow input{grid-column:1/-1}.buttons{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:11px}.status{min-height:18px;margin-top:8px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}#preview{position:relative;min-width:0;background:#060c14}#view3d{display:block;width:100%;height:100%;touch-action:none}.previewToolbar{position:absolute;z-index:3;top:10px;left:10px;right:10px;display:flex;flex-wrap:wrap;gap:7px;padding:8px;background:rgba(7,16,26,.88);border:1px solid var(--border);border-radius:10px}.previewToolbar select{min-width:180px;flex:1}.previewToolbar button{width:auto}.legend{position:absolute;left:10px;bottom:10px;z-index:3;padding:7px 9px;border-radius:8px;background:rgba(7,16,26,.82);color:var(--muted);font-size:11px}.dot{display:inline-block;width:9px;height:9px;border:2px solid #6aa7ff;border-radius:50%;margin-right:4px}.json{max-height:180px;overflow:auto;white-space:pre-wrap;background:#07101a;padding:8px;border-radius:8px;font:11px ui-monospace,monospace}@media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:52% 48%}#controls{border-right:0;border-bottom:1px solid var(--border);padding:10px}.assignment{grid-template-columns:1fr 135px}.buttons{grid-template-columns:1fr}.previewToolbar{top:6px;left:6px;right:6px}.legend{left:6px;bottom:6px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="controls">
+    <h1>World Popup Text Editor</h1>
+    <div class="help">Uses the game’s real NPC database, portrait compositor, PNG-plane avatar builder, centroid metadata, and popup renderer.</div>
+    <section class="section"><h2>Mode assignments</h2><div id="assignments"></div></section>
+    <nav class="modeTabs" aria-label="Mode being edited and previewed">
+      <button id="editFloatMode" class="modeTab active" type="button">Float+</button>
+      <button id="editListMode" class="modeTab" type="button">Five Row List</button>
+    </nav>
+    <section class="section" data-mode-panel="floatPlus">
+      <h2>Float+ placement</h2>
+      <div class="sliderRow"><label for="floatWorldHeight">Text world size</label><output id="floatWorldHeightValue"></output><small>Float+ line height in world metres.</small><input id="floatWorldHeight" type="range" min="0.02" max="0.40" step="0.005"></div>
+      <div class="sliderRow"><label for="floatXOffset">Horizontal avatar offset</label><output id="floatXOffsetValue"></output><small>Avatar-plane width × percentage.</small><input id="floatXOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="sliderRow"><label for="floatYOffset">Vertical avatar offset</label><output id="floatYOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage.</small><input id="floatYOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="help">Collision radius is exactly <code>max(0.18m, Float+ size × 3.2)</code>.</div>
+    </section>
+    <section class="section" data-mode-panel="centeredFiveRow" hidden>
+      <h2>Five Row List placement · left aligned</h2>
+      <div class="sliderRow"><label for="listWorldHeight">Text world size</label><output id="listWorldHeightValue"></output><small>Each list row’s line height in world metres.</small><input id="listWorldHeight" type="range" min="0.02" max="0.40" step="0.005"></div>
+      <div class="sliderRow"><label for="listXOffset">Horizontal avatar offset</label><output id="listXOffsetValue"></output><small>Avatar-plane width × percentage; this is the shared left edge for every row.</small><input id="listXOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="sliderRow"><label for="listYOffset">Vertical avatar offset</label><output id="listYOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage.</small><input id="listYOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="help">Row spacing is exactly <code>list size × 1.08</code>, with five rows centered around the configured centroid Y.</div>
+    </section>
+    <section class="section"><h2>Current JSON</h2><pre id="json" class="json"></pre></section>
+    <div class="buttons"><button id="apply">Apply locally</button><button id="download">Download JSON</button><button id="reset">Reset repository values</button></div>
+    <div id="status" class="status" aria-live="polite"></div>
+  </main>
+  <section id="preview">
+    <div class="previewToolbar">
+      <select id="npcSelect" aria-label="Preview avatar"><option>Loading repository avatars…</option></select>
+      <label style="display:inline-flex;align-items:center;gap:5px"><input id="npcFile" type="file" accept="application/json,.json"> Import NPC JSON</label>
+      <button id="burst">Replay popup burst</button>
+      <button id="front">Front</button><button id="angle">Angle</button>
+    </div>
+    <canvas id="view3d"></canvas>
+    <div class="legend"><span class="dot"></span>calculated avatar centroid</div>
+  </section>
+</div>
+<script>
+'use strict';
+const STORAGE_KEY='hobunjiWorldPopupSettings.v1';
+const EVENT_LABELS={damage:'Damage',healing:'Healing',skillXp:'Skill XP',masteryXp:'Tool Mastery XP',favor:'Favor changes',currency:'Currency acquisition/loss',loot:'Loot'};
+const NPC_DB_URL='../../config/npcs/hobunji-starter-npc-database.json';
+let repoSettings=null; // Used by resetSettings() to restore the checked-in configuration.
+let settings=null; // Editor model consumed by the controls and the real popup renderer.
+let npcs=[]; // Repository or user-imported NPC records available to the avatar selector.
+let avatarModel=null; // Current PNG-plane model used by popup anchoring and visual preview.
+let renderGeneration=0; // Prevents a slower earlier avatar render replacing a later selection.
+let editingMode='floatPlus'; // Selects the one slider panel and popup mode currently previewed.
+let THREE=null,renderer=null,scene=null,camera=null,controls=null; // Exact repository Three.js preview runtime, loaded by PNGPlaneAvatar.
+let avatarHolder=null,centroidMarker=null,popupRuntime=null; // Scene objects created once by initThreePreview().
+const $=id=>document.getElementById(id);
+const clone=value=>JSON.parse(JSON.stringify(value));
+const status=(message,tone='good')=>{$('status').textContent=message;$('status').className='status '+tone};
+
+async function initThreePreview(){
+  const modules=await window.PNGPlaneAvatar.loadThreeModules();THREE=modules.THREE;
+  const canvas=$('view3d');renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;
+  scene=new THREE.Scene();scene.background=new THREE.Color(0x060c14);
+  const cfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar||{};camera=new THREE.PerspectiveCamera(cfg.previewCameraFovDeg||45,1,.01,100);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x182435,1.8));const keyLight=new THREE.DirectionalLight(0xffffff,1.2);keyLight.position.set(2.5,3.5,4);scene.add(keyLight);
+  const grid=new THREE.GridHelper(cfg.previewGridSize||5,cfg.previewGridDivisions||10,0x33538a,0x1a2638);grid.position.y=-.55;scene.add(grid);
+  if(modules.OrbitControls){controls=new modules.OrbitControls(camera,canvas);controls.enableDamping=true;controls.dampingFactor=.08;controls.target.set(0,0,0)}
+  avatarHolder=new THREE.Group();avatarHolder.name='popup_editor_avatar_holder';scene.add(avatarHolder);
+  centroidMarker=new THREE.Mesh(new THREE.RingGeometry(.035,.052,32),new THREE.MeshBasicMaterial({color:0x6aa7ff,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));centroidMarker.renderOrder=1300;scene.add(centroidMarker);
+  popupRuntime=window.WorldPopupText.init({THREE,camera,playerRoot:avatarHolder,getActiveScene:()=>scene});setCamera('angle');resizeThree();
+  new ResizeObserver(resizeThree).observe($('preview'));window.addEventListener('resize',resizeThree);
+}
+
+function mergeSettings(base,extra){
+  const result=clone(base);
+  for(const [key,value] of Object.entries(extra||{}))result[key]=value&&typeof value==='object'&&!Array.isArray(value)?{...(result[key]||{}),...value}:value;
+  return result;
+}
+function normalizeDatabase(input){if(Array.isArray(input))return input;if(Array.isArray(input?.npcs))return input.npcs;if(Array.isArray(input?.npcDatabase))return input.npcDatabase;if(input&&typeof input==='object')return[input];throw new Error('That JSON does not contain an NPC or NPC database.');}
+function normalizeGender(value){return ['female','f'].includes(String(value||'').toLowerCase())?'female':'male'}
+function normalizeSpecies(value){const species=String(value||'').toLowerCase().replace(/_/g,'-').replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'');return species&&!species.includes('unknown')?species:'mao-ao'}
+function asEquipArray(value){if(Array.isArray(value))return value.filter(Boolean);if(value&&typeof value==='object')return Object.values(value).filter(item=>typeof item==='string'&&item);return[]}
+function portraitExportFor(npc){
+  const raw=npc?.avatarEditor?.rawExport||{},profile=raw.profile||raw.avatarProfile||raw.npcProfile||raw,source=raw.appearance||profile.appearance||profile.visuals?.appearance||npc?.appearance||{};
+  const appearance={...source,...(profile.appearance||{}),...(profile.visuals?.appearance||{}),...(npc.appearance||{})};
+  appearance.speciesId=normalizeSpecies(appearance.speciesId||appearance.species||npc.species);appearance.gender=normalizeGender(appearance.gender||npc.gender);
+  appearance.cosmetics={...(source.cosmetics||{}),...(profile.appearance?.cosmetics||{}),...(profile.visuals?.appearance?.cosmetics||{}),...(npc.appearance?.cosmetics||{})};
+  appearance.bodyColors={...(source.bodyColors||{}),...(profile.appearance?.bodyColors||{}),...(profile.visuals?.appearance?.bodyColors||{}),...(npc.appearance?.bodyColors||{})};
+  return{name:npc.name||npc.id||'NPC',appearance,equippedCosmetics:asEquipArray(raw.equippedCosmetics||profile.equippedCosmetics||profile.equipment||npc.equippedCosmetics),appliedDyes:raw.appliedDyes||profile.appliedDyes||npc.appliedDyes||{},portrait:npc.portrait||{},rawExport:raw};
+}
+function disposeAvatar(){
+  if(!avatarModel)return;avatarHolder.remove(avatarModel);avatarModel.traverse(child=>{child.geometry?.dispose?.();if(child.material){const materials=Array.isArray(child.material)?child.material:[child.material];materials.forEach(material=>{material.map?.dispose?.();material.dispose?.()})}});avatarModel=null;popupRuntime.clear();
+}
+async function renderAvatar(npc){
+  const generation=++renderGeneration;status(`Rendering ${npc.name||npc.id}…`,'');
+  const exported=portraitExportFor(npc);let profile=window.NpcAvatarPreview.buildProfileFromNpcExport(exported);
+  if(!profile)profile=window.NpcAvatarPreview.randomProfile(`popup:${npc.id||npc.name}`,{speciesId:exported.appearance.speciesId,gender:exported.appearance.gender});
+  if(!profile)throw new Error('Could not build this NPC portrait profile.');
+  const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
+  const front=Object.assign(document.createElement('canvas'),{width:size,height:size}),back=Object.assign(document.createElement('canvas'),{width:size,height:size});
+  await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,{seatId:npc.id||npc.name||'npc',forceEyesOpen:true});
+  await window.NpcAvatarPreview.renderProfileToCanvas(back,profile,{seatId:npc.id||npc.name||'npc',portraitView:'behind',forceEyesOpen:true});
+  if(generation!==renderGeneration)return;
+  disposeAvatar();avatarModel=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,front,{backCanvas:back,profile,appearance:exported.appearance,npcRecord:npc,name:`NPC_${npc.id||npc.name||'preview'}`});avatarHolder.add(avatarModel);
+  replayBurst();status(`Showing ${npc.name||npc.id}. Real portrait metadata is driving the centroid and offsets.`);
+}
+function fillNpcSelect(){
+  $('npcSelect').innerHTML=npcs.map((npc,index)=>`<option value="${index}">${npc.name||npc.id||`NPC ${index+1}`} · ${npc.species||npc.appearance?.speciesId||''}</option>`).join('');
+}
+function assignmentRows(){$('assignments').innerHTML=Object.entries(EVENT_LABELS).map(([key,label])=>`<div class="assignment"><span>${label}</span><select data-assignment="${key}"><option value="floatPlus">Float+</option><option value="centeredFiveRow">Centered Five Row List</option></select></div>`).join('')}
+function renderControls(){
+  document.querySelectorAll('[data-assignment]').forEach(select=>select.value=settings.assignments[select.dataset.assignment]);
+  $('floatWorldHeight').value=settings.floatPlus.worldHeight;$('floatXOffset').value=settings.floatPlus.xOffsetPercent;$('floatYOffset').value=settings.floatPlus.yOffsetPercent;
+  $('listWorldHeight').value=settings.centeredFiveRow.worldHeight;$('listXOffset').value=settings.centeredFiveRow.xOffsetPercent;$('listYOffset').value=settings.centeredFiveRow.yOffsetPercent;updateOutput();
+}
+function collect(){
+  document.querySelectorAll('[data-assignment]').forEach(select=>settings.assignments[select.dataset.assignment]=select.value);
+  settings.floatPlus={...settings.floatPlus,worldHeight:clampWorldHeight($('floatWorldHeight').value),xOffsetPercent:clampPercent($('floatXOffset').value),yOffsetPercent:clampPercent($('floatYOffset').value)};
+  settings.centeredFiveRow={...settings.centeredFiveRow,worldHeight:clampWorldHeight($('listWorldHeight').value),xOffsetPercent:clampPercent($('listXOffset').value),yOffsetPercent:clampPercent($('listYOffset').value)};updateOutput();
+}
+function clampWorldHeight(value){return Math.max(.02,Math.min(.40,Math.round(Number(value)*1000)/1000))}
+function clampPercent(value){return Math.max(-50,Math.min(50,Math.round(Number(value))))}
+function updateOutput(){
+  $('floatWorldHeightValue').textContent=`${settings.floatPlus.worldHeight.toFixed(3)}m`;$('floatXOffsetValue').textContent=`${settings.floatPlus.xOffsetPercent}%`;$('floatYOffsetValue').textContent=`${settings.floatPlus.yOffsetPercent}%`;
+  $('listWorldHeightValue').textContent=`${settings.centeredFiveRow.worldHeight.toFixed(3)}m`;$('listXOffsetValue').textContent=`${settings.centeredFiveRow.xOffsetPercent}%`;$('listYOffsetValue').textContent=`${settings.centeredFiveRow.yOffsetPercent}%`;$('json').textContent=JSON.stringify(settings,null,2);
+}
+function previewSettings(){collect();settings=popupRuntime.applySettings(settings);replayBurst()}
+function setEditingMode(mode){
+  editingMode=mode==='centeredFiveRow'?'centeredFiveRow':'floatPlus';
+  $('editFloatMode').classList.toggle('active',editingMode==='floatPlus');$('editListMode').classList.toggle('active',editingMode==='centeredFiveRow');
+  document.querySelectorAll('[data-mode-panel]').forEach(panel=>panel.hidden=panel.dataset.modePanel!==editingMode);
+  $('burst').textContent=editingMode==='floatPlus'?'Replay Float+':'Replay Five Row List';replayBurst();
+}
+function replayBurst(){
+  if(!avatarModel)return;popupRuntime.clear();
+  if(editingMode==='floatPlus'){popupRuntime.showChange('damage',-18,{root:avatarHolder,mode:'floatPlus'});return}
+  popupRuntime.queueReward('loot','+2 Pine Log',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('currency','+24g',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('favor','+8 Favor',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('masteryXp','+1 Hatchet Mastery',{root:avatarHolder,mode:'centeredFiveRow'});popupRuntime.queueReward('skillXp','+5 Farming XP',{root:avatarHolder,mode:'centeredFiveRow'});
+}
+function setCamera(view){const distance=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewCameraDistance)||3.2;const position=view==='front'?[0,distance*.12,distance]:[distance*.55,distance*.28,distance*.88];camera.position.set(...position);camera.lookAt(0,0,0);controls?.target.set(0,0,0);controls?.update()}
+function resizeThree(){if(!renderer||!camera)return;const rect=$('view3d').getBoundingClientRect(),width=Math.max(1,Math.floor(rect.width)),height=Math.max(1,Math.floor(rect.height));renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix()}
+function animate(now){controls?.update();popupRuntime.update(now);const centroid=avatarModel?popupRuntime.avatarCentroidWorld(avatarHolder):null;centroidMarker.visible=!!centroid;if(centroid){centroidMarker.position.copy(centroid);centroidMarker.quaternion.copy(camera.quaternion)}renderer.render(scene,camera);requestAnimationFrame(animate)}
+async function boot(){
+  assignmentRows();
+  if(document.fonts?.load)await document.fonts.load("900 72px 'KhymeryyanRomanLetters+Numbers'").catch(()=>[]);
+  await initThreePreview();
+  const [settingsResponse,npcResponse]=await Promise.all([fetch('../../config/ui/world-popup-settings.json'),fetch(NPC_DB_URL)]);if(!settingsResponse.ok||!npcResponse.ok)throw new Error(`Repository load failed (${settingsResponse.status}/${npcResponse.status}).`);
+  repoSettings=await settingsResponse.json();const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');settings=popupRuntime.applySettings(mergeSettings(repoSettings,saved));renderControls();
+  await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});npcs=normalizeDatabase(await npcResponse.json()).filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0]);requestAnimationFrame(animate);
+}
+document.addEventListener('input',event=>{if(event.target.matches('[data-assignment],#floatWorldHeight,#floatXOffset,#floatYOffset,#listWorldHeight,#listXOffset,#listYOffset'))previewSettings()});
+$('npcSelect').onchange=()=>renderAvatar(npcs[Number($('npcSelect').value)]).catch(error=>status(error.message,'bad'));
+$('npcFile').onchange=async event=>{try{const imported=normalizeDatabase(JSON.parse(await event.target.files[0].text()));npcs=imported.filter(Boolean);fillNpcSelect();await renderAvatar(npcs[0])}catch(error){status(`NPC import failed: ${error.message}`,'bad')}finally{event.target.value=''}};
+$('editFloatMode').onclick=()=>setEditingMode('floatPlus');$('editListMode').onclick=()=>setEditingMode('centeredFiveRow');
+$('burst').onclick=replayBurst;$('front').onclick=()=>setCamera('front');$('angle').onclick=()=>setCamera('angle');
+$('apply').onclick=()=>{collect();settings=popupRuntime.applySettings(settings);localStorage.setItem(STORAGE_KEY,JSON.stringify(settings));replayBurst();status('Applied locally. Reload an already-open game tab to refresh it.')};
+$('download').onclick=()=>{collect();const blob=new Blob([JSON.stringify(settings,null,2)+'\n'],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='world-popup-settings.json';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000)};
+$('reset').onclick=()=>{settings=popupRuntime.applySettings(repoSettings);localStorage.removeItem(STORAGE_KEY);renderControls();replayBurst();status('Restored repository settings.')};
+boot().catch(error=>status(error.stack||error.message,'bad'));
+</script>
+</body>
+</html>
