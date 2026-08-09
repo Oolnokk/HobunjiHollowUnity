@@ -2425,6 +2425,15 @@
         return null;
       }
 
+      // Furniture lights are tagged so WeatherFX can project their real
+      // world-space positions into the same soft mask used by lanterns.
+      function makeFurniturePointLight(lightDef, x, y, z) {
+        const light = new THREE.PointLight(lightDef.color, lightDef.intensity, lightDef.distance);
+        light.position.set(x, y, z);
+        light.userData.furnitureLightMask = true;
+        return light;
+      }
+
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
@@ -2436,8 +2445,7 @@
 
         let light = null;
         if (def.light) {
-          light = new THREE.PointLight(def.light.color, def.light.intensity, def.light.distance);
-          light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
+          light = makeFurniturePointLight(def.light, col + 0.5, def.light.height || 0.6, row + 0.5);
           targetScene.add(light);
         }
         const sfxSource = window.Music?.registerFurnitureSfxSource(area, col + (def.fw || 1) * 0.5, row + (def.fd || 1) * 0.5, window.Music?.resolveFurnitureSfx(def));
@@ -9122,6 +9130,11 @@
               bScene.add(ph);
               window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
+            // Building-map furniture bypasses makeDecorativeFurnitureMesh,
+            // so add its configured lamp/candle light explicitly here.
+            if (def?.light) {
+              bScene.add(makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz));
+            }
             // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
             // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
             // a custom interaction registered at this instance's actual
@@ -13261,8 +13274,7 @@
           interiorScene.add(mesh);
           let light = null;
           if (hearthDef.light) {
-            light = new THREE.PointLight(hearthDef.light.color, hearthDef.light.intensity, hearthDef.light.distance);
-            light.position.set(h.cx, hearthDef.light.height || 0.6, h.cz);
+            light = makeFurniturePointLight(hearthDef.light, h.cx, hearthDef.light.height || 0.6, h.cz);
             interiorScene.add(light);
           }
           return { mesh, light };
@@ -21427,6 +21439,29 @@
         // Used by WeatherFX's player lantern mask to follow the avatar's
         // smoothed world elevation instead of projecting from flat Y=0.
         getPlayerWorldY: () => playerMesh.position.y,
+        // Lighting is sampled at 10 Hz, so collecting the active scene's
+        // tagged furniture lights here stays cheap and avoids stale coords.
+        getFurnitureLightSources: () => {
+          const sources = [];
+          const worldPosition = new THREE.Vector3();
+          getActiveScene()?.traverse(obj => {
+            if (!obj.isPointLight || !obj.userData?.furnitureLightMask) return;
+            obj.getWorldPosition(worldPosition);
+            sources.push({
+              x: worldPosition.x,
+              y: worldPosition.y,
+              z: worldPosition.z,
+              distance: obj.distance,
+              intensity: obj.intensity,
+              color: {
+                r: Math.round(obj.color.r * 255),
+                g: Math.round(obj.color.g * 255),
+                b: Math.round(obj.color.b * 255),
+              },
+            });
+          });
+          return sources;
+        },
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
       });
