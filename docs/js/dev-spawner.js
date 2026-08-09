@@ -35,6 +35,7 @@
     if (deps.getCurrentArea() === DEV_ARENA_ZONE_ID) {
       const back = _devArenaReturnAnchor || { area: 'farm', x: (deps.COLS / 2) * deps.TILE, y: (deps.ROWS / 2) * deps.TILE };
       _devArenaReturnAnchor = null;
+      deps.setDebugWeather(null);
       deps.startSceneTransition(() => {
         const fromScene = deps.getActiveScene();
         if (fromScene) { fromScene.remove(deps.playerMesh); fromScene.remove(deps.playerGroundShadow); }
@@ -158,6 +159,34 @@
     }
     const foliageCountEl = document.getElementById('devArenaFoliageCount');
     if (foliageCountEl) foliageCountEl.textContent = String(_arenaSpawnedFoliage.size);
+    const activeWeather = deps.getDebugWeather();
+    document.querySelectorAll('#devArenaWeatherGrid [data-weather]').forEach(button => {
+      button.classList.toggle('fed-active', button.dataset.weather === activeWeather);
+    });
+    const rainSettings = deps.getRainPlaneSettings();
+    document.querySelectorAll('#devRainPlaneModeGrid [data-rain-mode]').forEach(button => {
+      button.classList.toggle('fed-active', button.dataset.rainMode === rainSettings.mode);
+    });
+    document.querySelectorAll('#devRainPositionRuleGrid [data-rain-rule], #devRainRotationRuleGrid [data-rain-rule], #devRainScaleRuleGrid [data-rain-rule]').forEach(button => {
+      button.classList.toggle('fed-active', Boolean(rainSettings[button.dataset.rainRule]));
+    });
+    const spacingInput = document.getElementById('devRainRowSpacing');
+    const frontInput = document.getElementById('devRainFrontCount');
+    const behindInput = document.getElementById('devRainBehindCount');
+    const speedInput = document.getElementById('devRainSpeedMultiplier');
+    if (spacingInput && document.activeElement !== spacingInput) spacingInput.value = String(rainSettings.rowSpacingTiles);
+    if (frontInput && document.activeElement !== frontInput) frontInput.value = String(rainSettings.frontCount);
+    if (behindInput && document.activeElement !== behindInput) behindInput.value = String(rainSettings.behindCount);
+    if (speedInput && document.activeElement !== speedInput) speedInput.value = String(rainSettings.speedMultiplier);
+  }
+
+  function setArenaWeather(mode) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    if (!['clear', 'rain', 'storm'].includes(mode)) return;
+    deps.setDebugWeather(mode);
+    const label = mode === 'storm' ? 'Storm' : mode === 'rain' ? 'Rain' : 'Clear weather';
+    deps.showToast(`${label} forced in the Testing Arena.`, true);
+    renderDevSpawnPanel();
   }
 
   // Rolls the exact same cosmetic-gene odds a wild den pack (or a
@@ -329,6 +358,7 @@
     const devMode = deps.isDevMode();
     const showFarmEdit = devMode && currentArea === 'farm' && deps.isFarmOwner();
     const showDevSpawn = devMode && currentArea === DEV_ARENA_ZONE_ID;
+    if (!showDevSpawn && deps.getDebugWeather()) deps.setDebugWeather(null);
     const farmBtn = document.getElementById('farmEditBtn');
     const spawnBtn = document.getElementById('devSpawnBtn');
     if (farmBtn) farmBtn.style.display = showFarmEdit ? '' : 'none';
@@ -372,6 +402,34 @@
       spawnDevArenaFoliage(devSpawnFoliageSelectedKey);
     });
     document.getElementById('devClearFoliageBtn')?.addEventListener('click', devArenaClearFoliage);
+    document.getElementById('devArenaWeatherGrid')?.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-weather]');
+      if (button) setArenaWeather(button.dataset.weather);
+    });
+    document.getElementById('devRainPlaneModeGrid')?.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-rain-mode]');
+      if (!button) return;
+      deps.setRainPlaneSettings({ mode: button.dataset.rainMode });
+      renderDevSpawnPanel();
+    });
+    const bindRainRuleGrid = (id) => document.getElementById(id)?.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-rain-rule]');
+      if (!button) return;
+      const current = deps.getRainPlaneSettings();
+      deps.setRainPlaneSettings({ [button.dataset.rainRule]: !current[button.dataset.rainRule] });
+      renderDevSpawnPanel();
+    });
+    bindRainRuleGrid('devRainPositionRuleGrid');
+    bindRainRuleGrid('devRainRotationRuleGrid');
+    bindRainRuleGrid('devRainScaleRuleGrid');
+    const bindRainNumber = (id, key) => document.getElementById(id)?.addEventListener('change', (e) => {
+      deps.setRainPlaneSettings({ [key]: e.target.value });
+      renderDevSpawnPanel();
+    });
+    bindRainNumber('devRainRowSpacing', 'rowSpacingTiles');
+    bindRainNumber('devRainFrontCount', 'frontCount');
+    bindRainNumber('devRainBehindCount', 'behindCount');
+    bindRainNumber('devRainSpeedMultiplier', 'speedMultiplier');
   }
 
   function initWithBinding(injectedDeps) {
@@ -386,5 +444,6 @@
     teleportToDevArena,
     toggle,
     refreshEditorButtonVisibility,
+    setArenaWeather,
   };
 })();
