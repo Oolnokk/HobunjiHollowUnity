@@ -151,16 +151,13 @@
     }
 
     // The primary tab click is owned by game.js. Reset the subordinate choice
-    // after that handler has updated __debugLogFilter so each category opens
-    // at its own un-narrowed view before the user drills down further.
+    // synchronously before that handler runs; game.js then changes the primary
+    // filter and performs the render using the fresh All-subcategory state.
     document.addEventListener('click', function (event) {
       const button = event.target.closest('#debugFilterTabs [data-filter]');
       if (!button) return;
-      setTimeout(() => {
-        window.__debugLogSubFilter = 'all';
-        _renderDebugPanel();
-      }, 0);
-    });
+      window.__debugLogSubFilter = 'all';
+    }, true);
 
     window._renderDebugPanel = _renderDebugPanel;
     window.__debugLogMatchesFilter = function (entry, filter) {
