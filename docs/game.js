@@ -13937,8 +13937,9 @@
       // Plain MeshLambertMaterial has no light of its own, so under this
       // game's storm/night dimming any of these can drop toward (0,0,0) --
       // same problem the tree-bark material had (see hexBarkMat/hslMat in
-      // foliage-generator.js) and the grass billboard shader already solves
-      // with a 0.3 uLightMul floor. Ground rock tiles specifically went
+      // foliage-generator.js); grass (ground and billboards alike) sidesteps
+      // it entirely by going unlit instead (see unlitFloorMat/tileMats.grass
+      // and _grassBillFrag below). Ground rock tiles specifically went
       // unnoticed until generator-placed rock objects off a plateau started
       // actually rendering (see mergeZoneTiles' generatedObjectType exemption
       // from the "downgrade to grass" rule) instead of always downgrading
@@ -16452,8 +16453,6 @@
       const _grassBillFrag = `
         uniform sampler2D uGrassTex;
         uniform vec3 uTint;
-        uniform vec3 uLightColor;
-        uniform float uLightMul;
         uniform float uDensity;
         varying vec2 vUv;
         varying float vRandom;
@@ -16463,10 +16462,12 @@
           if (texel.a < 0.5) discard;
           // Treat grass_1.png as mint-toned; desaturate and re-tint to grass color
           float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-          // Same day/night ambient color+brightness driving the ground tiles'
-          // Lambert shading, applied only to the tinted blade (not the outline)
-          // so blades dim/tint with the world instead of staying flat-lit.
-          vec3 tinted = uTint * (0.7 + lum * 0.8) * uLightColor * uLightMul;
+          // Unlit, same as the ground tiles' MeshBasicMaterial (see
+          // unlitFloorMat/tileMats.grass) — blades read at one consistent
+          // painted brightness day or night/storm instead of dimming with
+          // ambientLight/sunLight, so a blade never goes darker than the
+          // grass surface it's standing on.
+          vec3 tinted = uTint * (0.7 + lum * 0.8);
           // Drawn outline pixels (near-black source) stay pure black; tint the rest
           vec3 col = mix(vec3(0.0), tinted, smoothstep(0.0, 0.15, lum));
           gl_FragColor = vec4(col, texel.a);
@@ -16490,8 +16491,6 @@
           uTint:       { value: _grassTint },
           uTime:       { value: 0 },
           uStrength:   { value: 0.04 },
-          uLightColor: { value: new THREE.Color(1, 1, 1) },
-          uLightMul:   { value: 1 },
           uDensity:    { value: 1 },
         });
         grassBillboardMat = new THREE.ShaderMaterial({
@@ -17493,13 +17492,10 @@
         );
         sunLight.intensity = brightnessMul * 1.2;
         sunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
-        // Grass billboards are an unlit shader, not MeshLambertMaterial — drive their
-        // tint/brightness from the same values as ambientLight so blades match the
-        // ground's day/night response instead of staying a fixed brightness.
-        if (grassBillboardMat) {
-          grassBillboardMat.uniforms.uLightColor.value.setRGB(r/255 * 0.6 + 0.4, g/255 * 0.6 + 0.4, b/255 * 0.6 + 0.4);
-          grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul * 0.7;
-        }
+        // Grass billboards are unlit (see _grassBillFrag), same as the ground
+        // tiles' MeshBasicMaterial (tileMats.grass) — no day/night uniform to
+        // drive here anymore, so blades never dim independently of the
+        // ground they're standing on.
         // Fog colour matches sky
         scene.background.setRGB(
           Math.max(0, r/255 * 0.15 + 0.04),
@@ -17524,10 +17520,7 @@
         );
         townSunLight.intensity = brightnessMul * 1.2;
         townSunLight.color.setRGB(r/255 * 0.5 + 0.5, g/255 * 0.5 + 0.5, b/255 * 0.4 + 0.6);
-        if (grassBillboardMat) {
-          grassBillboardMat.uniforms.uLightColor.value.setRGB(r/255 * 0.6 + 0.4, g/255 * 0.6 + 0.4, b/255 * 0.6 + 0.4);
-          grassBillboardMat.uniforms.uLightMul.value = 0.3 + brightnessMul * 0.7;
-        }
+        // Grass billboards are unlit (see updateThreeLighting's matching comment).
         townScene.background.setRGB(
           Math.max(0, r/255 * 0.15 + 0.04),
           Math.max(0, g/255 * 0.15 + 0.08),
