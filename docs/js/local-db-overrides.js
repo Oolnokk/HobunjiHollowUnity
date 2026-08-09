@@ -49,6 +49,8 @@
     { id: 'locales',       label: 'Locales',             repoPath: 'config/locales/index.json' },
   ];
 
+  let _runtimeSuppressedNpcIds = []; // Used by runtime/debug inspection to report NPC records intentionally excluded from live spawning.
+
   function dbById(id) { return DATABASES.find(d => d.id === id) || null; }
   function overrideKey(id) { return OVERRIDE_KEY_PREFIX + id; }
 
@@ -185,6 +187,47 @@
     return merged;
   }
 
+  // Lifecycle is authored in the NPC record itself rather than a second
+  // runtime-only denylist. Existing deceased records predate a dedicated
+  // status field, so accept both explicit flags/status and the current
+  // role/tag/homeId convention (e.g. "deceased snow-watcher" and
+  // "hatayap_clan_deceased"). Deliberately do NOT scan bio/lore text: a
+  // living widow/widower can mention a deceased spouse without being dead.
+  function isNpcMarkedDeceased(npc) {
+    if (!npc || typeof npc !== 'object') return false;
+    if (npc.isDeceased === true || npc.spawnEnabled === false || npc.spawn === false) return true;
+    const status = String(npc.lifecycleStatus ?? npc.lifeStatus ?? npc.status ?? '').trim().toLowerCase(); // Used for newer/explicit lifecycle fields if the schema gains them.
+    if (status === 'deceased' || status === 'dead') return true;
+    const authoredSignals = [npc.role, npc.homeId, ...(Array.isArray(npc.tags) ? npc.tags : [])]; // Used to recognize the database's existing deceased naming convention without reading prose fields.
+    return authoredSignals.some(value => /(^|[^a-z])(deceased|dead)([^a-z]|$)/i.test(String(value || '')));
+  }
+
+  // Editors must continue to see deceased people for family history, dialogue,
+  // lore, and authoring. Only the live game gets the spawnable projection of
+  // the database. Filtering at this shared runtime database boundary is more
+  // durable than the old workaround of merely deleting fallback schedule
+  // positions: no global event/schedule fallback can instantiate a record the
+  // runtime never receives in its active NPC list.
+  function filterRuntimeNpcDatabase(npcDatabase) {
+    const isToolPage = typeof location !== 'undefined' && /\/tools\//.test(location.pathname); // Used to keep editor/database views complete while filtering only the live game.
+    if (isToolPage || !npcDatabase || !Array.isArray(npcDatabase.npcs)) {
+      _runtimeSuppressedNpcIds = [];
+      return npcDatabase;
+    }
+    const suppressed = npcDatabase.npcs.filter(isNpcMarkedDeceased); // Used for both the filtered list and an inspectable/debuggable suppression summary.
+    _runtimeSuppressedNpcIds = suppressed.map(npc => npc.id || npc.name || '<unnamed>');
+    if (!_runtimeSuppressedNpcIds.length) return npcDatabase;
+
+    const message = `[NPC lifecycle] Suppressed ${_runtimeSuppressedNpcIds.length} deceased NPC(s): ${_runtimeSuppressedNpcIds.join(', ')}`; // Used by the in-game debug logger when globally exposed, with console as a fallback.
+    if (typeof window.debugLog === 'function') window.debugLog(message, 'schedule');
+    else console.info(message);
+    return { ...npcDatabase, npcs: npcDatabase.npcs.filter(npc => !isNpcMarkedDeceased(npc)) };
+  }
+
+  function getRuntimeSuppressedNpcIds() {
+    return [..._runtimeSuppressedNpcIds];
+  }
+
   // What game.js/combat-config-loader.js actually call at boot in place of a
   // bare fetch(repoPath): local override wins only when the player has opted
   // into 'local' source mode AND actually saved one for this id; otherwise
@@ -194,13 +237,14 @@
   async function loadDatabase(id) {
     const data = await _loadRawDatabase(id); // Used as the selected raw local/repo database before optional composition.
     if (id !== 'npcDatabase') return data;
+    let composed = data; // Used as the NPC database after optional Shop-or-Chat composition and before live-runtime lifecycle filtering.
     try {
       const shopStock = await _loadRawDatabase('shopStock'); // Used to compose shopkeeper access trees into the loaded NPC database.
-      return applyShopDialogueAccess(data, shopStock);
+      composed = applyShopDialogueAccess(data, shopStock);
     } catch (error) {
       console.warn('[LocalDBOverrides] Could not compose Shop or Chat dialogue trees:', error);
-      return data;
     }
+    return filterRuntimeNpcDatabase(composed);
   }
 
   window.LocalDBOverrides = {
@@ -209,5 +253,6 @@
     hasOverride, getOverride, setOverride, clearOverride,
     listStatuses, loadDatabase,
     applyShopDialogueAccess,
+    isNpcMarkedDeceased, filterRuntimeNpcDatabase, getRuntimeSuppressedNpcIds,
   };
 })();
