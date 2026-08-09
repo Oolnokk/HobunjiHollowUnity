@@ -247,7 +247,18 @@
     return null;
   }
   function _naturalRoofAxis(m) { return m.w >= m.h ? 'x' : 'z'; }
+  // A piece with an explicit roofAxis (set via rotateRoofAxis, e.g. the
+  // player's own "Rotate Roof" button) is PINNED — its axis is authoritative
+  // and never gets overridden by neighbor voting, so moving/rotating some
+  // OTHER piece around it can never silently flip its roof. Pieces without
+  // a pin keep resolving via the vote below, which naturally leans toward
+  // matching whichever pinned (or also-auto) neighbor it touches — so a
+  // pinned piece still influences its neighbors' own auto choices, just
+  // never the reverse. The main starter room is pinned to its natural axis
+  // by default the moment it's created (see seedStarter), so it's stable
+  // from the very first frame, not just after the player explicitly rotates it.
   function _roofAxisDecision(m, all) {
+    if (m.roofAxis === 'x' || m.roofAxis === 'z') return m.roofAxis;
     let xScore = 0, zScore = 0;
     for (const other of all) {
       if (other === m) continue;
@@ -486,7 +497,10 @@
   // instead of needing a purchased deed before any of that is ever visible.
   function seedStarter(col, row) {
     const pieces = deps.getHousePieces();
-    const main  = { id: 'house_starter', pieceKey: 'starter', col, row, w: 4, h: 3, stage: 'built' };
+    // The main room is pinned to its own natural roof axis from creation —
+    // see _roofAxisDecision's comment — so it's never at the mercy of the
+    // annex's (or any later piece's) position, only the reverse.
+    const main  = { id: 'house_starter', pieceKey: 'starter', col, row, w: 4, h: 3, stage: 'built', roofAxis: _naturalRoofAxis({ w: 4, h: 3 }) };
     const annex = { id: 'house_starter_annex', pieceKey: 'starter', col: col + main.w, row, w: 3, h: 3, stage: 'built' };
     pieces.push(main, annex);
     [main, annex].forEach(entry => { entry._worldObj = _makeWorldObject(entry); _registerFootprint(entry); });
@@ -682,6 +696,37 @@
     return { ok: true, message: `Rotated ${label(entry)}.` };
   }
 
+  // Rotates a piece's ROOF ridge 90° — separate from rotatePiece (footprint
+  // w/h swap): this never touches col/row/w/h, so it can't fail a clear-
+  // ground/touching check and works on every built piece, including the
+  // main starter room (footprint rotatePiece explicitly refuses). Pinning
+  // (see _roofAxisDecision) means once a piece's roof has been rotated it
+  // stays exactly there — including through drags/rotates of OTHER pieces —
+  // until rotated again.
+  function rotateRoofAxis(id) {
+    if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can rotate a roof." };
+    const pieces = deps.getHousePieces();
+    const entry = pieces.find(p => p.id === id);
+    if (!entry) return { ok: false, message: 'House piece not found.' };
+    if (entry.stage !== 'built') return { ok: false, message: 'Build it first.' };
+    const built = pieces.filter(p => p.stage === 'built');
+    const current = _roofAxisDecision(entry, built);
+    entry.roofAxis = current === 'x' ? 'z' : 'x';
+    _rebuildAllStructureMeshes();
+    deps.saveFarmLayout();
+    return { ok: true, message: `Rotated ${label(entry)}'s roof.` };
+  }
+
+  // Sets a piece's pinned roof axis without rebuilding or saving — for
+  // restoring saved roofAxis values onto already-spawned pieces (the main
+  // room/annex, which loadFarmLayout repositions in place rather than
+  // recreating) during load, where the caller does one bulk
+  // rebuildStructureMeshes() afterward instead of one per piece.
+  function setRoofAxis(id, axis) {
+    const entry = deps.getHousePieces().find(p => p.id === id);
+    if (entry) entry.roofAxis = axis;
+  }
+
   function clearAll() {
     const pieces = deps.getHousePieces();
     pieces.forEach(entry => { _unregisterFootprint(entry); _unregisterDoor(entry); _disposeMesh(entry._mesh); });
@@ -768,6 +813,9 @@
     movePiece,
     canMovePieceTo,
     rotatePiece,
+    rotateRoofAxis,
+    setRoofAxis,
+    rebuildStructureMeshes: _rebuildAllStructureMeshes,
     clearAll,
     getPieceRects,
     computeInteriorLayout,

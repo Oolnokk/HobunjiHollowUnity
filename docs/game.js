@@ -2661,7 +2661,7 @@
           // as extra fields on the same version-3 shape rather than bumping
           // the version, so older saves without these fields still load fine.
           if (housePieces.length) {
-            layout.housePieces = housePieces.map(p => ({ id: p.id, pieceKey: p.pieceKey, col: p.col, row: p.row, w: p.w, h: p.h, stage: p.stage }));
+            layout.housePieces = housePieces.map(p => ({ id: p.id, pieceKey: p.pieceKey, col: p.col, row: p.row, w: p.w, h: p.h, stage: p.stage, roofAxis: p.roofAxis || null }));
           }
           if (farmBuildings.length) {
             layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage }));
@@ -2750,10 +2750,21 @@
             if (saved.pieceKey === 'starter' || !HOUSE_PIECE_CATALOG[saved.pieceKey]) return;
             if (housePieces.some(p => p.id === saved.id)) return;
             const def = HOUSE_PIECE_CATALOG[saved.pieceKey];
-            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row, w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation' };
+            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row, w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation', roofAxis: saved.roofAxis || null };
             housePieces.push(entry);
             window.HousePieces.spawnEntry(entry);
           });
+          // Restore each already-spawned piece's pinned roof axis (main
+          // room/annex, which the block above repositions in place rather
+          // than recreating) — independent of position, and applied as one
+          // bulk rebuild rather than per piece.
+          let _restoredRoofAxis = false;
+          layout.housePieces.forEach(saved => {
+            if (!saved.roofAxis) return;
+            const entry = housePieces.find(p => p.id === saved.id);
+            if (entry && entry.roofAxis !== saved.roofAxis) { window.HousePieces.setRoofAxis(saved.id, saved.roofAxis); _restoredRoofAxis = true; }
+          });
+          if (_restoredRoofAxis) window.HousePieces.rebuildStructureMeshes();
         } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
                    && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
           window.HousePieces.clearAll();
@@ -21324,6 +21335,7 @@
         movePiece: (pieceId, col, row) => window.HousePieces.movePiece(pieceId, col, row),
         canMovePieceTo: (pieceId, col, row) => window.HousePieces.canMovePieceTo(pieceId, col, row),
         rotateHousePiece: (id) => window.HousePieces.rotatePiece(id),
+        rotateHouseRoof: (id) => window.HousePieces.rotateRoofAxis(id),
         housePieceLabel: (entry) => window.HousePieces.label(entry),
         scene,
         getFarmBuildings: () => farmBuildings,

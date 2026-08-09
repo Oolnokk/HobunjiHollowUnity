@@ -654,13 +654,24 @@
     if (entry.stage === 'foundation') {
       mk('Build', () => afterAction(deps.buildHousePiece(entry.id)));
       mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
-    } else if (entry.id === 'house_starter') {
+      return;
+    }
+    // Roof rotation is separate from footprint rotation (Rotate 90° below):
+    // it never touches col/row/w/h, so it can't fail a clear-ground/
+    // touching check and works on every built piece — including the main
+    // starter room, which footprint rotation (and moving on its own)
+    // explicitly refuses. A piece's rotated roof is pinned from then on and
+    // won't be pulled back by some OTHER piece moving nearby (see
+    // house-pieces.js's _roofAxisDecision) — the main room is pinned to its
+    // natural axis from the moment the farm is created, for the same reason.
+    mk('Rotate Roof', () => afterAction(deps.rotateHouseRoof(entry.id)));
+    if (entry.id === 'house_starter') {
       // The main starter room anchors the whole house — it (and every other
       // piece touching it) can only move together, via a drag starting from
-      // any of them. Explain that instead of showing dead buttons, so
-      // selecting it doesn't look broken/do-nothing.
+      // any of them. Explain that instead of a dead Move/Rotate-footprint
+      // button, so selecting it doesn't look broken/do-nothing.
       const note = document.createElement('div');
-      note.style.cssText = 'font-size:11px;color:var(--muted);line-height:1.4;';
+      note.style.cssText = 'font-size:11px;color:var(--muted);line-height:1.4;margin-top:4px;';
       note.textContent = 'This room anchors the house — drag it (or any attached room) to move the whole house together.';
       wrap.appendChild(note);
     } else {
