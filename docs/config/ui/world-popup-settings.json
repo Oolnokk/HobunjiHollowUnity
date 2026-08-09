@@ -9,17 +9,27 @@
     "loot": "centeredFiveRow"
   },
   "floatPlus": {
-    "worldHeight": 0.075,
-    "xOffsetPercent": 0,
-    "yOffsetPercent": 0,
+    "worldHeight": 0.16,
+    "xOffsetPercent": 15,
+    "yOffsetPercent": -35,
     "lifetimeMs": 1150
   },
   "centeredFiveRow": {
-    "worldHeight": 0.075,
-    "xOffsetPercent": 8,
-    "yOffsetPercent": 0,
+    "worldHeight": 0.16,
+    "xOffsetPercent": 50,
+    "yOffsetPercent": -12,
     "lifetimeMs": 1500,
     "rowSpacing": 1.08,
-    "maxRows": 5
+    "maxRows": 5,
+    "textAlign": "left"
+  },
+  "colors": {
+    "damage": "#fff4e2",
+    "healing": "#71f59a",
+    "skillXp": "#9de7ff",
+    "masteryXp": "#78cfff",
+    "favor": "#ff9fd7",
+    "currency": "#ffe181",
+    "loot": "#ffffff"
   }
 }

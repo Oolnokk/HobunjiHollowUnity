@@ -12,8 +12,8 @@
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow',
     },
-    floatPlus: { worldHeight: 0.075, xOffsetPercent: 0, yOffsetPercent: 0, lifetimeMs: 1150 },
-    centeredFiveRow: { worldHeight: 0.075, xOffsetPercent: 8, yOffsetPercent: 0, lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5 },
+    floatPlus: { worldHeight: 0.16, xOffsetPercent: 15, yOffsetPercent: -35, lifetimeMs: 1150 },
+    centeredFiveRow: { worldHeight: 0.16, xOffsetPercent: 50, yOffsetPercent: -12, lifetimeMs: 1500, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
       masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff',
@@ -114,14 +114,16 @@
     canvas.width = Math.max(64, width);
     canvas.height = 92;
     ctx.font = `800 ${fontPx}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
+    const leftAligned = layout.textAlign === 'left';
+    const textX = leftAligned ? 14 : canvas.width / 2;
+    ctx.textAlign = leftAligned ? 'left' : 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
     ctx.lineWidth = 9;
     ctx.strokeStyle = 'rgba(15,10,8,.9)';
-    ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
+    ctx.strokeText(text, textX, canvas.height / 2);
     ctx.fillStyle = state.settings.colors[kind] || '#fff';
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(text, textX, canvas.height / 2);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.minFilter = THREE.LinearFilter;
@@ -230,6 +232,9 @@
         list.forEach((item, slot) => { item.listSlot = slot; });
         const centerSlot = (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
         center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing;
+        // Plane geometry is centered on its position. Shift by half its width so
+        // every variable-width row begins at the configured horizontal anchor.
+        if (state.settings.centeredFiveRow.textAlign === 'left') center.addScaledVector(cameraRight, event.width * 0.5);
       }
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);

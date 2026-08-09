@@ -27,14 +27,14 @@
     <section class="section" data-mode-panel="floatPlus">
       <h2>Float+ placement</h2>
       <div class="sliderRow"><label for="floatWorldHeight">Text world size</label><output id="floatWorldHeightValue"></output><small>Float+ line height in world metres.</small><input id="floatWorldHeight" type="range" min="0.02" max="0.18" step="0.005"></div>
-      <div class="sliderRow"><label for="floatXOffset">Horizontal avatar offset</label><output id="floatXOffsetValue"></output><small>Avatar-plane width × percentage; default 0% centers Float+ on the centroid.</small><input id="floatXOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="sliderRow"><label for="floatXOffset">Horizontal avatar offset</label><output id="floatXOffsetValue"></output><small>Avatar-plane width × percentage.</small><input id="floatXOffset" type="range" min="-50" max="50" step="1"></div>
       <div class="sliderRow"><label for="floatYOffset">Vertical avatar offset</label><output id="floatYOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage.</small><input id="floatYOffset" type="range" min="-50" max="50" step="1"></div>
       <div class="help">Collision radius is exactly <code>max(0.18m, Float+ size × 3.2)</code>.</div>
     </section>
     <section class="section" data-mode-panel="centeredFiveRow" hidden>
-      <h2>Centered Five Row List placement</h2>
+      <h2>Five Row List placement · left aligned</h2>
       <div class="sliderRow"><label for="listWorldHeight">Text world size</label><output id="listWorldHeightValue"></output><small>Each list row’s line height in world metres.</small><input id="listWorldHeight" type="range" min="0.02" max="0.18" step="0.005"></div>
-      <div class="sliderRow"><label for="listXOffset">Horizontal avatar offset</label><output id="listXOffsetValue"></output><small>Avatar-plane width × percentage; default 8% retains the uploaded prototype’s offset.</small><input id="listXOffset" type="range" min="-50" max="50" step="1"></div>
+      <div class="sliderRow"><label for="listXOffset">Horizontal avatar offset</label><output id="listXOffsetValue"></output><small>Avatar-plane width × percentage; this is the shared left edge for every row.</small><input id="listXOffset" type="range" min="-50" max="50" step="1"></div>
       <div class="sliderRow"><label for="listYOffset">Vertical avatar offset</label><output id="listYOffsetValue"></output><small>Combined half-portrait/species-offset height × percentage.</small><input id="listYOffset" type="range" min="-50" max="50" step="1"></div>
       <div class="help">Row spacing is exactly <code>list size × 1.08</code>, with five rows centered around the configured centroid Y.</div>
     </section>
