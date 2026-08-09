@@ -59,4 +59,33 @@
       afflictionPulse: Object.freeze({ durationSeconds: 1, scale: 0.22, shakeUnits: 0.035 })
     })
   });
+
+  // The old hard-surface footstep voice still lives in AudioSystem as the
+  // gravel fallback. Recorded gravel/path clips were later configured on top
+  // of it; disable those clips for the live game so paths, building floors,
+  // and BuildingDoor-classified porches consistently use the procedural voice.
+  // Run after synchronous config scripts have populated SCRATCHBONES_CONFIG;
+  // playback happens later, so AudioSystem sees this before any footfall.
+  function useProceduralHardSurfaceFootsteps() {
+    if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname)) return;
+    const directAudio = root.SCRATCHBONES_CONFIG?.game?.audio; // Used when the modern direct audio config is populated.
+    const audio = directAudio && Object.keys(directAudio).length
+      ? directAudio
+      : root.SCRATCHBONES_CONFIG?.game?.assets?.audio; // Used by older/current assets.audio config layouts.
+    const footsteps = audio?.footsteps; // Used as the same config object AudioSystem reads for each footfall.
+    if (!footsteps) return;
+    const surfaces = footsteps.surfaces || (footsteps.surfaces = {}); // Used to replace only the hard/gravel surface configuration.
+    const existingGravel = surfaces.gravel || {}; // Used to preserve any non-recording hard-surface tuning already authored in config.
+    surfaces.gravel = {
+      ...existingGravel,
+      urls: [],
+      url: null,
+      volumeMul: 1.65,
+    };
+    const message = '[footsteps] Recorded hard-surface clips disabled; procedural path/porch/interior voice active at volumeMul=1.65.'; // Used for mobile-visible confirmation in the existing debug log.
+    if (typeof root.debugLog === 'function') root.debugLog(message, 'audio');
+    else console.info(message);
+  }
+
+  if (typeof setTimeout === 'function') setTimeout(useProceduralHardSurfaceFootsteps, 0);
 })(typeof self !== 'undefined' ? self : globalThis);
