@@ -2395,8 +2395,13 @@
 
       function decorativeFurnitureSize(furnitureKey, rotYDeg = 0) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
-        const fw = def?.fw || 1, fd = def?.fd || 1;
-        return Math.abs(Math.round(rotYDeg / 90)) % 2 ? { fw: fd, fd: fw } : { fw, fd };
+        const baseW = def?.fw || 1, baseD = def?.fd || 1;
+        const angle = (rotYDeg || 0) * Math.PI / 180;
+        const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle));
+        return {
+          fw: Math.max(1, Math.ceil(baseW * cos + baseD * sin - 1e-6)),
+          fd: Math.max(1, Math.ceil(baseW * sin + baseD * cos - 1e-6)),
+        };
       }
 
       function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0) {
@@ -2561,6 +2566,30 @@
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} returned to inventory.` };
       }
 
+      function rotateDecorativeFurniture(id, degrees = 45) {
+        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
+        if (!obj) return { ok: false, message: 'Furniture not found.' };
+        const nextRot = ((obj.rotYDeg || 0) + degrees + 360) % 360;
+        if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot)) {
+          return { ok: false, message: 'Cannot rotate here — the turned furniture would overlap a wall or another item.' };
+        }
+        const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+        const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot);
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        obj.rotYDeg = nextRot;
+        obj.mesh.rotation.y = nextRot * Math.PI / 180;
+        obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
+        if (obj.light) obj.light.position.set(obj.col + fw * 0.5, def?.light?.height || 0.6, obj.row + fd * 0.5);
+        window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+        obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+        if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
+        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, obj.col, obj.row, fw, fd, nextRot);
+        registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
+        saveFarmLayout();
+        return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
+      }
+
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
         interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
           const insideOld = obj.col >= oldRect.col * 2 && obj.col < (oldRect.col + oldRect.w) * 2
@@ -2653,18 +2682,67 @@
       // right after the farm editor's own.
       let furniturePlacementArmedKey = null;
       let furnitureMoveArmedId = null;
+      let furniturePlacementGhost = null;
+      let furniturePlacementPointerId = null;
       function armFurniturePlacement(itemKey) {
         furniturePlacementArmedKey = itemKey || null;
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
+        clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
       }
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
         furnitureMoveArmedId = id || null;
         if (furnitureMoveArmedId) furniturePlacementArmedKey = null;
+        clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
       }
       function getArmedFurnitureMoveId() { return furnitureMoveArmedId; }
+
+      function clearFurniturePlacementGhost() {
+        if (!furniturePlacementGhost) return;
+        const targetScene = furniturePlacementGhost.area === 'interior' ? interiorScene : scene;
+        targetScene.remove(furniturePlacementGhost.group);
+        furniturePlacementGhost.group.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+        furniturePlacementGhost = null;
+      }
+
+      function furniturePlacementSpec() {
+        if (furnitureMoveArmedId) {
+          const obj = interiorFurnitureObjects.find(o => o.id === furnitureMoveArmedId && o.area === currentArea);
+          return obj ? { key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id } : null;
+        }
+        const key = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        return key ? { key, rotYDeg: 0, ignoreId: null } : null;
+      }
+
+      function showFurniturePlacementGhost(col, row) {
+        const spec = furniturePlacementSpec();
+        if (!spec) { clearFurniturePlacementGhost(); return; }
+        const valid = canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
+        if (!furniturePlacementGhost || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
+          clearFurniturePlacementGhost();
+          const group = buildFurnitureVisual(spec.key, 0x5cff7a);
+          const ghostMaterial = new THREE.MeshBasicMaterial({ color: 0x5cff7a, transparent: true, opacity: 0.58, depthWrite: false });
+          group.traverse(child => { if (child.isMesh) child.material = ghostMaterial.clone(); });
+          group.rotation.y = spec.rotYDeg * Math.PI / 180;
+          group.renderOrder = 1000;
+          (currentArea === 'interior' ? interiorScene : scene).add(group);
+          furniturePlacementGhost = { group, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
+        }
+        const { fw, fd } = decorativeFurnitureSize(spec.key, spec.rotYDeg);
+        furniturePlacementGhost.group.position.set(col + fw * 0.5, 0.04, row + fd * 0.5);
+        furniturePlacementGhost.group.visible = true;
+        furniturePlacementGhost.group.traverse(child => {
+          if (child.isMesh) child.material.color.set(valid ? 0x5cff7a : 0xff5555);
+        });
+        furniturePlacementGhost.col = col;
+        furniturePlacementGhost.row = row;
+        furniturePlacementGhost.valid = valid;
+      }
 
       // ── Farm editor ───────────────────────────────────────────────
       let farmEditMode = false;
@@ -13880,8 +13958,11 @@
         if (currentArea === 'town') {
           for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
+        if (currentArea === 'interior' && activeCameraMode === 'seated' && interiorWallGroup) meshes.push(interiorWallGroup);
         for (const obj of interiorFurnitureObjects) {
-          if (obj.area === currentArea && obj.mesh) meshes.push(obj.mesh);
+          const isActiveSeat = sitInteraction && obj.area === currentArea
+            && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
+          if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
         }
         return meshes;
       }
@@ -13913,7 +13994,11 @@
               // Stop a little short of the actual hit (not flush against it) so
               // the camera doesn't clip into the cliff face it just pulled in
               // behind.
-              const safeDist = Math.max(3, hits[0].distance - 0.6);
+              // A chair directly against a wall needs a much tighter pull-in:
+              // the ordinary three-tile floor can remain beyond a nearby
+              // wall and leave that wall filling the seated view.
+              const minSafeDistance = activeCameraMode === 'seated' ? 0.85 : 3;
+              const safeDist = Math.max(minSafeDistance, hits[0].distance - 0.6);
               // Wilderness plateaus can tower many tiers higher than anything
               // an authored map ever had, so a cliff can sit close enough to
               // the player that safeDist collapses near its floor — sliding
@@ -20934,7 +21019,8 @@
       let cameraDragStartX = 0, cameraDragStartY = 0;
       let cameraDragStartAzimuthOffset = 0, cameraDragStartAngleOffset = 0;
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
+        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+          && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed;
       }
       // Every other camera mode nudges a small look-around offset on top of a
       // fixed base framing, clamped tight (desktopControls.cameraRotateClampDeg,
@@ -21027,6 +21113,7 @@
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
           // move the cursor toward the target pixel — not rotate the camera
           // (Shift+drag, below) or spin the character's facing via mouse-
@@ -21074,25 +21161,53 @@
       // hotbar's "equip item, aim reticle, interact" flow — checked first
       // so an armed furniture placement always wins over the (dev-mode-
       // only, so rarely simultaneously active) farm editor brush.
+      function furniturePlacementPointerArmed() {
+        return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
+          && (currentArea === 'farm' || currentArea === 'interior');
+      }
       threeContainer.addEventListener('pointerdown', (e) => {
-        if ((!furniturePlacementArmedKey && !furnitureMoveArmedId) || (currentArea !== 'farm' && currentArea !== 'interior')) return;
-        e.stopPropagation();
-        const t = _screenToActiveTile(e.clientX, e.clientY);
-        if (!t) return;
+        if (!furniturePlacementPointerArmed()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        furniturePlacementPointerId = e.pointerId;
+        try { threeContainer.setPointerCapture?.(e.pointerId); } catch (_err) { /* preview still follows without capture */ }
+        const tile = _screenToActiveTile(e.clientX, e.clientY);
+        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
+      }, { capture: true });
+      threeContainer.addEventListener('pointermove', (e) => {
+        if (!furniturePlacementPointerArmed()) return;
+        if (e.pointerType !== 'mouse' && e.pointerId !== furniturePlacementPointerId) return;
+        e.preventDefault();
+        const tile = _screenToActiveTile(e.clientX, e.clientY);
+        if (tile) showFurniturePlacementGhost(tile.col, tile.row);
+      }, { capture: true });
+      function commitFurniturePlacementPointer(e) {
+        if (e.pointerId !== furniturePlacementPointerId) return;
+        furniturePlacementPointerId = null;
+        if (!furniturePlacementPointerArmed() || !furniturePlacementGhost) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const { col, row } = furniturePlacementGhost;
         if (furnitureMoveArmedId) {
-          const result = moveDecorativeFurniture(furnitureMoveArmedId, t.col, t.row);
+          const result = moveDecorativeFurniture(furnitureMoveArmedId, col, row);
           showToast(result.message, result.ok);
           if (result.ok) furnitureMoveArmedId = null;
-          window.FurniturePlacer?.render();
-          return;
+        } else {
+          const itemKey = furniturePlacementArmedKey;
+          const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
+          const result = decorKey ? placeDecorativeFurniture(col, row, decorKey) : { ok: false, message: 'Furniture not found.' };
+          showToast(result.message, result.ok);
+          if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
         }
-        const decorKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
-        if (!decorKey) return;
-        const result = placeDecorativeFurniture(t.col, t.row, decorKey);
-        showToast(result.message, result.ok);
-        if (result.ok && (inventory[furniturePlacementArmedKey] || 0) <= 0) furniturePlacementArmedKey = null;
+        clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
-      });
+      }
+      window.addEventListener('pointerup', commitFurniturePlacementPointer, { capture: true });
+      window.addEventListener('pointercancel', (e) => {
+        if (e.pointerId !== furniturePlacementPointerId) return;
+        furniturePlacementPointerId = null;
+        clearFurniturePlacementGhost();
+      }, { capture: true });
 
       // ── Farm editor pointer handlers ──────────────────────────────
       threeContainer.addEventListener('pointerdown', (e) => {
@@ -21777,6 +21892,7 @@
         getArmedFurnitureMoveId,
         getPlacedFurniture: () => interiorFurnitureObjects.filter(o => o.area === currentArea),
         removeFurniture: removeDecorativeFurniture,
+        rotateFurniture: rotateDecorativeFurniture,
         showToast,
         esc,
         isPaused: () => paused,
