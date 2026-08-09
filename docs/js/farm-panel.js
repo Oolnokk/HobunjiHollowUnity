@@ -387,7 +387,21 @@
     selectBox.visible = false;
     overlayScene.add(selectBox);
 
-    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox };
+    // House pieces render with plain MeshLambertMaterial (see HousePieceGen.js)
+    // and no emissive boost — the same "reads as a solid black blob under
+    // anything but bright light" issue game.js's own floorMat() comment
+    // documents for rock tiles, just never patched for house roofs/walls
+    // since nobody used to stare at one from directly overhead for long.
+    // Rather than touching that shared material (also used for every barn,
+    // NPC house, and the real player house — changing it would restyle the
+    // whole game), add a strong flat fill light scoped to just this editor's
+    // own snapshot: added to deps.scene immediately before this renderer's
+    // own render() call and removed immediately after (see
+    // _renderHouseLayout3d), synchronously, so the main render loop never
+    // observes it and gameplay lighting/mood is untouched.
+    const fillLight = new THREE.AmbientLight(0xffffff, 1.1);
+
+    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox, fillLight };
     return _houseLayout3d;
   }
   // Sizes the renderer to the viewport container's actual CSS size and
@@ -418,7 +432,7 @@
     const ctx3d = _ensureHouseLayout3d();
     if (!ctx3d) return;
     _resizeAndFrameHouseLayout3d();
-    const { renderer, camera, overlayScene, selectBox } = ctx3d;
+    const { renderer, camera, overlayScene, selectBox, fillLight } = ctx3d;
     const selected = deps.getHousePieces().find(p => p.id === _houseLayoutSelectedId);
     if (selected) {
       selectBox.visible = true;
@@ -428,8 +442,20 @@
     } else {
       selectBox.visible = false;
     }
+    // Also skip fog for this pass: it's tuned for a close-up player-eye-level
+    // camera, and this locked top-down one sits ~30 units above everything,
+    // putting the whole house at roughly the same (fairly heavy) fog depth.
+    // Both changes are undone synchronously right after this render call,
+    // before any other code — including the main render loop's own frame —
+    // can run, so neither the added light nor the disabled fog ever affects
+    // the actual player view.
+    const savedFog = deps.scene.fog;
+    deps.scene.fog = null;
+    deps.scene.add(fillLight);
     renderer.clear();
     renderer.render(deps.scene, camera);
+    deps.scene.remove(fillLight);
+    deps.scene.fog = savedFog;
     renderer.render(overlayScene, camera);
   }
   let _houseLayoutRafId = null;
@@ -506,7 +532,11 @@
         entry: piece, moved: false,
         grabDX: world.x - piece.col, grabDZ: world.z - piece.row,
         candidateCol: piece.col, candidateRow: piece.row,
-        isWholeHouse: piece.pieceKey === 'starter',
+        // Only the main starter room (the house's fixed anchor) drags the
+        // whole cluster — every other piece, including the starter annex,
+        // moves independently (still validated to end up touching the rest
+        // of the house, same as any bought piece).
+        isWholeHouse: piece.id === 'house_starter',
       };
     });
 
@@ -613,9 +643,26 @@
     if (entry.stage === 'foundation') {
       mk('Build', () => afterAction(deps.buildHousePiece(entry.id)));
       mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
-    } else if (entry.pieceKey !== 'starter') {
+    } else if (entry.id === 'house_starter') {
+      // The main starter room anchors the whole house — it (and every other
+      // piece touching it) can only move together, via a drag starting from
+      // any of them. Explain that instead of showing dead buttons, so
+      // selecting it doesn't look broken/do-nothing.
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:11px;color:var(--muted);line-height:1.4;';
+      note.textContent = 'This room anchors the house — drag it (or any attached room) to move the whole house together.';
+      wrap.appendChild(note);
+    } else {
+      // Every other piece — including the starter annex — can be moved and
+      // rotated independently, as long as it stays touching some other
+      // piece afterward (movePiece/rotatePiece both enforce that). Only
+      // non-starter (bought) pieces can be demolished; the starter annex is
+      // part of the free starting house and can't be removed, just
+      // repositioned.
       mk('Rotate 90°', () => afterAction(deps.rotateHousePiece(entry.id)));
-      mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
+      if (entry.pieceKey !== 'starter') {
+        mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
+      }
     }
   }
 

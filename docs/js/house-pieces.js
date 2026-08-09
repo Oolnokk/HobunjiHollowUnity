@@ -547,17 +547,20 @@
     return { ok: true, message: 'Moved the house.' };
   }
 
-  // Moves one non-starter piece on its own (mirrors FarmBuildings' per-barn
-  // move()) — the starter (main room + annex) isn't movable this way since
-  // every other piece is placed relative to it; use moveHouse to reposition
-  // the whole cluster instead. Still must end up touching some other piece,
-  // same rule canPlaceAt enforces for a brand-new placement.
+  // Moves one piece on its own (mirrors FarmBuildings' per-barn move()) —
+  // only the main starter room ('house_starter') is excluded, since every
+  // other piece (including the starter annex) is placed relative to it; use
+  // moveHouse to reposition that anchor and drag the whole cluster together
+  // instead. Every other piece, starter annex included, can be repositioned
+  // independently as long as it ends up touching some other piece — same
+  // rule canPlaceAt enforces for a brand-new placement — so the player can
+  // freely rearrange rooms around the fixed anchor.
   function movePiece(id, newCol, newRow) {
     if (!deps.hasFarmPermission('alterFarm')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can move house pieces." };
     const pieces = deps.getHousePieces();
     const entry = pieces.find(p => p.id === id);
     if (!entry) return { ok: false, message: 'House piece not found.' };
-    if (entry.pieceKey === 'starter') return { ok: false, message: 'Move the whole house instead of the main room on its own.' };
+    if (entry.id === 'house_starter') return { ok: false, message: 'Move the whole house instead of the main room on its own.' };
     if (newCol === entry.col && newRow === entry.row) return { ok: false, message: 'Already there.' };
 
     const others = pieces.filter(p => p.id !== id);
@@ -585,7 +588,8 @@
     return { ok: true, message: `Moved ${label(entry)}.` };
   }
 
-  // Rotates one non-starter piece 90° in place. Since every piece is a
+  // Rotates one piece 90° in place — everything except the main starter room
+  // ('house_starter'), same exclusion as movePiece. Since every piece is a
   // simple axis-aligned rectangle rendered live by HousePieceGen.buildGroup
   // (roof direction is independently resolved per-cluster by the roof-axis
   // vote, never baked into oriented content), a 90° turn is exactly a w/h
@@ -598,7 +602,7 @@
     const pieces = deps.getHousePieces();
     const entry = pieces.find(p => p.id === id);
     if (!entry) return { ok: false, message: 'House piece not found.' };
-    if (entry.pieceKey === 'starter') return { ok: false, message: "The original house can't be rotated." };
+    if (entry.id === 'house_starter') return { ok: false, message: "The main room can't be rotated on its own." };
     const newW = entry.h, newH = entry.w;
 
     const others = pieces.filter(p => p.id !== id);
