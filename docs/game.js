@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 333187)
-... 284170 bytes omitted ...
-
     (() => {
       'use strict';
 
@@ -6701,7 +6698,9015 @@ Warning: truncated output (original token count: 333187)
       // meshes built by _buildZoneFloorMeshes — grass/trench/raised/rock/
       // etc. all merged into one mesh per material). Tracked so a runtime
       // tile-type change (digging/filling/raising a tile with a shovel/pick
-      // — see applyAction/firePendingAction) can remove and reb…62152 tokens truncated…;
+      // — see applyAction/firePendingAction) can remove and rebuild just
+      // the ground+grass layer via refreshZoneGroundVisuals, instead of
+      // leaving a stale mesh in place (the bug where a freshly dug trench
+      // "physically" exists — tile.type/height are already correct — but
+      // its grass never disappears, since a zone's terrain is built once
+      // as merged meshes rather than the farm's per-tile mesh array).
+      const _zoneFloorMeshGroups = new Map();
+      // mapId → THREE.InstancedMesh (grass billboard tufts) — see
+      // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
+      const _zoneGrassMeshes = new Map();
+      // mapId → [THREE.Mesh, ...] (one per plateau tier-transition mesa —
+      // see buildZoneMesaMeshes/buildPlateauMesa). Tracked for the same
+      // reason as _zoneFloorMeshGroups: a mesa's lid is built once from
+      // whatever tile types existed at zone-build time, and deliberately
+      // leaves a hole over any CARVED_TILE_TYPES cell (trench/raised/river/
+      // stream/waterfall) for the ordinary per-tile floor loop to fill in —
+      // but that hole (and the flat lid everywhere else) is frozen at build
+      // time otherwise, so digging a NEW trench on a plateau's flat top
+      // needs this mesh rebuilt too, or the original solid lid quad just
+      // keeps covering the freshly-carved pit underneath it.
+      const _zoneMesaMeshGroups = new Map();
+      // mapId → Map("col,row" -> pickable reagent-plant world object) — the
+      // wilderness counterpart to the farm's worldObjects, populated by
+      // ensureZoneReagents and consulted by getWorldObjectAt.
+      const _zoneReagentObjects = new Map();
+      // mapId → [THREE.Group, ...] (reagent plant meshes) — tracked separately
+      // from _zoneDecorFurnitureGroups so the daily respawn can tear down and
+      // rebuild just the reagent sprites without touching the rest of the
+      // zone's (yearly-cached) scene.
+      const _zoneReagentMeshGroups = new Map();
+      // mapId → { day, placements: [{col,row,key}, ...] } — the source of
+      // truth for a zone's reagent plants, independent of whether that
+      // zone's meshes are currently built (see ensureZoneReagents). A `day`
+      // mismatch against calendar.day means the data is stale and gets
+      // regenerated the next time ensureZoneReagents(mapId) runs (see
+      // enterZone / respawnAllZoneReagents). Persisted verbatim in
+      // saveMemberWorldData/spawnPlayerAvatar so a reload doesn't reshuffle
+      // plants the player hasn't picked yet.
+      const _zoneReagentPersist = new Map();
+      // mapId → Map("col,row" -> pickable wild-berry-bush world object) —
+      // the same "wilderness counterpart to the farm's worldObjects" idea as
+      // _zoneReagentObjects just above, for wild berry bushes (see
+      // WILD_BERRY_ZONES/ensureZoneBerries). A separate trio of maps rather
+      // than folding berries into the reagent ones so the two systems' daily
+      // respawn/dispose logic stay independent, mirroring each other 1:1.
+      const _zoneBerryObjects = new Map();
+      // mapId → [THREE.Group, ...] (berry bush meshes).
+      const _zoneBerryMeshGroups = new Map();
+      // mapId → { day, placements: [{col,row,key}, ...] } — same shape/role
+      // as _zoneReagentPersist.
+      const _zoneBerryPersist = new Map();
+      // mapId → Map("col,row" -> pickable buried-treasure world object,
+      // either a digsite or the chest it becomes once dug up) — see
+      // ensureZoneTreasure/getWorldObjectAt.
+      const _zoneTreasureObjects = new Map();
+      // mapId → [THREE.Group, ...] (digsite mound + chest meshes).
+      const _zoneTreasureMeshGroups = new Map();
+      // mapId → { week, placements: [{col,row,state:'buried'|'dug', metalKeys:[...]}] } —
+      // same shape/role as _zoneReagentPersist/_zoneBerryPersist, but keyed
+      // to a week index (see treasureWeekIndex) instead of calendar.day —
+      // buried treasure is meant to be rarer than reagents/berries.
+      const _zoneTreasurePersist = new Map();
+      // mapId → [{col, row, feltDay}, ...] — trees felled with the axe (see
+      // isChoppableTreeTile/applyAction's axe branch), each remembering the
+      // absolute calendar.day it was felled on. tickFelledTreeRegrowth grows
+      // one back (tile.type -> SHRUB; floraKind is never cleared by felling,
+      // so it renders as the same species again) once TREE_REGROWTH_DAYS
+      // have passed. Same persisted-across-reload shape/role as
+      // _zoneReagentPersist, just without the day-mismatch staleness check
+      // (a felled tile is either still felled or it isn't).
+      const _zoneFelledTreePersist = new Map();
+      const TREE_REGROWTH_DAYS = 7;
+      // mapId → [{col, row, minedDay}, ...] — ore rocks mined with the pick
+      // (see isMineableRockTile/applyAction's pick branch), same shape/role
+      // as _zoneFelledTreePersist. tickMinedRockRegrowth grows one back
+      // (tile.type -> ROCK; rockKind is never cleared by mining) once
+      // ROCK_REGROWTH_DAYS pass.
+      const _zoneMinedRockPersist = new Map();
+      const ROCK_REGROWTH_DAYS = 7;
+      // mapIds whose _zoneLayouts entry was replaced by a Tothal Shift (see
+      // performTothalShift) while the player was standing inside that same
+      // zone — rebuilding the live THREE.Scene out from under them mid-visit
+      // would drop them through changed terrain, so the stale cached scene is
+      // left alone and only torn down (via _disposeZoneScene, in
+      // buildZoneScene) the next time that map is entered fresh.
+      const _dirtyZoneScenes = new Set();
+      // Surface Y for a tile actually standing inside an exterior zone. Plateau
+      // sub-maps are purely an authoring convenience in the Map Editor — in-game
+      // every tier of a plateau stack is merged into its root zone's single grid,
+      // so each tile itself (not the zone as a whole) carries its own absolute
+      // elevation tier (tile.elevTier, set by _loadTownFromWorkspace's recursive
+      // merge). Authored ramp tiles use their own absolute rampElevation instead,
+      // so players/creatures crossing a ramp follow its slope rather than snapping
+      // to a flat tier height.
+      function tileSurfaceYInArea(tile, areaId) {
+        if (tile && tile.type === TileType.RAMP) return NORMAL_TOP + (tile.rampElevation || 0) * PLATEAU_UNIT;
+        return tileSurfaceY(tile ? tile.type : TileType.GRASS) + (tile?.elevTier || 0) * PLATEAU_UNIT;
+      }
+      function surfaceYAtWorld(areaId, worldX, worldZ) {
+        const sceneGrid = _zoneScenes.get(areaId)?.grid;
+        const tile = sceneGrid?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
+        const base = tileSurfaceYInArea(tile, areaId);
+        const layout = _zoneLayouts.get(areaId);
+        const subtle = window.TerrainPreview?.sampleVisualHeight(layout?.visualHeights, worldX, worldZ, layout?.cols, layout?.rows) || 0;
+        return base + subtle;
+      }
+      // Runtime counterpart to TerrainPreview's preview-only displacement pass.
+      // Most zone builders bake world X/Z into their buffers; per-tile water
+      // planes are local, so callers may supply the mesh translation as well.
+      function displaceZoneGeometry(geometry, mapId, offsetX = 0, offsetZ = 0) {
+        const pos = geometry?.getAttribute?.('position');
+        const layout = _zoneLayouts.get(mapId);
+        if (!pos || !layout?.visualHeights || !window.TerrainPreview?.sampleVisualHeight) return geometry;
+        for (let i = 0; i < pos.count; i++) {
+          const subtle = window.TerrainPreview.sampleVisualHeight(
+            layout.visualHeights, pos.getX(i) + offsetX, pos.getZ(i) + offsetZ,
+            layout.cols, layout.rows
+          );
+          pos.setY(i, pos.getY(i) + subtle);
+        }
+        pos.needsUpdate = true;
+        return geometry;
+      }
+
+      // Background music, ambient cues, exterior/rain bgs, and furniture
+      // proximity SFX now live in js/music-system.js (window.Music) — see
+      // window.Music.init(...) below for the wiring.
+
+      // Ground floor for a zone: same per-vertex seam-safe heightfield pipeline
+      // as the town/farm (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo),
+      // merged into one mesh per material. Rock tiles get the farm's real
+      // stone-mound geometry (buildRockTileGeo) instead of town's flatten-to-grass
+      // treatment, since here rock tiles are actual cliff terrain, not building
+      // footprint markers. Extracted out of buildZoneScene (which calls this
+      // once per zone build) so refreshZoneGroundVisuals can also call it to
+      // rebuild just this layer after a runtime tile change (digging/filling/
+      // raising with a shovel/pick — see applyAction) without disposing/
+      // rebuilding the whole zone scene. Returns every mesh it added to
+      // zScene, so the caller can track and later remove them.
+      function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
+        const meshes = [];
+        const _floorBuckets = new Map();
+        const _addToBucket = (matKey, geo, x, y, z) => {
+          if (!geo) return;
+          let arr = _floorBuckets.get(matKey);
+          if (!arr) { arr = []; _floorBuckets.set(matKey, arr); }
+          arr.push({ geo, x, y, z });
+        };
+
+        // Animal den footprints get one continuous rock mound mesh of their
+        // own (see buildAnimalDenMeshes) — without this exclusion, the
+        // ordinary per-tile ROCK treatment just below would ALSO render its
+        // own small independent rock lump on every one of those same tiles,
+        // reading as a separate "pile of rocks" sitting on/around the mound
+        // instead of one clean shape.
+        const denTileKeys = new Set();
+        for (const den of (_zoneLayouts.get(mapId)?.dens || [])) {
+          const dw = den.w || 1, dh = den.h || 1;
+          for (let dy = 0; dy < dh; dy++) for (let dx = 0; dx < dw; dx++) denTileKeys.add((den.x + dx) + ',' + (den.y + dy));
+        }
+
+        const pathNet = buildPathNetworkGeo(zGrid, ZCOLS, ZROWS);
+        if (pathNet) {
+          // Tiny lift above the plateau mesa lid (which shares this exact
+          // tier height wherever a path crosses a plateau — see
+          // buildPathNetworkGeo's elevTier fix) so the two coplanar surfaces
+          // don't z-fight; small enough to read as flush, not floating.
+          const PATH_Z_FIGHT_LIFT = 0.004;
+          // Regular ground (grass) covers the path's own footprint too —
+          // see the paved brick surface registered below, which is meant to
+          // simply overlay ordinary ground rather than sit on a separately-
+          // colored "path" patch (same treatment as the town path).
+          _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP + PATH_Z_FIGHT_LIFT, 0);
+        }
+
+        // Paved brick surface over this zone's path, if it has one — same
+        // technique as the town path (see "Path: paved brick surface"
+        // below): built once the shared recipe/GLB are ready, chunked and
+        // culled by camera corridor rather than tied to this zone's own
+        // scene-build timing.
+        ensurePathSurfaceReady().then(() => {
+          const zoneRoutes = worldRoutes.filter(r => (r.area || 'farm') === mapId);
+          const splineData = preparePathSplineData(zGrid, ZCOLS, ZROWS, zoneRoutes, mapId);
+          if (splineData) registerPathBrickChunks(mapId, zScene, splineData);
+        }).catch(err => debugLog(`Zone path brick surface (${mapId}) error: ` + err.message, 'warn'));
+
+        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+          const tile = zGrid[r][c];
+          const cx = c + 0.5, cz = r + 0.5;
+          const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+
+          // A genuine plateau-top tile is normally left to buildPlateauMesa's
+          // own continuous lid entirely (skipFloor) — but that lid already
+          // leaves a deliberate hole over any CARVED_TILE_TYPES cell (see
+          // quadIsCarved in buildPlateauMesa) expecting THIS loop's own
+          // TRENCH/RAISED/river/stream/waterfall branch below to fill it in.
+          // Skipping unconditionally here left that hole permanently empty —
+          // digging a trench on a plateau's flat top set tile.type correctly
+          // but never rendered anything, since skipFloor never turns back
+          // off just because the tile's now been carved into.
+          if (tile.skipFloor && !CARVED_TILE_TYPES.has(tile.type)) continue;
+          if (tile.type === TileType.RAMP) continue; // covered by the ramp slope mesh below
+
+          if (tile.type === TileType.ROCK) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
+            const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
+            _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
+            continue;
+          }
+          if (tile.type === TileType.TRENCH || tile.type === TileType.RAISED ||
+              tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) {
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tile.type, zGrid);
+            const bedMatKey = (tile.type === TileType.RIVER || tile.type === TileType.STREAM || tile.type === TileType.WATERFALL) ? tile.type : TileType.TRENCH;
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP + tierY, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
+            continue;
+          }
+          if (tile.type === TileType.PATH ||
+              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tile.type === TileType.GRASS)) {
+            continue; // covered by the path network mesh above
+          }
+          if (tile.type === TileType.SHRUB) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (window.FoliageGenerator) {
+              // Which generated object this SHRUB tile came from (see
+              // terrain-preview.js's floraKind) decides its mesh: a real
+              // tree only for 'copse' (and only in a zone with a native
+              // species — see TREE_PRESETS), a proper small bush for
+              // 'bush', a big old stump for 'beehive' (in lieu of a real
+              // beehive prop), and the generic shrub for everything else
+              // (fruitBush/mushroomPatch/unknown/hand-authored data with no
+              // floraKind at all — which also covers every other zone that
+              // has no dedicated tree species).
+              const isTreeZone = mapId === 'map_northern_cliffs' || mapId === 'map_southern_cloud_forest';
+              const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isShadewood   = isTreeZone && mapId === 'map_southern_cloud_forest' && (tile.floraKind === 'copse' || !tile.floraKind);
+              const isBush   = tile.floraKind === 'bush';
+              const isStump  = tile.floraKind === 'beehive';
+              const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
+                             : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
+                             : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
+                             : window.FoliageGenerator.buildShrubMesh(c, r);
+              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
+              if (!isNativeBuild) vegGroup.scale.multiplyScalar(2);
+              // Small bushes are short enough that a player standing behind
+              // one is still mostly visible over/around it, and they're
+              // meant to read as harmless ground clutter rather than a wall
+              // — never worth the fade occlusion treatment reserved for
+              // actual trees (see updateZoneVegetationCulling). The
+              // generic shrub fallback (everything that isn't a real tree/
+              // bush/stump — see the comment above, and the vast majority of
+              // ground cover in most zones) is the exact same kind of squat
+              // clutter and, per that same comment, blankets the ground far
+              // more densely than actual trees ever do. Leaving it eligible
+              // for occlusion fade meant almost ANY sightline to the player
+              // or an attached mount/shoulder-pet clipped through some
+              // nearby clump, so the two flickered semi-transparent
+              // constantly whenever they stood near each other outdoors —
+              // not because they were occluding one another, but because
+              // shrubs everywhere kept getting flagged as the "blocking
+              // tree" for one or both of them.
+              if (isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
+              const groundY = tileSurfaceY(TileType.GRASS) + tierY;
+              vegGroup.position.set(cx, groundY, cz);
+              if (isShadewood) {
+                // Shadewood only: this is the species the "canopy influence
+                // radius"/"underside height" numbers were actually specified
+                // for (rainforest network mode, radius 2.75 / height 6 game
+                // tiles). Crowned pine's low, sweeping skirt branches dip to
+                // near ground level on every instance, which would make the
+                // clamp geometrically unsatisfiable (no zoom level keeps the
+                // camera below a canopy that low) and force max zoom-in
+                // constantly throughout Northern Cliffs — not what was asked.
+                // Tag the lowest point of the leaf canopy so the camera can be
+                // kept from rising above it while the player is nearby (see
+                // canopyZoomFloor) — mirrors the standalone foliage tool's own
+                // camera-vs-canopy obstruction concept. canopyLocal is computed
+                // once per shared tree variant (see foliage-generator.js's
+                // getTreeVariants), not per instance — just scale it by this
+                // instance's own transform.
+                const canopyLocal = vegGroup.userData.canopyLocal;
+                if (canopyLocal) {
+                  const scaleTotal = vegGroup.scale.x;
+                  vegGroup.userData.canopyClamp = {
+                    x: cx, z: cz, radius: canopyLocal.radius * scaleTotal,
+                    undersideY: groundY + canopyLocal.undersideY * scaleTotal,
+                  };
+                }
+              }
+              if (isNativeBuild) {
+                // Bounding sphere for view-corridor culling (see
+                // updateZoneVegetationCulling) — computed once per instance at
+                // build time, not per frame. Ports the standalone foliage
+                // tool's own forestCullSphere concept: a dense forest pays for
+                // full per-object visibility work at ~7Hz instead of every
+                // frame, and only for objects a camera-aligned corridor could
+                // plausibly show.
+                const box = new THREE.Box3().setFromObject(vegGroup);
+                if (!box.isEmpty()) {
+                  const sphere = box.getBoundingSphere(new THREE.Sphere());
+                  // xzRadius: horizontal-only footprint half-diagonal, for the
+                  // camera-player occlusion test (updateZoneVegetationCulling)
+                  // — the full 3D bounding-sphere radius above is dominated by
+                  // a tall tree's height, not its trunk/canopy width, and
+                  // reusing it as the occlusion test's sideways tolerance let
+                  // trees well off to the side of the sightline register as
+                  // "blocking" just for being tall.
+                  const xzRadius = Math.hypot((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2);
+                  vegGroup.userData.cullSphere = { x: sphere.center.x, z: sphere.center.z, radius: sphere.radius, xzRadius };
+                }
+              }
+              zScene.add(vegGroup);
+              _markOutline(vegGroup);
+              meshes.push(vegGroup);
+            }
+            continue;
+          }
+          const matKey = tileMats[tile.type] ? tile.type : TileType.GRASS;
+          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
+        }
+
+        for (const [matKey, entries] of _floorBuckets) {
+          const merged = _mergeTileGeos(entries);
+          displaceZoneGeometry(merged, mapId);
+          merged.computeVertexNormals();
+          const mesh = new THREE.Mesh(merged, resolveTileMat(mapId, matKey));
+          mesh.receiveShadow = true;
+          zScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
+          meshes.push(mesh);
+        }
+        return meshes;
+      }
+
+      function buildZoneScene(mapId) {
+        if (_dirtyZoneScenes.has(mapId)) { _disposeZoneScene(mapId); _dirtyZoneScenes.delete(mapId); }
+        if (_zoneScenes.has(mapId)) return _zoneScenes.get(mapId);
+        const zdef = EXTERIOR_ZONES[mapId];
+        const zoneData = _zoneLayouts.get(mapId);
+        if (!zdef && !zoneData) return null;
+        const ZCOLS = zoneData?.cols || zdef?.cols, ZROWS = zoneData?.rows || zdef?.rows;
+
+        const fogColor = zdef?.fogColor ?? 0x33404a;
+        const zScene = new THREE.Scene();
+        zScene.background = new THREE.Color(fogColor);
+        zScene.fog = new THREE.FogExp2(fogColor, 0.018); // match town/farm fog density
+        zScene.add(new THREE.AmbientLight(0xfff0e0, 0.7));
+        const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+        sun.position.set(4, 8, 2);
+        zScene.add(sun);
+
+        const zGrid = Array.from({ length: ZROWS }, () =>
+          Array.from({ length: ZCOLS }, () => ({
+            type: TileType.GRASS, water: 0, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+        // Plateau sub-maps are purely an authoring convenience in the Map Editor —
+        // _loadTownFromWorkspace already recursively merged every tier of a plateau
+        // stack into this one grid, so each tile here just carries its own absolute
+        // elevTier (rendered below as continuous heightfield mesas, one per tier
+        // transition, in the same visual style as the distant boundary terrain beyond
+        // the playable area) and, for ramp tiles, its own slope-following rampElevation.
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind } of (zoneData?.tiles || [])) {
+          if (!zGrid[r]?.[c]) continue;
+          zGrid[r][c].type = type || TileType.GRASS;
+          zGrid[r][c].elevTier = elevTier || 0;
+          zGrid[r][c].skipFloor = !!skipFloor;
+          zGrid[r][c].incline = !!incline;
+          if (type === TileType.RAMP) zGrid[r][c].rampElevation = rampElevation || 0;
+          // Which generated object (copse/bush/fruitBush/mushroomPatch/beehive)
+          // produced this SHRUB tile — see terrain-preview.js's floraKind and
+          // _buildZoneFloorMeshes below. Missing/undefined (hand-authored map
+          // data, or a tile whose object landed on a plateau footprint the
+          // merge doesn't track this through) falls back to treating any
+          // SHRUB tile in a tree zone as a real tree — the prior behavior.
+          if (type === TileType.SHRUB) zGrid[r][c].floraKind = floraKind || null;
+          if (type === TileType.ROCK) zGrid[r][c].rockKind = rockKind || null;
+        }
+        // Re-apply any trees felled with the axe that haven't regrown yet
+        // (see _zoneFelledTreePersist/tickFelledTreeRegrowth) — zoneData.tiles
+        // above always shows the original, always-treed layout, so a fresh
+        // build here would otherwise put a felled tree right back before its
+        // TREE_REGROWTH_DAYS are up. Entries that are actually due get
+        // dropped here too (the tile's already SHRUB from zoneData.tiles,
+        // matching regrown state — nothing left for them to do).
+        {
+          const felledEntries = _zoneFelledTreePersist.get(mapId);
+          if (felledEntries?.length) {
+            const stillFelled = felledEntries.filter(entry => {
+              const due = calendar.day - entry.feltDay >= TREE_REGROWTH_DAYS;
+              if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
+              return !due;
+            });
+            if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
+            else _zoneFelledTreePersist.delete(mapId);
+          }
+        }
+        // Re-apply any ore rocks mined with the pick that haven't regrown yet
+        // — same rationale as the felled-tree block above, mirrored for ROCK.
+        {
+          const minedEntries = _zoneMinedRockPersist.get(mapId);
+          if (minedEntries?.length) {
+            const stillMined = minedEntries.filter(entry => {
+              const due = calendar.day - entry.minedDay >= ROCK_REGROWTH_DAYS;
+              if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
+              return !due;
+            });
+            if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
+            else _zoneMinedRockPersist.delete(mapId);
+          }
+        }
+        // Ramp curtains: a non-ramp cell beside a ramp cell gets folded into the
+        // ramp's slope as a 1-tile-wide skirt instead of sitting flat — this is
+        // what stops players walking off the side of an elevated ramp, and gives
+        // the ramp the same cliff-face treatment a plateau gets. Cells already
+        // `incline` (an existing plateau wall) are left alone so the ramp blends
+        // into that wall instead of doubling it up (see buildRampCurtainMeshes).
+        // A neighbor whose own ground height already matches the ramp there is
+        // NOT a cliff — it's the flush approach/exit tile at the ramp's low or
+        // high end (rampElevation lerps to exactly that tier's height at t=0/1) —
+        // so it must stay walkable, not get walled off.
+        const RAMP_FLUSH_EPS = 0.5; // world-Y; absorbs wide-ramp t fuzz near an end without masking a real side drop
+        for (let r = 0; r < ZROWS; r++) for (let c = 0; c < ZCOLS; c++) {
+          if (zGrid[r][c].type !== TileType.RAMP) continue;
+          const rampY = NORMAL_TOP + (zGrid[r][c].rampElevation || 0) * PLATEAU_UNIT;
+          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const nt = zGrid[r + dr]?.[c + dc];
+            if (!nt || nt.type === TileType.RAMP || nt.incline) continue;
+            const groundY = NORMAL_TOP + (nt.elevTier || 0) * PLATEAU_UNIT;
+            if (Math.abs(rampY - groundY) < RAMP_FLUSH_EPS) continue;
+            nt.incline = true; nt.skipFloor = true; nt.rampCurtain = true;
+          }
+        }
+        const plateauMesas = zoneData?.mesas || [];
+        console.log(`%c[zone:${mapId}] ${plateauMesas.length} plateau tier transition(s)`, 'color:#22c55e;font-weight:bold');
+
+        // Ground: same per-vertex seam-safe heightfield pipeline as the town/farm
+        // (makeFloorGeo / buildTerrainTileGeo / buildPathNetworkGeo), merged into one
+        // mesh per material — see _buildZoneFloorMeshes. Tracked per-zone so a
+        // runtime tile change (digging/filling/raising — see
+        // refreshZoneGroundVisuals) can rebuild just this layer later.
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId));
+
+        // Each tier transition in the merged plateau stack renders as one continuous
+        // heightfield mesa — same seam-noise/blend/steep-face-skin technique as the
+        // distant boundary terrain beyond the playable area (buildZoneBorderTerrain)
+        // — instead of a hard box: flat raised top across (almost) the whole tier's
+        // footprint, smoothly blending down to the tier below across the outer
+        // 1-tile margin (exactly how much smaller each plateau sub-map is than its
+        // parent, so that margin is the cliff-face band).
+        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
+
+        window.ZoneTerrainFeatures.buildZoneRampMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        window.ZoneTerrainFeatures.buildRampCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        window.ZoneTerrainFeatures.buildRockFormationMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId);
+        window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
+        window.ZoneDenTotemFeatures.buildRootTotemMeshes(zScene, zGrid, zoneData?.rootTotems || [], mapId);
+        _zoneWaterMeshes.set(mapId, [
+          ...window.ZoneTerrainFeatures.buildWaterfallCurtainMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+          ...window.ZoneTerrainFeatures.buildZoneRiverWaterMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId),
+        ]);
+
+        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zScene, zGrid, ZCOLS, ZROWS));
+        window.ZoneGrassBillboards.buildRichFoliageBillboards(zScene, zoneData, zGrid);
+        window.BorderTerrain.buildZoneBorderTerrain(zScene, ZCOLS, ZROWS, mapId, 0, zGrid);
+
+        const toTownExit = zoneData?.toTownExit;
+        const backToTown = (toTownExit || zdef) ? [{
+          id: mapId + '_exit', label: toTownExit?.label || 'Back to Town',
+          col: toTownExit?.col ?? zdef.exitCol, row: toTownExit?.row ?? zdef.exitRow,
+          target: 'town', targetCol: zdef?.townReturnCol, targetRow: zdef?.townReturnRow,
+        }] : [];
+        const transitions = [...backToTown, ...(zoneData?.transitions || [])];
+
+        // Gold ring markers for zone transitions, matching town's
+        const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        for (const t of transitions) {
+          const tile = zGrid[t.row]?.[t.col];
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(t.col + 0.5, tileSurfaceYInArea(tile, mapId) + 0.02, t.row + 0.5);
+          zScene.add(ring);
+        }
+
+        // Meshes tall enough to get between the fixed follow camera and the
+        // player (plateau mesas, cliff-face rock skins — see their own
+        // `.userData.cameraObstacle` tags) — collected once here rather than
+        // walking the whole scene graph every frame in updateCameraPosition.
+        const occlusionMeshes = [];
+        zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+
+        // Canopy zones (tree crowns) whose underside should temporarily hard-limit
+        // manual zoom-out — see canopyZoomFloor. Plain data, not raycast targets.
+        const canopyZones = [];
+        zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
+
+        // Trees/bushes/stumps eligible for view-corridor culling — see
+        // updateZoneVegetationCulling.
+        const cullables = [];
+        zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
+
+        const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables };
+        _zoneScenes.set(mapId, info);
+        window.TownZoneBuildings.spawnZoneBuildings(mapId);
+        window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
+        // Any NPC whose schedule targeted this zone before its (expensive,
+        // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
+        // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
+        for (const w of npcWalkers) {
+          if (w.root._pendingZoneAdd === mapId) {
+            w.root._pendingZoneAdd = null;
+            zScene.add(w.root); w.root._npcScene = zScene;
+          }
+        }
+        return info;
+      }
+
+      // One plateau group's footprint as a continuous heightfield mesa: flat raised
+      // top across the interior, blending smoothly down to ground level over the
+      // outer MARGIN_TILES band — the same seam-hash + blend + steep-face-stone-skin
+      // technique buildZoneBorderTerrain uses for the distant boundary terrain beyond
+      // the playable area, so an in-bounds plateau reads visually like those same
+      // mesas instead of a flat-sided box. The margin band's width matches exactly
+      // how much smaller each plateau's submap is than its parent (see
+      // getOrCreateSubmap/resizeMapAndSubmaps in the Map Editor), since that band is
+      // reserved for this cliff-face blend.
+      // Builds every tier-transition mesa for a zone, returning the meshes so
+      // the caller can track and later remove/rebuild them (see
+      // rebuildZoneMesaMeshes) — used both by buildZoneScene's initial build
+      // and by a runtime tile change on a plateau's flat top.
+      function buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid) {
+        const meshes = [];
+        plateauMesas.forEach((mesa, i) => {
+          const elevOffset = (mesa.toTier - mesa.fromTier) * PLATEAU_UNIT;
+          if (elevOffset <= 0) return;
+          const mesh = window.ZonePlateauMesa.buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * PLATEAU_UNIT, zGrid);
+          if (mesh) meshes.push(mesh);
+        });
+        return meshes;
+      }
+
+      // Rebuilds a zone's plateau mesa meshes from its current grid — used
+      // after a dig/fill/raise/till/smooth changes a tile that sits on a
+      // plateau's flat top, so a newly-carved CARVED_TILE_TYPES cell's hole
+      // (or a filled-back-in cell's restored solid lid) actually shows up
+      // instead of the mesa staying frozen at whatever it looked like when
+      // the zone first loaded. See refreshZoneGroundVisuals.
+      function rebuildZoneMesaMeshes(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        const zoneData = _zoneLayouts.get(mapId);
+        if (!zi || !zoneData?.mesas?.length) return;
+        const oldMeshes = _zoneMesaMeshGroups.get(mapId);
+        if (oldMeshes) for (const mesh of oldMeshes) { zi.scene.remove(mesh); if (mesh.geometry) mesh.geometry.dispose(); }
+        _zoneMesaMeshGroups.set(mapId, buildZoneMesaMeshes(zi.scene, mapId, zoneData.mesas, zi.grid));
+      }
+
+      // A zone's in-bounds elevated plateau/mesa terrain (buildPlateauMesa)
+      // now lives in js/zone-plateau-mesa.js — call via
+      // window.ZonePlateauMesa.buildPlateauMesa(...).
+
+      // Zone ramp surfaces/curtains (buildZoneRampMeshes/
+      // buildRampCurtainMeshes) and the unioned non-walkable rock layer
+      // (buildRockFormationMeshes) now live in js/zone-terrain-features.js
+      // — call via window.ZoneTerrainFeatures.*.
+
+      // Rounded boulder-mound bump field — the exact same BFS-grown-plateau
+      // algorithm (and the identical seam/roughness noise formulas) that
+      // buildRockTileGeo already uses for every loose rock scattered on
+      // farm/zone ground, generalized from a single 1x1 tile to an arbitrary
+      // col×row footprint so a whole surface (a den face, a cavern wall
+      // panel — see buildAnimalDenMeshes/buildCavernWalls) reads as one
+      // continuous cluster of rounded lobes, matching the farm's rocks,
+      // instead of a flat panel with small edge-only jitter. Boundary
+      // vertices are forced to exactly 0 so adjacent faces/panels that meet
+      // at a shared edge stay crack-free even though each field is grown
+      // independently in its own local coordinate space.
+      const ROCK_MOUND_CELLS_PER_TILE = 6;
+      function buildRockMoundBumpField(colsTiles, rowsTiles, worldU0, worldV0, salt, peakScale = 1) {
+        const CX = Math.max(1, Math.round(colsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const CZ = Math.max(1, Math.round(rowsTiles * ROCK_MOUND_CELLS_PER_TILE));
+        const VX = CX + 1, VZ = CZ + 1, STEP = 1 / ROCK_MOUND_CELLS_PER_TILE;
+        let _s = ((Math.round(worldU0 * 8) * 374761393) ^ (Math.round(worldV0 * 8) * 668265263) ^ Math.imul(salt, 2654435761)) >>> 0;
+        const rng = () => { _s += 0x6D2B79F5; let t = Math.imul(_s ^ _s >>> 15, _s | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 8) | 0, kz = Math.round(vz * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h >>> 13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.05;
+        };
+        const Y = new Float32Array(VX * VZ);
+        for (let vj = 0; vj < VZ; vj++) for (let vi = 0; vi < VX; vi++) Y[vj * VX + vi] = seamDisp(worldU0 + vi * STEP, worldV0 + vj * STEP);
+        if (CX >= 3 && CZ >= 3) {
+          const lobeCount = Math.max(1, Math.round(colsTiles * rowsTiles * 0.7));
+          for (let lobe = 0; lobe < lobeCount; lobe++) {
+            const startCi = 1 + Math.floor(rng() * (CX - 2));
+            const startCj = 1 + Math.floor(rng() * (CZ - 2));
+            const maxSize = 2 + Math.floor(rng() * 12);
+            const group = new Set([startCj * CX + startCi]);
+            const front = [[startCi, startCj]];
+            while (front.length && group.size < maxSize) {
+              const fi = Math.floor(rng() * front.length);
+              const [ci, cj] = front.splice(fi, 1)[0];
+              for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const ni = ci + dc, nj = cj + dr;
+                if (ni < 1 || ni > CX - 2 || nj < 1 || nj > CZ - 2) continue;
+                const nk = nj * CX + ni;
+                if (group.has(nk)) continue;
+                group.add(nk); front.push([ni, nj]);
+              }
+            }
+            let maxY = -Infinity;
+            const raised = new Set();
+            for (const ck of group) {
+              const ci = ck % CX, cj = (ck / CX) | 0;
+              for (const vv of [cj * VX + ci, cj * VX + ci + 1, (cj + 1) * VX + ci, (cj + 1) * VX + ci + 1]) {
+                raised.add(vv);
+                if (Y[vv] > maxY) maxY = Y[vv];
+              }
+            }
+            const PEAK = (0.22 + rng() * 0.3) * peakScale;
+            const target = maxY + PEAK;
+            for (const vv of raised) {
+              const vix = vv % VX, viy = (vv / VX) | 0;
+              const edgeDist = Math.min(vix, VX - 1 - vix, viy, VZ - 1 - viy);
+              const blend = Math.min(1, edgeDist / 2);
+              if (blend <= 0) continue;
+              const vx = worldU0 + vix * STEP, vz = worldV0 + viy * STEP;
+              const hgt = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+              if (hgt > Y[vv]) Y[vv] = hgt;
+            }
+          }
+        }
+        for (let vi = 0; vi < VX; vi++) { Y[vi] = 0; Y[(VZ - 1) * VX + vi] = 0; }
+        for (let vj = 0; vj < VZ; vj++) { Y[vj * VX] = 0; Y[vj * VX + VX - 1] = 0; }
+        return { VX, VZ, Y };
+      }
+      function sampleRockMoundBump(field, u, v) {
+        const fx = u * (field.VX - 1), fz = v * (field.VZ - 1);
+        const ix = Math.max(0, Math.min(field.VX - 2, Math.floor(fx))), iz = Math.max(0, Math.min(field.VZ - 2, Math.floor(fz)));
+        const tx = fx - ix, tz = fz - iz;
+        const y00 = field.Y[iz * field.VX + ix], y10 = field.Y[iz * field.VX + ix + 1];
+        const y01 = field.Y[(iz + 1) * field.VX + ix], y11 = field.Y[(iz + 1) * field.VX + ix + 1];
+        return y00 * (1 - tx) * (1 - tz) + y10 * tx * (1 - tz) + y01 * (1 - tx) * tz + y11 * tx * tz;
+      }
+
+      // Animal den rock mounds (buildDenRockMoundGeo/buildAnimalDenMeshes)
+      // and root totem meshes (buildRootTotemMeshes) now live in
+      // js/zone-den-totem-features.js — call via
+      // window.ZoneDenTotemFeatures.*.
+
+      // Zone waterway meshes (buildWaterfallCurtainMeshes/
+      // buildZoneRiverWaterMeshes) now live in js/zone-terrain-features.js
+      // — call via window.ZoneTerrainFeatures.*.
+
+      // Zone grass billboards and rich foliage patch billboards
+      // (buildZoneGrassBillboards/buildRichFoliageBillboards) now live in
+      // js/zone-grass-billboards.js — call via window.ZoneGrassBillboards.*.
+
+      // Procedural cliff/border ring around a zone's playable area
+      // (buildZoneBorderTerrain) now lives in js/border-terrain.js — call
+      // via window.BorderTerrain.buildZoneBorderTerrain(...).
+
+      function initWorldTravel(layout) {
+        if (layout?.version === 3) {
+          worldTransitions = (layout.transitions || []).filter(t =>
+            t && Number.isFinite(t.col) && Number.isFinite(t.row) && (t.area || 'farm') !== 'town');
+          worldNpcPaths = (layout.npcPaths || []).filter(p =>
+            p && Array.isArray(p.nodes) && p.nodes.length > 0 && (p.area || 'farm') !== 'town');
+          worldRoutes = normalizeRoutes(
+            (layout.routes || []).filter(r => (r.area || 'farm') !== 'town'),
+            worldNpcPaths);
+          registerNpcStations(layout.npcStations, null);
+          window.Music?.registerMapAudio(layout.mapAudio);
+          rebuildRouteGraphs();
+        }
+        // Don't fire a spot the player happens to spawn on
+        _transitionLatch = travelAreaKey();
+        buildTransitionMarkers();
+        spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
+      }
+
+      function _travelAreaOf(area) {
+        return _isBuildingArea(area) ? area : _isZoneArea(area) ? area : area === 'interior' ? 'interior' : area === 'town' ? 'town' : 'farm';
+      }
+
+      function travelAreaKey() {
+        const area = _travelAreaOf(currentArea);
+        return area + ':' + Math.floor(player.x / TILE) + ',' + Math.floor(player.y / TILE);
+      }
+
+      function buildTransitionMarkers() {
+        const _ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const _ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        for (const t of worldTransitions) {
+          const interior = t.area === 'interior';
+          const g = interior ? interiorGrid : grid;
+          const tile = g[t.row]?.[t.col];
+          if (!tile) continue;
+          const ring = new THREE.Mesh(_ringGeo, _ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(t.col + 0.5, tileSurfaceY(tile.type) + 0.02, t.row + 0.5);
+          (interior ? interiorScene : scene).add(ring);
+        }
+      }
+
+      function checkTransitionSpots() {
+        const area = _travelAreaOf(currentArea);
+        const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
+        const key = area + ':' + pc + ',' + pr;
+        if (key === _transitionLatch) { _pendingSpotTransition = null; return; }
+        _transitionLatch = null;
+        let pool;
+        if (_isBuildingArea(area)) pool = _buildingScenes.get(area)?.transitions || [];
+        else if (_isZoneArea(area)) pool = _zoneScenes.get(area)?.transitions || [];
+        else pool = area === 'town' ? worldTownTransitions : worldTransitions;
+        const t = pool.find(x =>
+          (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
+          (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow))));
+        if (t !== _pendingSpotTransition) { _pendingSpotTransition = t || null; refreshActionBar(); }
+        // Farm interior exit fires automatically (legacy behaviour)
+        if (t && area === 'interior') startSceneTransition(() => performTravel(t));
+      }
+
+      function _returnToFarmMeshes() {
+        if (currentArea === 'interior') {
+          interiorScene.remove(playerMesh);
+          interiorScene.remove(playerGroundShadow);
+        } else if (currentArea === 'town' && townScene) {
+          townScene.remove(playerMesh);
+          townScene.remove(playerGroundShadow);
+        } else if (_isBuildingArea(currentArea)) {
+          const bs = _buildingScenes.get(currentArea);
+          if (bs?.scene) { bs.scene.remove(playerMesh); bs.scene.remove(playerGroundShadow); }
+          _currentBuildingMapId = null;
+        }
+        scene.add(playerMesh);
+        scene.add(playerGroundShadow);
+        scene.add(toolHolder);
+        scene.add(reticleMesh);
+        scene.add(reticleCircleMesh);
+        scene.add(reticleRingMesh);
+        scene.add(reticleWavyGroup);
+        currentArea = 'farm';
+        refreshActionBar();
+      }
+
+      function performTravel(t) {
+        if (t.target === 'exit_building') {
+          exitBuilding();
+        } else if (t.target === 'building') {
+          enterBuilding(t.targetMapId, t.targetCol, t.targetRow);
+        } else if (t.target === 'interior') {
+          if (currentArea !== 'interior') enterInterior();
+          const c = clamp(t.targetCol, 0, INTERIOR_COLS - 1);
+          const r = clamp(t.targetRow, 0, INTERIOR_ROWS - 1);
+          player.x = (c + 0.5) * TILE;
+          player.y = (r + 0.5) * TILE;
+        } else if (t.target === 'town') {
+          const tcols = _townZone?.cols || 60, trows = _townZone?.rows || 50;
+          const c = clamp(t.targetCol, 0, tcols - 1);
+          const r = clamp(t.targetRow, 0, trows - 1);
+          enterTown(c, r);
+        } else if (t.target === 'zone') {
+          enterZone(t.targetMapId, t.targetCol, t.targetRow);
+        } else { // 'farm'
+          _returnToFarmMeshes();
+          const c = clamp(t.targetCol, 0, COLS - 1);
+          const r = clamp(t.targetRow, 0, ROWS - 1);
+          player.x = (c + 0.5) * TILE;
+          player.y = (r + 0.5) * TILE;
+        }
+        player.vx = 0;  player.vy = 0;
+        _snapCameraTarget();
+        _transitionLatch = travelAreaKey();
+        if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
+      }
+
+
+      function pngAvatarGroundShadowConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.groundShadow || {};
+      }
+
+      function makeCharacterGroundShadow(name = 'character_ground_shadow') {
+        const cfg = pngAvatarGroundShadowConfig();
+        const geo = new THREE.CircleGeometry(1, 40);
+        geo.rotateX(-Math.PI / 2);
+        const mat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(cfg.color || '#1b1712'),
+          transparent: true,
+          opacity: cfg.opacity ?? 0.28,
+          depthWrite: false,
+        });
+        const shadow = new THREE.Mesh(geo, mat);
+        shadow.name = name;
+        shadow.renderOrder = -1;
+        shadow.scale.set(cfg.radiusX ?? 0.34, 1, cfg.radiusZ ?? 0.22);
+        return shadow;
+      }
+
+      function characterGroundShadowSurfaceOffset() {
+        return pngAvatarGroundShadowConfig().surfaceOffsetY ?? 0.018;
+      }
+
+      // Ties a creature's shadow footprint to the same modelWidth used for
+      // its own hit cone/collision radius (see creatureHitboxHalfSizePx)
+      // instead of the player/NPC's fixed humanoid size, so e.g. a gar-wolf
+      // alpha visibly casts a bigger shadow than a dabinggi-hound. Keeps the
+      // configured player shadow's X:Z squash ratio rather than introducing
+      // a separate tunable.
+      function creatureGroundShadowRadii(def) {
+        const cfg = pngAvatarGroundShadowConfig();
+        const baseRadiusX = cfg.radiusX ?? 0.34;
+        const baseRadiusZ = cfg.radiusZ ?? 0.22;
+        const radiusX = (def.modelWidth || 2) * 0.3;
+        return { radiusX, radiusZ: radiusX * (baseRadiusZ / baseRadiusX) };
+      }
+
+      // ── Schedule-driven NPCs: beeline first, shared routes as fallback ─
+      const NPC_SPECIES_IDS = ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'];
+
+      function npcMovementConfig() { return window.SCRATCHBONES_CONFIG?.game?.movement?.npc || {}; }
+      function npcDialogueStagingConfig() { return window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.staging || {}; }
+      function cameraConfig() { return window.SCRATCHBONES_CONFIG?.game?.camera || {}; }
+      function cameraModesConfig() { return cameraConfig().modes || {}; }
+      function cameraModeConfig(mode) {
+        const modes = cameraModesConfig();
+        return modes[mode] || modes[cameraConfig().defaultMode] || modes.default || {};
+      }
+      function npcDialogueCameraMode() { return cameraConfig().dialogueMode || 'npcDialogue'; }
+      function dialogueZoomConfig() { return cameraModeConfig(npcDialogueCameraMode()).runtimeZoom || {}; }
+      function dialogueZoomEnabled() { return dialogueZoomConfig().enabled !== false; }
+      function dialogueZoomActive() { return dialogueOpen && activeCameraMode === npcDialogueCameraMode() && dialogueZoomEnabled(); }
+      function clampDialogueZoomPercent(value) {
+        const cfg = dialogueZoomConfig();
+        return clamp(value, cfg.minPercent ?? 0, cfg.maxPercent ?? 100);
+      }
+      function dialogueZoomFactor() {
+        const cfg = dialogueZoomConfig();
+        const minPercent = cfg.minPercent ?? 0;
+        const maxPercent = cfg.maxPercent ?? 100;
+        const range = Math.max(0.001, maxPercent - minPercent);
+        const normalized = clamp((dialogueCameraZoomPercent - minPercent) / range, 0, 1);
+        return 1 + normalized * ((cfg.maxZoomFactor ?? 2.5) - 1);
+      }
+      function setDialogueCameraZoomPercent(value) {
+        dialogueCameraZoomPercent = clampDialogueZoomPercent(value);
+        updateDialogueZoomIndicator();
+      }
+      function updateDialogueZoomIndicator() {
+        if (!dialogueZoomIndicator) return;
+        dialogueZoomIndicator.textContent = `${Math.round(dialogueCameraZoomPercent)}%`;
+        dialogueZoomIndicator.setAttribute('aria-hidden', dialogueZoomActive() ? 'false' : 'true');
+        dialogueZoomIndicator.classList.toggle('open', dialogueZoomActive());
+      }
+      function resetDialogueCameraZoom() {
+        setDialogueCameraZoomPercent(dialogueZoomConfig().initialPercent ?? 0);
+      }
+      function desktopControlsConfig() { return window.SCRATCHBONES_CONFIG?.game?.desktopControls || {}; }
+      function npcDialogueButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.npcDialogueButton || {};
+      }
+      function npcDialogueAction() { return npcDialogueButtonConfig().action || 'npc_dialogue'; }
+      function generalStoreButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
+      }
+      function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
+      function normalizeStationLabel(label) {
+        return String(label || '').trim().toLowerCase();
+      }
+      function isGeneralStoreNpcOnDuty(walker) {
+        const cfg = generalStoreButtonConfig();
+        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
+        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : [];
+        const npcId = walker?.rec?.id || '';
+        const target = walker?.currentScheduleTarget || null;
+        const stationLabel = normalizeStationLabel(target?.label);
+        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
+          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
+        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
+      }
+      function generalStoreButton() {
+        const cfg = generalStoreButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '🛒',
+          label: name ? `${cfg.label || 'Shop'}: ${name}` : (cfg.label || 'Shop'),
+          action: generalStoreAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
+
+      // ── Carpenter's shop — mirrors the General Store's NPC-gated shop
+      // button pattern above, but for barn plans instead of goods/clothing.
+      function carpenterButtonConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.carpenterButton || {};
+      }
+      function carpenterAction() { return carpenterButtonConfig().action || 'open_carpenter_shop'; }
+      function isCarpenterNpcOnDuty(walker) {
+        const cfg = carpenterButtonConfig();
+        const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['dzibim_khibu'];
+        const stationLabels = Array.isArray(cfg.stationLabels) ? cfg.stationLabels : ['Carpentry Work'];
+        const npcId = walker?.rec?.id || '';
+        const target = walker?.currentScheduleTarget || null;
+        const stationLabel = normalizeStationLabel(target?.label);
+        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
+          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
+        return ids.includes(npcId) && isAtStation && stationLabels.some(label => stationLabel === normalizeStationLabel(label));
+      }
+      function carpenterButton() {
+        const cfg = carpenterButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '🪚',
+          label: name ? `${cfg.label || 'Carpenter'}: ${name}` : (cfg.label || 'Carpenter'),
+          action: carpenterAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
+
+      function npcDialogueStagingOffsets() {
+        const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
+        return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
+      }
+
+      function beginNpcDialogueStaging(walker) {
+        // Cutscene Preview drives every participant's position/facing itself
+        // (see "Cutscene Preview Mode" below) — walking/turning the real
+        // singleton `player` to stand next to whoever it opened dialogue
+        // with would fight the director's own scripted blocking, and there
+        // may not even be a "player" in the scene the preview is running.
+        if (cutscenePreviewActive) return;
+        const npcX = walker?.root?.position?.x;
+        const npcZ = walker?.root?.position?.z;
+        if (!Number.isFinite(npcX) || !Number.isFinite(npcZ)) { npcDialogueStaging = null; return; }
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const candidates = npcDialogueStagingOffsets().map(offset => ({
+          x: npcX + (Number(offset.x) || 0),
+          z: npcZ + (Number(offset.y) || 0),
+        }));
+        candidates.sort((a, b) => Math.hypot(playerWorldX - a.x, playerWorldZ - a.z) - Math.hypot(playerWorldX - b.x, playerWorldZ - b.z));
+        const target = candidates.find(pos => canPlayerOccupy(pos.x * TILE, pos.z * TILE)) || candidates[0];
+        npcDialogueStaging = { walker, targetX: target.x, targetZ: target.z };
+        player.vx = 0;
+        player.vy = 0;
+      }
+
+      function faceNpcDialogueParticipants() {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
+        const walker = npcDialogueStaging?.walker || _dialogueWalker;
+        if (!walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const playerWorldX = player.x / TILE;
+        const playerWorldZ = player.y / TILE;
+        const npcX = walker.root.position.x;
+        const npcZ = walker.root.position.z;
+        const playerTargetAngle = Math.atan2(npcZ - playerWorldZ, npcX - playerWorldX);
+        facingAngle += angleDiff(playerTargetAngle, facingAngle) * (cfg.faceLerp ?? 0.28);
+        player.angle = facingAngle;
+        const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
+        const npcTargetRot = -npcTargetAngle + Math.PI / 2;
+        walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFacePlayerLerp ?? 0.28);
+        walker.root.rotation.y = walker.rot;
+        // Head rotation: the body above only catches up to npcTargetRot
+        // gradually (npcFacePlayerLerp), so while it's still turning, aim the
+        // neck bone at however much of that gap remains right now (clamped to
+        // a natural-looking max) — the NPC glances at the player immediately
+        // and the head straightens on its own as the body finishes turning.
+        if (walker.neckJoint) {
+          const maxHeadYawRad = (cfg.npcHeadMaxYawDeg ?? 28) * Math.PI / 180;
+          const residual = angleDiff(npcTargetRot, walker.rot);
+          walker.neckJoint.rotation.y = Math.max(-maxHeadYawRad, Math.min(maxHeadYawRad, residual));
+        }
+      }
+
+      function updateNpcDialogueStaging(dt) {
+        if (cutscenePreviewActive) return; // see beginNpcDialogueStaging
+        if (!npcDialogueStaging?.walker?.root) return;
+        const cfg = npcDialogueStagingConfig();
+        const speed = (cfg.moveSpeedTilesPerSecond ?? 4.25) * TILE;
+        const arrival = (cfg.arrivalRadiusTiles ?? 0.08) * TILE;
+        const targetX = npcDialogueStaging.targetX * TILE;
+        const targetY = npcDialogueStaging.targetZ * TILE;
+        const dx = targetX - player.x;
+        const dy = targetY - player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= arrival) {
+          player.x = targetX;
+          player.y = targetY;
+          player.vx = 0;
+          player.vy = 0;
+          faceNpcDialogueParticipants();
+          return;
+        }
+        const step = Math.min(dist, speed * dt);
+        const desiredX = player.x + dx / dist * step;
+        const desiredY = player.y + dy / dist * step;
+        let moved = false;
+        if (canPlayerOccupy(desiredX, player.y)) { player.x = desiredX; moved = true; }
+        if (canPlayerOccupy(player.x, desiredY)) { player.y = desiredY; moved = true; }
+        player.vx = moved ? dx / dist * speed : 0;
+        player.vy = moved ? dy / dist * speed : 0;
+        faceNpcDialogueParticipants();
+      }
+
+      function npcDialogueButton() {
+        const cfg = npcDialogueButtonConfig();
+        const name = nearbyNpcWalker?.rec?.name;
+        return {
+          icon: cfg.icon || '💬',
+          label: name ? `${cfg.label || 'Talk'}: ${name}` : (cfg.label || 'Talk'),
+          action: npcDialogueAction(),
+          style: cfg.style || 'primary',
+          allowed: true,
+        };
+      }
+
+      function normalizeRoutes(routes, legacyPaths = []) {
+        const out = (routes || []).filter(r => r && Array.isArray(r.nodes) && r.nodes.length > 0)
+          .map(r => ({ id: r.id, label: r.label || 'Route', area: normalizeNpcArea(r.area || 'farm'), nodes: r.nodes.map(n => [n[0], n[1]]) }));
+        if (!out.length) legacyPaths.forEach(p => out.push({ id: 'legacy_' + (p.id || p.label || out.length), label: p.label || 'Legacy route', area: normalizeNpcArea(p.area || 'farm'), nodes: p.nodes.map(n => [n[0], n[1]]) }));
+        return out;
+      }
+
+      // Whether the straight segment between two route nodes stays on dry,
+      // walkable ground (no river crossing) — sampled the same way as
+      // canNpcBeeline so authored route edges respect the same rules.
+      function isRouteSegmentDry(area, c1, r1, c2, r2) {
+        const x1 = c1 + 0.5, z1 = r1 + 0.5, x2 = c2 + 0.5, z2 = r2 + 0.5;
+        const dist = Math.hypot(x2 - x1, z2 - z1);
+        const samples = Math.max(1, Math.ceil(dist / 0.5));
+        for (let i = 0; i <= samples; i++) {
+          const t = i / samples;
+          const c = Math.floor(x1 + (x2 - x1) * t);
+          const r = Math.floor(z1 + (z2 - z1) * t);
+          if (!isNpcTileWalkable(area, c, r)) return false;
+        }
+        return true;
+      }
+
+      function buildRouteGraph(routes) {
+        const nodes = new Map();
+        const key = (area, c, r) => area + ':' + c + ',' + r;
+        const ensure = (area, c, r) => {
+          const k = key(area, c, r);
+          if (!nodes.has(k)) nodes.set(k, { key: k, area, c, r, edges: new Set(), routeIds: new Set() });
+          return nodes.get(k);
+        };
+        routes.forEach(route => {
+          const area = route.area || 'farm';
+          let prev = null;
+          (route.nodes || []).forEach(([c, r]) => {
+            const node = ensure(area, c, r);
+            if (route.id) node.routeIds.add(route.id);
+            // Skip edges that wade through a river — NPCs following this route
+            // will detour via any other dry edge instead of crossing the water.
+            if (prev && isRouteSegmentDry(area, prev.c, prev.r, c, r)) { prev.edges.add(node.key); node.edges.add(prev.key); }
+            prev = node;
+          });
+        });
+        return { nodes };
+      }
+
+      function rebuildRouteGraphs() {
+        routeGraphsByArea.clear();
+        const areas = new Set(['farm', 'interior', 'town']);
+        [...worldRoutes, ...worldTownRoutes].forEach(r => areas.add(r.area || 'farm'));
+        for (const area of areas) {
+          const routes = [...worldRoutes, ...worldTownRoutes].filter(r => (r.area || 'farm') === area);
+          routeGraphsByArea.set(area, buildRouteGraph(routes));
+        }
+      }
+
+      function distanceToTarget(node, target) { return Math.hypot((node.c + 0.5) - (target.c + 0.5), (node.r + 0.5) - (target.r + 0.5)); }
+
+      function findNearestRouteNode(area, x, z, target) {
+        const graph = routeGraphsByArea.get(area);
+        const routeId = target?.routeId || null;
+        const maxDist = npcMovementConfig().routeSnapRadiusTiles ?? 8;
+        let best = null, bestD = Infinity;
+        graph?.nodes.forEach(node => {
+          if (routeId && !node.routeIds.has(routeId)) return;
+          const d = Math.hypot(node.c + 0.5 - x, node.r + 0.5 - z);
+          if (d <= maxDist && (!target || distanceToTarget(node, target) < Math.hypot(x - (target.c + 0.5), z - (target.r + 0.5))) && d < bestD) { best = node; bestD = d; }
+        });
+        return best;
+      }
+
+      function findBestRouteDestinationNode(graph, target) {
+        const routeId = target?.routeId || null;
+        let best = null, bestD = Infinity;
+        graph?.nodes.forEach(node => {
+          if (routeId && !node.routeIds.has(routeId)) return;
+          const d = distanceToTarget(node, target);
+          if (d < bestD) { best = node; bestD = d; }
+        });
+        return best;
+      }
+
+      // Full shortest-path walk (via BFS) from `startNode` to whichever route
+      // node sits nearest the target, instead of a greedy "pick whichever
+      // neighbor is closer than here" step. The greedy version refuses any
+      // edge that doesn't immediately shrink the distance to target, so at
+      // junction nodes with no immediately-closer neighbor — door tiles are
+      // exactly this, since routes typically bend right where they cross a
+      // threshold — it gives up and the NPC freezes there indefinitely.
+      function computeRoutePathToTarget(startNode, target) {
+        const graph = routeGraphsByArea.get(startNode.area);
+        if (!graph) return null;
+        const dest = findBestRouteDestinationNode(graph, target);
+        if (!dest || dest.key === startNode.key) return [];
+        const routeId = target?.routeId || null;
+        const prevByKey = new Map();
+        const visited = new Set([startNode.key]);
+        const queue = [startNode.key];
+        for (let i = 0; i < queue.length; i++) {
+          const curKey = queue[i];
+          if (curKey === dest.key) break;
+          const cur = graph.nodes.get(curKey);
+          cur.edges.forEach(k => {
+            if (visited.has(k)) return;
+            const n = graph.nodes.get(k);
+            if (routeId && n && !n.routeIds.has(routeId)) return;
+            visited.add(k);
+            prevByKey.set(k, curKey);
+            queue.push(k);
+          });
+        }
+        if (!visited.has(dest.key)) return null;
+        const path = [];
+        let curKey = dest.key;
+        while (curKey !== startNode.key) {
+          path.unshift(graph.nodes.get(curKey));
+          curKey = prevByKey.get(curKey);
+          if (curKey === undefined) return null;
+        }
+        return path;
+      }
+
+      function isNpcTileWalkable(area, c, r) {
+        const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
+        const tile = g[r]?.[c];
+        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
+        if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
+        if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
+        if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
+        if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
+        if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
+        return true;
+      }
+
+      function canNpcBeeline(area, fromX, fromZ, targetC, targetR) {
+        const tx = targetC + 0.5, tz = targetR + 0.5;
+        const dist = Math.hypot(tx - fromX, tz - fromZ);
+        const step = npcMovementConfig().beelineSampleStepTiles ?? 0.25;
+        const samples = Math.max(1, Math.ceil(dist / step));
+        for (let i = 0; i <= samples; i++) {
+          const t = i / samples;
+          const c = Math.floor(fromX + (tx - fromX) * t);
+          const r = Math.floor(fromZ + (tz - fromZ) * t);
+          if (!isNpcTileWalkable(area, c, r)) return false;
+        }
+        return true;
+      }
+
+      function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
+      function currentGameMinutes() { return Math.round(window.CalendarSystem.getHour() * 60); }
+      function isNowWithinNpcRuleWindow(now, start, end) {
+        if (start === null || end === null) return false;
+        if (start <= end) return now >= start && now < end;
+        return now >= start || now < end;
+      }
+      function normalizeNpcArea(area) {
+        if (!area) return 'farm';
+        if (area === 'interior') return 'interior';
+        if (area === 'town' || area === 'hobunji_main_town' || area === 'map_hobunji_town') return 'town';
+        if (_isBuildingArea(area)) return area;
+        if (_isZoneArea(area)) return area;
+        window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
+        return 'farm';
+      }
+      function normalizeNpcStation(station, fallbackArea) {
+        if (!station || !station.id) return null;
+        const c = station.c ?? station.col;
+        const r = station.r ?? station.row;
+        if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
+        return {
+          id: station.id,
+          label: station.label || station.id,
+          area: normalizeNpcArea(station.area || station.mapId || fallbackArea || 'farm'),
+          c, r,
+          rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
+          pose: station.pose || 'stand',
+          toolKey: station.toolKey || '',
+          toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
+          toolAnimStyle: station.toolAnimStyle || '',
+          // Multi-tile wander footprint around this station's root tile —
+          // see makeNpcWalker's _updateStationWander/_pickStationWanderTile.
+          // wanderMode 'radius' (default) samples a random offset within
+          // wanderRadiusTiles of (c,r); 'shape' instead picks uniformly
+          // among the hand-painted wanderShapeTiles (each a [dc,dr] offset
+          // from (c,r), authored in the Map Editor's station paint tool) —
+          // lets an author cover an irregular region a circle can't express
+          // (an L-shaped yard, a field that hugs a path, etc). Neither set
+          // (radius 0, empty shape) keeps today's behavior: an NPC freezes
+          // exactly at (c,r).
+          wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
+          wanderMode: station.wanderMode === 'shape' ? 'shape' : 'radius',
+          wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
+            ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
+            : [],
+        };
+      }
+      function registerNpcStations(stations, fallbackArea) {
+        (stations || []).forEach(st => {
+          const normalized = normalizeNpcStation(st, fallbackArea);
+          if (normalized) npcStationsById.set(normalized.id, normalized);
+        });
+      }
+      function resolveNpcStationTarget(stationId) {
+        const station = npcStationsById.get(stationId);
+        return station ? { ...station, stationId: station.id } : null;
+      }
+
+      // Chairs auto-register as NPC scheduling stations wherever they're
+      // placed — no map author has to hand-add an npcStations entry for
+      // player-placed furniture. Deterministic id (area+tile) so placing the
+      // same spot twice is idempotent and a schedule rule survives a reload.
+      // Only pose:'sit' is set here; there's no seated NPC pose animation
+      // yet (see beginSitInteraction's own player-side note on the same
+      // gap), so a scheduled NPC currently just stands at the chair like any
+      // other station — the registration/scheduling half of the request.
+      function furnitureNpcStationId(area, col, row) {
+        return `furniture_chair_${area}_${col}_${row}`;
+      }
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area) {
+        const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+        if (!def?.sit) return;
+        registerNpcStations([{
+          id: furnitureNpcStationId(area, col, row), label: def.name,
+          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit',
+        }], area);
+      }
+      function unregisterChairNpcStation(furnitureKey, col, row, area) {
+        if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
+        npcStationsById.delete(furnitureNpcStationId(area, col, row));
+      }
+
+      function sceneForNpcArea(area) {
+        if (area === 'interior') return interiorScene;
+        if (area === 'town') return townScene;
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.scene || null;
+        if (_isZoneArea(area)) return _zoneScenes.get(area)?.scene || null;
+        return scene;
+      }
+      function npcGridForArea(area) {
+        if (area === 'interior') return interiorGrid;
+        if (area === 'town') return townGrid;
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.grid || null;
+        if (_isZoneArea(area)) return _zoneScenes.get(area)?.grid || null;
+        return grid;
+      }
+      function npcSurfaceY(area, c, r) {
+        const g = npcGridForArea(area);
+        const tile = g?.[r]?.[c];
+        if (!tile) return 0;
+        // Zone terrain has real plateau tiers/ramps — tileSurfaceY(type) alone
+        // (used by every other area, all flat ground) would ignore them.
+        return _isZoneArea(area) ? surfaceYAtWorld(area, c + 0.5, r + 0.5) : tileSurfaceY(tile.type);
+      }
+      function resolveNpcSpawnPosition(rec, target) {
+        const legacy = target?.legacyPath || null;
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[0]; return { area: legacy.area || target?.area || 'farm', c, r }; }
+        return target;
+      }
+
+      const _scheduleFallbackLogKeys = new Set();
+      function logScheduleFallbackOnce(rec, kind, area, c, r) {
+        const minuteBucket = Math.floor(currentGameMinutes() / 10);
+        const key = [rec?.id || 'npc', kind, currentArea, area, c, r, minuteBucket].join('|');
+        if (_scheduleFallbackLogKeys.has(key)) return;
+        _scheduleFallbackLogKeys.add(key);
+        window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
+      }
+
+      // A rule may restrict itself to one or more weekdays via "day" (single
+      // name) or "days" (array); rules with neither run every day, same as before.
+      function isNpcRuleActiveOnDay(rule) {
+        if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
+        if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
+        return true;
+      }
+
+      // Village-wide shared schedule overrides (e.g. Temple Service, Anan
+      // 9-11am): any NPC tagged `appliesToTag`, without a rule of their own
+      // active for that window, joins the group at a round-robin-assigned
+      // station instead of following their usual routine. Authored data —
+      // see docs/config/npcs/hobunji-starter-npc-database.json's top-level
+      // `sharedSchedules[]` (editable in the Schedule Editor's Shared
+      // Events panel) — populated into npcSharedSchedules by
+      // spawnScheduledNpcs() below. Used to be hardcoded Temple-Service-only
+      // constants here; kept generic so any future event just needs data.
+      let npcSharedSchedules = [];
+      function hashNpcIdToIndex(id, mod) {
+        let h = 0;
+        const s = String(id || '');
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+        return Math.abs(h) % mod;
+      }
+
+      function resolveNpcScheduleTarget(rec) {
+        const hooks = rec?.scheduleHooks || {};
+        const now = currentGameMinutes();
+        for (const rule of hooks.rules || []) {
+          if (rule.contentIncomplete) continue; // flagged by the Schedule Editor / migration — not a real target yet
+          if (!isNpcRuleActiveOnDay(rule)) continue;
+          const start = parseNpcTimeMinutes(rule.start ?? rule.from);
+          const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
+          const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
+          if (ruleActive && rule.stationId) {
+            const stationTarget = resolveNpcStationTarget(rule.stationId);
+            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
+            // The station's building scene may simply not have been visited/loaded
+            // yet this session (its npcStations only register once it loads) —
+            // warm it up so the lookup succeeds on a later tick, and throttle the
+            // warning instead of spamming it every tick until that load completes.
+            const missingArea = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
+            if (_isBuildingArea(missingArea) && !_buildingScenes.has(missingArea)) loadBuildingScene(missingArea);
+            const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
+            if (!_scheduleFallbackLogKeys.has(warnKey)) {
+              _scheduleFallbackLogKeys.add(warnKey);
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
+            }
+          }
+          const c = rule.c ?? rule.position?.c;
+          const r = rule.r ?? rule.position?.r;
+          const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
+          if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
+            return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
+        }
+        for (const shared of npcSharedSchedules) {
+          if (!shared || shared.contentIncomplete) continue;
+          const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
+          if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
+          if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
+          if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
+          if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
+          const ids = shared.stationIds || [];
+          if (!ids.length) continue;
+          const target = resolveNpcStationTarget(ids[hashNpcIdToIndex(rec?.id, ids.length)]);
+          if (target) return { ...target, activity: shared.label || shared.id || 'Shared Event' };
+        }
+        if (hooks.defaultStationId) {
+          const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
+          if (stationTarget) return stationTarget;
+          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
+        }
+        // contentIncomplete NPCs (flagged by the migration/Schedule Editor —
+        // e.g. a defaultPosition that was only ever a {0,0} placeholder)
+        // skip the raw-position fallback entirely rather than spawn at a
+        // made-up tile; they fall through to "no target" below, which
+        // spawnScheduledNpcs()/​_retrySpawnDeferredNpcs() already treat as
+        // "defer and retry" instead of a visible glitch.
+        if (!hooks.contentIncomplete && hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
+          const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
+          logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
+          return { ...hooks.defaultPosition, area: defArea };
+        }
+        const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
+        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
+        return null;
+      }
+
+      // Pool of transition spots that live "in" the given area, in the same
+      // shape checkTransitionSpots() uses for the player.
+      function npcTransitionPool(area) {
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.transitions || [];
+        if (area === 'town') return worldTownTransitions;
+        return worldTransitions.filter(t => (t.area || 'farm') === area);
+      }
+
+      // One-hop links reachable directly from `area`, in the shape
+      // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
+      // findNpcAreaLink() searches below. Mirrors the exact matching rules the
+      // single-hop version of this code used to use, so existing direct links
+      // (town↔building, building→town, farm↔interior) behave identically.
+      function areaLinksFrom(area) {
+        const pool = npcTransitionPool(area);
+        const links = [];
+        for (const t of pool) {
+          if (t.target === 'building' && t.targetMapId) {
+            if (!_buildingScenes.has(t.targetMapId)) loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
+            const bi = _buildingScenes.get(t.targetMapId);
+            const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
+              : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
+            links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
+          } else if (t.target === 'exit_building') {
+            const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === area);
+            const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
+            links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
+          } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
+            links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
+          }
+        }
+        return links;
+      }
+
+      // Resolves the door an NPC should walk to in order to leave `fromArea`
+      // toward `toArea`, plus the spot they should appear at once they arrive —
+      // i.e. the Spot doubles as both the movement target on the way out and
+      // the spawn point on the way in, so NPCs are never warped straight to
+      // their final schedule target through a wall. `toArea` may be several
+      // hops away (e.g. town → a building's ground floor → one of its
+      // upstairs rooms) — this does a short BFS over the area graph and
+      // returns only the *first* hop; the caller re-resolves on arrival,
+      // which naturally chains the walk leg by leg instead of skipping
+      // straight to the final room.
+      function findNpcAreaLink(fromArea, toArea) {
+        if (fromArea === toArea) return null;
+        const visited = new Set([fromArea]);
+        const queue = [{ area: fromArea, firstHop: null }];
+        while (queue.length) {
+          const { area, firstHop } = queue.shift();
+          for (const link of areaLinksFrom(area)) {
+            const hop = firstHop || link;
+            if (link.toArea === toArea) return hop;
+            if (!visited.has(link.toArea)) {
+              visited.add(link.toArea);
+              queue.push({ area: link.toArea, firstHop: hop });
+            }
+          }
+        }
+        return null;
+      }
+
+      async function spawnScheduledNpcs(extraRecords) {
+        if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        let dbNpcs = extraRecords || [];
+        if (!dbNpcs.length) {
+          try {
+            // Routed through window.LocalDBOverrides (see docs/js/local-db-
+            // overrides.js) so the onboarding "Database Source" toggle can
+            // swap in a locally-saved character-studio/dialogue-editor/
+            // schedule-editor edit of this file without touching the repo
+            // copy — falls back to a direct fetch if that module isn't loaded.
+            const json = window.LocalDBOverrides
+              ? await window.LocalDBOverrides.loadDatabase('npcDatabase')
+              : await fetch('config/npcs/hobunji-starter-npc-database.json').then(r => r.json());
+            dbNpcs = json.npcs || [];
+            npcSharedSchedules = json.sharedSchedules || [];
+            for (const npc of dbNpcs) {
+              const bd = npc.relationship?.baseDisposition;
+              if (typeof bd === 'number' && window.DialogueContent) window.DialogueContent.npcBaseDispositions[npc.id] = bd;
+            }
+          } catch {}
+        }
+        await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
+        const deferred = [];
+        for (const rec of dbNpcs) {
+          const target = resolveNpcScheduleTarget(rec);
+          if (!target) { deferred.push(rec); continue; }
+          try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
+          catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
+        }
+        console.log(`[NPC] Spawned ${npcWalkers.length}/${dbNpcs.length} walkers. inspect: window._npcWalkers`);
+        console.log('[NPC] Areas:', npcWalkers.map(w => (w.rec?.id || '?') + '@' + (w.area || w.root?._pendingBuildingAdd || (w.root?._pendingTownAdd ? 'town(pending)' : '?'))));
+        if (deferred.length) {
+          console.log('[NPC] Deferred (no schedule target resolvable yet):', deferred.map(r => r.id));
+          _retrySpawnDeferredNpcs(deferred);
+        }
+      }
+
+      // Some NPCs (e.g. Garanki Gabu) only have schedule stations that come
+      // from content the Tothal Shift stamps into a wilderness zone at world
+      // boot -- but that shift runs fire-and-forget (see checkTothalShift's
+      // call site) and hasn't necessarily finished by the time
+      // spawnScheduledNpcs() runs at module init, so resolveNpcScheduleTarget()
+      // has nothing to resolve to yet for them. Spawning them at a made-up
+      // fallback position instead (defaultPosition) used to "fix" the missing
+      // NPC but created a worse, more visible bug: they'd spawn wherever that
+      // fallback pointed -- often far from their real, just-stamped station in
+      // a large procedurally generated zone -- and only *begin* the (slow,
+      // ~1.25 tiles/sec) walk there once their schedule re-resolves, so the
+      // NPC would still be nowhere near where a player would look for them for
+      // a long time. Waiting and retrying instead means they're only ever
+      // created once there's a real station to spawn at.
+      function _retrySpawnDeferredNpcs(records, attempt = 0) {
+        const MAX_ATTEMPTS = 30; // ~30s at 1s apart -- Tothal Shift is described as "a few seconds"
+        setTimeout(async () => {
+          const stillDeferred = [];
+          for (const rec of records) {
+            const target = resolveNpcScheduleTarget(rec);
+            if (!target) { stillDeferred.push(rec); continue; }
+            try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
+            catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
+          }
+          if (!stillDeferred.length) return;
+          if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
+          else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
+        }, 1000);
+      }
+
+      // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
+      const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
+
+      // Station wander (see makeNpcWalker's _updateStationWander) — same
+      // pick-a-tile/path-there/wait/repeat rhythm as farm-animals.js's
+      // FARM_ANIMAL_WANDER_WAIT_MIN_SEC/MAX_SEC.
+      const NPC_STATION_WANDER_WAIT_MIN_S = 2;
+      const NPC_STATION_WANDER_WAIT_MAX_S = 6;
+      const NPC_STATION_WANDER_RETRY_S = 0.5;
+
+      async function makeNpcWalker(rec, initialTarget) {
+        const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+        const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
+          speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
+          gender: rec?.gender === 'female' ? 'female' : 'male',
+          cosmetics: {},
+        };
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport({
+          name: rec?.name || rec?.id || 'npc',
+          appearance,
+          equippedCosmetics: rec?.equippedCosmetics || [],
+          appliedDyes: rec?.appliedDyes || {},
+        });
+        if (!profile) return null;
+
+        const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+        const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
+        const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
+        const frontCanvas = document.createElement('canvas');
+        frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        // forceEyesOpen: this bakes one static texture at spawn and never
+        // re-renders it, so an unlucky blink-timing roll here would leave
+        // the NPC's world model with its eyes shut forever (see
+        // renderProfile's forceEyesOpen handling in portrait-utils.js).
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        const backCanvas = document.createElement('canvas');
+        backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+
+        const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
+          THREE, frontCanvas,
+          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+        );
+        const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
+        avatarGroup.position.set(0, avatarHeight / 2, 0);
+        _markPngPlane(avatarGroup);
+        const root = new THREE.Group();
+        root.name = 'npc_walker_' + (rec?.id || rec?.name || '');
+        const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
+        root.add(groundShadow);
+        root.add(avatarGroup);
+
+        const spawnTarget = resolveNpcSpawnPosition(rec, initialTarget);
+        const spawnArea = normalizeNpcArea(spawnTarget.area);
+        root.position.set(spawnTarget.c + 0.5, npcSurfaceY(spawnArea, spawnTarget.c, spawnTarget.r), spawnTarget.r + 0.5);
+        const sc = sceneForNpcArea(spawnArea);
+        if (sc) { sc.add(root); root._npcScene = sc; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
+        else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
+        else if (_isBuildingArea(spawnArea)) {
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea; root._pendingZoneAdd = null;
+          if (!_buildingScenes.has(spawnArea)) loadBuildingScene(spawnArea);
+        } else if (_isZoneArea(spawnArea)) {
+          // Unlike buildings, zone scenes are expensive to build (full terrain
+          // mesh generation) -- don't eagerly warm one up just to park an idle
+          // NPC there; wait for the player to actually visit it, same as any
+          // other zone content that only exists once the scene is built.
+          root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
+        } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
+
+        // Procedural feet attach directly under `root` (floor-anchored, Y=0),
+        // NOT under avatarGroup (offset up by avatarHeight/2 — see
+        // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
+        // Creatures/wildlife never call this; only humanoid species get legs.
+        const legs = window.ProceduralLegAnimation?.attach(THREE, root, {
+          speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
+          modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
+          handAttachY: avatarGroup.userData?.handAttachY,
+          name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
+
+        const walker = {
+          root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
+          // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
+          // option (null if no neck pivot could be detected for this NPC's
+          // portrait) — see faceNpcDialogueParticipants for the one place
+          // this is driven today.
+          neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
+          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
+          state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
+          pause: 0, catchup: 1, catchupDur: 0,
+          rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
+          resetRouteState() {
+            this.state = 'idle';
+            this.routeNode = null;
+            this.routeTarget = null;
+            this.routePath = null;
+            this._routePathTargetKey = null;
+          },
+          // `spawnPos` is where the NPC reappears in `nextArea` — normally the
+          // Spot they're entering through, never the final schedule target,
+          // so they always walk the last leg into view instead of popping in.
+          transferToArea(nextArea, spawnPos) {
+            const area = nextArea; // caller passes pre-normalized area
+            if (area === this.area) return;
+            if (root._npcScene) root._npcScene.remove(root);
+            else { scene.remove(root); interiorScene?.remove(root); townScene?.remove(root); }
+            _buildingScenes.forEach(bi => bi?.scene?.remove(root));
+            root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null;
+            const nextScene = sceneForNpcArea(area);
+            if (nextScene) { nextScene.add(root); root._npcScene = nextScene; }
+            else if (area === 'town') { root._npcScene = null; root._pendingTownAdd = true; }
+            else if (_isBuildingArea(area)) {
+              root._npcScene = null; root._pendingBuildingAdd = area;
+              if (!_buildingScenes.has(area)) loadBuildingScene(area);
+            } else if (_isZoneArea(area)) {
+              root._npcScene = null; root._pendingZoneAdd = area;
+            } else { scene.add(root); root._npcScene = scene; }
+            this.area = area;
+            this.resetRouteState();
+            root.position.set(spawnPos.c + 0.5, _isBuildingArea(area) ? 0 : npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5);
+          },
+          // Surface/interior-aware placeholder footstep hook — shared by every
+          // NPC movement path since they all funnel through moveToward().
+          _tickFootsteps(distTiles) {
+            if (this.area !== currentArea) return; // not in the player's current area; inaudible
+            if (!window.AudioSystem?.footstepAdvance(this, distTiles * TILE)) return;
+            const wx = root.position.x * TILE, wy = root.position.z * TILE;
+            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
+            if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
+            // Linear, not squared — squared falloff made anything past ~30% of
+        // earshot drop to near-silence, which was most of the usable range.
+        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+            const pan = Math.max(-1, Math.min(1, (wx - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+            const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
+            window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
+          },
+          // Ad-hoc grid pathfinding fallback — used when neither a direct
+          // beeline nor the authored route-node graph can get this NPC to
+          // its target (no route node within routeSnapRadiusTiles, or the
+          // route graph has no connecting path between two disconnected
+          // route islands). Previously either case just parked the NPC in
+          // 'idle'/'breakoff' forever with no way to actually reach its
+          // station. Searches the real collision grid (isNpcTileWalkable —
+          // the same solidity/worldObjects/building/interior checks
+          // beeline/route pathing already use) via the shared
+          // TilePathfinding utility, bounded to a padded box around start/
+          // target so a genuinely unreachable target (e.g. a different
+          // area, resolved separately above) fails fast instead of
+          // scanning the whole map.
+          _tryStartGridPath(target) {
+            if (!window.TilePathfinding) return false;
+            const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
+            const path = window.TilePathfinding.findPath(startCol, startRow, target.c, target.r,
+              (c, r) => isNpcTileWalkable(this.area, c, r),
+              { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, 6) });
+            if (!path || !path.length) return false;
+            this._gridPath = path;
+            this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
+            return true;
+          },
+          _stepGridPath(target, dt) {
+            const targetKey = target.routeId + '|' + target.c + ',' + target.r;
+            if (!this._gridPath || this._gridPathTargetKey !== targetKey) {
+              if (!this._tryStartGridPath(target)) { this.state = 'idle'; return; }
+            }
+            const nextHop = this._gridPath[0];
+            if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) this._gridPath.shift();
+            if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
+          },
+          // Station wander — active once state === 'station-wander' (entered
+          // in update() the first time this NPC reaches a station whose
+          // target.wanderRadiusTiles > 0). Same pick-a-tile/path-there/wait/
+          // repeat rhythm as farm-animals.js's station wander, but riding
+          // this walker's own moveToward/beeline/grid-path machinery instead
+          // of reimplementing a separate greedy-hop mover — an NPC walker
+          // moves continuously (root.position), not tile-slot-discrete like
+          // a farm animal, so there's no equivalent worldObjects bookkeeping
+          // to duplicate. Deliberately skips the station's own rotY snap/
+          // tool-swing pose (see the frozen-idle branch in update()) —
+          // those represent a fixed "working at this desk" pose that
+          // doesn't make sense away from the authored root tile.
+          // Picks the next wander tile: either uniformly among the
+          // hand-painted wanderShapeTiles (shuffled so a small region still
+          // gets fair coverage instead of always scanning authored order),
+          // or a random radius-bounded offset — see normalizeNpcStation's
+          // comment on wanderMode. Returns null if nothing walkable was
+          // found (empty/fully-blocked shape, or radius 0/all attempts
+          // blocked).
+          _pickStationWanderTile(target) {
+            if (target.wanderMode === 'shape' && target.wanderShapeTiles?.length) {
+              const candidates = target.wanderShapeTiles.map(([dc, dr]) => ({ c: target.c + dc, r: target.r + dr }));
+              for (let i = candidates.length - 1; i > 0; i--) {
+                const j = Math.floor(rnd() * (i + 1));
+                [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+              }
+              return candidates.find(t => isNpcTileWalkable(this.area, t.c, t.r)) || null;
+            }
+            const radius = target.wanderRadiusTiles || 0;
+            if (radius <= 0) return null;
+            for (let attempt = 0; attempt < 8; attempt++) {
+              const dc = Math.round((rnd() * 2 - 1) * radius);
+              const dr = Math.round((rnd() * 2 - 1) * radius);
+              const nc = target.c + dc, nr = target.r + dr;
+              if (isNpcTileWalkable(this.area, nc, nr)) return { c: nc, r: nr };
+            }
+            return null;
+          },
+          _updateStationWander(target, dt) {
+            if (this._wanderWaitT > 0) { this._wanderWaitT -= dt; return; }
+            if (!this._wanderTarget) {
+              this._wanderTarget = this._pickStationWanderTile(target);
+              this._wanderGridPath = null;
+              if (!this._wanderTarget) { this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; return; }
+            }
+            const cfg = npcMovementConfig();
+            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const wx = this._wanderTarget.c + 0.5, wz = this._wanderTarget.r + 0.5;
+            if (Math.hypot(root.position.x - wx, root.position.z - wz) <= arrival) {
+              this._wanderTarget = null; this._wanderGridPath = null;
+              this._wanderWaitT = NPC_STATION_WANDER_WAIT_MIN_S + rnd() * (NPC_STATION_WANDER_WAIT_MAX_S - NPC_STATION_WANDER_WAIT_MIN_S);
+              return;
+            }
+            if (this._wanderGridPath && this._wanderGridPath.length) {
+              const hop = this._wanderGridPath[0];
+              if (this.moveToward(hop.c + 0.5, hop.r + 0.5, dt)) this._wanderGridPath.shift();
+              return;
+            }
+            if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
+              this.moveToward(wx, wz, dt);
+              return;
+            }
+            const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
+            const path = window.TilePathfinding?.findPath(startCol, startRow, this._wanderTarget.c, this._wanderTarget.r,
+              (c, r) => isNpcTileWalkable(this.area, c, r),
+              { bounds: window.TilePathfinding.boxAround(startCol, startRow, this._wanderTarget.c, this._wanderTarget.r, 4) });
+            if (path && path.length) this._wanderGridPath = path;
+            else { this._wanderTarget = null; this._wanderWaitT = NPC_STATION_WANDER_RETRY_S; } // unreachable — try a different wander tile shortly
+          },
+          moveToward(tx, tz, dt) {
+            // See moveCreatureToward's matching guard: a non-finite target
+            // must never reach root.position — nothing downstream would
+            // catch a NaN position directly, and it'd only surface as a
+            // crash far away (e.g. footstep audio) or a permanently
+            // invisible/frozen NPC.
+            if (!Number.isFinite(tx) || !Number.isFinite(tz)) return false;
+            const cfg = npcMovementConfig();
+            const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
+            const dx = tx - root.position.x, dz = tz - root.position.z;
+            const d = Math.hypot(dx, dz);
+            if (d <= Math.max(0.001, speed * dt)) {
+              this._tickFootsteps(d);
+              root.position.x = tx; root.position.z = tz; return true;
+            }
+            const movedTiles = speed * dt;
+            root.position.x += dx / d * movedTiles;
+            root.position.z += dz / d * movedTiles;
+            this._tickFootsteps(movedTiles);
+            const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
+            const { effectiveTarget, snapTo } = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativePerps());
+            if (snapTo !== null) this.rot = effectiveTarget;
+            else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
+            root.rotation.y = this.rot;
+            return false;
+          },
+          update(dt) {
+            // Drives procedural legs (and the move-bob below) from last
+            // frame's actual position delta rather than hooking every
+            // movement branch below individually — always runs regardless of
+            // which branch (or early return) this call ends up taking. One
+            // frame of lag; imperceptible at 60fps.
+            const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
+            this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false);
+            this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
+            if (this.pause === Infinity) return;
+            const target = resolveNpcScheduleTarget(this.rec);
+            this.currentScheduleTarget = target || null;
+            if (!target) return;
+            const targetArea = normalizeNpcArea(target.area);
+            if (targetArea !== this.area) {
+              if (!this._exitSpot) {
+                // May be several hops away (e.g. town → a building → one of its
+                // upstairs rooms) — findNpcAreaLink only returns the next leg,
+                // whose destination (_exitToArea) can differ from the ultimate
+                // targetArea. Arriving there re-enters this branch and resolves
+                // the next leg, so a multi-hop trip is walked leg by leg.
+                const link = findNpcAreaLink(this.area, targetArea);
+                if (link) { this._exitSpot = link.exit; this._entrySpot = link.spawn; this._exitToArea = link.toArea; }
+              }
+              if (this._exitSpot) {
+                const ex = this._exitSpot.c + 0.5, ez = this._exitSpot.r + 0.5;
+                const arrival = npcMovementConfig().arrivalRadiusTiles ?? 0.18;
+                if (Math.hypot(root.position.x - ex, root.position.z - ez) <= arrival) {
+                  const hopArea = this._exitToArea || targetArea;
+                  window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: transferring via exit spot "${this.area}"→"${hopArea}"${hopArea !== targetArea ? ` (en route to "${targetArea}")` : ''} | playerMap="${currentArea}"`, 'info');
+                  const spawn = this._entrySpot || this._exitSpot;
+                  this._exitSpot = null; this._entrySpot = null; this._exitToArea = null;
+                  this.transferToArea(hopArea, spawn);
+                } else {
+                  this.moveToward(ex, ez, dt);
+                }
+                return;
+              }
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: instant transfer "${this.area}"→"${targetArea}" (no exit spot — area link missing in map data)`, 'info');
+              this.transferToArea(targetArea, target);
+              return;
+            }
+            this._exitSpot = null;
+            const cfg = npcMovementConfig();
+            const tx = target.c + 0.5, tz = target.r + 0.5;
+            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
+            const wanderKey = target.stationId || target.id || null;
+            // Station wander (see _updateStationWander) takes over completely
+            // once entered, instead of the plain freeze-at-the-exact-tile
+            // idle below — abandoned the instant the schedule moves this NPC
+            // to a different target (a different station, or one with no
+            // wander region set).
+            if (this.state === 'station-wander' && (!wanderEnabled || this._stationWanderKey !== wanderKey)) {
+              this.state = 'idle';
+              this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
+            }
+            if (this.state !== 'station-wander' && wanderEnabled && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+              this.state = 'station-wander';
+              this._stationWanderKey = wanderKey;
+              this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
+            }
+            if (this.state === 'station-wander') {
+              this._updateStationWander(target, dt);
+              const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y += (wty - root.position.y) * 0.2;
+              if (this._moveSpeedTiles > 0.05) {
+                const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              }
+              groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
+              return;
+            }
+            if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
+            if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
+              const groundY = npcSurfaceY(this.area, target.c, target.r);
+              root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+              if (Number.isFinite(target.rotY)) { this.rot = THREE.MathUtils.degToRad(target.rotY); root.rotation.y = this.rot; }
+              if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
+                if (this.stationToolKey !== target.toolKey) {
+                  if (this.stationToolMesh) root.remove(this.stationToolMesh);
+                  this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
+                  this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  if (this.stationToolMesh) root.add(this.stationToolMesh);
+                }
+                if (this.stationToolMesh) {
+                  // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
+                  // entirely in root-local space: the mesh is a child of `root`, so root's
+                  // own rotation.y already carries this NPC's facing — using the fixed
+                  // local right/forward axes here reproduces the player's world-space
+                  // swing for whichever way this NPC happens to be facing.
+                  const interval = Math.max(0.2, target.toolIntervalSec || 2);
+                  this.stationToolT = (this.stationToolT + dt) % interval;
+                  const progress = this.stationToolT / interval;
+                  const anim = target.toolAnimStyle || TOOL_ITEM_DEFS[target.toolKey]?.animStyle || 'chop';
+                  const WF = 0.16, SF = 0.28;
+                  let swingAngle = 0, fwdOff = 0;
+                  if (anim === 'thrust') {
+                    swingAngle = 0.18;
+                    if (progress <= WF) fwdOff = -0.22 * (progress / WF);
+                    else if (progress <= SF) fwdOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
+                    else fwdOff = 0.32 * (1.0 - (progress - SF) / (1.0 - SF));
+                  } else {
+                    if (progress <= WF) swingAngle = 0.82 + 0.98 * (progress / WF);
+                    else if (progress <= SF) swingAngle = 1.80 - 3.30 * ((progress - WF) / (SF - WF));
+                    else swingAngle = -1.50 + 2.32 * ((progress - SF) / (1.0 - SF));
+                  }
+                  this.stationToolMesh.position.set(-0.28, 0.18, fwdOff);
+                  this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
+                }
+              } else if (this.stationToolMesh) {
+                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
+              }
+              groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
+              return;
+            }
+            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
+            if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
+              this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
+              this.moveToward(tx, tz, dt);
+            } else if (this.state === 'grid-path') {
+              this._stepGridPath(target, dt);
+            } else if (this.state !== 'on-route') {
+              this.routeTarget = findNearestRouteNode(this.area, root.position.x, root.position.z, target);
+              // Don't wade to the route node — if the direct line there crosses
+              // water, wait instead (no off-route dry path is computed here).
+              if (this.routeTarget && !canNpcBeeline(this.area, root.position.x, root.position.z, this.routeTarget.c, this.routeTarget.r)) {
+                this.routeTarget = null;
+              }
+              if (this.routeTarget) {
+                this.state = 'to-route';
+                this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt);
+              } else if (this._tryStartGridPath(target)) {
+                // No authored route node in range at all — fall back to a
+                // real grid-searched path instead of just parking idle.
+                this.state = 'grid-path';
+              } else {
+                this.state = 'idle';
+              }
+            } else {
+              // Walk a precomputed shortest path hop-by-hop instead of greedily
+              // picking whichever neighbor looks closer right now — the greedy
+              // version stalls forever at junction nodes (often doorways) where
+              // every immediate neighbor is briefly no closer than "here".
+              const targetKey = target.routeId + '|' + target.c + ',' + target.r;
+              if (!this.routePath || this._routePathTargetKey !== targetKey) {
+                this.routePath = computeRoutePathToTarget(this.routeNode, target);
+                this._routePathTargetKey = targetKey;
+              }
+              if (!this.routePath || !this.routePath.length) {
+                // The route graph has no connecting path between this NPC's
+                // current route island and the target's (e.g. two separately
+                // authored route networks that were never linked) — try a
+                // real grid search before giving up outright.
+                if (this._tryStartGridPath(target)) { this.state = 'grid-path'; return; }
+                this.state = 'breakoff'; return;
+              }
+              const nextHop = this.routePath[0];
+              if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) {
+                this.routeNode = nextHop;
+                this.routePath.shift();
+              }
+            }
+            if (this.state === 'to-route' && this.routeTarget && Math.hypot(root.position.x - (this.routeTarget.c + 0.5), root.position.z - (this.routeTarget.r + 0.5)) <= arrival) {
+              this.routeNode = this.routeTarget; this.routeTarget = null; this.routePath = null; this.state = 'on-route';
+            }
+            if (this.state === 'breakoff') this.state = 'idle';
+            const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+            root.position.y += (ty - root.position.y) * 0.2;
+            // Bob animation when moving — mirrors the player's own
+            // effort-based move bob (updateMovement): amplitude ramps from
+            // the calm-walking baseline up to the full-effort peak as this
+            // NPC's own actual movement speed (tiles/sec, from moveDistTiles
+            // above) approaches its own max (cfg.speedTilesPerSecond),
+            // rather than a flat distance whenever it's walking at all.
+            if (this._moveSpeedTiles > 0.05) {
+              const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+              root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+            }
+            groundShadow.position.y = ty - root.position.y + characterGroundShadowSurfaceOffset();
+          },
+        };
+        return walker;
+      }
+
+      // Fires once the screen is fully black on a player area transition.
+      // Any NPC who was already mid-transit between the same two areas (i.e.
+      // their goal-based schedule has them leaving exactly where the player
+      // is leaving, headed exactly where the player is headed) finishes its
+      // walk through the door right now instead of over the next several
+      // seconds, and is nudged a tile past the spawn point in the direction
+      // of travel. The black screen hides the pop-in, so when it clears the
+      // NPC simply looks like it left a step ahead of the player — "caught"
+      // leaving instead of teleporting in front of them.
+      function catchNpcsOnPlayerAreaTransition(fromArea, toArea) {
+        for (const w of npcWalkers) {
+          if (w.area !== fromArea) continue;
+          const target = resolveNpcScheduleTarget(w.rec);
+          if (!target) continue;
+          if (normalizeNpcArea(target.area) !== toArea) continue;
+          const link = (w._exitSpot && w._entrySpot)
+            ? { exit: w._exitSpot, spawn: w._entrySpot, toArea: w._exitToArea || toArea }
+            : findNpcAreaLink(fromArea, toArea);
+          if (!link) continue;
+          // findNpcAreaLink may return an intermediate leg (e.g. fromArea is
+          // several hops from toArea) — only fast-forward the "caught leaving"
+          // polish when that leg actually lands them in toArea; otherwise let
+          // the walker's own update() carry them there leg by leg as normal.
+          if (link.toArea && link.toArea !== toArea) continue;
+          w._exitSpot = null; w._entrySpot = null; w._exitToArea = null;
+          w.transferToArea(toArea, link.spawn);
+          const dx = link.spawn.c - link.exit.c, dz = link.spawn.r - link.exit.r;
+          const dist = Math.hypot(dx, dz);
+          if (dist > 0) {
+            const nc = Math.floor(link.spawn.c + dx / dist);
+            const nr = Math.floor(link.spawn.r + dz / dist);
+            if (isNpcTileWalkable(toArea, nc, nr)) {
+              w.root.position.x = nc + 0.5;
+              w.root.position.z = nr + 0.5;
+              w.root.position.y = npcSurfaceY(toArea, nc, nr);
+              w.rot = -Math.atan2(dz, dx) + Math.PI / 2;
+              w.root.rotation.y = w.rot;
+            }
+          }
+        }
+      }
+
+      // Periodic Garanki Gabu position/target diagnostic, tagged [schedule] so
+      // it shows up under the Debug panel's existing "Schedule" filter tab —
+      // wildlife AI logs several entries a second and the debug log caps at
+      // 200 entries, so anything logged once (e.g. at Tothal Shift time) is
+      // gone within seconds; this re-logs every few seconds instead so a
+      // fresh copy of the debug log always has current data for him, with no
+      // console commands needed.
+      let _garankiDiagT = 0;
+      function _logGarankiDiagnostic(dt) {
+        _garankiDiagT -= dt;
+        if (_garankiDiagT > 0) return;
+        _garankiDiagT = 4;
+        const g = npcWalkers.find(w => w.rec?.id === 'garanki_gabu');
+        if (!g) { window.__farmLog('[schedule] garanki_gabu DIAG: not spawned yet', 'info'); return; }
+        const zl = _zoneLayouts.get('map_northern_cliffs');
+        const tent = zl?.buildings?.find(b => b.id === 'bldg_researchers_tent');
+        const trans = zl?.transitions?.find(t => t.id === 'sp_ncl_tent');
+        window.__farmLog(`[schedule] garanki_gabu DIAG: area=${g.area} pos=(${g.root.position.x.toFixed(1)},${g.root.position.z.toFixed(1)}) state=${g.state} target=${JSON.stringify(g.currentScheduleTarget)} tentBuilding=${tent ? `(${tent.gridX},${tent.gridZ})` : 'none'} tentDoor=${trans ? `(${trans.col},${trans.row})` : 'none'}`, 'info');
+      }
+
+      function updateNpcWalkers(dt) {
+        const previousNearbyNpcWalker = nearbyNpcWalker;
+        for (const w of npcWalkers) w.update(dt);
+        _logGarankiDiagnostic(dt);
+        let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
+        const px = player.x / TILE, pz = player.y / TILE;
+        for (const w of npcWalkers) {
+          if (w.area !== currentArea) continue;
+          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
+          if (d < closestDist) { closestDist = d; closest = w; }
+        }
+        nearbyNpcWalker = closest;
+        if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
+      }
+
+      // ── Town zone ──────────────────────────────────────────────────
+      // Loads the town layout from the workspace JSON file.
+      // Mirrors the map editor's buildTownLayout() conversion.
+      async function _loadTownFromWorkspace() {
+        try {
+          // One-shot override: docs/tools/index.html's "Open Game" button stashes the
+          // map editor's live (possibly unsaved) workspace here so testing in-progress
+          // edits doesn't require exporting to the on-disk JSON first. Consumed once —
+          // cleared immediately so a plain reload goes back to the real saved file.
+          const GAME_WS_OVERRIDE_KEY = 'hobunji_game_workspace_override_v1';
+          let ws;
+          const overrideRaw = localStorage.getItem(GAME_WS_OVERRIDE_KEY);
+          if (overrideRaw) {
+            localStorage.removeItem(GAME_WS_OVERRIDE_KEY);
+            try {
+              ws = JSON.parse(overrideRaw);
+              console.log('%c[workspace] using live unsaved map-editor data from "Open Game"', 'color:#22c55e;font-weight:bold');
+            } catch (_) { ws = null; }
+          }
+          if (!ws) {
+            // Routed through window.LocalDBOverrides (see docs/js/local-db-
+            // overrides.js) so the onboarding "Database Source" toggle can
+            // swap in a locally-saved map-editor snapshot of the whole town
+            // workspace without touching the repo copy — same one-shot-vs-
+            // persistent relationship as the GAME_WS_OVERRIDE_KEY check
+            // above, just for a saved/toggled override instead of a single
+            // "Open Game" handoff. Falls back to a direct fetch if that
+            // module isn't loaded.
+            try {
+              ws = window.LocalDBOverrides
+                ? await window.LocalDBOverrides.loadDatabase('townWorkspace')
+                : await fetch('config/town-workspace-v1.json').then(r => r.ok ? r.json() : null);
+            } catch (_) { ws = null; }
+            if (!ws) return;
+          }
+          // Load map index so individual map files take priority over workspace inline data
+          let mapFileIndex = {};
+          try {
+            const idxResp = await fetch('config/maps/index.json');
+            if (idxResp.ok) {
+              const idx = await idxResp.json();
+              for (const e of (idx.maps || [])) if (e.id && e.file) mapFileIndex[e.id] = e.file;
+            }
+          } catch(_) {}
+          // Resolve each map: fetch from file if listed in index, fall back to workspace inline data
+          const resolvedMaps = await Promise.all((ws.maps || []).map(async m => {
+            const file = mapFileIndex[m.id];
+            if (!file) return m;
+            try {
+              const r = await fetch(file);
+              if (!r.ok) return m;
+              const data = await r.json();
+              // If the file is an Interior Editor layout and the workspace entry is Map Editor
+              // format, keep the workspace version (source of truth for game logic) and attach
+              // the file as visual base so loadBuildingScene can still render the room.
+              if (data?.schema === 'hobunji_building_interior.v1' && m?.schema !== 'hobunji_building_interior.v1') {
+                return { ...m, buildingInteriorBase: data };
+              }
+              // Normalise tiles: array [{c,r,type,crop}] → dict {"c,r":{type,crop}}
+              if (Array.isArray(data.tiles)) {
+                const d = {};
+                for (const t of data.tiles) d[`${t.c},${t.r}`] = { type: t.type, crop: t.crop || '' };
+                data.tiles = d;
+              }
+              return data;
+            } catch(_) { return m; }
+          }));
+          _workspaceMaps = resolvedMaps;
+
+          // Plateau sub-maps are purely an authoring convenience in the Map Editor —
+          // in-game every tier of a plateau stack is merged into its root zone's
+          // single grid (see tileSurfaceYInArea / buildZoneScene), so only root
+          // (non-submap) exterior maps get their own zone entry below.
+          const childByParentGroup = new Map();
+          for (const m of resolvedMaps) {
+            if (m.isSubmap && m.parentMapId && m.plateauGroupId) {
+              childByParentGroup.set(`${m.parentMapId}__${m.plateauGroupId}`, m);
+            }
+          }
+          const plateauElevById = new Map((ws.plateauGroups || []).map(g => [g.id, g.elevation || 0]));
+
+          // Recursively folds map `m` (placed at world offset `offsetC`/`offsetR`,
+          // floor elevation tier `baseTier`) into `outTiles` (world-keyed "c,r"
+          // → tile). Every plateau group's elevation is absolute, measured from the
+          // root map, so a group's stored elevation IS the final tier its tiles
+          // render at. Plateau groups are always painted as siblings directly on
+          // the root zone map (the Map Editor no longer allows painting a plateau
+          // group onto another plateau group's sub-map), so `m` here is normally
+          // the root zone itself — `baseTier` is just that root's own floor (0)
+          // for the outermost call, and a tier's resolved `toTier` for the one
+          // recursive call into each sibling's own (otherwise plateau-free)
+          // sub-map below, to fold in that tier's own ramps/buildings/decor. A
+          // tier's footprint is the bounding box of whichever tiles on the root
+          // are actually tagged `plateau: <thisGroupId>` — the artist paints
+          // however large a region they want a tier to occupy. The OUTER 1-tile
+          // ring of that painted bbox is reserved (automatically, not by
+          // painting) as the cliff-face lerp between this tier and whatever sits
+          // immediately around it — another sibling tier's footprint if one is
+          // adjacent (so two plateaus sharing this map blend straight into each
+          // other instead of each sloping all the way down to baseTier), or true
+          // ungraded ground otherwise. Ring cells are flagged `incline`
+          // (always solid/impassable — see tileSpeedAt) unless the map explicitly
+          // paints something else there (a ramp tile, typically), which always
+          // wins over the auto-incline. The child sub-map's own local (0,0) is
+          // placed one tile inside that ring, i.e. at the bbox's top-left corner + 1.
+          // Whenever a plateau group actually has an authored child submap, this
+          // also records a `{minC,maxC,minR,maxR,fromTier,toTier}` mesa entry (in
+          // world coords) for the continuous heightfield buildZoneScene renders at
+          // that tier transition. Also folds `m.buildings` (placed by the Map
+          // Editor on this root zone or any of its plateau-tier sub-maps) into
+          // `outBuildings`/`outDecor`/`outFurniture`, translating their authored
+          // local col/row (gridX/gridZ for buildings) by the same offsetC/offsetR
+          // every tile here gets, so a building/decor/furniture piece on a raised
+          // sub-map ends up at its correct world position — its final `elevTier`
+          // is resolved by the caller from `outTiles` once the whole stack is in,
+          // so houses, decor, and processing furniture all sit on top of whatever
+          // plateau tier their anchor cell landed on instead of at ground level.
+          function mergeZoneTiles(m, offsetC, offsetR, baseTier, outTiles, mesas, outBuildings, outDecor, outFurniture) {
+            const groupMask = new Map(); // plateauGroupId -> Set of parent-local "c,r" actually painted
+            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+              const plateauId = m.tiles?.[`${c},${r}`]?.plateau;
+              if (!plateauId) continue;
+              let mask = groupMask.get(plateauId);
+              if (!mask) { mask = new Set(); groupMask.set(plateauId, mask); }
+              mask.add(`${c},${r}`);
+            }
+            // Every plateau group painted on `m` is a sibling here (painting one
+            // group's brush over another's cells reassigns them — see applyAt — so
+            // groupMask's per-group masks are already disjoint). A ring cell's real
+            // support height is therefore whichever group (if any) owns its missing
+            // neighbor, not always this map's own baseTier — that's what lets two
+            // plateaus sharing this map blend straight into each other (a lower
+            // tier's cells bordering a higher sibling's footprint stay flat at their
+            // own tier instead of sloping down to baseTier, since the riser is
+            // entirely the higher sibling's own mesa wall) while a true outer edge
+            // (bordering ungraded ground, or a still-lower sibling) still ramps down.
+            const tierAt = (c, r) => {
+              const pid = m.tiles?.[`${c},${r}`]?.plateau;
+              return pid ? (plateauElevById.get(pid) || 0) : baseTier;
+            };
+
+            // Stake out each recursing group's footprint (incline ring + raised
+            // interior) BEFORE writing this map's own tiles below, so any tile `m`
+            // explicitly authored inside that footprint (a ramp cut through the
+            // incline ring, a plateau marker, etc.) always overwrites/wins. Only the
+            // ACTUAL painted shape is staked — not its bounding rectangle — so a
+            // genuine concave/irregular footprint's "gap" cells (inside the bbox,
+            // unpainted, and not just a stray pinhole — see the fill pass below)
+            // are left untouched here and fall through to this map's own per-cell
+            // loop below, which fills them in as ordinary ground at this tier
+            // instead of getting raised along with the rest of the rectangle.
+            const children = [];
+            for (const [gid, mask] of groupMask) {
+              const child = childByParentGroup.get(`${m.id}__${gid}`);
+              if (!child) continue; // plateau group marked but no authored child submap yet
+              const toTier = (plateauElevById.get(gid) || 0);
+              let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+              for (const k of mask) { const [c, r] = k.split(',').map(Number); if (c<minC)minC=c; if (c>maxC)maxC=c; if (r<minR)minR=r; if (r>maxR)maxR=r; }
+
+              // A brush stroke can leave a single un-stamped pinhole inside an
+              // otherwise-solid blob (the circular stamp's own rounding, or a
+              // missed click) — that cell has NO tile entry at all, so it isn't a
+              // deliberate concave notch, just a gap. Adopt any untouched cell
+              // that's mostly surrounded by this same mask (3+ of its 4 cardinal
+              // neighbors already painted) into the mask too, so it gets raised
+              // and ringed along with the rest of the blob instead of sinking
+              // back to flat ground in the middle of the mesa. Iterate so a short
+              // chain of adjacent pinholes fills in one cell at a time; capped so
+              // a genuinely open notch (few neighbors painted at any point along
+              // it) is left alone.
+              for (let pass = 0; pass < 8; pass++) {
+                let filled = false;
+                for (let r = minR; r <= maxR; r++) {
+                  for (let c = minC; c <= maxC; c++) {
+                    const k = `${c},${r}`;
+                    if (mask.has(k) || m.tiles?.[k]) continue;
+                    const neighborCount = [[1,0],[-1,0],[0,1],[0,-1]].filter(([dc,dr]) => mask.has(`${c+dc},${r+dr}`)).length;
+                    if (neighborCount >= 3) { mask.add(k); filled = true; }
+                  }
+                }
+                if (!filled) break;
+              }
+
+              const worldMinC = offsetC + minC, worldMaxC = offsetC + maxC, worldMinR = offsetR + minR, worldMaxR = offsetR + maxR;
+              const maskWorldKeys = new Set();
+              for (const k of mask) { const [c, r] = k.split(',').map(Number); maskWorldKeys.add(`${c + offsetC},${r + offsetR}`); }
+              mesas.push({ minC: worldMinC, maxC: worldMaxC, minR: worldMinR, maxR: worldMaxR, fromTier: baseTier, toTier, maskWorldKeys, groupId: gid });
+              for (const k of mask) {
+                const [lc, lr] = k.split(',').map(Number);
+                const c = lc + offsetC, r = lr + offsetR;
+                // A generated wilderness zone's entry gate corridor (see
+                // openBorderEntryGate in wilderness-map-generator.js) is a
+                // deliberately flattened, walkable cut through the boundary
+                // cliff ring — it's always at the outer edge of its plateau's
+                // mask (right at the map border), which is exactly what the
+                // ring check below treats as a sloped/impassable cliff face.
+                // Force it to the group's real (interior, non-incline) tier
+                // instead of computing ring-ness for it, or the entrance
+                // itself becomes solid to the game's own movement collision
+                // (see tileSpeedAt's `if (tile.incline) return null`).
+                if (m.tiles?.[k]?.borderEntryGate) {
+                  outTiles.set(`${c},${r}`, { c, r, type: 'grass', elevTier: toTier, skipFloor: true, rampElevation: 0, incline: false });
+                  continue;
+                }
+                let ringTier = null; // null => fully interior, no slope needed here
+                for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                  if (mask.has(`${lc+dc},${lr+dr}`)) continue;
+                  const supportTier = tierAt(lc+dc, lr+dr);
+                  if (supportTier < toTier) ringTier = ringTier === null ? supportTier : Math.min(ringTier, supportTier);
+                }
+                const onRing = ringTier !== null;
+                outTiles.set(`${c},${r}`, {
+                  c, r, type: 'grass', elevTier: onRing ? ringTier : toTier,
+                  skipFloor: true, rampElevation: 0, incline: onRing,
+                });
+              }
+              children.push({ child, childOffsetC: worldMinC + 1, childOffsetR: worldMinR + 1, toTier });
+            }
+
+            // `m.tiles` is sparse — most cells (including almost all of a plateau
+            // submap's own extent, which artists only ever paint a handful of
+            // marker/ramp tiles on) have no entry. Explicit NON-plateau-tagged
+            // tiles always win over the bulk pre-fill above (this is how a ramp
+            // cuts through the auto-incline ring: paintRampTiles strips the
+            // `.plateau` tag from any cell it stamps, so it falls through here).
+            // A missing entry, OR an entry that's still tagged `.plateau` (i.e.
+            // it's part of the painted footprint shape itself, not a deliberate
+            // override), must NOT stomp the ring/interior staking already written
+            // above — only default to flat grass if no caller has touched this
+            // world cell yet.
+            for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
+              const t = m.tiles?.[`${c},${r}`];
+              const key = `${c + offsetC},${r + offsetR}`;
+              if (!t || t.plateau) {
+                if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+                continue;
+              }
+              let type = t.type || 'grass';
+              // Decorative (non-plateau) rock tiles are always-solid in the engine
+              // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
+              // them across the walkable ground — turn the un-tagged ones back to
+              // grass so the real plateau cliff-face (plateau-tagged rock) reads as
+              // the only solid rock terrain, and the zone is actually walkable.
+              // t.generatedObjectType exempts this: a generator-placed rock object
+              // (diggableRockOre/undiggableBoulder/etc, always blocksMovement:true —
+              // see wilderness-map-generator.js's placeRepeated/placeCopses' variety
+              // conversion) is deliberately solid, unlike the stray authored
+              // decoration this rule was written for; without the exemption every
+              // such object off-plateau silently vanished into invisible grass.
+              if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
+              outTiles.set(key, {
+                c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
+                rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
+                // Which generator object ('diggableRockOre'/'undiggableBoulder')
+                // this 'rock' tile came from — see terrain-preview.js's mirrored
+                // field (named rockKind to avoid colliding with the generator's
+                // own per-object oreKind material pick) and isMineableRockTile below.
+                rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+              });
+            }
+
+            for (const b of (m.buildings || [])) {
+              outBuildings.push({ ...b, gridX: (b.gridX || 0) + offsetC, gridZ: (b.gridZ || 0) + offsetR, _baseTier: baseTier });
+            }
+            for (const d of (m.decor || [])) {
+              outDecor.push({ ...d, col: (d.col || 0) + offsetC, row: (d.row || 0) + offsetR, _baseTier: baseTier });
+            }
+            for (const f of (m.furniture || [])) {
+              outFurniture.push({ ...f, col: (f.col || 0) + offsetC, row: (f.row || 0) + offsetR, _baseTier: baseTier });
+            }
+
+            for (const { child, childOffsetC, childOffsetR, toTier } of children) {
+              mergeZoneTiles(child, childOffsetC, childOffsetR, toTier, outTiles, mesas, outBuildings, outDecor, outFurniture);
+            }
+          }
+
+          // Resolve real authored tile/transition data for every top-level exterior
+          // zone so buildZoneScene can render actual cliff/terrain content instead
+          // of EXTERIOR_ZONES' tiny flat placeholder grid. This predates the Tothal
+          // Shift procedural generator (WildernessMapGenerator) -- all four of
+          // EXTERIOR_ZONES' own zones are now fully owned by that system instead
+          // (see performTothalShift's own _zoneLayouts.set(zoneId, ...) call),
+          // which runs later at world start and would otherwise race this one for
+          // the exact same _zoneLayouts key: whichever finished last silently won,
+          // meaning the player could end up standing on (and testing bug fixes
+          // against) this stale hand-authored layout instead of the freshly
+          // generated one, with no visible sign that had happened. allZoneMapIds
+          // itself still needs to include EXTERIOR_ZONES ids below -- both this
+          // loop's own transition classification (allZoneMapIds.has(...) a few
+          // lines down) and the town's own transitions further below use it to
+          // recognize "this leads into a wilderness zone" -- only the actual
+          // _zoneLayouts.set(...) for one of those four is skipped, so town's
+          // real authored gate into e.g. Northern Cliffs still works, it just
+          // doesn't get to build (and race) that zone's own terrain/buildings.
+          const allZoneMapIds = new Set(Object.keys(EXTERIOR_ZONES));
+          for (const m of resolvedMaps) {
+            if (m.category === 'exterior' && m.id !== 'map_hobunji_town' && !m.isSubmap) allZoneMapIds.add(m.id);
+          }
+
+          for (const zoneMapId of allZoneMapIds) {
+            if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
+            const zm = resolvedMaps.find(m => m.id === zoneMapId);
+            if (!zm) continue;
+            const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
+            mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
+            const zTiles = [...outTiles.values()];
+            for (const b of outBuildings) {
+              const t = outTiles.get(`${b.gridX},${b.gridZ}`);
+              b.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (b._baseTier || 0);
+              delete b._baseTier;
+            }
+            for (const d of outDecor) {
+              const t = outTiles.get(`${d.col},${d.row}`);
+              d.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (d._baseTier || 0);
+              delete d._baseTier;
+            }
+            for (const f of outFurniture) {
+              const t = outTiles.get(`${f.col},${f.row}`);
+              f.elevTier = (t && typeof t.elevTier === 'number') ? t.elevTier : (f._baseTier || 0);
+              delete f._baseTier;
+            }
+            const zTransitions = [];
+            let toTownExit = null;
+            (zm.transitions || []).forEach(t => {
+              if (!t.targetMapId) return;
+              if (t.targetMapId === 'map_hobunji_town') {
+                // Real authored exit back to town — buildZoneScene uses this position
+                // (instead of EXTERIOR_ZONES' placeholder exitCol/exitRow) for the
+                // "Back to Town" transition, so the gold ring lands where the map
+                // was actually drawn to connect to town.
+                if (!toTownExit) toTownExit = t;
+              } else if (_isBuildingArea(t.targetMapId)) {
+                zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+              } else if (allZoneMapIds.has(t.targetMapId)) {
+                zTransitions.push({ id: t.id, label: t.label, col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
+              }
+            });
+            // Hand-authored zones (Western Slope/Eastern Mire) don't carry
+            // procedurally-placed animalDen anchors — only the Tothal Shift
+            // path (WildernessMapGenerator) produces those (see
+            // performTothalShift), so wild packs simply don't spawn here yet.
+            const visualHeights = window.TerrainPreview?.buildMergedZoneGrid(ws, zoneMapId)?.visualHeights || new Map();
+            _zoneLayouts.set(zoneMapId, { cols: zm.cols, rows: zm.rows, tiles: zTiles, visualHeights, transitions: zTransitions, toTownExit, mesas, buildings: outBuildings, decor: outDecor, furniture: outFurniture, dens: [], foliagePatches: [], ambushStations: [] });
+            console.log(`%c[zone:${zoneMapId}] loaded ${zm.cols}x${zm.rows}, tiles=${zTiles.length}, mesas=${mesas.length}, buildings=${outBuildings.length}, decor=${outDecor.length}, furniture=${outFurniture.length}, toTownExit=${toTownExit ? `(${toTownExit.col},${toTownExit.row})` : 'none (using placeholder)'}, zoneTransitions=${zTransitions.length}`, 'color:#22c55e;font-weight:bold');
+          }
+          const townM = resolvedMaps.find(m => m.id === 'map_hobunji_town');
+          if (!townM) return;
+          const layout = { version: 1, name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [] };
+          for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
+            const t = townM.tiles[`${c},${r}`];
+            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+          }
+          layout.routes = [];
+          (townM.routes || townM.npcPaths || []).forEach(p => {
+            if (!p.nodes?.length) return;
+            layout.routes.push({ id: p.id, label: p.label, area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+          });
+          (townM.npcPaths || []).forEach(p => {
+            if (!p.nodes?.length || (townM.routes || []).length) return;
+            layout.npcPaths.push({ id: p.id, label: p.label, npcId: p.npcId || '', area: 'town', nodes: p.nodes.map(n => [n[0], n[1]]) });
+          });
+          resolvedMaps.forEach(m => {
+            const area = m.id === townM.id ? 'town' : m.id;
+            (m.npcStations || []).forEach(st => layout.npcStations.push({ ...st, area }));
+          });
+          (townM.transitions || []).forEach(t => {
+            // Farm spot (no targetMapId) — returns player to farm exit at col 17, row 0
+            if (!t.targetMapId) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
+            } else if (_isBuildingArea(t.targetMapId)) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+            } else if (allZoneMapIds.has(t.targetMapId)) {
+              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
+            }
+          });
+          initTownTravel(layout);
+        } catch(e) { debugLog('Town workspace load failed: ' + e.message, 'warn'); }
+      }
+
+      function initTownTravel(layout) {
+        if (!layout || layout.version !== 1) return;
+        _townZone = layout;
+        const TCOLS = layout.cols || 60, TROWS = layout.rows || 50;
+        townGrid = Array.from({ length: TROWS }, (_, r) =>
+          Array.from({ length: TCOLS }, (_, c) => ({
+            type: TileType.GRASS, water: 0, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+        for (const { c, r, type } of (layout.tiles || [])) {
+          if (townGrid[r]?.[c]) townGrid[r][c].type = type || TileType.GRASS;
+        }
+        // Per-column far-terrain water level south of the town grid — same
+        // gap-continuation tracking as the farm's farSouthLevel (see recomputeWater).
+        townSouthLevel = new Float32Array(TCOLS).fill(0.5);
+        worldTownTransitions = (layout.transitions || []).filter(t =>
+          t && Number.isFinite(t.col) && Number.isFinite(t.row) && (
+            (Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) ||
+            (t.target === 'building' && t.targetMapId) ||
+            (t.target === 'zone' && t.targetMapId)
+          ));
+        const townPaths = (layout.npcPaths || []).filter(p =>
+          p && Array.isArray(p.nodes) && p.nodes.length > 0 && p.area === 'town');
+        worldTownRoutes = normalizeRoutes(layout.routes, townPaths).map(r => ({ ...r, area: 'town' }));
+        registerNpcStations(layout.npcStations, 'town');
+        window.Music?.registerMapAudio(layout.mapAudio);
+        rebuildRouteGraphs();
+        // If town scene was already built before this layout arrived, spawn buildings now
+        if (_townSceneBuilt && townScene) {
+          _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
+          window.TownZoneBuildings.spawnTownBuildings();
+        }
+      }
+
+      // ── Building interior scenes ─────────────────────────────────────
+
+      // Generates WallBuilder panels for a rectangular room. Walls always sit at
+      // the footprint boundary. A 2-tile door gap is cut in whichever wall the exit
+      // transition sits on; the gap is centred on the transition column/row.
+      function buildWallPanelsForRoom(cols, rows, wallHeight, exitTransition) {
+        const DOOR_W = 2;
+        const panels = [];
+        // Determine which wall the exit is on (S/N/W/E) by proximity to boundary
+        let doorWall = null, doorPos = 0;
+        if (exitTransition) {
+          const { col: ec, row: er } = exitTransition;
+          const dS = rows - 1 - er, dN = er, dE = cols - 1 - ec, dW = ec;
+          const minD = Math.min(dS, dN, dE, dW);
+          if      (minD === dS) { doorWall = 'S'; doorPos = ec; }
+          else if (minD === dN) { doorWall = 'N'; doorPos = ec; }
+          else if (minD === dE) { doorWall = 'E'; doorPos = er; }
+          else                  { doorWall = 'W'; doorPos = er; }
+        }
+        const splitH = (wallId, z, rot, along) => {
+          if (doorWall === along) {
+            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+            const gapEnd   = Math.min(cols, gapStart + DOOR_W);
+            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [gapStart / 2,            0, z], rotationDeg: rot });
+            if (gapEnd < cols)   panels.push({ id: wallId + '_r', width: cols - gapEnd,   height: wallHeight, position: [(gapEnd + cols) / 2,     0, z], rotationDeg: rot });
+          } else {
+            panels.push({ id: wallId, width: cols, height: wallHeight, position: [cols / 2, 0, z], rotationDeg: rot });
+          }
+        };
+        const splitV = (wallId, x, rot, along) => {
+          if (doorWall === along) {
+            const gapStart = Math.max(0, doorPos - Math.floor(DOOR_W / 2));
+            const gapEnd   = Math.min(rows, gapStart + DOOR_W);
+            if (gapStart > 0)    panels.push({ id: wallId + '_l', width: gapStart,        height: wallHeight, position: [x, 0, gapStart / 2],            rotationDeg: rot });
+            if (gapEnd < rows)   panels.push({ id: wallId + '_r', width: rows - gapEnd,   height: wallHeight, position: [x, 0, (gapEnd + rows) / 2],     rotationDeg: rot });
+          } else {
+            panels.push({ id: wallId, width: rows, height: wallHeight, position: [x, 0, rows / 2], rotationDeg: rot });
+          }
+        };
+        splitH('wn', 0,    [0, 0,    0], 'N');
+        splitH('ws', rows, [0, 180,  0], 'S');
+        splitV('ww', 0,    [0, 90,   0], 'W');
+        splitV('we', cols, [0, -90,  0], 'E');
+        return panels;
+      }
+      // Interior wall-panel derivation (run-merged brick/cavern/canvas quads),
+      // panel corner math, and the wallStyle-aware floor material now live in
+      // js/interior-scene-builder.js as window.InteriorSceneBuilder — shared
+      // with the Interior Editor and Cutscene Director so all three never
+      // drift out of visual sync (see loadBuildingScene below for the call
+      // sites: InteriorSceneBuilder.buildWallPanels/buildWallGroup/buildFloorMaterial).
+
+      // Procedural den-cavern floor generation (generateCavernFloor/
+      // pickDenMotherKind/synthesizeCavernMapData) now lives in
+      // js/cavern-generator.js — call via window.CavernGenerator.*.
+
+      async function loadBuildingScene(mapId) {
+        if (_buildingScenes.has(mapId) && _buildingScenes.get(mapId) !== null) return;
+        _buildingScenes.set(mapId, null); // sentinel: loading in progress
+        let mapData = null;
+        let loadSource = 'missing';
+        if (mapId.startsWith('map_i_den_')) {
+          // A den's cavern is generated in-memory, never fetched/persisted
+          // (see synthesizeCavernMapData).
+          mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
+          loadSource = 'cavern';
+        } else {
+        try {
+          const resp = await fetch('config/maps/' + mapId + '.json');
+          if (resp.ok) { mapData = await resp.json(); loadSource = 'config'; }
+        } catch(_) {}
+        // Fallback: load map data from cached workspace JSON
+        if (!mapData && _workspaceMaps) {
+          const wsMap = _workspaceMaps.find(m => m.id === mapId);
+          if (wsMap) {
+            const tileArr = [];
+            for (const [key, val] of Object.entries(wsMap.tiles || {})) {
+              const [c, r] = key.split(',').map(Number);
+              if (Number.isFinite(c) && Number.isFinite(r)) tileArr.push({ c, r, type: val.type || 'grass' });
+            }
+            mapData = { cols: wsMap.cols, rows: wsMap.rows, tiles: tileArr, transitions: wsMap.transitions || [], npcStations: wsMap.npcStations || [] };
+            loadSource = 'workspace';
+            window.__farmLog?.(`[building] ${mapId}: loaded from workspace fallback (${mapData.cols}x${mapData.rows})`, 'warn');
+          }
+        }
+        }
+
+        // ── hobunji_building_interior.v1 schema ──────────────────────────
+        if (mapData?.schema === 'hobunji_building_interior.v1') {
+          const cols = mapData.cols || 20, rows = mapData.rows || 20;
+          const bGrid = Array.from({ length: rows }, () =>
+            Array.from({ length: cols }, () => ({
+              type: TileType.ROCK, water: 0, crop: CropType.NONE,
+              cropAge: 0, cropReady: false, stress: '', variation: 0,
+            }))
+          );
+          // Fill floor tiles as walkable
+          const floorSet = new Set();
+          for (const [c, r] of (mapData.floor || [])) {
+            if (bGrid[r]?.[c]) { bGrid[r][c].type = TileType.GRASS; floorSet.add(`${c},${r}`); }
+          }
+          // Colliders override back to solid
+          for (const [c, r] of (mapData.colliders || [])) {
+            if (bGrid[r]?.[c]) bGrid[r][c].type = TileType.ROCK;
+          }
+          // Build transitions from exits array
+          const transitions = [];
+          const exitTileSet = new Set();
+          for (const exit of (mapData.exits || [])) {
+            const target = exit.targetMap ? 'building' : 'exit_building';
+            for (const [tc, tr] of (exit.tiles || [])) {
+              exitTileSet.add(`${tc},${tr}`);
+              const t = { col: tc, row: tr, area: mapId, target, exitId: exit.id };
+              if (exit.targetMap) { t.targetMapId = exit.targetMap; t.targetCol = exit.spawnCol || 0; t.targetRow = exit.spawnRow || 0; }
+              transitions.push(t);
+            }
+          }
+          // If workspace has a Map Editor version of this map, it is the source of truth
+          // for game logic (spots/transitions, stations). The Interior Editor file above
+          // only provided the visual layout (floor, furniture). Override now.
+          const _wsOverride = _workspaceMaps?.find(m => m.id === mapId && m.schema !== 'hobunji_building_interior.v1');
+          if (_wsOverride) {
+            transitions.length = 0;
+            exitTileSet.clear();
+            for (const t of (_wsOverride.transitions || [])) {
+              if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) continue;
+              const target = !t.targetMapId ? 'exit_building' : 'building';
+              const tr = { col: t.col, row: t.row, area: mapId, target, exitId: t.exitId };
+              if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
+              transitions.push(tr);
+              if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
+            }
+          }
+          const bScene = new THREE.Scene();
+          bScene.background = new THREE.Color(0x2a1a0a);
+          bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
+          const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+          dl.position.set(5, 10, 5);
+          bScene.add(dl);
+          const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+          // Floor tiles only for defined floor set
+          for (const [c, r] of (mapData.floor || [])) {
+            const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+            fl.position.set(c + 0.5, -0.05, r + 0.5);
+            bScene.add(fl);
+          }
+          // Irregular brick walls with gaps at all exit tiles — or, for a den's
+          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls,
+          // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
+          // flat cloth-colored panels matching the exterior tent piece's
+          // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
+          const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+          if (wallPanels.length) {
+            const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
+            _markOutline(wallGroup);
+            bScene.add(wallGroup);
+          }
+          // A den's cavern entrance had no visual distinguishing it from any
+          // other dark corner of the cave (see generateCavernFloor's
+          // guaranteed 3-wide south opening) — a warm point light standing
+          // in for daylight spilling through the mouth, plus a lighter floor
+          // patch, makes it read as "the way out" and gives the player's
+          // spawn point some actual light instead of pitch dark.
+          if (mapData.wallStyle === 'cavern' && exitTileSet.size) {
+            let ex = 0, ez = 0;
+            for (const key of exitTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
+            ex = ex / exitTileSet.size + 0.5; ez = ez / exitTileSet.size + 0.5;
+            const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
+            doorLight.position.set(ex, 1.6, ez + 0.6);
+            bScene.add(doorLight);
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
+            const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
+            glow.rotation.x = -Math.PI / 2;
+            glow.position.set(ex, 0.02, ez);
+            bScene.add(glow);
+          }
+          // Furniture: build combined itemKey -> def/furnitureKey lookup
+          const allFurnDefs = {};
+          const furnKeyByItemKey = {};
+          for (const [key, def] of Object.entries(DECORATIVE_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
+          for (const [key, def] of Object.entries(PROCESSING_FURNITURE_DEFS)) { allFurnDefs[def.itemKey] = def; furnKeyByItemKey[def.itemKey] = key; }
+          for (const f of (mapData.furniture || [])) {
+            const def = allFurnDefs[f.itemKey];
+            const furnitureKey = furnKeyByItemKey[f.itemKey];
+            const color = def?.color || 0x888888;
+            const scX = f.postSX != null ? f.postSX : (f.postScale != null ? f.postScale : 1);
+            const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
+            const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
+            const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
+            const by = f.postY || 0;
+            const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
+            const rotRad = THREE.MathUtils.degToRad(f.rotY || 0);
+            if (furnitureKey && window.ProceduralFurniture.CATALOG[furnitureKey]) {
+              const model = buildFurnitureVisual(furnitureKey, color);
+              model.position.set(bx, by, bz);
+              model.rotation.y = rotRad;
+              model.scale.set(scX, scY, scZ);
+              _markOutline(model);
+              _markFurnitureEdgeId(model);
+              bScene.add(model);
+              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+              registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId));
+            } else {
+              // Fallback: no procedural recipe found for this furniture key
+              window.__farmLog?.(`[furniture] ${furnitureKey || '(no key)'}: no procedural recipe → fallback placeholder box`, 'warn');
+              const ph = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshLambertMaterial({ color }));
+              ph.position.set(bx, by + 0.4, bz);
+              ph.rotation.y = rotRad;
+              ph.scale.set(scX, scY, scZ);
+              _markOutline(ph);
+              _markFurnitureEdgeId(ph);
+              bScene.add(ph);
+              window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+            }
+            // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
+            // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
+            // a custom interaction registered at this instance's actual
+            // placed tile — so moving/duplicating it in the Interior Editor
+            // just works, unlike the old hardcoded-per-mapId spawn it replaced.
+            const interactableFactory = BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
+            if (interactableFactory) {
+              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, interactableFactory());
+            } else if (def?.sit) {
+              // Sittable town/building furniture (see computeActionButtons'/
+              // useActiveAction's town+_buildingInteractables lookups) — the
+              // Highland House interior instead goes through
+              // getInteriorInteractableAt, so this only matters here.
+              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(furnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
+            }
+          }
+          // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
+          // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
+          // / generateCavernFloor for nestCol/nestRow/denMotherKind.
+          if (mapData.wallStyle === 'cavern' && Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
+            const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
+            const motherKey = mapData.denMotherKind;
+            const motherDef = CREATURE_DB[motherKey];
+            // Same shared per-family genotype as this den's exterior pack
+            // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
+            // two spawns first rolls it, the other reuses it, so the
+            // Den-Mother and any same-family pack members (and the nest's
+            // eggs/babies) always match. Keyed by family (not just mapId)
+            // since the Den-Mother's species is picked independently of
+            // whatever the exterior pack currently is (see
+            // pickDenMotherKind) — they can genuinely differ.
+            const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
+            const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
+            if (motherDef) {
+              const homeX = (nestCol + 1) * TILE, homeY = (nestRow + 1) * TILE;
+              const mother = makeCreatureEntity(motherKey, homeX, homeY, {
+                scene: bScene, grid: bGrid, cols, rows,
+                areaId: mapId, homeX, homeY, state: 'idle',
+                isDenMother: true, genotype: denGenotype,
+              });
+              if (mother) hostileObjects.add(mother);
+            }
+            const nestRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng)
+              ? WildernessMapGenerator.makeRng(mapId + '_nestcount') : Math.random;
+            const clutchCfg = window.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch || {};
+            const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
+            const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
+            const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
+            const liveBirth = !!motherDef?.liveBirth;
+            const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+            if (itemKey) {
+              _denNests.set(mapId, {
+                col: nestCol, row: nestRow, w: 2, h: 2,
+                itemKey, liveBirth, remaining, genotype: denGenotype,
+              });
+            } else {
+              window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
+            }
+            // Simple nest marker so the 2x2 chamber reads as an objective.
+            const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
+            const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
+            nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
+            bScene.add(nestMarker);
+          }
+          const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
+          registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
+          const buildingPaths = (mapData.npcPaths || []).filter(p => p && Array.isArray(p.nodes) && p.nodes.length > 0)
+            .map(p => ({ ...p, area: mapId }));
+          const buildingRoutes = normalizeRoutes(
+            (mapData.routes || []).map(r => ({ ...r, area: mapId })),
+            buildingPaths);
+          if (buildingRoutes.length) {
+            worldRoutes = worldRoutes.filter(r => (r.area || 'farm') !== mapId).concat(buildingRoutes);
+            rebuildRouteGraphs();
+          }
+          const info = { scene: bScene, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId };
+          _buildingScenes.set(mapId, info);
+          for (const w of npcWalkers) {
+            if (w.root._pendingBuildingAdd === mapId) {
+              w.root._pendingBuildingAdd = null;
+              bScene.add(w.root); w.root._npcScene = bScene;
+            }
+          }
+          if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
+            bScene.add(playerMesh); bScene.add(playerGroundShadow);
+            if (_isCavernBuildingArea(mapId)) {
+              bScene.add(toolHolder); bScene.add(reticleMesh);
+              bScene.add(reticleCircleMesh); bScene.add(reticleRingMesh);
+              bScene.add(reticleWavyGroup);
+            }
+            if (_pendingEntrySpawnFromExit) {
+              _pendingEntrySpawnFromExit = false;
+              const sp = buildingSpawnFromExit(info, cols, rows);
+              player.x = (sp.col + 0.5) * TILE;
+              player.y = (sp.row + 0.5) * TILE;
+              _snapCameraTarget();
+            }
+          }
+          debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ') [v1]');
+          return;
+        }
+
+        // ── Legacy rectangular-room schema ───────────────────────────────
+        const cols = mapData?.cols || 20, rows = mapData?.rows || 20;
+        const bGrid = Array.from({ length: rows }, () =>
+          Array.from({ length: cols }, () => ({
+            type: TileType.GRASS, water: 0, crop: CropType.NONE,
+            cropAge: 0, cropReady: false, stress: '', variation: 0,
+          }))
+        );
+        if (mapData) {
+          for (const tile of (mapData.tiles || [])) {
+            if (bGrid[tile.r]?.[tile.c]) bGrid[tile.r][tile.c].type = tile.type || TileType.GRASS;
+          }
+        }
+        // Convert workspace exit transitions (targetMapId=town) to exit_building so checkTransitionSpots fires
+        const transitions = (mapData?.transitions || [])
+          .filter(t => Number.isFinite(t.col) && Number.isFinite(t.row))
+          .map(t => ({ ...t, area: mapId, target: t.target || 'exit_building' }));
+        const bScene = new THREE.Scene();
+        bScene.background = new THREE.Color(0x2a1a0a);
+        bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
+        const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+        dl.position.set(5, 10, 5);
+        bScene.add(dl);
+        const floorMat = new THREE.MeshLambertMaterial({ color: 0x8b6914 });
+        new THREE.TextureLoader().load('assets/textures/boards.png', (tex) => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          floorMat.map = tex; floorMat.color.set(0xffffff); floorMat.needsUpdate = true;
+        }, undefined, () => {});
+        // Floor covers the full footprint — walls always sit on the boundary
+        for (let r2 = 0; r2 < rows; r2++) for (let c2 = 0; c2 < cols; c2++) {
+          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+          fl.position.set(c2 + 0.5, -0.05, r2 + 0.5);
+          bScene.add(fl);
+        }
+        // Brick walls at footprint boundary with a door gap at the exit transition
+        const exitT = transitions.find(t => t.target === 'exit_building');
+        const wallPanels = buildWallPanelsForRoom(cols, rows, INTERIOR_WALL_HEIGHT, exitT);
+        if (wallPanels.length) {
+          const wallGroup = houseWallBuilder.build(wallPanels, { usePlaceholder: false, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+          _markOutline(wallGroup);
+          bScene.add(wallGroup);
+        }
+        const info = { scene: bScene, grid: bGrid, cols, rows, transitions, loadSource, fallback: loadSource !== 'config', name: mapData?.name || mapId };
+        _buildingScenes.set(mapId, info);
+        for (const w of npcWalkers) {
+          if (w.root._pendingBuildingAdd === mapId) {
+            w.root._pendingBuildingAdd = null;
+            bScene.add(w.root); w.root._npcScene = bScene;
+          }
+        }
+        if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
+          bScene.add(playerMesh); bScene.add(playerGroundShadow);
+        }
+        debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
+      }
+
+      function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
+        const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
+        if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
+        // Multiple unrelated exit_building tiles can exist on one map (e.g. a real
+        // exterior door plus an unwired stairwell stub). Cluster tiles that share the
+        // same exitId/door, then use the largest cluster so a stray single-tile stub
+        // can't drag the computed spawn point away from the actual entrance.
+        const clusters = new Map();
+        for (const t of exitTiles) {
+          const key = t.exitId != null ? t.exitId : `${t.col},${t.row}`;
+          if (!clusters.has(key)) clusters.set(key, []);
+          clusters.get(key).push(t);
+        }
+        let mainCluster = exitTiles;
+        if (clusters.size > 1) {
+          mainCluster = [...clusters.values()].reduce((a, b) => (b.length > a.length ? b : a));
+        }
+        const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
+        const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
+        return {
+          col: clamp(Math.round(avgCol), 0, fallbackCols - 1),
+          row: clamp(northRow, 0, fallbackRows - 1)
+        };
+      }
+
+      function mapDebugName(area) {
+        if (area === 'interior') return 'Farmhouse Interior';
+        if (area === 'town') return _townZone?.name || 'Hobunji Hollow — Town';
+        if (area === 'farm') return 'Farm';
+        if (_isBuildingArea(area)) return _buildingScenes.get(area)?.name || area;
+        return area || '(unknown)';
+      }
+
+      function logMapSwap(label, area, extra = {}) {
+        const source = extra.source || 'runtime';
+        const fallback = !!extra.fallback;
+        const loading = !!extra.loading;
+        const target = extra.target ? ` target=${extra.target}` : '';
+        window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target}`, fallback ? 'warn' : 'info');
+      }
+
+      function enterBuilding(mapId, defaultCol, defaultRow) {
+        if (!_buildingScenes.has(mapId)) loadBuildingScene(mapId);
+        const fromScene = _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || null)
+          : currentArea === 'town' ? townScene : scene;
+        if (!_isBuildingArea(currentArea)) {
+          farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        }
+        _currentBuildingMapId = mapId;
+        currentArea = mapId;
+        const bi = _buildingScenes.get(mapId);
+        const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
+        // Default entry is one tile north of the building's exit. Explicit
+        // inter-floor spawn coordinates still win when an exit supplies them.
+        const exitSpawn = buildingSpawnFromExit(bi, bCols, bRows);
+        const col = Number.isFinite(defaultCol) ? defaultCol : exitSpawn.col;
+        const row = Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
+        // If the scene hasn't loaded yet (bi===null) and no explicit coords, defer
+        // the spawn correction to when loadBuildingScene finishes.
+        _pendingEntrySpawnFromExit = !bi && !Number.isFinite(defaultCol);
+        player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        facingAngle = Math.PI / 2; player.angle = facingAngle;
+        _snapCameraTarget();
+        if (fromScene) {
+          fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
+          fromScene.remove(toolHolder); fromScene.remove(reticleMesh);
+          fromScene.remove(reticleCircleMesh); fromScene.remove(reticleRingMesh);
+          fromScene.remove(reticleWavyGroup);
+        }
+        if (bi?.scene) {
+          bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow);
+          if (_isCavernBuildingArea(mapId)) {
+            bi.scene.add(toolHolder); bi.scene.add(reticleMesh);
+            bi.scene.add(reticleCircleMesh); bi.scene.add(reticleRingMesh);
+            bi.scene.add(reticleWavyGroup);
+          }
+        }
+        refreshActionBar();
+        logMapSwap('enterBuilding', currentArea, { source: bi?.loadSource || 'loading', fallback: bi?.fallback || !bi, loading: !bi });
+      }
+
+      function exitBuilding() {
+        if (!_isBuildingArea(currentArea)) return;
+        startSceneTransition(() => {
+          const fromScene = _buildingScenes.get(currentArea)?.scene || null;
+          const returnArea = farmPlayerSave?.area ?? 'town';
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          _currentBuildingMapId = null;
+          currentArea = returnArea;
+          if (farmPlayerSave) {
+            player.x = farmPlayerSave.x; player.y = farmPlayerSave.y;
+            player.angle = farmPlayerSave.angle; facingAngle = farmPlayerSave.angle;
+          }
+          player.vx = 0; player.vy = 0;
+          _snapCameraTarget();
+          // A den's cavern (see loadBuildingScene's map_i_den_ synthesis) is
+          // entered from a wilderness zone, not the farm — this used to only
+          // special-case 'town' here, so returning from any other non-farm
+          // area silently landed the player on the farm scene instead (see
+          // enterZone, which builds/adds to the zone scene the same way on
+          // the way in).
+          const toScene = returnArea === 'town' ? townScene : (_isZoneArea(returnArea) ? buildZoneScene(returnArea)?.scene : scene);
+          if (toScene) {
+            toScene.add(playerMesh); toScene.add(playerGroundShadow);
+            toScene.add(toolHolder); toScene.add(reticleMesh);
+            toScene.add(reticleCircleMesh); toScene.add(reticleRingMesh);
+            toScene.add(reticleWavyGroup);
+          }
+          refreshActionBar();
+          logMapSwap('exitBuilding', currentArea);
+        });
+      }
+
+      // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
+      async function enterZone(mapId, defaultCol, defaultRow) {
+        // A Tothal Shift in progress is about to replace this zone's layout —
+        // wait for it so the player lands on the freshly reshaped map instead
+        // of whatever was cached (or authored) a moment before the shift.
+        if (_tothalShiftPromise) {
+          showToast('The wilds are still settling into shape…', true);
+          await _tothalShiftPromise;
+        }
+        const zdef = EXTERIOR_ZONES[mapId];
+        if (!zdef && !_zoneLayouts.has(mapId)) return;
+        const zi = buildZoneScene(mapId);
+        if (!zi) return;
+        window.ReagentPlants.ensureZoneReagents(mapId);
+        window.WildBerries.ensureZone(mapId); // after reagents, so it can see today's reagent tiles and avoid them
+        window.WildTreasure.ensureZone(mapId); // after both, so it can avoid their tiles too
+        const fromScene = getActiveScene();
+        _currentBuildingMapId = null;
+        currentArea = mapId;
+        const col = Number.isFinite(defaultCol) ? defaultCol : (zdef?.entryCol ?? 0);
+        const row = Number.isFinite(defaultRow) ? defaultRow : (zdef?.entryRow ?? 0);
+        player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        facingAngle = -Math.PI / 2; player.angle = facingAngle;
+        _snapCameraTarget();
+        if (fromScene) {
+          fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
+          fromScene.remove(toolHolder); fromScene.remove(reticleMesh);
+          fromScene.remove(reticleCircleMesh); fromScene.remove(reticleRingMesh);
+          fromScene.remove(reticleWavyGroup);
+        }
+        zi.scene.add(playerMesh); zi.scene.add(playerGroundShadow);
+        zi.scene.add(toolHolder); zi.scene.add(reticleMesh);
+        zi.scene.add(reticleCircleMesh); zi.scene.add(reticleRingMesh);
+        zi.scene.add(reticleWavyGroup);
+        refreshActionBar();
+        logMapSwap('enterZone', currentArea);
+        // Fire the den-check on the very next frame instead of waiting up to
+        // DEN_CHECK_INTERVAL_S — see _zoneEntryAnimalLogPending above — so
+        // wildlife populates promptly on arrival and the log reflects it.
+        window.WildlifeSpawn.onZoneEntered(mapId);
+        // A cleared bandit camp only ever re-rolls somewhere else BETWEEN
+        // visits, never under the player's feet — this is the one moment
+        // ensureCurrentZoneBanditCamps is allowed to release and re-stamp.
+        window.BanditCamps?.markZoneEntered(mapId);
+      }
+
+      // Town/zone building mesh spawning (detectTownBuildings/
+      // spawnTownBuildings/spawnZoneBuildings) and decorative furniture/
+      // prop spawning (spawnZoneDecorFurniture) now live in
+      // js/town-zone-buildings.js (window.TownZoneBuildings) — see its
+      // init(deps) call below for the shared game.js state it's threaded.
+
+      // ── Alchemy: reagent plant scatter (per wilderness zone) ─────────
+      function _seedFromString(str) {
+        let h = 0;
+        for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+        return h >>> 0;
+      }
+
+      // One re-tinted copy of the grass-leaf silhouette per reagent color —
+      // same texture/sway shader as ordinary grass billboards (grassBillboardMat),
+      // and the same luminance-preserving tint-blend those use (uTint * (0.7 +
+      // lum*0.8) in _grassBillFrag) rather than a flat solid fill, so each
+      // reagent species reads as a distinct hue while keeping the leaf
+      // texture's own light/dark shading (veins, highlights) intact — only
+      // hue/saturation change per reagent, not the source texture's value.
+      const _reagentPlantMaterials = new Map(); // colorHex -> ShaderMaterial
+      function getReagentPlantMaterial(colorHex) {
+        if (!_grassLeafTex) return null;
+        let mat = _reagentPlantMaterials.get(colorHex);
+        if (mat) return mat;
+        mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uGrassTex: { value: _grassLeafTex },
+            uTime: { value: 0 }, uStrength: { value: 0.04 },
+            uColor: { value: new THREE.Color(colorHex) },
+          },
+          vertexShader: _grassBillVert,
+          fragmentShader: `
+            uniform sampler2D uGrassTex;
+            uniform vec3 uColor;
+            varying vec2 vUv;
+            void main() {
+              vec4 texel = texture2D(uGrassTex, vUv);
+              if (texel.a < 0.5) discard;
+              float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
+              vec3 tinted = uColor * (0.7 + lum * 0.8);
+              gl_FragColor = vec4(tinted, 1.0);
+            }
+          `,
+          alphaTest: 0.5, side: THREE.DoubleSide, depthWrite: true,
+        });
+        _reagentPlantMaterials.set(colorHex, mat);
+        return mat;
+      }
+
+      // Finds up to `count` distinct flat, empty (col,row) tiles in a
+      // wilderness zone for reagent placement. Uses the same tile-level
+      // exclusion checklist as findZonePlacementFootprint's single-spot
+      // search (uniform-elevation rect logic dropped since every plant is
+      // a single tile), but scans the whole grid and shuffles instead of
+      // stopping at the first hit, since we want many scattered spots.
+      function findZoneFlatEmptyTiles(mapId, count, rng, extraOccupied) {
+        const zi = _zoneScenes.get(mapId);
+        const grid = zi?.grid;
+        if (!grid) return [];
+        const cols = zi.cols, rows = zi.rows;
+        const zoneData = _zoneLayouts.get(mapId);
+        const occupied = Array.from({ length: rows }, () => new Array(cols).fill(false));
+        const markOccupied = (col, row, ow, oh) => {
+          for (let r = Math.max(0, row); r < Math.min(rows, row + (oh || 1)); r++)
+            for (let c = Math.max(0, col); c < Math.min(cols, col + (ow || 1)); c++) { if (occupied[r]) occupied[r][c] = true; }
+        };
+        for (const b of (zoneData?.buildings || [])) markOccupied(b.gridX || 0, b.gridZ || 0, b.footprintW ?? b.w ?? 1, b.footprintD ?? b.h ?? 1);
+        for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
+        for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
+        for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+        // Lets a second scatter system (wild berries) avoid the tiles another
+        // one (reagents) already claimed for the same day — see
+        // scatterBerriesForZone.
+        for (const p of (extraOccupied || [])) markOccupied(p.col, p.row, 1, 1);
+
+        const candidates = [];
+        for (let r = 1; r < rows - 1; r++) {
+          for (let c = 1; c < cols - 1; c++) {
+            if (occupied[r][c]) continue;
+            const tile = grid[r][c];
+            if (!tile || tile.water || tile.incline) continue;
+            if (tile.type === TileType.RAMP) continue;
+            if (isSolid(tile.type)) continue;
+            candidates.push({ col: c, row: r });
+          }
+        }
+        for (let i = candidates.length - 1; i > 0; i--) { // seeded Fisher-Yates
+          const j = Math.floor(rng() * (i + 1));
+          [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+        return candidates.slice(0, count);
+      }
+
+      // Save/restore _zoneFelledTreePersist as a plain object — see
+      // saveMemberWorldData/spawnPlayerAvatar. Simpler shape than
+      // _zoneReagentPersist (no day-mismatch staleness check needed here).
+      function serializeZoneFelledTreeState() {
+        const out = {};
+        _zoneFelledTreePersist.forEach((entries, mapId) => { out[mapId] = entries; });
+        return out;
+      }
+      function restoreZoneFelledTreeState(saved) {
+        _zoneFelledTreePersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, entries]) => {
+          if (Array.isArray(entries)) _zoneFelledTreePersist.set(mapId, entries);
+        });
+      }
+
+      // Save/restore _zoneMinedRockPersist — mirrors serializeZoneFelledTreeState/
+      // restoreZoneFelledTreeState above.
+      function serializeZoneMinedRockState() {
+        const out = {};
+        _zoneMinedRockPersist.forEach((entries, mapId) => { out[mapId] = entries; });
+        return out;
+      }
+      function restoreZoneMinedRockState(saved) {
+        _zoneMinedRockPersist.clear();
+        Object.entries(saved || {}).forEach(([mapId, entries]) => {
+          if (Array.isArray(entries)) _zoneMinedRockPersist.set(mapId, entries);
+        });
+      }
+
+      // Tears down a previously built zone scene so buildZoneScene(mapId)'s
+      // cache check falls through and rebuilds it from whatever's now in
+      // _zoneLayouts — used by a Tothal Shift to apply newly generated
+      // wilderness terrain. Only disposes geometries; tileMats/houseWallBuilder
+      // materials are shared across every map and must outlive this.
+      function _disposeZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (zi?.scene) zi.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneScenes.delete(mapId);
+        _zoneWaterMeshes.delete(mapId);
+        const buildingGroups = _zoneBuildingGroups.get(mapId);
+        if (buildingGroups) for (const { group } of buildingGroups) group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneBuildingGroups.delete(mapId);
+        const decorFurniture = _zoneDecorFurnitureGroups.get(mapId);
+        if (decorFurniture) for (const obj of decorFurniture) obj.traverse?.(o => { if (o.geometry) o.geometry.dispose(); });
+        _zoneDecorFurnitureGroups.delete(mapId);
+        _zoneBuildingsGlbUpgradePending.delete(mapId);
+        window.Music?.unregisterFurnitureSfxSourcesForArea(mapId);
+        // Reagent plant meshes were children of the disposed scene above, and
+        // the terrain just changed underneath any persisted placements — drop
+        // all of it so ensureZoneReagents scatters fresh against the new map.
+        _zoneReagentMeshGroups.delete(mapId);
+        _zoneReagentObjects.delete(mapId);
+        _zoneReagentPersist.delete(mapId);
+        // Same reasoning as the reagent cleanup just above, for wild berries.
+        _zoneBerryMeshGroups.delete(mapId);
+        _zoneBerryObjects.delete(mapId);
+        _zoneBerryPersist.delete(mapId);
+        // Same reasoning again, for buried treasure.
+        _zoneTreasureMeshGroups.delete(mapId);
+        _zoneTreasureObjects.delete(mapId);
+        _zoneTreasurePersist.delete(mapId);
+        // The whole tile layout just changed underneath any felled-tree
+        // timers too — a shift's fresh terrain has its own new trees.
+        _zoneFelledTreePersist.delete(mapId);
+        // Same reasoning again, for mined-out ore rocks.
+        _zoneMinedRockPersist.delete(mapId);
+        _zoneFloorMeshGroups.delete(mapId);
+        _zoneGrassMeshes.delete(mapId);
+        _zoneMesaMeshGroups.delete(mapId);
+      }
+
+      // Rebuilds just a zone's ground floor + grass tufts (see
+      // _buildZoneFloorMeshes/_buildZoneGrassBillboards) from its current
+      // grid, in place — used after a shovel/pick action changes a tile's
+      // type at runtime (digging/filling/raising — see applyAction) while
+      // standing inside a wilderness zone. A zone's terrain is built once as
+      // merged meshes rather than the farm's per-tile mesh array, so without
+      // this a freshly dug trench would be "physically" real (tile.type/
+      // height read live every frame) while its grass never disappears —
+      // the player would see themselves sink through still-standing grass.
+      // Deliberately narrower than _disposeZoneScene + buildZoneScene: it
+      // leaves buildings/decor/creatures/NPCs/reagents/berries/treasure
+      // alone, so it's safe to call immediately while the player is
+      // standing in the zone (unlike a full zone rebuild — see
+      // _dirtyZoneScenes' comments on why that's deferred to zone re-entry).
+      function refreshZoneGroundVisuals(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return;
+        const oldFloor = _zoneFloorMeshGroups.get(mapId);
+        if (oldFloor) for (const mesh of oldFloor) { zi.scene.remove(mesh); mesh.traverse?.(o => { if (o.geometry) o.geometry.dispose(); }); if (mesh.geometry) mesh.geometry.dispose(); }
+        const oldGrass = _zoneGrassMeshes.get(mapId);
+        if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
+        _zoneFloorMeshGroups.set(mapId, _buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
+        _zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+        // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
+        // felled tree's mesh is gone after this rebuild, and leaving its stale
+        // entries around would keep hard-limiting zoom / culling nothing over
+        // an empty stump.
+        const canopyZones = [];
+        zi.scene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
+        zi.canopyZones = canopyZones;
+        const cullables = [];
+        zi.scene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
+        zi.cullables = cullables;
+        // A dug/filled tile might sit on a plateau's flat top — its mesa lid
+        // is otherwise frozen from zone-build time (see rebuildZoneMesaMeshes)
+        // and would keep covering/exposing the wrong side of a real trench.
+        rebuildZoneMesaMeshes(mapId);
+        // A dig/fill/raise here may have just turned a buried chest's tile
+        // into (or out of) a real trench — see syncZoneTreasureInteractivity.
+        window.WildTreasure.syncZoneInteractivity(mapId);
+      }
+
+      // Regrows trees felled with the axe once TREE_REGROWTH_DAYS have
+      // passed (see _zoneFelledTreePersist/applyAction's axe branch).
+      // Called once per day from advanceDay()/sleepInBed(), the same
+      // trigger tickCropDay() uses for the farm grid's crop aging.
+      function tickFelledTreeRegrowth() {
+        for (const [mapId, entries] of _zoneFelledTreePersist) {
+          if (!entries.length) { _zoneFelledTreePersist.delete(mapId); continue; }
+          const zi = _zoneScenes.get(mapId);
+          // Zone isn't currently built (never visited this session, or its
+          // scene was disposed) — nothing to mutate live. Leave every entry
+          // exactly as-is; buildZoneScene re-derives due/not-due from
+          // feltDay itself the next time this zone is actually built (see
+          // there), so dropping entries here without a grid to apply them
+          // to would just lose the regrowth timer entirely.
+          if (!zi) continue;
+          const stillFelled = [];
+          let regrewAny = false;
+          for (const entry of entries) {
+            if (calendar.day - entry.feltDay < TREE_REGROWTH_DAYS) { stillFelled.push(entry); continue; }
+            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.SHRUB;
+            regrewAny = true;
+          }
+          if (stillFelled.length) _zoneFelledTreePersist.set(mapId, stillFelled);
+          else _zoneFelledTreePersist.delete(mapId);
+          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
+        }
+      }
+
+      // Regrows ore rocks broken with the pick once ROCK_REGROWTH_DAYS have
+      // passed — mirrors tickFelledTreeRegrowth above for ROCK/rockKind.
+      function tickMinedRockRegrowth() {
+        for (const [mapId, entries] of _zoneMinedRockPersist) {
+          if (!entries.length) { _zoneMinedRockPersist.delete(mapId); continue; }
+          const zi = _zoneScenes.get(mapId);
+          if (!zi) continue;
+          const stillMined = [];
+          let regrewAny = false;
+          for (const entry of entries) {
+            if (calendar.day - entry.minedDay < ROCK_REGROWTH_DAYS) { stillMined.push(entry); continue; }
+            if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = TileType.ROCK;
+            regrewAny = true;
+          }
+          if (stillMined.length) _zoneMinedRockPersist.set(mapId, stillMined);
+          else _zoneMinedRockPersist.delete(mapId);
+          if (regrewAny && mapId === currentArea) refreshZoneGroundVisuals(mapId);
+        }
+      }
+
+      function buildTownScene() {
+        if (_townSceneBuilt) return;
+        _townSceneBuilt = true;
+
+        townScene = new THREE.Scene();
+        townScene.background = new THREE.Color(0x7da87b);
+        townScene.fog = new THREE.FogExp2(0x7da87b, 0.018); // match farm fog density
+        townAmbientLight = new THREE.AmbientLight(0xfff0e0, 0.7);
+        townScene.add(townAmbientLight);
+        townSunLight = new THREE.DirectionalLight(0xffeedd, 1.1);
+        townSunLight.position.set(4, 8, 2);
+        townScene.add(townSunLight);
+
+        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
+
+        // Ground: real per-vertex seam-safe heightfield geometry, same pipeline
+        // as the farm (makeFloorGeo / buildPathTileGeo / buildTerrainTileGeo —
+        // all keyed on a hash of absolute world coords so adjacent tiles' shared
+        // edge vertices match exactly, with no gaps or independently-tilted
+        // facets). Per-tile geometries are merged into one BufferGeometry per
+        // material so the whole town ground still costs only a handful of draw
+        // calls despite TCOLS*TROWS individual tiles.
+        const _floorBuckets = new Map();
+        const _addToBucket = (matKey, geo, x, y, z) => {
+          if (!geo) return;
+          let arr = _floorBuckets.get(matKey);
+          if (!arr) { arr = []; _floorBuckets.set(matKey, arr); }
+          arr.push({ geo, x, y, z });
+        };
+
+        // Paths are no longer flat per-tile slabs stitched at the edges — the
+        // whole road network builds as one continuous heightfield (see
+        // buildPathNetworkGeo) so the dirt/grass boundary reads as an organic
+        // line independent of the tile grid. Tiles inside its bounding box
+        // are skipped below (pathNet.inBounds) except for TRENCH/RAISED/
+        // SHRUB/ROCK, which keep their own geometry.
+        const pathNet = buildPathNetworkGeo(townGrid, TCOLS, TROWS);
+        let _townPathFallbackMesh = null;
+        if (pathNet) {
+          // Regular ground (grass) covers the path's own footprint too now —
+          // the brick surface below is meant to simply overlay ordinary
+          // ground, not sit on top of a separately-colored "path" patch.
+          _addToBucket(TileType.GRASS, pathNet.pathGeo,  0, NORMAL_TOP, 0);
+          _addToBucket(TileType.GRASS, pathNet.grassGeo, 0, NORMAL_TOP, 0);
+          // Old flat tan path quad — shares pathNet.pathGeo's geometry (a
+          // BufferGeometry can back more than one Mesh) but hidden by
+          // default now that the brick surface below provides the real path
+          // visual; only shown if that brick surface never manages to load
+          // (see ensurePathSurfaceReady's .catch and the no-route-matched
+          // case below), so there's still some path indication rather than
+          // the corridor reading as empty grass forever.
+          _townPathFallbackMesh = new THREE.Mesh(pathNet.pathGeo, resolveTileMat('map_hobunji_town', TileType.PATH));
+          _townPathFallbackMesh.name = 'TownPathFallback';
+          _townPathFallbackMesh.visible = false;
+          _townPathFallbackMesh.receiveShadow = true;
+          townScene.add(_townPathFallbackMesh);
+          _markTerrainEdgeId(_townPathFallbackMesh, _terrainCategoryFor(TileType.PATH));
+        }
+
+        // Paved brick surface over the path — see the "Path: paved brick
+        // surface" block below (preparePathSplineData/buildAllPathBrickChunks/
+        // updatePathBrickCulling). Loads async (its own WallBuilder GLB + wall
+        // recipe); every chunk along the corridor is built once ready
+        // (registerPathBrickChunks), then gameLoop's throttled tick just
+        // toggles each chunk's .visible by the same camera-aligned-corridor
+        // test already used for wilderness tree culling (updateZoneVegetationCulling)
+        // — cheap per-frame, no geometry rebuilding.
+        ensurePathSurfaceReady().then(() => {
+          const splineData = preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes, 'town');
+          if (splineData) registerPathBrickChunks('town', townScene, splineData);
+          else if (_townPathFallbackMesh) _townPathFallbackMesh.visible = true;
+        }).catch(err => {
+          debugLog('Town path brick surface error: ' + err.message, 'warn');
+          if (_townPathFallbackMesh) _townPathFallbackMesh.visible = true;
+        });
+
+        const riverTiles = [];
+
+        for (let r = 0; r < TROWS; r++) for (let c = 0; c < TCOLS; c++) {
+          const tile = townGrid[r]?.[c];
+          const tp = (tile?.type === TileType.ROCK) ? TileType.GRASS : (tile?.type || TileType.GRASS);
+          const cx = c + 0.5, cz = r + 0.5;
+
+          if (tp === TileType.TRENCH || tp === TileType.RAISED || tp === TileType.RIVER || tp === TileType.STREAM) {
+            const { dirtGeo, grassGeo } = buildTerrainTileGeo(c, r, tp, townGrid);
+            const bedMatKey = (tp === TileType.RIVER || tp === TileType.STREAM) ? tp : TileType.TRENCH;
+            _addToBucket(bedMatKey, dirtGeo, cx, NORMAL_TOP, cz);
+            _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP, cz);
+            if (tp === TileType.RIVER || tp === TileType.STREAM) riverTiles.push({ c, r, tp });
+            continue;
+          }
+          if (tile?.type !== TileType.ROCK && (tp === TileType.PATH ||
+              (pathNet && pathNet.inBounds(c, r) && !pathNet.isExcludedTile(c, r) && tp === TileType.GRASS))) {
+            continue; // covered by the path network mesh above
+          }
+          if (tp === TileType.SHRUB) {
+            _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS), cz);
+            if (window.FoliageGenerator) {
+              const vegGroup = window.FoliageGenerator.buildShrubMesh(c, r);
+              vegGroup.scale.set(2, 2, 2);
+              vegGroup.position.set(cx, tileSurfaceY(TileType.GRASS), cz);
+              townScene.add(vegGroup);
+              _markOutline(vegGroup);
+            }
+            continue;
+          }
+          // GRASS / TILLED / any other flat type — subdivided slab
+          const matKey = tileMats[tp] ? tp : TileType.GRASS;
+          _addToBucket(matKey, makeFloorGeo(c, r), cx, tileYCenter(tp), cz);
+        }
+
+        for (const [matKey, entries] of _floorBuckets) {
+          const merged = _mergeTileGeos(entries);
+          const mesh = new THREE.Mesh(merged, resolveTileMat('map_hobunji_town', matKey));
+          mesh.receiveShadow = true;
+          townScene.add(mesh);
+          _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
+        }
+
+        // River/stream water surface — an animated translucent plane sitting
+        // above the sunken bed built above, so the banks read as real depth
+        // instead of a flat colored tile. Flow direction comes from which
+        // neighbouring tiles are also water, so the shader's flow-stripe mode
+        // animates along the channel rather than rippling in place.
+        const isWaterTile = (cc, rr) => {
+          const t = townGrid[rr]?.[cc]?.type;
+          return t === TileType.RIVER || t === TileType.STREAM;
+        };
+        _townRiverWaterMeshes = riverTiles.map(({ c, r, tp }) => {
+          let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
+          let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
+          const flen = Math.hypot(fx, fz);
+          if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
+          const deep = tp === TileType.RIVER;
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              uTime:  { value: 0 },
+              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
+              uDepth: { value: deep ? 0.8 : 0.45 },
+              uFlow:  { value: new THREE.Vector2(fx, fz) },
+              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
+            },
+            vertexShader:   waterVertShader,
+            fragmentShader: waterFragShader,
+            transparent:    true,
+            depthWrite:     false,
+            side:           THREE.FrontSide,
+          });
+          const wm = new THREE.Mesh(waterGeo, mat);
+          wm.receiveShadow = false;
+          wm.position.set(c + 0.5, NORMAL_TOP - (deep ? 0.10 : 0.05), r + 0.5);
+          townScene.add(wm);
+          _markTerrainEdgeId(wm, 'water');
+          return wm;
+        });
+
+        _buildTownGrassBillboards(TCOLS, TROWS);
+        window.BorderTerrain.buildTownBorderTerrain();
+
+        // Gold ring markers for town transitions
+        const ringGeo = new THREE.RingGeometry(0.22, 0.36, 24);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+        for (const t of worldTownTransitions) {
+          const tile = townGrid[t.row]?.[t.col];
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
+          townScene.add(ring);
+        }
+
+        // Add any NPC walkers that were spawned before town scene was built
+        for (const w of npcWalkers) {
+          if (w.root._pendingTownAdd) {
+            w.root._pendingTownAdd = false;
+            townScene.add(w.root);
+            w.root._npcScene = townScene;
+          }
+          if (w.root._pendingBuildingAdd === undefined) w.root._pendingBuildingAdd = null;
+        }
+
+        // Generate 3D buildings from rock-tile clusters
+        _townBuildingDefs = window.TownZoneBuildings.detectTownBuildings();
+        window.TownZoneBuildings.spawnTownBuildings();
+
+        debugLog('buildTownScene complete');
+      }
+
+      function enterTown(col, row) {
+        const fromScene = getActiveScene();
+        buildTownScene();
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
+        _currentBuildingMapId = null;
+        currentArea = 'town';
+        player.x = (col + 0.5) * TILE;
+        player.y = (row + 0.5) * TILE;
+        player.vx = 0; player.vy = 0;
+        facingAngle = -Math.PI / 2;
+        player.angle = facingAngle;
+        _snapCameraTarget();
+        if (fromScene) {
+          fromScene.remove(playerMesh);
+          fromScene.remove(playerGroundShadow);
+          fromScene.remove(toolHolder);
+          fromScene.remove(reticleMesh);
+          fromScene.remove(reticleCircleMesh);
+          fromScene.remove(reticleRingMesh);
+          fromScene.remove(reticleWavyGroup);
+        }
+        if (townScene) {
+          townScene.add(playerMesh);
+          townScene.add(playerGroundShadow);
+          townScene.add(toolHolder);
+          townScene.add(reticleMesh);
+          townScene.add(reticleCircleMesh);
+          townScene.add(reticleRingMesh);
+          townScene.add(reticleWavyGroup);
+        }
+        refreshActionBar();
+      }
+
+      function processButtonLabel(methodId, inputKey, output) {
+        const methodVerb = ({ mashing: 'Mash', squeezing: 'Squeeze', grinding: 'Grind', drying: 'Dry', smoking: 'Smoke', barrelAging: 'Age', vaseAging: 'Age' })[methodId] || 'Process';
+        return methodVerb + ' → ' + output.icon;
+      }
+
+      function methodIdleLabel(methodId) {
+        return ({
+          mashing: 'Needs mashable item', squeezing: 'Needs squeezable item', grinding: 'Needs grindable item',
+          drying: 'Needs wet/fresh item', smoking: 'Needs meat/fish', barrelAging: 'Needs juice/dew', vaseAging: 'Needs milk/curd'
+        })[methodId] || 'Needs ingredient';
+      }
+
+      function isBerryKey(key) {
+        return ['redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries'].includes(key);
+      }
+
+      function berryBaseName(key) {
+        return ({ redberries: 'Redberry', blueberries: 'Blueberry', yellowberries: 'Yellowberry', whiteberries: 'Whiteberry', blackberries: 'Blackberry' })[key] || (ITEM_DEFS[key]?.label || key);
+      }
+
+      // Berries literally have their color in their name — used to recolor
+      // their Jam (jar_liquid.png) and Wine (bottle_wine.png) sprites.
+      const BERRY_COLORS = {
+        redberries: 0xD93A3A, blueberries: 0x3F63D9, yellowberries: 0xE0C93A,
+        whiteberries: 0xF2EFE6, blackberries: 0x241A2E,
+      };
+
+      // The 7 Uumkao'ii dew colors and their per-color processed-item keys —
+      // shared by getProcessingOutputs (squeezing dew -> milk+curds) and
+      // getProcessingOutput's barrelAging branch (milk -> nectar). "white"
+      // uses the uumkaoii-prefixed key spelling from the reference cooking
+      // spec (avoids colliding with any future generic "white dairy" family).
+      const DEW_COLOR_KEYS = ['yellow', 'green', 'blue', 'orange', 'red', 'purple', 'white'];
+      function dewItemKey(color) { return color + 'Dew'; }
+      function dewMilkKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewMilk' : color + 'DewMilk'; }
+      function dewCurdsKey(color) { return color === 'white' ? 'uumkaoiiWhiteDewCurds' : color + 'DewCurds'; }
+      function dewColorFromMilkOrCurdsKey(key) {
+        for (const color of DEW_COLOR_KEYS) {
+          if (key === dewMilkKey(color) || key === dewCurdsKey(color)) return color;
+        }
+        return null;
+      }
+
+      // Single-output recipes. getProcessingOutputs (below) wraps this for
+      // the common case and special-cases the one recipe — squeezing
+      // Uumkao'ii dew — that jointly produces two outputs from one input.
+      function getProcessingOutput(methodId, inputKey) {
+        const input = ITEM_DEFS[inputKey];
+        if (!input) return null;
+        if (methodId === 'squeezing' && isBerryKey(inputKey)) {
+          const base = berryBaseName(inputKey);
+          return { key: inputKey + 'Juice', icon: '🧃', label: base + ' Juice', cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 5), tags: ['Processed', 'Juice', 'Fruit'], desc: 'Sweet liquid squeezed from ' + input.label.toLowerCase() + '.' };
+        }
+        if (methodId === 'squeezing' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfButter', icon: '🧈', label: 'Gar-wolf Butter', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 6), tags: ['Processed', 'Butter', 'Gar-wolf'], desc: 'Butter pressed from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
+        if (methodId === 'mashing' && isBerryKey(inputKey)) {
+          const base = berryBaseName(inputKey);
+          return { key: inputKey + 'Jam', icon: input.icon, label: base + ' Jam', cat: 'processed', sellPrice: Math.max(5, (input.sellPrice || 4) + 7), tags: ['Processed', 'Jam', 'Sweet Paste'], desc: 'Thick berry preserve made at a pestle station.', spriteIcon: 'jar_liquid.png', spriteColor: BERRY_COLORS[inputKey], spriteMode: 'keyed' };
+        }
+        if (methodId === 'mashing' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfCream', icon: '🍦', label: 'Gar-wolf Cream', cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Cream', 'Gar-wolf'], desc: 'Cream worked from gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
+        if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mustard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mustard seed.' };
+        if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mustard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mustard seed.' };
+        if (methodId === 'mashing' && ['heftroot', 'garlink', 'ongyums', 'blackMustard', 'greenMustard'].includes(inputKey)) return { key: inputKey + 'Mash', icon: '🥣', label: 'Mashed ' + input.label, cat: 'processed', sellPrice: Math.max(3, (input.sellPrice || 3) + 3), tags: ['Processed', 'Mash'], desc: 'Mashed crop base for future cooking recipes.' };
+        if (methodId === 'grinding' && inputKey === 'needlegrain') return { key: 'needlegrainFlour', icon: '🌾', label: 'Needlegrain Flour', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Flour', 'Grain'], desc: 'Ground needlegrain flour for noodles and bread.' };
+        if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: 15, tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.' };
+        if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mustard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mustard powder.' };
+        if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mustard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mustard powder.' };
+        if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
+        if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
+          const berryKey = inputKey.replace(/Juice$/, '');
+          return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Milk$/.test(inputKey)) {
+          const color = dewColorFromMilkOrCurdsKey(inputKey);
+          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
+          return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
+          return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'heftroot') {
+          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, clear white.', spriteIcon: 'bottle_wine.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' };
+        }
+        if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+        }
+        if (methodId === 'vaseAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Curds$/.test(inputKey)) {
+          return { key: 'uumkaoiiCheese', icon: '🧀', label: "Uumkao'ii Cheese", cat: 'processed', sellPrice: 28, tags: ['Processed', 'Cheese', "Uumkao'ii", 'Aged'], desc: 'Vase-aged Uumkao\'ii curds — every dew color ferments into the same cheese.', spriteIcon: 'cheese.png', spriteColor: 0xD9A441, spriteMode: 'direct' };
+        }
+        if (methodId === 'vaseAging' && inputKey === 'garWolfMilk') {
+          return { key: 'garWolfCheese', icon: '🧀', label: 'Gar-wolf Cheese', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Cheese', 'Gar-wolf', 'Aged'], desc: 'Vase-aged gar-wolf milk.', spriteIcon: 'cheese.png', spriteColor: input.spriteColor, spriteMode: 'direct' };
+        }
+        return null;
+      }
+
+      // Wraps getProcessingOutput in an array, except for the one recipe that
+      // jointly produces two items from a single input in a single action:
+      // squeezing raw Uumkao'ii dew into both Milk and Curds at once.
+      function getProcessingOutputs(methodId, inputKey) {
+        const input = ITEM_DEFS[inputKey];
+        if (!input) return null;
+        const dewColorMatch = DEW_COLOR_KEYS.find(color => dewItemKey(color) === inputKey);
+        if (methodId === 'squeezing' && dewColorMatch) {
+          const color = dewColorMatch;
+          const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
+          const dewColorHex = input.spriteColor;
+          return [
+            { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 3), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
+            { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
+          ];
+        }
+        const single = getProcessingOutput(methodId, inputKey);
+        return single ? [single] : null;
+      }
+
+      function ensureProcessedItemDef(output) {
+        if (ITEM_DEFS[output.key]) return;
+        ITEM_DEFS[output.key] = {
+          icon: output.icon,
+          label: output.label,
+          cat: output.cat || 'processed',
+          sellPrice: output.sellPrice || 1,
+          tags: output.tags || ['Processed'],
+          desc: output.desc || 'Processed food item.',
+          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
+        };
+      }
+
+      // ── Farm buildings: barns (movable, buildable via the Farm tab) ────
+      // A barn instance: { id, kind:'barn', tier, col, row, w, h, stage }.
+      // stage is 'foundation' (just placed, needs an interact-to-build) or
+      // 'built' (rendered as the highland-style stable.json piece).
+      // farmBuildings only ever holds barns — the house is its own array
+      // (housePieces, see js/house-pieces.js) since it can hold several
+      // independently-built pieces rather than one fixed footprint.
+      // Synchronous startup default — overwritten from docs/config/shops/
+      // shop-stock.json's carpenterBarnPlans.tiers once it loads.
+      let BARN_TIERS = {
+        small:  { label: 'Little Barn', slots: 4,  price: 500,  planItem: 'barnPlanSmall'  },
+        medium: { label: 'Medium Barn', slots: 8,  price: 1000, planItem: 'barnPlanMedium' },
+        large:  { label: 'Large Barn',  slots: 12, price: 1500, planItem: 'barnPlanLarge'  },
+      };
+      // House piece deeds — bought from the Carpenter (see
+      // js/carpenter-shop.js), placed touching the existing house cluster,
+      // then built the same foundation->built way as a barn (see
+      // js/house-pieces.js). 'starter' isn't purchasable (no price/deedItem)
+      // — it's the always-present piece(s) every farm is seeded with (see
+      // HousePieces.seedStarter, which actually spawns a 4x3 main room plus
+      // a 3x3 annex touching it — HOUSE_PIECE_CATALOG.starter's own w/h
+      // below is otherwise unused, kept only for shape/documentation
+      // consistency with the rest of this catalog). Every house piece
+      // (starter and deeds alike) is generated live by HousePieceGen.build
+      // Group with a real roof-axis vote + door portal cut against its
+      // current neighbors — see house-pieces.js's _rebuildAllStructureMeshes
+      // — rather than loaded from an authored piece JSON file, so any w×h
+      // works without needing a matching file. Synchronous startup default —
+      // overwritten from docs/config/shops/shop-stock.json's
+      // carpenterHouseDeeds.pieces once it loads.
+      let HOUSE_PIECE_CATALOG = {
+        starter:   { label: 'House',           w: 4, h: 3 },
+        largeWing: { label: 'Large Wing Deed', w: 5, h: 7, price: 1300, deedItem: 'houseDeedLargeWing' },
+        smallRoom: { label: 'Small Room Deed', w: 3, h: 3, price: 400,  deedItem: 'houseDeedSmallRoom'  },
+      };
+      // Loaded config (docs/config/shops/shop-stock.json) replaces
+      // WARES_POOLS/GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
+      // GENERAL_STORE_CLOTHING_SLOTS/BARN_TIERS/HOUSE_PIECE_CATALOG wholesale
+      // once it resolves — called from loadLootShopConfig() above. Jubmir's
+      // stock isn't a simple catalog swap (it also drives genotype
+      // generation/one-shot purchase state), so window.JubmirShop reads
+      // _shopStock.jubmirWares (via deps.getShopStock()) directly instead of
+      // a mirrored variable.
+      function _applyLoadedShopStock() {
+        WARES_POOLS = Object.fromEntries(Object.entries(_shopStock).map(([id, shop]) =>
+          [id, { label: shop.label, menuId: shop.menuId }]));
+        if (_shopStock.generalStoreWares?.goods) GENERAL_STORE_CATALOG = _shopStock.generalStoreWares.goods;
+        if (_shopStock.generalStoreWares?.clothingRotation?.pieces) STORE_CLOTHING_PIECES = _shopStock.generalStoreWares.clothingRotation.pieces;
+        if (_shopStock.generalStoreWares?.clothingRotation?.slots) GENERAL_STORE_CLOTHING_SLOTS = _shopStock.generalStoreWares.clothingRotation.slots;
+        if (_shopStock.carpenterBarnPlans?.tiers) { BARN_TIERS = _shopStock.carpenterBarnPlans.tiers; _registerBarnPlanItemDefs(); }
+        if (_shopStock.carpenterHouseDeeds?.pieces) { HOUSE_PIECE_CATALOG = { starter: HOUSE_PIECE_CATALOG.starter, ..._shopStock.carpenterHouseDeeds.pieces }; _registerHousePieceDeedItemDefs(); }
+      }
+      let farmBuildings = []; // barns placed on this farm — persisted via saveFarmLayout
+      let housePieces = [];   // house pieces (starter + built/foundation deeds) — persisted via saveFarmLayout
+
+      // Per-species farm-resource output: item produced + how many in-game
+      // days the cooldown takes. A kind with no entry here can be housed but
+      // won't produce anything yet.
+      const LIVESTOCK_RESOURCE_DEFS = window.SCRATCHBONES_CONFIG?.game?.livestock?.resources || {};
+
+      // Which action verb the in-world "Collect" button shows, per kind —
+      // gar-wolf/dabinggi-hound's resource is milked out of them rather than
+      // collected like an egg, but both flow through the exact same
+      // resourceReady/collectLivestockResource machinery (see
+      // _farmAnimalGetButtons) — this only changes the button's label/action
+      // string, not the mechanic.
+      const LIVESTOCK_RESOURCE_VERB = Object.fromEntries(Object.entries(LIVESTOCK_RESOURCE_DEFS).filter(([, def]) => def.verb).map(([kind, def]) => [kind, def.verb]));
+
+      // A housed uumkao'ii's dew cooldown is tracked separately from its
+      // LIVESTOCK_RESOURCE_DEFS egg cooldown (see dewDaysUntil/dewReady on
+      // the livestock record, ticked in tickLivestockResources) — unlike the
+      // egg, a ready dew doesn't get a "Collect" button; it's dropped as a
+      // persistent, diggable world pile on the next open tile the animal
+      // wanders onto (see makeUumkaoiiAnimal's tick() / dropDewPile).
+      // Every uumkao'ii currently produces the same color — dewColor exists
+      // on the record (rather than hardcoding UUMKAOII_DEFAULT_DEW_COLOR at
+      // drop time) so a future breeding/genetics mechanism can assign a
+      // different one per-animal without touching the drop code at all.
+      const UUMKAOII_DEW_COOLDOWN_DAYS = 2;
+      const UUMKAOII_DEFAULT_DEW_COLOR = 'blue';
+
+
+      // ── Register world objects ─────────────────────────────────────
+      function initWorldObjects() {
+        const sc = window.FarmCrates.makeSellCrate(2, ROWS - 3);
+        const sb = window.FarmCrates.makeSupplyBox(4, ROWS - 3);
+        shippingBoxObject = sc;
+        supplyBoxObject = sb;
+        worldObjects.set(sc.col + ',' + sc.row, sc);
+        worldObjects.set(sb.col + ',' + sb.row, sb);
+        // The starter house piece — always present, free, built immediately.
+        // Every other house piece (deeds bought from the Carpenter) and every
+        // barn is spawned later by applyFarmLayoutObjects() from the saved
+        // farm layout, same as a fresh farm's single starter piece here.
+        window.HousePieces.seedStarter(HOUSE_STARTER_COL, HOUSE_STARTER_ROW);
+        rebuildInteriorGeometry();
+      }
+
+      // Top-left of the starter house piece on a brand-new farm — matches
+      // the old Highland House's HOUSE_COL/HOUSE_ROW. Existing saves instead
+      // read this from their legacy houseCol/houseRow field (see
+      // applyFarmLayoutObjects' housePieces migration below).
+      const HOUSE_STARTER_COL = 26;
+      const HOUSE_STARTER_ROW = 2;
+
+      // ── Scene transition fade ─────────────────────────────────────
+      function startSceneTransition(callback) {
+        sceneTransAlpha = 0;
+        sceneTransDir   = 1;
+        sceneTransCb    = callback;
+        sceneTransFromArea = currentArea;
+      }
+
+      function updateSceneTransition(dt) {
+        if (sceneTransDir === 0) return;
+        if (sceneTransDir === 1) {
+          sceneTransAlpha = Math.min(1, sceneTransAlpha + dt * 4);
+          if (sceneTransAlpha >= 1 && sceneTransCb) {
+            const _cb = sceneTransCb;
+            sceneTransCb  = null;
+            sceneTransDir = -1;
+            const fromArea = sceneTransFromArea;
+            try {
+              _cb();
+              if (fromArea && fromArea !== currentArea) catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+            } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
+          }
+        } else {
+          // Hold the black overlay until the building scene has finished loading
+          // so the player never briefly sees the farm scene on entry.
+          if (_isBuildingArea(currentArea) && _buildingScenes.has(currentArea) && !_buildingScenes.get(currentArea)) {
+            return;
+          }
+          sceneTransAlpha = Math.max(0, sceneTransAlpha - dt * 2.5);
+          if (sceneTransAlpha <= 0) sceneTransDir = 0;
+        }
+      }
+
+      // ── Enter / exit the interior ─────────────────────────────────
+      // pieceId identifies which house piece's door the player walked
+      // through (see js/house-pieces.js's door world-objects) — the player
+      // spawns just inside that piece's room. Falls back to any available
+      // door (or the interior's center, if somehow none exist yet) when
+      // called without one, e.g. legacy 'interior' travel transitions.
+      function enterInterior(pieceId) {
+        const fromScene = currentArea === 'town' ? townScene : scene;
+        farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
+        currentArea    = 'interior';
+        const layout = window.HousePieces.computeInteriorLayout();
+        const door = layout.doors.find(d => d.pieceId === pieceId) || layout.doors[0];
+        const entryCol = door ? door.enter.c : INTERIOR_COLS / 2;
+        const entryRow = door ? door.enter.r : INTERIOR_ROWS / 2;
+        player.x       = (entryCol + 0.5) * TILE;
+        player.y       = (entryRow + 0.5) * TILE;
+        player.vx      = 0;  player.vy = 0;
+        facingAngle    = Math.PI / 2;   // face south (into the room)
+        player.angle   = facingAngle;
+        _snapCameraTarget();
+        // Move player mesh into interior scene
+        fromScene.remove(playerMesh);
+        fromScene.remove(playerGroundShadow);
+        fromScene.remove(toolHolder);
+        fromScene.remove(reticleMesh);
+        fromScene.remove(reticleCircleMesh);
+        fromScene.remove(reticleRingMesh);
+        fromScene.remove(reticleWavyGroup);
+        clearTargetHighlights();
+        interiorScene.add(playerMesh);
+        interiorScene.add(playerGroundShadow);
+        refreshActionBar();
+      }
+
+      function exitInterior() {
+        if (currentArea !== 'interior') return;
+        startSceneTransition(() => {
+          const returnArea = farmPlayerSave?.area ?? 'farm';
+          currentArea = returnArea;
+          if (farmPlayerSave) {
+            player.x     = farmPlayerSave.x;
+            player.y     = farmPlayerSave.y;
+            player.angle = farmPlayerSave.angle;
+            facingAngle  = farmPlayerSave.angle;
+          }
+          player.vx  = 0;  player.vy = 0;
+          _snapCameraTarget();
+          // Move player mesh back to the scene they came from
+          const toScene = returnArea === 'town' ? townScene : scene;
+          interiorScene.remove(playerMesh);
+          interiorScene.remove(playerGroundShadow);
+          toScene.add(playerMesh);
+          toScene.add(playerGroundShadow);
+          toScene.add(toolHolder);
+          toScene.add(reticleMesh);
+          toScene.add(reticleCircleMesh);
+          toScene.add(reticleRingMesh);
+          toScene.add(reticleWavyGroup);
+          refreshActionBar();
+        });
+      }
+
+      function getWorldObjectAt(col, row) {
+        const corpse = getCorpseObjectAt(col, row);
+        if (corpse) return corpse;
+        if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
+        if (_isZoneArea(currentArea)) {
+          return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
+              || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
+              || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
+              || null;
+        }
+        if (currentArea !== 'farm') return null;
+        return worldObjects.get(col + ',' + row) || null;
+      }
+
+      function worldObjectMorningTick() {
+        // Deliver pending orders
+        const today = calendar.day;
+        const arriving = pendingOrders.filter(o => o.arrivalDay <= today);
+        pendingOrders   = pendingOrders.filter(o => o.arrivalDay >  today);
+        for (const o of arriving) {
+          const item = o.item;
+          Object.entries(item.gives).forEach(([k, v]) => {
+            inventory[k] = Math.min(99, (inventory[k] || 0) + v * o.qty);
+          });
+          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + ' delivered';
+          deliveryLog.unshift({ type: 'delivery', text: line });
+          showToast('📦 ' + o.qty + '× ' + item.name + ' delivered!', true);
+        }
+        deliveryLog = deliveryLog.slice(0, 12);
+        if (menuOpen) window.SupplyPage.render();
+        // Tick sell crate clock
+        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
+      }
+
+      function tickWorldObjects() {
+        worldObjects.forEach(o => o.tick && o.tick(window.CalendarSystem.getHour()));
+      }
+
+      // Supplies tab (Supply Box ordering + pending deliveries/sale log)
+      // now lives in js/supply-page.js — call via window.SupplyPage.render().
+
+      // Tasks tab (board requests + accepted NPC favors + active bounty) now
+      // lives in js/tasks-panel.js — call via window.TasksPanel.render().
+      // ── Relationships panel (friendship tier per NPC talked to) ──────
+      // Relationships tab render now lives in js/relationships-panel.js —
+      // call via window.RelationshipsPanel.render().
+
+      // ── Market page render ─────────────────────────────────────────
+      function renderMarketPage() { /* market UI removed — sell from Inventory panel */ }
+
+      // General Store (window.GeneralStore) and Carpenter's Shop
+      // (window.CarpenterShop) page renders now live in js/general-store.js
+      // and js/carpenter-shop.js — call via .render() on each.
+
+      // Crafting tab (Inventory panel's Crafting sub-tab) now lives in
+      // js/crafting-panel.js — call via window.CraftingPanel.render().
+
+      // Sloomi/Kzubug's smithing counter (craft/plate/reinforce verdigris
+      // tools) now lives in js/metal-craft-shop.js — call via
+      // window.MetalCraftShop.render().
+
+            // Item scroll — ordered list of scrollable inventory slots
+      const inventoryItems = [
+        { key: 'needlegrainSeeds',   icon: '🌾', label: 'NEEDLEGRAIN SEEDS', max: 99, seedFor: 'needlegrain' },
+        { key: 'heftrootSeeds',      icon: '🟡', label: 'HEFTROOT SEEDS',    max: 99, seedFor: 'heftroot' },
+        { key: 'garlinkSeeds',       icon: '🧄', label: 'GARLINK SEEDS',     max: 99, seedFor: 'garlink' },
+        { key: 'ongyumsSeeds',       icon: '🧅', label: 'ONGYUMS SEEDS',     max: 99, seedFor: 'ongyums' },
+        { key: 'redberrySeeds',      icon: '🍓', label: 'REDBERRY SEEDS',    max: 99, seedFor: 'redberries' },
+        { key: 'blueberrySeeds',     icon: '🫐', label: 'BLUEBERRY SEEDS',   max: 99, seedFor: 'blueberries' },
+        { key: 'yellowberrySeeds',   icon: '🟡', label: 'YELLOWBERRY SEEDS', max: 99, seedFor: 'yellowberries' },
+        { key: 'whiteberrySeeds',    icon: '⚪', label: 'WHITEBERRY SEEDS',  max: 99, seedFor: 'whiteberries' },
+        { key: 'blackberrySeeds',    icon: '⚫', label: 'BLACKBERRY SEEDS',  max: 99, seedFor: 'blackberries' },
+        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSTARD SEED', max: 99, seedFor: 'blackMustard' },
+        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSTARD SEED', max: 99, seedFor: 'greenMustard' },
+        { key: 'needlegrain',        icon: '🌾', label: 'NEEDLEGRAIN',       max: 99 },
+        { key: 'heftroot',           icon: '🟡', label: 'HEFTROOT',          max: 99 },
+        { key: 'garlink',            icon: '🧄', label: 'GARLINK',           max: 99 },
+        { key: 'ongyums',            icon: '🧅', label: 'ONGYUMS',           max: 99 },
+        { key: 'redberries',         icon: '🍓', label: 'REDBERRIES',        max: 99 },
+        { key: 'blueberries',        icon: '🫐', label: 'BLUEBERRIES',       max: 99 },
+        { key: 'yellowberries',      icon: '🟡', label: 'YELLOWBERRIES',     max: 99 },
+        { key: 'whiteberries',       icon: '⚪', label: 'WHITEBERRIES',      max: 99 },
+        { key: 'blackberries',       icon: '⚫', label: 'BLACKBERRIES',      max: 99 },
+        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
+        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
+        { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
+        { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
+        { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
+        { key: 'alphaGarWolfMeat',   icon: '🥩', label: 'ALPHA GAR-WOLF MEAT', max: 99 },
+        { key: 'alphaGarWolfHide',   icon: '🟫', label: 'ALPHA GAR-WOLF HIDE', max: 99 },
+        { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
+        { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
+        { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
+        { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
+        { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
+        { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
+        { key: 'grehlrBaby',          icon: '🐾', label: 'GREHLR BABY', max: 9  },
+        { key: 'fertileDrenkirraEgg', icon: '🥚', label: 'FERTILE DRENKIRRA EGG', max: 9  },
+        { key: 'drenkirraEgg',        icon: '🥚', label: 'DRENKIRRA EGG', max: 99 },
+        { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
+        { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
+        { key: 'fishingmace',  icon: '🎣', label: 'FISHING MACE',  max: 9 },
+        { key: 'fishingspear', icon: '🎣', label: 'FISHING SPEAR', max: 9 },
+        { key: 'pickshovel',   icon: '⛏️', label: 'PICK-SHOVEL',   max: 9 },
+      ];
+
+      // ── Item definitions for Inventory panel ──────────────────────
+      const ITEM_DEFS = {
+        needlegrainSeeds: { icon: '🌾', label: 'Needlegrain Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Plantable'], desc: 'Plants needlegrain. Dry-default grain crop; ideal water 20–50%.' },
+        heftrootSeeds: { icon: '🟡', label: 'Heftroot Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Plantable'], desc: 'Plants heftroot. Starchy root crop; ideal water 25–55%.' },
+        garlinkSeeds: { icon: '🧄', label: 'Garlink Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Plantable'], desc: 'Plants garlink. Pungent broth-base crop; ideal water 15–45%.' },
+        ongyumsSeeds: { icon: '🧅', label: 'Ongyums Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Plantable'], desc: 'Plants ongyums. Aromatic crop; ideal water 35–70%.' },
+        redberrySeeds: { icon: '🍓', label: 'Redberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants redberries. Berries grow best when any adjacent tile is a ditch; ideal water 35–70%.' },
+        blueberrySeeds: { icon: '🫐', label: 'Blueberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blueberries. Berries grow best when any adjacent tile is a ditch; ideal water 50–85%.' },
+        yellowberrySeeds: { icon: '🟡', label: 'Yellowberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants yellowberries. Berries grow best when any adjacent tile is a ditch; ideal water 25–60%.' },
+        whiteberrySeeds: { icon: '⚪', label: 'Whiteberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants whiteberries. Berries grow best when any adjacent tile is a ditch; ideal water 40–75%.' },
+        blackberrySeeds: { icon: '⚫', label: 'Blackberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blackberries. Berries grow best when any adjacent tile is a ditch; ideal water 45–80%.' },
+        blackMustardSeed: { icon: '⚫', label: 'Black Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants black mustard. Hot mustard crop; ideal water 15–40%.' },
+        greenMustardSeed: { icon: '🥬', label: 'Green Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants green mustard. Fresh mustard crop; ideal water 30–65%.' },
+        needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: 8, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
+        heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: 11, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
+        garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: 7, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
+        ongyums: { icon: '🧅', label: 'Ongyums', cat: 'crop', sellPrice: 7, tags: ['Crop', 'Sellable', 'Aromatic'], desc: 'Aromatic vegetable and broth base.' },
+        redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', sellPrice: 12, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
+        blueberries: { icon: '🫐', label: 'Blueberries', cat: 'crop', sellPrice: 13, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Wet-loving berry crop. Grows well beside adjacent ditches.' },
+        yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: 12, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
+        whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: 14, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
+        blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: 14, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
+        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
+        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
+        mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
+        shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
+        stone:  { icon: '🪨', label: 'Stone',  cat: 'material', sellPrice: 5, tags: ['Material', 'Stone'], desc: 'Rough building stone broken from an ore rock with a pick. A carpenter can build with it.' },
+        pebble: { icon: '🔘', label: 'Pebble', cat: 'material', sellPrice: 2, tags: ['Material', 'Stone'], desc: 'A small smooth stone that chipped off while breaking rock. Sells for a little.' },
+        garWolfMeat: { icon: '🥩', label: 'Gar-wolf Meat', cat: 'material', sellPrice: 9, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a slain gar-wolf. Good for cooking or smoking.' },
+        garWolfHide: { icon: '🟫', label: 'Gar-wolf Hide', cat: 'material', sellPrice: 14, tags: ['Material', 'Hide'], desc: 'A tough hide stripped from a slain gar-wolf.' },
+        banditScrapMetal: { icon: '🔩', label: 'Bandit Scrap Metal', cat: 'material', sellPrice: 6, tags: ['Material', 'Metal'], desc: 'Bent buckles, cut rivets and broken blade stock stripped off a fallen bandit. Sells on, or feeds the forge.' },
+        banditTreasureToken: { icon: '🪙', label: 'Bandit Treasure Token', cat: 'material', sellPrice: 40, tags: ['Material', 'Valuable'], desc: "A stamped brass token the gangs pass around in place of coin. Worth good money to someone who'll take it." },
+        alphaGarWolfMeat: { icon: '🥩', label: 'Alpha Gar-wolf Meat', cat: 'material', sellPrice: 16, tags: ['Material', 'Meat'], desc: 'Prime meat butchered from a slain alpha gar-wolf.' },
+        alphaGarWolfHide: { icon: '🟫', label: 'Alpha Gar-wolf Hide', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide'], desc: 'A thick, battle-scarred hide stripped from a slain alpha gar-wolf.' },
+        dabinggiHoundMeat: { icon: '🥩', label: 'Dabinggi-hound Meat', cat: 'material', sellPrice: 8, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a fallen dabinggi-hound.' },
+        dabinggiHoundHide: { icon: '🟫', label: 'Dabinggi-hound Hide', cat: 'material', sellPrice: 12, tags: ['Material', 'Hide'], desc: 'A soft hide stripped from a fallen dabinggi-hound.' },
+        grehlrMeat: { icon: '🥩', label: 'Grehlr Meat', cat: 'material', sellPrice: 11, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a northern-cliff grehlr.' },
+        grehlrHide: { icon: '🟫', label: 'Grehlr Hide', cat: 'material', sellPrice: 17, tags: ['Material', 'Hide'], desc: 'A dense hide stripped from a fallen grehlr.' },
+        drenkirraMeat: { icon: '🥩', label: 'Drenkirra Meat', cat: 'material', sellPrice: 10, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a cloud-forest drenkirra.' },
+        drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
+        uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
+        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
+        garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
+        dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
+        grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
+        fertileDrenkirraEgg: { icon: '🥚', label: 'Fertile Drenkirra Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a southern-cloud-forest den. Add it to a farm or stable to hatch the drenkirra inside.' },
+        drenkirraEgg: { icon: '🥚', label: 'Drenkirra Egg', cat: 'material', sellPrice: 8, tags: ['Ingredient', 'Egg', 'Food'], desc: 'A regular unfertilized egg laid by a farmed drenkirra, suitable for eating or cooking.' },
+        bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
+        hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
+        fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
+        fishingspear: { icon: '🎣', label: 'Fishing Spear', cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A slender fishing spear. Fits in the harpoon or weapon slot.' },
+        pickshovel:   { icon: '⛏️', label: 'Pick-Shovel',   cat: 'tool', sellPrice: 0, tags: ['Tool', 'Shovel', 'Pick', 'Weapon'],  desc: 'A combination pick-shovel for digging. Fits in the shovel, pick, or weapon slot.' },
+
+        // ── Uumkao'ii Dew ────────────────────────────────────────────
+        // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
+        // dropDewPile — the pile itself renders cheese.png, shade-fill tinted
+        // and faded; see spawnDewPileMesh). What lands in the bag is the
+        // bottled dew, so
+        // its item sprite is jar_liquid.png, keyed-recolored the same way as
+        // any other bottled liquid. Only blueDew is actually reachable today
+        // (the default/only color a farm uumkao'ii currently produces — see
+        // UUMKAOII_DEFAULT_DEW_COLOR). The other six are pre-wired data for
+        // whichever future mechanism (breeding/genetics) assigns a farm
+        // uumkao'ii a different dew color.
+        yellowDew: { icon: '🟡', label: 'Yellow Uumkao\'ii Dew', cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Dry Season'], desc: 'Glossy sweet dew from a dry-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF3D23A, spriteMode: 'keyed' },
+        greenDew:  { icon: '🟢', label: 'Green Uumkao\'ii Dew',  cat: 'material', sellPrice: 9, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Wet Season'], desc: 'Glossy sweet dew from a wet-season uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x5CB84A, spriteMode: 'keyed' },
+        blueDew:   { icon: '🔵', label: 'Blue Uumkao\'ii Dew',   cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy blue dew — the common color a farm uumkao\'ii leaves, dug up from a pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x3F8FE0, spriteMode: 'keyed' },
+        orangeDew: { icon: '🟠', label: 'Orange Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Cloud Forest'], desc: 'Glossy sweet dew from a cloud-forest uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xF08A2E, spriteMode: 'keyed' },
+        redDew:    { icon: '🔴', label: 'Red Uumkao\'ii Dew',    cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Northern Cliffs'], desc: 'Glossy sweet dew from a northern-cliffs uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xE0453F, spriteMode: 'keyed' },
+        purpleDew: { icon: '🟣', label: 'Purple Uumkao\'ii Dew', cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy sweet dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0x9B4FD9, spriteMode: 'keyed' },
+        whiteDew:  { icon: '⚪', label: 'White Uumkao\'ii Dew',  cat: 'material', sellPrice: 13, tags: ['Material', 'Dew', 'Uumkao\'ii', 'Mire'], desc: 'Glossy pale dew from a mire-dwelling uumkao\'ii, dug up from a farm pile.', spriteIcon: 'jar_liquid.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' },
+
+        // ── Milkable/extractable livestock resources (Gar-wolf, Dabinggi-hound, Grehlr) ─
+        garWolfMilk: { icon: '🥛', label: 'Gar-wolf Milk', cat: 'material', sellPrice: 10, tags: ['Material', 'Milk', 'Gar-wolf'], desc: 'Milk collected from a housed gar-wolf. Pale white with a faint blue sheen.', spriteIcon: 'jar_liquid.png', spriteColor: 0xEFF3F8, spriteMode: 'keyed' },
+        dabinggiHoundVenom: { icon: '🧪', label: 'Dabinggi-hound Venom', cat: 'material', sellPrice: 15, tags: ['Material', 'Venom', 'Dabinggi-hound'], desc: 'Venom milked from a housed dabinggi-hound. A vivid, lime-green fluid.', spriteIcon: 'jar_liquid.png', spriteColor: 0xA6E22E, spriteMode: 'keyed' },
+        grehlrStinkOil: { icon: '🦨', label: 'Grehlr Stink Oil', cat: 'material', sellPrice: 18, tags: ['Material', 'Stink Oil', 'Grehlr'], desc: 'Denatured stink oil extracted from a housed grehlr. A murky yellow-green.', spriteIcon: 'jar_liquid.png', spriteColor: 0x8A9A3D, spriteMode: 'keyed' },
+      };
+
+      // ── Mystery Dye items (see game.dyes.mysteryPools in scratchbones-config.js)
+      // Found in treasure chests (see rollTreasureDyeItemKeys), used from the
+      // inventory panel to permanently unlock one random dye from that pool's
+      // hue families into the character's dye collection (see gearInventory.
+      // dyeCollection / unlockDye). One item key per pool.
+      const MYSTERY_DYE_POOL_ICONS = { red: '🔴', orange: '🟠', yellow: '🟡', green: '🟢', blue: '🔵', indigo: '🟣', violet: '🟪' };
+      const MYSTERY_DYE_ITEM_KEY_BY_POOL = {};
+      const MYSTERY_DYE_POOL_BY_ITEM_KEY = {};
+      (window.SCRATCHBONES_CONFIG?.game?.dyes?.mysteryPools || []).forEach(pool => {
+        const key = 'mysteryDye' + pool.id.charAt(0).toUpperCase() + pool.id.slice(1);
+        MYSTERY_DYE_ITEM_KEY_BY_POOL[pool.id] = key;
+        MYSTERY_DYE_POOL_BY_ITEM_KEY[key] = pool;
+        const icon = MYSTERY_DYE_POOL_ICONS[pool.id] || '🎨';
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon, label: pool.label.toUpperCase(), max: 9 });
+        }
+        if (!ITEM_DEFS[key]) {
+          ITEM_DEFS[key] = {
+            icon, label: pool.label, cat: 'dye', sellPrice: Math.floor((window.SCRATCHBONES_CONFIG?.game?.dyes?.mysteryDyePrice || 35) * 0.4),
+            tags: ['Dye', 'Mystery', ...pool.hueFamilies],
+            desc: pool.description + ' Use it to add that dye to your collection permanently.',
+          };
+        }
+      });
+
+      function useMysteryDye(key) {
+        const pool = MYSTERY_DYE_POOL_BY_ITEM_KEY[key];
+        if (!pool || (inventory[key] || 0) < 1) return { ok: false, message: 'Nothing to use.' };
+        const candidates = window.DyeSystem.getCatalog().filter(d => !d.neutral && pool.hueFamilies.includes(d.hueFamily) && !window.DyeSystem.owns(d.id));
+        if (!candidates.length) return { ok: false, message: `You already own every dye ${pool.label} can grant.` };
+        const dye = candidates[Math.floor(Math.random() * candidates.length)];
+        window.DyeSystem.unlock(dye.id);
+        inventory[key]--;
+        clampInventoryStack(key);
+        return { ok: true, message: `Unlocked ${dye.label} for your dye collection!` };
+      }
+
+      // ── Metal bars (dug up from wilderness treasure chests — see
+      // ensureZoneTreasure) — one per METAL_DEFS entry, verdigris-capable
+      // or not; non-verdigris bars are only useful for cosmetic plating.
+      Object.entries(METAL_DEFS).forEach(([metalKey, metal]) => {
+        const key = metalBarItemKey(metalKey);
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon: '🔶', label: metal.label.toUpperCase() + ' BAR', max: 99 });
+        }
+        if (!ITEM_DEFS[key]) {
+          ITEM_DEFS[key] = {
+            icon: '🔶',
+            label: metal.label + ' Bar',
+            cat: 'material',
+            sellPrice: 4 + (metal.tier || 1) * 3,
+            tags: ['Material', 'Metal Bar', metal.tier != null ? 'Verdigris Metal' : 'Plating Metal'],
+            desc: metal.tier != null
+              ? `A bar of ${metal.label.toLowerCase()}, tier ${metal.tier} of the verdigris hierarchy. Sloomi or Kzubug can smith it into tools.`
+              : `A bar of ${metal.label.toLowerCase()}. Doesn't take a verdigris — Sloomi or Kzubug can still use it for cosmetic plating.`,
+          };
+        }
+      });
+
+      // ── Smith-crafted verdigris tools (see craftedToolItemKey) — one per
+      // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
+      // 5 hand-authored tool keys just above.
+      Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
+        if (!def.metalKey || ITEM_DEFS[key]) return;
+        const tags = ['Tool', TOOL_SHAPE_DEFS[def.shapeKey]?.label || def.shapeKey];
+        if (def.slots?.includes('weapon')) tags.push('Weapon');
+        ITEM_DEFS[key] = {
+          icon: def.icon,
+          label: def.label,
+          cat: 'tool',
+          sellPrice: 0,
+          tags,
+          desc: `A ${METAL_DEFS[def.metalKey]?.label.toLowerCase()} ${TOOL_SHAPE_DEFS[def.shapeKey]?.label.toLowerCase()}, smithed by Sloomi or Kzubug. Its verdigris grows with this tool's own mastery.`,
+        };
+      });
+
+      Object.values(PROCESSING_FURNITURE_DEFS).forEach(def => {
+        // Used by inventory rendering and item scroll after furniture orders are delivered.
+        if (!inventoryItems.some(item => item.key === def.itemKey)) {
+          inventoryItems.push({ key: def.itemKey, icon: def.icon, label: def.name.toUpperCase(), max: 99 });
+        }
+        if (!ITEM_DEFS[def.itemKey]) {
+          ITEM_DEFS[def.itemKey] = {
+            icon: def.icon,
+            label: def.name,
+            cat: 'furniture',
+            sellPrice: 0,
+            tags: ['Furniture', 'Placeable', def.method],
+            desc: def.desc
+          };
+        }
+      });
+
+      Object.values(DECORATIVE_FURNITURE_DEFS).forEach(def => {
+        if (!inventoryItems.some(item => item.key === def.itemKey)) {
+          inventoryItems.push({ key: def.itemKey, icon: def.icon, label: def.name.toUpperCase(), max: 99 });
+        }
+        if (!ITEM_DEFS[def.itemKey]) {
+          ITEM_DEFS[def.itemKey] = {
+            icon: def.icon, label: def.name, cat: 'furniture', sellPrice: 0,
+            tags: ['Furniture', 'Decorative', def.area || 'interior'], desc: def.desc
+          };
+        }
+      });
+
+      // Furniture blueprints — see FURNITURE_BLUEPRINT_CATALOG above. Same
+      // auto-registration pattern as the furniture items themselves.
+      FURNITURE_BLUEPRINT_CATALOG.forEach(bp => {
+        if (!inventoryItems.some(item => item.key === bp.key)) {
+          inventoryItems.push({ key: bp.key, icon: '📜', label: (bp.name + ' Blueprint').toUpperCase(), max: 9 });
+        }
+        if (!ITEM_DEFS[bp.key]) {
+          ITEM_DEFS[bp.key] = {
+            icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
+            tags: ['Blueprint', 'Craftable'],
+            desc: `Craft into a ${bp.name} from the Inventory's Crafting tab using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+          };
+        }
+      });
+
+      Object.entries(window.AlchemySystem.REAGENT_DEFS).forEach(([key, def]) => {
+        if (!inventoryItems.some(item => item.key === key)) {
+          inventoryItems.push({ key, icon: def.icon, label: def.label.toUpperCase(), max: 99 });
+        }
+        if (!ITEM_DEFS[key]) {
+          ITEM_DEFS[key] = {
+            icon: def.icon, label: def.label, cat: 'material', sellPrice: def.sellPrice,
+            tags: ['Reagent', 'Alchemy', EXTERIOR_ZONES[def.zone]?.label || def.zone],
+            desc: `An alchemy reagent foraged in the ${EXTERIOR_ZONES[def.zone]?.label || def.zone}. Known property: ${window.AlchemySystem.EFFECT_DEFS[def.effects[0]].label}.`,
+          };
+        }
+      });
+
+      // Barn plans — bought from the Carpenter, placed as a foundation from
+      // the Farm tab. Same auto-registration pattern as furniture above.
+      // Factored into a function (rather than inline like the others) so it
+      // can also be re-run from _applyLoadedShopStock once
+      // docs/config/shops/shop-stock.json loads — a tier added there that
+      // isn't in BARN_TIERS's synchronous startup default still needs its
+      // planItem registered.
+      function _registerBarnPlanItemDefs() {
+        Object.entries(BARN_TIERS).forEach(([tier, def]) => {
+          if (!inventoryItems.some(item => item.key === def.planItem)) {
+            inventoryItems.push({ key: def.planItem, icon: '📜', label: (def.label + ' Plan').toUpperCase(), max: 9 });
+          }
+          if (!ITEM_DEFS[def.planItem]) {
+            ITEM_DEFS[def.planItem] = {
+              icon: '📜', label: def.label + ' Plan', cat: 'buildingPlan', sellPrice: 0,
+              tags: ['Plan', 'Placeable', 'Barn'],
+              desc: `Place from the Farm tab to start a ${def.label.toLowerCase()} foundation (${def.slots} livestock slots). Interact with it on the farm to complete construction.`,
+            };
+          }
+        });
+      }
+      _registerBarnPlanItemDefs();
+
+      // House piece deeds — bought from the Carpenter, placed touching the
+      // existing house from the Farm tab. Same auto-registration pattern as
+      // barn plans above; the 'starter' catalog entry has no deedItem (it's
+      // never bought) so Object.entries naturally skips it here.
+      function _registerHousePieceDeedItemDefs() {
+        Object.entries(HOUSE_PIECE_CATALOG).forEach(([, def]) => {
+          if (!def.deedItem) return;
+          if (!inventoryItems.some(item => item.key === def.deedItem)) {
+            inventoryItems.push({ key: def.deedItem, icon: '📜', label: def.label.toUpperCase(), max: 9 });
+          }
+          if (!ITEM_DEFS[def.deedItem]) {
+            ITEM_DEFS[def.deedItem] = {
+              icon: '📜', label: def.label, cat: 'buildingPlan', sellPrice: 0,
+              tags: ['Deed', 'Placeable', 'House'],
+              desc: `Place from the Farm tab to start a ${def.w}×${def.h} foundation touching your house. Interact with it on the farm to complete construction.`,
+            };
+          }
+        });
+      }
+      _registerHousePieceDeedItemDefs();
+
+      // ── Fish catalog ────────────────────────────────────────────
+      // Keyed by zone category. "town" is the only zone with real river/stream
+      // tiles today; northernCliffs/cloudForest are existing map IDs that have
+      // no water bodies yet, and westernSlope/easternMire aren't built as zones
+      // at all — all three are kept here so the catalog is ready the moment
+      // those areas grow water. `seasons`/`timesOfDay` are 'any' or a subset of
+      // the `seasons` array's `.name` values / ['dawn','day','dusk','night'].
+      const FISH_DEFS = {
+        farm: [
+          { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
+          { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
+        ],
+        town: [
+          { key: 'fish_riverMinnow',     label: 'River Minnow',     icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: 'any',            fishClass: 'smooth',  difficulty: 28 },
+          { key: 'fish_speckledCarp',    label: 'Speckled Carp',    icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['day', 'dusk'],   fishClass: 'sinker',  difficulty: 35 },
+          { key: 'fish_bronzefinTrout',  label: 'Bronzefin Trout',  icon: '🐡', rarity: 'uncommon', sellPrice: 22, seasons: ['Deadgrass'],          timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 52 },
+          { key: 'fish_mossbackCatfish', label: 'Mossback Catfish', icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: ['Stormtide', 'Longpour'],        timesOfDay: ['night'],         fishClass: 'floater', difficulty: 48 },
+          { key: 'fish_goldenKoi',       label: 'Golden Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 60, seasons: 'any', timesOfDay: ['dawn'],          fishClass: 'mixed',   difficulty: 70 },
+        ],
+        northernCliffs: [
+          { key: 'fish_cliffsideChar',   label: 'Cliffside Char',   icon: '🐟', rarity: 'common',   sellPrice: 10, seasons: ['Deadgrass'],          timesOfDay: 'any',             fishClass: 'dart',    difficulty: 38 },
+          { key: 'fish_stonebellyTrout', label: 'Stonebelly Trout', icon: '🐠', rarity: 'common',   sellPrice: 11, seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 34 },
+          { key: 'fish_frostWhiskerEel', label: 'Frost Whisker Eel',icon: '🐡', rarity: 'uncommon', sellPrice: 26, seasons: ['Stormtide', 'Longpour'],        timesOfDay: ['night'],         fishClass: 'smooth',  difficulty: 50 },
+          { key: 'fish_cliffHawkSalmon', label: 'Cliff Hawk Salmon',icon: '🐠', rarity: 'rare',     sellPrice: 65, seasons: ['Longpour'],                       timesOfDay: ['dawn', 'dusk'],  fishClass: 'dart',    difficulty: 72 },
+          { key: 'fish_ironscalePike',   label: 'Ironscale Pike',   icon: '🐟', rarity: 'rare',     sellPrice: 58, seasons: 'any', timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 68 },
+        ],
+        cloudForest: [
+          { key: 'fish_cloudmistGuppy',  label: 'Cloudmist Guppy',  icon: '🐠', rarity: 'common',   sellPrice: 7,  seasons: 'any', timesOfDay: ['dawn', 'dusk'],  fishClass: 'floater', difficulty: 26 },
+          { key: 'fish_fernshadeLoach',  label: 'Fernshade Loach',  icon: '🐟', rarity: 'common',   sellPrice: 9,  seasons: ['Stormtide', 'Longpour'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_orchidBetta',     label: 'Orchid Betta',     icon: '🐡', rarity: 'uncommon', sellPrice: 28, seasons: ['Longpour'],                       timesOfDay: ['day'],           fishClass: 'mixed',   difficulty: 46 },
+          { key: 'fish_vinehookGar',     label: 'Vinehook Gar',     icon: '🐟', rarity: 'uncommon', sellPrice: 25, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 49 },
+          { key: 'fish_canopyKoi',       label: 'Canopy Koi',       icon: '🐠', rarity: 'rare',     sellPrice: 62, seasons: ['Stormtide'],                    timesOfDay: ['dawn'],          fishClass: 'floater', difficulty: 71 },
+        ],
+        westernSlope: [
+          { key: 'fish_glacierSmelt',    label: 'Glacier Smelt',    icon: '🐟', rarity: 'common',   sellPrice: 8,  seasons: ['Deadgrass'],          timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 30 },
+          { key: 'fish_frostbellyGrayling', label: 'Frostbelly Grayling', icon: '🐠', rarity: 'common', sellPrice: 10, seasons: 'any', timesOfDay: ['day'],     fishClass: 'dart',    difficulty: 37 },
+          { key: 'fish_iceveilWhitefish',label: 'Iceveil Whitefish',icon: '🐡', rarity: 'uncommon', sellPrice: 27, seasons: ['Deadgrass', 'Stormtide'],        timesOfDay: ['dusk', 'night'], fishClass: 'sinker',  difficulty: 51 },
+          { key: 'fish_snowmeltSalmon',  label: 'Snowmelt Salmon',  icon: '🐠', rarity: 'uncommon', sellPrice: 30, seasons: ['Stormtide'],                    timesOfDay: ['dawn'],          fishClass: 'dart',    difficulty: 55 },
+          { key: 'fish_glassfinChar',    label: 'Glassfin Char',    icon: '🐟', rarity: 'rare',     sellPrice: 64, seasons: ['Longpour'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 73 },
+          { key: 'fish_permafrostEel',   label: 'Permafrost Eel',   icon: '🐡', rarity: 'rare',     sellPrice: 59, seasons: ['Deadgrass'],                      timesOfDay: ['night'],         fishClass: 'floater', difficulty: 69 },
+        ],
+        easternMire: [
+          { key: 'fish_mudskipper',      label: 'Mudskipper',       icon: '🐟', rarity: 'common',   sellPrice: 6,  seasons: 'any', timesOfDay: ['day'],           fishClass: 'sinker',  difficulty: 27 },
+          { key: 'fish_swampBullhead',   label: 'Swamp Bullhead',   icon: '🐠', rarity: 'common',   sellPrice: 9,  seasons: 'any', timesOfDay: ['dusk', 'night'], fishClass: 'floater', difficulty: 33 },
+          { key: 'fish_mireleafTetra',   label: 'Mireleaf Tetra',   icon: '🐡', rarity: 'uncommon', sellPrice: 23, seasons: ['Longpour', 'Stormtide'],        timesOfDay: 'any',             fishClass: 'smooth',  difficulty: 45 },
+          { key: 'fish_bogLamprey',      label: 'Bog Lamprey',      icon: '🐟', rarity: 'uncommon', sellPrice: 24, seasons: 'any', timesOfDay: ['night'],         fishClass: 'dart',    difficulty: 50 },
+          { key: 'fish_murkwaterGar',    label: 'Murkwater Gar',    icon: '🐠', rarity: 'rare',     sellPrice: 61, seasons: ['Longpour'],                       timesOfDay: ['night'],         fishClass: 'mixed',   difficulty: 70 },
+          { key: 'fish_willOWispEel',    label: "Will-o'-Wisp Eel", icon: '🐡', rarity: 'rare',     sellPrice: 66, seasons: ['Stormtide'],                    timesOfDay: ['night'],         fishClass: 'floater', difficulty: 74 },
+        ],
+      };
+      const FISH_ZONE_LABELS = {
+        farm: 'Farm Pond', town: 'Town River', northernCliffs: 'Northern Cliffs', cloudForest: 'Southern Cloud Forest',
+        westernSlope: 'Western Slope', easternMire: 'Eastern Mire',
+      };
+
+      Object.entries(FISH_DEFS).forEach(([zoneKey, list]) => {
+        list.forEach(fish => {
+          if (!inventoryItems.some(item => item.key === fish.key)) {
+            inventoryItems.push({ key: fish.key, icon: fish.icon, label: fish.label.toUpperCase(), max: 99 });
+          }
+          if (!ITEM_DEFS[fish.key]) {
+            ITEM_DEFS[fish.key] = {
+              icon: fish.icon, label: fish.label, cat: 'material', sellPrice: fish.sellPrice,
+              tags: ['Fish', fish.rarity, FISH_ZONE_LABELS[zoneKey]],
+              desc: `A ${fish.rarity} fish speared in the ${FISH_ZONE_LABELS[zoneKey]}.`,
+            };
+          }
+        });
+      });
+
+      function itemIconForKey(key) {
+        return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+      }
+
+      // Upgrades an already-rendered emoji icon element to a recolored PNG
+      // once it's ready (async — canvas recolor + data URL), for items whose
+      // def carries spriteIcon/spriteColor/spriteMode (see sprite-recolor.js).
+      // The emoji textContent set by the caller is left in place underneath
+      // as the instant, zero-risk fallback — el.color is only hidden once
+      // the background-image actually lands, and never touched at all for
+      // plain items or if the recolor fails.
+      function applyItemSpriteIcon(el, def) {
+        if (!el || !def?.spriteIcon || !window.SpriteRecolor) return;
+        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/' + def.spriteIcon, def.spriteColor, def.spriteMode)
+          .then(canvas => {
+            el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            el.classList.add('sprited-icon');
+          })
+          .catch(() => {});
+      }
+
+      // ── Inventory panel state ──────────────────────────────────────
+      let invSelectedKey = null;
+      let invActiveCat   = 'all';
+      const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
+
+      function getKnownItemRank(key) {
+        const idx = inventoryItems.findIndex(item => item.key === key);
+        return idx === -1 ? 9999 : idx;
+      }
+
+      function getInventoryStackKeys(cat = 'all') {
+        // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
+        return Object.keys(inventory)
+          .filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0)
+          .filter(key => cat === 'all' || ITEM_DEFS[key].cat === cat)
+          .sort((a, b) => getKnownItemRank(a) - getKnownItemRank(b) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
+      }
+
+      function getInventoryStackItems() {
+        // Used by the active item scroll; only stacks the player actually owns are selectable.
+        return getInventoryStackKeys('all').map(key => inventoryItems.find(item => item.key === key) || {
+          key,
+          icon: ITEM_DEFS[key].icon,
+          label: ITEM_DEFS[key].label.toUpperCase(),
+          max: 99,
+        });
+      }
+
+      function getActiveInventoryItem() {
+        // Used by planting, shipping-box quick deposit, HUD, and item scroll.
+        const stacks = getInventoryStackItems();
+        if (stacks.length === 0) { activeItemIndex = 0; return null; }
+        if (activeItemIndex >= stacks.length) activeItemIndex = 0;
+        if (activeItemIndex < 0) activeItemIndex = stacks.length - 1;
+        return stacks[activeItemIndex];
+      }
+
+      function cycleActiveInventoryItem(delta) {
+        const stacks = getInventoryStackItems();
+        if (stacks.length === 0) { activeItemIndex = 0; return null; }
+        activeItemIndex = (activeItemIndex + delta + stacks.length) % stacks.length;
+        return stacks[activeItemIndex];
+      }
+
+      function clampInventoryStack(key) {
+        // Used after transfers/sales so zero-count stacks stop occupying item boxes.
+        if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
+      }
+
+      // Shipping tab (player bag <-> shipping-box transfer UI) now lives
+      // in js/shipping-panel.js — call via window.ShippingPanel.build().
+
+      function clearInventoryDetail(message = '← Select an item') {
+        invSelectedKey = null;
+        document.querySelectorAll('.inv-item-box').forEach(b => b.classList.remove('selected'));
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = message; }
+        if (detailEl) detailEl.style.display = 'none';
+      }
+
+      function buildInventoryGrid() {
+        const grid = document.getElementById('invGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        const keys = getInventoryStackKeys(invActiveCat);
+        const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(keys.length, 1) / 7) * 7);
+
+        const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W' };
+        keys.forEach(key => {
+          const def   = ITEM_DEFS[key];
+          const count = inventory[key] || 0;
+          const box   = document.createElement('button');
+          box.className = 'inv-item-box' + (key === invSelectedKey ? ' selected' : '');
+          box.dataset.key = key;
+          box.innerHTML =
+            `<span class="iib-icon">${def.icon}</span>` +
+            `<span class="iib-count">×${count}</span>`;
+          // Corner badge listing every slot this item is assigned to
+          const badges = Object.entries(equipmentSlots)
+            .filter(([, v]) => v === key)
+            .map(([s]) => _slotAbbr[s] || s.charAt(0).toUpperCase());
+          if (badges.length) {
+            const badge = document.createElement('span');
+            badge.className = 'iib-equip-badge';
+            badge.textContent = badges.join('·');
+            box.appendChild(badge);
+          }
+          box.addEventListener('click', () => selectInventoryItem(key));
+          applyItemSpriteIcon(box.querySelector('.iib-icon'), def);
+          grid.appendChild(box);
+        });
+
+        for (let i = keys.length; i < visibleSlotCount; i++) {
+          const box = document.createElement('button');
+          box.className = 'inv-item-box empty';
+          box.type = 'button';
+          box.disabled = true;
+          box.setAttribute('aria-label', 'Empty inventory slot');
+          grid.appendChild(box);
+        }
+
+        // Refresh wallet
+        const wd = document.getElementById('invWalletDisplay');
+        if (wd) wd.textContent = (inventory.gold || 0) + 'g';
+
+        if (invSelectedKey && keys.includes(invSelectedKey)) selectInventoryItem(invSelectedKey, true);
+        else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
+        window.EquipmentPanel.buildPackClothingSection();
+      }
+
+      function selectInventoryItem(key, skipGridUpdate) {
+        const def   = ITEM_DEFS[key];
+        const count = inventory[key] || 0;
+        if (!def || count <= 0) { clearInventoryDetail('← Select an item'); return; }
+
+        if (!skipGridUpdate) {
+          invSelectedKey = key;
+          document.querySelectorAll('.inv-item-box').forEach(b =>
+            b.classList.toggle('selected', b.dataset.key === key));
+        }
+
+        const emptyEl  = document.getElementById('iiEmpty');
+        const detailEl = document.getElementById('iiDetail');
+        if (emptyEl)  emptyEl.style.display  = 'none';
+        if (detailEl) detailEl.style.display  = '';
+
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+        set('iiIcon',  def.icon);
+        const iiIconEl = document.getElementById('iiIcon');
+        if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
+        applyItemSpriteIcon(iiIconEl, def);
+        set('iiName',  `${def.label} ×${count}`);
+        set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
+        set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
+        set('iiDesc',  def.desc);
+
+        const actEl = document.getElementById('iiActions');
+        if (actEl) {
+          actEl.innerHTML = '';
+          function mkBtn(label, cls, fn) {
+            const b = document.createElement('button');
+            b.className = 'ii-btn' + (cls ? ' ' + cls : '');
+            b.textContent = label; b.onclick = fn;
+            actEl.appendChild(b);
+          }
+          // Mystery Dye items unlock a random unowned dye from their pool
+          // straight into the character's permanent dye collection.
+          if (MYSTERY_DYE_POOL_BY_ITEM_KEY[key] && count > 0) {
+            mkBtn('🎨 Use', 'equip', () => {
+              const result = useMysteryDye(key);
+              showToast(result.message, result.ok);
+              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+            });
+          }
+          // Potions are drinkable from right here — the Inventory panel is
+          // reachable from anywhere, so this is the "consume anywhere" path
+          // (as opposed to brewing, which still needs the Alchemy Table).
+          if ((window.AlchemySystem.POTION_ITEMS[key] || window.AlchemySystem.getPotionEffectsFromKey(key)) && count > 0) {
+            mkBtn('🧪 Drink', 'equip', () => {
+              const result = window.AlchemySystem.drinkPotion(key);
+              showToast(result.message, result.ok !== false);
+              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
+            });
+          }
+          if (def.sellPrice > 0 && count > 0) {
+            mkBtn(`Sell All  (${count} × ${def.sellPrice}g = ${count * def.sellPrice}g)`, 'sell', () => {
+              const earned = (inventory[key] || 0) * def.sellPrice;
+              inventory.gold = (inventory.gold || 0) + earned;
+              delete inventory[key];
+              showToast(`Sold all ${def.label} for ${earned}g`, true);
+              if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+              buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
+            });
+            mkBtn(`Sell 1  (${def.sellPrice}g)`, 'sell', () => {
+              if ((inventory[key] || 0) < 1) return;
+              inventory[key]--; inventory.gold = (inventory.gold || 0) + def.sellPrice;
+              clampInventoryStack(key);
+              showToast(`Sold 1 ${def.label} for ${def.sellPrice}g`, true);
+              if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+              buildInventoryGrid(); refreshItemScroll(); refreshActionBar();
+              saveMemberWorldData();
+            });
+          }
+          // Tool items in pack: offer Transfer to Gear (can't equip directly from pack)
+          const toolDef = TOOL_ITEM_DEFS[key];
+          if (toolDef && count > 0) {
+            if (!gearInventory?.tools?.[key]) {
+              mkBtn('Transfer to Gear', 'equip', () => window.EquipmentPanel.transferToolToGear(key));
+            } else {
+              mkBtn('Already in Gear (extra copy)', '', () => showToast('You already have this tool in your gear.', false));
+            }
+          }
+
+          // Undeployed creature items: anyone, anywhere, can add one straight
+          // to their personal stable — no farm/ownership involved. Adding to
+          // a farm's own livestock (tradeable, ownership-gated) instead
+          // happens from the Farm tab, not here.
+          if (LIVESTOCK_ITEM_KINDS[key] && count > 0) {
+            mkBtn('Add to Stable', 'equip', () => {
+              const result = window.FarmAnimals.addToStable(key);
+              showToast(result.message, result.ok);
+              if (result.ok) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); }
+            });
+          }
+
+          mkBtn('Drop  (coming soon)', '', () => showToast('Dropping items — coming soon', false));
+        }
+      }
+
+      // Tool/weapon equipment-slot assignment (setEquipmentSlot/equipItem/
+      // unequipItem/transferToolToGear) and gear clothing
+      // (applyGearClothingToPlayerData/clothingSpriteForCosmetic/etc) now
+      // live in js/equipment-panel.js — call via window.EquipmentPanel.*.
+
+      function disposeAvatarGroup(group) {
+        group?.traverse?.(node => {
+          node.geometry?.dispose?.();
+          if (node.material) {
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            materials.forEach(mat => {
+              mat.map?.dispose?.();
+              mat.dispose?.();
+            });
+          }
+        });
+      }
+
+      function removePlayerAvatarChildren() {
+        playerMesh.children
+          .filter(child => child?.name === 'player_avatar')
+          .forEach(child => {
+            playerMesh.remove(child);
+            disposeAvatarGroup(child);
+          });
+      }
+
+      // Pixel-diffs a "with hat" portrait render against a "hatless" render of
+      // the same profile and returns a canvas containing ONLY the pixels that
+      // differ (i.e. just the hat) — ported from the animation-author tool's
+      // canvasDifferenceOverlayV1521. Returns null if nothing differs (no hat
+      // actually present, or the diff came up empty).
+      function _hatXrayDiffCanvas(fullCanvas, hatlessCanvas) {
+        const w = fullCanvas?.width || 0, h = fullCanvas?.height || 0;
+        if (!w || !h || hatlessCanvas?.width !== w || hatlessCanvas?.height !== h) return null;
+        const out = document.createElement('canvas');
+        out.width = w; out.height = h;
+        const outCtx = out.getContext('2d');
+        const full = fullCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h);
+        const plain = hatlessCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h);
+        const result = outCtx.createImageData(w, h);
+        let kept = 0;
+        for (let i = 0; i < full.data.length; i += 4) {
+          const diff = Math.abs(full.data[i] - plain.data[i]) + Math.abs(full.data[i + 1] - plain.data[i + 1])
+                     + Math.abs(full.data[i + 2] - plain.data[i + 2]) + Math.abs(full.data[i + 3] - plain.data[i + 3]);
+          if (diff < 6 || full.data[i + 3] <= 1) continue;
+          result.data[i] = full.data[i]; result.data[i + 1] = full.data[i + 1];
+          result.data[i + 2] = full.data[i + 2]; result.data[i + 3] = full.data[i + 3];
+          kept++;
+        }
+        if (!kept) return null;
+        outCtx.putImageData(result, 0, 0);
+        return out;
+      }
+
+      // Toggles whether the hat-xray overlay's depthWrite is on (normal — the
+      // hat occludes like anything else) or off (a shoulder pet's real solid
+      // sprite wins the depth test against the hat specifically, so the pet
+      // stays visible instead of vanishing behind a tall hat).
+      function setPlayerHatXray(enabled) {
+        enabled = !!enabled;
+        if (enabled === _playerHatXrayEnabled) return;
+        _playerHatXrayEnabled = enabled;
+        for (const m of _playerHatXrayOverlay?.materials || []) { m.depthWrite = !enabled; m.needsUpdate = true; }
+      }
+
+      // Ported from the animation-author tool's shoulder-pet hat-xray feature
+      // (setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521 in
+      // docs/tools/animation-author/index.html): a shoulder pet perched near
+      // the head would otherwise just vanish behind a tall hat like any other
+      // opaque foreground pixel, since the hat is baked into the same
+      // portrait texture as the rest of the body. Splitting the hat's own
+      // pixels into a separate overlay plane -- and disabling ONLY that
+      // overlay's depthWrite while a shoulder pet is attached (see
+      // updateCompanions) -- lets the pet win the depth test against the hat
+      // specifically, without touching how the hat occludes anything else,
+      // and without ever affecting the body layer's own normal occlusion (so
+      // this never makes the player see-through, only the hat).
+      async function buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, modelWidth, modelHeight, anchorZ, alphaTest, refreshGeneration) {
+        try {
+          const hat = profile?.hat;
+          const hasHat = !!(hat && hat.id && hat.id !== 'none' && (hat.layers?.length || hat.url));
+          if (!hasHat || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+          const hatlessProfile = { ...profile, hat: { id: 'none', tintSlot: null, layers: [] } };
+          const hatlessFrontCanvas = document.createElement('canvas');
+          hatlessFrontCanvas.width = hatlessFrontCanvas.height = frontCanvas.width;
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessFrontCanvas, hatlessProfile, { forceEyesOpen: true });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+          const hatlessBackCanvas = document.createElement('canvas');
+          hatlessBackCanvas.width = hatlessBackCanvas.height = backCanvas.width;
+          await window.NpcAvatarPreview.renderProfileToCanvas(hatlessBackCanvas, hatlessProfile, { portraitView: 'behind', forceEyesOpen: true });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+
+          // Diff through the SAME per-face variant transform (front: as-is;
+          // back: flipX) the base texture pipeline itself applies (see
+          // buildTextureSet in png-plane-avatar.js), so the overlay's pixels
+          // land in exactly the same orientation as the plane they sit on.
+          const fullFrontVariant    = window.PNGPlaneAvatar.makeVariantCanvas(frontCanvas);
+          const hatlessFrontVariant = window.PNGPlaneAvatar.makeVariantCanvas(hatlessFrontCanvas);
+          const fullBackVariant     = window.PNGPlaneAvatar.makeVariantCanvas(backCanvas, { flipX: true });
+          const hatlessBackVariant  = window.PNGPlaneAvatar.makeVariantCanvas(hatlessBackCanvas, { flipX: true });
+          const hatFrontOverlay = _hatXrayDiffCanvas(fullFrontVariant, hatlessFrontVariant);
+          const hatBackOverlay  = _hatXrayDiffCanvas(fullBackVariant, hatlessBackVariant);
+          if (!hatFrontOverlay && !hatBackOverlay) return;
+
+          // Strip the hat out of the ordinary body texture now that a
+          // separate overlay carries it -- otherwise disabling the overlay's
+          // depthWrite would do nothing, since the hat pixels baked into the
+          // body plane would still occlude normally regardless.
+          window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(avatarGroup, hatlessFrontCanvas, { backCanvas: hatlessBackCanvas });
+          if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+
+          const assembly = avatarGroup.children[0];
+          if (!assembly) return;
+          const backOffsetZ = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.backPlaneOffsetZ ?? 0.001;
+          const materials = [], meshes = [];
+          const addPlane = (canvas, facingBack) => {
+            if (!canvas) return;
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+            const material = new THREE.MeshBasicMaterial({
+              map: texture, transparent: true, alphaTest: alphaTest ?? 0.01,
+              side: THREE.FrontSide, depthWrite: true, depthTest: true,
+              name: `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_material`,
+            });
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(modelWidth, modelHeight), material);
+            mesh.name = `player_avatar_${facingBack ? 'back' : 'front'}_hat_xray_plane`;
+            // Nudged a hair closer to camera than its sibling body plane (in
+            // the SAME outward direction that plane already leans relative to
+            // anchorZ) so the hat consistently draws on top instead of
+            // z-fighting with the now-hatless body layer underneath it.
+            mesh.position.z = facingBack ? (anchorZ - backOffsetZ - 0.0005) : (anchorZ + 0.0015);
+            if (facingBack) mesh.rotation.y = Math.PI;
+            // Front stays at the body planes' shared default (2) — resolved
+            // against the front body plane by the Z-nudge above, same as
+            // always. Back has to explicitly out-rank the body's own back
+            // plane (bumped to PLAYER_BACK_PLANE_RENDER_ORDER in
+            // refreshPlayerAvatar, for the shoulder-pet layering rule — see
+            // updatePetLayering), since renderOrder is compared before the
+            // Z-nudge ever comes into play.
+            mesh.renderOrder = facingBack ? PLAYER_BACK_PLANE_RENDER_ORDER + 1 : 2;
+            assembly.add(mesh);
+            materials.push(material);
+            meshes.push(mesh);
+          };
+          addPlane(hatFrontOverlay, false);
+          addPlane(hatBackOverlay, true);
+          if (!meshes.length) return;
+          if (refreshGeneration !== playerAvatarRefreshGeneration) {
+            for (const m of meshes) m.parent?.remove(m);
+            for (const m of materials) { m.map?.dispose(); m.dispose(); }
+            return;
+          }
+          _playerHatXrayOverlay = { materials, meshes };
+          _playerHatXrayEnabled = false; // fresh overlay always starts normal (hat occludes as usual)
+        } catch (err) {
+          window.__farmLog?.(`[avatar] hat-xray overlay build failed: ${err.message}`, 'warn');
+        }
+      }
+
+      async function refreshPlayerAvatar() {
+        if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+        const refreshGeneration = ++playerAvatarRefreshGeneration;
+        // Every input playerAttachmentAnchor()/_playerAvatarBodyMaterials()
+        // memoize (species/gender, playerAvatarModelHeight, playerToolBaseY,
+        // the avatar mesh subtree) is about to be replaced below, so their
+        // caches would otherwise keep answering with the outgoing avatar's
+        // values.
+        _playerAttachmentAnchorCache = new Map();
+        _playerAvatarBodyMaterialsCache = null;
+        _playerHatXrayOverlay = null;
+        _playerHatXrayEnabled = false;
+        // The old front/back materials this pointed at are about to be
+        // disposed by removePlayerAvatarChildren below, and a brand new
+        // pair (default depthWrite:true) is coming — force updatePetLayering
+        // to treat the next call as a real transition even if a shoulder
+        // pet was already active before this refresh (e.g. a gear/hat
+        // change mid-session), so it actually re-applies to the new
+        // materials instead of short-circuiting on an unchanged (active,
+        // pet) pair.
+        _petLayeringActive = false;
+        _petLayeringPet = null;
+        removePlayerAvatarChildren();
+        const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(window.EquipmentPanel.applyGearClothingToPlayerData(_playerData));
+        if (!profile || refreshGeneration !== playerAvatarRefreshGeneration) return;
+        const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
+        const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
+        const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
+        const frontCanvas = document.createElement('canvas');
+        frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
+        // forceEyesOpen: same reasoning as makeNpcWalker's world avatar —
+        // this bakes one static texture and never re-renders it, so an
+        // unlucky blink-timing roll here would leave the player's own world
+        // model stuck with its eyes shut until the next gear/cosmetic change
+        // happens to trigger a fresh bake.
+        await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        const backCanvas = document.createElement('canvas');
+        backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
+          THREE, frontCanvas,
+          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+        );
+        avatarGroup.name = 'player_avatar';
+        playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
+        // Direct front/back plane refs for updatePetLayering (see near
+        // updateCompanions) — createSinglePlaneAssembly always nests them
+        // as the assembly's first two children (frontMesh, then backMesh).
+        // The back plane's renderOrder is bumped here (once, unconditionally
+        // — harmless when idle, since front/back are never simultaneously
+        // visible) so it always out-ranks a shoulder pet's planes whenever
+        // it's the one actually facing the camera.
+        const _bodyAssembly = avatarGroup.children[0];
+        _playerAvatarFrontMaterial = _bodyAssembly?.children?.[0]?.material || null;
+        _playerAvatarBackMaterial = _bodyAssembly?.children?.[1]?.material || null;
+        if (_bodyAssembly?.children?.[1]) _bodyAssembly.children[1].renderOrder = PLAYER_BACK_PLANE_RENDER_ORDER;
+        const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
+        const avatarWidth = avatarGroup.userData?.portraitModelWidth || MODEL_W;
+        playerAvatarModelHeight = avatarHeight;
+        avatarGroup.position.set(0, avatarHeight / 2, 0);
+        // Tools/weapons hang from the avatar's actual scanned right-arm sprite edge
+        // and bottom-edge pixel row (see handAttachX/handAttachY in
+        // png-plane-avatar.js) — recompute here since this is the only place the
+        // per-species scale/sprite is known.
+        if (avatarGroup.userData?.handAttachX == null || avatarGroup.userData?.handAttachY == null) {
+          window.__farmLog?.('[avatar] hand-attach scan failed → fallback to half-width/half-height tool base', 'warn');
+        }
+        playerToolBaseX = avatarGroup.userData?.handAttachX ?? (-avatarWidth / 2);
+        playerToolBaseY = avatarGroup.userData?.handAttachY ?? (avatarHeight / 2);
+        // Re-clear (not just at this function's top): the 'posterior' anchor
+        // is derived from playerAvatarModelHeight/playerToolBaseY, just set
+        // above — anything that called playerAttachmentAnchor('posterior')
+        // during this function's earlier awaits (e.g. updatePlayerMesh
+        // computing a mounted rider's seat lift mid-refresh) would have
+        // cached an answer built from the OUTGOING avatar's height/hand-Y,
+        // and nothing else would ever flush it back out.
+        _playerAttachmentAnchorCache = new Map();
+        // Anchored to playerToolBaseY (the real per-species/gender scanned hand
+        // height) rather than a flat fraction of avatarHeight, so differently
+        // proportioned species/genders get a correctly offset chest height
+        // instead of all sharing one ratio tuned for a single species. The
+        // +0.19 was picked to reproduce the previous avatarHeight*0.6 value for
+        // mao-ao (the species that height was tuned against).
+        playerItemHoldY = playerToolBaseY + 0.19;
+        _markPngPlane(avatarGroup);
+        if (refreshGeneration !== playerAvatarRefreshGeneration) {
+          disposeAvatarGroup(avatarGroup);
+          return;
+        }
+        removePlayerAvatarChildren();
+        playerMesh.add(avatarGroup);
+        buildPlayerHatXrayOverlay(avatarGroup, profile, frontCanvas, backCanvas, avatarWidth, avatarHeight, 0, avatarCfg.worldAlphaTest ?? 0.01, refreshGeneration);
+        // Procedural feet attach directly under playerMesh (floor-anchored,
+        // Y=0) as a sibling of avatarGroup (offset up by avatarHeight/2), not
+        // as its child — see docs/js/procedural-leg-animation.js. Rebuilt
+        // here (species/gender/body color can all change on a fresh
+        // refresh); removePlayerAvatarChildren() above only ever touches
+        // 'player_avatar'-named children, so the previous legs handle has to
+        // be disposed explicitly.
+        playerLegs?.dispose();
+        playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
+          speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
+          modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
+          name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
+        // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
+        // playback.js) writes directly into this same legs handle — re-attach
+        // it every time the avatar (and therefore playerLegs) refreshes.
+        window.ImpactRagdollPlayback?.attach(playerMesh, playerLegs);
+      }
+
+      // Clothing-sprite lookup, redye panel, and equipment-slots panel
+      // (clothingSpriteForCosmetic/buildEquipmentSlots/etc) now live in
+      // js/equipment-panel.js — call via window.EquipmentPanel.*.
+      // equipWhistle/unequipWhistle/buildWhistleEquipUI now live in
+      // js/whistle-equip.js — call via window.WhistleEquip.build().
+
+      let activeItemIndex = 0;
+      // Declared before createInitialGrid() because recomputeWater() (called
+      // inside createInitialGrid) sets these — they must not be in TDZ.
+      let _waterSimDirty = true;
+      let _flowingTrenchTiles = [];
+      // The town's average water level (0..1), refreshed every time the town's
+      // water sim ticks. The farm's far terrain (and its west/east edge inflow)
+      // tracks this, so the town's own water state shows up out past the farm's
+      // playable edges. Town itself has no "upstream" grid to draw from, so its
+      // own far terrain/edge inflow tracks its own average instead (see
+      // recomputeWater's farLevel computation).
+      let _townWaterLevel = 0.5;
+      // Per-column water level (0..1) of the far terrain immediately south of
+      // the farm's playable grid — tracks each column's south-edge tile so a
+      // player-made gap in the water reaching the bottom row continues into
+      // the far terrain beyond the map instead of stopping dead at the seam.
+      let farSouthLevel = new Float32Array(COLS).fill(0.5);
+      let grid = createInitialGrid();
+      // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
+      { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
+
+      // ── Area-switching state ───────────────────────────────────────
+      let currentArea     = 'farm';   // 'farm' | 'interior'
+      let farmPlayerSave  = null;     // {x,y,angle} saved when entering house
+      let sceneTransAlpha = 0;        // 0 = fully clear, 1 = fully black
+      let sceneTransDir   = 0;        // 0=idle  1=darkening  -1=brightening
+      let sceneTransCb    = null;     // fired once at peak darkness
+      let sceneTransFromArea = null;  // area the player was in when the fade started
+
+      function getActiveCols() { return currentArea === 'interior' ? INTERIOR_COLS : currentArea === 'town' ? (_townZone?.cols || 60) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.cols || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.cols || EXTERIOR_ZONES[currentArea]?.cols || _zoneLayouts.get(currentArea)?.cols) : COLS; }
+      function getActiveRows() { return currentArea === 'interior' ? INTERIOR_ROWS : currentArea === 'town' ? (_townZone?.rows || 50) : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.rows || 20) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.rows || EXTERIOR_ZONES[currentArea]?.rows || _zoneLayouts.get(currentArea)?.rows) : ROWS; }
+      function getActiveGrid() { return currentArea === 'interior' ? interiorGrid : currentArea === 'town' ? townGrid : _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.grid || grid) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.grid || buildZoneScene(currentArea).grid) : grid; }
+      function getActiveScene() { return _isBuildingArea(currentArea) ? (_buildingScenes.get(currentArea)?.scene || scene) : _isZoneArea(currentArea) ? (_zoneScenes.get(currentArea)?.scene || buildZoneScene(currentArea).scene) : currentArea === 'interior' ? interiorScene : currentArea === 'town' ? (townScene || scene) : scene; }
+      function getActiveTileAt(col, row) {
+        const g = getActiveGrid();
+        return g[row]?.[col] || { type: TileType.ROCK, water: 0, crop: CropType.NONE, cropAge: 0, cropReady: false, stress: '', variation: 0 };
+      }
+
+      // Whether a farm-grid tile falls inside the house footprint
+      function isHouseFootprint(col, row) {
+        return housePieces.some(p => col >= p.col && col < p.col + p.w && row >= p.row && row < p.row + p.h);
+      }
+      // Barns (any tier, foundation or built) block movement over their
+      // whole registered footprint — stable.json's own footprint.cells is
+      // already a solid rectangle matching w×h, so the piece-less bbox
+      // fallback in _buildingFootprintBlocks (below) gives the identical
+      // result without needing the async-loaded piece JSON on hand here.
+      function isFarmBuildingCollisionTile(col, row) {
+        return farmBuildings.some(b => _buildingFootprintBlocks(b, null, col, row));
+      }
+      // Rotation math lives once in js/building-door.js (shared with the Map
+      // Editor and House Piece Author's door tooling) — this is just the
+      // local name collision detection already used before that file existed.
+      function rotateBuildingCollisionCell(localX, localY, width, depth, rotationDeg) {
+        return BuildingDoor.rotateCell(localX, localY, width, depth, rotationDeg);
+      }
+      // Axis-aligned bbox check using the building's own footprintW/D (or
+      // legacy w/h) — used both when no piece is loaded yet at all, and as
+      // a defensive fallback if a piece IS loaded but its footprint.cells
+      // came back empty (e.g. exported before the House Piece Author's
+      // footprint tool was used). Either way, a real placed/rendered
+      // building should never end up with silently zero collision.
+      function _buildingFootprintBbox(bldg, originX, originZ, col, row) {
+        const fbRot = ((Math.round((bldg.rotationDeg || bldg.rotation || 0) / 90) * 90) % 360 + 360) % 360;
+        const fbSwap = fbRot === 90 || fbRot === 270;
+        const width = fbSwap ? (bldg.footprintD ?? bldg.h ?? 1) : (bldg.footprintW ?? bldg.w ?? 1);
+        const depth = fbSwap ? (bldg.footprintW ?? bldg.w ?? 1) : (bldg.footprintD ?? bldg.h ?? 1);
+        return col >= originX && row >= originZ && col < originX + width && row < originZ + depth;
+      }
+      function _buildingFootprintBlocks(bldg, piece, col, row) {
+        const originX = bldg.gridX ?? bldg.col ?? 0;
+        const originZ = bldg.gridZ ?? bldg.row ?? 0;
+
+        if (!piece?.footprint) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
+
+        const structuralCells = piece.footprint.cells || [];
+        const fencePostCells = piece.footprint.extensions?.railings || [];
+        const collisionCells = structuralCells.concat(fencePostCells);
+        if (!collisionCells.length) return _buildingFootprintBbox(bldg, originX, originZ, col, row);
+
+        const allBuildingCells = []
+          .concat(piece.footprint.cells || [])
+          .concat(piece.footprint.extensions?.entryTunnels || [])
+          .concat(piece.footprint.extensions?.chimneys || [])
+          .concat(piece.footprint.extensions?.porches || [])
+          .concat(piece.footprint.extensions?.porchStairs || [])
+          .concat(piece.footprint.extensions?.railings || []);
+        const minX = Math.min(...allBuildingCells.map(cell => cell.x));
+        const minY = Math.min(...allBuildingCells.map(cell => cell.y));
+        const maxX = Math.max(...allBuildingCells.map(cell => cell.x));
+        const maxY = Math.max(...allBuildingCells.map(cell => cell.y));
+        const width = maxX - minX + 1;
+        const depth = maxY - minY + 1;
+
+        return collisionCells.some(cell => {
+          const rotated = rotateBuildingCollisionCell(
+            cell.x - minX,
+            cell.y - minY,
+            width,
+            depth,
+            bldg.rotationDeg || bldg.rotation || 0,
+          );
+          return col === originX + rotated.x && row === originZ + rotated.y;
+        });
+      }
+      // `area` defaults to 'town'; any zone mapId with its own merged buildings
+      // (see _spawnZoneBuildings / _zoneBuildingGroups) is also accepted, so the
+      // same collision rules apply to a building placed on a plateau zone map.
+      function isTownBuildingCollisionTile(col, row, area) {
+        area = area || 'town';
+        if (area === 'town') {
+          // Building-entrance transition tiles are always walkable (they ARE the door approach)
+          if (worldTownTransitions.some(t => t.target === 'building' && t.col === col && t.row === row)) return false;
+          // Every building must be checked regardless of whether ITS OWN piece
+          // has finished loading — _buildingFootprintBlocks already falls back
+          // to a bbox check per-entry when `piece` is null. Previously this
+          // filtered down to only piece-loaded entries once ANY building had
+          // loaded, which silently dropped collision entirely (not even the
+          // bbox fallback) for any building still fetching, whose fetch
+          // failed, or that the GLB-upgrade pass (town-zone-buildings.js)
+          // dropped for not having a piece — see that file's own upgrade loop.
+          const buildingSources = _townBuildingGroups.length
+            ? _townBuildingGroups
+            : _townBuildingDefs.map(bldg => ({ bldg, piece: null }));
+          return buildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row));
+        }
+
+        const zoneGroups = _zoneBuildingGroups.get(area) || [];
+        const zoneBuildingSources = zoneGroups.length
+          ? zoneGroups
+          : (_zoneLayouts.get(area)?.buildings || []).map(bldg => ({ bldg, piece: null }));
+        if (zoneBuildingSources.some(({ bldg, piece }) => _buildingFootprintBlocks(bldg, piece, col, row))) return true;
+        return isAnimalDenCollisionTile(col, row, area);
+      }
+      // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
+      // their south-facing mouth tile, which stays walkable — it's both the
+      // doorway gap in the mesh and the cavern-entrance transition tile.
+      function isAnimalDenCollisionTile(col, row, area) {
+        for (const den of (_zoneLayouts.get(area)?.dens || [])) {
+          if (den.mouthAnchor && den.mouthAnchor.x === col && den.mouthAnchor.y === row) continue;
+          if (col >= den.x && col < den.x + (den.w || 1) && row >= den.y && row < den.y + (den.h || 1)) return true;
+        }
+        return false;
+      }
+      // Interior grid: sized to the whole farm at 2x resolution (see
+      // INTERIOR_COLS/INTERIOR_ROWS above); every cell starts as ROCK
+      // (blocked) and rebuildInteriorGeometry() flips the currently-built
+      // house pieces' cells to GRASS (walkable) in place whenever the house
+      // changes — the array itself is never resized/reallocated.
+      const interiorGrid = Array.from({ length: INTERIOR_ROWS }, () =>
+        Array.from({ length: INTERIOR_COLS }, () => ({
+          type: TileType.ROCK, water: 0, flow: false, crop: CropType.NONE,
+          cropAge: 0, cropReady: false, stress: '', variation: 0,
+        }))
+      );
+
+      let activeTool = 'shovel';
+      let activeAction = 'dig';
+      let heldMode = 'tool'; // 'tool' | 'item'
+      // Snapshot of { heldMode, tool, itemIndex } taken when the weapon
+      // quick-switch engages; null when not engaged. 'weapon' is no longer
+      // one of the regular tool-select options (see WHEEL_SLOTS below) —
+      // this snapshot/restore toggle is the only way in and out of it.
+      let weaponQuickSwitchSaved = null;
+      let lastTime = performance.now();
+      let simAccumulator = 0;
+      let waterFlowPhase = 0;
+      let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
+      let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
+      let paused = false;
+
+      // Facing lag: visual/reticle angle lags behind raw movement angle.
+      // facingAngle is what the reticle and sprite actually use.
+      // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
+      let facingAngle = -Math.PI / 2;   // starts facing north
+      const FACING_LERP    = 12;        // higher = snappier rotation (radians/sec effective rate)
+      const LUNGE_HOMING_RATE = 6;      // rad/sec cap on in-flight lunge re-aim toward the locked target
+      const CARDINAL_HOLD  = 0.13;      // seconds to hold last cardinal after input stops
+      let cardinalHoldTimer = 0;
+      let lastMoveAngle = -Math.PI / 2;
+      let targetAimAngle = -Math.PI / 2;
+
+      // Mouse-look: on desktop, facing tracks the mouse cursor in world space.
+      // After MOUSE_IDLE_MS of no mouse movement, reverts to input-direction facing.
+      const MOUSE_IDLE_MS  = 1800;  // ms before reverting to input-direction mode
+      let mouseLookAngle   = -Math.PI / 2;
+      let mouseLookActive  = false;
+      let controllerLookAngle = -Math.PI / 2;
+      let controllerLookActive = false;
+      let lastMouseMoveTime = 0;
+      const _raycaster     = isDesktop ? new THREE.Raycaster() : null;
+      const _mouseNDC      = isDesktop ? new THREE.Vector2()   : null;
+      // Constant is reset to the player's own ground height right before each
+      // raycast (see the mousemove handler below) — a fixed Y=0 plane made
+      // aiming distort badly on an exterior zone's raised plateaus, since a
+      // ray from the (also elevated, but differently offset) camera hits a
+      // Y=0 plane at a very different XZ position than it hits the actual
+      // ground the player is standing on.
+      const _groundPlane   = isDesktop ? new THREE.Plane(new THREE.Vector3(0,1,0), 0) : null;
+      const _mouseWorld    = isDesktop ? new THREE.Vector3()   : null;
+      // Editor-specific raycaster (always available, used by farm editor on both desktop and touch)
+      const _edRay = new THREE.Raycaster();
+      const _edNDC = new THREE.Vector2();
+      const _edPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const _edHit  = new THREE.Vector3();
+      function _screenToFarmTile(clientX, clientY) {
+        const rect = threeContainer.getBoundingClientRect();
+        _edNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        _edRay.setFromCamera(_edNDC, camera);
+        if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
+          return { col: clamp(Math.floor(_edHit.x), 0, COLS - 1), row: clamp(Math.floor(_edHit.z), 0, ROWS - 1) };
+        }
+        return null;
+      }
+      // Same screen->ground-plane raycast as _screenToFarmTile, generalized
+      // to whichever area is actually active (farm or interior — the only
+      // two areas furniture placement supports) via getActiveCols/Rows
+      // instead of hardcoded farm COLS/ROWS. Shares the same camera/scratch
+      // raycast objects since only one area ever renders at a time.
+      function _screenToActiveTile(clientX, clientY) {
+        const rect = threeContainer.getBoundingClientRect();
+        _edNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        _edNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        _edRay.setFromCamera(_edNDC, camera);
+        if (_edRay.ray.intersectPlane(_edPlane, _edHit)) {
+          return { col: clamp(Math.floor(_edHit.x), 0, getActiveCols() - 1), row: clamp(Math.floor(_edHit.z), 0, getActiveRows() - 1) };
+        }
+        return null;
+      }
+
+      // Water particle system (bubbles/foam) and ripple rings now live as
+      // private state in js/weather-fx.js.
+      // Tool-use feedback particles; rendered in drawActionParticles() as screen-space overlays.
+      const actionParticles = [];
+      // Tool-use tile flashes; rendered in drawActionTileEffects() to identify the affected tile.
+      const actionTileEffects = [];
+      // Machete slash trails; rendered in drawWeaponTrailEffects() to show the actual cone hit area.
+      const weaponTrailEffects = [];
+      // Lightning flash alpha — stays here (not moved into js/weather-fx.js
+      // with the rest of the lightning state) since drawOverlays() reads it
+      // directly; js/weather-fx.js's updateLightningFlash reads/writes it
+      // via the getLightningAlpha/setLightningAlpha deps.
+      let lightningAlpha = 0;
+
+      function createInitialGrid() {
+        const nextGrid = Array.from({ length: ROWS }, (_, row) => (
+          Array.from({ length: COLS }, (_, col) => createDayOneTile(col, row))
+        ));
+
+        // Used to keep day-one from being visually uniform while still beginning mostly wild.
+        const rocks  = [[1,1],[10,1],[15,2],[3,7],[13,9],[16,11],[20,2],[28,4],[33,1],[22,8],[30,10],[25,14],[7,18],[18,20],[31,22],[5,24],[14,16],[26,6],[32,18],[8,12]];
+        const shrubs = [[6,1],[7,2],[2,4],[14,4],[4,10],[9,11],[19,3],[24,2],[29,7],[21,12],[27,15],[11,19],[23,21],[34,16],[3,22],[16,24],[12,6],[35,9],[17,13],[28,23]];
+        rocks.forEach(([col, row]) => { nextGrid[row][col].type = TileType.ROCK; });
+        shrubs.forEach(([col, row]) => { nextGrid[row][col].type = TileType.SHRUB; });
+
+        // Small test pond in the top-left corner — lets fishing be checked on
+        // the farm (otherwise only town/wilderness zones have fishable water).
+        const farmPondTiles = [[1,1],[2,1],[1,2],[2,2],[3,2],[2,3]];
+        farmPondTiles.forEach(([col, row]) => { nextGrid[row][col].type = TileType.RIVER; nextGrid[row][col].water = MAX_WATER; });
+
+        // Path from farm (col 17, row 0 = north exit to town) going south into the farmstead
+        const farmPathTiles = [
+          [16,0],[17,0],[18,0],
+          [16,1],[17,1],[18,1],
+          [16,2],[17,2],[18,2],
+          [16,3],[17,3],[18,3],
+          [16,4],[17,4],[18,4],
+        ];
+        farmPathTiles.forEach(([c, r]) => { nextGrid[r][c].type = TileType.PATH; });
+
+        // Used as a tiny player-spawn clearing so movement and the reticle are immediately readable.
+        [[8, 9], [9, 9], [8, 10], [9, 10], [10, 10]].forEach(([col, row]) => {
+          nextGrid[row][col].type = TileType.GRASS;
+          nextGrid[row][col].crop = CropType.NONE;
+        });
+
+        // NOTE: deliberately does not call chooseWeatherForDay() here — this
+        // function runs at startup, on doReset(), and on per-world grid
+        // rebuilds, and every one of those call sites already has a valid
+        // calendar.weather/nextRainWindows for the current calendar.day
+        // (the hardcoded day-1 init, or doReset()'s explicit reset just
+        // above its own createInitialGrid() call). Re-rolling here silently
+        // overwrote that — and since the roll is seeded purely by
+        // calendar.day, day 1's roll is the same for every player on every
+        // load, which is why the game once appeared to always start clear
+        // regardless of the intended "raining on day one" state.
+        recomputeWater(false, nextGrid);
+        return nextGrid;
+      }
+
+      function createDayOneTile(col, row) {
+        const pattern = (col * 17 + row * 31 + col * row * 7) % 10;
+        return {
+          type:      pattern < 7 ? TileType.WEEDS : TileType.GRASS,
+          water:     0.0,    // depth of water above floor surface (0..MAX_WATER)
+          flow:      false,  // true when trench tile has active flow this tick
+          depth:     0,      // trench depth 0..1 (1 = freshly dug); siltation lowers it over time
+          crop:      CropType.NONE,
+          cropAge:   0,
+          cropReady: false,
+          stress:    '',
+          variation: pattern
+        };
+      }
+
+      function tickPlayerFootsteps(prevX, prevY) {
+        const dist = Math.hypot(player.x - prevX, player.y - prevY);
+        if (!window.AudioSystem?.footstepAdvance(player, dist, window.AudioSystem.FOOTSTEP_PLAYER_STRIDE_PX)) return;
+        const tile = window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid());
+        window.AudioSystem?.playFootstepSfx(currentArea, tile, 1);
+      }
+
+      function updateMovement(dt) {
+        if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
+        if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
+        if (sitInteraction) { updateSitInteraction(dt); return; }
+        if (window.Fishing?.state?.active) return;
+        if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
+        // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
+        // and performDodge below (the somersault-recovery trigger). Covers
+        // both the settled hold (ImpactRagdollPlayback.isHolding()) and the
+        // recovery roll (player.somersaultRecovering) — both keep the player
+        // fully out of normal movement/physics until recovery finishes and
+        // clears player.prone itself (see beginSomersaultRecovery).
+        if (player.prone) { updateProneState(dt); return; }
+
+        const _fsPrevX = player.x, _fsPrevY = player.y;
+
+        if (player.climbing) {
+          window.ClimbSystem.updateClimb(dt);
+          return;
+        }
+
+        if (player.dodging) {
+          player.dodgeT -= dt;
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.x + player.dodgeDirX * DODGE_SPEED_PX * dt, minX, maxX);
+          const desiredY = clamp(player.y + player.dodgeDirY * DODGE_SPEED_PX * dt, minY, maxY);
+          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = dodgeSwept.x; player.y = dodgeSwept.y;
+          player.vx = player.dodgeDirX * DODGE_SPEED_PX;
+          player.vy = player.dodgeDirY * DODGE_SPEED_PX;
+          if (player.dodgeT <= 0) {
+            player.dodging = false;
+            player.vx = 0; player.vy = 0;
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+          }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          return;
+        }
+
+        if (player.knockbackT > 0) {
+          player.knockbackT = Math.max(0, player.knockbackT - dt);
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.x + player.knockbackVX * dt, minX, maxX);
+          const desiredY = clamp(player.y + player.knockbackVY * dt, minY, maxY);
+          const kbSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = kbSwept.x; player.y = kbSwept.y;
+          if (kbSwept.blockedX) player.knockbackVX = 0;
+          if (kbSwept.blockedY) player.knockbackVY = 0;
+          player.vx = player.knockbackVX;
+          player.vy = player.knockbackVY;
+          if (player.knockbackT <= 0) { player.vx = 0; player.vy = 0; }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          return;
+        }
+
+        if (player.lunging) {
+          // Stop in place the instant a hostile is already inside this
+          // lunge's own attack — checked before this frame's movement, so
+          // the target is guaranteed to still be within the collider right
+          // where the lunge halts instead of the player sliding past it.
+          if (isHostileInLungeCone(player.lungeHitTest)) {
+            player.lunging = false;
+            player.lungeHopCurrent = 0;
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+            tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+            tickLungeTrail(_fsPrevX, _fsPrevY);
+            return;
+          }
+          // Gently re-aim the lunge toward the locked target's *current*
+          // position each frame, capped at LUNGE_HOMING_RATE so it reads as
+          // an in-flight correction rather than a snap. Direction otherwise
+          // stays exactly what it was locked to at lunge-start (see
+          // beginCombatLunge) — a target that sidesteps or gets knocked
+          // during the lunge's own short flight would otherwise carry the
+          // player right past it.
+          const lungeTarget = (activeTool === 'weapon' && equipmentSlots.weapon) ? findAutoTarget() : null;
+          if (lungeTarget) {
+            const desiredLungeAngle = Math.atan2(lungeTarget.y - player.y, lungeTarget.x - player.x);
+            const curLungeAngle = Math.atan2(player.lungeDirY, player.lungeDirX);
+            const lungeDiff = angleDiff(desiredLungeAngle, curLungeAngle);
+            const newLungeAngle = curLungeAngle + lungeDiff * Math.min(1, LUNGE_HOMING_RATE * dt);
+            player.lungeDirX = Math.cos(newLungeAngle);
+            player.lungeDirY = Math.sin(newLungeAngle);
+          }
+
+          player.lungeT = Math.max(0, player.lungeT - dt);
+          const t = 1 - player.lungeT / player.lungeDur;
+          const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
+          const minX = PLAYER_RADIUS, maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+          const minY = PLAYER_RADIUS, maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+          const desiredX = clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          // Swept, not a single endpoint check — this recomputes an absolute
+          // target from total elapsed progress every frame (ease-out is
+          // fastest right at the start), so a big lunge like Charged
+          // Breaker's ~7 tiles can cover more than a tile in one frame and
+          // would otherwise tunnel clean through a one-tile-thick plateau
+          // wall instead of stopping at it.
+          const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = lungeSwept.x; player.y = lungeSwept.y;
+          player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
+          if (player.lungeT <= 0) {
+            player.lunging = false;
+            player.lungeHopCurrent = 0;
+            window.AudioSystem?.playHeavyLandingSfx(currentArea, window.AudioSystem?.footstepTileAt(currentArea, player.x, player.y, getActiveGrid()));
+          }
+          tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+          tickLungeTrail(_fsPrevX, _fsPrevY);
+          return;
+        }
+
+        const keyboardVector = getKeyboardVector();
+        const usingKeyboard = keyboardVector.active;
+        let ix = usingKeyboard ? keyboardVector.x : input.x;
+        let iy = usingKeyboard ? keyboardVector.y : input.y;
+        let inputLen = Math.hypot(ix, iy);
+
+        // Keyboard is digital, joystick is analog. Normalize keyboard to full speed,
+        // but preserve joystick throw strength so thumb distance controls walk/run.
+        let inputStrength = 0;
+        if (inputLen > 0.001) {
+          inputStrength = usingKeyboard ? 1 : clamp(inputLen, 0, 1);
+          ix /= inputLen;
+          iy /= inputLen;
+          const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
+          if (inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
+        }
+
+        // Raw per-frame move intent, read by hold abilities (Blink Dodge)
+        // that need to know which way the player is trying to go.
+        player.inputX = ix;
+        player.inputY = iy;
+        player.inputStrength = inputStrength;
+
+        // ── Cardinal bias ────────────────────────────────────
+        // Slightly guide near-cardinal movement without crushing diagonals.
+        if (inputStrength > 0.001) {
+          const ax = Math.abs(ix), ay = Math.abs(iy);
+          if (ax > ay && ax > 0.001) {
+            iy *= 1 - CARDINAL_BIAS * (ax - ay) / ax;
+          } else if (ay > ax && ay > 0.001) {
+            ix *= 1 - CARDINAL_BIAS * (ay - ax) / ay;
+          }
+          const biasedLen = Math.hypot(ix, iy) || 1;
+          ix /= biasedLen;
+          iy /= biasedLen;
+        }
+
+        // ── Tile-speed lookup ─────────────────────────────────
+        const rawSpeed = tileSpeedAt(player.x, player.y);
+        // If the player ever gets nudged onto an invalid edge/solid sample, keep input alive so they can step back out.
+        const speedMul = rawSpeed === null ? 1 : rawSpeed;
+
+        // ── Acceleration / deceleration ──────────────────────
+        const analogEase = usingKeyboard ? 1 : (0.28 + 0.72 * inputStrength);
+        // Lets a held movement ability (Blink Dodge) slow normal walking
+        // while it's converting movement into zips; 1 (no change) otherwise.
+        const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
+        const footingSpeedMul = getFootingSpeedMul(player);
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * devGlobalSpeedMul;
+        if (inputStrength > 0.001) {
+          const targetVx = ix * targetSpeed;
+          const targetVy = iy * targetSpeed;
+          const currentSpeed = Math.hypot(player.vx, player.vy);
+          const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
+          const accel = (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
+          const step = accel * dt;
+          player.vx += clamp(targetVx - player.vx, -step, step);
+          player.vy += clamp(targetVy - player.vy, -step, step);
+        } else {
+          const speed = Math.hypot(player.vx, player.vy);
+          if (speed > 0) {
+            const decelStep = DECEL * dt;
+            const newSpeed = Math.max(0, speed - decelStep);
+            const ratio = newSpeed / speed;
+            player.vx *= ratio;
+            player.vy *= ratio;
+          }
+        }
+
+        // ── Axis-separated collision ─────────────────────────
+        // Tests the player center plus a tiny radius so corners feel less snaggy.
+        const minX = PLAYER_RADIUS;
+        const maxX = getActiveCols() * TILE - PLAYER_RADIUS;
+        const minY = PLAYER_RADIUS;
+        const maxY = getActiveRows() * TILE - PLAYER_RADIUS;
+        const desiredX = player.x + player.vx * dt;
+        const desiredY = player.y + player.vy * dt;
+        const nextX = clamp(desiredX, minX, maxX);
+        const nextY = clamp(desiredY, minY, maxY);
+
+        if (canPlayerOccupy(nextX, player.y)) { player.x = nextX; }
+        else { player.vx = 0; }
+        if (desiredX !== nextX) player.vx = 0;
+
+        if (canPlayerOccupy(player.x, nextY)) { player.y = nextY; }
+        else { player.vy = 0; }
+        if (desiredY !== nextY) player.vy = 0;
+
+        // ── Facing ────────────────────────────────────────────
+        // Auto-targeting only engages while an actual weapon item is
+        // equipped in the weapon slot (not just the slot being active).
+        const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const autoTarget = weaponEngaged ? findAutoTarget() : null;
+        btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
+        btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon');
+
+        // Auto-aim lock takes absolute priority over mouse-look/right-stick
+        // look while it's engaged, so neither can interrupt or steal facing
+        // away from the locked target. It now keeps tracking through an
+        // attack swing too (toolSwingT > 0), just at a slower rate — it used
+        // to fully release during swings ("the swing pose drives its own
+        // body rotation instead"), but combo steps chain fast enough that
+        // facing/lunge direction were effectively frozen at whatever they
+        // were when the string started (see combat-combo.js's onTap, which
+        // samples player.angle fresh on every tap). A target that moved or
+        // got knocked back by an earlier combo hit would then drift right
+        // out of the next step's hit cone. The slower mid-swing rate keeps
+        // the swing pose's own bodyYaw flourish reading as the dominant
+        // motion. Only the weapon being switched away from/unequipped fully
+        // releases it (weaponEngaged false, so autoTarget is already null).
+        const autoAiming = !!autoTarget;
+
+        if (autoAiming) {
+          const targetAngle = Math.atan2(autoTarget.y - player.y, autoTarget.x - player.x);
+          const diff = angleDiff(targetAngle, facingAngle);
+          const autoAimRate = toolSwingT > 0 ? FACING_LERP : FACING_LERP * 2;
+          facingAngle += diff * Math.min(1, autoAimRate * dt);
+          if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+          cardinalHoldTimer = CARDINAL_HOLD;
+          player.angle = facingAngle;
+        } else {
+          if (controllerLookActive) {
+            const diff = angleDiff(controllerLookAngle, facingAngle);
+            facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+            player.angle = facingAngle;
+            if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+          } else if (isDesktop && mouseLookActive) {
+            if (performance.now() - lastMouseMoveTime > MOUSE_IDLE_MS) {
+              mouseLookActive = false;
+            } else {
+              const diff = angleDiff(mouseLookAngle, facingAngle);
+              facingAngle += diff * Math.min(1, FACING_LERP * 2.5 * dt);
+              player.angle = facingAngle;
+              if (inputStrength > 0.001) lastMoveAngle = Math.atan2(iy, ix);
+            }
+          }
+
+          if (!controllerLookActive && (!mouseLookActive || !isDesktop)) {
+            if (inputStrength > 0.001) {
+              lastMoveAngle = Math.atan2(iy, ix);
+              cardinalHoldTimer = CARDINAL_HOLD;
+              const diff = angleDiff(lastMoveAngle, facingAngle);
+              facingAngle += diff * Math.min(1, FACING_LERP * dt);
+            } else if (cardinalHoldTimer > 0) {
+              cardinalHoldTimer -= dt;
+              const card = window.PerpRotation.nearestCardinalAngle(lastMoveAngle);
+              const diff = angleDiff(card, facingAngle);
+              facingAngle += diff * Math.min(1, FACING_LERP * 2 * dt);
+            }
+            player.angle = facingAngle;
+          }
+        }
+
+        // ── Boundary clamp ────────────────────────────────────
+        player.x = clamp(player.x, PLAYER_RADIUS, getActiveCols() * TILE - PLAYER_RADIUS);
+        player.y = clamp(player.y, PLAYER_RADIUS, getActiveRows() * TILE - PLAYER_RADIUS);
+
+        tickPlayerFootsteps(_fsPrevX, _fsPrevY);
+      }
+
+      // Generalized footprint-occupancy check (a square of side 2*radius is free
+      // of solid terrain / map edges), shared by the player and by creature
+      // attacks that need to know when a forced movement (e.g. a pounce leap)
+      // has run into something.
+      function canOccupyAt(wx, wy, radius) {
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx - radius < 0 || wy - radius < 0 || wx + radius >= aC * TILE || wy + radius >= aR * TILE) return false;
+        return tileSpeedAt(wx - radius, wy - radius) !== null
+            && tileSpeedAt(wx + radius, wy - radius) !== null
+            && tileSpeedAt(wx - radius, wy + radius) !== null
+            && tileSpeedAt(wx + radius, wy + radius) !== null;
+      }
+
+      function canPlayerOccupy(wx, wy) {
+        return canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72);
+      }
+
+      // A fast forced move (combat lunge, knockback, dodge) recomputes its
+      // target position from total elapsed progress every frame rather than
+      // stepping a small fixed distance, so a single frame's jump can easily
+      // exceed one tile — e.g. Charged Breaker's ~7-tile lunge covers most of
+      // its distance in its very first frames (ease-out is fastest at t=0).
+      // Testing occupancy only at that frame's endpoint lets it tunnel clean
+      // through a one-tile-thick solid wall (a plateau's incline face)
+      // instead of stopping at it. Subdividing the straight line from the
+      // current position to the desired one into small steps and testing
+      // each one — same per-axis sliding behavior as a single check, just
+      // repeated — closes that gap for any of these forced moves.
+      // blockedX/blockedY report whether that axis was ever rejected during
+      // the sweep, so a caller (e.g. knockback) can zero out that axis's
+      // velocity exactly like the old single-check version did.
+      const COLLISION_SWEEP_STEP_PX = TILE * 0.25;
+      function sweptMove(curX, curY, desiredX, desiredY, canOccupyFn) {
+        const dx = desiredX - curX, dy = desiredY - curY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.001) return { x: curX, y: curY, blockedX: false, blockedY: false };
+        const steps = Math.max(1, Math.ceil(dist / COLLISION_SWEEP_STEP_PX));
+        const stepX = dx / steps, stepY = dy / steps;
+        let x = curX, y = curY, blockedX = false, blockedY = false;
+        for (let i = 0; i < steps; i++) {
+          const nx = x + stepX, ny = y + stepY;
+          if (canOccupyFn(nx, y)) x = nx; else blockedX = true;
+          if (canOccupyFn(x, ny)) y = ny; else blockedY = true;
+        }
+        return { x, y, blockedX, blockedY };
+      }
+
+      function getKeyboardVector() {
+        let x = 0;
+        let y = 0;
+        if (input.keys.has('ArrowLeft') || input.keys.has('a')) x -= 1;
+        if (input.keys.has('ArrowRight') || input.keys.has('d')) x += 1;
+        if (input.keys.has('ArrowUp') || input.keys.has('w')) y -= 1;
+        if (input.keys.has('ArrowDown') || input.keys.has('s')) y += 1;
+        return { x, y, active: x !== 0 || y !== 0 };
+      }
+
+      // Calendar day/week/month/year derivations (getHour, dayOfYear,
+      // yearNumber, monthIndex, seasonForDay, currentSeason,
+      // currentWeekdayName, formatCalendarDate, etc.) now live in
+      // js/calendar-system.js — call via window.CalendarSystem.*.
+
+      // Farm tab hub (header, grid glance, buildings list, processor status
+      // tiles, livestock roster + breeding, farm<->stable transfers, storage,
+      // farmhands) and the Stable tab now live in js/farm-panel.js — call via
+      // window.FarmPanel.*.
+
+      // Set by a barn's in-world "Manage Livestock" button (see
+      // makeBarnWorldObject) to jump straight to the Farm tab; currently just
+      // opens the tab (the livestock list itself has no per-barn grouping to
+      // scroll to yet), kept as a hook for a future focused view.
+      let _farmLivestockFocusBarnId = null;
+
+      // Calendar tab render (renderCalendarPanel/renderCalendarMonthView)
+      // and its prev/next month nav buttons now live in
+      // js/calendar-system.js — call via window.CalendarSystem.renderCalendarPanel().
+
+      // A 'copse'-sourced SHRUB tile in Northern Cliffs or the Southern Cloud
+      // Forest renders as a real tree (crowned pine / shadewood — see
+      // FoliageGenerator's TREE_PRESETS and _buildZoneFloorMeshes' floraKind
+      // switch), not a plain decorative bush/stump. Those need a proper
+      // axe-chop hold to fell (see CHOP_TREE_STAGES) rather than being
+      // destroyed for free by a shovel dig or a wide machete/axe swing.
+      // Missing floraKind (hand-authored map data with no generator
+      // metadata) defaults to "is a tree", matching _buildZoneFloorMeshes'
+      // own fallback.
+      function isChoppableTreeTile(col, row) {
+        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
+        const tile = getActiveGrid()[row]?.[col];
+        if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
+        return tile.floraKind === 'copse' || !tile.floraKind;
+      }
+      function treeLogItemKey() {
+        return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
+      }
+
+      // A generator-placed ore rock (see rockKind/mergeZoneTiles) is
+      // mineable with a pick; an undiggableBoulder or a plain plateau cliff
+      // face (rockKind null — decorative/structural rock, see mergeZoneTiles'
+      // generatedObjectType exemption) is not. Hand-authored ROCK tiles
+      // (rockKind undefined, no generator behind them at all) default to
+      // "not mineable" — the opposite fallback from isChoppableTreeTile,
+      // since most ROCK tiles in the game are solid cliff/decoration, not
+      // wilderness resource nodes. The farm is the one exception: every
+      // ROCK tile there is one of createInitialGrid's scattered day-one
+      // obstacle rocks (no generator, no cliffs/boulders on the farm at
+      // all), so unlike a hand-authored wilderness rock, it's always fair
+      // game to clear.
+      function isMineableRockTile(col, row) {
+        const tile = getActiveGrid()[row]?.[col];
+        if (!tile || tile.type !== TileType.ROCK) return false;
+        if (currentArea === 'farm') return true;
+        return tile.rockKind === 'diggableRockOre';
+      }
+
+      function isDigRemovableVegetation(tile, col, row) {
+        // Used by shovel dig so day-one overgrowth can be destroyed by digging underneath it.
+        // Real trees (see isChoppableTreeTile) are excluded — they require a proper axe chop, not a free dig-through.
+        if (tile.crop) return false;
+        if (tile.type === TileType.WEEDS) return true;
+        if (tile.type !== TileType.SHRUB) return false;
+        return !(col != null && row != null && isChoppableTreeTile(col, row));
+      }
+
+      function blocksDiggingUnder(tile) {
+        // Used by shovel dig to protect solid blockers and planted crops from accidental terrain edits.
+        return tile.type === TileType.ROCK || Boolean(tile.crop);
+      }
+
+      function canUseAction(tool, action, col, row) {
+        const tile = getActiveGrid()[row][col];
+        // A mineable ore rock is the one ROCK-tile exception to the blanket
+        // solid-rock block below — everything else (cliff faces, boulders)
+        // stays impassable/inert to every tool, mining included.
+        if (tile.type === TileType.ROCK) return tool === 'pick' && action === 'mine' && isMineableRockTile(col, row);
+        if (currentArea === 'farm' && isHouseFootprint(col, row)) return false;
+        // Town terrain is fixed set-dressing — dig/fill/raise/till/smooth are farm-only mechanics.
+        if (currentArea === 'town' && (tool === 'shovel' || tool === 'hoe')) return false;
+        if (tool === 'shovel') {
+          // A dew pile must be dug up (shovel only, half a trench-dig's
+          // duration — see DIG_DEW_PILE_STAGES) before anything else can be
+          // done to this tile, including actually digging it into a trench.
+          if (tile.dewPile) return action === 'dig';
+          if (action === 'dig') {
+            if (blocksDiggingUnder(tile)) return false;
+            // An already-dug trench can be redug (single tap) once rain has silted it shallower.
+            if (tile.type === TileType.TRENCH) return (tile.depth ?? 1) < 1;
+            return [TileType.GRASS, TileType.TILLED, TileType.RAISED].includes(tile.type) || isDigRemovableVegetation(tile, col, row);
+          }
+          if (action === 'fill') return tile.type === TileType.TRENCH;
+          if (action === 'raise') return [TileType.GRASS, TileType.TILLED].includes(tile.type) && !tile.crop;
+        }
+        if (tool === 'hoe') {
+          if (tile.dewPile) return false; // dig the pile up with a shovel first
+          if (action === 'till') return tile.type === TileType.GRASS && !tile.crop;
+          if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
+        }
+        if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
+        if (tool === 'harpoon' && action === 'fish') {
+          return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
+        }
+        if (tool === 'machete' || tool === 'axe') {
+          const targets = getMacheteTargets(col, row, action);
+          const tgrid = getActiveGrid();
+          return targets.some(t => {
+            const targetTile = tgrid[t.row]?.[t.col];
+            return targetTile && !targetTile.crop && (targetTile.type === TileType.WEEDS || targetTile.type === TileType.SHRUB);
+          });
+        }
+        if (tool === 'seeds') {
+          if (action === 'harvest') return Boolean(tile.crop && tile.cropReady);
+          const crop = action.startsWith('plant_') ? action.slice(6) : null;
+          if (!crop || tile.crop || !cropData[crop]) return false;
+          if (inventory[cropData[crop].seedKey] <= 0) return false;
+          return canPlantCropOnTile(crop, tile);
+        }
+        return false;
+      }
+
+      function plantCrop(tile, crop) {
+        const data = cropData[crop];
+        if (!data) return { ok: false, message: 'Unknown crop.' };
+        if (inventory[data.seedKey] <= 0) return { ok: false, message: `No ${data.label} seeds left.` };
+        if (tile.crop) return { ok: false, message: 'Something is already growing here.' };
+        if (!canPlantCropOnTile(crop, tile))
+          return { ok: false, message: 'Can only plant on tilled or raised soil.' };
+        inventory[data.seedKey]--;
+        clampInventoryStack(data.seedKey);
+        tile.crop = crop;
+        tile.cropAge = 0;
+        tile.cropReady = false;
+        tile.stress = '';
+        const idealPct = Math.round(data.idealMin * 100) + '–' + Math.round(data.idealMax * 100);
+        const ditchNote = data.needsAdjacentDitch ? ' Grows well beside adjacent ditches.' : '';
+        return { ok: true, message: `Planted ${data.emoji} ${data.label}. Ideal water: ${idealPct}%.${ditchNote}` };
+      }
+
+      function harvestCrop(tile) {
+        if (!tile.crop) return { ok: false, message: 'Nothing to harvest here.' };
+        if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
+        const data = cropData[tile.crop];
+        inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
+        const stars = rollItemStars();
+        const msg = `Harvested ${starRatingText(stars)} ${data.emoji} ${data.label}!`;
+        tile.crop = CropType.NONE;
+        tile.cropAge = 0;
+        tile.cropReady = false;
+        tile.stress = '';
+        window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+        return { ok: true, message: msg };
+      }
+
+      function getMacheteTargets(col, row, action) {
+        const acols = getActiveCols(), arows = getActiveRows();
+        const clampedCenter = { col: clamp(col, 0, acols - 1), row: clamp(row, 0, arows - 1) };
+        if (action !== 'slash' && action !== 'hack') return [clampedCenter];
+
+        // Slash uses a simple three-tile cone: the aimed tile plus its two side tiles relative to facing.
+        const dir = facingCardinal(player.angle);
+        const side = dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 };
+        const seen = new Set();
+        return [
+          clampedCenter,
+          { col: clampedCenter.col + side.x, row: clampedCenter.row + side.y },
+          { col: clampedCenter.col - side.x, row: clampedCenter.row - side.y },
+        ].filter(t => {
+          if (t.col < 0 || t.col >= acols || t.row < 0 || t.row >= arows) return false;
+          const key = `${t.col},${t.row}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+
+      function clearVegetationAt(col, row, action) {
+        const targets = getMacheteTargets(col, row, action);
+        const tgrid = getActiveGrid();
+        let cleared = 0;
+        for (const t of targets) {
+          const tile = tgrid[t.row][t.col];
+          if (!tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB)) {
+            // A real tree needs a proper held axe chop (see CHOP_TREE_STAGES) —
+            // a wide hack/slash cone shouldn't fell one for free mulch.
+            if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
+            tile.type = TileType.GRASS;
+            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            // markTileDirty indexes the farm's own small grid (see its
+            // declaration) — calling it with a wilderness zone's col/row
+            // (up to 100x100) reads past the farm grid's bounds. Zones get
+            // their visual refresh from refreshZoneGroundVisuals instead
+            // (see applyAction's callers), once per completed action rather
+            // than per cleared tile.
+            if (currentArea === 'farm') markTileDirty(t.col, t.row);
+            cleared++;
+          }
+        }
+        return { cleared, targets };
+      }
+
+      function actionFxProfile(action, ok) {
+        if (!ok) return { emoji: '×', color: '#ff8060', count: 8, spread: 0.42, lift: -0.5, ring: '#ff8060' };
+        if (action === 'dig' || action === 'fill') return { emoji: '▪', color: '#8a5b34', count: 14, spread: 0.52, lift: -0.9, ring: '#c39a55' };
+        if (action === 'raise') return { emoji: '▲', color: '#f0d040', count: 12, spread: 0.45, lift: -0.75, ring: '#f0d040' };
+        if (action === 'paddy') return { emoji: '〜', color: '#6ec6f0', count: 14, spread: 0.50, lift: -0.65, ring: '#6ec6f0' };
+        if (action === 'till' || action === 'smooth') return { emoji: '·', color: '#d2a66a', count: 12, spread: 0.42, lift: -0.65, ring: '#d2a66a' };
+        if (action === 'cut' || action === 'slash') {
+          const isWide = action === 'slash';
+          return { emoji: '✦', color: '#7fe89a', count: isWide ? 20 : 12, spread: isWide ? 0.78 : 0.48, lift: -0.8, ring: '#7fe89a' };
+        }
+        if (action === 'chop' || action === 'hack') {
+          // Wood chips flying off an axe strike — tree fells (chop) and
+          // wide brush-clearing swings (hack) alike.
+          const isWide = action === 'hack';
+          return { emoji: '◺', color: '#c8925a', count: isWide ? 20 : 14, spread: isWide ? 0.78 : 0.5, lift: -0.8, ring: '#c8925a' };
+        }
+        if (action === 'mine') {
+          // Pebbles bursting off a pick strike on an ore rock.
+          return { emoji: '●', color: '#9a9a9a', count: 16, spread: 0.5, lift: -0.85, ring: '#c9c9c9' };
+        }
+        if (action === 'harvest') return { emoji: '✧', color: '#f9e28a', count: 16, spread: 0.50, lift: -0.9, ring: '#f9e28a' };
+        if (action.startsWith('plant')) return { emoji: '•', color: '#9ff08a', count: 11, spread: 0.36, lift: -0.55, ring: '#9ff08a' };
+        if (action.startsWith('place_')) return { emoji: '◆', color: '#f9e28a', count: 12, spread: 0.42, lift: -0.65, ring: '#f9e28a' };
+        if (action.startsWith('obj_process_')) return { emoji: '✧', color: '#e7b85c', count: 14, spread: 0.44, lift: -0.75, ring: '#e7b85c' };
+        return { emoji: '•', color: '#f9e28a', count: 10, spread: 0.42, lift: -0.65, ring: '#f9e28a' };
+      }
+
+      function spawnActionParticles(col, row, action, ok) {
+        const profile = actionFxProfile(action, ok);
+        const agrid = getActiveGrid();
+        const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
+        actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
+        while (actionTileEffects.length > 8) actionTileEffects.shift();
+        if (activeTool === 'weapon' && action === 'cut') spawnWeaponTrailEffect(action, ok);
+        else if (action === 'slash') spawnWeaponTrailEffect(action, ok, col, row);
+
+        for (let i = 0; i < profile.count; i++) {
+          if (actionParticles.length >= ACTION_FX_LIMIT) actionParticles.shift();
+          const a = Math.random() * Math.PI * 2;
+          const d = Math.random() * profile.spread;
+          // Spawned in tile-local world coords; consumed by updateActionParticles()/drawActionParticles().
+          actionParticles.push({
+            x: col + 0.5 + Math.cos(a) * d,
+            y: baseY + 0.08 + Math.random() * 0.18,
+            z: row + 0.5 + Math.sin(a) * d,
+            vx: Math.cos(a) * (0.35 + Math.random() * 0.9),
+            vy: profile.lift - Math.random() * 0.55,
+            vz: Math.sin(a) * (0.35 + Math.random() * 0.9),
+            age: 0,
+            maxAge: 0.42 + Math.random() * 0.26,
+            size: 9 + Math.random() * 8,
+            emoji: profile.emoji,
+            color: profile.color,
+            gravity: ok ? 1.9 : 0.35
+          });
+        }
+      }
+
+
+      // Half the player avatar's own prism height above the ground it's
+      // standing on — playerMesh.position.y already tracks that ground
+      // level (see the lerp toward targetY below), and the avatar plane
+      // itself is bottom-edge anchored there, so its world-space vertical
+      // center is exactly ground + height/2.
+      function playerPrismHeightTiles() {
+        let h = null;
+        playerMesh?.traverse?.(child => {
+          if (h == null && Number.isFinite(child.userData?.portraitModelHeight)) h = child.userData.portraitModelHeight;
+        });
+        return h ?? (window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? 0.9);
+      }
+      function weaponTrailCenterY() {
+        return playerMesh.position.y + playerPrismHeightTiles() / 2;
+      }
+
+      // Random seed points scattered across the swing's actual swept shape
+      // (trapezoid or cone), each driving one particle in the burst rather
+      // than one flat filled polygon — see drawWeaponTrailEffects().
+      const WEAPON_TRAIL_PARTICLE_COUNT = 9;
+      function weaponTrailParticleSeeds(fx) {
+        const seeds = [];
+        for (let i = 0; i < WEAPON_TRAIL_PARTICLE_COUNT; i++) {
+          let dx, dz, outAngle;
+          if (fx.isCone) {
+            const a = fx.angle - fx.halfConeRad + (2 * fx.halfConeRad) * Math.random();
+            const r = fx.rangeTiles * (0.25 + Math.random() * 0.75);
+            dx = Math.cos(a) * r; dz = Math.sin(a) * r; outAngle = a;
+          } else {
+            const along = 0.15 + Math.random() * fx.far;
+            const across = (Math.random() * 2 - 1) * fx.halfWidth;
+            dx = fx.dir.x * along + fx.side.x * across;
+            dz = fx.dir.y * along + fx.side.y * across;
+            outAngle = Math.atan2(fx.dir.y, fx.dir.x);
+          }
+          seeds.push({ dx, dz, outAngle, jitterY: (Math.random() - 0.5) * 0.16, drift: 0.15 + Math.random() * 0.25, size: 5 + Math.random() * 5 });
+        }
+        return seeds;
+      }
+
+      function spawnWeaponTrailEffect(action, ok, col = null, row = null) {
+        const abil = weaponAbility(action) || weaponAbility('slash');
+        const tileAnchored = col !== null && row !== null;
+        const dir = tileAnchored ? facingCardinal(player.angle) : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+        const side = tileAnchored
+          ? (dir.x !== 0 ? { x: 0, y: 1 } : { x: 1, y: 0 })
+          : { x: -dir.y, y: dir.x };
+        const fx = {
+          x: col === null ? player.x / TILE : col + 0.5,
+          z: row === null ? player.y / TILE : row + 0.5,
+          dir, side, action,
+          halfWidth: abil.trailHalfWidthTiles,
+          far: abil.trailFarTiles,
+          age: 0,
+          maxAge: ok ? abil.trailMaxAgeSeconds : Math.max(abil.trailMaxAgeSeconds * 0.72, 0.1),
+          ok,
+          y: weaponTrailCenterY(),
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      // matches the legacy cut ability's trailMaxAgeSeconds; still used by
+      // spawnBurstEffect/spawnCreatureHitSpark below.
+      const COMBAT_TRAIL_MAX_AGE_S = 0.24;
+
+      // Full-circle burst at the player's position with an explicit color —
+      // used for non-attack feedback like shield blocks. halfConeRad = π gives
+      // a full 360° fan in weaponTrailParticleSeeds.
+      function spawnBurstEffect({ color, rangePx }) {
+        const fx = {
+          isCone: true,
+          x: player.x / TILE,
+          z: player.y / TILE,
+          y: weaponTrailCenterY(),
+          angle: 0,
+          halfConeRad: Math.PI,
+          rangeTiles: rangePx / TILE,
+          age: 0,
+          maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.4,
+          ok: true,
+          color,
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      // Small radial spark anchored on the creature itself (not the player,
+      // unlike spawnBurstEffect) so a hit reads clearly regardless of
+      // who/what landed it — companion-on-hostile
+      // damage gets the same feedback as the player's own attacks. Reuses
+      // the same isCone/particle-seed rendering as every other combat
+      // effect; a bright spark color keeps it visually distinct from the
+      // creature's own red hitFlashT tint and the shield's blue block burst.
+      const CREATURE_HIT_SPARK_COLOR = '#fff35c';
+      function spawnCreatureHitSpark(c) {
+        const fx = {
+          isCone: true,
+          x: c.x / TILE,
+          z: c.y / TILE,
+          y: c.avatarRef?.group?.position?.y ?? weaponTrailCenterY(),
+          angle: 0,
+          halfConeRad: Math.PI,
+          rangeTiles: Math.max(0.35, (c.def?.modelWidth || 2) * 0.3),
+          age: 0,
+          maxAge: COMBAT_TRAIL_MAX_AGE_S * 1.1,
+          ok: true,
+          color: CREATURE_HIT_SPARK_COLOR,
+        };
+        fx.particles = weaponTrailParticleSeeds(fx);
+        weaponTrailEffects.push(fx);
+        const limit = Number(combatConfig().weaponTrailLimit) || 5;
+        while (weaponTrailEffects.length > limit) weaponTrailEffects.shift();
+      }
+
+      function updateActionParticles(dt) {
+        for (let i = actionParticles.length - 1; i >= 0; i--) {
+          const p = actionParticles[i];
+          p.age += dt;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.z += p.vz * dt;
+          p.vy += p.gravity * dt;
+          if (p.age >= p.maxAge) actionParticles.splice(i, 1);
+        }
+        for (let i = actionTileEffects.length - 1; i >= 0; i--) {
+          actionTileEffects[i].age += dt;
+          if (actionTileEffects[i].age >= actionTileEffects[i].maxAge) actionTileEffects.splice(i, 1);
+        }
+        for (let i = weaponTrailEffects.length - 1; i >= 0; i--) {
+          weaponTrailEffects[i].age += dt;
+          if (weaponTrailEffects[i].age >= weaponTrailEffects[i].maxAge) weaponTrailEffects.splice(i, 1);
+        }
+      }
+
+      function worldToOverlay(x, y, z) {
+        const v = new THREE.Vector3(x, y, z);
+        v.project(camera);
+        return {
+          x: (v.x * 0.5 + 0.5) * _threeRect.width,
+          y: (-v.y * 0.5 + 0.5) * _threeRect.height,
+          visible: v.z >= -1 && v.z <= 1
+        };
+      }
+
+      function drawCombatConeReticle() {
+        const cfg = combatConfig().combatConeReticle || {};
+        if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
+        const abil = weaponAbility('cut');
+        if (!abil) return;
+        const rangeTiles = abil.rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = tileSurfaceY(getActiveTileAt(Math.floor(baseX), Math.floor(baseZ)).type) + 0.035;
+        const alpha = Number(cfg.alpha) || 0.24;
+        const lineWidth = Number(cfg.lineWidth) || 2;
+        const color = cfg.color || '#d9ffe0';
+        const left = player.angle - abil.halfConeRad;
+        const right = player.angle + abil.halfConeRad;
+        const leftEnd = worldToOverlay(baseX + Math.cos(left) * rangeTiles, y, baseZ + Math.sin(left) * rangeTiles);
+        const rightEnd = worldToOverlay(baseX + Math.cos(right) * rangeTiles, y, baseZ + Math.sin(right) * rangeTiles);
+        const origin = worldToOverlay(baseX, y, baseZ);
+        if (!origin.visible || !leftEnd.visible || !rightEnd.visible) return;
+        octx.save();
+        octx.globalAlpha = alpha;
+        octx.strokeStyle = color;
+        octx.lineWidth = lineWidth;
+        octx.setLineDash(Array.isArray(cfg.lineDash) ? cfg.lineDash : []);
+        octx.beginPath();
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(leftEnd.x, leftEnd.y);
+        octx.moveTo(origin.x, origin.y);
+        octx.lineTo(rightEnd.x, rightEnd.y);
+        octx.stroke();
+        octx.restore();
+      }
+
+      function drawWeaponTrailEffects() {
+        for (const fx of weaponTrailEffects) {
+          const t = fx.age / fx.maxAge;
+          const alpha = Math.max(0, 1 - t);
+          const color = fx.color ?? (fx.ok ? '#ffdc60' : '#4488ff');
+          octx.save();
+          octx.fillStyle = color;
+          for (const p of fx.particles) {
+            // Particles drift outward along their seed angle and bob in y
+            // as they age, instead of sitting still like a flat decal.
+            const spread = 1 + t * p.drift;
+            const wx = fx.x + p.dx * spread;
+            const wz = fx.z + p.dz * spread;
+            const wy = fx.y + p.jitterY + t * 0.22;
+            const pos = worldToOverlay(wx, wy, wz);
+            if (!pos.visible) continue;
+            const r = Math.max(1.5, p.size * (1 - t * 0.5));
+            octx.globalAlpha = alpha * (fx.ok ? 0.85 : 0.7);
+            octx.beginPath();
+            octx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+            octx.fill();
+          }
+          octx.restore();
+        }
+      }
+
+      // Looks up an affliction's color and pushes it through
+      // ResourceRings.neonizeColor — the same vivid-not-white saturation
+      // boost the resource rings use (see resource-rings.js) — so the
+      // combat cone trail and lunge trail read as the same neon palette
+      // instead of AFFLICTION_COLORS' raw, often muted/muddy source tone.
+      // Falls back to the raw color if ResourceRings hasn't loaded.
+      function neonAfflictionColor(id) {
+        const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id];
+        if (raw == null) return null;
+        return window.ResourceRings?.neonizeColor ? window.ResourceRings.neonizeColor(raw) : raw;
+      }
+
+      // Combat swing trail — real 3D ribbon meshes (not a flat canvas
+      // overlay decal) tracing the outer edge of the attack's own hit cone
+      // (rangePx/halfConeRad/angle, captured in combatSwingCone by
+      // triggerWeaponSwingVisual/setCombatSwingCone), so they sit properly
+      // in the scene — occluded by terrain/creatures like anything else —
+      // rather than always drawing on top. One ribbon lane per affliction
+      // the attack can inflict (min one, plain white with none), each
+      // stepped slightly inward in radius so multiple afflictions read as
+      // distinct side-by-side swipes instead of one overlapping smear.
+      // Each lane tapers to a point at both ends (like a blade arc, not a
+      // uniform-width ring segment) and arches upward through its middle —
+      // the "swipe" actually lifts off the ground plane instead of being a
+      // flat decal — peaking at the same mid-swing instant its width does.
+      const COMBAT_CONE_TRAIL_SAMPLES = 16;
+      const COMBAT_CONE_TRAIL_MAX_LANES = 4;
+      const COMBAT_CONE_TRAIL_LANE_INSET = 0.08; // fraction of range stepped inward per lane
+      const COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES = 0.06;
+      const COMBAT_CONE_TRAIL_ARCH_UNITS = 0.22; // how far (world units) the ribbon's middle lifts above weaponTrailCenterY
+      // Directional brightness spike: rather than one flat opacity across
+      // the whole arc (which reads as a static bracket with no sense of
+      // motion), the arc sits at a dim baseline everywhere except a bright
+      // band that lerps from one tip to the other over the swing's own
+      // progress — a moving highlight that sells "the blade is sweeping
+      // through here right now" and, mirrored by combatSwingSign, actually
+      // points the same way the swing itself is going (forehand vs
+      // backhand). Achieved via per-vertex color brightness (not per-vertex
+      // alpha — MeshBasicMaterial's vertex colors are RGB-only) which reads
+      // correctly under AdditiveBlending: a dim vertex just adds little.
+      const COMBAT_CONE_TRAIL_BASELINE_INTENSITY = 0.22;
+      const COMBAT_CONE_TRAIL_SPIKE_WIDTH_U = 0.24;
+      const coneTrailLaneMeshes = [];
+      function ensureConeTrailLaneMesh(i) {
+        let mesh = coneTrailLaneMeshes[i];
+        if (mesh) return mesh;
+        const geo = new THREE.BufferGeometry();
+        const vertCount = (COMBAT_CONE_TRAIL_SAMPLES + 1) * 2;
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        const indices = [];
+        for (let s = 0; s < COMBAT_CONE_TRAIL_SAMPLES; s++) {
+          const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
+          indices.push(a, b, c, b, d, c);
+        }
+        geo.setIndex(indices);
+        const mat = new THREE.MeshBasicMaterial({
+          transparent: true,
+          depthWrite: false,
+          vertexColors: true,
+          // Additive so the tint reads as a clear glowing swipe regardless
+          // of what's behind it, same reasoning as the old ghost trail's
+          // material (see git history).
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        });
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        // Geometry is rebuilt fresh every visible frame — skip the
+        // per-frame bounding-sphere recompute frustum culling would need.
+        mesh.frustumCulled = false;
+        coneTrailLaneMeshes[i] = mesh;
+        return mesh;
+      }
+
+      // Called every frame alongside updateToolMesh (not from the 2D octx
+      // draw pass) since it owns real scene-graph meshes, not canvas pixels.
+      function updateCombatConeTrail() {
+        const parent = toolHolder.parent;
+        const active = combatSwingAnim && combatSwingCone && toolSwingT > 0 && toolSwingDur > 0 && parent;
+        if (!active) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+        const progress = 1 - toolSwingT / toolSwingDur;
+        const WF = combatSwingWindupFrac, SF = combatSwingStrikeFrac;
+        // The actual hit (damage + SFX, see combat-core.js's
+        // fireStagedStrike, fired at real-seconds windupS) lands exactly at
+        // cosmetic progress===WF, not at SF — SF is just where the cosmetic
+        // swing's own follow-through finishes extending. So the arc's
+        // sweep only spans WF→SF: it starts the instant the hit/SFX
+        // actually happens and finishes when the strike pose is fully
+        // extended, rather than crawling across the whole windup too.
+        if (progress < WF) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+        const strikeT = Math.min(1, (progress - WF) / Math.max(1e-6, SF - WF));
+        // Same post-strike-hold math updateToolMesh uses for HF (the
+        // fraction where the strike pose's pause ends and the return-to-
+        // neutral lerp begins) — the sweep itself is done by SF, but the
+        // arc should still persist through that pause rather than
+        // vanishing early, fading its overall opacity to 0 exactly by the
+        // pause's end instead of bleeding into the return phase.
+        const HF = combatSwingHoldS > 0
+          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
+          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        let alpha;
+        if (progress <= SF) alpha = 1;
+        else if (progress < HF) alpha = 1 - (progress - SF) / Math.max(1e-6, HF - SF);
+        else alpha = 0;
+        if (alpha <= 0.01) {
+          for (const mesh of coneTrailLaneMeshes) if (mesh) mesh.visible = false;
+          return;
+        }
+
+        const { rangePx, halfConeRad, angle } = combatSwingCone;
+        const rangeTiles = rangePx / TILE;
+        const baseX = player.x / TILE;
+        const baseZ = player.y / TILE;
+        const y = weaponTrailCenterY();
+        const ids = combatSwingAfflictionIds;
+        const laneCount = Math.min(COMBAT_CONE_TRAIL_MAX_LANES, Math.max(1, ids.length));
+        // Which tip (u=0 or u=1) the bright spike starts from — mirrors
+        // combatSwingSign so the highlight travels the same way the actual
+        // swing does (forehand vs backhand read as sweeping opposite ways).
+        const spikeU = combatSwingSign >= 0 ? strikeT : 1 - strikeT;
+
+        for (let lane = 0; lane < COMBAT_CONE_TRAIL_MAX_LANES; lane++) {
+          const mesh = ensureConeTrailLaneMesh(lane);
+          if (lane >= laneCount) { mesh.visible = false; continue; }
+          const colorNum = ids.length
+            ? (neonAfflictionColor(ids[lane]) ?? 0xffffff)
+            : 0xffffff;
+          const cr = ((colorNum >> 16) & 0xff) / 255;
+          const cg = ((colorNum >> 8) & 0xff) / 255;
+          const cb = (colorNum & 0xff) / 255;
+          const laneRadius = rangeTiles * (1 - lane * COMBAT_CONE_TRAIL_LANE_INSET);
+          const posAttr = mesh.geometry.attributes.position;
+          const colorAttr = mesh.geometry.attributes.color;
+          for (let s = 0; s <= COMBAT_CONE_TRAIL_SAMPLES; s++) {
+            const u = s / COMBAT_CONE_TRAIL_SAMPLES;
+            const a = angle - halfConeRad + (2 * halfConeRad) * u;
+            const cosA = Math.cos(a), sinA = Math.sin(a);
+            const taper = Math.sin(u * Math.PI); // 0 at both tips, 1 at the middle
+            const half = COMBAT_CONE_TRAIL_HALF_THICKNESS_TILES * (0.25 + 0.75 * taper);
+            const arch = COMBAT_CONE_TRAIL_ARCH_UNITS * taper;
+            const innerR = laneRadius - half, outerR = laneRadius + half;
+            const vi = s * 2;
+            posAttr.setXYZ(vi,     baseX + cosA * innerR, y + arch, baseZ + sinA * innerR);
+            posAttr.setXYZ(vi + 1, baseX + cosA * outerR, y + arch, baseZ + sinA * outerR);
+            const spike = Math.max(0, 1 - Math.abs(u - spikeU) / COMBAT_CONE_TRAIL_SPIKE_WIDTH_U);
+            const intensity = COMBAT_CONE_TRAIL_BASELINE_INTENSITY + (1 - COMBAT_CONE_TRAIL_BASELINE_INTENSITY) * spike;
+            colorAttr.setXYZ(vi,     cr * intensity, cg * intensity, cb * intensity);
+            colorAttr.setXYZ(vi + 1, cr * intensity, cg * intensity, cb * intensity);
+          }
+          posAttr.needsUpdate = true;
+          colorAttr.needsUpdate = true;
+          mesh.material.opacity = alpha * 0.85;
+          mesh.visible = true;
+          if (mesh.parent !== parent) parent.add(mesh);
+        }
+      }
+
+      // Attack-lunge movement trail — a series of flat single-color ring
+      // stamps dropped along the ground path an attack's lunge (see
+      // beginCombatLunge/tickLungeTrail, or a creature's Pounce leap —
+      // tickCreatureLungeTrail below) actually travels, distinct from
+      // updateCombatConeTrail's weapon-swipe ribbon above: this one traces
+      // the mover's own footprints through the dash, not the weapon/attack's
+      // hit cone.
+      //
+      // Each individual stamp is a single affliction's color, not a nested
+      // multi-color "onion ring" — with several afflictions in play, which
+      // color any given stamp gets is picked at random, weighted by that
+      // affliction's own per-hit multiplier (see pickWeightedAfflictionId),
+      // so it's the *sequence* of stamps along the trail — how many of each
+      // color show up, in what rough proportion — that reads as "this
+      // attack applies mostly bleed with a little poison mixed in", rather
+      // than trying to cram every affliction into one stamp's own rings.
+      // An attack with no afflictions to give it (a fresh, unleveled player
+      // attack; a creature whose attackTag maps to none) leaves no trail at
+      // all — there's nothing to color it by.
+      const LUNGE_TRAIL_STAMP_SPACING_PX = TILE * 0.4;
+      const LUNGE_TRAIL_OUTER_RADIUS = 0.46; // world units (tile-space)
+      const LUNGE_TRAIL_RING_THICKNESS = 0.14;
+      const LUNGE_TRAIL_LIFETIME_S = 0.55;
+      const LUNGE_TRAIL_BASE_OPACITY = 0.8;
+      const LUNGE_TRAIL_GROW_SCALE = 0.35; // how much each stamp expands over its lifetime as it fades
+      const _lungeTrailStamps = [];
+
+      // Picks one id from `ids`, weighted by its multiplier in `muls` — an
+      // affliction with a 0.35 mul gets picked roughly 3.5x as often as one
+      // with 0.1, which is what lets the trail's own color mix communicate
+      // "applies mostly X" without needing every color crammed into a
+      // single stamp. Falls back to uniform-random if every weight is 0.
+      function pickWeightedAfflictionId(ids, muls) {
+        if (ids.length === 1) return ids[0];
+        let total = 0;
+        for (const id of ids) total += Math.max(0, Number(muls?.[id]) || 0);
+        if (total <= 0) return ids[Math.floor(Math.random() * ids.length)];
+        let r = Math.random() * total;
+        for (const id of ids) {
+          const w = Math.max(0, Number(muls?.[id]) || 0);
+          if (r < w) return id;
+          r -= w;
+        }
+        return ids[ids.length - 1];
+      }
+
+      // areaId/grid/sceneObj let this same stamp-builder serve both the
+      // player (currentArea/getActiveGrid()/getActiveScene()) and a
+      // creature (c.areaId/c.areaGrid/c.scene||scene — see
+      // tickCreatureLungeTrail) without either caller needing to know how
+      // the other resolves its own area context.
+      function spawnLungeTrailStamp(wx, wy, areaId, grid, sceneObj, ids, muls) {
+        if (!ids || !ids.length) return; // nothing to color this lunge by — no trail
+        if (!sceneObj) return;
+        const chosenId = pickWeightedAfflictionId(ids, muls);
+        const color = neonAfflictionColor(chosenId) ?? 0xffffff;
+
+        const tile = window.AudioSystem?.footstepTileAt(areaId, wx, wy, grid);
+        const y = tileSurfaceYInArea(tile, areaId) + characterGroundShadowSurfaceOffset() + 0.02;
+        const group = new THREE.Group();
+        group.position.set(wx / TILE, y, wy / TILE);
+        group.rotation.x = -Math.PI / 2; // lie flat on the ground, same convention as every other ground-projected ring in this file
+
+        const innerR = LUNGE_TRAIL_OUTER_RADIUS - LUNGE_TRAIL_RING_THICKNESS;
+        const outerR = LUNGE_TRAIL_OUTER_RADIUS;
+
+        const geo = new THREE.RingGeometry(innerR, outerR, 24);
+        const mat = new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: LUNGE_TRAIL_BASE_OPACITY, depthWrite: false,
+          side: THREE.DoubleSide,
+          // Additive, same reasoning as the combat cone trail above — reads
+          // as a clear glowing footprint regardless of what's underneath.
+          blending: THREE.AdditiveBlending,
+          fog: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData.baseOpacity = LUNGE_TRAIL_BASE_OPACITY;
+        group.add(mesh);
+
+        sceneObj.add(group);
+        _lungeTrailStamps.push({ group, scene: sceneObj, age: 0 });
+      }
+
+      // Per-entity stride accumulator (see _footstepAdvance) tracking how far
+      // `entity` has traveled since the last dropped stamp — kept on the
+      // entity itself under its own key (not player.footstepAccum/
+      // c.footstepAccum, the ordinary footstep cadence, which keeps ticking
+      // during a lunge/leap too) so the two don't fight over the same
+      // counter. Shared by both tickLungeTrail (player) and
+      // tickCreatureLungeTrail (Pounce) below.
+      function tickLungeTrailForEntity(entity, distPx, ids, muls, areaId, grid, sceneObj) {
+        if (!ids || !ids.length) return;
+        if (!entity._lungeTrailStride) entity._lungeTrailStride = { footstepAccum: 0, footstepFoot: false };
+        if (!window.AudioSystem?.footstepAdvance(entity._lungeTrailStride, distPx, LUNGE_TRAIL_STAMP_SPACING_PX)) return;
+        spawnLungeTrailStamp(entity.x, entity.y, areaId, grid, sceneObj, ids, muls);
+      }
+
+      function tickLungeTrail(prevX, prevY) {
+        const dist = Math.hypot(player.x - prevX, player.y - prevY);
+        tickLungeTrailForEntity(player, dist, combatSwingAfflictionIds, combatSwingAfflictionMuls, currentArea, getActiveGrid(), getActiveScene());
+      }
+
+      // Pounce's leap (see combat-animal-attacks.js's pounceUpdate) covers
+      // real ground exactly like a player attack lunge, so it earns the
+      // same colored-by-affliction trail — using the creature's own
+      // dmgTag-derived afflictionBonuses (ResourceSystem.afflictionBonusesForTag,
+      // {id: mul} same shape as the player's combatSwingAfflictionMuls)
+      // instead of the player's chosen upgrades. Exposed to combat-*.js via
+      // window.Combat.deps.tickCreatureLungeTrail.
+      function tickCreatureLungeTrail(c, distPx, afflictionBonuses) {
+        if (!afflictionBonuses) return;
+        tickLungeTrailForEntity(c, distPx, Object.keys(afflictionBonuses), afflictionBonuses, c.areaId, c.areaGrid, c.scene || scene);
+      }
+
+      // Ages/fades/removes already-dropped stamps — runs every frame
+      // regardless of player.lunging so a stamp dropped right before the
+      // lunge ends still finishes its fade instead of vanishing or freezing.
+      function updateLungeTrailStamps(dt) {
+        for (let i = _lungeTrailStamps.length - 1; i >= 0; i--) {
+          const stamp = _lungeTrailStamps[i];
+          stamp.age += dt;
+          const t = stamp.age / LUNGE_TRAIL_LIFETIME_S;
+          if (t >= 1) {
+            stamp.group.parent?.remove(stamp.group);
+            stamp.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+            _lungeTrailStamps.splice(i, 1);
+            continue;
+          }
+          const fade = 1 - t;
+          const scale = 1 + t * LUNGE_TRAIL_GROW_SCALE;
+          stamp.group.scale.set(scale, scale, scale);
+          for (const child of stamp.group.children) {
+            child.material.opacity = (child.userData.baseOpacity ?? LUNGE_TRAIL_BASE_OPACITY) * fade;
+          }
+        }
+      }
+
+      function drawActionTileEffects() {
+        for (const fx of actionTileEffects) {
+          const t = fx.age / fx.maxAge;
+          const tile = getActiveGrid()[fx.row][fx.col];
+          const y = tileSurfaceY(tile.type) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
+          const center = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.5);
+          if (!center.visible) continue;
+          const east = worldToOverlay(fx.col + 1.0, y + 0.02, fx.row + 0.5);
+          const north = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.0);
+          const radius = Math.max(12, Math.hypot(east.x - center.x, east.y - center.y, north.x - center.x, north.y - center.y) * (0.92 + t * 0.18));
+          octx.save();
+          octx.globalAlpha = (1 - t) * (fx.ok ? 0.85 : 0.95);
+          octx.strokeStyle = fx.color;
+          octx.lineWidth = fx.ok ? 3 : 4;
+          octx.setLineDash(fx.ok ? [7, 5] : [3, 4]);
+          octx.beginPath();
+          octx.ellipse(center.x, center.y, radius, radius * 0.42, 0, 0, Math.PI * 2);
+          octx.stroke();
+          octx.restore();
+        }
+      }
+
+      function drawActionParticles() {
+        octx.save();
+        octx.textAlign = 'center';
+        octx.textBaseline = 'middle';
+        for (const p of actionParticles) {
+          const t = p.age / p.maxAge;
+          const pos = worldToOverlay(p.x, p.y, p.z);
+          if (!pos.visible) continue;
+          octx.globalAlpha = Math.max(0, 1 - t);
+          octx.font = `${Math.max(8, p.size * (1 - t * 0.35))}px 'DM Mono', monospace`;
+          octx.fillStyle = p.color;
+          octx.fillText(p.emoji, pos.x, pos.y);
+        }
+        octx.restore();
+        octx.globalAlpha = 1;
+      }
+
+      function applyAction(tool, action, col, row) {
+        if (!canUseAction(tool, action, col, row)) return { ok: false, message: `${actionName(action)} cannot be used on that tile.` };
+        const tile = getActiveGrid()[row][col];
+
+        if (tool === 'shovel') {
+          if (action === 'dig' && tile.dewPile) {
+            const colorKey = tile.dewPile;
+            tile.dewPile = null;
+            window.DewVats.removeMesh(col, row);
+            const dewKey = dewItemKey(colorKey);
+            inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
+            awardToolUseMasteryXp('shovel');
+            saveFarmLayout();
+            return { ok: true, message: `Dug up 1 ${ITEM_DEFS[dewKey]?.label || dewKey}.` };
+          }
+          if (action === 'dig' && tile.type === TileType.TRENCH) {
+            tile.depth = 1;
+            awardToolUseMasteryXp('shovel');
+            return { ok: true, message: 'Redug the trench back to full depth.' };
+          }
+          const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
+          if (action === 'dig')   { tile.type = TileType.TRENCH; tile.depth = 1; }
+          if (action === 'fill')  tile.type = TileType.GRASS;
+          if (action === 'raise') tile.type = TileType.RAISED;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
+          awardToolUseMasteryXp('shovel');
+          return { ok: true, message: digMsg };
+        }
+
+        if (tool === 'hoe') {
+          tile.type = action === 'till' ? TileType.TILLED : TileType.GRASS;
+          if (action === 'smooth') tile.crop = CropType.NONE;
+          awardToolUseMasteryXp('hoe');
+          return { ok: true, message: action === 'till' ? 'Tilled a plantable bed.' : 'Smoothed the tile back into grass.' };
+        }
+
+        if (tool === 'axe' && action === 'chop' && isChoppableTreeTile(col, row)) {
+          // Felling a real tree — only reachable via a completed hold (see
+          // CHOP_TREE_STAGES/wouldStartCharge), unlike the instant clear
+          // below. Drops logs matching the zone's species instead of mulch.
+          const logKey = treeLogItemKey();
+          const logDef = ITEM_DEFS[logKey];
+          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 logs
+          tile.type = TileType.GRASS;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          // tile.floraKind is deliberately left alone — tickFelledTreeRegrowth
+          // just flips tile.type back to SHRUB once TREE_REGROWTH_DAYS pass,
+          // and the same species grows back via _buildZoneFloorMeshes' switch.
+          const _felledEntries = _zoneFelledTreePersist.get(currentArea) || [];
+          _felledEntries.push({ col, row, feltDay: calendar.day });
+          _zoneFelledTreePersist.set(currentArea, _felledEntries);
+          inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
+          inventory.mulch = Math.min(99, inventory.mulch + 1);
+          // No markTileDirty here — it indexes the farm's own small grid,
+          // and felling a tree only ever happens in a wilderness zone (see
+          // isChoppableTreeTile). completeChargeAction's zone-refresh branch
+          // (tool === 'axe') handles the visual update instead.
+          awardToolUseMasteryXp('axe');
+          return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
+        }
+
+        if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {
+          // Breaking a rock — reachable via a completed hold (see
+          // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
+          // above. Drops stone (plus a rare pebble) instead of logs/mulch.
+          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 stone
+          tile.type = TileType.GRASS;
+          tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          // tile.rockKind is deliberately left alone — tickMinedRockRegrowth
+          // just flips tile.type back to ROCK once ROCK_REGROWTH_DAYS pass.
+          // Farm rocks are day-one land-clearing obstacles, not a wilderness
+          // resource node — they should stay cleared, so skip the regrow
+          // entry entirely (tickMinedRockRegrowth only ever resolves entries
+          // against _zoneScenes-backed wilderness maps; a 'farm' entry would
+          // just sit there forever, bloating the save for nothing).
+          if (currentArea !== 'farm') {
+            const _minedEntries = _zoneMinedRockPersist.get(currentArea) || [];
+            _minedEntries.push({ col, row, minedDay: calendar.day });
+            _zoneMinedRockPersist.set(currentArea, _minedEntries);
+          }
+          inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
+          const gotPebble = Math.random() < 0.35;
+          if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
+          // No markTileDirty here for the wilderness-zone case — see the axe
+          // branch above; completeChargeAction's own currentArea==='farm'
+          // branch already calls markTileDirty/recomputeWater for the farm.
+          awardToolUseMasteryXp('pick');
+          return { ok: true, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
+        }
+
+        if (tool === 'machete' || tool === 'axe') {
+          const result = clearVegetationAt(col, row, action);
+          const isWide = action === 'slash' || action === 'hack';
+          if (result.cleared <= 0) return { ok: false, message: isWide ? 'Found no overgrowth in the swing.' : 'No overgrowth to clear here.' };
+          if (tool === 'axe') awardToolUseMasteryXp('axe'); // machete isn't a gear tool — no mastery of its own
+          return {
+            ok: true,
+            message: isWide
+              ? `Cleared ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the swing into mulch.`
+              : 'Cleared one tile of day-one overgrowth into mulch.'
+          };
+        }
+
+        if (tool === 'weapon') {
+          const hitResult = window.Combat ? window.Combat.resolveWeaponHit(action, resolveWeaponHit) : resolveWeaponHit(action);
+          if (hitResult.hits > 0) return { ok: true, message: hitResult.message };
+          const vegResult = clearVegetationAt(col, row, action);
+          if (vegResult.cleared > 0) {
+            return {
+              ok: true,
+              message: action === 'slash'
+                ? `Slashed ${vegResult.cleared} tile${vegResult.cleared === 1 ? '' : 's'} in the cone into mulch.`
+                : 'Cut one tile of day-one overgrowth into mulch.'
+            };
+          }
+          return { ok: false, message: action === 'slash' ? 'The big sweep connects with nothing.' : 'The strike connects with nothing.' };
+        }
+
+        if (tool === 'seeds') {
+          if (action === 'harvest') return harvestCrop(tile);
+          const crop = action.startsWith('plant_') ? action.slice(6) : null;
+          return plantCrop(tile, crop);
+        }
+
+        return { ok: false, message: 'No action handler found.' };
+      }
+
+      function useActiveAction() {
+        if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
+        if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
+        // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
+        // builds while fishing is active — mirrors runInputAction's existing
+        // window.Fishing?.state?.active special-case for keyboard/controller.
+        if (window.Fishing?.state?.active) {
+          if (activeAction === 'fish_primary') window.Fishing?.primaryAction();
+          else if (activeAction === 'fish_cancel') window.Fishing?.close();
+          return;
+        }
+        if (activeAction === 'climb') {
+          if (player.climbing) return;
+          const climb = window.ClimbSystem.getClimbTarget();
+          if (climb) window.ClimbSystem.startClimb(climb); else showToast('Nothing to climb here.', false);
+          return;
+        }
+        if (activeTool === 'shovel') {
+          activeAction = resolveDigFillAction(activeTool, activeAction, getReticleTile());
+        }
+        if (activeAction === carpenterAction()) {
+          if (nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('carpenterShop'); return; }
+          showToast(carpenterButtonConfig().noTargetMessage || 'The carpenter is not available right now.', false);
+          return;
+        }
+        if (activeAction === generalStoreAction()) {
+          if (nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) && !farmEditMode) { openMenu('generalStore'); return; }
+          showToast(generalStoreButtonConfig().noTargetMessage || 'The general store is not available right now.', false);
+          return;
+        }
+        if (activeAction === npcDialogueAction()) {
+          if (nearbyNpcWalker && !farmEditMode) { openNpcDialogue(nearbyNpcWalker); return; }
+          showToast(npcDialogueButtonConfig().noTargetMessage || 'No one nearby to talk to.', false);
+          return;
+        }
+        // Spearfishing bypasses the normal swing timer entirely — it opens
+        // its own minigame overlay instead of queuing a pendingAction.
+        if (activeTool === 'harpoon' && activeAction === 'fish') {
+          const reticle = getReticleTile();
+          if (!canUseAction('harpoon', 'fish', reticle.col, reticle.row)) {
+            showToast('No river or stream here to fish.', false);
+            return;
+          }
+          window.Fishing?.beginCast();
+          return;
+        }
+        // Weapon attacks route through the loadout's tap-slot abilities
+        // (combo/quick attacks/etc.) instead of firing a plain swing here —
+        // mirrors the mouse/touch action-bar handling further down, so
+        // gamepad/keyboard "primary action" presses get the same combo and
+        // windup/strike behavior instead of falling back to the pre-loadout
+        // swing. Each ability deducts its own stamina cost, so there's no
+        // separate check here.
+        if (activeTool === 'weapon') {
+          const slot = activeAction === toolActions.weapon[0] ? 1 : activeAction === toolActions.weapon[1] ? 2 : null;
+          if (slot && window.Combat?.input) { window.Combat.input.fireTap(slot); return; }
+        }
+
+        // Digging a brand-new trench or filling an existing one in requires a
+        // sustained hold through multiple ramping/timed swings rather than a single
+        // tap — hand off to the charge state machine instead of a normal swing.
+        if (wouldStartCharge(activeTool, activeAction)) {
+          // Check permission before the multi-second hold starts, not after —
+          // completeChargeAction() re-checks too in case a grant changes mid-charge.
+          const _preChargePermCategory = farmActionPermissionCategory(activeTool, activeAction);
+          if (_preChargePermCategory && !hasFarmPermission(_preChargePermCategory)) {
+            const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
+            lastActionMessage = msg;
+            showToast(msg, false);
+            return;
+          }
+          if (activeTool === 'axe') {
+            startChargeAction(getReticleTile(), CHOP_TREE_STAGES);
+            return;
+          }
+          if (activeTool === 'pick' && activeAction === 'mine') {
+            startChargeAction(getReticleTile(), MINE_ROCK_STAGES);
+            return;
+          }
+          {
+            const _chargeReticle = getReticleTile();
+            const _chargeTile = getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
+            const _digStages = _chargeTile?.dewPile ? DIG_DEW_PILE_STAGES : DIG_NEW_TRENCH_STAGES;
+            startChargeAction(_chargeReticle, activeAction === 'fill' ? FILL_TRENCH_STAGES : _digStages);
+          }
+          return;
+        }
+
+        const _anim = activeAnimStyle();
+        toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
+        // Dig speed only scales shovel dig & fill swings (e.g. the single-tap
+        // trench redig below) — everything else swings at its normal pace.
+        if (activeTool === 'shovel' && (activeAction === 'dig' || activeAction === 'fill')) {
+          toolSwingDur /= getDigSpeedMultiplier();
+        }
+        toolSwingT = toolSwingDur;
+        strikeFired = false;
+        pendingAction = null;
+
+        // Spot transitions require explicit input
+        if (activeAction === 'use_spot' && _pendingSpotTransition) {
+          startSceneTransition(() => performTravel(_pendingSpotTransition));
+          return;
+        }
+
+        // Immediate actions (navigation / world-object interactions)
+        if (activeAction === 'obj_exit_house') {
+          exitInterior();
+          lastActionMessage = 'Stepped outside.';
+          showToast(lastActionMessage, true);
+          return;
+        }
+        if (activeAction.startsWith('obj_')) {
+          const _r = getReticleTile();
+          // worldObjects is farm-scene-only (see its declaration) — interior
+          // interactables (e.g. a bed) live in interiorFurnitureObjects
+          // instead, via getInteriorInteractableAt. Ordinary building/town
+          // furniture has no interaction at all — only the handful
+          // registered in _buildingInteractables (e.g. the Alchemy Table,
+          // and now sittable furniture — see the mapData.furniture loader).
+          const _o = currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
+            : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getWorldObjectAt(_r.col, _r.row))
+            : getWorldObjectAt(_r.col, _r.row);
+          const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
+          lastActionMessage = _res.message;
+          showToast(_res.message, _res.ok !== false);
+          if (_res.ok !== false) saveMemberWorldData();
+          return;
+        }
+
+        // All other actions are queued to fire at the start of the strike phase
+        const reticle = getReticleTile();
+        pendingAction = { col: reticle.col, row: reticle.row, action: activeAction, tool: activeTool };
+      }
+
+      // Only the farm (and, for furniture, the house interior) is
+      // ownership-gated — wilderness/town resource gathering, combat, and
+      // navigation are always open to any farmhand. Returns null when the
+      // action isn't farm-alteration at all (weapon swings, obj_
+      // interactions, etc.). Adding livestock isn't a tile action at all
+      // anymore — see window.FarmAnimals.addFromItem(), invoked from the Farm tab.
+      function farmActionPermissionCategory(tool, action) {
+        if (action.startsWith('place_')) {
+          // placeDecorativeFurniture() also accepts area:'interior' pieces
+          // placed inside the house — gate those too, not just the open farm.
+          return (currentArea === 'farm' || currentArea === 'interior') ? 'placeFurniture' : null;
+        }
+        if (currentArea !== 'farm') return null;
+        if (action.startsWith('plant_')) return 'plant';
+        if (action === 'harvest') return 'harvest';
+        if (tool === 'shovel' || tool === 'hoe' || tool === 'pick' || tool === 'machete' || tool === 'axe') return 'alterFarm';
+        return null;
+      }
+
+      function firePendingAction() {
+        if (!pendingAction) return;
+        const { col, row, action, tool } = pendingAction;
+        pendingAction = null;
+
+        const permCategory = farmActionPermissionCategory(tool, action);
+        if (permCategory && !hasFarmPermission(permCategory)) {
+          const msg = "Only the farm's owner (or a granted farmhand) can do that here.";
+          lastActionMessage = msg;
+          showToast(msg, false);
+          refreshActionBar();
+          return;
+        }
+
+        const tile = getActiveGrid()[row][col];
+        let result;
+        if (action.startsWith('place_decor_')) {
+          result = placeDecorativeFurniture(col, row, action.slice(12));
+        } else if (action.startsWith('place_')) {
+          result = placeProcessingFurniture(col, row, action.slice(6));
+        } else if (action.startsWith('plant_')) {
+          result = plantCrop(tile, action.slice(6));
+        } else if (action === 'harvest') {
+          result = harvestCrop(tile);
+        } else {
+          result = applyAction(tool, action, col, row);
+        }
+        lastActionMessage = result.message;
+        // Basic weapon-tap swings resolve through applyAction's tool ===
+        // 'weapon' branch — silence the chime same as the combo/quick/
+        // Charged Breaker ability swings below (see showToast's `silent`).
+        showToast(result.message, result.ok !== false, tool === 'weapon');
+        spawnActionParticles(col, row, action, result.ok !== false);
+        debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
+        // The farm tile-mesh/water systems below are farm-grid specific; off
+        // the farm (town, zones) col/row index into a different grid entirely.
+        if (currentArea === 'farm') {
+          recomputeWater(false);
+          // dig/fill/raise/till/smooth/plant/harvest/place_* all land here —
+          // previously none of them ever called saveFarmLayout() (only the
+          // farm editor's brush path did), so any terraforming or planting
+          // done through ordinary gameplay was silently lost on reload, and
+          // could get wiped out mid-session by anything that re-applies the
+          // (stale, still-unsaved) layout on top of the live grid.
+          if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
+        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+          // Note: weapon/machete vegetation clears in a zone don't trigger this —
+          // applyAction's weapon branch returns the same ok:true shape for a normal
+          // combat hit as for a veg clear, and refreshing the whole zone floor/grass
+          // mesh on every combat hit would be a real perf hit. Their cleared tile
+          // just stays visually stale (still SHRUB-shaped) until something else
+          // rebuilds the zone — a pre-existing, non-crashing gap, not fixed here.
+          // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
+          // a dig/fill/raise/till/smooth just changed this tile's type, but a
+          // zone's terrain is merged meshes built once rather than the farm's
+          // per-tile array, so the whole ground+grass layer needs rebuilding
+          // (not just this one tile) for the change to actually show up. See
+          // refreshZoneGroundVisuals.
+          refreshZoneGroundVisuals(currentArea);
+        }
+        if (result.ok !== false) saveMemberWorldData();
+        refreshActionBar();
+      }
+
+      function targetingConfig() {
+        return window.SCRATCHBONES_CONFIG?.game?.input?.targeting || {};
+      }
+
+      function getReticleTile() {
+        const cfg = targetingConfig();
+        const orbitRadiusTiles = Number.isFinite(Number(cfg.orbitRadiusTiles)) ? Number(cfg.orbitRadiusTiles) : 0.62;
+        const angle = targetAimAngle;
+        const dir = { x: Math.cos(angle), y: Math.sin(angle), name: facingCardinal(angle).name };
+        // Ground-level probe: a tight orbit around the player's actual position,
+        // aimed by raw input/look rotation rather than the tile the player stands on.
+        const probeX = player.x + dir.x * TILE * orbitRadiusTiles;
+        const probeY = player.y + dir.y * TILE * orbitRadiusTiles;
+        return {
+          col: clamp(Math.floor(probeX / TILE), 0, getActiveCols() - 1),
+          row: clamp(Math.floor(probeY / TILE), 0, getActiveRows() - 1),
+          dir,
+          probeX,
+          probeY
+        };
+      }
+
+      function facingCardinal(angle) {
+        const x = Math.cos(angle);
+        const y = Math.sin(angle);
+        if (Math.abs(x) > Math.abs(y)) return { x: Math.sign(x), y: 0, name: x > 0 ? 'east' : 'west' };
+        return { x: 0, y: Math.sign(y), name: y > 0 ? 'south' : 'north' };
+      }
+
+      // Cliff climbing (getClimbTarget/startClimb/updateClimb) now lives in
+      // js/climb-system.js — call via window.ClimbSystem.*.
+
+      function angleDiff(target, current) {
+        let d = target - current;
+        while (d >  Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        return d;
+      }
+
+      // Spearfishing minigame (Spear Bridge) + fishing FX particles now
+      // live in js/fishing-minigame.js (window.Fishing) -- see
+      // window.Fishing.init(...) below for the wiring. game.js's own
+      // tool-swing code still reads window.Fishing.state/.readyPose
+      // directly where it poses the held harpoon during a throw.
+
+      // Dead-zone rotation math (perpClamp/creatureDeadzoneTarget/
+      // creatureSnapSwayTarget/nearestCardinalAngle) shared by player/NPC/
+      // creature PNG-plane avatars now lives in js/perp-rotation.js — call
+      // via window.PerpRotation.*.
+
+      // Weather FX & lighting overlay (checkForMajorStorm, day/night sky
+      // tint + lantern masks + lightning flash, trench water particles,
+      // paddy/rain ripples) now lives in js/weather-fx.js
+      // (window.WeatherFX) — see its init(deps) call below for the shared
+      // game.js state it's threaded.
+
+      // Layered rain audio (rainLayerWeights/updateRainAudio) now lives in
+      // js/music-system.js (window.Music).
+
+      function tileSpeedAt(wx, wy) {
+        const aC = getActiveCols(), aR = getActiveRows();
+        if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return null;
+        const col  = Math.floor(wx / TILE);
+        const row  = Math.floor(wy / TILE);
+        const tile = getActiveGrid()[row][col];
+        const type = tile.type;
+        if (isSolid(type)) return null;
+        // Auto-reserved plateau cliff-face ring — impassable except where a
+        // ramp tile explicitly cuts through it (which never sets `incline`).
+        if (tile.incline) return null;
+        // Rivers/streams are swimmable, not blocked — the player has no
+        // canSwim tag of their own (see CREATURE_DB's comment on the flag),
+        // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
+        // for the matching attack-lockout.
+        if (type === TileType.RIVER || type === TileType.STREAM) return SWIM_SPEED_MUL;
+        // Block structural building tiles on exterior maps (player must use doors/transitions).
+        if (currentArea === 'farm' && (isHouseFootprint(col, row) || isFarmBuildingCollisionTile(col, row))) return null;
+        if (currentArea === 'town' && isTownBuildingCollisionTile(col, row)) return null;
+        if (_isZoneArea(currentArea) && isTownBuildingCollisionTile(col, row, currentArea)) return null;
+        if (furnitureBlocksMovementAt(currentArea, wx / TILE, wy / TILE)) return null;
+        // Farm terrain no longer slows movement — keeps farm traversal feeling
+        // as snappy as town, matching the player's uniform GRASS speed there.
+        if (currentArea === 'farm') return 1.00;
+        return {
+          [TileType.GRASS]:   1.00,
+          [TileType.TILLED]:  0.85,
+          [TileType.WEEDS]:   1.00,
+          [TileType.RAISED]:  0.90,
+          [TileType.PADDY]:   0.70,
+          [TileType.TRENCH]:  0.30,
+        }[type] ?? 1.00;
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  THREE.JS RENDERER
+      //  World units: 1 unit = 1 tile. X=col, Z=row, Y=height.
+      //  Floor Y: RAISED=0.5, normal=0, TRENCH=-0.5
+      //  Water rendered as a semi-transparent plane at floor Y + water depth.
+      //  Camera: isometric-style, fixed angle, follows player smoothly.
+      // ═══════════════════════════════════════════════════════════════
+
+      // ── Three.js scene setup ──────────────────────────────────────
+      const THREE_SCALE = 1.0;  // world units per tile (keep at 1)
+
+      const scene    = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a2b20);
+      scene.fog      = new THREE.FogExp2(0x1a2b20, 0.018);
+
+      const threeRect = threeContainer.getBoundingClientRect();
+      // preserveDrawingBuffer:true — without it, canvas.toDataURL() (see the
+      // Pixel Probe's screenshot capture) has no spec guarantee of reading
+      // back anything meaningful outside the exact rAF callback that drew
+      // it, and forcing an extra ad-hoc renderer.render() call to work
+      // around that risks capturing a DIFFERENT render of the "same" frame
+      // than what was actually displayed — GPU resolution of near-tied
+      // depth/stencil comparisons (exactly what's suspected here) isn't
+      // guaranteed identical between two separate render() invocations,
+      // especially on a tile-based mobile GPU. Keeping the buffer around
+      // lets the probe read back the literal frame the user actually saw.
+      const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+      threeContainer.appendChild(renderer.domElement);
+
+      // ── Interior scene (bigger-on-the-inside room) ────────────────
+      const interiorScene = new THREE.Scene();
+      interiorScene.background = new THREE.Color(0x000000);
+
+      // Interior lighting — dark room, single warm lantern
+      const _intAmbient = new THREE.AmbientLight(0xffd090, 0.15);
+      interiorScene.add(_intAmbient);
+      const _intKey = new THREE.DirectionalLight(0xfff0cc, 0.08);
+      _intKey.position.set(2, 6, 3);
+      interiorScene.add(_intKey);
+      const _intFill = new THREE.PointLight(0xff8833, 0.35, 6);
+      _intFill.position.set(3, 1.8, 2.5);  // centre of 6×5 main room, dim fallback so placed lamps/candles/hearths stand out
+      interiorScene.add(_intFill);
+
+      // WallBuilder instance — loads Roughbrick1.glb eagerly in background
+      const houseWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
+      let interiorWallGroup  = null;
+      let interiorFloorGroup = null;
+      let _interiorGeometryBuilt = false; // becomes true once the starter piece has spawned at least one rebuild
+      // One mesh (+ optional light) per chimney's derived hearth — rebuilt
+      // fresh every rebuildInteriorGeometry() pass alongside the floor/wall
+      // groups, from window.HousePieces.computeInteriorLayout()'s own
+      // `hearths` list. Not part of interiorFurnitureObjects: a derived
+      // hearth isn't player-placed/moved/demolished independently, it's
+      // tied 1:1 to its chimney and disappears the moment that chimney does.
+      let _derivedHearthMeshes = [];
+
+      houseWallBuilder.loadDefaultGlb()
+        .then(() => {
+          debugLog('Interior walls: Roughbrick1.glb loaded');
+          if (_interiorGeometryBuilt) rebuildInteriorGeometry(); // swap placeholder bricks for the real GLB
+        })
+        .catch(err => debugLog('Interior walls GLB error: ' + err.message));
+
+      // Kicks off the shared HighlandLongshingle_boned.glb load for every
+      // Highland-roofed structure (barns, house pieces, town/zone
+      // buildings). Previously only town-zone-buildings.js ever called
+      // this — a farm-only session (never visiting town) left barns/house
+      // pieces stuck on the tube-fallback "shingles" forever, since nothing
+      // else triggered the fetch. HousePieceGen.loadShingleGlb() is a
+      // cached singleton promise, so this is a safe, cheap no-op if
+      // something else already started/finished the load.
+      if (typeof HousePieceGen !== 'undefined') {
+        HousePieceGen.loadShingleGlb('assets/models/')
+          .then(() => debugLog('Shingle GLB loaded (HighlandLongshingle_boned.glb)'))
+          .catch(err => debugLog('Shingle GLB error: ' + err.message, 'warn'));
+      }
+
+      // Retints the shared brick + shingle GLB templates to the same tan/grey
+      // finish town buildings use (town-zone-buildings.js's own
+      // _applyBuildingGlbTints, gated on the same window.__hobunjiGlbTintApplied
+      // flag so whichever code path finishes its loads first — farm or town —
+      // does the retint exactly once). Without this, a farm-only session that
+      // never visits town leaves barns/house pieces on the untinted default
+      // brick/shingle colors forever, since nothing else triggers it.
+      if (typeof HousePieceGen !== 'undefined') {
+        Promise.all([houseWallBuilder.loadDefaultGlb(), HousePieceGen.loadShingleGlb('assets/models/')])
+          .then(() => {
+            if (window.__hobunjiGlbTintApplied) return;
+            window.__hobunjiGlbTintApplied = true;
+            houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
+            HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
+          })
+          .catch(() => {});
+      }
+
+      // Dedicated WallBuilder instance for the town's path-as-paved-surface
+      // (buildTownPathBrickSurface below) — kept separate from houseWallBuilder
+      // so it can carry its own tint (path.bricks' #545039, distinct from
+      // building walls' #4d4d4d) without both fighting over one shared
+      // GLB-library material object (build() hands every instanced wall the
+      // exact same material reference — see WallBuilder.js).
+      const pathWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
+      const PATH_SURFACE_RECIPE_ID = 'town_path_surface';
+      let _pathSurfaceReadyPromise = null;
+      function ensurePathSurfaceReady() {
+        if (!_pathSurfaceReadyPromise) {
+          _pathSurfaceReadyPromise = Promise.all([
+            pathWallBuilder.loadDefaultGlb(),
+            fetch('assets/models/recipes/walls/wallrecipe2.json').then(r => {
+              if (!r.ok) throw new Error('HTTP ' + r.status + ' fetching wallrecipe2.json');
+              return r.json();
+            }),
+          ]).then(([, recipe]) => {
+            pathWallBuilder.addRecipe(PATH_SURFACE_RECIPE_ID, recipe);
+            pathWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#545039');
+            debugLog('Path brick surface: recipe + GLB ready.');
+          }).catch(err => {
+            // Logged here too, not just at each call site's own .catch — this
+            // promise is cached and reused by every zone/farm/town caller
+            // (see the singleton guard above), so a failure here otherwise
+            // only ever surfaces as "no bricks anywhere, silently" instead of
+            // pointing at the actual cause (bad fetch, malformed recipe, GLB
+            // load failure).
+            debugLog('Path brick surface: recipe/GLB load failed — ' + err.message, 'warn');
+            throw err;
+          });
+        }
+        return _pathSurfaceReadyPromise;
+      }
+
+      // Exit-threshold interior cells (3-wide nub just outside each built
+      // house piece's door) — walking onto one of these triggers
+      // exitInterior(); also the exitTileSet InteriorSceneBuilder needs so
+      // it doesn't wall off the opening. Rebuilt by rebuildInteriorGeometry()
+      // whenever a piece is built/demolished.
+      let _interiorExitTiles = new Set();
+
+      // Rebuilds the merged house interior — floor tiles, walls, the
+      // interiorGrid walkability data, and the exit-trigger tile set — from
+      // every currently-built house piece (window.HousePieces.
+      // computeInteriorLayout()). Called once at farm init (after the
+      // starter piece spawns) and again every time a piece finishes
+      // building or gets demolished, replacing the old one-shot
+      // buildInteriorScene()/frozen INTERIOR_WALL_PANELS approach — this is
+      // the same InteriorSceneBuilder.buildWallPanels/buildWallGroup
+      // algorithm every other building interior in the game already uses
+      // (see loadBuildingScene's hobunji_building_interior.v1 branch).
+      function rebuildInteriorGeometry() {
+        _interiorGeometryBuilt = true;
+        const { floorSet, exitSet, hearths } = window.HousePieces.computeInteriorLayout();
+        _interiorExitTiles = exitSet;
+
+        _derivedHearthMeshes.forEach(h => {
+          interiorScene.remove(h.mesh);
+          h.mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+          if (h.light) interiorScene.remove(h.light);
+        });
+        _derivedHearthMeshes = hearths.map(h => {
+          const hearthDef = DECORATIVE_FURNITURE_DEFS.hearth;
+          const mesh = buildFurnitureVisual('hearth', hearthDef.color || 0x5a4a3a);
+          mesh.position.set(h.cx, 0, h.cz);
+          mesh.rotation.y = h.yaw;
+          _markOutline(mesh);
+          interiorScene.add(mesh);
+          let light = null;
+          if (hearthDef.light) {
+            light = new THREE.PointLight(hearthDef.light.color, hearthDef.light.intensity, hearthDef.light.distance);
+            light.position.set(h.cx, hearthDef.light.height || 0.6, h.cz);
+            interiorScene.add(light);
+          }
+          return { ...h, mesh, light };
+        });
+
+        for (let r = 0; r < INTERIOR_ROWS; r++) {
+          for (let c = 0; c < INTERIOR_COLS; c++) {
+            interiorGrid[r][c].type = floorSet.has(c + ',' + r) ? TileType.GRASS : TileType.ROCK;
+          }
+        }
+
+        if (interiorFloorGroup) { interiorScene.remove(interiorFloorGroup); interiorFloorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+        if (interiorWallGroup)  { WallBuilder.disposeGroup(interiorWallGroup); interiorScene.remove(interiorWallGroup); }
+
+        interiorFloorGroup = new THREE.Group();
+        floorSet.forEach(key => {
+          const [c, r] = key.split(',').map(Number);
+          const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), interiorFloorMaterial);
+          fl.position.set(c + 0.5, -0.05, r + 0.5);
+          fl.receiveShadow = true;
+          interiorFloorGroup.add(fl);
+        });
+        interiorScene.add(interiorFloorGroup);
+
+        const panels = InteriorSceneBuilder.buildWallPanels(floorSet, exitSet, INTERIOR_WALL_HEIGHT);
+        interiorWallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, panels, '', { usePlaceholder: true, unitMult: 0.5, rockScale: 1.5, preScale: [1, 1, 0.6], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 } });
+        _markOutline(interiorWallGroup);
+        interiorScene.add(interiorWallGroup);
+
+        debugLog(`rebuildInteriorGeometry: ${floorSet.size} floor cells, ${panels.length} wall panels`);
+      }
+
+      // Floor material — boards.png if present, warm brown placeholder
+      // otherwise; shared by every rebuildInteriorGeometry() floor tile.
+      const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/');
+
+      // ── Inverted shell outline ────────────────────────────────────
+      // Second render pass: back faces only, vertices extruded along
+      // normals → solid black border on every mesh edge. No render
+      // targets or screen-space sampling required.
+      const shellOutlineMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+          uThickness: { value: 0.006 },  // NDC units → constant screen-pixel width
+        },
+        vertexShader: `
+          // NOTE: do not redeclare "attribute mat4 instanceMatrix" here — for a
+          // regular (non-Raw) ShaderMaterial, three.js's WebGLProgram already
+          // injects that exact declaration into the vertex shader prefix
+          // whenever USE_INSTANCING is defined. Redeclaring it is a duplicate
+          // attribute and fails to compile/link, which silently dropped the
+          // outline for every InstancedMesh (wall bricks) using this material.
+          uniform float uThickness;
+          void main() {
+            #ifdef USE_INSTANCING
+              mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+              // Wall-brick instances are only ever rotated/shifted per
+              // instance, never non-uniformly scaled (see WallBuilder's
+              // brickJitter), so the linear part of mvMatrix itself still
+              // transforms a normal correctly here.
+              vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
+            #else
+              mat4 mvMatrix = modelViewMatrix;
+              // normalMatrix (three.js's own inverse-transpose of
+              // modelViewMatrix's linear part, supplied automatically) is
+              // required here rather than mat3(mvMatrix) directly —
+              // furniture placed in a building interior can carry a
+              // non-uniform per-instance scale (see loadBuildingScene's
+              // postSX/postSY/postSZ), and naively transforming a normal
+              // through a non-uniformly-scaled matrix stops being
+              // perpendicular to the actual scaled surface — confirmed live
+              // as a rescaled interior bench's shell outline bleeding onto
+              // the player sprite regardless of actual depth (not a
+              // depth-test bug at all: the shell geometry itself was wrong).
+              vec3 viewNormal = normalize(normalMatrix * normal);
+            #endif
+            vec4 viewPos = mvMatrix * vec4(position, 1.0);
+            vec4 clip  = projectionMatrix * viewPos;
+            vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
+
+            vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
+            float len = length(dir);
+            dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
+            clip.xy    += dir * uThickness * clip.w;
+            gl_Position = clip;
+          }
+        `,
+        fragmentShader: `
+          void main() {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+          }
+        `,
+        // depthWrite off: shell only reads the scene depth, never corrupts it.
+        // LessDepth: coplanar back faces (adjacent tiles share the same Z plane)
+        // would pass LEQUAL and splat black everywhere — LESS rejects equal depth.
+        depthWrite: false,
+        depthFunc:  THREE.LessDepth,
+      });
+
+      // Enable layer 1 on a mesh (or every mesh inside a Group) so the
+      // selective outline pass picks it up. Flat floor slabs, water, and
+      // grass billboards stay on layer 0 only and are never outlined.
+      // Meshes tagged userData.noOutline (textured leaf cards — see
+      // foliage-generator.js's getLeafCardMaterial usage) are skipped even
+      // inside an otherwise-outlined group: shellOutlineMat's inverted-hull
+      // technique needs real volume, correct normals, and a depth-writing
+      // main pass to produce a thin border. A leaf card is a flat, single-
+      // layer, depthWrite:false alpha-cutout plane with no computed normals
+      // (mergeGeomsWithUV never calls computeVertexNormals, unlike the bark/
+      // vine merges right next to it) — the shell's normal-based expand is
+      // therefore zero, so for whichever leaf cards happen to be back-facing
+      // from the current camera angle (roughly half, given the random per-
+      // leaf yaw), the BackSide shell isn't culled, has the exact same depth
+      // as the real card, passes shellOutlineMat's LessDepth test (nothing
+      // else at that depth to fail against, since the real card never wrote
+      // depth), and paints its FULL quad solid black with no alphaTest —
+      // the "black leaf rectangles" bug, camera-angle dependent since it's a
+      // different subset of back-facing cards each time the view changes.
+      function _markOutline(obj) {
+        if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
+        if (obj.isMesh) { if (!obj.userData.noOutline) obj.layers.enable(1); return; }
+        obj.traverse(child => { if (child.isMesh && !child.userData.noOutline) child.layers.enable(1); });
+      }
+
+      // Shared vertex shader used for coloured target outlines (supports instancing)
+      const _targetOutlineVert = `
+        // See shellOutlineMat above — three.js's own vertex-shader prefix
+        // already declares "attribute mat4 instanceMatrix" under
+        // USE_INSTANCING for ShaderMaterial, so it must not be redeclared here.
+        uniform float uThickness;
+        void main() {
+          #ifdef USE_INSTANCING
+            mat4 mvMatrix = modelViewMatrix * instanceMatrix;
+            vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
+          #else
+            mat4 mvMatrix = modelViewMatrix;
+            // See shellOutlineMat's own comment on this same substitution —
+            // required for correctness under non-uniform scale.
+            vec3 viewNormal = normalize(normalMatrix * normal);
+          #endif
+          vec4 viewPos = mvMatrix * vec4(position, 1.0);
+          vec4 clip  = projectionMatrix * viewPos;
+          vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
+          vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
+          float len = length(dir);
+          dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
+          clip.xy += dir * uThickness * clip.w;
+          gl_Position = clip;
+        }
+      `;
+      const targetOutlineGreenMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: { uThickness: { value: 0.009 } },
+        vertexShader: _targetOutlineVert,
+        fragmentShader: `void main() { gl_FragColor = vec4(0.08, 0.95, 0.18, 1.0); }`,
+        depthWrite: false, depthFunc: THREE.LessDepth,
+      });
+      const targetOutlineRedMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: { uThickness: { value: 0.009 } },
+        vertexShader: _targetOutlineVert,
+        fragmentShader: `void main() { gl_FragColor = vec4(0.95, 0.12, 0.08, 1.0); }`,
+        depthWrite: false, depthFunc: THREE.LessDepth,
+      });
+      let _targetOutlineMeshes = [];
+      let _targetOutlineAllowed = true;
+      function clearTargetHighlights() {
+        for (const m of _targetOutlineMeshes) m.layers.disable(2);
+        _targetOutlineMeshes = [];
+        updateCuttableBillboardGlow(0, 0, false);
+      }
+      function findTargetMeshes(col, row) {
+        const i = row * COLS + col;
+        const out = [];
+        const obj = getWorldObjectAt(col, row);
+        if (obj && obj.mesh) {
+          out.push(obj.mesh);
+          if (obj.lid) out.push(obj.lid);
+          return out;
+        }
+        if (cropMeshes[i]) {
+          cropMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
+          if (out.length) return out;
+        }
+        if (vegFoliageMeshes[i]) {
+          vegFoliageMeshes[i].traverse(m => { if (m.isMesh) out.push(m); });
+        }
+        return out;
+      }
+
+      // ── Screen-space outline pass (depth edges + furniture material seams) ──
+      // Two extra outline sources layered on top of the per-mesh shell outline
+      // above, both detected as a post-process over the rendered frame:
+      //   1. Depth discontinuities — catches silhouettes the shell pass misses,
+      //      e.g. one object's edge against another object/the floor behind it.
+      //   2. Furniture "material ID" seams — catches boundaries between two
+      //      touching parts of the same furniture group (e.g. a chair leg
+      //      against the seat) where depth is continuous but the part changes,
+      //      so neither the shell pass nor depth edges would draw a line.
+      // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
+
+      // PNG-plane avatars (player/NPCs/animals/creatures) are flat cutout
+      // sprites — running depth-edge detection against them would outline
+      // every alpha-cutout silhouette edge of the sprite art itself, which
+      // reads as noise rather than a deliberate outline. Tagging their root
+      // group lets the depth-only source pass below hide them temporarily
+      // without touching the main colour pass that actually shows them.
+      function _markPngPlane(obj) {
+        if (obj) obj.userData.isPngPlane = true;
+      }
+
+      let _furnitureEdgeIdSeq = 0;
+      function _markFurnitureEdgeId(obj) {
+        if (!obj) return;
+        const apply = (m) => {
+          m.layers.enable(3);
+          const hue = (_furnitureEdgeIdSeq++ * 0.6180339887) % 1;
+          const idColor = new THREE.Color().setHSL(hue, 0.85, 0.55);
+          m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
+            if (material !== _furnitureIdMat) return;
+            _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+            // Every tagged part shares this one material instance, so the
+            // renderer's "material/program unchanged since last draw" cache
+            // would otherwise skip re-uploading the uniform we just mutated —
+            // only the first part drawn each frame would ever reach the GPU.
+            _furnitureIdMat.uniformsNeedUpdate = true;
+          };
+        };
+        if (obj.isMesh) { apply(obj); return; }
+        obj.traverse(child => { if (child.isMesh) apply(child); });
+      }
+      // Exposed so docs/js/procedural-leg-animation.js (a separate module,
+      // not part of this closure) can tag a foot's touching material
+      // sub-meshes (e.g. the pachyderm/sloth GLBs' separate bone-claw and
+      // body-pad meshes) into this same seam pass — traversing a group here
+      // assigns each mesh CHILD its own unique ID color independently
+      // (_furnitureEdgeIdSeq increments per mesh, not per call), so calling
+      // this once on a foot's root already produces a seam wherever two
+      // differently-tagged meshes touch, exactly like two touching
+      // furniture parts.
+      window.HobunjiOutlines = { markShellOutline: _markOutline, markMaterialSeamId: _markFurnitureEdgeId };
+
+      // Flat-unlit material shared by every furniture part during the ID-buffer
+      // pass; each part's onBeforeRender (above) stamps its own colour into the
+      // shared uniform right before its draw call.
+      const _furnitureIdMat = new THREE.ShaderMaterial({
+        uniforms: { uIdColor: { value: new THREE.Color(0, 0, 0) } },
+        vertexShader: `
+          void main() {
+            #ifdef USE_INSTANCING
+              gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+            #else
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            #endif
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uIdColor;
+          void main() { gl_FragColor = vec4(uIdColor, 1.0); }
+        `,
+      });
+
+      // Main colour pass render target — keeps a depth texture around so the
+      // composite shader below can read real per-pixel scene depth.
+      function _makeSceneRT(w, h) {
+        const rt = new THREE.WebGLRenderTarget(w, h, {
+          minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+        });
+        rt.depthTexture = new THREE.DepthTexture(w, h);
+        return rt;
+      }
+      const _mainRT   = _makeSceneRT(1, 1);
+      // Furniture/terrain material-ID buffer — alpha 0 means "nothing tagged
+      // here". Carries its own depth texture (depth of the tagged objects
+      // only, since the pass that fills this target restricts the camera to
+      // layer 3) so the composite shader can tell whether a tagged surface is
+      // actually the frontmost thing at that pixel before drawing its seam —
+      // without that check, a tagged object hidden behind a wall would still
+      // contribute an edge, since nothing else was rendered into this target
+      // to occlude it.
+      const _edgeIdRT = _makeSceneRT(1, 1);
+      // Depth-only source for depth-edge detection — rendered with PNG-plane
+      // avatars hidden (see _markPngPlane above) so the detector only sees
+      // solid-geometry depth, never sprite-cutout silhouettes. colorWrite is
+      // off since only the attached depth texture is read back.
+      const _depthOnlyRT = _makeSceneRT(1, 1);
+      const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      function _resizeOutlineTargets(pixelW, pixelH) {
+        _mainRT.setSize(pixelW, pixelH);
+        _edgeIdRT.setSize(pixelW, pixelH);
+        _depthOnlyRT.setSize(pixelW, pixelH);
+        _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
+      }
+
+      // Fullscreen composite — blends depth-edge and furniture-seam outlines
+      // over the rendered colour buffer.
+      const _postScene  = new THREE.Scene();
+      const _postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const _postMat = new THREE.ShaderMaterial({
+        uniforms: {
+          tColor: { value: null }, tDepth: { value: null }, tEdgeId: { value: null },
+          tEdgeIdDepth: { value: null }, tSceneDepth: { value: null },
+          uTexel: { value: new THREE.Vector2(1, 1) },
+          uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
+          uDepthOutlinesOn: { value: 0 }, uDepthThreshScale: { value: 1 },
+        },
+        depthTest: false, depthWrite: false,
+        vertexShader: `
+          varying vec2 vUv;
+          void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+        `,
+        fragmentShader: `
+          uniform sampler2D tColor, tDepth, tEdgeId, tEdgeIdDepth, tSceneDepth;
+          uniform vec2 uTexel;
+          uniform float uCameraNear, uCameraFar;
+          uniform float uDepthOutlinesOn, uDepthThreshScale;
+          varying vec2 vUv;
+          float linearDepth(float z) {
+            float zNdc = z * 2.0 - 1.0;
+            return (2.0 * uCameraNear * uCameraFar) / (uCameraFar + uCameraNear - zNdc * (uCameraFar - uCameraNear));
+          }
+          void main() {
+            vec3 color = texture2D(tColor, vUv).rgb;
+
+            float d0 = linearDepth(texture2D(tDepth, vUv).r);
+            float dL = linearDepth(texture2D(tDepth, vUv - vec2(uTexel.x, 0.0)).r);
+            float dR = linearDepth(texture2D(tDepth, vUv + vec2(uTexel.x, 0.0)).r);
+            float dU = linearDepth(texture2D(tDepth, vUv + vec2(0.0, uTexel.y)).r);
+            float dD = linearDepth(texture2D(tDepth, vUv - vec2(0.0, uTexel.y)).r);
+            float depthDelta  = max(max(abs(d0 - dL), abs(d0 - dR)), max(abs(d0 - dU), abs(d0 - dD)));
+            // Compare the depth gap *relative to* the pixel's own depth rather than
+            // an absolute world-space gap. Under perspective, the true depth gap
+            // between neighbouring pixels on a continuous receding surface (e.g.
+            // flat ground running toward the horizon) grows with distance even
+            // where there's no real silhouette edge — an absolute threshold (even
+            // one scaled up at range) gets outpaced by that growth and the far
+            // ground lights up with false edges. Dividing by d0 cancels the
+            // perspective-driven growth out, so a real edge (a genuine jump in
+            // depth) still triggers at any distance while a smooth receding
+            // surface does not.
+            float relDepthDelta = depthDelta / max(d0, uCameraNear);
+            float depthThresh   = 0.010 * uDepthThreshScale;
+            float depthEdge     = step(depthThresh, relDepthDelta) * uDepthOutlinesOn;
+
+            vec4 id0 = texture2D(tEdgeId, vUv);
+            vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
+            vec4 idR = texture2D(tEdgeId, vUv + vec2(uTexel.x, 0.0));
+            vec4 idU = texture2D(tEdgeId, vUv + vec2(0.0, uTexel.y));
+            vec4 idD = texture2D(tEdgeId, vUv - vec2(0.0, uTexel.y));
+            float idEdge = 0.0;
+            idEdge = max(idEdge, (id0.a > 0.5 && idL.a > 0.5 && distance(id0.rgb, idL.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > 0.1) ? 1.0 : 0.0);
+            idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > 0.1) ? 1.0 : 0.0);
+
+            // Occlusion test — the ID buffer was rendered with only the
+            // tagged objects in view, so it has no idea a wall or other
+            // untagged object sits in front of them. Compare its own depth
+            // against the real scene depth at this pixel and drop the seam
+            // if something closer to the camera is actually there.
+            float idDepth    = linearDepth(texture2D(tEdgeIdDepth, vUv).r);
+            float sceneDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
+            idEdge *= step(idDepth, sceneDepth + 0.05);
+
+            float edge = max(depthEdge, idEdge);
+            gl_FragColor = vec4(mix(color, vec3(0.0), edge), 1.0);
+          }
+        `,
+      });
+      _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
+
+      let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
+      // Declared up here (rather than down by the rest of the Cutscene
+      // Preview Mode section) because updateCameraPosition below reads both
+      // directly — it's called during normal synchronous boot (well before
+      // that section's own module-level `let`s would run), so declaring
+      // them any later throws "cannot access before initialization" the
+      // first time the game camera positions itself at all.
+      let cutscenePreviewActive = false;
+      let cutscenePreviewZoomPercent = 100; // a cutscene Zoom card's percent (100 = unmodified); reset on preview start/end
+      let cutscenePreviewDialogueSpeaker = null; // current Talk stage's { kind, root, creature } entity, or null; see dialoguePortraitCameraAim
+
+      // Camera — mode-driven, with the default preserving the original isometric follow.
+      const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
+      let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72, camTargetY = 0;
+      // Snaps the camera's follow target to the player's current position,
+      // including ground height — exterior zones now carry real per-tile
+      // elevTier (plateau tiers merged into one scene, ramps sloping between
+      // them), so the camera must track actual terrain height instead of
+      // assuming a flat Y=0 ground plane, or a player standing on an elevated
+      // tier renders far below where the camera is looking.
+      function _playerGroundY() {
+        const col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
+        const tile = getActiveGrid()?.[row]?.[col];
+        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+      }
+      function _snapCameraTarget() {
+        camTargetX = player.x / TILE;
+        camTargetZ = player.y / TILE;
+        camTargetY = _playerGroundY();
+      }
+
+      function portraitAvatarCenterWorldPosition(root) {
+        let avatarRoot = null;
+        root?.traverse?.(child => {
+          if (!avatarRoot && Number.isFinite(child.userData?.portraitModelHeight)) avatarRoot = child;
+        });
+        if (!avatarRoot) return null;
+        const center = new THREE.Vector3();
+        avatarRoot.updateWorldMatrix?.(true, false);
+        avatarRoot.getWorldPosition(center);
+        const height = avatarRoot.userData.portraitModelHeight;
+        const placementRatio = avatarRoot.userData.portraitVerticalPlacementRatio ?? 0.5;
+        center.y += (placementRatio - 0.5) * height;
+        return center;
+      }
+
+      // Cutscene dialogue's stand-in for a "player" anchor: the real
+      // dialoguePortraitCameraAim below hardcodes the actual player mesh as
+      // one of its two portrait-center anchors, which is meaningless here
+      // (neither cutscene speaker is ever the real player, who may be
+      // sitting untouched somewhere else entirely in the save). Pins the
+      // shot to the SPEAKING actor's own visual center instead — a
+      // creature's avatarRef.group already sits at its own body-center
+      // height (see cutscenePreviewApplyState), while an NPC/player's
+      // coin-plane needs the same portrait-tagged-child lookup real
+      // gameplay uses. Returns null (falling back to the generic elevated
+      // follow-camera framing) for a freeform placeholder actor, which has
+      // neither.
+      function cutscenePreviewSpeakerCenterY(entity) {
+        if (!entity) return null;
+        if (entity.kind === 'creature') return entity.root?.position.y ?? null;
+        return portraitAvatarCenterWorldPosition(entity.root)?.y ?? null;
+      }
+
+      function dialoguePortraitCameraAim(modeCfg, tx, tz, distance, baseAngle) {
+        if (!modeCfg.alignToDialoguePortraitCenters) return null;
+        if (cutscenePreviewActive) {
+          const y = cutscenePreviewSpeakerCenterY(cutscenePreviewDialogueSpeaker);
+          return y == null ? null : { cameraY: y, lookY: y, targetX: tx, targetZ: tz };
+        }
+        if (!_dialogueWalker?.root) return null;
+        const playerCenter = portraitAvatarCenterWorldPosition(playerMesh);
+        const npcCenter = portraitAvatarCenterWorldPosition(_dialogueWalker.root);
+        if (!playerCenter || !npcCenter) return null;
+        const minDistance = modeCfg.portraitCenterMinDistanceTiles ?? 0.001;
+        const portraitDistance = Math.max(
+          minDistance,
+          Math.hypot(npcCenter.x - playerCenter.x, npcCenter.z - playerCenter.z),
+        );
+        const rawPortraitPitch = Math.atan2(npcCenter.y - playerCenter.y, portraitDistance);
+        const maxUpwardPitch = THREE.MathUtils.degToRad(modeCfg.maxUpwardPortraitPitchDeg ?? 0);
+        const portraitPitch = Math.min(rawPortraitPitch, maxUpwardPitch);
+        const cameraY = rawPortraitPitch > maxUpwardPitch
+          ? (playerCenter.y + npcCenter.y) / 2
+          : playerCenter.y;
+        const cameraHorizontalDistance = Math.cos(baseAngle) * distance;
+        return {
+          cameraY,
+          lookY: cameraY + Math.tan(portraitPitch) * cameraHorizontalDistance,
+          targetX: tx,
+          targetZ: tz,
+        };
+      }
+
+      // Every mesh worth pulling the camera in front of, for whatever area is
+      // currently active. Zones keep their existing tagged-mesh collection
+      // (buildZoneScene's `occlusionMeshes`, built once per zone from
+      // `.userData.cameraObstacle` tags on cliff/mesa skins) as a base, but
+      // that snapshot is taken before spawnZoneBuildings' async piece-fetch
+      // (and later GLB-upgrade) resolves, so zone buildings can never join
+      // it by tagging alone — read _zoneBuildingGroups fresh each call
+      // instead, same as town/farm below. Town and farm buildings, and any
+      // placed furniture, have no static tagged collection at all — the
+      // farmhouse, barn, town buildings, and furniture can all sit between
+      // the camera and the player (the house/barn were the reported case
+      // for losing sight of animals behind them; furniture matters for the
+      // seated camera specifically, since a chair can easily have another
+      // piece of furniture right behind it) — so those are gathered fresh
+      // each call instead. Cheap in practice: a handful of structures/
+      // furniture pieces at most, and this only runs once a frame.
+      function currentAreaOcclusionMeshes() {
+        if (_isZoneArea(currentArea)) {
+          const meshes = (_zoneScenes.get(currentArea)?.occlusionMeshes || []).slice();
+          for (const entry of (_zoneBuildingGroups.get(currentArea) || [])) if (entry.group) meshes.push(entry.group);
+          return meshes;
+        }
+        const meshes = [];
+        if (currentArea === 'farm') {
+          for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
+          for (const entry of farmBuildings) if (entry._mesh) meshes.push(entry._mesh);
+        }
+        if (currentArea === 'town') {
+          for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
+        }
+        if (currentArea === 'interior' && activeCameraMode === 'seated' && interiorWallGroup) meshes.push(interiorWallGroup);
+        for (const obj of interiorFurnitureObjects) {
+          const isActiveSeat = sitInteraction && obj.area === currentArea
+            && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
+          if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
+        }
+        return meshes;
+      }
+      // Pulls the camera in along the target→camera line if something from
+      // currentAreaOcclusionMeshes() sits between them — the fixed south-of-
+      // player follow camera has no other way to keep the player visible
+      // once something tall is in that gap, since generation alone can bias
+      // terrain but can't guarantee a clear line at this camera's shallow
+      // angle (see conversation history: even a single-tier rise close to
+      // the player already eats most of the vertical slack a ~14-tile,
+      // ~33°-elevation sightline allows).
+      const CAMERA_FLOOR_CLEARANCE = 0.2; // minimum height above ground the camera is ever allowed to settle at (see the floor guard below)
+      let _seatedOcclusionDistance = null;
+      let _seatedOcclusionUpdatedAt = 0;
+      function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
+        let resultX = idealX, resultY = idealY, resultZ = idealZ;
+        const obstacles = currentAreaOcclusionMeshes();
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist >= 0.5) {
+          const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+          let desiredSafeDist = dist;
+          if (obstacles && obstacles.length) {
+            _cameraOcclusionRaycaster.set(new THREE.Vector3(lookAtX, lookAtY, lookAtZ), new THREE.Vector3(dir.x, dir.y, dir.z));
+            _cameraOcclusionRaycaster.near = 0.3; // skip the player's own standing point
+            _cameraOcclusionRaycaster.far = dist;
+            // recursive:true — zone occlusion meshes are already individual
+            // tagged leaf meshes (harmless either way there), but the
+            // house/barn/furniture entries above are whole Groups.
+            const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
+            if (hits.length) {
+              const minSafeDistance = activeCameraMode === 'seated' ? 0.85 : 3;
+              desiredSafeDist = Math.min(dist, Math.max(minSafeDistance, hits[0].distance - 0.6));
+            }
+          }
+          let safeDist = desiredSafeDist;
+          if (activeCameraMode === 'seated') {
+            // Smooth toward the freshly raycast distance every frame. The old
+            // direct assignment made the camera stick to whichever wall face
+            // happened to win one raycast, then snap when that face changed.
+            const now = performance.now();
+            const dt = _seatedOcclusionUpdatedAt ? Math.min(0.1, (now - _seatedOcclusionUpdatedAt) / 1000) : 0;
+            _seatedOcclusionUpdatedAt = now;
+            if (_seatedOcclusionDistance == null) _seatedOcclusionDistance = dist;
+            const alpha = 1 - Math.exp(-8 * dt);
+            _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
+            safeDist = clamp(_seatedOcclusionDistance, 0.85, dist);
+          } else {
+            _seatedOcclusionDistance = null;
+            _seatedOcclusionUpdatedAt = 0;
+          }
+          if (safeDist < dist - 1e-4) {
+            const shrink = clamp(1 - safeDist / dist, 0, 1);
+            const lift = shrink * dist * 0.5;
+            resultX = lookAtX + dir.x * safeDist;
+            resultY = lookAtY + dir.y * safeDist + lift;
+            resultZ = lookAtZ + dir.z * safeDist;
+          }
+        } else if (activeCameraMode !== 'seated') {
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
+        }
+        // Floor guard — applies everywhere, not just zones (unlike the
+        // mesh-obstacle pull-in above, which has nothing to raycast against
+        // for the ground itself). A steep enough upward pitch (see the
+        // seated camera's up/down joystick allowance) can put the ideal
+        // position below ground with no cliff/obstacle involved at all —
+        // same pull-toward-lookAt technique as above: slide the camera back
+        // along its own look-at ray (preserving direction, not just
+        // clamping Y in isolation) until it clears a minimum floor
+        // clearance, using camTargetY (the player's own smoothed ground
+        // height, already tracked for the ordinary follow camera) as the
+        // floor reference so this still holds up on tiered zone terrain,
+        // not just the flat Y=0 farm/interior/town case that motivated it.
+        const minCameraY = camTargetY + CAMERA_FLOOR_CLEARANCE;
+        if (resultY < minCameraY) {
+          const dx = resultX - lookAtX, dy = resultY - lookAtY, dz = resultZ - lookAtZ;
+          if (dy < -1e-4) {
+            const t = clamp((minCameraY - lookAtY) / dy, 0, 1);
+            resultX = lookAtX + dx * t;
+            resultY = lookAtY + dy * t;
+            resultZ = lookAtZ + dz * t;
+          } else {
+            resultY = minCameraY;
+          }
+        }
+        return { x: resultX, y: resultY, z: resultZ };
+      }
+
+      // How far under a tree canopy's own recorded influence radius the player
+      // has to be before manual zoom-out gets hard-limited to its underside
+      // height — ports the standalone foliage tool's camera-vs-canopy
+      // obstruction concept (see buildZoneScene's canopyZones / the
+      // vegGroup.userData.canopyClamp tagging in _buildZoneFloorMeshes).
+      // Only ever raises the effective zoom used for THIS frame's distance —
+      // never mutates s_zoomScale itself, so the player's own wheel/slider
+      // setting is restored the instant they step out of every canopy's radius.
+      function canopyZoomFloor(tx, tz, lookY) {
+        if (!_isZoneArea(currentArea)) return 0;
+        const zones = _zoneScenes.get(currentArea)?.canopyZones;
+        if (!zones || !zones.length) return 0;
+        const modeCfg = cameraModeConfig(activeCameraMode);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const distanceTiles = modeCfg.distanceTiles ?? 14;
+        const sinAngle = Math.sin(angle);
+        const CANOPY_CLEARANCE = 0.3;
+        let floor = 0;
+        for (const z of zones) {
+          const dx = tx - z.x, dz = tz - z.z;
+          if (dx * dx + dz * dz > z.radius * z.radius) continue;
+          const headroom = z.undersideY - CANOPY_CLEARANCE - lookY;
+          const required = headroom > 1e-4 ? (sinAngle * distanceTiles) / headroom : Infinity;
+          if (required > floor) floor = required;
+        }
+        return floor;
+      }
+      function updateCameraPosition() {
+        const modeCfg = cameraModeConfig(activeCameraMode);
+        // A cutscene Zoom card's percent (100 = the captured shot's own
+        // unmodified framing, higher = closer) — entirely separate from the
+        // player's own s_zoomScale wheel setting so it never leaks into
+        // normal gameplay once the cutscene ends (see cutscenePreviewZoomPercent).
+        const cutsceneZoomMul = cutscenePreviewActive ? 100 / (cutscenePreviewZoomPercent || 100) : 1;
+        const tx = camTargetX, tz = camTargetZ;
+        // Cutscene/dialogue/portrait framing is deliberately scripted — only
+        // clamp the ordinary gameplay camera against tree canopies.
+        let effectiveZoomScale = s_zoomScale;
+        if (!cutscenePreviewActive && !dialogueZoomActive()) {
+          const approxLookY = camTargetY + (modeCfg.targetYOffsetTiles ?? 0);
+          const floor = canopyZoomFloor(tx, tz, approxLookY);
+          if (floor > effectiveZoomScale) {
+            const cfg = desktopControlsConfig();
+            const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
+            effectiveZoomScale = Math.min(floor, max);
+          }
+        }
+        const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
+        const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
+        const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
+        const lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
+        const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
+        const groundDistance = Math.cos(angle) * distance;
+        // Camera sits at `azimuth` east of due-south from the target, elevated,
+        // looking back at it. azimuth=0 (every mode but "fishing") reduces to the
+        // original due-south-looking-north framing.
+        const lookAtX = portraitAim?.targetX ?? tx, lookAtZ = portraitAim?.targetZ ?? tz;
+        const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
+        const idealZ = lookAtZ + Math.cos(azimuth) * groundDistance; // +Z = south
+        const safe = occlusionSafeCameraPosition(lookAtX, lookY, lookAtZ, idealX, cameraY, idealZ);
+        camera.position.set(safe.x, safe.y, safe.z);
+        camera.lookAt(lookAtX, lookY, lookAtZ);
+        camera.fov = modeCfg.fovDeg ?? 42;
+        camera.aspect = threeContainer.clientWidth / threeContainer.clientHeight;
+        camera.updateProjectionMatrix();
+      }
+      updateCameraPosition();
+
+      // Camera-aligned view-corridor culling for dense zone vegetation — ports
+      // the standalone foliage tool's updateForestGeometryCulling. Toggling
+      // .visible on whole tree/bush/stump groups (bounding sphere precomputed
+      // once at build time, see cullSphere tagging in _buildZoneFloorMeshes)
+      // is far cheaper than every one of those groups' own per-object frustum
+      // test every single frame, and this corridor can hide far more than
+      // default frustum culling would (behind camera, wide off to the sides)
+      // — the "1-2 tile gaps throughout" density this exists to support can
+      // put thousands of these groups in one zone.
+      const VEG_CULL_FORWARD_TILES = 42;
+      const VEG_CULL_WIDTH_TILES = 30;
+      const VEG_CULL_REAR_TILES = 2;
+      const VEG_CULL_HYSTERESIS_TILES = 1;
+      let _vegCullAccum = 999; // force a real pass on the first tick
+
+      // Keep the player (and anyone/anything else) visible when foliage is
+      // between them and the camera. A tree flagged as blocking the
+      // camera-player sightline (below, via isBetweenCameraAndPlayer2D)
+      // fades its own opacity down — but a transparent object with
+      // depthWrite left at its default (true) still writes full depth, so
+      // whatever's behind it still fails the depth test and gets fully
+      // occluded despite the tree visually reading as see-through. That
+      // asymmetry (tools showing through, characters not) was originally
+      // patched around with a "ghost" duplicate of the avatar/tool plane,
+      // stencil-gated to draw only behind a flagged-blocking tree — real,
+      // but a bandaid: it needed its own mesh built per revealable target
+      // (player, companion, mount, each tool, each hat swap) at avatar-build
+      // time, its own per-frame transform resync for anything that animates
+      // its own local transform after ghost creation (see the old
+      // updateToolMesh spinPlane note), and a wilderness-zone visibility
+      // gate — all just to work around one flag on the actual occluder.
+      // Dropping depthWrite once a tree is actually fading removes the
+      // occlusion at its source instead: the tree stops writing depth for
+      // exactly as long as it's actually transparent, so ANYTHING behind it
+      // (player, companion, wild animal, a bandit's weapon, whatever) shows
+      // through via ordinary alpha blending — no per-target ghost mesh, no
+      // stencil buffer, nothing to keep in sync each frame.
+      const TREE_FADE_OPACITY = 0.25;
+      const TREE_FADE_LERP_PER_SEC = 6;
+      // Sideways tolerance for the camera-player occlusion line test, as a
+      // fraction of a tree's own horizontal footprint radius (cullSphere's
+      // xzRadius) — halved from the full footprint so only trees whose trunk
+      // is genuinely close to dead-center on the sightline count as
+      // blocking, not merely anything within a whole canopy-width of it.
+      const OCCLUSION_XZ_RADIUS_MUL = 0.5;
+      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
+      function ensureTreeFadeMaterials(vegGroup) {
+        let mats = vegGroup.userData._fadeMaterials;
+        if (mats) return mats;
+        mats = [];
+        for (const child of vegGroup.children) {
+          if (!child.material) continue;
+          const clone = child.material.clone();
+          clone.transparent = true;
+          child.material = clone;
+          mats.push(clone);
+        }
+        vegGroup.userData._fadeMaterials = mats;
+        vegGroup.userData._fadeOpacity = 1;
+        vegGroup.userData._fadeTarget = 1;
+        return mats;
+      }
+      // depthWrite:false only while a tree is actually in its blocking-fade
+      // state — see the comment above. Reverted (true) the instant a tree
+      // stops blocking, alongside the opacity revert in
+      // updateZoneVegetationCulling, so a tree back at full opacity also
+      // goes back to normally occluding things behind it.
+      //
+      // Also pulls the tree off the shell-outline pass's layer (see
+      // shellOutlineMat/_markOutline) while blocking. That pass renders
+      // every layer-1 mesh's silhouette in solid, opacity-independent black
+      // (back faces extruded along normals, its own override material —
+      // unrelated to the mesh's real material entirely), so a "faded" tree
+      // still traced a fully opaque black outline over whatever it was
+      // supposed to be letting show through, defeating the whole point.
+      // Re-enabled the instant a tree stops blocking, same as depthWrite.
+      function setTreeBlocking(vegGroup, mats, blocking) {
+        for (const m of mats || []) m.depthWrite = !blocking;
+        vegGroup.traverse(child => {
+          if (!child.isMesh || child.userData.noOutline) return;
+          if (blocking) child.layers.disable(1); else child.layers.enable(1);
+        });
+      }
+      function updateTreeFadeAnimation(dt) {
+        if (!_treeFadeActive.size) return;
+        const step = TREE_FADE_LERP_PER_SEC * dt;
+        for (const vegGroup of _treeFadeActive) {
+          const target = vegGroup.userData._fadeTarget ?? 1;
+          let opacity = vegGroup.userData._fadeOpacity ?? 1;
+          if (Math.abs(opacity - target) <= step) opacity = target;
+          else opacity += Math.sign(target - opacity) * step;
+          vegGroup.userData._fadeOpacity = opacity;
+          for (const m of vegGroup.userData._fadeMaterials || []) m.opacity = opacity;
+          if (opacity === target && target >= 1) _treeFadeActive.delete(vegGroup);
+        }
+      }
+      // Is (px,pz) actually BETWEEN (ax,az) [camera] and (bx,bz) [player],
+      // within `radius` of that line? Unlike a plain point-to-segment
+      // distance, this rejects anything whose projection falls outside the
+      // segment (t outside [0,1]) instead of clamping to the nearest
+      // endpoint — clamping was the bug: a tree sitting right next to the
+      // player but on the far side (behind them, from the camera's view)
+      // has an unclamped t > 1, but clamping snapped that to the player's
+      // own endpoint and reported it as "on the line" merely for being near
+      // the player, faded/ghosted every tree behind the player as well as
+      // the ones actually in front. Trees genuinely off to either side stay
+      // correctly unaffected either way since `side` (perpendicular
+      // distance) is unaffected by the clamp — only the "how far along" axis
+      // was the problem.
+      function isBetweenCameraAndPlayer2D(px, pz, ax, az, bx, bz, radius) {
+        const abx = bx - ax, abz = bz - az;
+        const abLenSq = abx * abx + abz * abz;
+        if (abLenSq < 1e-9) return false;
+        const t = ((px - ax) * abx + (pz - az) * abz) / abLenSq;
+        if (t <= 0 || t >= 1) return false;
+        const cx = ax + abx * t, cz = az + abz * t;
+        return Math.hypot(px - cx, pz - cz) < radius;
+      }
+      function updateZoneVegetationCulling(force = false) {
+        if (!_isZoneArea(currentArea)) return;
+        const zi = _zoneScenes.get(currentArea);
+        const cullables = zi?.cullables;
+        if (!cullables || !cullables.length) return;
+        const camX = camera.position.x, camZ = camera.position.z;
+        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
+        let viewLen = Math.hypot(viewX, viewZ);
+        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
+        viewX /= viewLen; viewZ /= viewLen;
+        const rightX = viewZ, rightZ = -viewX;
+        const forwardRange = VEG_CULL_FORWARD_TILES;
+        const rearRange = VEG_CULL_REAR_TILES;
+        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
+        const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        // Every character worth revealing an occluder for, not just the
+        // player -- a tree that only fades for the player would leave a
+        // companion standing behind the SAME tree fully hidden by it, since
+        // the fade/depthWrite trigger below only checks whichever line(s)
+        // it's given. A tree can easily sit on the camera-to-companion line
+        // without also sitting on the camera-to-player line (they're rarely
+        // standing on exactly the same spot), so this needs its own check
+        // per target rather than reusing the player's.
+        const revealTargets = [{ x: player.x / TILE, z: player.y / TILE }];
+        for (const c of companionObjects) {
+          if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
+        }
+        for (const obj of cullables) {
+          const s = obj.userData.cullSphere;
+          const dx = s.x - camX, dz = s.z - camZ;
+          const along = dx * viewX + dz * viewZ;
+          const side = Math.abs(dx * rightX + dz * rightZ);
+          const sticky = obj.visible ? hysteresis : 0;
+          const expandedRadius = s.radius + sticky;
+          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+            && side <= halfWidth + expandedRadius;
+          if (force || show !== obj.visible) obj.visible = show;
+
+          if (show) {
+            const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
+            const blocking = !obj.userData.skipOcclusionFade
+              && revealTargets.some(t => isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
+            const target = blocking ? TREE_FADE_OPACITY : 1;
+            if (target !== 1 || obj.userData._fadeMaterials) {
+              const mats = ensureTreeFadeMaterials(obj);
+              obj.userData._fadeTarget = target;
+              _treeFadeActive.add(obj);
+              setTreeBlocking(obj, mats, blocking);
+            }
+          } else if (obj.userData._fadeMaterials) {
+            obj.userData._fadeTarget = 1;
+            obj.userData._fadeOpacity = 1;
+            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
+            setTreeBlocking(obj, obj.userData._fadeMaterials, false);
+            _treeFadeActive.delete(obj);
+          }
+        }
+      }
+
+      // ── Lighting ──────────────────────────────────────────────────
+      const ambientLight = new THREE.AmbientLight(0xffeedd, 0.7);
+      scene.add(ambientLight);
+      const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.1);
+      sunLight.position.set(8, 16, -6);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.set(1024, 1024);
+      sunLight.shadow.camera.near = 0.5;
+      sunLight.shadow.camera.far  = 80;
+      sunLight.shadow.camera.left = sunLight.shadow.camera.bottom = -30;
+      sunLight.shadow.camera.right = sunLight.shadow.camera.top  =  30;
+      scene.add(sunLight);
+
+      // Hemisphere light for sky/ground fill
+      const hemiLight = new THREE.HemisphereLight(0x88ccff, 0x3a5a30, 0.5);
+      scene.add(hemiLight);
+
+      // ── Materials ─────────────────────────────────────────────────
+      // Plain MeshLambertMaterial has no light of its own, so under this
+      // game's storm/night dimming any of these can drop toward (0,0,0) --
+      // same problem the tree-bark material had (see hexBarkMat/hslMat in
+      // foliage-generator.js); grass (ground and billboards alike) sidesteps
+      // it entirely by going unlit instead (see unlitFloorMat/tileMats.grass
+      // and _grassBillFrag below). Ground rock tiles specifically went
+      // unnoticed until generator-placed rock objects off a plateau started
+      // actually rendering (see mergeZoneTiles' generatedObjectType exemption
+      // from the "downgrade to grass" rule) instead of always downgrading
+      // to invisible grass -- large rock mounds reading as solid black blobs
+      // under anything but bright light is this exact bug, not a texture one.
+      const TILE_EMISSIVE_FLOOR = 0.3;
+      function floorMat(colorArg) {
+        const col = colorArg instanceof THREE.Color ? colorArg : new THREE.Color(colorArg);
+        return new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
+      }
+      // Unlit ground material — MeshBasicMaterial, same material family the
+      // player/NPC/animal sprite planes use (see makeSpriteMaterial in
+      // png-plane-avatar.js), so grass reads at one consistent painted
+      // brightness day or night/storm instead of dimming with ambientLight/
+      // sunLight like the rest of tileMats does. No emissive floor needed
+      // for the "black blob at night" problem floorMat's comment describes —
+      // an unlit material can't go dark in the first place.
+      function unlitFloorMat(colorArg) {
+        const col = colorArg instanceof THREE.Color ? colorArg : new THREE.Color(colorArg);
+        return new THREE.MeshBasicMaterial({ color: col });
+      }
+      const tileMats = {
+        grass:  unlitFloorMat(new THREE.Color().setHSL(108/360, 0.58, 0.28)),
+        weeds:  floorMat(0x247c3c),
+        tilled: floorMat(0x8a5b34),
+        trench: floorMat(0x3a2510),
+        raised: floorMat(0xc39a55),
+        paddy:  floorMat(0x6aa263),
+        rock:   floorMat(0x79807c),
+        shrub:  floorMat(0x356e36),
+        path:   floorMat(0xb8956a),
+        river:  floorMat(0x3a4a3f), // silty bed, seen through the water surface
+        stream: floorMat(0x6b5a3a), // sandy streambed
+        waterfall: floorMat(0x3a4a3f), // same bed as river — seen at the base of the curtain
+      };
+      // Floor material for vegetation tiles — matches weed foliage HSL color.
+      // Unlit (see unlitFloorMat/tileMats.grass) — the ground under a shrub/
+      // weed clump is still ground, so it reacts to light the same way the
+      // rest of the grass surface does now instead of dimming independently.
+      const vegFloorMat = unlitFloorMat(new THREE.Color().setHSL(108 / 360, 0.58, 0.28));
+
+      // Recolors the grass ground material and the grass billboard tufts
+      // (color + density) to the current regional season — vibrant/full for
+      // the wet seasons, sparse and off-hue for Deadgrass and Coldmuck.
+      // Defined here (next to tileMats/vegFloorMat) but not called until the
+      // grass billboard texture below has loaded — _grassTint/grassBillboardMat
+      // are declared further down the file and would TDZ-throw if this ran
+      // any earlier than that.
+      function applySeasonalGrassAppearance() {
+        const season = window.CalendarSystem.currentSeason();
+        tileMats.grass.color.copy(season.grassColor); // unlit — no .emissive to update, see unlitFloorMat
+        vegFloorMat.color.copy(season.grassColor); // also unlit — see its own declaration comment
+        _grassTint.copy(season.grassColor);
+        if (grassBillboardMat) grassBillboardMat.uniforms.uDensity.value = season.grassDensity;
+      }
+
+      // ── Per-map terrain material overrides ────────────────────────────
+      // Config: docs/config/maps/terrain-materials.json, authored via the
+      // Map Editor's Materials tab — { byMap: { <mapId>: { <tileMats key,
+      // or 'cliff'>: { texture: '<file under assets/textures/>', tileSize:
+      // <world units per texture repeat> } } } }. Only tile types actually
+      // listed here diverge from the single shared default tileMats/cliffMat
+      // instance every map used before this existed — anything unlisted (the
+      // common case) keeps using the exact same global material as always,
+      // so this is purely additive and costs nothing until a map opts in.
+      // Loaded once at startup; resolveTileMat/resolveCliffMat build (and
+      // cache) one real material per mapId+tileType override the first time
+      // it's actually needed.
+      let _terrainMaterialConfig = { byMap: {} };
+      function loadTerrainMaterialConfig() {
+        fetch('config/maps/terrain-materials.json')
+          .then(r => r.ok ? r.json() : null)
+          .then(cfg => {
+            if (!cfg?.byMap) return;
+            _terrainMaterialConfig = cfg;
+            // This fetch is kicked off at module-init time, well before the
+            // player can reach any terrain — but buildTileMeshes() (the
+            // farm's very first ground build) fires synchronously during
+            // that same initial script run, with no fetch round-trip to
+            // wait on, and this environment's heavy synchronous THREE.js
+            // setup can genuinely delay a fetch's .then() by several
+            // seconds. If that race loses, the farm/any already-built zone
+            // would otherwise be stuck on the plain default materials for
+            // the rest of the session (nothing else ever revisits already-
+            // built terrain) — so re-touch whatever's live right now the
+            // moment real override data actually lands. Cheap: only zones
+            // with a scene already built and the farm's own live grid do
+            // any work at all.
+            if (Object.keys(cfg.byMap).length) refreshTerrainForLateMaterialConfig();
+          })
+          .catch(() => {});
+      }
+      loadTerrainMaterialConfig();
+      function refreshTerrainForLateMaterialConfig() {
+        if (typeof buildTileMeshes === 'function' && typeof grid !== 'undefined' && grid) buildTileMeshes();
+        if (typeof _zoneScenes !== 'undefined') for (const mapId of _zoneScenes.keys()) refreshZoneGroundVisuals(mapId);
+      }
+
+      // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
+      // ground/cliff meshes — same emissive-floor treatment as floorMat (see
+      // TILE_EMISSIVE_FLOOR above) so a textured tile doesn't read as a solid
+      // black blob at night/in storms the way an untreated MeshLambertMaterial
+      // would. Unlike loadHousePieceFaceTexture (which bakes its tile size
+      // into each face's own UV, since a furniture part's geometry is built
+      // once for one fixed material), ground meshes get their UV for free
+      // from _mergeTileGeos/the world-space UV added to each standalone
+      // heightfield builder below — plain world-unit (X,Z) coordinates — so
+      // tileSize here just scales texture.repeat instead; that also means
+      // the exact same merged geometry keeps working if the override's
+      // tileSize is ever changed, no geometry rebuild required.
+      // fillColor, when given, recolors the PNG's visible pixels to that
+      // target hex using the same adaptive luminance-preserving shade fill
+      // as portrait/creature tinting (getShadeFillCanvas in portrait-utils.js,
+      // loaded before this file) — keeps the texture's own shading/grain
+      // instead of showing the raw PNG albedo untouched.
+      // stretch, when given as [worldWidth, worldHeight], fits the whole PNG
+      // once across that world-unit span instead of tiling it (the preview
+      // tool's "stretch to bounds" mode) — since this ground UV is already
+      // raw world (X,Z) in 1-unit-per-tile units (see the comment above),
+      // that span is simply the map's own tile footprint, so this is just a
+      // texture.repeat change, no geometry/UV rebuild needed. Overrides
+      // tileSize when present.
+      // unlit, when true, builds a MeshBasicMaterial (see unlitFloorMat)
+      // instead of the usual lit MeshLambertMaterial — used for grass so its
+      // textured ground override reads at one consistent brightness like the
+      // base tileMats.grass does, instead of dimming at night/in storms.
+      function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch, unlit) {
+        const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
+        const mat = unlit
+          ? new THREE.MeshBasicMaterial({ color: col })
+          : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(TILE_EMISSIVE_FLOOR) });
+        new THREE.TextureLoader().load(path, (tex) => {
+          let finalTex = tex;
+          const rgb = fillColor && parseHexColor(fillColor);
+          if (rgb) {
+            const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
+              mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
+            });
+            finalTex = new THREE.CanvasTexture(canvas);
+          }
+          finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+          if (Array.isArray(stretch) && stretch.length === 2) {
+            finalTex.repeat.set(1 / Math.max(0.05, stretch[0]), 1 / Math.max(0.05, stretch[1]));
+          } else {
+            const ts = Math.max(0.05, tileSize || 1);
+            finalTex.repeat.set(1 / ts, 1 / ts);
+          }
+          mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
+        }, undefined, () => {});
+        return mat;
+      }
+
+      const _mapTileMatCache = new Map(); // "mapId,tileMatsKey" -> THREE.Material
+      function resolveTileMat(mapId, matKey) {
+        const base = tileMats[matKey] || tileMats.grass;
+        // '*' is a wildcard entry — applies to any map with no entry of its own
+        // (every wilderness zone, without having to list each zone's mapId),
+        // overridden by a map-specific entry (town/farm) when one exists.
+        const override = _terrainMaterialConfig.byMap?.[mapId]?.[matKey] || _terrainMaterialConfig.byMap?.['*']?.[matKey];
+        if (!override?.texture) return base;
+        const cacheKey = mapId + ',' + matKey;
+        let mat = _mapTileMatCache.get(cacheKey);
+        if (!mat) {
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, matKey === TileType.GRASS);
+          _mapTileMatCache.set(cacheKey, mat);
+        }
+        return mat;
+      }
+
+      // Steep-cliff "stone skin" overlay material — same role as tileMats.rock
+      // but for the standalone heightfield cliff-face meshes (plateau mesas,
+      // farm/town border terrain — see buildZoneBorderTerrain/buildBorderTerrain/
+      // buildTownBorderTerrain), which never went through tileMats at all
+      // before this. Overridden via the 'cliff' key in terrain-materials.json,
+      // independent of 'rock' so a map can texture ore-bearing rock tiles
+      // differently from its distant cliff faces.
+      const _defaultCliffMat = new THREE.MeshLambertMaterial({
+        color: 0x6a6460, side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+      });
+      const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
+      function resolveCliffMat(mapId) {
+        const override = _terrainMaterialConfig.byMap?.[mapId]?.cliff || _terrainMaterialConfig.byMap?.['*']?.cliff;
+        if (!override?.texture) return _defaultCliffMat;
+        let mat = _mapCliffMatCache.get(mapId);
+        if (!mat) {
+          mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize, override.fillColor, override.stretch);
+          mat.side = THREE.DoubleSide;
+          mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+          _mapCliffMatCache.set(mapId, mat);
+        }
+        return mat;
+      }
+
+      // Fixed per-terrain-type ID colours feeding the same material-ID-seam
+      // outline used for furniture (see _markFurnitureEdgeId), generalized to
+      // ground tiles: unlike furniture (every part gets its own unique
+      // colour, since any two touching parts should show a seam), terrain
+      // tiles of the same type must share one colour so the seam only shows
+      // up at real material boundaries — path/grass, stone/grass, water's
+      // edge, etc. — not at every tile-to-tile grid line.
+      const _terrainIdColors = (() => {
+        const colors = {};
+        let i = 0;
+        for (const key of Object.keys(tileMats)) colors[key] = new THREE.Color().setHSL((i++ * 0.6180339887) % 1, 0.85, 0.55);
+        colors.water = new THREE.Color().setHSL((i++ * 0.6180339887) % 1, 0.85, 0.55);
+        return colors;
+      })();
+      function _terrainCategoryFor(type) {
+        return tileMats[type] ? type : TileType.GRASS;
+      }
+      function _markTerrainEdgeId(mesh, category) {
+        if (!mesh) return;
+        const idColor = _terrainIdColors[category] || _terrainIdColors[TileType.GRASS];
+        mesh.layers.enable(3);
+        mesh.onBeforeRender = function (renderer, scene, camera, geometry, material) {
+          if (material !== _furnitureIdMat) return;
+          _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
+          // See _markFurnitureEdgeId above — required so each tile's colour
+          // actually reaches the GPU instead of reusing whatever the
+          // previous tile sharing this material last uploaded.
+          _furnitureIdMat.uniformsNeedUpdate = true;
+        };
+      }
+      // ── Water shader — flow lines + ripple rings ───────────────────
+      // Each water plane gets its own ShaderMaterial instance with per-tile uniforms.
+      // uFlow: vec2 flow direction (normalised), zero = still water → ripple mode
+      // uDepth: 0..1 depth fraction
+      // uTime: global time
+      // uPhase: per-tile phase offset
+      const waterVertShader = `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `;
+      const waterFragShader = `
+        uniform float uTime;
+        uniform float uPhase;
+        uniform float uDepth;     // 0..1
+        uniform vec2  uFlow;      // normalised flow dir, (0,0) = still
+        uniform vec3  uColor;
+
+        varying vec2 vUv;
+
+        float stripe(float v, float freq, float sharpness) {
+          float s = fract(v * freq - uTime * 0.6 + uPhase);
+          return pow(max(0.0, 1.0 - abs(s - 0.5) * sharpness), 2.5);
+        }
+
+        float ripple(vec2 uv, float t) {
+          vec2 c = uv - 0.5;
+          float d = length(c);
+          float wave = sin(d * 18.0 - t * 2.5 + uPhase * 6.28) * 0.5 + 0.5;
+          float fade = smoothstep(0.5, 0.05, d); // fade toward edges
+          return wave * fade;
+        }
+
+        void main() {
+          float flowLen = length(uFlow);
+
+          float effect;
+          if (flowLen > 0.1) {
+            // ── Flow mode: animated lines parallel to flow direction ──
+            // Project UV onto flow axis to get the "along-flow" coordinate
+            vec2 flowDir = uFlow / flowLen;
+            vec2 perpDir = vec2(-flowDir.y, flowDir.x);
+            vec2 uvc     = vUv - 0.5;
+            float along  = dot(uvc, flowDir);
+            float perp   = dot(uvc, perpDir);
+
+            // Main flow stripes — scroll along flow axis
+            float lines  = stripe(along + perp * 0.15, 3.5, 6.0) * 0.7
+                         + stripe(along + perp * 0.1,  5.5, 8.0) * 0.4;
+
+            // Subtle cross-chop (perpendicular micro-ripples)
+            float chop   = stripe(perp, 9.0, 10.0) * 0.2;
+            effect = lines + chop;
+          } else {
+            // ── Still mode: expanding concentric rings ──
+            float t2 = uTime * 0.8 + uPhase * 3.14;
+            effect = ripple(vUv, t2) * 0.7
+                   + ripple(vUv + vec2(0.25, 0.1), t2 * 1.3) * 0.35;
+          }
+
+          // Brightness of surface detail scales with depth so shallow still shows something
+          float detailAlpha = mix(0.35, 0.65, uDepth) * effect;
+
+          // Base water tint
+          float baseAlpha = uDepth;  // opacity = depth fraction exactly
+
+          vec3 surfaceColor = mix(uColor, vec3(0.85, 0.96, 1.0), effect * 0.55);
+          float finalAlpha  = clamp(baseAlpha + detailAlpha, 0.0, 0.92);
+
+          gl_FragColor = vec4(surfaceColor, finalAlpha);
+        }
+      `;
+
+      function makeWaterMaterial(col, row) {
+        return new THREE.ShaderMaterial({
+          uniforms: {
+            uTime:  { value: 0 },
+            uPhase: { value: (col * 2.7 + row * 4.1) % 6.28 },
+            uDepth: { value: 0 },
+            uFlow:  { value: new THREE.Vector2(0, 0) },
+            uColor: { value: new THREE.Color(0x14a0c8) },
+          },
+          vertexShader:   waterVertShader,
+          fragmentShader: waterFragShader,
+          transparent:    true,
+          depthWrite:     false,
+          side:           THREE.FrontSide,
+        });
+      }
+
+      // Global water time — updated in gameLoop
+      let waterTime = 0;
+      const reticleMat = new THREE.MeshBasicMaterial({
+        color: 0xf9e28a, wireframe: true, transparent: true, opacity: 0.85,
+      });
+      const reticleIntenseMat = new THREE.MeshBasicMaterial({
+        color: 0xffffc8, wireframe: true, transparent: true, opacity: 1.0,
+      });
+      const reticleBlockedMat = new THREE.MeshBasicMaterial({
+        color: 0xff6040, wireframe: true, transparent: true, opacity: 0.85,
+      });
+
+      // ── World Z levels (in Three.js Y units) ──────────────────────
+      // Grass/tilled/weeds/paddy: top face at Y=0
+      // Trench:                   top face at Y=-0.5  (dug 0.5 down)
+      // Raised:                   top face at Y=+0.5  (built 0.5 up)
+      // Rock:                     top face at Y=+0.75 (tall obstacle)
+      // Vegetation slabs:         bottom at Y=0, top at Y=VEG_H
+      //
+      // Box center Y = topFaceY - boxHeight/2
+      const SLAB_H     = 0.5;   // thickness of all ground slabs
+      const TRENCH_TOP = -0.5;  // top surface of trench
+      const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
+      const RAISED_TOP = +0.5;  // top surface of raised bed
+      // World-Y rise per plateau elevation tier (absolute units shared by each
+      // merged tile's elevTier and authored ramp.rampElevation values — see
+      // tileSurfaceYInArea / _loadTownFromWorkspace's mergeZoneTiles).
+      const PLATEAU_UNIT = 2.5;
+      const RIVER_TOP  = -0.55; // river bed — a wide channel, at least trench-deep
+      const STREAM_TOP = -0.55; // stream bed — the actual painted waterway in current maps; same depth as the river
+      const ROCK_H     =  0.75; // rock block height
+      const ROCK_TOP   = NORMAL_TOP + ROCK_H;
+      // Tile types whose ground geometry sinks below NORMAL_TOP (vs. RAISED, which rises).
+      const DEPRESSION_TOP = {
+        [TileType.TRENCH]:    TRENCH_TOP,
+        [TileType.RIVER]:     RIVER_TOP,
+        [TileType.STREAM]:    STREAM_TOP,
+        [TileType.WATERFALL]: RIVER_TOP,
+      };
+
+      const WATER_UNIT = SLAB_H / MAX_WATER; // world-Y per water depth unit
+
+      // Y center of each tile's primary mesh
+      function tileYCenter(type) {
+        switch (type) {
+          case TileType.TRENCH:    return TRENCH_TOP - SLAB_H / 2;   // -0.75
+          case TileType.RIVER:     return RIVER_TOP  - SLAB_H / 2;
+          case TileType.STREAM:    return STREAM_TOP - SLAB_H / 2;
+          case TileType.WATERFALL: return RIVER_TOP  - SLAB_H / 2;
+          case TileType.RAISED:    return RAISED_TOP - SLAB_H / 2;   // +0.25
+          case TileType.ROCK:   return NORMAL_TOP + ROCK_H / 2;   // +0.375
+          case TileType.SHRUB:  return NORMAL_TOP + VEG_H / 2;    // slab on surface
+          case TileType.WEEDS:  return NORMAL_TOP + VEG_H / 2;
+          default:              return NORMAL_TOP - SLAB_H / 2;   // -0.25 (grass/tilled/paddy)
+        }
+      }
+
+      // Surface top Y for water placement and player standing
+      function tileSurfaceY(type) {
+        switch (type) {
+          case TileType.TRENCH:    return TRENCH_TOP;
+          case TileType.RIVER:     return RIVER_TOP;
+          case TileType.STREAM:    return STREAM_TOP;
+          case TileType.WATERFALL: return RIVER_TOP;
+          case TileType.RAISED:    return RAISED_TOP;
+          case TileType.ROCK:      return ROCK_TOP;
+          default:              return NORMAL_TOP;
+        }
+      }
+
+      // Geometry — full 1.0×1.0 footprint, no gaps
+      // Per-tile floor: 2×2 top subdivisions with seam-free vertex displacement.
+      // Displacement key is (round(worldX*2), round(worldZ*2)) so shared edge
+      // vertices between adjacent tiles always hash to the same value.
+      function makeFloorGeo(col, row) {
+        const geo = new THREE.BoxGeometry(1.0, SLAB_H, 1.0, 2, 1, 2);
+        const pa  = geo.attributes.position;
+        const ua  = geo.attributes.uv;
+        const topY = SLAB_H / 2;
+        for (let vi = 0; vi < pa.count; vi++) {
+          if (Math.abs(pa.getY(vi) - topY) < 1e-4) {
+            const kx = Math.round((col + 0.5 + pa.getX(vi)) * 2) | 0;
+            const kz = Math.round((row + 0.5 + pa.getZ(vi)) * 2) | 0;
+            let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+            h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+            pa.setY(vi, topY + (h / 4294967296 - 0.5) * 0.026);
+          }
+          // World-space (X,Z) UV, same convention as _mergeTileGeos — this
+          // geometry is used directly (unmerged) for the farm's individual
+          // tile meshes, so it needs its own real UV rather than BoxGeometry's
+          // default per-face 0..1 square (mesh.position offsets are applied
+          // after this, so bake col/row in here explicitly).
+          ua.setXY(vi, col + 0.5 + pa.getX(vi), row + 0.5 + pa.getZ(vi));
+        }
+        pa.needsUpdate = true;
+        ua.needsUpdate = true;
+        geo.computeVertexNormals();
+        return geo;
+      }
+
+      // Merge many small per-tile geometries (each in local -0.5..0.5 tile space)
+      // into a single BufferGeometry, baking in world-space (x,y,z) offsets per
+      // entry. Lets hundreds/thousands of seam-safe per-tile heightfield tiles
+      // collapse into one draw call per material instead of one mesh per tile.
+      function _mergeTileGeos(entries) {
+        // Recomputing normals on the merged buffer is mathematically the same
+        // as computing them per-entry (entries never share vertex indices, so
+        // there's no cross-entry averaging either way) — EXCEPT it silently
+        // discards any normal attribute an entry already carries. Some entries
+        // (e.g. the path network's pathGeo/grassGeo split) deliberately set a
+        // normal computed jointly across a sibling geometry that lives in a
+        // *different* bucket/material, to avoid a lighting seam where they
+        // meet. Preserve those instead of overwriting them.
+        for (const e of entries) {
+          if (!e.geo.attributes.normal) e.geo.computeVertexNormals();
+        }
+        let vertCount = 0, idxCount = 0;
+        for (const e of entries) {
+          vertCount += e.geo.attributes.position.count;
+          idxCount  += e.geo.index ? e.geo.index.count : e.geo.attributes.position.count;
+        }
+        const positions = new Float32Array(vertCount * 3);
+        const normals = new Float32Array(vertCount * 3);
+        // World-space (X,Z) UV, in raw world units (1 UV unit = 1 game tile) —
+        // resolveTileMat's textures scale via texture.repeat (see
+        // loadTerrainTileTexture) rather than a baked-in UV scale, so the
+        // same merged geometry works no matter what tile size a per-map
+        // override picks, and adjacent tiles' textures line up seamlessly
+        // across the whole merged mesh instead of each tile restarting its
+        // own 0..1 UV square (which is what "doesn't stretch evenly" meant
+        // here — there was no uv attribute at all before this).
+        const uvs = new Float32Array(vertCount * 2);
+        const indices = vertCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
+        let vOff = 0, uOff = 0, iOff = 0, vBase = 0;
+        for (const e of entries) {
+          const pa = e.geo.attributes.position;
+          const na = e.geo.attributes.normal;
+          for (let i = 0; i < pa.count; i++) {
+            const wx = pa.getX(i) + e.x, wz = pa.getZ(i) + e.z;
+            positions[vOff]   = wx;
+            positions[vOff+1] = pa.getY(i) + e.y;
+            positions[vOff+2] = wz;
+            normals[vOff]   = na.getX(i);
+            normals[vOff+1] = na.getY(i);
+            normals[vOff+2] = na.getZ(i);
+            uvs[uOff] = wx; uvs[uOff+1] = wz; uOff += 2;
+            vOff += 3;
+          }
+          const idx = e.geo.index;
+          if (idx) {
+            for (let i = 0; i < idx.count; i++) indices[iOff++] = idx.getX(i) + vBase;
+          } else {
+            for (let i = 0; i < pa.count; i++) indices[iOff++] = i + vBase;
+          }
+          vBase += pa.count;
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+        g.setIndex(new THREE.BufferAttribute(indices, 1));
+        return g;
+      }
+
+      // ── Path tile: worn depression with adjacency-aware torn edges ───────────
+      // Same heightfield pipeline as buildTerrainTileGeo (TRENCH/RAISED) but with
+      // a shallow depth (-0.09) so it reads as a foot-worn groove in the earth.
+      // Adjacent PATH tiles open the blend so connected tiles flow into each other.
+      // Geometry is split into pathGeo (depressed cells, path material) and
+      // grassGeo (edge cells blending back to NORMAL_TOP, grass material) — the
+      // same dual-mesh pattern used by rock and trench tiles.
+      function buildPathTileGeo(col, row, srcGrid = grid) {
+        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+        const BLEND_V  = 2;
+        const PATH_DY  = -0.045;  // depression depth — shallow, rock-tile-style dip
+
+        // World-space smooth value noise — used to wobble the closed-edge
+        // margin width *continuously along the edge's world coordinate*, so
+        // the dirt/grass line meanders in long, smooth curves (serpentine,
+        // like a worn footpath) instead of either a dead-straight band or
+        // independent per-tile random teeth (which would just look like
+        // sawtooth noise, not a winding path). Because it's keyed off world
+        // position rather than per-tile randomness, the wave lines up
+        // seamlessly across adjacent path tiles.
+        const hash1 = n => {
+          let h = (Math.imul(n | 0, 2654435761) ^ ((n | 0) << 13)) >>> 0;
+          h = Math.imul(h ^ h>>>15, 1274126177) >>> 0;
+          return (h >>> 0) / 4294967296;
+        };
+        const smooth = t => t * t * (3 - 2 * t);
+        const wobble = (coord, seedOff) => {
+          const WAVELEN = 3.4;  // ~3-4 tiles per S-curve — reads as serpentine, not jittery
+          const xs = coord / WAVELEN + seedOff;
+          const xi = Math.floor(xs), t = xs - xi;
+          const a = hash1(xi), b = hash1(xi + 1);
+          const v = a + (b - a) * smooth(t);       // 0..1 smooth value noise
+          return 0.35 + v * 1.3;                    // multiplier range ~0.35..1.65
+        };
+
+        const openN = srcGrid[row - 1]?.[col]?.type === TileType.PATH;
+        const openS = srcGrid[row + 1]?.[col]?.type === TileType.PATH;
+        const openW = srcGrid[row]?.[col - 1]?.type === TileType.PATH;
+        const openE = srcGrid[row]?.[col + 1]?.type === TileType.PATH;
+
+        // Diagonal tiles — used to bevel the inner corner of L-shaped turns
+        // instead of leaving a blocky right-angle notch (same technique as
+        // buildTerrainTileGeo's TRENCH/RAISED corners).
+        const diagNW = srcGrid[row-1]?.[col-1]?.type === TileType.PATH;
+        const diagNE = srcGrid[row-1]?.[col+1]?.type === TileType.PATH;
+        const diagSW = srcGrid[row+1]?.[col-1]?.type === TileType.PATH;
+        const diagSE = srcGrid[row+1]?.[col+1]?.type === TileType.PATH;
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        // Extra roughness along the path edge — stronger than trench to get ragged border
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.045;
+        };
+
+        // Isolated 1-tile corner "nubs" — both perpendicular neighbors are
+        // path, the far diagonal isn't, AND the other two sides are closed —
+        // are almost always a one-tile width-step along a wider road's edge,
+        // not an intentional junction. Those get a true 45° diagonal cut
+        // across the whole tile (literally half path / half grass) instead
+        // of just a small rounded nub, so a multi-tile-wide road's outer
+        // edge reads as a chamfered line rather than a sawtooth staircase.
+        // Real junctions (where another side is also open) keep the subtle
+        // small-radius diagonal trim so they don't get chopped in half.
+        const isCornerNW = openW && openN && !diagNW && !openS && !openE;
+        const isCornerNE = openE && openN && !diagNE && !openS && !openW;
+        const isCornerSW = openW && openS && !diagSW && !openN && !openE;
+        const isCornerSE = openE && openS && !diagSE && !openN && !openW;
+        const spanNW = isCornerNW ? CELLS : BLEND_V;
+        const spanNE = isCornerNE ? CELLS : BLEND_V;
+        const spanSW = isCornerSW ? CELLS : BLEND_V;
+        const spanSE = isCornerSE ? CELLS : BLEND_V;
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++) {
+          for (let vi = 0; vi < VERTS; vi++) {
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+
+            // Closed-edge margin wobbles smoothly along the edge's world
+            // coordinate (vz for W/E, vx for N/S) — a long serpentine curve
+            // rather than a per-tile-random tooth.
+            const bW = openW ? 1 : smooth(Math.min(1, (vi / BLEND_V) * wobble(vz, 0.0)));
+            const bE = openE ? 1 : smooth(Math.min(1, ((CELLS - vi) / BLEND_V) * wobble(vz, 17.3)));
+            const bN = openN ? 1 : smooth(Math.min(1, (vj / BLEND_V) * wobble(vx, 41.7)));
+            const bS = openS ? 1 : smooth(Math.min(1, ((CELLS - vj) / BLEND_V) * wobble(vx, 89.1)));
+
+            // Diagonal bevel — Manhattan (vi+vj) distance from the corner,
+            // whose iso-lines are true 45° diagonals (unlike max(vi,vj),
+            // whose iso-lines are right-angle brackets).
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, (vi + vj)                 / spanNW)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, ((CELLS-vi) + vj)         / spanNE)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, (vi + (CELLS-vj))         / spanSW)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, ((CELLS-vi) + (CELLS-vj)) / spanSE)) : 1;
+
+            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE);
+            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+          }
+        }
+
+        // Split: path material where the depression is visible, grass at shallow edges
+        const PATH_THRESH = -0.009;  // scaled with the shallower PATH_DY
+        const pathIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const isPath = Math.min(Y[v00], Y[v10], Y[v01], Y[v11]) < PATH_THRESH;
+            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const positions = [], uvs = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++) {
+            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+            // World-space (X,Z) UV, same convention as _mergeTileGeos — used
+            // directly (unmerged) for the farm's per-tile path mesh.
+            uvs.push(col + vi * STEP, row + vj * STEP);
+          }
+
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+
+        // pathGeo and grassGeo share the position buffer along the wobbling
+        // path/grass boundary — compute one normal set over both face lists
+        // so the boundary shades continuously instead of each geometry only
+        // seeing its own half of the faces.
+        const normAttr = new THREE.Float32BufferAttribute(
+          _sharedSplitNormals(positions, VERTS * VERTS, pathIdx, grassIdx), 3);
+
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setAttribute('uv', uvAttr);
+          g.setAttribute('normal', normAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          return g;
+        };
+        return { pathGeo: makeGeo(pathIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+      // Shared helper: compute one normal per vertex from a combined face list
+      // (used so two split geometries that share a position buffer along a
+      // boundary — e.g. path/grass — shade continuously instead of each
+      // computing normals only from its own half of the faces).
+      function _sharedSplitNormals(positions, vertCount, idxA, idxB) {
+        const allIdx = idxA.concat(idxB);
+        const normals = new Float32Array(vertCount * 3);
+        for (let f = 0; f < allIdx.length; f += 3) {
+          const ia = allIdx[f], ib = allIdx[f+1], ic = allIdx[f+2];
+          const ax=positions[ia*3],ay=positions[ia*3+1],az=positions[ia*3+2];
+          const bx=positions[ib*3],by=positions[ib*3+1],bz=positions[ib*3+2];
+          const cx=positions[ic*3],cy=positions[ic*3+1],cz=positions[ic*3+2];
+          const e1x=bx-ax,e1y=by-ay,e1z=bz-az, e2x=cx-ax,e2y=cy-ay,e2z=cz-az;
+          const nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+          for (const vi3 of [ia,ib,ic]) {
+            normals[vi3*3] += nx; normals[vi3*3+1] += ny; normals[vi3*3+2] += nz;
+          }
+        }
+        for (let v = 0; v < vertCount; v++) {
+          const nx=normals[v*3], ny=normals[v*3+1], nz=normals[v*3+2];
+          const len = Math.hypot(nx,ny,nz) || 1;
+          normals[v*3]=nx/len; normals[v*3+1]=ny/len; normals[v*3+2]=nz/len;
+        }
+        return normals;
+      }
+
+      // ── Path network: one continuous heightfield for the whole road system ───
+      // Instead of treating each PATH tile as its own flat, regular slab and
+      // patching the seams between them, the entire path network (bounding box
+      // of all PATH tiles + a margin) is built as ONE shared vertex grid — the
+      // same "no per-tile independence" approach the border terrain uses beyond
+      // the map's edge. A blurred per-tile mask defines where the ground dips
+      // into the path, so the path/grass boundary settles into an organic,
+      // irregular line that ignores the tile grid, and the dip itself reads as
+      // a very shallow inverted cliff rather than a Minecraft-style flat block.
+      // TRENCH/RAISED/SHRUB/ROCK tiles inside the bbox are left to their own
+      // per-tile geometry (skipped here) so they aren't double-covered.
+      function buildPathNetworkGeo(srcGrid, gcols, grows) {
+        let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+        for (let r = 0; r < grows; r++)
+          for (let c = 0; c < gcols; c++)
+            if (srcGrid[r]?.[c]?.type === TileType.PATH) {
+              if (c < minC) minC = c; if (c > maxC) maxC = c;
+              if (r < minR) minR = r; if (r > maxR) maxR = r;
+            }
+        if (minC === Infinity) return null; // no path tiles at all
+
+        const MARGIN = 2; // tiles of grass apron around the network for the dip to settle into
+        minC = Math.max(0, minC - MARGIN); maxC = Math.min(gcols - 1, maxC + MARGIN);
+        minR = Math.max(0, minR - MARGIN); maxR = Math.min(grows - 1, maxR + MARGIN);
+        const bw = maxC - minC + 1, bh = maxR - minR + 1;
+
+        const CELLS = 6, STEP = 1 / CELLS;
+        const GW = bw * CELLS + 1, GH = bh * CELLS + 1;
+
+        const EXCLUDED = new Set([TileType.TRENCH, TileType.RAISED, TileType.SHRUB, TileType.ROCK, TileType.TILLED, TileType.RIVER, TileType.STREAM]);
+        const cellType    = (ci, cj) => srcGrid[minR + cj]?.[minC + ci]?.type;
+        const isPathCell  = (ci, cj) => cellType(ci, cj) === TileType.PATH;
+        const isExcluded  = (ci, cj) => EXCLUDED.has(cellType(ci, cj));
+
+        // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
+        // average their path-membership so the mask starts as a clean 0 /
+        // 0.25 / 0.5 / 0.75 / 1 step instead of guessing a single owner cell.
+        const touching = (g, n) => {
+          if (g % CELLS === 0) {
+            const a = g / CELLS - 1, b = g / CELLS, arr = [];
+            if (a >= 0 && a < n) arr.push(a);
+            if (b >= 0 && b < n) arr.push(b);
+            return arr;
+          }
+          return [Math.floor(g / CELLS)];
+        };
+
+        let mask = new Float32Array(GW * GH);
+        for (let gj = 0; gj < GH; gj++) {
+          const rows = touching(gj, bh);
+          for (let gi = 0; gi < GW; gi++) {
+            const cols = touching(gi, bw);
+            let sum = 0, n = 0;
+            for (const cj of rows) for (const ci of cols) { n++; if (isPathCell(ci, cj)) sum++; }
+            mask[gj * GW + gi] = n ? sum / n : 0;
+          }
+        }
+
+        // Box-blur the mask a few times to round it into an organic, non-grid
+        // boundary — this is what gives the rim its "more complex/defineable"
+        // character instead of a tile-square hole.
+        for (let pass = 0; pass < 3; pass++) {
+          const next = new Float32Array(GW * GH);
+          for (let gj = 0; gj < GH; gj++)
+            for (let gi = 0; gi < GW; gi++) {
+              let sum = 0, n = 0;
+              for (let dj = -1; dj <= 1; dj++)
+                for (let di = -1; di <= 1; di++) {
+                  const ni = gi+di, nj = gj+dj;
+                  if (ni<0||ni>=GW||nj<0||nj>=GH) continue;
+                  sum += mask[nj*GW+ni]; n++;
+                }
+              next[gj*GW+gi] = sum / n;
+            }
+          mask = next;
+        }
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 7) | 0, kz = Math.round(vz * 7) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.045;
+        };
+        const smooth = t => t * t * (3 - 2 * t);
+        const PATH_DY = -0.05; // shallow — a worn groove, not a trench
+
+        // Y[] stays tier-independent (local worn-groove height only) since
+        // PATH_THRESH below is tuned against it — positions[] is what
+        // actually renders, and separately bakes in each vertex's owning
+        // tile's own elevTier so a path network that sits on a plateau
+        // doesn't render pinned to ground level while the plateau ground
+        // around it sits PLATEAU_UNIT higher (previously: a path crossing a
+        // plateau rendered as a hole cut through the mesa, the flat patch
+        // sunk far below the actual elevated surface).
+        const Y = new Float32Array(GW * GH);
+        const positions = new Float32Array(GW * GH * 3);
+        for (let gj = 0; gj < GH; gj++)
+          for (let gi = 0; gi < GW; gi++) {
+            const vx = minC + gi * STEP, vz = minR + gj * STEP;
+            const blend = smooth(Math.min(1, Math.max(0, mask[gj*GW+gi])));
+            const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
+            const tci = Math.min(bw - 1, Math.floor(gi / CELLS));
+            const tcj = Math.min(bh - 1, Math.floor(gj / CELLS));
+            const tierY = (srcGrid[minR + tcj]?.[minC + tci]?.elevTier || 0) * PLATEAU_UNIT;
+            const k = gj*GW+gi;
+            Y[k] = localY;
+            positions[k*3] = vx; positions[k*3+1] = tierY + localY; positions[k*3+2] = vz;
+          }
+
+        const PATH_THRESH = -0.013; // tuned for PATH_DY=-0.05 after the blur softens the mask
+        const pathIdx = [], grassIdx = [];
+        for (let cj = 0; cj < GH-1; cj++)
+          for (let ci = 0; ci < GW-1; ci++) {
+            const tci = Math.min(bw-1, Math.floor(ci / CELLS));
+            const tcj = Math.min(bh-1, Math.floor(cj / CELLS));
+            if (isExcluded(tci, tcj)) continue; // left for that tile's own geometry
+            const v00=cj*GW+ci, v10=cj*GW+ci+1, v01=(cj+1)*GW+ci, v11=(cj+1)*GW+ci+1;
+            const isPath = Math.min(Y[v00],Y[v10],Y[v01],Y[v11]) < PATH_THRESH;
+            (isPath ? pathIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const vertCount = GW * GH;
+        const posAttr  = new THREE.Float32BufferAttribute(positions, 3);
+        const normAttr = new THREE.Float32BufferAttribute(
+          _sharedSplitNormals(positions, vertCount, pathIdx, grassIdx), 3);
+
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setAttribute('normal', normAttr);
+          g.setIndex(new THREE.BufferAttribute(
+            vertCount > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
+          return g;
+        };
+
+        return {
+          pathGeo: makeGeo(pathIdx),
+          grassGeo: makeGeo(grassIdx),
+          inBounds: (c, r) => c >= minC && c <= maxC && r >= minR && r <= maxR,
+          isExcludedTile: (c, r) => EXCLUDED.has(srcGrid[r]?.[c]?.type),
+        };
+      }
+
+      // ── Path: paved brick surface (WallBuilder "horizontal wall") ──────────────
+      // Ports the town-path-preview tool's "wall-generated surface" technique:
+      // WallBuilder normally stands its recipe's brick lattice up along a
+      // vertical quad (see panelCorners() in WallBuilder.js — width along local
+      // +X, height along local +Y). Passing an explicit `corners` array bypasses
+      // that vertical-quad derivation entirely, so 4 corners that all share one
+      // Y instead describe a FLAT quad lying in the XZ plane — build()'s own
+      // quadBasis() then derives a +Y-ish normal and u/v axes from those corners
+      // with no other change needed, so the exact same brick-placement math
+      // (generateWallMatricesFromRecipe, which only ever reasons in the panel's
+      // own local width×height grid) ends up laying bricks down flat instead of
+      // upright.
+      //
+      // Paving the whole spline corridor in one WallBuilder panel is fine for a
+      // town-sized route but doesn't scale to a long wilderness road — so
+      // instead of one huge panel (or a streamed window rebuilt as the player
+      // moves, which still pays a geometry-generation cost on every rebuild),
+      // the corridor is chunked into fixed PATH_BRICK_CHUNK_SIZE cells and
+      // every chunk that actually overlaps the corridor is built ONCE, up
+      // front (buildAllPathBrickChunks) — empty cells (most of a route's own
+      // bounding box, since the corridor is a thin strip through it) are
+      // skipped entirely rather than paying to generate-then-discard. From
+      // then on nothing is ever rebuilt: gameLoop's throttled tick just
+      // toggles each chunk's .visible using the exact same camera-aligned-
+      // corridor test already used for wilderness tree culling
+      // (updateZoneVegetationCulling/VEG_CULL_* below) — see
+      // updatePathBrickCulling. The one-time spline math (route selection,
+      // Catmull-Rom sampling, corridor containment test) is prepared once per
+      // zone by preparePathSplineData and reused by every chunk.
+      const PATH_BRICK_CHUNK_SIZE = 10; // world units (≈ tiles) per pre-built chunk
+      function _routeCurvePoints(route) {
+        const pts = (route.nodes || [])
+          .map(n => new THREE.Vector3(Number(n[0]) + 0.5, 0, Number(n[1]) + 0.5))
+          .filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
+        if (pts.length < 2) return [];
+        if (pts.length === 2) {
+          const out = [];
+          for (let i = 0; i <= 24; i++) out.push(pts[0].clone().lerp(pts[1], i / 24));
+          return out;
+        }
+        const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.45);
+        return curve.getPoints(Math.max(32, (pts.length - 1) * 28));
+      }
+      function _segDistSq(px, pz, a, b) {
+        const vx = b.x - a.x, vz = b.z - a.z, wx = px - a.x, wz = pz - a.z, c1 = vx * wx + vz * wz;
+        if (c1 <= 0) return wx * wx + wz * wz;
+        const c2 = vx * vx + vz * vz;
+        if (c2 <= c1) { const dx = px - b.x, dz = pz - b.z; return dx * dx + dz * dz; }
+        const t = c1 / c2, dx = px - (a.x + t * vx), dz = pz - (a.z + t * vz);
+        return dx * dx + dz * dz;
+      }
+      // One-time (per zone) spline prep: picks which route(s) to pave and bakes
+      // their sampled centerlines + a corridor containment test + the overall
+      // bounding box, all reused by every streamed rebuild below.
+      function preparePathSplineData(srcGrid, gcols, grows, routes, mapId) {
+        const width = 3.25, tol = 0.05; // matches the preview tool's exported path.pathWidth/edgeTolerance
+        const pathTiles = new Set();
+        let tileMinC = Infinity, tileMaxC = -Infinity, tileMinR = Infinity, tileMaxR = -Infinity;
+        for (let r = 0; r < grows; r++) for (let c = 0; c < gcols; c++)
+          if (srcGrid[r]?.[c]?.type === TileType.PATH) {
+            pathTiles.add(c + ',' + r);
+            if (c < tileMinC) tileMinC = c; if (c > tileMaxC) tileMaxC = c;
+            if (r < tileMinR) tileMinR = r; if (r > tileMaxR) tileMaxR = r;
+          }
+        // Plateau zones (Northern Cliffs, Southern Cloud Forest, ...) carve a
+        // road across multiple elevation tiers — buildPathNetworkGeo's own
+        // flat mesh already bakes each vertex's owning tile's elevTier into
+        // its Y (see its "positions[] is what actually renders" comment), so
+        // a WallBuilder brick corridor built at one single flat Y would land
+        // underground/off in the air the moment the route crosses onto a
+        // raised tier. Snapped per-instance in buildPathBrickChunkAt below.
+        const elevTierAt = (x, z) => srcGrid[Math.floor(z)]?.[Math.floor(x)]?.elevTier || 0;
+        if (!pathTiles.size) {
+          // Not necessarily a bug — plenty of zones legitimately have no
+          // TileType.PATH tiles at all — but worth a trace-level note since
+          // "why are there no bricks here" always starts by ruling this out.
+          debugLog(`Path brick surface (${mapId}): no PATH tiles in this grid, skipping.`);
+          return null;
+        }
+
+        // Auto-pick whichever route(s) actually overlap the painted path tiles
+        // (same scoring as the preview's selectedRoutes/routeOverlapScore) —
+        // a route authored for something else (an NPC patrol, say) that
+        // happens to share the map shouldn't also get paved.
+        function pointNearPaintedPath(c, r, rad) {
+          for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++)
+            if (pathTiles.has((Math.floor(c) + dc) + ',' + (Math.floor(r) + dr))) return true;
+          return false;
+        }
+        const candidates = (routes || []).filter(r => Array.isArray(r.nodes) && r.nodes.length >= 2);
+        const scored = candidates.map(r => {
+          const nodes = r.nodes || [];
+          let hit = 0;
+          for (const n of nodes) if (Array.isArray(n) && pointNearPaintedPath(Number(n[0]) + 0.5, Number(n[1]) + 0.5, 2)) hit++;
+          return [r, nodes.length ? hit / nodes.length : 0];
+        }).sort((a, b) => b[1] - a[1]);
+        const good = scored.filter(x => x[1] >= 0.45).map(x => x[0]);
+        const selected = good.length ? good : (scored.length ? [scored[0][0]] : []);
+
+        const samples = selected.length ? selected.map(_routeCurvePoints).filter(s => s.length >= 2) : [];
+        if (samples.length) {
+          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          for (const arr of samples) for (const p of arr) {
+            minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+            minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+          }
+          const margin = width / 2 + 0.8;
+          minX -= margin; maxX += margin; minZ -= margin; maxZ += margin;
+
+          const rr = (width / 2 + tol) * (width / 2 + tol);
+          function containsPoint(x, z) {
+            for (const arr of samples) for (let i = 0; i < arr.length - 1; i++)
+              if (_segDistSq(x, z, arr[i], arr[i + 1]) <= rr) return true;
+            return false;
+          }
+          debugLog(`Path brick surface (${mapId}): spline mode, ${selected.length} route(s), ${pathTiles.size} PATH tile(s).`);
+          return { samples, containsPoint, elevTierAt, bounds: { minX, maxX, minZ, maxZ } };
+        }
+
+        // No authored route data overlaps this map's painted path tiles at
+        // all (e.g. the farm's hardcoded day-one path, or a hand-painted
+        // zone path with no route) — fall back to the preview tool's other
+        // mode, "tile-locked": the corridor is exactly the painted PATH
+        // cells themselves instead of a spline distance test. Blockier than
+        // the spline corridor on a curved route, but the farm's own path is
+        // a straight rectangular strip anyway, so it costs nothing there.
+        debugLog(`Path brick surface (${mapId}): no route matched ${pathTiles.size} painted PATH tile(s) (${candidates.length} candidate route(s) checked) — falling back to tile-locked mode.`, candidates.length ? 'warn' : 'info');
+        return {
+          samples: null,
+          containsPoint: (x, z) => pathTiles.has(Math.floor(x) + ',' + Math.floor(z)),
+          elevTierAt,
+          bounds: { minX: tileMinC, maxX: tileMaxC + 1, minZ: tileMinR, maxZ: tileMaxR + 1 },
+        };
+      }
+      // Builds one WallBuilder panel covering exactly one fixed grid cell
+      // (chunkMinX..chunkMinX+size, chunkMinZ..chunkMinZ+size), then prunes
+      // instances outside the actual corridor exactly like the original
+      // single-panel version did (see preparePathSplineData.containsPoint).
+      // Returns null if that cell has no corridor overlap at all — the
+      // caller uses that to skip empty cells rather than keep an empty group.
+      function buildPathBrickChunkAt(splineData, chunkMinX, chunkMinZ, size) {
+        const minX = chunkMinX, maxX = chunkMinX + size, minZ = chunkMinZ, maxZ = chunkMinZ + size;
+        const y = NORMAL_TOP + 0.01; // small lift above the flat path/grass mesh beneath, avoids z-fighting
+        const panel = {
+          id: 'path_surface_chunk', width: size, height: size, wallRecipeId: PATH_SURFACE_RECIPE_ID,
+          position: [(minX + maxX) / 2, y, (minZ + maxZ) / 2], rotationDeg: [0, 0, 0],
+          corners: [[minX, y, maxZ], [maxX, y, maxZ], [maxX, y, minZ], [minX, y, minZ]],
+        };
+        const opts = {
+          usePlaceholder: true, unitMult: 0.55, densityMult: 1, rockScale: 1.15,
+          preScale: [1, 1, 0.32], brickJitter: { rotYDeg: 8, shiftU: 0.04, shiftV: 0.03 },
+        };
+        const group = pathWallBuilder.build([panel], opts);
+        group.name = 'PathBrickSurfaceChunk';
+
+        const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+        let anyKept = false;
+        group.traverse(o => {
+          if (!o.isInstancedMesh) return;
+          const n = o.count;
+          let kept = 0;
+          for (let i = 0; i < n; i++) {
+            o.getMatrixAt(i, m);
+            m.decompose(p, q, s);
+            if (!splineData.containsPoint(p.x, p.z)) continue;
+            // Re-lift this one instance onto its own tile's elevation tier —
+            // see elevTierAt's comment in preparePathSplineData. The panel
+            // itself was built flat at the zone's base Y, so every brick
+            // needs its own per-instance correction rather than one offset
+            // for the whole chunk.
+            const tier = splineData.elevTierAt ? splineData.elevTierAt(p.x, p.z) : 0;
+            if (tier) { p.y += tier * PLATEAU_UNIT; m.compose(p, q, s); }
+            if (kept !== i) o.setMatrixAt(kept, m);
+            kept++;
+          }
+          o.count = kept;
+          o.instanceMatrix.needsUpdate = true;
+          o.castShadow = true;
+          o.receiveShadow = true;
+          if (kept) anyKept = true;
+        });
+        if (!anyKept) { WallBuilder.disposeGroup(group); return null; }
+        return group;
+      }
+      // Builds every non-empty chunk over the corridor's bounding box, once.
+      // Each surviving chunk is tagged with userData.cullSphere in the exact
+      // shape updateZoneVegetationCulling already expects ({x,z,radius}), so
+      // updatePathBrickCulling below can reuse that same corridor-visibility
+      // formula unmodified.
+      function buildAllPathBrickChunks(splineData, scene) {
+        const b = splineData.bounds, size = PATH_BRICK_CHUNK_SIZE;
+        const chunkRadius = Math.SQRT2 * size / 2; // half-diagonal of a size×size cell
+        const chunks = [];
+        for (let cz = Math.floor(b.minZ / size) * size; cz < b.maxZ; cz += size) {
+          for (let cx = Math.floor(b.minX / size) * size; cx < b.maxX; cx += size) {
+            const group = buildPathBrickChunkAt(splineData, cx, cz, size);
+            if (!group) continue;
+            group.visible = false; // first updatePathBrickCulling pass decides what's actually shown
+            group.userData.cullSphere = { x: cx + size / 2, z: cz + size / 2, radius: chunkRadius };
+            scene.add(group);
+            chunks.push(group);
+          }
+        }
+        return chunks;
+      }
+      // Per-zone chunk list: mapId -> THREE.Group[]. Keyed so town, farm, and
+      // every wilderness zone each keep their own chunk set without fighting
+      // over one slot.
+      const _pathBrickChunkLists = new Map();
+      function registerPathBrickChunks(mapId, scene, splineData) {
+        // Disposes any previous chunk set for this mapId first — a zone can
+        // rebuild its scene (Tothal Shift, cache invalidation) and call this
+        // again, and a stale chunk set left in the scene would otherwise leak
+        // both the GPU buffers and a dangling reference this map's cull pass
+        // still walks every tick.
+        const prev = _pathBrickChunkLists.get(mapId);
+        if (prev) for (const g of prev) { scene.remove(g); WallBuilder.disposeGroup(g); }
+        const chunks = buildAllPathBrickChunks(splineData, scene);
+        _pathBrickChunkLists.set(mapId, chunks);
+        if (chunks.length) {
+          const total = chunks.reduce((sum, g) => sum + g.children.reduce((s2, o) => s2 + (o.isInstancedMesh ? o.count : 0), 0), 0);
+          debugLog(`Path brick surface (${mapId}): ${chunks.length} chunk(s), ${total} brick instance(s).`);
+        } else {
+          // splineData always has a real corridor by this point (see
+          // preparePathSplineData — it only ever returns null, which callers
+          // check before reaching here) — zero chunks means every single
+          // per-chunk WallBuilder generate-then-filter pass came up empty,
+          // which points at the corridor math or recipe/unitMult, not at
+          // "this map just has no path."
+          debugLog(`Path brick surface (${mapId}): corridor bounds ${JSON.stringify(splineData.bounds)} produced 0 chunks — recipe/corridor mismatch?`, 'warn');
+        }
+      }
+      // Called from the throttled tick below for whichever zone is currently
+      // active. Identical corridor test to updateZoneVegetationCulling
+      // (camera-aligned forward/rear/width box around VEG_CULL_* tiles, with
+      // hysteresis so a chunk right at the boundary doesn't flicker every
+      // tick) — same technique, just toggling pre-built path chunks instead
+      // of pre-built tree groups, so it costs nothing beyond that dot-product
+      // test per chunk regardless of how long the corridor is.
+      function updatePathBrickCulling(mapId, force) {
+        const chunks = _pathBrickChunkLists.get(mapId);
+        if (!chunks || !chunks.length) return;
+        const camX = camera.position.x, camZ = camera.position.z;
+        let viewX = camTargetX - camX, viewZ = camTargetZ - camZ;
+        let viewLen = Math.hypot(viewX, viewZ);
+        if (viewLen < 1e-5) { viewX = 0; viewZ = 1; viewLen = 1; }
+        viewX /= viewLen; viewZ /= viewLen;
+        const rightX = viewZ, rightZ = -viewX;
+        const forwardRange = VEG_CULL_FORWARD_TILES, rearRange = VEG_CULL_REAR_TILES;
+        const halfWidth = VEG_CULL_WIDTH_TILES * 0.5, hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        for (const chunk of chunks) {
+          const s = chunk.userData.cullSphere;
+          const dx = s.x - camX, dz = s.z - camZ;
+          const along = dx * viewX + dz * viewZ;
+          const side = Math.abs(dx * rightX + dz * rightZ);
+          const sticky = chunk.visible ? hysteresis : 0;
+          const expandedRadius = s.radius + sticky;
+          const show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
+            && side <= halfWidth + expandedRadius;
+          if (force || show !== chunk.visible) chunk.visible = show;
+        }
+      }
+
+      // ── Rock tile: mini plateau heightfield (same pipeline as border terrain) ───
+      // 9×9 vertex grid (0.125u steps) over a 1×1 tile. Uses seam-safe FNV hash
+      // at tile edges so vertices match adjacent makeFloorGeo tiles exactly.
+      function buildRockTileGeo(col, row) {
+        const VERTS = 7, CELLS = 6;
+        const STEP = 1.0 / CELLS;
+
+        let _s = ((col * 374761393) ^ (row * 668265263)) >>> 0;
+        const rng = () => {
+          _s += 0x6D2B79F5;
+          let t = Math.imul(_s ^ _s>>>15, _s|1);
+          t ^= t + Math.imul(t ^ t>>>7, t|61);
+          return ((t ^ t>>>14) >>> 0) / 4294967296;
+        };
+
+        // Same hash formula as makeFloorGeo — seam-safe at tile edges
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0;
+          const kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        // Finer roughness detail for the mound surface
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 8) | 0;
+          const kz = Math.round(vz * 8) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.05;
+        };
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++)
+            Y[vj*VERTS+vi] = seamDisp(col + vi*STEP, row + vj*STEP);
+
+        // BFS plateau from a random interior starting cell (never touches edge cells)
+        const startCi = 1 + Math.floor(rng() * (CELLS - 2));
+        const startCj = 1 + Math.floor(rng() * (CELLS - 2));
+        const maxSize = 2 + Math.floor(rng() * 12);  // scaled for the smaller CELLS=6 interior
+        const group = new Set([startCj * CELLS + startCi]);
+        const front = [[startCi, startCj]];
+
+        while (front.length && group.size < maxSize) {
+          const fi = Math.floor(rng() * front.length);
+          const [ci, cj] = front.splice(fi, 1)[0];
+          for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const ni = ci+dc, nj = cj+dr;
+            if (ni < 1 || ni > CELLS-2 || nj < 1 || nj > CELLS-2) continue;
+            const nk = nj*CELLS+ni;
+            if (group.has(nk)) continue;
+            group.add(nk); front.push([ni, nj]);
+          }
+        }
+
+        // Collect plateau vertex indices and find peak
+        let maxY = -Infinity;
+        const raised = new Set();
+        for (const ck of group) {
+          const ci = ck % CELLS, cj = (ck / CELLS) | 0;
+          for (const vi of [cj*VERTS+ci, cj*VERTS+ci+1, (cj+1)*VERTS+ci, (cj+1)*VERTS+ci+1]) {
+            raised.add(vi);
+            if (Y[vi] > maxY) maxY = Y[vi];
+          }
+        }
+
+        const PEAK = 0.32 + rng() * 0.38;
+        const target = maxY + PEAK;
+
+        // Raise plateau verts, blending to zero at tile edges
+        for (const vi of raised) {
+          const vix = vi % VERTS, viy = (vi / VERTS) | 0;
+          const edgeDist = Math.min(vix, VERTS-1-vix, viy, VERTS-1-viy);
+          const blend = Math.min(1, edgeDist / 2);
+          if (blend <= 0) continue;
+          const vx = col + vix*STEP, vz = row + viy*STEP;
+          const h = seamDisp(vx, vz) + blend * target + roughDisp(vx, vz) * blend;
+          if (h > Y[vi]) Y[vi] = h;
+        }
+
+        const positions = [], uvs = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++) {
+            positions.push(vi*STEP - 0.5, Y[vj*VERTS+vi], vj*STEP - 0.5);
+            // World-space (X,Z) UV, same convention as _mergeTileGeos — this
+            // geometry is used directly (unmerged) for the farm's per-tile
+            // rock mound mesh, so it needs real UV of its own.
+            uvs.push(col + vi*STEP, row + vj*STEP);
+          }
+
+        // Split cells: stone if any corner is elevated (plateau or cliff face),
+        // grass if all corners are at ground level. Threshold 0.05u sits above
+        // the ±0.013u seam noise so ground cells always go green.
+        const stoneIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const tgt = Math.max(Y[v00], Y[v10], Y[v01], Y[v11]) > 0.05
+              ? stoneIdx : grassIdx;
+            tgt.push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+        const makeGeo = (idx) => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setAttribute('uv', uvAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { stoneGeo: makeGeo(stoneIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+      // ── Terrain tile heightfield: TRENCH ditch and RAISED bed ──────────────────
+      // Adjacency-driven shape with three refinements vs. the first version:
+      //   1. PLATEAU factor expands the fully-blended interior (more plateau, less peak)
+      //   2. Diagonal-corner correction fades the inner vertex of L-turns to NORMAL_TOP
+      //   3. Geometry is split into dirtGeo (depressed/raised cells) and grassGeo (flat
+      //      edge cells near NORMAL_TOP), mirroring the rock tile's stone/grass split.
+      function buildTerrainTileGeo(col, row, type, srcGrid = grid) {
+        const VERTS = 7, CELLS = 6, STEP = 1.0 / CELLS;
+        const BLEND_V  = 2;
+        // Trench is a dug pit meant to mirror the raised bed's wide flat top
+        // (just inverted) — same wide-plateau factor as RAISED. The natural
+        // waterway types (river/stream/waterfall) keep the narrower, more
+        // tapered 1.5 blend since those should still read as carved channels.
+        const PLATEAU  = (type === TileType.RAISED || type === TileType.TRENCH) ? 3.0 : 1.5;
+        const depressionTop = DEPRESSION_TOP[type];
+        const isDepression = depressionTop !== undefined;
+        const targetDY = isDepression
+          ? depressionTop - NORMAL_TOP
+          : RAISED_TOP - NORMAL_TOP;  // +0.5
+
+        // A dug TRENCH is a deliberate, hand-cut square pit — full depth to
+        // every edge, not a natural waterway that should taper into its
+        // banks. Force every side/diagonal "open" for it regardless of the
+        // actual neighbor, so a lone dug tile still reads as a real cut
+        // square instead of shrinking to a small dirt patch surrounded by
+        // grass sloping down to it (the old behavior, shared with RIVER/
+        // STREAM/WATERFALL, which DO still want that natural blend/taper).
+        // Adjacent trench tiles were already "open" toward each other via
+        // sameWaterway (a === b) — this only changes trench-vs-non-trench
+        // edges, i.e. a chain's outer boundary and any isolated tile.
+        const isTrench = type === TileType.TRENCH;
+        const openN = isTrench || sameWaterway(srcGrid[row - 1]?.[col]?.type, type);
+        const openS = isTrench || sameWaterway(srcGrid[row + 1]?.[col]?.type, type);
+        const openW = isTrench || sameWaterway(srcGrid[row]?.[col - 1]?.type, type);
+        const openE = isTrench || sameWaterway(srcGrid[row]?.[col + 1]?.type, type);
+
+        // Diagonal tiles — used to seal the inner corner of L-shaped turns
+        const diagNW = isTrench || sameWaterway(srcGrid[row-1]?.[col-1]?.type, type);
+        const diagNE = isTrench || sameWaterway(srcGrid[row-1]?.[col+1]?.type, type);
+        const diagSW = isTrench || sameWaterway(srcGrid[row+1]?.[col-1]?.type, type);
+        const diagSE = isTrench || sameWaterway(srcGrid[row+1]?.[col+1]?.type, type);
+
+        const seamDisp = (vx, vz) => {
+          const kx = Math.round(vx * 2) | 0, kz = Math.round(vz * 2) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.026;
+        };
+
+        const roughDisp = (vx, vz) => {
+          const kx = Math.round(vx * 6) | 0, kz = Math.round(vz * 6) | 0;
+          let h = (2166136261 ^ (kx * 374761393) ^ (kz * 668265263)) >>> 0;
+          h = Math.imul(h ^ h>>>13, 1274126177) >>> 0;
+          return (h / 4294967296 - 0.5) * 0.035;
+        };
+
+        const smooth = t => t * t * (3 - 2 * t);
+
+        const Y = new Float32Array(VERTS * VERTS);
+        for (let vj = 0; vj < VERTS; vj++) {
+          for (let vi = 0; vi < VERTS; vi++) {
+            const bW = openW ? 1 : smooth(Math.min(1, vi / BLEND_V));
+            const bE = openE ? 1 : smooth(Math.min(1, (CELLS - vi) / BLEND_V));
+            const bN = openN ? 1 : smooth(Math.min(1, vj / BLEND_V));
+            const bS = openS ? 1 : smooth(Math.min(1, (CELLS - vj) / BLEND_V));
+
+            // Diagonal correction: if both open sides share an outer (non-matching) diagonal,
+            // fade the inner corner vertex back to NORMAL_TOP. Uses max() so only the exact
+            // corner region (within BLEND_V steps of BOTH adjacent open edges) is affected.
+            const bDiagNW = (openW && openN && !diagNW) ? smooth(Math.min(1, Math.max(vi, vj)           / BLEND_V)) : 1;
+            const bDiagNE = (openE && openN && !diagNE) ? smooth(Math.min(1, Math.max(CELLS-vi, vj)     / BLEND_V)) : 1;
+            const bDiagSW = (openW && openS && !diagSW) ? smooth(Math.min(1, Math.max(vi, CELLS-vj)     / BLEND_V)) : 1;
+            const bDiagSE = (openE && openS && !diagSE) ? smooth(Math.min(1, Math.max(CELLS-vi, CELLS-vj) / BLEND_V)) : 1;
+
+            const blend = Math.min(1, bW * bE * bN * bS * bDiagNW * bDiagNE * bDiagSW * bDiagSE * PLATEAU);
+            const vx = col + vi * STEP, vz = row + vj * STEP;
+            Y[vj * VERTS + vi] = seamDisp(vx, vz) + blend * targetDY + blend * roughDisp(vx, vz);
+          }
+        }
+
+        const positions = [], uvs = [];
+        for (let vj = 0; vj < VERTS; vj++)
+          for (let vi = 0; vi < VERTS; vi++) {
+            positions.push(vi * STEP - 0.5, Y[vj * VERTS + vi], vj * STEP - 0.5);
+            // World-space (X,Z) UV, same convention as _mergeTileGeos — used
+            // directly (unmerged) for the farm's per-tile trench/raised mesh.
+            uvs.push(col + vi * STEP, row + vj * STEP);
+          }
+
+        // Split cells: dirt where significantly depressed (trench) or elevated (raised);
+        // grass on flat edge cells that blend back to ground level.
+        const DIRT_THRESH = 0.05;
+        const dirtIdx = [], grassIdx = [];
+        for (let cj = 0; cj < CELLS; cj++)
+          for (let ci = 0; ci < CELLS; ci++) {
+            const v00=cj*VERTS+ci, v10=cj*VERTS+ci+1;
+            const v01=(cj+1)*VERTS+ci, v11=(cj+1)*VERTS+ci+1;
+            const y00=Y[v00], y10=Y[v10], y01=Y[v01], y11=Y[v11];
+            const isDirt = isDepression
+              ? Math.min(y00, y10, y01, y11) < -DIRT_THRESH
+              : Math.max(y00, y10, y01, y11) >  DIRT_THRESH;
+            (isDirt ? dirtIdx : grassIdx).push(v00, v01, v11, v00, v11, v10);
+          }
+
+        const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+        const uvAttr  = new THREE.Float32BufferAttribute(uvs, 2);
+        const makeGeo = idx => {
+          if (!idx.length) return null;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', posAttr);
+          g.setAttribute('uv', uvAttr);
+          g.setIndex(new THREE.BufferAttribute(new Uint16Array(idx), 1));
+          g.computeVertexNormals();
+          return g;
+        };
+        return { dirtGeo: makeGeo(dirtIdx), grassGeo: makeGeo(grassIdx) };
+      }
+
+      // Procedural farm/town border terrain (buildBorderTerrain/
+      // buildTownBorderTerrain/its grass billboard belt) now lives in
+      // js/border-terrain.js — call via window.BorderTerrain.*.
+
+      const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
+      const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
+      waterGeo.rotateX(-Math.PI / 2);
+      const reticleGeo = new THREE.BoxGeometry(1.0, 0.06, 1.0);
+
+      // Flat circle indicator for dig/raise — torus baked horizontal
+      const reticleCircleGeo = new THREE.TorusGeometry(0.28, 0.04, 8, 40);
+      reticleCircleGeo.rotateX(-Math.PI / 2);
+      const reticleCircleMesh = new THREE.Mesh(reticleCircleGeo, reticleIntenseMat);
+      reticleCircleMesh.visible = false;
+
+      // Floating ring for object highlights — torus baked horizontal, bobs + spins
+      const reticleRingGeo = new THREE.TorusGeometry(0.38, 0.05, 8, 40);
+      reticleRingGeo.rotateX(-Math.PI / 2);
+      const reticleRingMat = new THREE.MeshBasicMaterial({ color: 0xffe588, transparent: true, opacity: 0.92 });
+      const reticleRingMesh = new THREE.Mesh(reticleRingGeo, reticleRingMat);
+      reticleRingMesh.visible = false;
+
+      // Three wavy horizontal lines for hoe tile actions
+      const _wavyLineMat = new THREE.LineBasicMaterial({ color: 0xffffc8, transparent: true, opacity: 0.95 });
+      const reticleWavyGroup = new THREE.Group();
+      for (let _wi = 0; _wi < 3; _wi++) {
+        const _pts = [];
+        for (let _j = 0; _j <= 28; _j++) {
+          const _x = (_j / 28 - 0.5) * 0.72;
+          const _z = (_wi - 1) * 0.17 + 0.07 * Math.sin(_j / 28 * 4 * Math.PI);
+          _pts.push(new THREE.Vector3(_x, 0, _z));
+        }
+        reticleWavyGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(_pts), _wavyLineMat));
+      }
+      reticleWavyGroup.visible = false;
+
+      // ── Mesh stores ───────────────────────────────────────────────
+      // Tile meshes: indexed by row*COLS+col
+      const tileMeshes  = new Array(ROWS * COLS).fill(null);
       const waterMeshes = new Array(ROWS * COLS).fill(null);
       // Sparse index of occupied waterMeshes slots, kept in sync by setWaterMesh(),
       // so the per-frame fast-path time-uniform update only visits live entries.
