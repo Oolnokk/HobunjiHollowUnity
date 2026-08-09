@@ -6,6 +6,7 @@
   'use strict';
 
   const STORAGE_KEY = 'hobunjiWorldPopupSettings.v1';
+  const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used for popup measurement and canvas rendering.
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
@@ -109,11 +110,11 @@
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const fontPx = 64;
-    ctx.font = `800 ${fontPx}px system-ui, sans-serif`;
+    ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
     const width = Math.ceil(ctx.measureText(text).width + 28);
     canvas.width = Math.max(64, width);
     canvas.height = 92;
-    ctx.font = `800 ${fontPx}px system-ui, sans-serif`;
+    ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
     const leftAligned = layout.textAlign === 'left';
     const textX = leftAligned ? 14 : canvas.width / 2;
     ctx.textAlign = leftAligned ? 'left' : 'center';
