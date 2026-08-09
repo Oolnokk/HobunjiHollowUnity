@@ -10000,10 +10000,9 @@
       // Synchronous startup default — overwritten from docs/config/shops/
       // shop-stock.json's carpenterHouseDeeds.pieces once it loads.
       let HOUSE_PIECE_CATALOG = {
-        starter:    { label: 'House',            w: 5, h: 4, pieceFile: 'config/pieces/generic-house-medium.json' },
-        familyWing: { label: 'Family Wing Deed',  w: 6, h: 5, pieceFile: 'config/pieces/hobunjihouse1.json',       price: 1200, deedItem: 'houseDeedFamilyWing' },
-        simpleRoom: { label: 'Simple Room Deed',  w: 5, h: 4, pieceFile: 'config/pieces/placeholder-medium.json',  price: 700,  deedItem: 'houseDeedSimpleRoom' },
-        smallRoom:  { label: 'Small Room Deed',   w: 4, h: 4, pieceFile: 'config/pieces/placeholder-small.json',   price: 450,  deedItem: 'houseDeedSmallRoom'  },
+        starter:   { label: 'House',           w: 4, h: 5, pieceFile: 'config/pieces/house-section-5x4.json' },
+        largeWing: { label: 'Large Wing Deed', w: 5, h: 7, pieceFile: 'config/pieces/house-section-7x5.json', price: 1300, deedItem: 'houseDeedLargeWing' },
+        smallRoom: { label: 'Small Room Deed', w: 3, h: 3, pieceFile: 'config/pieces/house-section-3x3.json', price: 400,  deedItem: 'houseDeedSmallRoom'  },
       };
       // Loaded config (docs/config/shops/shop-stock.json) replaces
       // WARES_POOLS/GENERAL_STORE_CATALOG/STORE_CLOTHING_PIECES/
@@ -13043,6 +13042,38 @@
           if (_interiorGeometryBuilt) rebuildInteriorGeometry(); // swap placeholder bricks for the real GLB
         })
         .catch(err => debugLog('Interior walls GLB error: ' + err.message));
+
+      // Kicks off the shared HighlandLongshingle_boned.glb load for every
+      // Highland-roofed structure (barns, house pieces, town/zone
+      // buildings). Previously only town-zone-buildings.js ever called
+      // this — a farm-only session (never visiting town) left barns/house
+      // pieces stuck on the tube-fallback "shingles" forever, since nothing
+      // else triggered the fetch. HousePieceGen.loadShingleGlb() is a
+      // cached singleton promise, so this is a safe, cheap no-op if
+      // something else already started/finished the load.
+      if (typeof HousePieceGen !== 'undefined') {
+        HousePieceGen.loadShingleGlb('assets/models/')
+          .then(() => debugLog('Shingle GLB loaded (HighlandLongshingle_boned.glb)'))
+          .catch(err => debugLog('Shingle GLB error: ' + err.message, 'warn'));
+      }
+
+      // Retints the shared brick + shingle GLB templates to the same tan/grey
+      // finish town buildings use (town-zone-buildings.js's own
+      // _applyBuildingGlbTints, gated on the same window.__hobunjiGlbTintApplied
+      // flag so whichever code path finishes its loads first — farm or town —
+      // does the retint exactly once). Without this, a farm-only session that
+      // never visits town leaves barns/house pieces on the untinted default
+      // brick/shingle colors forever, since nothing else triggers it.
+      if (typeof HousePieceGen !== 'undefined') {
+        Promise.all([houseWallBuilder.loadDefaultGlb(), HousePieceGen.loadShingleGlb('assets/models/')])
+          .then(() => {
+            if (window.__hobunjiGlbTintApplied) return;
+            window.__hobunjiGlbTintApplied = true;
+            houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
+            HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
+          })
+          .catch(() => {});
+      }
 
       // Dedicated WallBuilder instance for the town's path-as-paved-surface
       // (buildTownPathBrickSurface below) — kept separate from houseWallBuilder

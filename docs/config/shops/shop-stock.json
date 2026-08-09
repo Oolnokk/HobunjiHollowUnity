@@ -47,9 +47,8 @@
         "businessMaps": ["map_i_carpenters"]
       },
       "pieces": {
-        "familyWing": { "label": "Family Wing Deed", "w": 6, "h": 5, "pieceFile": "config/pieces/hobunjihouse1.json",      "price": 1200, "deedItem": "houseDeedFamilyWing", "conditions": {} },
-        "simpleRoom": { "label": "Simple Room Deed",  "w": 5, "h": 4, "pieceFile": "config/pieces/placeholder-medium.json", "price": 700,  "deedItem": "houseDeedSimpleRoom", "conditions": {} },
-        "smallRoom":  { "label": "Small Room Deed",   "w": 4, "h": 4, "pieceFile": "config/pieces/placeholder-small.json",  "price": 450,  "deedItem": "houseDeedSmallRoom",  "conditions": {} }
+        "largeWing": { "label": "Large Wing Deed", "w": 5, "h": 7, "pieceFile": "config/pieces/house-section-7x5.json", "price": 1300, "deedItem": "houseDeedLargeWing", "conditions": {} },
+        "smallRoom": { "label": "Small Room Deed", "w": 3, "h": 3, "pieceFile": "config/pieces/house-section-3x3.json", "price": 400,  "deedItem": "houseDeedSmallRoom",  "conditions": {} }
       }
     },
     "jubmirWares": {

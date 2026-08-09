@@ -7,10 +7,10 @@
   // buildings — replacing the old singular Highland House GLB.
   //
   // The farm always starts with one 'starter' piece (seeded for free at farm
-  // init, stage 'built' immediately, matching the old Highland House's 5x4
-  // footprint via config/pieces/generic-house-medium.json — already authored
-  // with a chimney + entry tunnel + porch). Additional pieces are bought as
-  // deeds from the Carpenter (see HOUSE_PIECE_CATALOG in game.js), placed
+  // init, stage 'built' immediately, matching the old Highland House's
+  // footprint via config/pieces/house-section-5x4.json). Additional pieces
+  // are bought as deeds from the Carpenter (see HOUSE_PIECE_CATALOG in
+  // game.js), placed
   // touching the existing cluster, then built via an in-world interact-to-
   // build step — the same foundation->built staging farm-buildings.js uses
   // for barns, which this module closely mirrors.
@@ -141,15 +141,58 @@
     return deps.getHousePieces().some(e => e.id !== selfId && col >= e.col && col < e.col + e.w && row >= e.row && row < e.row + e.h);
   }
 
+  // Where a piece's door would sit if it opened through a given side of its
+  // own footprint, one tile outside the wall, centered on that side (no
+  // rotation — house pieces are always placed unrotated in this pass).
+  const DOOR_SIDE_ORDER = ['south', 'east', 'west', 'north'];
+  function _doorTileForSide(entry, side) {
+    switch (side) {
+      case 'south': return { col: entry.col + Math.floor(entry.w / 2), row: entry.row + entry.h };
+      case 'north': return { col: entry.col + Math.floor(entry.w / 2), row: entry.row - 1 };
+      case 'east':  return { col: entry.col + entry.w, row: entry.row + Math.floor(entry.h / 2) };
+      case 'west':  return { col: entry.col - 1, row: entry.row + Math.floor(entry.h / 2) };
+      default: return null;
+    }
+  }
+  function _doorSideBlocked(entry, col, row) {
+    if (col < 0 || row < 0 || col >= deps.COLS || row >= deps.ROWS) return true;
+    if (tileInsideAnyOtherPiece(entry.id, col, row)) return true;
+    const occupant = deps.worldObjects.get(col + ',' + row);
+    if (occupant && occupant !== entry._worldObj) return true;
+    return false;
+  }
+  // Automatic (no authored footprint.door) entrance placement is biased
+  // toward the south face — matching the old single-answer south-only
+  // fallback every piece used to get from BuildingDoor.doorWorldFromBuilding
+  // — but tries east/west/north in turn if south is blocked (typically by a
+  // neighboring piece placed against that edge), so an automatic piece still
+  // gets a usable door instead of silently losing its entrance (see
+  // _registerDoor, which no-ops when the resolved door tile falls inside
+  // another piece's footprint). Falls back to south (registering nothing,
+  // same as before) only if every side is blocked.
+  function _deriveSouthBiasedDoor(entry) {
+    for (const side of DOOR_SIDE_ORDER) {
+      const tile = _doorTileForSide(entry, side);
+      if (tile && !_doorSideBlocked(entry, tile.col, tile.row)) return { col: tile.col, row: tile.row, side };
+    }
+    const fallback = _doorTileForSide(entry, 'south');
+    return fallback ? { col: fallback.col, row: fallback.row, side: 'south' } : null;
+  }
+
   // Resolves a piece's single authored door (footprint.door, or the
   // porch/south-edge geometric fallback) through this entry's placement into
-  // a world farm tile + which side of the footprint it opens through.
+  // a world farm tile + which side of the footprint it opens through. Pieces
+  // with no authored door (footprint.door === null) use the south-biased
+  // multi-side trial above instead, since BuildingDoor's own south-only
+  // fallback has no concept of an attached neighbor blocking that edge.
   function resolvePieceDoor(piece, entry) {
     if (!window.BuildingDoor) return null;
+    const normalized = window.BuildingDoor.normalizePieceData(piece);
+    if (!normalized?.footprint?.door) return _deriveSouthBiasedDoor(entry);
     let doorEnt = window.BuildingDoor.resolveDoorEntrance(piece);
-    // Some catalog pieces (seen on placeholder-small/medium.json) carry a
-    // stale footprint.door authored before this piece existed in its
-    // current footprint — resolveDoorEntrance trusts it blindly, producing
+    // Some catalog pieces can carry a stale footprint.door authored before
+    // this piece existed in its current footprint — resolveDoorEntrance
+    // trusts it blindly, producing
     // a cell outside the piece's own normalized bbox. Fall back to the pure
     // geometric porch/south-edge heuristic (deriveDoorLocal, ignoring the
     // bogus authored point) whenever that happens.
@@ -194,6 +237,15 @@
       entry._doorWorld = resolvePieceDoor(piece, entry);
       _registerDoor(entry);
       deps.onPieceGeometryChanged();
+      // The real shingle GLB may still be loading (a cached singleton
+      // kicked off once at startup — see game.js) — the roof above just
+      // rendered with the tube-mesh fallback in that case. Rebuild once
+      // real shingles are ready so the roof doesn't stay stuck on it.
+      if (!HousePieceGen.shingleReady()) {
+        HousePieceGen.loadShingleGlb('assets/models/').then(() => {
+          if (entry.stage === 'built' && deps.getHousePieces().includes(entry)) _buildStructureMesh(entry);
+        }).catch(() => {});
+      }
     }).catch(err => deps.debugLog(`House piece build error (${entry.id}): ${err?.message || err}`, 'warn'));
   }
 
