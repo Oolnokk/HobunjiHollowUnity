@@ -8,6 +8,11 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards shared out
 const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Guards the NPC avatar-sink measurement and seated anatomy math.
 const dewVatSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8'); // Guards assignment migration when a processor moves.
 const inn = JSON.parse(fs.readFileSync('docs/config/maps/map_i_inn.json', 'utf8'));
+const generalStore = JSON.parse(fs.readFileSync('docs/config/maps/map_i_general_store.json', 'utf8'));
+const kunjiF1 = JSON.parse(fs.readFileSync('docs/config/maps/map_i_kunjis_potions_F1.json', 'utf8'));
+const kunjiF2 = JSON.parse(fs.readFileSync('docs/config/maps/map_i_kunjis_potions_F2.json', 'utf8'));
+const temple = JSON.parse(fs.readFileSync('docs/config/maps/map_i_temple.json', 'utf8'));
+const stationById = (map, id) => map.npcStations.find(station => station.id === id);
 
 assert.match(gameSource,
   /function moveProcessingFurniture[\s\S]{0,900}worldObjects\.delete[\s\S]{0,500}worldObjects\.set[\s\S]{0,300}retargetAssignments[\s\S]{0,200}saveFarmLayout\(\)/,
@@ -32,6 +37,34 @@ const expectedRotations = new Map([
   ['fmqj09r8s0x0a', 180], ['fmqj09s9gcu2r', 270], ['fmqj09t02hklm', 0], ['fmqj09tmmlrts', 90],
 ]);
 for (const stool of stools) assert.equal(stool.rotY, expectedRotations.get(stool.id), `${stool.id} is turned 180° toward its table`);
+
+const authoredSeatBindings = [
+  [generalStore, 'station_p2x4t', 'stoolFurniture', 0],
+  [kunjiF1, 'station_0qpky', 'stoolFurniture', 0],
+  [kunjiF1, 'station_kaboku_dayoff', 'benchFurniture', 0],
+  [kunjiF1, 'station_kinami_dayoff', 'benchFurniture', 1],
+  [kunjiF2, 'station_jayis', 'chairSimpleFurniture', 0],
+  [kunjiF2, 'station_njyek', 'chairSimpleFurniture', 0],
+  [temple, 'station_temple_pew_6', 'benchFurniture', 1],
+  [temple, 'station_temple_pew_7', 'benchFurniture', 0],
+  [temple, 'station_temple_pew_8', 'benchFurniture', 1],
+  [temple, 'station_temple_pew_9', 'benchFurniture', 0],
+  [temple, 'station_temple_pew_10', 'benchFurniture', 1],
+  [temple, 'station_temple_pew_11', 'benchFurniture', 0],
+];
+for (const [map, id, furnitureKey, seatIndex] of authoredSeatBindings) {
+  const station = stationById(map, id);
+  assert(station, `${id} still exists`);
+  assert.equal(station.pose, 'sit', `${id} remains a sit station`);
+  assert.equal(station.furnitureKey, furnitureKey, `${id} identifies its actual seat furniture`);
+  assert.equal(station.seatIndex, seatIndex, `${id} identifies the intended seat anchor`);
+}
+for (const id of ['station_temple_counsel_teacup', 'station_temple_counsel_ring_1', 'station_temple_counsel_ring_2', 'station_temple_counsel_ring_3', 'station_temple_counsel_ring_4', 'station_temple_counsel_ring_5', 'station_temple_counsel_ring_6']) {
+  const station = stationById(temple, id);
+  assert(station, `${id} still exists`);
+  assert.equal(station.pose, 'sit', `${id} remains a floor-sit pose`);
+  assert.equal(station.furnitureKey, undefined, `${id} is not incorrectly snapped onto furniture`);
+}
 
 assert.match(gameSource,
   /pose: 'sit', furnitureKey, seatIndex: 0/,
