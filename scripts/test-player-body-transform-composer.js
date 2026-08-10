@@ -57,6 +57,9 @@ assert.ok(drunk.includes('applyTrackedFootTwist'), 'drunk gait composes one trac
 assert.ok(drunk.includes('FOOT_TWIST_LIMIT'), 'drunk foot twist has a hard shortest-arc bound below 180 degrees');
 assert.doesNotMatch(drunk, /foot\.rotation\.[yz]\s*\+=/, 'drunk foot yaw/roll cannot accumulate frame over frame');
 assert.doesNotMatch(drunk, /__drunkBaseRotation/, 'drunk feet do not cache and restore stale base rotations');
+assert.doesNotMatch(drunk, /yaw:\s*state\.yaw/, 'drunk body channel never competes with the player facing yaw');
+assert.doesNotMatch(drunk, /DRUNK_MAX_YAW_DEG|yawTarget/, 'drunk gait does not synthesize a second whole-body yaw target');
+assert.ok(drunk.includes('bodyYawOwnedByFacing: true'), 'debug output exposes that facing exclusively owns body yaw');
 
 assert.doesNotMatch(alcohol, /registerExternalRootProvider/, 'alcohol integration does not own body attachments');
 assert.doesNotMatch(alcohol, /WebGLRenderer\.prototype/, 'alcohol integration no longer owns renderer transforms');
