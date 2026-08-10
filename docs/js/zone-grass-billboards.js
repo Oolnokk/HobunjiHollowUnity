@@ -468,10 +468,12 @@
   // PixelProbe.init is already wrapped by config.js by the time this module
   // loads. Capture renderer.render *before* that wrapper installs its player-Y
   // hook, let the normal init complete, then replace only that hook with a
-  // render-scoped lift: add the authored subtle height while a scene pass is
-  // being drawn and restore the movement-owned Y immediately afterward. This
-  // keeps every visible pass aligned to the deformed ground without putting a
-  // raycast or a history-dependent Y value back on the gameplay hot path.
+  // render-scoped lift: add the authored subtle height while a town scene pass
+  // is being drawn and restore the movement-owned Y immediately afterward.
+  // This keeps every visible town pass aligned to the deformed ground without
+  // putting a raycast or a history-dependent Y value back on the gameplay hot
+  // path. Full-screen post passes are left alone because they do not render the
+  // player scene graph at all.
   function patchPlayerTownRenderHeight() {
     const api = window.PixelProbe;
     if (!api || api.__hobunjiTransientTownHeightRepair || typeof api.init !== 'function') return;
@@ -485,8 +487,9 @@
       renderer.render = function (...args) {
         const playerMesh = injectedDeps?.playerMesh;
         const sit = injectedDeps?.getSitInteraction?.();
-        const isTown = injectedDeps?.getCurrentArea?.() === 'town';
-        if (!isTown || !playerMesh?.position || (sit && sit.phase !== 'out')) {
+        const townScene = townDeps?.getTownScene?.();
+        const isTownScenePass = injectedDeps?.getCurrentArea?.() === 'town' && (!townScene || args[0] === townScene);
+        if (!isTownScenePass || !playerMesh?.position || (sit && sit.phase !== 'out')) {
           return baseRender.apply(this, args);
         }
 
