@@ -4,7 +4,7 @@
   "greetingCooldownMs": 1300,
   "durationMs": 4200,
   "textWorldHeight": 0.28,
-  "chatheadWorldSize": 0.48,
+  "chatheadWorldSize": 0.72,
   "anchorLiftTiles": 0.18,
   "friendGroups": [],
   "greetingTemplates": [
