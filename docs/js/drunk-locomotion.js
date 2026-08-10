@@ -1,8 +1,9 @@
 // Footing-driven Regular -> Drunken locomotion layer for the local player.
 //
 // This module owns ONLY the drunken gait contribution: procedural leg offsets,
-// non-accumulating additive foot twist, and a named body-rotation channel
-// published to PlayerBodyTransformComposer. It never owns playerMesh rotation.
+// non-accumulating additive foot twist, and a named body-tilt channel
+// published to PlayerBodyTransformComposer. It never owns playerMesh rotation
+// or facing yaw: game.js's dead-zone/facing resolver remains the sole yaw owner.
 (() => {
   'use strict';
 
@@ -13,7 +14,6 @@
   const DRUNK_FOOTING_ID = 'drunkenFooting';
   const DRUNK_MAX_PITCH_DEG = 13;
   const DRUNK_MAX_ROLL_DEG = 30;
-  const DRUNK_MAX_YAW_DEG = 22;
   const DRUNK_CROSS_STEP_WIDTH = 0.32;
   const DRUNK_WIDE_STEP_WIDTH = 0.30;
   const DRUNK_STEP_DEPTH = 0.18;
@@ -74,9 +74,12 @@
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
       mode: 'additive',
+      // Facing/dead-zone code owns Y rotation. Adding a second body-yaw here
+      // can push the PNG plane across its north-facing front/back boundary
+      // after facing has already resolved, producing a rapid flip-flop. Drunk
+      // sway therefore contributes tilt only; foot yaw remains independent.
       rotation: {
         pitch: state.pitch,
-        yaw: state.yaw,
         roll: state.roll,
       },
     });
@@ -95,7 +98,6 @@
       phase: 0,
       pitch: 0,
       roll: 0,
-      yaw: 0,
       left: { x: 0, y: 0, z: 0 },
       right: { x: 0, y: 0, z: 0 },
       footTwist: {
@@ -143,13 +145,9 @@
           + 0.34 * correctionPulse * extreme
           + 0.42 * crossCatch * extreme
           + 0.16 * hesitationBias * extreme);
-      const yawTarget = locomotionStrength * DRUNK_MAX_YAW_DEG * DEG *
-        (0.61 * Math.sin(p * 0.49 + 0.3) + 0.29 * Math.sin(p * 1.09 - 1.0)
-          + 0.28 * crossCatch * extreme);
 
       state.pitch = damp(state.pitch, pitchTarget, 6.5, dt);
       state.roll = damp(state.roll, rollTarget, 6.0, dt);
-      state.yaw = damp(state.yaw, yawTarget, 5.5, dt);
 
       const sideEntries = [
         { key: 'left', thigh: legPart(handle.group, 'left_thigh'), side: -1, phase: p },
@@ -205,7 +203,7 @@
       if (state.disposed) return;
       state.disposed = true;
       clearPreviousFootTwist();
-      state.pitch = state.roll = state.yaw = 0;
+      state.pitch = state.roll = 0;
       if (activePlayerState?.handle === handle) activePlayerState = null;
       window.PlayerBodyTransformComposer?.clearChannel(BODY_CHANNEL);
       originalDispose();
@@ -237,7 +235,8 @@
         speed: state?.speed ?? 0,
         pitchDeg: (state?.pitch || 0) / DEG,
         rollDeg: (state?.roll || 0) / DEG,
-        yawDeg: (state?.yaw || 0) / DEG,
+        yawDeg: 0,
+        bodyYawOwnedByFacing: true,
         forcedLoss,
       };
     },
