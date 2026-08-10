@@ -84,7 +84,9 @@
       }
       for (const c of deps.companionObjects) {
         if (node === c.avatarRef?.group) {
-          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
+          const sizeClass = c.genotype?.sizeClass || c.def?.defaultSizeClass || 'medium'; // Makes size mutations visible in copied mobile probe reports.
+          const scaleLabel = `${Math.round((c.visualScaleX || 1) * 100)}%×${Math.round((c.visualScaleY || 1) * 100)}%`; // Confirms the authored class scale reached this live mesh.
+          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} ${scaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null };
         }
       }
       node = node.parent;
@@ -205,7 +207,7 @@
 
     if (liveActivePet) {
       const perch = deps.playerAttachmentAnchor('shoulderPerch');
-      const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip');
+      const grip = deps.creatureAttachmentAnchor(liveActivePet.creatureKey, 'shoulderGrip', liveActivePet.genotype);
       if (perch && grip) {
         const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
         const invGripYaw = -gripYawRad;

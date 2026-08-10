@@ -2535,7 +2535,7 @@
     .farm-grid-legend span { display: inline-flex; align-items: center; gap: 3px; }
     .farm-grid-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 
-    .farm-list { display: flex; flex-direction: column; gap: 5px; max-height: 220px; overflow-y: auto; }
+    .farm-list { display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; }
     .farm-row {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
       padding: 6px 8px; border-radius: 8px;
@@ -2560,6 +2560,32 @@
     .farm-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; }
     .farm-row-value { font-size: 10px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
     .farm-row-value.tier-Rare, .farm-row-value.tier-Exceptional { color: var(--accent); }
+    .farm-traits {
+      width: 100%; display: grid; grid-template-columns: minmax(132px, auto) 1fr; gap: 6px;
+      padding-top: 6px; border-top: 1px dashed var(--border);
+    }
+    .farm-size-trait {
+      display: flex; flex-direction: column; justify-content: center; gap: 1px;
+      min-width: 0; padding: 5px 7px; border-radius: 7px; border: 1px solid var(--border-bright);
+      background: rgba(255,255,255,0.04); color: var(--muted); font-size: 9px;
+    }
+    .farm-size-trait.size-small { border-left: 4px solid #87b7d8; }
+    .farm-size-trait.size-medium { border-left: 4px solid #a9c978; }
+    .farm-size-trait.size-large { border-left: 4px solid #d49b65; }
+    .farm-size-trait .farm-size-name { color: var(--text); font-size: 12px; font-weight: 700; }
+    .farm-size-trait b { width: max-content; margin-top: 2px; color: var(--accent); font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
+    .farm-color-traits { display: flex; flex-wrap: wrap; align-items: stretch; gap: 5px; min-width: 0; }
+    .farm-trait-chip {
+      display: flex; align-items: center; gap: 5px; min-width: 116px; max-width: 100%;
+      padding: 4px 6px; border-radius: 7px; background: rgba(255,255,255,0.035); border: 1px solid var(--border);
+    }
+    .farm-trait-chip.pattern { border-style: dashed; }
+    .farm-trait-chip.carrier { opacity: .72; }
+    .farm-trait-chip i { width: 17px; height: 17px; border-radius: 5px; border: 1px solid rgba(255,255,255,.38); flex: 0 0 auto; }
+    .farm-trait-chip span { display: flex; flex-direction: column; min-width: 0; }
+    .farm-trait-chip strong { color: var(--text); font-size: 9px; line-height: 1.2; }
+    .farm-trait-chip small { color: var(--muted); font-size: 8px; line-height: 1.25; white-space: normal; }
+    .farm-trait-plain { display: flex; align-items: center; padding: 4px 6px; color: var(--muted); font-size: 8px; font-style: italic; }
 
     /* Processing-station status tiles — color-coded by the same job state
        makeProcessingFurniture already tracks (idle/aging-in-progress/ready),
@@ -2583,7 +2609,14 @@
     .farm-companion-btn { flex-shrink: 0; padding: 3px 7px; }
     .farm-companion-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(249,226,138,0.14); }
     .farm-storage-row .farm-row-value { flex: 1; }
-    @media(max-width: 480px) { .farm-storage { grid-template-columns: 1fr; } }
+    @media(max-width: 480px) {
+      .farm-storage { grid-template-columns: 1fr; }
+      .farm-list { max-height: 46vh; }
+      .farm-traits { grid-template-columns: 1fr; }
+      .farm-size-trait { flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: wrap; column-gap: 6px; }
+      .farm-size-trait b { margin: 0 0 0 auto; }
+      .farm-trait-chip { flex: 1 1 128px; }
+    }
 
     /* ── Mobile scroll: touch-action:none lives on #gameShell now,
        not body — so menu panel children scroll freely on touch.

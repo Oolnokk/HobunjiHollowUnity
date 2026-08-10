@@ -72,6 +72,15 @@
     return { effectiveTarget, snapTo };
   }
 
+  // Applies perpClamp to a rendered rotation. Callers keep `rawTarget` as
+  // their authored/logical facing so stationary models can be re-clamped
+  // whenever the camera azimuth changes instead of baking in an old result.
+  function clampedRotation(state, current, rawTarget, perps, lerp = 0.15, deadRad = PERP_DEAD_RAD) {
+    const { effectiveTarget, snapTo } = perpClamp(state, rawTarget, perps, deadRad);
+    if (snapTo !== null || lerp >= 1) return effectiveTarget;
+    return current + deps.angleDiff(effectiveTarget, current) * Math.max(0, lerp);
+  }
+
   // ── Animal/creature PNG-plane dead-zone behavior — THREE implementations ──
   // updateCreatureMesh's pngRot step (game.js) has been rewritten a few
   // times while this gets tuned by feel, and all three attempts are kept
@@ -192,6 +201,7 @@
   window.PerpRotation = {
     init,
     perpClamp,
+    clampedRotation,
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
     nearestCardinalAngle,

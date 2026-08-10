@@ -19,7 +19,7 @@
   <script src="config/scratchbones-config.js?v=20260801b"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
-  <link rel="stylesheet" href="style.css?v=20260712f">
+  <link rel="stylesheet" href="style.css?v=20260809a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -42,7 +42,7 @@
        before its rendering sibling below since creature-genetics-render.js
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
-  <script src="js/creature-genetics.js?v=20260807a"></script>
+  <script src="js/creature-genetics.js?v=20260809b"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-genetics-render.js?v=20260727b"></script>
   <!-- Procedural foliage / crop geometry -->
@@ -88,7 +88,7 @@
   <script src="js/combat/impact-blend-library.js?v=20260804a"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20260804a"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20260712d"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20260712d"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20260809a"></script>
   <script src="js/combat/combat-loadout.js?v=20260712d"></script>
   <script src="js/combat/combat-progression.js?v=20260712d"></script>
   <script src="js/combat/combat-input.js?v=20260712d"></script>
@@ -159,7 +159,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260807a"></script>
+  <script src="js/farm-animals.js?v=20260809b"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -249,7 +249,7 @@
        injected via init(), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
-  <script src="js/perp-rotation.js?v=20260807a"></script>
+  <script src="js/perp-rotation.js?v=20260809a"></script>
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -322,7 +322,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20260807a"></script>
+  <script src="js/farm-panel.js?v=20260809c"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -1633,7 +1633,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260809b"></script>
+  <script src="js/pixel-probe.js?v=20260809c"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1685,7 +1685,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260809k"></script>
+  <script src="game.js?v=20260809m"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

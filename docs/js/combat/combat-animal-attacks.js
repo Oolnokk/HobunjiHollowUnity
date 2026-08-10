@@ -234,7 +234,7 @@
     // (game.js's creatureAimColliderReachPx) — duplicated here since that
     // helper isn't exposed via deps — divided down to a third of pounce's
     // own travel distance.
-    const halfSize = (c.def.modelWidth || 2) * deps.TILE / 2;
+    const halfSize = (c.visualModelWidth || c.def.modelWidth || 2) * deps.TILE / 2;
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
     state.traveledPx = 0;

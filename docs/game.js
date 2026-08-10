@@ -3492,7 +3492,8 @@
         // Definitions with a different source canvas provide its width/height
         // ratio so the avatar plane preserves the uploaded sprite's aspect.
         const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
-        const halfH = modelHeight / 2;
+        const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, opts.genotype); // Applies Animation Author size-class values in-world.
+        const halfH = modelHeight * sizeScale.y / 2; // Keeps the scaled sprite's feet on the terrain.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
         const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
@@ -3500,6 +3501,7 @@
         });
         avatarRef.frontPlane = avatarRef.group.children[0] || null;
         avatarRef.backPlane  = avatarRef.group.children[1] || null;
+        avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
         // Skip the species-differentiation tint for genotype-bearing
         // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
         // replaced by a genotype-composited texture and def.tint would
@@ -3527,7 +3529,7 @@
         // squash (pounce crouch) or the death ragdoll's flip rotation —
         // same reasoning as the player's own playerGroundShadow.
         const groundShadow = makeCharacterGroundShadow(creatureKey + '_ground_shadow');
-        const shadowRadii = creatureGroundShadowRadii(def);
+        const shadowRadii = creatureGroundShadowRadii(def, sizeScale.x);
         groundShadow.scale.set(shadowRadii.radiusX, 1, shadowRadii.radiusZ);
         groundShadow.position.set(x / TILE, surfY + characterGroundShadowSurfaceOffset(), y / TILE);
         targetScene.add(groundShadow);
@@ -3537,6 +3539,9 @@
           creatureKey, def, avatarRef, groundShadow,
           x, y, vx: 0, vy: 0,
           halfHeight: halfH,
+          visualScaleX: sizeScale.x, // Reused whenever attack squash updates the group scale.
+          visualScaleY: sizeScale.y, // Reused whenever attack squash updates the group scale.
+          visualModelWidth: modelWidth * sizeScale.x, // Keeps shadows, rings, and combat reach aligned with visible width.
           health: def.maxHealth, maxHealth: def.maxHealth,
           stamina: def.maxStamina, maxStamina: def.maxStamina,
           facing: 0, groupRot: 0, pngRot: 0, perpState: {},
@@ -3560,6 +3565,7 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
         // Shifts the plane meshes (not the prism/group itself — see
         // creaturePlaneGroundOffset) down once the idle sprite's real
         // opaque bottom edge is known, so the art's actual feet sit on the
@@ -4184,13 +4190,14 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        grp.scale.y = scaleY;
+        grp.scale.x = c.visualScaleX || 1;
+        grp.scale.y = (c.visualScaleY || 1) * scaleY;
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
         if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + characterGroundShadowSurfaceOffset(), grp.position.z);
         if (window.ResourceRings) {
-          const ringRadius = clamp((c.def.modelWidth || 2) * .34, .46, 1.3);
+          const ringRadius = clamp((c.visualModelWidth || c.def.modelWidth || 2) * .34, .2, 2.6);
           const ringScene = c.scene || scene;
           // Only hostiles are ever a weapon auto-target (see findAutoTarget) —
           // a red target-lock ring renders around a hostile's resource rings
@@ -4369,15 +4376,15 @@
       // check and the debug hitbox overlay — derived from the avatar's
       // crossed-plane "prism" base (a square of side modelWidth, in tile
       // units) rather than an arbitrary radius.
-      function creatureHitboxHalfSizePx(def) {
-        return (def.modelWidth || 2) * TILE / 2;
+      function creatureHitboxHalfSizePx(creature) {
+        return (creature.visualModelWidth || creature.def?.modelWidth || 2) * TILE / 2;
       }
       // The forward aim collider a pounce-capable creature keeps pointed at
       // its target every chase frame: a rod starting at the head-side edge
       // of its hitbox and protruding 150% of the hitbox's own length beyond
       // that edge. A pounce only triggers once the target falls inside it.
-      function creatureAimColliderReachPx(def) {
-        const halfSize = creatureHitboxHalfSizePx(def);
+      function creatureAimColliderReachPx(creature) {
+        const halfSize = creatureHitboxHalfSizePx(creature);
         return halfSize + halfSize * 2 * 1.5;
       }
 
@@ -4650,7 +4657,7 @@
               // orbit, separated by a backing-up beat) replaces the plain
               // chase-and-trigger logic below for any creature that lists one.
               const result = updateCreatureBehaviorStage(c, dt, targetPlayer, def, (dist) => {
-                const triggerRangePx = creatureAimColliderReachPx(def);
+                const triggerRangePx = creatureAimColliderReachPx(c);
                 if (dist > triggerRangePx || c.attackCooldownT > 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c)) return false;
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
@@ -4666,7 +4673,7 @@
               // forward aim collider (always pointed straight at the target
               // via aimAngle above) rather than the bite's short flat range.
               const pounceCapable = def.attacks?.includes('pounce');
-              const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(def) : def.attackRangePx;
+              const triggerRangePx = pounceCapable ? creatureAimColliderReachPx(c) : def.attackRangePx;
               if (distToPlayer <= triggerRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
                 window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
                 c.attackCooldownT = def.attackCooldownS;
@@ -4882,16 +4889,23 @@
         }
         return Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
       }
-      function creatureAttachmentAnchor(kind, anchorName) {
-        const cacheKey = `${kind}::${anchorName}`;
+      function creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass = null) {
+        const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotypeOrSizeClass); // Matches anchor coordinates to the visible size class.
+        const profileKind = window.CreatureGenetics.SPECIES_ALIAS[kind] || kind; // Lets creature variants share their base rig profile.
+        const cacheKey = `${profileKind}::${anchorName}::${sizeScale.sizeClass}`;
         if (_creatureAttachmentAnchorCache.has(cacheKey)) return _creatureAttachmentAnchorCache.get(cacheKey);
-        const anchor = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]?.anchors?.[anchorName];
-        const result = Number.isFinite(anchor?.position?.y) ? { ...anchor.position, rotationDeg: anchor.rotationDeg } : null;
+        const anchor = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.anchors?.[anchorName]; // Unscaled canonical rig anchor.
+        const result = Number.isFinite(anchor?.position?.y) ? {
+          x: (Number(anchor.position.x) || 0) * sizeScale.x,
+          y: anchor.position.y * sizeScale.y,
+          z: Number(anchor.position.z) || 0,
+          rotationDeg: anchor.rotationDeg,
+        } : null;
         _creatureAttachmentAnchorCache.set(cacheKey, result);
         return result;
       }
       function playerAttachmentAnchorY(anchorName) { return playerAttachmentAnchor(anchorName)?.y ?? null; }
-      function creatureAttachmentAnchorY(kind, anchorName) { return creatureAttachmentAnchor(kind, anchorName)?.y ?? null; }
+      function creatureAttachmentAnchorY(kind, anchorName, genotypeOrSizeClass = null) { return creatureAttachmentAnchor(kind, anchorName, genotypeOrSizeClass)?.y ?? null; }
       // The X/Z half of the shoulderPerch/shoulderGrip alignment math —
       // shared by updateCompanions' shoulderPet branch (which also needs
       // dx/dz to set the pet's logical c.x/c.y and c.facing for this frame)
@@ -5159,7 +5173,7 @@
           if (c.stableRole === 'shoulderPet') {
             c.vx = 0; c.vy = 0;
             const perch = playerAttachmentAnchor('shoulderPerch');
-            const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+            const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
             let dx = null, dz = null, clingDx = null, clingDz = null;
             if (perch && grip) {
               const gripYawRad = (grip.rotationDeg?.y || 0) * Math.PI / 180;
@@ -5374,7 +5388,7 @@
           if (c.health <= 0 || c.areaId !== currentArea || c.stableRole !== 'shoulderPet') continue;
           if ((c.master || player) !== player) continue; // playerMesh only ever represents the real player
           const perch = playerAttachmentAnchor('shoulderPerch');
-          const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip');
+          const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
             const { dx, dz } = _shoulderPetOffsetXZ(perch, grip);
             c.avatarRef.group.position.x = playerMesh.position.x + dx;
@@ -7527,11 +7541,11 @@
       // alpha visibly casts a bigger shadow than a dabinggi-hound. Keeps the
       // configured player shadow's X:Z squash ratio rather than introducing
       // a separate tunable.
-      function creatureGroundShadowRadii(def) {
+      function creatureGroundShadowRadii(def, sizeScaleX = 1) {
         const cfg = pngAvatarGroundShadowConfig();
         const baseRadiusX = cfg.radiusX ?? 0.34;
         const baseRadiusZ = cfg.radiusZ ?? 0.22;
-        const radiusX = (def.modelWidth || 2) * 0.3;
+        const radiusX = (def.modelWidth || 2) * sizeScaleX * 0.3;
         return { radiusX, radiusZ: radiusX * (baseRadiusZ / baseRadiusX) };
       }
 
@@ -7681,8 +7695,7 @@
         player.angle = facingAngle;
         const npcTargetAngle = Math.atan2(playerWorldZ - npcZ, playerWorldX - npcX);
         const npcTargetRot = -npcTargetAngle + Math.PI / 2;
-        walker.rot += angleDiff(npcTargetRot, walker.rot) * (cfg.npcFacePlayerLerp ?? 0.28);
-        walker.root.rotation.y = walker.rot;
+        walker.applyFacingDeadzone(npcTargetRot, cfg.npcFacePlayerLerp ?? 0.28);
         // Head rotation: the body above only catches up to npcTargetRot
         // gradually (npcFacePlayerLerp), so while it's still turning, aim the
         // neck bone at however much of that gap remains right now (clamped to
@@ -8312,7 +8325,18 @@
           legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
-          rot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
+          rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
+          // Keeps the logical facing separate from the rendered facing. The
+          // latter is camera-relative, so even an idle NPC must refresh it as
+          // the camera changes or a 90° station pose can become edge-on.
+          applyFacingDeadzone(rawRot = this.desiredRot, lerp = 0.15) {
+            if (!Number.isFinite(rawRot)) return;
+            this.desiredRot = rawRot;
+            this.rot = window.PerpRotation.clampedRotation(
+              this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
+            );
+            root.rotation.y = this.rot;
+          },
           resetRouteState() {
             this.state = 'idle';
             this.routeNode = null;
@@ -8480,10 +8504,7 @@
             root.position.z += dz / d * movedTiles;
             this._tickFootsteps(movedTiles);
             const rawRot = -Math.atan2(dz, dx) + Math.PI / 2;
-            const { effectiveTarget, snapTo } = window.PerpRotation.perpClamp(this.perpState, rawRot, cameraRelativePerps());
-            if (snapTo !== null) this.rot = effectiveTarget;
-            else this.rot += angleDiff(effectiveTarget, this.rot) * 0.15;
-            root.rotation.y = this.rot;
+            this.applyFacingDeadzone(rawRot, 0.15);
             return false;
           },
           update(dt) {
@@ -8497,6 +8518,7 @@
             if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false);
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
+            this.applyFacingDeadzone(this.desiredRot, 0.15);
             const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
             if (!target) return;
@@ -8564,7 +8586,7 @@
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);
               root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
-              if (Number.isFinite(target.rotY)) { this.rot = THREE.MathUtils.degToRad(target.rotY); root.rotation.y = this.rot; }
+              if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
@@ -8708,8 +8730,7 @@
               w.root.position.x = nc + 0.5;
               w.root.position.z = nr + 0.5;
               w.root.position.y = npcSurfaceY(toArea, nc, nr);
-              w.rot = -Math.atan2(dz, dx) + Math.PI / 2;
-              w.root.rotation.y = w.rot;
+              w.applyFacingDeadzone(-Math.atan2(dz, dx) + Math.PI / 2, 1);
             }
           }
         }
@@ -17699,7 +17720,7 @@
         // is completely unaffected.
         let mountSeatLift = 0;
         if (mountRideEntity && mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
-          const saddleY = creatureAttachmentAnchorY(mountRideEntity.creatureKey, 'saddle');
+          const saddleY = creatureAttachmentAnchorY(mountRideEntity.creatureKey, 'saddle', mountRideEntity.genotype);
           const posteriorY = playerAttachmentAnchorY('posterior');
           // posteriorY is floor-relative (see the shoulder-pet lift comment
           // in updateCompanions) — no separate avatarHeight/2 term belongs
