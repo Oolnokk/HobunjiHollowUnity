@@ -13916,14 +13916,25 @@
       //      so neither the shell pass nor depth edges would draw a line.
       // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
 
+      // Layer 4 is a depth-only replay of visible PNG silhouettes immediately
+      // before outline rendering. It lets avatars whose normal depthWrite is
+      // intentionally disabled for avatar-vs-avatar ordering still occlude
+      // later furniture shell/material-seam outlines.
+      const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4;
+
       // PNG-plane avatars (player/NPCs/animals/creatures) are flat cutout
       // sprites — running depth-edge detection against them would outline
       // every alpha-cutout silhouette edge of the sprite art itself, which
       // reads as noise rather than a deliberate outline. Tagging their root
       // group lets the depth-only source pass below hide them temporarily
-      // without touching the main colour pass that actually shows them.
+      // without touching the main colour pass that actually shows them. Each
+      // child mesh also joins the dedicated outline-occluder layer above.
       function _markPngPlane(obj) {
-        if (obj) obj.userData.isPngPlane = true;
+        if (!obj) return;
+        obj.userData.isPngPlane = true;
+        obj.traverse(child => {
+          if (child.isMesh) child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+        });
       }
 
       let _furnitureEdgeIdSeq = 0;
@@ -14002,6 +14013,46 @@
       // off since only the attached depth texture is read back.
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
+
+      // Replays only PNG-plane meshes into _mainRT's existing depth buffer.
+      // Their original alpha-tested materials preserve the real sprite
+      // silhouette; forcing colorWrite off avoids touching the finished color
+      // image, while forcing depthWrite on makes every visible pet/player/NPC
+      // capable of blocking the shell and material-seam passes that follow.
+      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
+        const materialStates = new Map(); // Restores avatar materials after this depth-only draw.
+        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
+        activeScene.traverse(object => {
+          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
+          meshCount++;
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of materials) {
+            if (!material || materialStates.has(material)) continue;
+            materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+            material.colorWrite = false;
+            material.depthWrite = true;
+          }
+        });
+        if (meshCount === 0) return;
+
+        const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
+        try {
+          camera.layers.set(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+          renderer.render(activeScene, camera);
+        } finally {
+          camera.layers.mask = previousLayerMask;
+          for (const [material, state] of materialStates) {
+            material.colorWrite = state.colorWrite;
+            material.depthWrite = state.depthWrite;
+          }
+        }
+        if (meshCount !== _lastPngOutlineOccluderCount) {
+          _lastPngOutlineOccluderCount = meshCount;
+          window.__farmLog?.(`[outline] ${meshCount} PNG avatar plane(s) writing occlusion depth`, 'render');
+        }
+      }
+
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
@@ -18842,9 +18893,13 @@
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
 
-          // Selective shell outline pass (layer-1 objects only)
+          // Preserve the colour/depth result while PNG silhouettes add only
+          // the missing occlusion depth needed by both outline systems.
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
+          _renderPngPlaneOutlineOccluderDepth(activeScene);
+
+          // Selective shell outline pass (layer-1 objects only)
           activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
           renderer.render(activeScene, camera);
