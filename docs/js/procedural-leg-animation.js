@@ -692,6 +692,7 @@
     root.name = `${options.name || 'avatar'}_procedural_feet`;
 
     const posteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY));
+    const posteriorX = posteriorXForSpecies(speciesId, gender); // Used to recenter the legs and to locate the seated surface in this avatar-local frame.
     const initialIdleLeftX = -stanceWidthFraction * modelWidth * 0.5;
     const initialIdleRightX = stanceWidthFraction * modelWidth * 0.5;
 
@@ -880,7 +881,6 @@
         // the torso's true centerline (e.g. a lopsided silhouette); re-center
         // both legs by the same shift so the posterior attach point's X ends
         // up exactly midway between them rather than inheriting that skew.
-        const posteriorX = posteriorXForSpecies(speciesId, gender);
         const recenterShift = posteriorX - (scannedLeftX + scannedRightX) / 2;
         state.idleLeftX = scannedLeftX + recenterShift;
         state.idleRightX = scannedRightX + recenterShift;
@@ -926,8 +926,11 @@
     // provided, bypasses gait/suppressed entirely and runs the faithful
     // surface-flush seated solve below (ported from the furniture-avatar-
     // author tool's solveSurfaceFlushSeatedLeg/seatedLegPose) instead of a
-    // fixed-bend approximation. Used for sitting (see docs/game.js's
-    // sitInteraction).
+    // fixed-bend approximation. The caller already moves the whole avatar
+    // so its posterior coincides with seatY; this module therefore solves
+    // the seat plane in the resulting avatar-local posterior frame rather
+    // than treating the floor-relative seat height as a second hip height.
+    // Used for sitting (see docs/game.js's sitInteraction).
     const SEATED_THIGH_SURFACE_CLEARANCE = 0.006;
     const SEATED_KNEE_EDGE_TOLERANCE = 0.03;
     const SEATED_POSE_DAMP_RATE = 14;
@@ -985,32 +988,22 @@
       if (!mesh || !chain) return;
       const contactY = side === 'left' ? state.leftContactY : state.rightContactY;
       const standingPosteriorY = chain.hip.position.y;
-      // Faithful to the tool's seatedAnatomicalLegMetrics: the leg math's
-      // own "posterior height" is the SEAT's own surface height, not the
-      // character's standing hip height — the tool's whole avatar root is
-      // pre-positioned so its posterior anchor already sits right there
-      // (see applySeatAttachmentTransform), so its posteriorHeight comes
-      // out seat-relative "for free"; this game instead sinks the sprite
-      // separately (chairSeatSink in docs/game.js) without moving this leg
-      // rig's own hip anchor, so it has to read the seat height directly
-      // here or the thigh ends up projected from the WRONG starting height
-      // — confirmed live: without this, "thigh surface gap" (see below)
-      // read ~0.048 instead of the tool's ~0.001 clearance-only gap for the
-      // same species/chair. Standing height is only a fallback for a seat
-      // sitting at/below floor level.
-      const seatY = seatFrame.planePoint.y;
-      const posteriorY = (Number.isFinite(seatY) && seatY > contactY + 0.001) ? seatY : standingPosteriorY;
-      const fullLegLength = Math.max(0.001, posteriorY - contactY);
+      // Anatomy belongs to the character, not the chair. This exactly
+      // mirrors furniture-avatar-author's seatedAnatomicalLegMetrics:
+      // posterior -> foot contact determines the fixed full leg length once,
+      // while moving the avatar root aligns that posterior with whatever
+      // seat height is being used. A chair must never shorten or lengthen
+      // the femur/calf just because its surface is lower or higher.
+      const fullLegLength = Math.max(0.001, standingPosteriorY - contactY);
       const boneLength = fullLegLength * 0.5;
-      const hipSeed = new THREE.Vector3(chain.hip.position.x, posteriorY, chain.hip.position.z);
+      const hipSeed = chain.hip.position.clone();
       const solved = solveSeatedLegSurfaceFlush(
         hipSeed, boneLength, seatFrame.planePoint, seatFrame.normal, seatFrame.forward, seatFrame.footprintHalfDepth
       );
-      // chain.thigh is parented under chain.hip, which stays fixed at the
-      // avatar's STANDING hip position — thigh.position has to carry the
-      // full difference between that fixed parent and the solved seated
-      // hip point (seat-height correction + tiny surface clearance both
-      // folded in together).
+      // chain.thigh is parented under the fixed anatomical hip. The solved
+      // surface projection only contributes the tiny correction required to
+      // place the thigh flush on the seat plane; whole-avatar seat height is
+      // already handled by the caller's posterior-to-seat root transform.
       const hipOffset = solved.hip.clone().sub(chain.hip.position);
       const slerpT = 1 - Math.exp(-SEATED_POSE_DAMP_RATE * Math.max(0, dt));
       chain.thigh.position.x = damp(chain.thigh.position.x, hipOffset.x, SEATED_POSE_DAMP_RATE, dt);
@@ -1026,19 +1019,18 @@
       if (!lastSeatedPoseDebug) lastSeatedPoseDebug = {};
       lastSeatedPoseDebug[side] = {
         thighLength: solved.thighLength, calfLength: solved.calfLength, fullLegLength,
-        posteriorHeight: posteriorY, footContactY: contactY,
+        posteriorHeight: standingPosteriorY, footContactY: contactY,
         thighSurfaceGap: solved.thighSurfaceGap,
         calfStraight: solved.calfStraight, calfForced90: !solved.calfStraight,
         kneeOverSeat: solved.calfStraight, kneeForwardOffset: solved.kneeForwardOffset,
         footprintHalfDepth: solved.footprintHalfDepth, hipX: chain.hip.position.x,
       };
     }
-    // seatedPose (see applySeatedPose's comment above): plain data —
-    // { seatY, normalDeg:{x,z}, footprintHalfDepth, anchorZ } — describing
-    // the furniture's authored seat anchor. Resolved once per frame into
-    // the shared seat-plane frame (a world-down-tilted normal/forward pair,
-    // since the seat anchor's own yaw is already absorbed into the avatar's
-    // facing before this runs) both legs solve against.
+    // seatedPose (see applySeatedPose's comment above): plain data describing
+    // the furniture's authored seat. The caller has already translated the
+    // avatar root so its posterior lies on that seat in world space, so the
+    // leg solver's plane point is the posterior's own avatar-local position.
+    // Pitch/roll and footprint depth still come from the authored seat.
     function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       if (state.disposed) return;
       if (seatedPose) {
@@ -1047,7 +1039,7 @@
         const rollRad = (Number(seatedPose.normalDeg?.z) || 0) * SEATED_DEG;
         const tiltEuler = new THREE.Euler(pitchRad, 0, rollRad, 'XYZ');
         const seatFrame = {
-          planePoint: new THREE.Vector3(0, Number(seatedPose.seatY) || 0, Number(seatedPose.anchorZ) || 0),
+          planePoint: new THREE.Vector3(posteriorX, posteriorY, 0),
           normal: new THREE.Vector3(0, 1, 0).applyEuler(tiltEuler),
           forward: new THREE.Vector3(0, 0, 1).applyEuler(tiltEuler),
           footprintHalfDepth: Number.isFinite(seatedPose.footprintHalfDepth) ? seatedPose.footprintHalfDepth : 0.4,

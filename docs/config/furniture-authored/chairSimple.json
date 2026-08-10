@@ -2,26 +2,13 @@
   "schema": "hobunji_furniture_authored_runtime.v1",
   "key": "chairSimple",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
-  "footprint": {
-    "w": 1,
-    "d": 1
-  },
+  "footprint": { "w": 1, "d": 1 },
   "parts": [
     {
       "id": "part_msby0lrd_fwl2u",
       "kind": "box",
       "name": "Standard Chair Seat",
-      "transform": {
-        "x": 0,
-        "y": 0.18200000000000002,
-        "z": 0,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.5157999999999999,
-        "sy": 0.06,
-        "sz": 0.4164
-      },
+      "transform": { "x": 0, "y": 0.18200000000000002, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.5157999999999999, "sy": 0.06, "sz": 0.4164 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -56,17 +43,7 @@
       "id": "part_msby0lrd_92asg",
       "kind": "box",
       "name": "Standard Chair Back",
-      "transform": {
-        "x": 0,
-        "y": 0.43100000000000005,
-        "z": -0.19258499999999998,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.5029049999999999,
-        "sy": 0.458,
-        "sz": 0.031229999999999997
-      },
+      "transform": { "x": 0, "y": 0.43100000000000005, "z": -0.19258499999999998, "rx": 0, "ry": 0, "rz": 0, "sx": 0.5029049999999999, "sy": 0.458, "sz": 0.031229999999999997 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -96,28 +73,13 @@
       "textureName": "",
       "textureTransparent": true,
       "textureTileSize": 1,
-      "backrestHeightRule": {
-        "version": 1,
-        "seatDepth": 0.4164,
-        "multiplier": 1.1,
-        "bottomPreserved": true
-      }
+      "backrestHeightRule": { "version": 1, "seatDepth": 0.4164, "multiplier": 1.1, "bottomPreserved": true }
     },
     {
       "id": "part_msby0lrd_bkbo5",
       "kind": "legSquare",
       "name": "Chair Leg",
-      "transform": {
-        "x": -0.23533374999999998,
-        "y": 0.07600000000000001,
-        "z": -0.18998249999999997,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": -0.23533374999999998, "y": 0.07600000000000001, "z": -0.18998249999999997, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -152,17 +114,7 @@
       "id": "part_msby0lrd_7ltty",
       "kind": "legSquare",
       "name": "Chair Leg",
-      "transform": {
-        "x": 0.23533374999999998,
-        "y": 0.07600000000000001,
-        "z": -0.18998249999999997,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": 0.23533374999999998, "y": 0.07600000000000001, "z": -0.18998249999999997, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -197,17 +149,7 @@
       "id": "part_msby0lrd_9gkqc",
       "kind": "legSquare",
       "name": "Chair Leg",
-      "transform": {
-        "x": -0.23533374999999998,
-        "y": 0.07600000000000001,
-        "z": 0.18998249999999997,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": -0.23533374999999998, "y": 0.07600000000000001, "z": 0.18998249999999997, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -242,17 +184,7 @@
       "id": "part_msby0lrd_bxkq7",
       "kind": "legSquare",
       "name": "Chair Leg",
-      "transform": {
-        "x": 0.23533374999999998,
-        "y": 0.07600000000000001,
-        "z": 0.18998249999999997,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": 0.23533374999999998, "y": 0.07600000000000001, "z": 0.18998249999999997, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -285,18 +217,7 @@
     }
   ],
   "seatAnchors": [
-    {
-      "position": {
-        "x": 0,
-        "y": 0.3239999993294478,
-        "z": 0
-      },
-      "rotationDeg": {
-        "x": -5,
-        "y": 0,
-        "z": 0
-      }
-    }
+    { "position": { "x": 0, "y": 0.2339999993294478, "z": 0 }, "rotationDeg": { "x": -5, "y": 0, "z": 0 } }
   ],
   "particleEmitters": [],
   "processingWarps": [],
