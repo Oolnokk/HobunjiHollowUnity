@@ -42,14 +42,42 @@
     if (!child?.isObject3D) return false;
     const name = String(child.name || '').toLowerCase();
     const role = String(child.userData?.modelRole || '').toLowerCase();
+    const pipeline = String(child.userData?.pngPipelineMode || '').toLowerCase();
     return role === 'temporary-npc-demo-model'
       || role === 'player'
       || role === 'player-avatar'
+      || (pipeline === 'single' && role.includes('demo-model'))
       || name.includes('player_avatar')
       || name.includes('player_portrait')
       || name.includes('temporary_npc_portrait_model')
       || name.includes('hat_xray')
       || name.includes('occlusion_ghost');
+  }
+
+  function isDescendantOf(node, ancestor) {
+    if (!node?.isObject3D || !ancestor?.isObject3D) return false;
+    let cursor = node.parent;
+    while (cursor) {
+      if (cursor === ancestor) return true;
+      cursor = cursor.parent;
+    }
+    return false;
+  }
+
+  function discoverAvatarBodyRoots() {
+    if (!playerMesh?.isObject3D) return [];
+    const candidates = [];
+    playerMesh.traverse?.(obj => {
+      if (!obj?.isObject3D || obj === playerMesh || obj === playerLegRoot) return;
+      if (playerLegRoot && isDescendantOf(obj, playerLegRoot)) return;
+      if (isAvatarBodyRoot(obj) && hasRenderableDescendant(obj)) candidates.push(obj);
+    });
+
+    // Only rotate the highest matching node in each visual branch. The PNG
+    // model can contain named portrait/hat/ghost descendants; applying the
+    // same channel to both parent and child would double the drunken tilt.
+    return candidates.filter(candidate => !candidates.some(other =>
+      other !== candidate && isDescendantOf(candidate, other)));
   }
 
   function isHeldVisualRoot(child) {
@@ -67,11 +95,18 @@
     const roots = [];
     const add = root => {
       if (!root?.isObject3D || root.visible === false || roots.includes(root) || !hasRenderableDescendant(root)) return;
+      // If a provider returns an object already contained by a root we own,
+      // rotating it again would compound the same visual delta.
+      if (roots.some(existing => isDescendantOf(root, existing))) return;
+      for (let i = roots.length - 1; i >= 0; i--) {
+        if (isDescendantOf(roots[i], root)) roots.splice(i, 1);
+      }
       roots.push(root);
     };
 
+    for (const root of discoverAvatarBodyRoots()) add(root);
     for (const child of playerMesh?.children || []) {
-      if (isAvatarBodyRoot(child) || isHeldVisualRoot(child)) add(child);
+      if (isHeldVisualRoot(child)) add(child);
     }
     add(playerLegRoot);
 
@@ -257,6 +292,7 @@
       return {
         playerAttached: !!playerMesh,
         posteriorY: playerPosteriorY,
+        avatarBodyRoots: discoverAvatarBodyRoots().map(root => root.name || root.type),
         visualRoots: currentOwnedRoots().map(root => root.name || root.type),
         externalProviders: Array.from(externalRootProviders.keys()),
         channels: Array.from(channels.entries()).map(([name, channel]) => ({
