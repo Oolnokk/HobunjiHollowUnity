@@ -21,6 +21,18 @@ for (const modulePath of [
   assert.ok(loader.includes(modulePath), `${modulePath} is bootstrapped before game.js`);
 }
 
+// three.js r128 assigns render() directly to each renderer instance. A
+// prototype-only composer hook is therefore invisible unless the compatibility
+// bootstrap captures that own method and removes the shadow before game.js
+// constructs its renderer.
+assert.ok(loader.includes('makeRendererPrototypeHookable'), 'bootstrap adapts r128 renderer instances for the composer hook');
+assert.ok(loader.includes('__hobunjiBaseRendererRender'), 'bootstrap preserves the real instance render implementation');
+assert.ok(loader.includes('delete instance.render'), 'renderer instances no longer shadow the composer prototype hook');
+assert.ok(
+  loader.indexOf('makeRendererPrototypeHookable();') < loader.indexOf("'js/player-body-transform-composer.js"),
+  'renderer compatibility is installed before player-body-transform-composer executes'
+);
+
 assert.ok(composer.includes('setChannel'), 'composer exposes named transform channels');
 assert.ok(composer.includes('registerExternalRootProvider'), 'composer exposes body-bound attachment providers');
 assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current visual roots instead of pinning stale avatar objects');
