@@ -459,6 +459,53 @@
     api.__hobunjiExactSubtleFollowersPatched = true;
   }
 
+  // config.js's first performance pass removed the expensive merged-ground
+  // raycast, but its replacement persisted the sampled subtle lift back into
+  // playerMesh.position.y. The ordinary movement loop then saw that lifted Y
+  // on the next frame and could feed it into its own smoothing, making the
+  // player climb an increasingly taller imaginary hill.
+  //
+  // PixelProbe.init is already wrapped by config.js by the time this module
+  // loads. Capture renderer.render *before* that wrapper installs its player-Y
+  // hook, let the normal init complete, then replace only that hook with a
+  // render-scoped lift: add the authored subtle height while a scene pass is
+  // being drawn and restore the movement-owned Y immediately afterward. This
+  // keeps every visible pass aligned to the deformed ground without putting a
+  // raycast or a history-dependent Y value back on the gameplay hot path.
+  function patchPlayerTownRenderHeight() {
+    const api = window.PixelProbe;
+    if (!api || api.__hobunjiTransientTownHeightRepair || typeof api.init !== 'function') return;
+    const compatibilityInit = api.init;
+    api.init = function (injectedDeps) {
+      const renderer = injectedDeps?.renderer;
+      const baseRender = renderer?.render;
+      const result = compatibilityInit.call(this, injectedDeps);
+      if (!renderer || typeof baseRender !== 'function' || renderer.__hobunjiTransientTownHeightRepair) return result;
+
+      renderer.render = function (...args) {
+        const playerMesh = injectedDeps?.playerMesh;
+        const sit = injectedDeps?.getSitInteraction?.();
+        const isTown = injectedDeps?.getCurrentArea?.() === 'town';
+        if (!isTown || !playerMesh?.position || (sit && sit.phase !== 'out')) {
+          return baseRender.apply(this, args);
+        }
+
+        const baseY = Number(playerMesh.position.y) || 0;
+        const lift = sampleTownHeight(playerMesh.position.x, playerMesh.position.z);
+        playerMesh.position.y = baseY + lift;
+        try {
+          return baseRender.apply(this, args);
+        } finally {
+          playerMesh.position.y = baseY;
+        }
+      };
+      renderer.__hobunjiTransientTownHeightRepair = true;
+      return result;
+    };
+    api.__hobunjiTransientTownHeightRepair = true;
+  }
+
   patchWallBuilderPathTag();
   patchTownZoneBuildings();
+  patchPlayerTownRenderHeight();
 })();
