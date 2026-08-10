@@ -1480,11 +1480,8 @@
   // visible on mobile rather than hiding it in hover-only titles.
   function _livestockTraitsHtml(genotype, kind) {
     const traits = window.CreatureGenetics.genotypeTraits(kind, genotype); // Single normalized view of size/color/pattern genes.
-    const size = traits.size; // Drives the prominent class/role/scale badge.
-    const scaleText = Math.abs(size.x - size.y) < 0.001
-      ? `${Math.round(size.x * 100)}% scale`
-      : `${Math.round(size.x * 100)}% wide · ${Math.round(size.y * 100)}% tall`; // Mirrors actual in-world authored scale.
-    const sizeHtml = `<div class="farm-size-trait size-${deps.esc(size.sizeClass)}"><span class="farm-size-name">${deps.esc(size.label)}</span><span>${deps.esc(size.roleLabel)} · ${deps.esc(scaleText)}</span>${size.isNonDefault ? '<b>Rare size</b>' : ''}</div>`; // First chip makes size immediately scannable.
+    const size = traits.size; // Drives the prominent class/role badge.
+    const sizeHtml = `<div class="farm-size-trait size-${deps.esc(size.sizeClass)}"><span class="farm-size-name">${deps.esc(size.label)}</span><span>${deps.esc(size.roleLabel)}</span>${size.isNonDefault ? '<b>Rare size</b>' : ''}</div>`; // Authored scale values stay behind the scenes; players only see the three size classes.
     const colorHtml = traits.colors.map(trait => {
       const color = _safeTraitColor(trait.color); // Validated before use in an inline background.
       return `<div class="farm-trait-chip"><i style="background:${color}"></i><span><strong>${deps.esc(trait.label)}</strong><small>${deps.esc(trait.colorName)}</small></span></div>`;

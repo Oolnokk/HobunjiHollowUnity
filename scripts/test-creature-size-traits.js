@@ -72,4 +72,7 @@ const mutatedChild = context.CreatureGenetics.crossOffspring(
 context.Math.random = originalRandom;
 assert.equal(mutatedChild.sizeClass, 'medium', 'a successful endpoint mutation always changes Size class');
 
+const farmPanelSource = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
+assert.doesNotMatch(farmPanelSource, /scaleText|% scale|% wide|% tall/, 'Farm and Stable cards keep authored scale percentages hidden');
+
 console.log('creature size scaling and trait-summary tests passed');
