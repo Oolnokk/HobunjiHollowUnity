@@ -253,19 +253,24 @@
 
 // Town visualHeights compatibility hook.
 //
-// The original runtime visual-height pass was only wired into wilderness/zone
-// geometry. Town uses its own merged ground meshes, so building overrides could
-// lift a house while leaving the lawn beneath it flat. TownZoneBuildings is
-// loaded after this config file but is called only after buildTownScene has
-// finished creating those floor meshes; capture its injected live scene/map
-// dependencies and deform the existing ground in place immediately before the
-// house meshes are spawned. No second surface is created, so this cannot add a
-// new coplanar layer or z-fighting surface.
+// The original runtime visual-height pass only handled wilderness/zone terrain.
+// Town's floor, player grounding, grass blades and WallBuilder road bricks use
+// separate render paths. Keep them all on the same TerrainPreview height field
+// without creating a second terrain surface or a competing road-elevation map.
 (function installTownVisualHeightCompatibility(root) {
   'use strict';
   if (typeof document === 'undefined') return;
 
   let capturedDeps = null;
+  let playerDeps = null;
+  const townGroundMeshes = new Set();
+  const raycaster = new THREE.Raycaster();
+  const rayOrigin = new THREE.Vector3();
+  const rayDown = new THREE.Vector3(0, -1, 0);
+  const matrix = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
 
   function visualHeightMap() {
     const live = capturedDeps?.getTownZone?.();
@@ -284,67 +289,187 @@
   function isLikelyMergedTownFloor(mesh, map) {
     if (!mesh?.isMesh || mesh.isInstancedMesh || !mesh.visible) return false;
     if (mesh.userData?.hobunjiTownVisualHeightApplied) return false;
-    const pos = mesh.geometry?.getAttribute?.('position');
-    if (!pos || pos.count < 12) return false;
-
+    const p = mesh.geometry?.getAttribute?.('position');
+    if (!p || p.count < 12) return false;
     const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
     if (!materials.length) return false;
-    // Grass is deliberately MeshBasicMaterial in the current renderer. Other
-    // opaque floor buckets may still be Lambert; ShaderMaterial meshes in the
-    // town are primarily grass billboards/weather and must not be reshaped.
     if (materials.some(mat => mat.isShaderMaterial || mat.transparent || mat.opacity < 1)) return false;
     if (!materials.every(mat => mat.isMeshBasicMaterial || mat.isMeshLambertMaterial)) return false;
-
-    // Merged floor geometry bakes world X/Z into its vertices and sits at the
-    // scene origin. Transition rings, sprites, props, etc. use local geometry
-    // translated to their tile and are rejected here.
     if (Math.abs(Number(mesh.position?.x) || 0) > 1e-4 || Math.abs(Number(mesh.position?.z) || 0) > 1e-4) return false;
     mesh.geometry.computeBoundingBox?.();
     const bb = mesh.geometry.boundingBox;
     if (!bb) return false;
-    const spanX = bb.max.x - bb.min.x;
-    const spanZ = bb.max.z - bb.min.z;
+    const spanX = bb.max.x - bb.min.x, spanZ = bb.max.z - bb.min.z;
     if (spanX < 4 && spanZ < 4) return false;
-    const cols = Math.max(1, Number(map?.cols) || 1);
-    const rows = Math.max(1, Number(map?.rows) || 1);
-    if (bb.max.x < -1 || bb.min.x > cols + 1 || bb.max.z < -1 || bb.min.z > rows + 1) return false;
-    return true;
+    const cols = Math.max(1, Number(map?.cols) || 1), rows = Math.max(1, Number(map?.rows) || 1);
+    return !(bb.max.x < -1 || bb.min.x > cols + 1 || bb.max.z < -1 || bb.min.z > rows + 1);
   }
 
   function deformTownFloor() {
     const scene = capturedDeps?.getTownScene?.();
     const map = visualHeightMap();
     if (!scene || !map?.visualHeights || !root.TerrainPreview?.sampleVisualHeight) return 0;
-
-    let changedMeshes = 0;
-    let changedVertices = 0;
-    // Only inspect direct scene children. The merged terrain buckets are direct
-    // children; grass billboard blades and authored buildings live inside
-    // groups, which keeps this pass from ever touching avatar/building meshes.
+    let changedMeshes = 0, changedVertices = 0;
+    townGroundMeshes.clear();
     for (const mesh of scene.children || []) {
+      // Already-displaced meshes stay valid ground targets on subsequent calls.
+      if (mesh?.userData?.hobunjiTownGroundSurface) {
+        townGroundMeshes.add(mesh);
+        continue;
+      }
       if (!isLikelyMergedTownFloor(mesh, map)) continue;
-      const pos = mesh.geometry.getAttribute('position');
+      const p = mesh.geometry.getAttribute('position');
       let touched = 0;
-      for (let i = 0; i < pos.count; i++) {
-        const lift = sampleHeight(map, pos.getX(i), pos.getZ(i));
+      for (let i = 0; i < p.count; i++) {
+        const lift = sampleHeight(map, p.getX(i), p.getZ(i));
         if (Math.abs(lift) < 1e-7) continue;
-        pos.setY(i, pos.getY(i) + lift);
+        p.setY(i, p.getY(i) + lift);
         touched++;
       }
-      if (!touched) continue;
-      pos.needsUpdate = true;
-      mesh.geometry.computeVertexNormals?.();
-      mesh.geometry.computeBoundingBox?.();
-      mesh.geometry.computeBoundingSphere?.();
-      mesh.userData.hobunjiTownVisualHeightApplied = true;
-      changedMeshes++;
-      changedVertices += touched;
+      if (touched) {
+        p.needsUpdate = true;
+        mesh.geometry.computeVertexNormals?.();
+        mesh.geometry.computeBoundingBox?.();
+        mesh.geometry.computeBoundingSphere?.();
+        mesh.userData.hobunjiTownVisualHeightApplied = true;
+        changedMeshes++;
+        changedVertices += touched;
+      }
+      // Ground buckets with zero local lift still belong in the grounding set;
+      // the player can cross through them while approaching/leaving a hill.
+      mesh.userData.hobunjiTownGroundSurface = true;
+      townGroundMeshes.add(mesh);
     }
-
-    if (changedMeshes) {
-      capturedDeps?.debugLog?.(`Town subtle elevation: displaced ${changedVertices} vertices across ${changedMeshes} existing ground mesh(es)`);
-    }
+    if (changedMeshes) capturedDeps?.debugLog?.(`Town subtle elevation: displaced ${changedVertices} vertices across ${changedMeshes} existing ground mesh(es)`);
     return changedMeshes;
+  }
+
+  function isGrassBillboardTileGroup(group) {
+    if (!group?.isGroup || group.children.length < 8) return false;
+    return group.children.every(cross => cross?.isGroup && cross.children.length === 2 && cross.children.every(mesh => mesh?.isMesh && mesh.material?.isShaderMaterial));
+  }
+
+  function elevateGrassGroup(group, map) {
+    if (!isGrassBillboardTileGroup(group)) return 0;
+    let count = 0;
+    for (const cross of group.children) {
+      if (!Number.isFinite(cross.userData.hobunjiTownGrassBaseY)) cross.userData.hobunjiTownGrassBaseY = Number(cross.position.y) || 0;
+      cross.position.y = cross.userData.hobunjiTownGrassBaseY + sampleHeight(map, cross.position.x, cross.position.z);
+      count++;
+    }
+    group.userData.hobunjiTownGrassElevated = true;
+    return count;
+  }
+
+  function elevateTownGrass() {
+    const scene = capturedDeps?.getTownScene?.(), map = visualHeightMap();
+    if (!scene || !map) return 0;
+    let count = 0;
+    for (const obj of scene.children || []) count += elevateGrassGroup(obj, map);
+    return count;
+  }
+
+  function isRoadChunk(group) {
+    return !!(group?.isGroup && group.name === 'WallBuilder_Instances' && group.userData?.cullSphere);
+  }
+
+  function elevateRoadChunk(group, map) {
+    if (!isRoadChunk(group) || !map) return 0;
+    let moved = 0;
+    group.traverse(inst => {
+      if (!inst?.isInstancedMesh || !inst.count) return;
+      if (!inst.userData.hobunjiTownRoadBaseMatrices || inst.userData.hobunjiTownRoadBaseMatrices.length !== inst.instanceMatrix.array.length) {
+        inst.userData.hobunjiTownRoadBaseMatrices = new Float32Array(inst.instanceMatrix.array);
+      }
+      const base = inst.userData.hobunjiTownRoadBaseMatrices;
+      for (let i = 0; i < inst.count; i++) {
+        matrix.fromArray(base, i * 16);
+        matrix.decompose(pos, quat, scale);
+        pos.y += sampleHeight(map, pos.x, pos.z);
+        matrix.compose(pos, quat, scale);
+        inst.setMatrixAt(i, matrix);
+        moved++;
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      inst.computeBoundingSphere?.();
+    });
+    group.userData.hobunjiTownRoadElevated = true;
+    return moved;
+  }
+
+  function elevateTownRoads() {
+    const scene = capturedDeps?.getTownScene?.(), map = visualHeightMap();
+    if (!scene || !map) return 0;
+    let count = 0;
+    for (const obj of scene.children || []) count += elevateRoadChunk(obj, map);
+    return count;
+  }
+
+  function patchTownSceneAdd() {
+    const scene = capturedDeps?.getTownScene?.();
+    if (!scene || scene.userData.hobunjiTownElevationAddPatched) return;
+    const originalAdd = scene.add;
+    scene.add = function (...objects) {
+      const result = originalAdd.apply(this, objects);
+      const map = visualHeightMap();
+      if (map) {
+        for (const obj of objects) {
+          elevateRoadChunk(obj, map); // catches async path chunks as soon as WallBuilder adds them
+          elevateGrassGroup(obj, map); // harmless fallback if grass is rebuilt later
+        }
+      }
+      return result;
+    };
+    scene.userData.hobunjiTownElevationAddPatched = true;
+  }
+
+  function refreshTownVisuals() {
+    deformTownFloor();
+    patchTownSceneAdd();
+    const grass = elevateTownGrass();
+    const road = elevateTownRoads();
+    if (grass || road) capturedDeps?.debugLog?.(`Town subtle elevation: raised ${grass} grass crosses and ${road} road-brick instances`);
+  }
+
+  function groundYAt(x, z) {
+    if (!townGroundMeshes.size) deformTownFloor();
+    const meshes = [...townGroundMeshes].filter(mesh => mesh?.parent && mesh.visible !== false);
+    if (!meshes.length) return null;
+    rayOrigin.set(x, 50, z);
+    raycaster.set(rayOrigin, rayDown);
+    const hits = raycaster.intersectObjects(meshes, false);
+    return hits.length ? hits[0].point.y : null;
+  }
+
+  function correctPlayerTownHeight() {
+    if (!playerDeps || playerDeps.getCurrentArea?.() !== 'town') return;
+    const playerMesh = playerDeps.playerMesh;
+    if (!playerMesh?.position) return;
+    const sit = playerDeps.getSitInteraction?.();
+    if (sit && sit.phase !== 'out') return; // seat anchors own vertical placement while seated
+    const y = groundYAt(playerMesh.position.x, playerMesh.position.z);
+    if (Number.isFinite(y)) playerMesh.position.y = y;
+  }
+
+  function patchPixelProbe(api) {
+    if (!api || api.__hobunjiTownHeightPlayerHook || typeof api.init !== 'function') return api;
+    const originalInit = api.init;
+    api.init = function (injectedDeps) {
+      playerDeps = injectedDeps;
+      const result = originalInit.call(this, injectedDeps);
+      const renderer = injectedDeps?.renderer;
+      if (renderer && !renderer.__hobunjiTownHeightRenderHook) {
+        const originalRender = renderer.render;
+        renderer.render = function (...args) {
+          correctPlayerTownHeight();
+          return originalRender.apply(this, args);
+        };
+        renderer.__hobunjiTownHeightRenderHook = true;
+      }
+      return result;
+    };
+    api.__hobunjiTownHeightPlayerHook = true;
+    return api;
   }
 
   function patchTownZoneBuildings(api) {
@@ -352,35 +477,45 @@
     const originalInit = api.init;
     const originalSpawnTownBuildings = api.spawnTownBuildings;
     if (typeof originalInit !== 'function' || typeof originalSpawnTownBuildings !== 'function') return api;
-
     api.init = function (injectedDeps) {
       capturedDeps = injectedDeps;
       return originalInit.call(this, injectedDeps);
     };
     api.spawnTownBuildings = function (...args) {
-      deformTownFloor();
+      refreshTownVisuals();
       return originalSpawnTownBuildings.apply(this, args);
     };
-    api.deformTownFloorForVisualHeights = deformTownFloor; // Pixel-probe/debug-console escape hatch.
+    api.deformTownFloorForVisualHeights = deformTownFloor;
+    api.refreshTownVisualHeightFollowers = refreshTownVisuals;
     api.__hobunjiTownVisualHeightCompatibility = true;
     return api;
   }
 
-  if (root.TownZoneBuildings) {
-    patchTownZoneBuildings(root.TownZoneBuildings);
-    return;
+  root.HobunjiTownSubtleElevation = {
+    sampleHeightAt(x, z) { return sampleHeight(visualHeightMap(), x, z); },
+    groundYAt,
+    refresh: refreshTownVisuals,
+  };
+
+  // config.js loads before both modules. Intercept their single global
+  // assignments so the hooks are installed synchronously before game.js init.
+  if (root.TownZoneBuildings) patchTownZoneBuildings(root.TownZoneBuildings);
+  else {
+    let assignedTownApi;
+    Object.defineProperty(root, 'TownZoneBuildings', {
+      configurable: true, enumerable: true,
+      get() { return assignedTownApi; },
+      set(value) { assignedTownApi = patchTownZoneBuildings(value); },
+    });
   }
 
-  // config.js loads before town-zone-buildings.js. Intercept that single
-  // global assignment so the module is patched synchronously the moment its
-  // script finishes, long before game.js calls .init().
-  let assignedApi;
-  Object.defineProperty(root, 'TownZoneBuildings', {
-    configurable: true,
-    enumerable: true,
-    get() { return assignedApi; },
-    set(value) {
-      assignedApi = patchTownZoneBuildings(value);
-    },
-  });
+  if (root.PixelProbe) patchPixelProbe(root.PixelProbe);
+  else {
+    let assignedProbeApi;
+    Object.defineProperty(root, 'PixelProbe', {
+      configurable: true, enumerable: true,
+      get() { return assignedProbeApi; },
+      set(value) { assignedProbeApi = patchPixelProbe(value); },
+    });
+  }
 })(typeof self !== 'undefined' ? self : globalThis);
