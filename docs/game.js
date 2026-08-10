@@ -2227,9 +2227,10 @@
         return entry ? entry[0] : null;
       }
 
-      function canPlaceFurnitureAt(col, row) {
+      function canPlaceFurnitureAt(col, row, ignoreObject = null) {
         const tile = grid[row]?.[col];
-        if (!tile || getWorldObjectAt(col, row)) return false;
+        const occupyingObject = getWorldObjectAt(col, row); // Ignored only while moving this exact processor.
+        if (!tile || (occupyingObject && occupyingObject !== ignoreObject)) return false;
         if (tile.crop || tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS || tile.type === TileType.TRENCH) return false;
         return true;
       }
@@ -2249,11 +2250,12 @@
       // vfxActive()).
       const PROCESS_BURST_S = 1.2;
 
-      function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
+      function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const mesh = buildFurnitureVisual(furnitureKey, def.color);
         mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        mesh.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(mesh);
         _markFurnitureEdgeId(mesh);
         scene.add(mesh);
@@ -2292,7 +2294,7 @@
 
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
-          type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
+          type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh, rotYDeg,
           label: def.icon + ' ' + def.name,
           update: updateVfx,
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
@@ -2369,6 +2371,49 @@
         worldObjects.set(col + ',' + row, obj);
         processingFurnitureObjects.add(obj);
         return { ok: true, message: 'Placed ' + def.icon + ' ' + def.name + '.' };
+      }
+
+      function processingFurnitureById(id) {
+        return [...processingFurnitureObjects].find(obj => obj.id === id) || null;
+      }
+
+      function moveProcessingFurniture(id, col, row) {
+        const obj = processingFurnitureById(id);
+        if (!obj) return { ok: false, message: 'Processing furniture not found.' };
+        if (!canPlaceFurnitureAt(col, row, obj)) return { ok: false, message: 'Place furniture on an empty grass, tilled, or raised tile.' };
+        const oldId = obj.id; // Used to preserve any livestock assignment attached to a moved squeezing vat.
+        worldObjects.delete(obj.col + ',' + obj.row);
+        obj.col = col; obj.row = row;
+        obj.id = 'processor_' + obj.furnitureKey + '_' + col + '_' + row;
+        obj.mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        worldObjects.set(col + ',' + row, obj);
+        window.DewVats?.retargetAssignments(oldId, obj.id);
+        saveFarmLayout();
+        return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} moved.` };
+      }
+
+      function rotateProcessingFurniture(id, degrees = 45) {
+        const obj = processingFurnitureById(id);
+        if (!obj) return { ok: false, message: 'Processing furniture not found.' };
+        obj.rotYDeg = ((obj.rotYDeg || 0) + degrees + 360) % 360;
+        obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
+        saveFarmLayout();
+        return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} rotated 45°.` };
+      }
+
+      function removeProcessingFurniture(id) {
+        const obj = processingFurnitureById(id);
+        if (!obj) return { ok: false, message: 'Processing furniture not found.' };
+        const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
+        if (obj.getJob?.()) return { ok: false, message: `${def?.name || 'This processor'} cannot be removed until its contents are collected.` };
+        window.DewVats?.retargetAssignments(obj.id, null);
+        worldObjects.delete(obj.col + ',' + obj.row);
+        processingFurnitureObjects.delete(obj);
+        obj.reset?.();
+        if (def?.itemKey) { inventory[def.itemKey] = (inventory[def.itemKey] || 0) + 1; clampInventoryStack(def.itemKey); }
+        saveFarmLayout();
+        refreshItemScroll();
+        return { ok: true, message: `${def?.icon || '⚙️'} ${def?.name || 'Processing furniture'} returned to inventory.` };
       }
 
       function clearPlacedProcessingFurniture() {
@@ -2749,17 +2794,24 @@
       function furniturePlacementSpec() {
         if (furnitureMoveArmedId) {
           const obj = interiorFurnitureObjects.find(o => o.id === furnitureMoveArmedId && o.area === currentArea);
-          return obj ? { key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id } : null;
+          if (obj) return { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id };
+          const processor = currentArea === 'farm' ? processingFurnitureById(furnitureMoveArmedId) : null;
+          return processor ? { kind: 'processing', key: processor.furnitureKey, rotYDeg: processor.rotYDeg || 0, ignoreId: processor.id, ignoreObject: processor } : null;
         }
-        const key = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
-        return key ? { key, rotYDeg: 0, ignoreId: null } : null;
+        const decorativeKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        if (decorativeKey) return { kind: 'decorative', key: decorativeKey, rotYDeg: 0, ignoreId: null };
+        const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(furniturePlacementArmedKey) : null;
+        return processingKey ? { kind: 'processing', key: processingKey, rotYDeg: 0, ignoreId: null } : null;
       }
 
       function showFurniturePlacementGhost(col, row) {
         const spec = furniturePlacementSpec();
         if (!spec) { clearFurniturePlacementGhost(); return; }
-        const valid = canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
-        if (!furniturePlacementGhost || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
+        const isProcessing = spec.kind === 'processing';
+        const valid = isProcessing
+          ? canPlaceFurnitureAt(col, row, spec.ignoreObject)
+          : canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
+        if (!furniturePlacementGhost || furniturePlacementGhost.kind !== spec.kind || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
           clearFurniturePlacementGhost();
           const group = buildFurnitureVisual(spec.key, 0x5cff7a);
           const ghostMaterial = new THREE.MeshBasicMaterial({ color: 0x5cff7a, transparent: true, opacity: 0.58, depthWrite: false });
@@ -2767,10 +2819,11 @@
           group.rotation.y = spec.rotYDeg * Math.PI / 180;
           group.renderOrder = 1000;
           (currentArea === 'interior' ? interiorScene : scene).add(group);
-          furniturePlacementGhost = { group, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
+          furniturePlacementGhost = { group, kind: spec.kind, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
         }
-        const { fw, fd } = decorativeFurnitureSize(spec.key, spec.rotYDeg);
-        furniturePlacementGhost.group.position.set(col + fw * 0.5, 0.04, row + fd * 0.5);
+        const { fw, fd } = isProcessing ? { fw: 1, fd: 1 } : decorativeFurnitureSize(spec.key, spec.rotYDeg);
+        const previewY = isProcessing ? tileSurfaceY(grid[row]?.[col]?.type) : 0.04;
+        furniturePlacementGhost.group.position.set(col + fw * 0.5, previewY, row + fd * 0.5);
         furniturePlacementGhost.group.visible = true;
         furniturePlacementGhost.group.traverse(child => {
           if (child.isMesh) child.material.color.set(valid ? 0x5cff7a : 0xff5555);
@@ -2918,7 +2971,7 @@
           }
           processingFurnitureObjects.forEach(obj => {
             const job = obj.getJob && obj.getJob();
-            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, ...(job ? { job } : {}) });
+            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, rotYDeg: obj.rotYDeg || 0, ...(job ? { job } : {}) });
           });
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
@@ -2997,9 +3050,9 @@
             const nb = window.FarmCrates.makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
           }
         }
-        (layout.furniture || []).forEach(({ key, col, row, job }) => {
+        (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
           if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-            const obj = makeProcessingFurniture(col, row, key, job);
+            const obj = makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
             if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
           }
         });
@@ -3145,8 +3198,8 @@
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
       // placement's actual world position/facing. rotYDeg is the furniture's
-      // own placement yaw (0 for every current player-placed decorative/
-      // processing furniture path, since none of them support rotation yet).
+      // own placement yaw, including player-rotated decorative furniture and
+      // processing stations.
       function resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
         const data = window.AuthoredFurniture?.peek(furnitureKey);
         const anchor = data && window.AuthoredFurniture.seatAnchorFor(data, seatIndex);
@@ -3165,10 +3218,8 @@
           // through to the leg rig's faithful surface-flush seated solve
           // (see procedural-leg-animation.js's applySeatedPose). Read
           // straight off the anchor's own local rotation with no further
-          // rotation applied for rotYDeg — every current player-placed
-          // furniture path always places at rotYDeg 0 (see the comment
-          // above this function), so anchor-local and world pitch/roll
-          // already coincide.
+          // rotation applied for rotYDeg. Yaw is already represented by
+          // facingRad; the leg solver consumes seat-local pitch/roll.
           normalDeg: { x: anchor.rotationDeg.x || 0, z: anchor.rotationDeg.z || 0 },
           footprintHalfDepth: Math.max(0.05, (Number(data.footprint?.d) || 1) / 2),
           anchorZ: az,
@@ -5372,10 +5423,13 @@
       }
 
       // Second pass for the real player's own shoulder pet(s), called after
-      // updatePlayerMesh in the main loop (updateCompanions itself runs
-      // before it — see the long comment in its shoulderPet branch for why
-      // that ordering is otherwise required, and why it leaves
-      // playerMesh.position one frame stale for this pin). Re-pins X/Z for
+      // updateToolMesh in the main loop (updateCompanions itself runs before
+      // updatePlayerMesh — see the long comment in its shoulderPet branch for
+      // why that ordering is otherwise required). Waiting through tool mesh
+      // animation matters because authored attack/tool poses apply bodyYaw to
+      // playerMesh.rotation.y after the ordinary player update; the shoulder
+      // pet must inherit that final body rotation, not the pre-swing facing.
+      // Re-pins X/Z for
       // BOTH the rig-anchor (perch/grip) and no-rig-data fallback cases —
       // both read playerMesh.position the same way, so both need this.
       // Y is only re-pinned for the perch/grip case: the fallback's Y is a
@@ -5390,14 +5444,17 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const { dx, dz } = _shoulderPetOffsetXZ(perch, grip);
+            const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
             c.avatarRef.group.position.x = playerMesh.position.x + dx;
             c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
             c.avatarRef.group.position.z = playerMesh.position.z + dz;
+            c.avatarRef.group.rotation.y = playerMesh.rotation.y - gripYawRad;
           } else {
-            const clingAngle = player.angle + Math.PI;
-            c.avatarRef.group.position.x = playerMesh.position.x + Math.cos(clingAngle) * 0.3;
-            c.avatarRef.group.position.z = playerMesh.position.z + Math.sin(clingAngle) * 0.3;
+            // Backward local offset expressed through the avatar's final
+            // THREE.js Y rotation, so fallback pets follow bodyYaw too.
+            c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
+            c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
+            c.avatarRef.group.rotation.y = playerMesh.rotation.y;
           }
         }
       }
@@ -5420,10 +5477,11 @@
       // per Size-gated stable role — see STABLE_ROLE_META) to match the
       // stable's designated active entry for each slot, or (companion slot
       // only, falling back for any legacy whistle not represented in the
-      // stable) its equipped whistle. Called every farm/zone-area frame for
+      // stable) its equipped whistle. Called every playable-area frame for
       // the real player (master defaults to `player`); cheap no-op once in
       // sync. Also re-spawns into the new area's scene whenever the master
-      // travels. Takes an explicit `master` (rather than always reading the
+      // travels, including farmhouse and building interiors. Takes an
+      // explicit `master` (rather than always reading the
       // real player) so this same function can eventually drive a second
       // companion-bearing player's companion, or an NPC's, without change —
       // see the `master` field on the companion entity itself.
@@ -5476,7 +5534,10 @@
           const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
             isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
           });
-          if (companion) companionObjects.add(companion);
+          if (companion) {
+            companionObjects.add(companion);
+            window.__farmLog?.(`[companion] spawned ${role} ${desired.creatureKey} in ${currentArea}`, 'wildlife');
+          }
         }
       }
 
@@ -6727,6 +6788,13 @@
       // its grass never disappears, since a zone's terrain is built once
       // as merged meshes rather than the farm's per-tile mesh array).
       const _zoneFloorMeshGroups = new Map();
+      // mapId -> Map("col,row" -> foliage Group). Used by combat/axe clears
+      // to remove one shrub/tree immediately without rebuilding every
+      // procedural tree and merged ground mesh in a wilderness zone.
+      const _zoneVegetationMeshes = new Map();
+      // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
+      // individually removable while structural ROCK terrain remains merged.
+      const _zoneMineableRockMeshes = new Map();
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -6861,6 +6929,10 @@
       // zScene, so the caller can track and later remove them.
       function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
         const meshes = [];
+        const vegetationByTile = new Map(); // Used for O(1) runtime foliage removal by tile.
+        const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
+        _zoneVegetationMeshes.set(mapId, vegetationByTile);
+        _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -6928,6 +7000,30 @@
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
+            if (tile.rockKind === 'diggableRockOre') {
+              // Keep resource rocks out of the merged terrain buckets so a
+              // completed pick swing can remove exactly one mound without a
+              // synchronous whole-zone geometry rebuild. Structural rocks
+              // continue through the merged path below.
+              const rockGroup = new THREE.Group(); // Owns this resource rock's disposable mound geometry.
+              // stoneGeo and grassGeo share their position buffer, so one
+              // displacement updates both layers and must only run once.
+              displaceZoneGeometry(stoneGeo || grassGeo, mapId, cx, cz);
+              for (const [geometry, matKey] of [[stoneGeo, TileType.ROCK], [grassGeo, TileType.GRASS]]) {
+                if (!geometry) continue;
+                geometry.computeVertexNormals();
+                const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
+                rockMesh.castShadow = rockMesh.receiveShadow = true;
+                _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
+                rockGroup.add(rockMesh);
+              }
+              rockGroup.position.set(cx, NORMAL_TOP + tierY, cz);
+              zScene.add(rockGroup);
+              _markOutline(rockGroup);
+              meshes.push(rockGroup);
+              mineableRocksByTile.set(`${c},${r}`, rockGroup);
+              continue;
+            }
             _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
@@ -7038,6 +7134,7 @@
               zScene.add(vegGroup);
               _markOutline(vegGroup);
               meshes.push(vegGroup);
+              vegetationByTile.set(`${c},${r}`, vegGroup);
             }
             continue;
           }
@@ -7884,7 +7981,7 @@
         return true;
       }
 
-      function canNpcBeeline(area, fromX, fromZ, targetC, targetR) {
+      function canNpcBeeline(area, fromX, fromZ, targetC, targetR, allowOccupiedTarget = false) {
         const tx = targetC + 0.5, tz = targetR + 0.5;
         const dist = Math.hypot(tx - fromX, tz - fromZ);
         const step = npcMovementConfig().beelineSampleStepTiles ?? 0.25;
@@ -7893,7 +7990,7 @@
           const t = i / samples;
           const c = Math.floor(fromX + (tx - fromX) * t);
           const r = Math.floor(fromZ + (tz - fromZ) * t);
-          if (!isNpcTileWalkable(area, c, r)) return false;
+          if (!isNpcTileWalkable(area, c, r) && !(allowOccupiedTarget && c === targetC && r === targetR)) return false;
         }
         return true;
       }
@@ -7926,6 +8023,10 @@
           c, r,
           rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
           pose: station.pose || 'stand',
+          furnitureKey: station.furnitureKey
+            || getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
+            || (DECORATIVE_FURNITURE_DEFS[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
+          seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
           toolKey: station.toolKey || '',
           toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
           toolAnimStyle: station.toolAnimStyle || '',
@@ -7961,10 +8062,6 @@
       // placed — no map author has to hand-add an npcStations entry for
       // player-placed furniture. Deterministic id (area+tile) so placing the
       // same spot twice is idempotent and a schedule rule survives a reload.
-      // Only pose:'sit' is set here; there's no seated NPC pose animation
-      // yet (see beginSitInteraction's own player-side note on the same
-      // gap), so a scheduled NPC currently just stands at the chair like any
-      // other station — the registration/scheduling half of the request.
       function furnitureNpcStationId(area, col, row) {
         return `furniture_chair_${area}_${col}_${row}`;
       }
@@ -7973,7 +8070,7 @@
         if (!def?.sit) return;
         registerNpcStations([{
           id: furnitureNpcStationId(area, col, row), label: def.name,
-          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit',
+          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
         }], area);
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
@@ -8245,6 +8342,16 @@
       const NPC_STATION_WANDER_WAIT_MAX_S = 6;
       const NPC_STATION_WANDER_RETRY_S = 0.5;
 
+      function npcSeatTransformForTarget(target) {
+        if (target?.pose !== 'sit' || !target.furnitureKey) return null;
+        const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
+        if (!def?.sit) return null;
+        return resolveSeatWorldTransform(
+          target.furnitureKey, target.c, target.r, def.fw || 1, def.fd || 1,
+          target.rotY || 0, target.seatIndex || 0
+        );
+      }
+
       async function makeNpcWalker(rec, initialTarget) {
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
@@ -8326,6 +8433,7 @@
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
+          _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
@@ -8336,6 +8444,9 @@
               this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
             );
             root.rotation.y = this.rot;
+            // The portrait plane obeys the camera-relative deadzone, but the
+            // procedural feet must keep the NPC's exact logical facing.
+            if (this.legs?.group) this.legs.group.rotation.y = rawRot - root.rotation.y;
           },
           resetRouteState() {
             this.state = 'idle';
@@ -8399,7 +8510,7 @@
             if (!window.TilePathfinding) return false;
             const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
             const path = window.TilePathfinding.findPath(startCol, startRow, target.c, target.r,
-              (c, r) => isNpcTileWalkable(this.area, c, r),
+              (c, r) => (target.pose === 'sit' && c === target.c && r === target.r) || isNpcTileWalkable(this.area, c, r),
               { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, 6) });
             if (!path || !path.length) return false;
             this._gridPath = path;
@@ -8515,14 +8626,31 @@
             // frame of lag; imperceptible at 60fps.
             const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
             this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
-            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false);
+            const target = resolveNpcScheduleTarget(this.rec);
+            const targetArea = target ? normalizeNpcArea(target.area) : null;
+            const cfg = npcMovementConfig();
+            const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
+            const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
+            const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const seatedAtTarget = !!seatTransform && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival;
+            const seatedPose = seatedAtTarget ? {
+              seatY: seatTransform.y,
+              normalDeg: seatTransform.normalDeg,
+              footprintHalfDepth: seatTransform.footprintHalfDepth,
+              anchorZ: seatTransform.anchorZ,
+            } : undefined;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false, seatedPose);
+            const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
+            if (seatedStationKey !== this._seatedStationKey) {
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
+              this._seatedStationKey = seatedStationKey;
+            }
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
             if (!target) return;
-            const targetArea = normalizeNpcArea(target.area);
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
                 // May be several hops away (e.g. town → a building → one of its
@@ -8552,9 +8680,6 @@
               return;
             }
             this._exitSpot = null;
-            const cfg = npcMovementConfig();
-            const tx = target.c + 0.5, tz = target.r + 0.5;
-            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
@@ -8585,8 +8710,17 @@
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);
-              root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
-              if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
+              if (seatTransform) {
+                root.position.x = seatTransform.x;
+                root.position.z = seatTransform.z;
+                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
+                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
+                root.position.y += (groundY + seatSink - root.position.y) * 0.18;
+                this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
+              } else {
+                root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+                if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
+              }
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
@@ -8627,7 +8761,7 @@
             }
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -9894,8 +10028,84 @@
         // Same reasoning again, for mined-out ore rocks.
         _zoneMinedRockPersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
+        _zoneVegetationMeshes.delete(mapId);
+        _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
+      }
+
+      // Finds one already-built wilderness shrub/tree group by indexed tile
+      // lookup and removes it with light list bookkeeping. The grass floor
+      // beneath SHRUB tiles is already part of the merged ground mesh, so a
+      // vegetation clear does not require terrain, mesa, or grass-instance
+      // reconstruction. Geometry is deliberately not
+      // disposed here: native tree instances share cached variant geometry.
+      function removeZoneVegetationVisual(mapId, col, row) {
+        const zi = _zoneScenes.get(mapId);
+        const byTile = _zoneVegetationMeshes.get(mapId);
+        const vegGroup = byTile?.get(`${col},${row}`);
+        if (!zi || !vegGroup) return false;
+        zi.scene.remove(vegGroup);
+        byTile.delete(`${col},${row}`);
+        _treeFadeActive.delete(vegGroup);
+        for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
+
+        const floorMeshes = _zoneFloorMeshGroups.get(mapId);
+        const floorIndex = floorMeshes?.indexOf(vegGroup) ?? -1;
+        if (floorIndex >= 0) floorMeshes.splice(floorIndex, 1);
+        if (vegGroup.userData?.canopyClamp) {
+          zi.canopyZones = (zi.canopyZones || []).filter(zone => zone !== vegGroup.userData.canopyClamp);
+        }
+        if (vegGroup.userData?.cullSphere) {
+          zi.cullables = (zi.cullables || []).filter(obj => obj !== vegGroup);
+        }
+        return true;
+      }
+
+      // Removes one separately-built wilderness resource rock. Its full
+      // grass floor tile is already in the merged ground mesh, so only the
+      // small mound group needs to disappear when mining completes.
+      function removeZoneMineableRockVisual(mapId, col, row) {
+        const zi = _zoneScenes.get(mapId);
+        const byTile = _zoneMineableRockMeshes.get(mapId);
+        const rockGroup = byTile?.get(`${col},${row}`);
+        if (!zi || !rockGroup) return false;
+        zi.scene.remove(rockGroup);
+        byTile.delete(`${col},${row}`);
+        rockGroup.traverse(object => object.geometry?.dispose());
+
+        const floorMeshes = _zoneFloorMeshGroups.get(mapId);
+        const floorIndex = floorMeshes?.indexOf(rockGroup) ?? -1;
+        if (floorIndex >= 0) floorMeshes.splice(floorIndex, 1);
+        return true;
+      }
+
+      function updateClearedZoneVegetationVisual(mapId, col, row, previousType) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return false;
+        const removedFoliage = removeZoneVegetationVisual(mapId, col, row);
+        if (previousType !== TileType.WEEDS) return removedFoliage;
+
+        // WEEDS are part of the zone's merged material buckets rather than
+        // individual foliage groups. Cover only the cleared tile with a
+        // grass patch; the next ordinary terrain refresh folds it back into
+        // the merged grass mesh. This keeps a weapon swing O(AoE tiles)
+        // instead of O(the entire wilderness map).
+        const tile = zi.grid?.[row]?.[col];
+        if (!tile) return removedFoliage;
+        const geometry = makeFloorGeo(col, row); // Used by the one-tile grass cover mesh below.
+        displaceZoneGeometry(geometry, mapId, col + 0.5, row + 0.5);
+        const patch = new THREE.Mesh(geometry, resolveTileMat(mapId, TileType.GRASS)); // Covers the stale merged WEEDS surface.
+        patch.receiveShadow = true;
+        patch.position.set(
+          col + 0.5,
+          tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
+          row + 0.5
+        );
+        zi.scene.add(patch);
+        _markTerrainEdgeId(patch, TileType.GRASS);
+        _zoneFloorMeshGroups.get(mapId)?.push(patch);
+        return true;
       }
 
       // Rebuilds just a zone's ground floor + grass tufts (see
@@ -12302,12 +12512,14 @@
         const targets = getMacheteTargets(col, row, action);
         const tgrid = getActiveGrid();
         let cleared = 0;
+        let zoneVisualsUpdated = true;
         for (const t of targets) {
           const tile = tgrid[t.row][t.col];
           if (!tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB)) {
             // A real tree needs a proper held axe chop (see CHOP_TREE_STAGES) —
             // a wide hack/slash cone shouldn't fell one for free mulch.
             if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
+            const previousType = tile.type; // Used to choose the targeted zone visual replacement below.
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
             // markTileDirty indexes the farm's own small grid (see its
@@ -12317,10 +12529,52 @@
             // (see applyAction's callers), once per completed action rather
             // than per cleared tile.
             if (currentArea === 'farm') markTileDirty(t.col, t.row);
+            else if (_isZoneArea(currentArea)) {
+              zoneVisualsUpdated = updateClearedZoneVegetationVisual(currentArea, t.col, t.row, previousType) && zoneVisualsUpdated;
+            }
             cleared++;
           }
         }
-        return { cleared, targets };
+        return { cleared, targets, zoneVisualsUpdated };
+      }
+
+      // Clears every non-tree vegetation tile whose center lies inside a
+      // weapon attack's real continuous hit cone. Iteration is bounded to
+      // the cone's small tile-space AABB, so cost scales with attack area,
+      // not map size. Crops and true copse trees are intentionally protected.
+      function clearVegetationInAttackCone(fromX, fromY, facingAngle, rangePx, halfConeRad) {
+        const tgrid = getActiveGrid();
+        const cols = getActiveCols(), rows = getActiveRows();
+        const radiusTiles = Math.max(0, rangePx) / TILE;
+        const centerCol = fromX / TILE, centerRow = fromY / TILE;
+        const minCol = clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
+        const maxCol = clamp(Math.ceil(centerCol + radiusTiles - 0.5), 0, cols - 1);
+        const minRow = clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
+        const maxRow = clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
+        let cleared = 0;
+
+        for (let row = minRow; row <= maxRow; row++) {
+          for (let col = minCol; col <= maxCol; col++) {
+            const tile = tgrid[row]?.[col];
+            if (!tile || tile.crop || (tile.type !== TileType.WEEDS && tile.type !== TileType.SHRUB)) continue;
+            if (tile.type === TileType.SHRUB && isChoppableTreeTile(col, row)) continue;
+            const tileX = (col + 0.5) * TILE, tileY = (row + 0.5) * TILE;
+            if (!inCone(fromX, fromY, facingAngle, tileX, tileY, rangePx, halfConeRad)) continue;
+
+            const previousType = tile.type; // Used to remove/cover the matching runtime visual.
+            tile.type = TileType.GRASS;
+            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            if (currentArea === 'farm') markTileDirty(col, row);
+            else if (_isZoneArea(currentArea)) updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
+            cleared++;
+          }
+        }
+        if (cleared > 0) {
+          if (currentArea === 'farm') saveFarmLayout();
+          saveMemberWorldData();
+          debugLog(`weapon cone cleared ${cleared} non-tree vegetation tile${cleared === 1 ? '' : 's'}`);
+        }
+        return cleared;
       }
 
       function actionFxProfile(action, ok) {
@@ -12992,12 +13246,13 @@
           _zoneFelledTreePersist.set(currentArea, _felledEntries);
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
           inventory.mulch = Math.min(99, inventory.mulch + 1);
-          // No markTileDirty here — it indexes the farm's own small grid,
-          // and felling a tree only ever happens in a wilderness zone (see
-          // isChoppableTreeTile). completeChargeAction's zone-refresh branch
-          // (tool === 'axe') handles the visual update instead.
+          // Remove this tree's indexed Group immediately. The merged floor
+          // beneath it is already grass, so rebuilding all ground and every
+          // procedural tree in the zone would only create a long main-thread
+          // freeze (especially in the Southern Cloud Forest).
+          const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
-          return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
+          return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
         }
 
         if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {
@@ -13022,11 +13277,14 @@
           inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
           const gotPebble = Math.random() < 0.35;
           if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
-          // No markTileDirty here for the wilderness-zone case — see the axe
-          // branch above; completeChargeAction's own currentArea==='farm'
-          // branch already calls markTileDirty/recomputeWater for the farm.
+          // Farm rocks use ordinary per-tile mesh rebuilding. Wilderness
+          // resource rocks are individually indexed, so remove only this
+          // mound and skip the expensive full-zone ground reconstruction.
+          const zoneVisualsUpdated = currentArea === 'farm'
+            ? false
+            : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
-          return { ok: true, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
+          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -13036,6 +13294,7 @@
           if (tool === 'axe') awardToolUseMasteryXp('axe'); // machete isn't a gear tool — no mastery of its own
           return {
             ok: true,
+            zoneVisualsUpdated: result.zoneVisualsUpdated,
             message: isWide
               ? `Cleared ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the swing into mulch.`
               : 'Cleared one tile of day-one overgrowth into mulch.'
@@ -13044,13 +13303,17 @@
 
         if (tool === 'weapon') {
           const hitResult = window.Combat ? window.Combat.resolveWeaponHit(action, resolveWeaponHit) : resolveWeaponHit(action);
-          if (hitResult.hits > 0) return { ok: true, message: hitResult.message };
-          const vegResult = clearVegetationAt(col, row, action);
-          if (vegResult.cleared > 0) {
+          const abil = weaponAbility(action);
+          const cleared = abil
+            ? clearVegetationInAttackCone(player.x, player.y, player.angle, abil.rangePx, abil.halfConeRad)
+            : 0;
+          if (hitResult.hits > 0) return { ok: true, zoneVisualsUpdated: true, message: hitResult.message };
+          if (cleared > 0) {
             return {
               ok: true,
+              zoneVisualsUpdated: true,
               message: action === 'slash'
-                ? `Slashed ${vegResult.cleared} tile${vegResult.cleared === 1 ? '' : 's'} in the cone into mulch.`
+                ? `Slashed ${cleared} tile${cleared === 1 ? '' : 's'} in the cone into mulch.`
                 : 'Cut one tile of day-one overgrowth into mulch.'
             };
           }
@@ -13265,13 +13528,10 @@
           // could get wiped out mid-session by anything that re-applies the
           // (stale, still-unsaved) layout on top of the live grid.
           if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
-          // Note: weapon/machete vegetation clears in a zone don't trigger this —
-          // applyAction's weapon branch returns the same ok:true shape for a normal
-          // combat hit as for a veg clear, and refreshing the whole zone floor/grass
-          // mesh on every combat hit would be a real perf hit. Their cleared tile
-          // just stays visually stale (still SHRUB-shaped) until something else
-          // rebuilds the zone — a pre-existing, non-crashing gap, not fixed here.
+        } else if (_isZoneArea(currentArea) && result.ok !== false && !result.zoneVisualsUpdated && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+          // Vegetation-only changes remove/cover their indexed tile visuals
+          // directly and report zoneVisualsUpdated, so they skip this costly
+          // full-zone path. Actual terrain changes still need merged geometry.
           // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
           // a dig/fill/raise/till/smooth just changed this tile's type, but a
           // zone's terrain is merged meshes built once rather than the farm's
@@ -13744,14 +14004,25 @@
       //      so neither the shell pass nor depth edges would draw a line.
       // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
 
+      // Layer 4 is a depth-only replay of visible PNG silhouettes immediately
+      // before outline rendering. It lets avatars whose normal depthWrite is
+      // intentionally disabled for avatar-vs-avatar ordering still occlude
+      // later furniture shell/material-seam outlines.
+      const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4;
+
       // PNG-plane avatars (player/NPCs/animals/creatures) are flat cutout
       // sprites — running depth-edge detection against them would outline
       // every alpha-cutout silhouette edge of the sprite art itself, which
       // reads as noise rather than a deliberate outline. Tagging their root
       // group lets the depth-only source pass below hide them temporarily
-      // without touching the main colour pass that actually shows them.
+      // without touching the main colour pass that actually shows them. Each
+      // child mesh also joins the dedicated outline-occluder layer above.
       function _markPngPlane(obj) {
-        if (obj) obj.userData.isPngPlane = true;
+        if (!obj) return;
+        obj.userData.isPngPlane = true;
+        obj.traverse(child => {
+          if (child.isMesh) child.layers.enable(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+        });
       }
 
       let _furnitureEdgeIdSeq = 0;
@@ -13830,6 +14101,46 @@
       // off since only the attached depth texture is read back.
       const _depthOnlyRT = _makeSceneRT(1, 1);
       const _depthOnlyMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+      let _lastPngOutlineOccluderCount = -1; // Used to keep mobile outline diagnostics useful without per-frame log spam.
+
+      // Replays only PNG-plane meshes into _mainRT's existing depth buffer.
+      // Their original alpha-tested materials preserve the real sprite
+      // silhouette; forcing colorWrite off avoids touching the finished color
+      // image, while forcing depthWrite on makes every visible pet/player/NPC
+      // capable of blocking the shell and material-seam passes that follow.
+      function _renderPngPlaneOutlineOccluderDepth(activeScene) {
+        const materialStates = new Map(); // Restores avatar materials after this depth-only draw.
+        let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
+        activeScene.traverse(object => {
+          if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << PNG_PLANE_OUTLINE_OCCLUDER_LAYER))) return;
+          meshCount++;
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of materials) {
+            if (!material || materialStates.has(material)) continue;
+            materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite });
+            material.colorWrite = false;
+            material.depthWrite = true;
+          }
+        });
+        if (meshCount === 0) return;
+
+        const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
+        try {
+          camera.layers.set(PNG_PLANE_OUTLINE_OCCLUDER_LAYER);
+          renderer.render(activeScene, camera);
+        } finally {
+          camera.layers.mask = previousLayerMask;
+          for (const [material, state] of materialStates) {
+            material.colorWrite = state.colorWrite;
+            material.depthWrite = state.depthWrite;
+          }
+        }
+        if (meshCount !== _lastPngOutlineOccluderCount) {
+          _lastPngOutlineOccluderCount = meshCount;
+          window.__farmLog?.(`[outline] ${meshCount} PNG avatar plane(s) writing occlusion depth`, 'render');
+        }
+      }
+
       function _resizeOutlineTargets(pixelW, pixelH) {
         _mainRT.setSize(pixelW, pixelH);
         _edgeIdRT.setSize(pixelW, pixelH);
@@ -16214,7 +16525,7 @@
           // fill charge (new trench, fill-in) needs the same saveFarmLayout()
           // fix, or it's just as silently lost as a single-tap action.
           if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+        } else if (_isZoneArea(currentArea) && result.ok !== false && !result.zoneVisualsUpdated && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
@@ -18476,25 +18787,29 @@
           window.AlchemySystem.update();
           window.BountyBoard.updateTracking(dt);
 
-          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
-            // Den-Mother caverns are the one building exception (boss arena,
-            // same reason tools/weapons/reticle still work in there — see
-            // enterBuilding/the combat-gate comment near updateToolMesh) —
-            // a companion should follow the player in and keep fighting
-            // alongside them, not sit frozen back in the farm/town/zone
-            // scene it was last synced into.
+          // Active companions and shoulder pets follow the player through
+          // every playable interior. A building still loading has no real
+          // destination scene yet, so wait behind the existing black scene
+          // transition rather than spawning a follower into `scene`'s
+          // fallback and leaving it there after the building finishes.
+          const companionSceneReady = !_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea); // Gates indoor follower scene attachment.
+          if (companionSceneReady) {
             syncCompanionFromWhistle();
             updateCompanions(dt);
-            window.Mounts?.updateMountRide(dt);
+          }
+          // Runs in every area so any phase of a mount transition is cleared
+          // immediately on entering an interior. Mounts remain exterior-only.
+          window.Mounts?.updateMountRide(dt);
+
+          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
             window.BanditCamps.updateCompanionPerception(dt);
             window.BanditCamps.updateCampBanners(dt);
             window.WildlifeSpawn.updateHostileSpawning(dt);
             updateHostiles(dt);
             window.CreatureDeath.updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
-            // Ordinary building interiors (house/shop) intentionally have no
-            // companions or wild spawns — only Den-Mother mini-bosses still
-            // need to chase/attack/return there.
+            // Ordinary building interiors still have no wild spawns; this
+            // branch only keeps any authored interior hostile/corpse active.
             updateHostiles(dt);
             window.CreatureDeath.updateCorpses(dt);
           }
@@ -18572,10 +18887,6 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
-        // Must run right after updatePlayerMesh, not folded into
-        // updateCompanions (called earlier, before it) — see
-        // updateShoulderPetMeshPin's own comment for why.
-        updateShoulderPetMeshPin();
         updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
@@ -18600,6 +18911,10 @@
           window.Combat?.update(dt);
           updateReticleMesh();
         }
+        // Must run after updateToolMesh: attack/tool poses can rotate the
+        // player's body after updatePlayerMesh, and the attached pet needs
+        // that final transform in the same frame.
+        updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();
@@ -18666,9 +18981,13 @@
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
 
-          // Selective shell outline pass (layer-1 objects only)
+          // Preserve the colour/depth result while PNG silhouettes add only
+          // the missing occlusion depth needed by both outline systems.
           renderer.autoClearColor = false;
           renderer.autoClearDepth = false;
+          _renderPngPlaneOutlineOccluderDepth(activeScene);
+
+          // Selective shell outline pass (layer-1 objects only)
           activeScene.overrideMaterial = shellOutlineMat;
           camera.layers.set(1);
           renderer.render(activeScene, camera);
@@ -20400,9 +20719,9 @@
         try {
           const _rl = loadFarmLayout();
           if (_rl) {
-            (_rl.furniture || []).forEach(({ key, col, row, job }) => {
+            (_rl.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
               if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-                const obj = makeProcessingFurniture(col, row, key, job);
+                const obj = makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
@@ -21259,14 +21578,27 @@
         e.stopImmediatePropagation();
         const { col, row } = furniturePlacementGhost;
         if (furnitureMoveArmedId) {
-          const result = moveDecorativeFurniture(furnitureMoveArmedId, col, row);
+          const result = processingFurnitureById(furnitureMoveArmedId)
+            ? moveProcessingFurniture(furnitureMoveArmedId, col, row)
+            : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
           showToast(result.message, result.ok);
           if (result.ok) furnitureMoveArmedId = null;
         } else {
           const itemKey = furniturePlacementArmedKey;
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
-          const result = decorKey ? placeDecorativeFurniture(col, row, decorKey) : { ok: false, message: 'Furniture not found.' };
+          const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
+          const result = decorKey
+            ? placeDecorativeFurniture(col, row, decorKey)
+            : processingKey
+              ? placeProcessingFurniture(col, row, processingKey)
+              : { ok: false, message: 'Furniture not found.' };
           showToast(result.message, result.ok);
+          window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
+          if (result.ok && processingKey) {
+            refreshItemScroll();
+            saveFarmLayout();
+            saveMemberWorldData();
+          }
           if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
         }
         clearFurniturePlacementGhost();
@@ -21324,6 +21656,10 @@
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
         placeProcessing: placeProcessingFurniture,
+        moveProcessing: moveProcessingFurniture,
+        rotateProcessing: rotateProcessingFurniture,
+        removeProcessing: removeProcessingFurniture,
+        seatedNpcs: () => npcWalkers.filter(w => w._seatedStationKey).map(w => ({ id: w.rec?.id, stationId: w._seatedStationKey })),
         tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
         loadWorldLivestock: () => _loadWorldLivestock(),
         saveWorldLivestock: (list) => _saveWorldLivestock(list),
@@ -21473,6 +21809,7 @@
         weaponAbility,
         combatConfig,
         resolveWeaponHit,
+        clearVegetationInAttackCone,
         findAutoTarget,
         canPlayerOccupy,
         canOccupyAt,
@@ -21981,15 +22318,19 @@
       window.FurniturePlacer?.init({
         getCurrentArea: () => currentArea,
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
+        getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
         inventory,
         hasFarmPermission,
         armFurniturePlacement,
         getArmedFurniturePlacementKey,
         armFurnitureMove,
         getArmedFurnitureMoveId,
-        getPlacedFurniture: () => interiorFurnitureObjects.filter(o => o.area === currentArea),
-        removeFurniture: removeDecorativeFurniture,
-        rotateFurniture: rotateDecorativeFurniture,
+        getPlacedFurniture: () => [
+          ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
+          ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
+        ],
+        removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
+        rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
         esc,
         isPaused: () => paused,

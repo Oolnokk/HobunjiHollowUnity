@@ -1126,7 +1126,11 @@
       applyBoneGuideTransforms(chain, upperLength, lowerLength);
     }
 
-    return { group: root, update, dispose, applyRecordedLegPose, getSeatedPoseDebug: () => lastSeatedPoseDebug };
+    return {
+      group: root, update, dispose, applyRecordedLegPose,
+      standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
+      getSeatedPoseDebug: () => lastSeatedPoseDebug,
+    };
   }
 
   window.ProceduralLegAnimation = {

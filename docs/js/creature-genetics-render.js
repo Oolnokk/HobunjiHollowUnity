@@ -216,6 +216,15 @@
     return _maskPromise;
   }
 
+  function usesDrenkirraBodyStripesColorSwap(kind, genotype) {
+    const stripes = genotype?.bodystripes; // Supplies the inverted base/stripe colors for this one Drenkirra pattern.
+    return kind === 'drenkirra'
+      && !!genotype?.base?.color
+      && stripes?.enabled !== false
+      && stripes?.copies > 0
+      && !!stripes?.color;
+  }
+
   // Draw order matches SPECIES[kind].patterns — the same fixed layer order
   // the HTML lab uses (each species' patterns object insertion order).
   async function composeFrame(kind, frame, genotype) {
@@ -229,7 +238,9 @@
     const masks = await loadBaseMasks();
     const tMasks = performance.now();
     const mask = masks?.[kind]?.[frame];
-    const baseColor = genotype?.base?.color;
+    const storedBaseColor = genotype?.base?.color; // Retained for the bodystripes overlay when its Drenkirra color roles swap.
+    const bodyStripesColorSwap = usesDrenkirraBodyStripesColorSwap(kind, genotype); // Changes rendering only; the inherited genotype stays untouched.
+    const baseColor = bodyStripesColorSwap ? genotype.bodystripes.color : storedBaseColor; // Effective body fill color for this frame.
     // Only worth a warning if there was actually a base color to apply —
     // uumkaoii's genotype has no `base` layer at all (its two regions are
     // the fur/plates overlays below, not a recolored base), so baseColor is
@@ -251,7 +262,12 @@
       if (layer?.enabled === false || !(layer?.copies > 0) || !layer?.color) continue;
       const url = patternUrl(kind, patternId, frame);
       try {
-        const recolored = await recoloredPattern(url, layer.color);
+        // Drenkirra bodystripes invert only their own two color roles: the
+        // body uses their pattern color above and these stripes use the
+        // stored base color. Any other simultaneous pattern keeps its own
+        // ordinary layer.color.
+        const renderColor = bodyStripesColorSwap && patternId === 'bodystripes' ? storedBaseColor : layer.color; // Effective color for this overlay only.
+        const recolored = await recoloredPattern(url, renderColor);
         ctx.drawImage(recolored, 0, 0, c.width, c.height);
         drawnPatterns.push(patternId);
       } catch (e) {
@@ -264,7 +280,7 @@
     // fetch+decode (only nonzero the very first call all session), baseMs
     // covers the base sprite's network load + recolor pixel pass, patternMs
     // covers every enabled pattern layer's load+recolor combined.
-    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}] timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
   }
 

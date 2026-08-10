@@ -44,6 +44,12 @@
   const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
   const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
 
+  function mountAllowedInArea(area) {
+    // Used by summon and both update paths: every authored/farmhouse/cavern
+    // interior rejects mounts, while all exterior exploration areas allow them.
+    return area === 'farm' || area === 'town' || deps._isZoneArea(area);
+  }
+
   function toggleMount() {
     if (mountRideState === 'none') beginSummonMount();
     else if (mountRideState === 'mounted' || mountRideState === 'rushingIn') beginDismissMount();
@@ -52,6 +58,10 @@
   }
 
   function beginSummonMount() {
+    if (!mountAllowedInArea(deps.getCurrentArea())) {
+      deps.showToast('Mounts cannot be called indoors.', false);
+      return;
+    }
     const activeMountId = deps.getActiveMountId();
     const activeStabled = activeMountId ? deps.getStable().find(s => s.id === activeMountId) : null;
     if (!activeStabled || !deps.CREATURE_DB[activeStabled.kind]) {
@@ -103,6 +113,17 @@
       mountRideState = 'none'; mountRideEntity = null;
       return;
     }
+    const currentArea = deps.getCurrentArea();
+    if (!mountAllowedInArea(currentArea)) {
+      // Covers rushing, mounting, mounted, and dismissing states alike; no
+      // mount mesh is ever relocated into an interior scene.
+      deps.despawnCreature(m);
+      deps.companionObjects.delete(m);
+      mountRideState = 'none'; mountRideEntity = null;
+      deps.btnCallMount?.classList.remove('active');
+      window.__farmLog?.(`[mount] dismissed at indoor boundary (${currentArea})`, 'wildlife');
+      return;
+    }
     // An area transition (e.g. riding through the farm's town gate) can
     // land mid-ride-transition, not just mid-'mounted'. The 'mounted'
     // state's own area-change handling lives in updateMountedMovement
@@ -110,7 +131,6 @@
     // === 'mounted' — every other phase here needs the same relocation, or
     // the rider gets dragged toward stale old-area coordinates for the rest
     // of an in-flight lerp.
-    const currentArea = deps.getCurrentArea();
     if (m.areaId !== currentArea) {
       relocateMountForAreaChange(m);
       if (mountRideState === 'mountingUp' || mountRideState === 'dismountingDown') {
@@ -244,11 +264,10 @@
     const m = mountRideEntity;
     if (!m) { mountRideState = 'none'; return; }
     const currentArea = deps.getCurrentArea();
-    // Entering a building/interior that doesn't support companions/mounts
-    // would otherwise leave the mount's visuals frozen with no way to tick
-    // — force an instant dismount instead of letting the rider get stuck
-    // riding a creature that no longer exists in the scene they're in.
-    if (!(currentArea === 'farm' || currentArea === 'town' || deps._isZoneArea(currentArea) || deps._isCavernBuildingArea(currentArea))) {
+    // updateMountRide normally handles this first, but movement runs earlier
+    // in the frame; retain the same guard here for a mounted player crossing
+    // an indoor boundary during that ordering window.
+    if (!mountAllowedInArea(currentArea)) {
       deps.despawnCreature(m);
       deps.companionObjects.delete(m);
       mountRideState = 'none'; mountRideEntity = null;

@@ -234,6 +234,17 @@
     deps.saveWorldLivestock(list);
     return { ok: true, message: `${rec.name} unassigned from its vat.` };
   }
+  function retargetAssignments(oldVatId, newVatId = null) {
+    const list = deps.loadWorldLivestock();
+    let changed = 0;
+    for (const rec of list) {
+      if (rec.assignedVatId !== oldVatId) continue;
+      rec.assignedVatId = newVatId;
+      changed++;
+    }
+    if (changed) deps.saveWorldLivestock(list);
+    return changed;
+  }
   // Runs the squeezing recipe for a raw dew color directly into inventory
   // (bypassing the dig-up-a-pile step) and plays the vat's own processing
   // VFX burst. Returns false (no state change) if the vat no longer
@@ -264,6 +275,7 @@
     findVatById,
     assignToVat,
     unassignFromVat,
+    retargetAssignments,
     autoSqueezeAtVat,
   };
 })();
