@@ -13,7 +13,7 @@
   const PANEL_ID = 'bldgSubtleElevationPanel'; // Identifies the injected Building inspector controls across native rerenders.
   const footprintLoads = new Map(); // Deduplicates piece JSON requests while several UI events target one building.
   let core = null; // Set once BuildingSubtleElevation is loaded; all rebuilds route through it.
-  let observer = null; // Watches the native Building list/panel because renderBuildingPanel replaces their contents.
+  let observer = null; // Watches the native Building list because renderBuildingPanel replaces its selection markup.
   let basePaintActive = false; // True while the native Subtle elevation brush is editing the preserved hand-painted base layer.
   let syntheticSave = false; // Prevents our refresh click from recursively scheduling another rebuild.
   let renderQueued = false; // Coalesces MutationObserver bursts into one injected-panel refresh.
@@ -97,6 +97,7 @@
 
   async function ensureFootprintShape(building) {
     if (!core || !building) return null;
+    const ownerMap = (workspace()?.maps || []).find(map => (map.buildings || []).includes(building)) || activeMap(); // Rebuilds the map that actually owns this async-loaded building.
     if (Array.isArray(building.footprintShape?.cells) && building.footprintShape.cells.length) return building.footprintShape;
     if (!building.pieceFile) return null;
     const cacheKey = `${building.id || ''}|${building.pieceFile}`;
@@ -113,7 +114,7 @@
           building.footprintShape = shape;
           building.footprintW = shape.bboxW;
           building.footprintD = shape.bboxD;
-          core.rebuildMapVisualHeights(activeMap());
+          core.rebuildMapVisualHeights(ownerMap);
           persistWorkspace();
         }
         return shape;
@@ -296,9 +297,10 @@
 
   function installObserver() {
     if (observer) return;
-    const root = document.getElementById('buildingsSection') || document.body;
+    const root = document.getElementById('buildingList'); // Native list rerenders cover selection/add/remove without observing our injected panel and self-triggering forever.
+    if (!root) return;
     observer = new MutationObserver(queueRender);
-    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
   function exposeDebugApi() {
