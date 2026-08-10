@@ -13195,18 +13195,13 @@
           .catch(err => debugLog('Shingle GLB error: ' + err.message, 'warn'));
       }
 
-      // Retints the shared brick + shingle GLB templates to the same tan/grey
-      // finish town buildings use (town-zone-buildings.js's own
-      // _applyBuildingGlbTints, gated on the same window.__hobunjiGlbTintApplied
-      // flag so whichever code path finishes its loads first — farm or town —
-      // does the retint exactly once). Without this, a farm-only session that
-      // never visits town leaves barns/house pieces on the untinted default
-      // brick/shingle colors forever, since nothing else triggers it.
+      // Applies the farmhouse PNG materials to the shared brick + shingle
+      // templates. The material APIs cache the request, so repeating it at
+      // each GLB-ready boundary is safe and prevents town loads from replacing
+      // a textured template with a freshly-loaded baked-material copy.
       if (typeof HousePieceGen !== 'undefined') {
         Promise.all([houseWallBuilder.loadDefaultGlb(), HousePieceGen.loadShingleGlb('assets/models/')])
           .then(() => {
-            if (window.__hobunjiGlbTintApplied) return;
-            window.__hobunjiGlbTintApplied = true;
             houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
             HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
           })

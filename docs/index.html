@@ -6,8 +6,8 @@
   <title>Tropical Wet/Dry Trench Farm</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20260712d"></script>
-  <script src="js/HousePieceGen.js?v=20260712d"></script>
+  <script src="js/WallBuilder.js?v=20260809a"></script>
+  <script src="js/HousePieceGen.js?v=20260809a"></script>
   <script src="js/interior-scene-builder.js?v=20260808a"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -285,7 +285,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20260809a"></script>
+  <script src="js/town-zone-buildings.js?v=20260809b"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -1681,7 +1681,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260809e"></script>
+  <script src="game.js?v=20260809f"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

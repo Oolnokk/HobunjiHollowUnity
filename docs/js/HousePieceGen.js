@@ -48,6 +48,8 @@
   // ── Shingle GLB singleton ───────────────────────────────────────────────────
   var _tpl = null;      // { scene, bone, boneLength, boneFrameInverse }
   var _tplProm = null;
+  var _pendingShingleTint = null; // Applied after the shared GLB loads; used by every farmhouse/town roof.
+  var _appliedShingleTintKey = ''; // Prevents duplicate texture work when several building systems request the same PNG.
 
   function loadShingleGlb(basePath) {
     if (_tpl)     return Promise.resolve(_tpl);
@@ -57,6 +59,7 @@
       var loader = new THREE.GLTFLoader();
       loader.load(url, function (gltf) {
         _tpl = _analyzeShingle(gltf.scene);
+        if (_pendingShingleTint) tintShingleMaterial(_pendingShingleTint.pngPath, _pendingShingleTint.fillColor);
         resolve(_tpl);
       }, undefined, reject);
     });
@@ -74,7 +77,11 @@
   // clone materials), so tinting the template's material once retints every
   // shingle instance — already placed or placed later.
   function tintShingleMaterial(pngPath, fillColor) {
+    _pendingShingleTint = { pngPath: pngPath, fillColor: fillColor };
     if (!_tpl) return;
+    var tintKey = pngPath + '|' + (fillColor || '');
+    if (_appliedShingleTintKey === tintKey) return;
+    _appliedShingleTintKey = tintKey;
     var mats = new Set();
     _tpl.scene.traverse(function (o) {
       if (!o.isMesh || !o.material) return;
@@ -93,7 +100,7 @@
       finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
       finalTex.needsUpdate = true;
       mats.forEach(function (m) { m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
-    }, undefined, function () {});
+    }, undefined, function () { if (_appliedShingleTintKey === tintKey) _appliedShingleTintKey = ''; });
   }
 
   // Some authored GLBs (e.g. HighlandLongshingle_boned.glb's shell meshes)

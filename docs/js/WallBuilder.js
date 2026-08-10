@@ -335,6 +335,14 @@
     this.glbBasePath = opts.glbBasePath || 'assets/models/';
     this.recipeLibrary = new Map();
     this.glbLibrary = new Map();
+    // Reused by every farmhouse/town rebuild so a later fetch cannot replace
+    // the already PNG-textured shared brick material with a fresh GLB copy.
+    this._defaultGlbLoadPromise = null;
+    // Remembered here so a tint requested before the GLB is ready is applied
+    // as soon as the shared brick template finishes loading.
+    this._defaultGlbTintRequest = null;
+    this._defaultGlbTintKey = '';
+    this._defaultGlbTintModel = null;
     this.defaultRecipeId = BUILTIN_DEFAULT_RECIPE_ID;
     this.recipeLibrary.set(BUILTIN_DEFAULT_RECIPE_ID, {
       version: 1, seed: 'builtin_default',
@@ -391,7 +399,18 @@
 
   /** Fetch glbBasePath + 'Roughbrick1.glb'. Returns Promise<name>. */
   WallBuilder.prototype.loadDefaultGlb = function () {
-    return this.loadGlbFromUrl(this.glbBasePath + WALL_DEFAULT_GLB_NAME, WALL_DEFAULT_GLB_NAME);
+    if (this._defaultGlbLoadPromise) return this._defaultGlbLoadPromise;
+    this._defaultGlbLoadPromise = this.loadGlbFromUrl(this.glbBasePath + WALL_DEFAULT_GLB_NAME, WALL_DEFAULT_GLB_NAME)
+      .then((name) => {
+        const request = this._defaultGlbTintRequest;
+        if (request) this.tintDefaultGlb(request.pngPath, request.fillColor);
+        return name;
+      })
+      .catch((error) => {
+        this._defaultGlbLoadPromise = null;
+        throw error;
+      });
+    return this._defaultGlbLoadPromise;
   };
 
   /** Register a brown box placeholder so build() can run without a real GLB. */
@@ -415,8 +434,13 @@
    * anywhere the default GLB is used.
    */
   WallBuilder.prototype.tintDefaultGlb = function (pngPath, fillColor) {
+    this._defaultGlbTintRequest = { pngPath, fillColor };
     const model = this.glbLibrary.get(WALL_DEFAULT_GLB_NAME);
     if (!model) return;
+    const tintKey = `${pngPath}|${fillColor || ''}`;
+    if (this._defaultGlbTintKey === tintKey && this._defaultGlbTintModel === model.mesh) return;
+    this._defaultGlbTintKey = tintKey;
+    this._defaultGlbTintModel = model.mesh;
     const mats = Array.isArray(model.mesh.material) ? model.mesh.material : [model.mesh.material];
     new THREE.TextureLoader().load(pngPath, (tex) => {
       const rgb = fillColor && root.parseHexColor && root.parseHexColor(fillColor);
@@ -430,7 +454,12 @@
       finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
       finalTex.needsUpdate = true;
       mats.forEach((m) => { if (!m) return; m.map = finalTex; if (m.color) m.color.setHex(0xffffff); m.needsUpdate = true; });
-    }, undefined, () => {});
+    }, undefined, () => {
+      if (this._defaultGlbTintModel === model.mesh) {
+        this._defaultGlbTintKey = '';
+        this._defaultGlbTintModel = null;
+      }
+    });
   };
 
   /**
