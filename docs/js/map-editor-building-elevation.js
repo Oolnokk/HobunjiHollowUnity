@@ -12,6 +12,7 @@
   const PRESET_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level1_radius1_v1'; // Original one-time overwrite of older off/0/0 test values.
   const RADIUS_ZERO_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level1_radius0_v2'; // Set only by the briefly-published radius-0 preset.
   const RADIUS_ONE_RESTORE_KEY = 'hobunji_map_editor_building_elevation_radius1_restore_v3'; // One-time repair for browsers that opened that radius-0 build.
+  const HEIGHT_HALF_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level05_v4'; // One-time conversion from the level-1 preset to level 0.5.
   const CORE_URL = '../../js/building-subtle-elevation.js'; // Loads the pure footprint/height math used by this controller and tests.
   const PANEL_ID = 'bldgSubtleElevationPanel'; // Identifies the injected Building inspector controls across native rerenders.
   const footprintLoads = new Map(); // Deduplicates piece JSON requests while several UI events target one building.
@@ -130,6 +131,28 @@
     }
     if (changed) persistWorkspace();
     try { localStorage.setItem(RADIUS_ONE_RESTORE_KEY, '1'); } catch (_) {}
+    return changed;
+  }
+
+  function migrateHeightHalfOnce() {
+    if (!core) return false;
+    try {
+      if (localStorage.getItem(HEIGHT_HALF_MIGRATION_KEY) === '1') return false;
+    } catch (_) {}
+    const ws = workspace();
+    if (!Array.isArray(ws?.maps)) return false;
+
+    let changed = false;
+    for (const map of ws.maps) {
+      for (const building of (Array.isArray(map?.buildings) ? map.buildings : [])) {
+        const existing = core.normalizeOverride(building.subtleElevationOverride);
+        building.subtleElevationOverride = { ...existing, value: 0.5 };
+        changed = true;
+      }
+      if ((map.buildings || []).length) core.rebuildMapVisualHeights(map);
+    }
+    if (changed) persistWorkspace();
+    try { localStorage.setItem(HEIGHT_HALF_MIGRATION_KEY, '1'); } catch (_) {}
     return changed;
   }
 
@@ -392,6 +415,7 @@
     if (window.MapEditorBuildingElevation) return;
     migratePresetOnce();
     restoreRadiusOneAfterRadiusZeroPreset();
+    migrateHeightHalfOnce();
     ensureDefaultsForWorkspace();
     installEventHooks();
     installObserver();
