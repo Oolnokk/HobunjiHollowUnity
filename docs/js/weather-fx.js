@@ -72,26 +72,28 @@
   const LANTERN_CLARITY_TILES = 1.3; // fully-cleared radius, in tiles
   const LANTERN_SHINE_TILES   = 5.0; // total falloff radius, in tiles
 
-  function _lanternScreenRadius(tx, tz, tiles) {
-    const c = deps.worldToOverlay(tx, 0.5, tz);
-    const e = deps.worldToOverlay(tx + tiles, 0.5, tz);
+  function _lightScreenRadius(tx, tz, worldY, tiles) {
+    const c = deps.worldToOverlay(tx, worldY, tz);
+    const e = deps.worldToOverlay(tx + tiles, worldY, tz);
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
   function drawLanternMasks() {
     const lctx = deps.lctx;
-    const carriers = [{ x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE }];
+    // Each carrier's y is used below to project its mask at avatar height;
+    // player/NPC movement code already keeps these world positions grounded.
+    const carriers = [{ x: deps.player.x / deps.TILE, y: deps.getPlayerWorldY() + 0.5, z: deps.player.y / deps.TILE }];
     const currentArea = deps.getCurrentArea();
     for (const w of deps.npcWalkers) {
       if (w.area === currentArea && w.rec?.tags?.includes('watch')) {
-        carriers.push({ x: w.root.position.x, z: w.root.position.z });
+        carriers.push({ x: w.root.position.x, y: w.root.position.y + 0.5, z: w.root.position.z });
       }
     }
     lctx.globalCompositeOperation = 'destination-out';
     for (const c of carriers) {
-      const center = deps.worldToOverlay(c.x, 0.5, c.z);
+      const center = deps.worldToOverlay(c.x, c.y, c.z);
       if (!center.visible) continue;
-      const shineR = _lanternScreenRadius(c.x, c.z, LANTERN_SHINE_TILES);
+      const shineR = _lightScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES);
       if (!(shineR > 0)) continue;
       const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
       const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
@@ -107,6 +109,50 @@
     lctx.globalCompositeOperation = 'source-over';
   }
 
+  // Furniture uses the lantern mask technique, scaled by each real Three.js
+  // light's range/intensity, plus a restrained warm glow near the source.
+  function drawFurnitureLightMasks() {
+    const lctx = deps.lctx;
+    const visibleLights = [];
+    for (const light of deps.getFurnitureLightSources()) {
+      const center = deps.worldToOverlay(light.x, light.y, light.z);
+      if (!center.visible) continue;
+      const shineR = _lightScreenRadius(light.x, light.z, light.y, light.distance);
+      if (!(shineR > 0)) continue;
+      visibleLights.push({ light, center, shineR });
+    }
+
+    lctx.globalCompositeOperation = 'destination-out';
+    for (const { light, center, shineR } of visibleLights) {
+      const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
+      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+      const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
+      grad.addColorStop(0,                              `rgba(0,0,0,${strength})`);
+      grad.addColorStop(clarityFrac,                    `rgba(0,0,0,${strength * 0.78})`);
+      grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      grad.addColorStop(1,                              'rgba(0,0,0,0)');
+      lctx.fillStyle = grad;
+      lctx.beginPath();
+      lctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
+      lctx.fill();
+    }
+
+    lctx.globalCompositeOperation = 'source-over';
+    for (const { light, center, shineR } of visibleLights) {
+      const glowR = shineR * 0.62;
+      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
+      const { r, g, b } = light.color;
+      const glow = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
+      glow.addColorStop(0,   `rgba(${r},${g},${b},${glowAlpha})`);
+      glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
+      glow.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+      lctx.fillStyle = glow;
+      lctx.beginPath();
+      lctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
+      lctx.fill();
+    }
+  }
+
   let _lastLightingOverlayTime = 0;
   function drawLightingOverlay() {
     const lctx = deps.lctx;
@@ -120,9 +166,11 @@
 
     const currentArea = deps.getCurrentArea();
     if (currentArea === 'interior' || deps._isBuildingArea(currentArea)) {
-      // Interior/building: no outdoor day/night overlay — just warm interior ambience
-      lctx.fillStyle = 'rgba(80,40,10,0.08)';
+      // A warm dim layer gives furniture masks something visible to clear,
+      // while the underlying Three.js PointLights still shade nearby models.
+      lctx.fillStyle = 'rgba(32,20,10,0.28)';
       lctx.fillRect(0, 0, rect.width, rect.height);
+      drawFurnitureLightMasks();
       if (sceneTransAlpha > 0) {
         lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
         lctx.fillRect(0, 0, rect.width, rect.height);
@@ -145,6 +193,7 @@
     lctx.globalCompositeOperation = 'source-over';
 
     drawLanternMasks();
+    drawFurnitureLightMasks();
 
     // Lightning flash on lighting canvas too
     if (lightningAlpha > 0) {

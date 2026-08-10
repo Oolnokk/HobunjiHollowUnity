@@ -6,8 +6,8 @@
   <title>Tropical Wet/Dry Trench Farm</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
-  <script src="js/WallBuilder.js?v=20260712d"></script>
-  <script src="js/HousePieceGen.js?v=20260712d"></script>
+  <script src="js/WallBuilder.js?v=20260809a"></script>
+  <script src="js/HousePieceGen.js?v=20260809a"></script>
   <script src="js/interior-scene-builder.js?v=20260808a"></script>
   <script src="js/building-door.js?v=20260725a"></script>
   <script src="js/tile-pathfinding.js?v=20260808a"></script>
@@ -79,7 +79,7 @@
   <script src="onboarding.js?v=20260728c"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260712d"></script>
-  <script src="js/combat/resource-rings.js?v=20260804a"></script>
+  <script src="js/combat/resource-rings.js?v=20260809a"></script>
   <script src="js/combat/combat-core.js?v=20260712d"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
        runtime playback onto the player's existing procedural-leg-animation.js
@@ -285,7 +285,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20260807a"></script>
+  <script src="js/town-zone-buildings.js?v=20260809b"></script>
   <!-- Dev Tools: Testing Arena teleport + creature/bandit/foliage spawner
        panel (window.DevSpawner) — reads window.CreatureGenetics/
        window.CreatureGeneticsRender/window.BanditCombat/
@@ -310,7 +310,7 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20260807a"></script>
+  <script src="js/weather-fx.js?v=20260809b"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20260809f"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status

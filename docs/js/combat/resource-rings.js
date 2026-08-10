@@ -51,6 +51,9 @@
   // gets the same black outline (see addSegmentOutlines).
   const AFFLICTION_COLORS = Object.fromEntries(Object.entries(ringConfig.afflictionColors)
     .map(([id, color]) => [id, parseCssColor(color, 0xffffff)]));
+  // Used by makeArcMesh so every ring layer renders above ordinary ground
+  // effects but behind character/creature avatar planes (renderOrder 2).
+  const RESOURCE_RING_RENDER_ORDER = 1;
 
   function makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments) {
     const span = endDeg - startDeg;
@@ -106,7 +109,9 @@
       ...(additive ? { blending: THREE.AdditiveBlending } : {}),
     });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = Math.round(yOffset * 100000);
+    // Preserve the ring's tiny Y-based layer ordering without letting those
+    // offsets turn into four-digit render orders that paint over avatars.
+    mesh.renderOrder = RESOURCE_RING_RENDER_ORDER + yOffset;
     return mesh;
   }
 
