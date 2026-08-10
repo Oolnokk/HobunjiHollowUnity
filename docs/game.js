@@ -2487,6 +2487,15 @@
         return null;
       }
 
+      // Furniture lights are tagged so WeatherFX can project their real
+      // world-space positions into the same soft mask used by lanterns.
+      function makeFurniturePointLight(lightDef, x, y, z) {
+        const light = new THREE.PointLight(lightDef.color, lightDef.intensity, lightDef.distance);
+        light.position.set(x, y, z);
+        light.userData.furnitureLightMask = true;
+        return light;
+      }
+
       function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea, rotYDeg = 0) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
@@ -2500,8 +2509,7 @@
 
         let light = null;
         if (def.light) {
-          light = new THREE.PointLight(def.light.color, def.light.intensity, def.light.distance);
-          light.position.set(col + 0.5, def.light.height || 0.6, row + 0.5);
+          light = makeFurniturePointLight(def.light, col + fw * 0.5, def.light.height || 0.6, row + fd * 0.5);
           targetScene.add(light);
         }
         const sfxSource = window.Music?.registerFurnitureSfxSource(area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
@@ -2574,7 +2582,7 @@
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         obj.col = col; obj.row = row;
         obj.mesh.position.set(col + fw * 0.5, 0, row + fd * 0.5);
-        if (obj.light) obj.light.position.set(col + 0.5, def?.light?.height || 0.6, row + 0.5);
+        if (obj.light) obj.light.position.set(col + fw * 0.5, def?.light?.height || 0.6, row + fd * 0.5);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
@@ -2643,7 +2651,7 @@
           obj.ownerPieceId = pieceId; obj.localCol = localCol; obj.localRow = localRow;
           obj.col = newRect.col * 2 + localCol; obj.row = newRect.row * 2 + localRow;
           obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
-          if (obj.light) obj.light.position.set(obj.col + 0.5, def?.light?.height || 0.6, obj.row + 0.5);
+          if (obj.light) obj.light.position.set(obj.col + fw * 0.5, def?.light?.height || 0.6, obj.row + fd * 0.5);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
           registerChairNpcStation(obj.key, obj.col, obj.row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
@@ -9112,7 +9120,14 @@
             if (!t.targetMapId) {
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'farm', targetCol: 17, targetRow: 0 });
             } else if (_isBuildingArea(t.targetMapId)) {
-              layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'building', targetMapId: t.targetMapId });
+              layout.transitions.push({
+                id: t.id, label: t.label, area: 'town', col: t.col, row: t.row,
+                target: 'building', targetMapId: t.targetMapId,
+                // Retained so the building renderer can keep this spot on
+                // the piece's authored door after rotations or old exports.
+                buildingId: t.buildingId || '',
+                targetSpotId: t.targetSpotId || '',
+              });
             } else if (allZoneMapIds.has(t.targetMapId)) {
               layout.transitions.push({ id: t.id, label: t.label, area: 'town', col: t.col, row: t.row, target: 'zone', targetMapId: t.targetMapId });
             }
@@ -9369,6 +9384,11 @@
               _markFurnitureEdgeId(ph);
               bScene.add(ph);
               window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
+            }
+            // Building-map furniture bypasses makeDecorativeFurnitureMesh,
+            // so add its configured lamp/candle light explicitly here.
+            if (def?.light) {
+              bScene.add(makeFurniturePointLight(def.light, bx, by + (def.light.height || 0.6), bz));
             }
             // Furniture whose itemKey has a BUILDING_FIXTURE_INTERACTABLES
             // factory (e.g. the Alchemy Table, the Bulletin Board) also gets
@@ -10111,6 +10131,9 @@
           const ring = new THREE.Mesh(ringGeo, ringMat);
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(t.col + 0.5, tileSurfaceY((tile?.type) || TileType.GRASS) + 0.02, t.row + 0.5);
+          // Used by the async building pass to move a stale linked marker
+          // onto the door it belongs to without leaving an orphan ring.
+          ring.userData.transitionId = t.id;
           townScene.add(ring);
         }
 
@@ -12316,7 +12339,7 @@
       function spawnActionParticles(col, row, action, ok) {
         const profile = actionFxProfile(action, ok);
         const agrid = getActiveGrid();
-        const baseY = tileSurfaceY(agrid[row][col].type) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
+        const baseY = activeSurfaceYAtWorld(col + 0.5, row + 0.5) + 0.16 + Math.max(0, agrid[row][col].water * WATER_UNIT);
         actionTileEffects.push({ col, row, action, ok, age: 0, maxAge: ok ? 0.58 : 0.44, color: profile.ring });
         while (actionTileEffects.length > 8) actionTileEffects.shift();
         if (activeTool === 'weapon' && action === 'cut') spawnWeaponTrailEffect(action, ok);
@@ -12494,6 +12517,15 @@
         };
       }
 
+      // Used by projected action FX, targeting guides, camera aiming, and
+      // other player-ground consumers so each shares the same ramp,
+      // plateau-tier, and subtle visual-height result as the player avatar.
+      function activeSurfaceYAtWorld(worldX, worldZ) {
+        if (_isZoneArea(currentArea)) return surfaceYAtWorld(currentArea, worldX, worldZ);
+        const tile = getActiveGrid()?.[Math.floor(worldZ)]?.[Math.floor(worldX)];
+        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+      }
+
       function drawCombatConeReticle() {
         const cfg = combatConfig().combatConeReticle || {};
         if (cfg.enabled === false || activeTool !== 'weapon' || !findAutoTarget()) return;
@@ -12502,7 +12534,7 @@
         const rangeTiles = abil.rangePx / TILE;
         const baseX = player.x / TILE;
         const baseZ = player.y / TILE;
-        const y = tileSurfaceY(getActiveTileAt(Math.floor(baseX), Math.floor(baseZ)).type) + 0.035;
+        const y = activeSurfaceYAtWorld(baseX, baseZ) + 0.035;
         const alpha = Number(cfg.alpha) || 0.24;
         const lineWidth = Number(cfg.lineWidth) || 2;
         const color = cfg.color || '#d9ffe0';
@@ -12857,7 +12889,7 @@
         for (const fx of actionTileEffects) {
           const t = fx.age / fx.maxAge;
           const tile = getActiveGrid()[fx.row][fx.col];
-          const y = tileSurfaceY(tile.type) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
+          const y = activeSurfaceYAtWorld(fx.col + 0.5, fx.row + 0.5) + 0.06 + Math.max(0, tile.water * WATER_UNIT);
           const center = worldToOverlay(fx.col + 0.5, y + 0.02, fx.row + 0.5);
           if (!center.visible) continue;
           const east = worldToOverlay(fx.col + 1.0, y + 0.02, fx.row + 0.5);
@@ -13412,18 +13444,13 @@
           .catch(err => debugLog('Shingle GLB error: ' + err.message, 'warn'));
       }
 
-      // Retints the shared brick + shingle GLB templates to the same tan/grey
-      // finish town buildings use (town-zone-buildings.js's own
-      // _applyBuildingGlbTints, gated on the same window.__hobunjiGlbTintApplied
-      // flag so whichever code path finishes its loads first — farm or town —
-      // does the retint exactly once). Without this, a farm-only session that
-      // never visits town leaves barns/house pieces on the untinted default
-      // brick/shingle colors forever, since nothing else triggers it.
+      // Applies the farmhouse PNG materials to the shared brick + shingle
+      // templates. The material APIs cache the request, so repeating it at
+      // each GLB-ready boundary is safe and prevents town loads from replacing
+      // a textured template with a freshly-loaded baked-material copy.
       if (typeof HousePieceGen !== 'undefined') {
         Promise.all([houseWallBuilder.loadDefaultGlb(), HousePieceGen.loadShingleGlb('assets/models/')])
           .then(() => {
-            if (window.__hobunjiGlbTintApplied) return;
-            window.__hobunjiGlbTintApplied = true;
             houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
             HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
           })
@@ -13501,8 +13528,7 @@
           interiorScene.add(mesh);
           let light = null;
           if (hearthDef.light) {
-            light = new THREE.PointLight(hearthDef.light.color, hearthDef.light.intensity, hearthDef.light.distance);
-            light.position.set(h.cx, hearthDef.light.height || 0.6, h.cz);
+            light = makeFurniturePointLight(hearthDef.light, h.cx, hearthDef.light.height || 0.6, h.cz);
             interiorScene.add(light);
           }
           return { ...h, mesh, light };
@@ -13895,9 +13921,7 @@
       // assuming a flat Y=0 ground plane, or a player standing on an elevated
       // tier renders far below where the camera is looking.
       function _playerGroundY() {
-        const col = Math.floor(player.x / TILE), row = Math.floor(player.y / TILE);
-        const tile = getActiveGrid()?.[row]?.[col];
-        return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
+        return activeSurfaceYAtWorld(player.x / TILE, player.y / TILE);
       }
       function _snapCameraTarget() {
         camTargetX = player.x / TILE;
@@ -16265,6 +16289,9 @@
       // Shared by the player's own equipped-tool mesh (rebuildToolMeshes), a
       // bandit's weapon (makeBanditToolHolder), and an NPC work station's
       // displayed tool.
+      // Used by both tool planes and held bag-item planes to keep them above
+      // resource-ring layers (<1.1) while remaining below avatar planes (2+).
+      const HELD_OBJECT_RENDER_ORDER = 1.5;
       function makeToolPlaneMesh(itemKey, opts = {}) {
         if (!itemKey || !toolTextures[itemKey]) return null;
         const def  = TOOL_ITEM_DEFS[itemKey];
@@ -16288,6 +16315,7 @@
         // bottom of the handle, meant to be thrust rather than swung like
         // the blade) faces forward instead when built for the pick slot.
         plane.rotation.x = opts.flip ? Math.PI / 2 : -Math.PI / 2;
+        plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         g.add(plane);
         // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
         // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
@@ -16364,7 +16392,7 @@
           side: THREE.DoubleSide,
         });
         const plane = new THREE.Mesh(geo, mat);
-        plane.renderOrder = 3;
+        plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
         return plane;
       }
 
@@ -21792,6 +21820,32 @@
         threeContainer,
         getCamX: () => camX,
         getCamY: () => camY,
+        // Used by WeatherFX's player lantern mask to follow the avatar's
+        // smoothed world elevation instead of projecting from flat Y=0.
+        getPlayerWorldY: () => playerMesh.position.y,
+        // Lighting is sampled at 10 Hz, so collecting the active scene's
+        // tagged furniture lights here stays cheap and avoids stale coords.
+        getFurnitureLightSources: () => {
+          const sources = [];
+          const worldPosition = new THREE.Vector3();
+          getActiveScene()?.traverse(obj => {
+            if (!obj.isPointLight || !obj.userData?.furnitureLightMask) return;
+            obj.getWorldPosition(worldPosition);
+            sources.push({
+              x: worldPosition.x,
+              y: worldPosition.y,
+              z: worldPosition.z,
+              distance: obj.distance,
+              intensity: obj.intensity,
+              color: {
+                r: Math.round(obj.color.r * 255),
+                g: Math.round(obj.color.g * 255),
+                b: Math.round(obj.color.b * 255),
+              },
+            });
+          });
+          return sources;
+        },
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
       });
@@ -22026,6 +22080,7 @@
         getTownBuildingGroups: () => _townBuildingGroups,
         setTownBuildingGroups: (v) => { _townBuildingGroups = v; },
         getWorldTownTransitions: () => worldTownTransitions,
+        getTownGrid: () => townGrid,
         houseWallBuilder,
         INTERIOR_COLS,
         INTERIOR_ROWS,

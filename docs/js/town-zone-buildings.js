@@ -24,15 +24,11 @@
   // reference the same material object (see WallBuilder.build's InstancedMesh
   // and HousePieceGen's _tpl.scene.clone), so retinting each template's
   // material once here covers every building anywhere, town or wilderness —
-  // no per-building or per-zone work needed. Gated on the same
-  // window.__hobunjiGlbTintApplied flag game.js's own early tint kickoff
-  // uses (it starts the identical retint as soon as its farm-scoped GLB
-  // loads resolve, so a farm-only session that never visits town still gets
-  // matching materials) — whichever path finishes its loads first does the
-  // retint exactly once; this path is a safe no-op if the other already ran.
+  // no per-building or per-zone material copies are needed. The material
+  // APIs cache these requests themselves. Calling this after
+  // every GLB-ready boundary is intentional: town and farmhouse rebuilds
+  // cannot race and leave a newly loaded template on its baked material.
   function _applyBuildingGlbTints() {
-    if (window.__hobunjiGlbTintApplied) return;
-    window.__hobunjiGlbTintApplied = true;
     deps.houseWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#4d4d4d');
     HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
   }
@@ -164,8 +160,30 @@
           eRow = Math.min(TROWS_ENT - 1, bldg.gridZ + (bldg.footprintD ?? 1));
         }
         const eid = 'bldg_entrance_' + bldg.id;
-        // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
         const worldTownTransitions = deps.getWorldTownTransitions();
+        // A linked transition can carry coordinates derived from an older
+        // piece shape. Snap it to the freshly loaded authored door and move
+        // its already-rendered marker too, eliminating both the dead doorway
+        // and the detached live teleport without duplicating either one.
+        const linkedEntry = worldTownTransitions.find(t =>
+          t.target === 'building' && t.buildingId === bldg.id);
+        if (linkedEntry && (linkedEntry.col !== eCol || linkedEntry.row !== eRow)) {
+          const oldCol = linkedEntry.col;
+          const oldRow = linkedEntry.row;
+          linkedEntry.col = eCol;
+          linkedEntry.row = eRow;
+          const linkedRing = townScene2.children.find(o => o.userData?.transitionId === linkedEntry.id);
+          if (linkedRing) {
+            const entranceTile = deps.getTownGrid()?.[eRow]?.[eCol];
+            linkedRing.position.set(
+              eCol + 0.5,
+              deps.tileSurfaceY(entranceTile?.type || deps.TileType.GRASS) + 0.02,
+              eRow + 0.5
+            );
+          }
+          deps.debugLog(`Building entrance ${bldg.id}: corrected (${oldCol},${oldRow}) -> (${eCol},${eRow})`);
+        }
+        // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
         const hasWorkspaceEntry = worldTownTransitions.some(t =>
           t.target === 'building' &&
           Number.isFinite(t.col) && Number.isFinite(t.row) &&
