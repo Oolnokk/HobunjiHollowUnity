@@ -110,14 +110,8 @@
 })();
 
 // Town subtle-height followers for instanced ground cover and paved roads.
-//
-// Town grass is not a hierarchy of per-tile groups: it is one InstancedMesh
-// whose matrices are written by _fillBillboardInstances (28 instances per
-// grass tile). Likewise, paved roads are WallBuilder instance groups which are
-// generated, then compacted by the path-corridor filter before being added to
-// the scene. Work at those real matrix boundaries rather than guessing from
-// scene hierarchy. The shared visualHeights field remains the only elevation
-// authority; this code only makes these two renderers follow it.
+// Town grass is one InstancedMesh; paved roads are WallBuilder instance groups
+// compacted by the path-corridor filter. Work at those real matrix boundaries.
 (() => {
   'use strict';
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return;
@@ -127,16 +121,35 @@
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const surfaceNormal = new THREE.Vector3(0, 1, 0);
+  const slopeQuat = new THREE.Quaternion();
+  const SLOPE_SAMPLE_OFFSET = 0.20;
 
   function sampleTownHeight(x, z) {
     const fn = window.HobunjiTownSubtleElevation?.sampleHeightAt;
     return typeof fn === 'function' ? (Number(fn(x, z)) || 0) : 0;
   }
 
+  // Approximate the normal of the exact bilinearly-sampled visual-height field
+  // around this brick. A small symmetric footprint smooths cell-boundary kinks
+  // without flattening the authored radius transition.
+  function sampleTownSurfaceNormal(x, z) {
+    const d = SLOPE_SAMPLE_OFFSET;
+    const hLeft = sampleTownHeight(x - d, z);
+    const hRight = sampleTownHeight(x + d, z);
+    const hBack = sampleTownHeight(x, z - d);
+    const hFront = sampleTownHeight(x, z + d);
+    const dx = (hRight - hLeft) / (2 * d);
+    const dz = (hFront - hBack) / (2 * d);
+    surfaceNormal.set(-dx, 1, -dz);
+    if (surfaceNormal.lengthSq() < 1e-10) surfaceNormal.copy(worldUp);
+    else surfaceNormal.normalize();
+    return surfaceNormal;
+  }
+
   // Path panels have an exact authored id. Tag the returned WallBuilder group
-  // immediately, before game.js performs its corridor compaction. The tag then
-  // survives that compaction and gives the town-scene hook a precise identity;
-  // no group-name/cull-sphere inference is required.
+  // before game.js performs its corridor compaction; the tag survives it.
   function patchWallBuilderPathTag() {
     const proto = window.WallBuilder?.prototype;
     if (!proto || proto.__hobunjiPathSurfaceTagPatched || typeof proto.build !== 'function') return;
@@ -153,9 +166,6 @@
   }
 
   function isTownBillboardMesh(obj) {
-    // The farm/town/zone grass builders all identify their actual InstancedMesh
-    // this way. Restricting the adjustment to the town scene below keeps farm
-    // and wilderness matrices untouched.
     return !!(obj?.isInstancedMesh && obj.userData?.isBillboard === true && obj.count > 0);
   }
 
@@ -164,9 +174,6 @@
     const requiredLength = mesh.instanceMatrix?.array?.length || 0;
     if (!requiredLength) return 0;
     if (!mesh.userData.hobunjiTownSubtleBaseMatrices || mesh.userData.hobunjiTownSubtleBaseMatrices.length !== requiredLength) {
-      // Capture the plateau-aware matrices already authored by
-      // _fillBillboardInstances. Re-running this follower is idempotent because
-      // every subsequent solve starts from these immutable originals.
       mesh.userData.hobunjiTownSubtleBaseMatrices = new Float32Array(mesh.instanceMatrix.array);
     }
     const base = mesh.userData.hobunjiTownSubtleBaseMatrices;
@@ -199,9 +206,8 @@
       const requiredLength = inst.instanceMatrix?.array?.length || 0;
       if (!requiredLength) return;
       if (!inst.userData.hobunjiTownSubtleBaseMatrices || inst.userData.hobunjiTownSubtleBaseMatrices.length !== requiredLength) {
-        // This capture happens only after game.js has compacted the path chunk,
-        // so it includes the existing elevTier correction and final kept-brick
-        // order. Subtle Y is layered on top of that real runtime baseline.
+        // Capture only after the road's existing elevTier correction and final
+        // corridor compaction. Repeated refreshes always start from this base.
         inst.userData.hobunjiTownSubtleBaseMatrices = new Float32Array(inst.instanceMatrix.array);
       }
       const base = inst.userData.hobunjiTownSubtleBaseMatrices;
@@ -209,10 +215,19 @@
         matrix.fromArray(base, i * 16);
         matrix.decompose(pos, quat, scale);
         const lift = sampleTownHeight(pos.x, pos.z);
+        const normal = sampleTownSurfaceNormal(pos.x, pos.z);
         pos.y += lift;
+
+        // WallBuilder has already produced the brick's correct flat-surface
+        // quaternion (including road direction and authored/random variation).
+        // Premultiplying a world-space up->normal rotation tips that finished
+        // orientation with the terrain while preserving all of those choices.
+        slopeQuat.setFromUnitVectors(worldUp, normal);
+        quat.premultiply(slopeQuat);
+
         matrix.compose(pos, quat, scale);
         inst.setMatrixAt(i, matrix);
-        if (Math.abs(lift) > 1e-7) moved++;
+        if (Math.abs(lift) > 1e-7 || normal.y < 0.999999) moved++;
       }
       inst.instanceMatrix.needsUpdate = true;
       inst.computeBoundingBox?.();
@@ -267,15 +282,9 @@
 
     api.init = function (injectedDeps) {
       townDeps = injectedDeps;
-      const result = originalInit.call(this, injectedDeps);
-      // Town scene may not exist yet at init; the spawn wrapper below performs
-      // the first guaranteed scan and installs its async-add hook.
-      return result;
+      return originalInit.call(this, injectedDeps);
     };
     api.spawnTownBuildings = function (...args) {
-      // The compatibility wrapper installed from config.js runs first through
-      // originalSpawn and deforms the town ground. Follow that finished surface
-      // immediately afterward so grass/roads read the same height field.
       const result = originalSpawn.apply(this, args);
       refreshTownFollowers();
       return result;
