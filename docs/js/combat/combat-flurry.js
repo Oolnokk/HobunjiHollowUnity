@@ -97,6 +97,7 @@
         strikeS,
         recoverS: 0,
         onStrike: () => {
+          deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, strikeAngle, rangePx, halfConeRad);
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;

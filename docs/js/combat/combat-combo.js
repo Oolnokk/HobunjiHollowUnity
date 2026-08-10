@@ -207,6 +207,7 @@
         strikeS,
         recoverS: 0,
         onStrike: () => {
+          const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
@@ -218,11 +219,13 @@
           }
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
+            : vegetationCleared > 0
+              ? `${step.name}: cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `${step.name} connects with nothing.`;
           // silent: every swing already has its own weaponSlash/creatureClawHit
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
-          deps.showToast(msg, hits > 0, true);
+          deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           window.Combat.comboStreak?.registerHit(hits > 0);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },

@@ -147,6 +147,7 @@
         strikeS,
         recoverS: 0,
         onStrike: () => {
+          const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '';
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
@@ -162,10 +163,12 @@
           const pct = Math.round(chargeT * 100);
           const msg = hits > 0
             ? `Charged Breaker (${pct}% charge): hit ${hits > 1 ? hits + ' creatures' : 'the ' + lastName}!`
+            : vegetationCleared > 0
+              ? `Charged Breaker (${pct}% charge): cut ${vegetationCleared} vegetation tile${vegetationCleared === 1 ? '' : 's'} into mulch.`
             : `Charged Breaker (${pct}% charge) connects with nothing.`;
           // silent: same reasoning as combat-combo.js — every swing already
           // has its own weaponSlash/creatureClawHit sfx.
-          deps.showToast(msg, hits > 0, true);
+          deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
           if (hits > 0) deps.awardWeaponMasteryXp();
         },
       });

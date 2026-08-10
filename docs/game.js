@@ -6727,6 +6727,10 @@
       // its grass never disappears, since a zone's terrain is built once
       // as merged meshes rather than the farm's per-tile mesh array).
       const _zoneFloorMeshGroups = new Map();
+      // mapId -> Map("col,row" -> foliage Group). Used by combat/axe clears
+      // to remove one shrub/tree immediately without rebuilding every
+      // procedural tree and merged ground mesh in a wilderness zone.
+      const _zoneVegetationMeshes = new Map();
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -6861,6 +6865,8 @@
       // zScene, so the caller can track and later remove them.
       function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
         const meshes = [];
+        const vegetationByTile = new Map(); // Used for O(1) runtime foliage removal by tile.
+        _zoneVegetationMeshes.set(mapId, vegetationByTile);
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -7038,6 +7044,7 @@
               zScene.add(vegGroup);
               _markOutline(vegGroup);
               meshes.push(vegGroup);
+              vegetationByTile.set(`${c},${r}`, vegGroup);
             }
             continue;
           }
@@ -9894,8 +9901,65 @@
         // Same reasoning again, for mined-out ore rocks.
         _zoneMinedRockPersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
+        _zoneVegetationMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
+      }
+
+      // Finds one already-built wilderness shrub/tree group by indexed tile
+      // lookup and removes it with light list bookkeeping. The grass floor
+      // beneath SHRUB tiles is already part of the merged ground mesh, so a
+      // vegetation clear does not require terrain, mesa, or grass-instance
+      // reconstruction. Geometry is deliberately not
+      // disposed here: native tree instances share cached variant geometry.
+      function removeZoneVegetationVisual(mapId, col, row) {
+        const zi = _zoneScenes.get(mapId);
+        const byTile = _zoneVegetationMeshes.get(mapId);
+        const vegGroup = byTile?.get(`${col},${row}`);
+        if (!zi || !vegGroup) return false;
+        zi.scene.remove(vegGroup);
+        byTile.delete(`${col},${row}`);
+        _treeFadeActive.delete(vegGroup);
+        for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
+
+        const floorMeshes = _zoneFloorMeshGroups.get(mapId);
+        const floorIndex = floorMeshes?.indexOf(vegGroup) ?? -1;
+        if (floorIndex >= 0) floorMeshes.splice(floorIndex, 1);
+        if (vegGroup.userData?.canopyClamp) {
+          zi.canopyZones = (zi.canopyZones || []).filter(zone => zone !== vegGroup.userData.canopyClamp);
+        }
+        if (vegGroup.userData?.cullSphere) {
+          zi.cullables = (zi.cullables || []).filter(obj => obj !== vegGroup);
+        }
+        return true;
+      }
+
+      function updateClearedZoneVegetationVisual(mapId, col, row, previousType) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return false;
+        const removedFoliage = removeZoneVegetationVisual(mapId, col, row);
+        if (previousType !== TileType.WEEDS) return removedFoliage;
+
+        // WEEDS are part of the zone's merged material buckets rather than
+        // individual foliage groups. Cover only the cleared tile with a
+        // grass patch; the next ordinary terrain refresh folds it back into
+        // the merged grass mesh. This keeps a weapon swing O(AoE tiles)
+        // instead of O(the entire wilderness map).
+        const tile = zi.grid?.[row]?.[col];
+        if (!tile) return removedFoliage;
+        const geometry = makeFloorGeo(col, row); // Used by the one-tile grass cover mesh below.
+        displaceZoneGeometry(geometry, mapId, col + 0.5, row + 0.5);
+        const patch = new THREE.Mesh(geometry, resolveTileMat(mapId, TileType.GRASS)); // Covers the stale merged WEEDS surface.
+        patch.receiveShadow = true;
+        patch.position.set(
+          col + 0.5,
+          tileYCenter(TileType.GRASS) + (tile.elevTier || 0) * PLATEAU_UNIT + 0.008,
+          row + 0.5
+        );
+        zi.scene.add(patch);
+        _markTerrainEdgeId(patch, TileType.GRASS);
+        _zoneFloorMeshGroups.get(mapId)?.push(patch);
+        return true;
       }
 
       // Rebuilds just a zone's ground floor + grass tufts (see
@@ -12302,12 +12366,14 @@
         const targets = getMacheteTargets(col, row, action);
         const tgrid = getActiveGrid();
         let cleared = 0;
+        let zoneVisualsUpdated = true;
         for (const t of targets) {
           const tile = tgrid[t.row][t.col];
           if (!tile.crop && (tile.type === TileType.WEEDS || tile.type === TileType.SHRUB)) {
             // A real tree needs a proper held axe chop (see CHOP_TREE_STAGES) —
             // a wide hack/slash cone shouldn't fell one for free mulch.
             if (tile.type === TileType.SHRUB && isChoppableTreeTile(t.col, t.row)) continue;
+            const previousType = tile.type; // Used to choose the targeted zone visual replacement below.
             tile.type = TileType.GRASS;
             inventory.mulch = Math.min(99, inventory.mulch + 1);
             // markTileDirty indexes the farm's own small grid (see its
@@ -12317,10 +12383,52 @@
             // (see applyAction's callers), once per completed action rather
             // than per cleared tile.
             if (currentArea === 'farm') markTileDirty(t.col, t.row);
+            else if (_isZoneArea(currentArea)) {
+              zoneVisualsUpdated = updateClearedZoneVegetationVisual(currentArea, t.col, t.row, previousType) && zoneVisualsUpdated;
+            }
             cleared++;
           }
         }
-        return { cleared, targets };
+        return { cleared, targets, zoneVisualsUpdated };
+      }
+
+      // Clears every non-tree vegetation tile whose center lies inside a
+      // weapon attack's real continuous hit cone. Iteration is bounded to
+      // the cone's small tile-space AABB, so cost scales with attack area,
+      // not map size. Crops and true copse trees are intentionally protected.
+      function clearVegetationInAttackCone(fromX, fromY, facingAngle, rangePx, halfConeRad) {
+        const tgrid = getActiveGrid();
+        const cols = getActiveCols(), rows = getActiveRows();
+        const radiusTiles = Math.max(0, rangePx) / TILE;
+        const centerCol = fromX / TILE, centerRow = fromY / TILE;
+        const minCol = clamp(Math.floor(centerCol - radiusTiles - 0.5), 0, cols - 1);
+        const maxCol = clamp(Math.ceil(centerCol + radiusTiles - 0.5), 0, cols - 1);
+        const minRow = clamp(Math.floor(centerRow - radiusTiles - 0.5), 0, rows - 1);
+        const maxRow = clamp(Math.ceil(centerRow + radiusTiles - 0.5), 0, rows - 1);
+        let cleared = 0;
+
+        for (let row = minRow; row <= maxRow; row++) {
+          for (let col = minCol; col <= maxCol; col++) {
+            const tile = tgrid[row]?.[col];
+            if (!tile || tile.crop || (tile.type !== TileType.WEEDS && tile.type !== TileType.SHRUB)) continue;
+            if (tile.type === TileType.SHRUB && isChoppableTreeTile(col, row)) continue;
+            const tileX = (col + 0.5) * TILE, tileY = (row + 0.5) * TILE;
+            if (!inCone(fromX, fromY, facingAngle, tileX, tileY, rangePx, halfConeRad)) continue;
+
+            const previousType = tile.type; // Used to remove/cover the matching runtime visual.
+            tile.type = TileType.GRASS;
+            inventory.mulch = Math.min(99, inventory.mulch + 1);
+            if (currentArea === 'farm') markTileDirty(col, row);
+            else if (_isZoneArea(currentArea)) updateClearedZoneVegetationVisual(currentArea, col, row, previousType);
+            cleared++;
+          }
+        }
+        if (cleared > 0) {
+          if (currentArea === 'farm') saveFarmLayout();
+          saveMemberWorldData();
+          debugLog(`weapon cone cleared ${cleared} non-tree vegetation tile${cleared === 1 ? '' : 's'}`);
+        }
+        return cleared;
       }
 
       function actionFxProfile(action, ok) {
@@ -12992,12 +13100,13 @@
           _zoneFelledTreePersist.set(currentArea, _felledEntries);
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
           inventory.mulch = Math.min(99, inventory.mulch + 1);
-          // No markTileDirty here — it indexes the farm's own small grid,
-          // and felling a tree only ever happens in a wilderness zone (see
-          // isChoppableTreeTile). completeChargeAction's zone-refresh branch
-          // (tool === 'axe') handles the visual update instead.
+          // Remove this tree's indexed Group immediately. The merged floor
+          // beneath it is already grass, so rebuilding all ground and every
+          // procedural tree in the zone would only create a long main-thread
+          // freeze (especially in the Southern Cloud Forest).
+          const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
-          return { ok: true, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
+          return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
         }
 
         if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {
@@ -13036,6 +13145,7 @@
           if (tool === 'axe') awardToolUseMasteryXp('axe'); // machete isn't a gear tool — no mastery of its own
           return {
             ok: true,
+            zoneVisualsUpdated: result.zoneVisualsUpdated,
             message: isWide
               ? `Cleared ${result.cleared} tile${result.cleared === 1 ? '' : 's'} in the swing into mulch.`
               : 'Cleared one tile of day-one overgrowth into mulch.'
@@ -13044,13 +13154,17 @@
 
         if (tool === 'weapon') {
           const hitResult = window.Combat ? window.Combat.resolveWeaponHit(action, resolveWeaponHit) : resolveWeaponHit(action);
-          if (hitResult.hits > 0) return { ok: true, message: hitResult.message };
-          const vegResult = clearVegetationAt(col, row, action);
-          if (vegResult.cleared > 0) {
+          const abil = weaponAbility(action);
+          const cleared = abil
+            ? clearVegetationInAttackCone(player.x, player.y, player.angle, abil.rangePx, abil.halfConeRad)
+            : 0;
+          if (hitResult.hits > 0) return { ok: true, zoneVisualsUpdated: true, message: hitResult.message };
+          if (cleared > 0) {
             return {
               ok: true,
+              zoneVisualsUpdated: true,
               message: action === 'slash'
-                ? `Slashed ${vegResult.cleared} tile${vegResult.cleared === 1 ? '' : 's'} in the cone into mulch.`
+                ? `Slashed ${cleared} tile${cleared === 1 ? '' : 's'} in the cone into mulch.`
                 : 'Cut one tile of day-one overgrowth into mulch.'
             };
           }
@@ -13265,13 +13379,10 @@
           // could get wiped out mid-session by anything that re-applies the
           // (stale, still-unsaved) layout on top of the live grid.
           if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
-          // Note: weapon/machete vegetation clears in a zone don't trigger this —
-          // applyAction's weapon branch returns the same ok:true shape for a normal
-          // combat hit as for a veg clear, and refreshing the whole zone floor/grass
-          // mesh on every combat hit would be a real perf hit. Their cleared tile
-          // just stays visually stale (still SHRUB-shaped) until something else
-          // rebuilds the zone — a pre-existing, non-crashing gap, not fixed here.
+        } else if (_isZoneArea(currentArea) && result.ok !== false && !result.zoneVisualsUpdated && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+          // Vegetation-only changes remove/cover their indexed tile visuals
+          // directly and report zoneVisualsUpdated, so they skip this costly
+          // full-zone path. Actual terrain changes still need merged geometry.
           // Wilderness-zone counterpart of markTileDirty's farm mesh rebuild —
           // a dig/fill/raise/till/smooth just changed this tile's type, but a
           // zone's terrain is merged meshes built once rather than the farm's
@@ -16214,7 +16325,7 @@
           // fill charge (new trench, fill-in) needs the same saveFarmLayout()
           // fix, or it's just as silently lost as a single-tap action.
           if (result.ok !== false) { markTileDirty(col, row); saveFarmLayout(); }
-        } else if (_isZoneArea(currentArea) && result.ok !== false && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
+        } else if (_isZoneArea(currentArea) && result.ok !== false && !result.zoneVisualsUpdated && (tool === 'shovel' || tool === 'pick' || tool === 'hoe' || tool === 'axe')) {
           // See the matching branch in firePendingAction — this is the charge-
           // action completion path (a brand-new trench dig or a fill-in is a
           // multi-stage charge, not a single tap), and needs the same fix.
@@ -21473,6 +21584,7 @@
         weaponAbility,
         combatConfig,
         resolveWeaponHit,
+        clearVegetationInAttackCone,
         findAutoTarget,
         canPlayerOccupy,
         canOccupyAt,
