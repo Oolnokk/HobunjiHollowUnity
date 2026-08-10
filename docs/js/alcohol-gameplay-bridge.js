@@ -1,9 +1,11 @@
-// Integration glue for alcohol/drunkenness outside the resource model itself.
+// Game-facing integration for alcohol/drunkenness outside the resource model.
 //
-// Resource math lives in combat-core/resource-system; gait/body composition
-// lives in drunk-locomotion + player-body-transform-composer. This module owns
-// only game-facing seams: blackout transition safety/time recovery, movement
-// inertia, drink/food consumption, and adapters to late-created game systems.
+// Resource math: combat-core/resource-system
+// Body/gait visuals: drunk-locomotion + player-body-transform-composer
+// Body-bound attachments: player-body-attachment-bridge
+//
+// This module owns only blackout timing/safety, drunken movement inertia,
+// held food/drink consumption, and adapters to late-created gameplay systems.
 (() => {
   'use strict';
 
@@ -86,15 +88,16 @@
   }
 
   // Alchemy is exposed through a future-global setter by combat-core. Preserve
-  // that setter chain and publish its authored potion table under the name the
-  // generic held-consumable path expects.
+  // that chain and publish the authored potion table under the generic name the
+  // held-consumable path expects.
   chainFutureSetter('AlchemySystem', null, api => {
     if (api?.ALCHEMY_POTION_ITEMS) api.POTION_ITEMS = api.ALCHEMY_POTION_ITEMS;
   });
 
-  // DevSpawner's injected dependency bag contains several game-owned helpers
-  // that are intentionally not copied into this module. Keep one private
-  // adapter reference instead of exporting another global dependency bucket.
+  // DevSpawner's dependency bag contains a few game-owned helpers this adapter
+  // needs. Keep the reference private rather than exporting another shared
+  // global bag. The separate body-attachment bridge may wrap the same init;
+  // each wrapper is additive and preserves the previous one.
   chainFutureSetter('DevSpawner', api => {
     if (!api?.init || api.__drunkenZoneCompatInstalled) return;
     const originalInit = api.init.bind(api);
@@ -124,26 +127,11 @@
   hookFutureInit('Mounts', deps => { mountDeps = deps; });
   hookFutureInit('FarmCrates', deps => { itemDeps = deps; });
 
-  // Body-bound visuals register through the composer rather than being
-  // transformed by alcohol code. Providers are lazy, so avatar/pet/tool
-  // replacements are picked up automatically without stale object references.
-  window.PlayerBodyTransformComposer?.registerExternalRootProvider('equippedTool', () => devDeps?.toolHolder || null);
-  window.PlayerBodyTransformComposer?.registerExternalRootProvider('shoulderPets', () => {
-    const combatDeps = window.Combat?.deps;
-    const player = combatDeps?.player;
-    if (!player) return [];
-    const roots = [];
-    for (const companion of combatDeps.companionObjects || []) {
-      if (!companion || companion.health <= 0 || companion.stableRole !== 'shoulderPet') continue;
-      if ((companion.master || player) !== player) continue;
-      if (companion.avatarRef?.group) roots.push(companion.avatarRef.group);
-    }
-    return roots;
-  });
-
   function drunkFootingFraction(player) {
     const max = Math.max(0, Number(player?.maxFooting) || 0);
-    return max ? clamp01((Number(player?.afflictions?.[DRUNK_FOOTING_ID]) || 0) / max) : 0;
+    return max
+      ? clamp01((Number(player?.afflictions?.[DRUNK_FOOTING_ID]) || 0) / max)
+      : 0;
   }
 
   function footingSpeedMuls(player) {
@@ -159,9 +147,10 @@
     };
   }
 
-  // Predict blackout before combat-core performs synchronous travel so an
-  // already-started tool swing can finish against its original map grid. Then
-  // recover drunken afflictions by the amount of gameplay time skipped.
+  // Predict blackout before combat-core performs its synchronous travel so an
+  // already-started tool action can resolve against its original map grid.
+  // Afterwards recover drunken afflictions by the gameplay-time equivalent of
+  // the skipped in-world minutes.
   const originalAddDrunkenness = RS.addDrunkenness?.bind(RS);
   if (originalAddDrunkenness && !RS.__blackoutSobrietyRecoveryInstalled) {
     RS.addDrunkenness = function blackoutSobrietyAwareAdd(entity, footingAmount, healthAmount, opts = {}) {
@@ -193,8 +182,10 @@
         beforeFootingDrunk - (Number(entity.afflictions?.[DRUNK_FOOTING_ID]) || 0));
       RS.removeAffliction(entity, DRUNK_HEALTH_ID, recovery);
       if (footingRecovered > 0) {
-        entity.footing = Math.min(RS.getEffectiveMax(entity, 'footing'),
-          (Number(entity.footing) || 0) + footingRecovered);
+        entity.footing = Math.min(
+          RS.getEffectiveMax(entity, 'footing'),
+          (Number(entity.footing) || 0) + footingRecovered
+        );
       }
       RS.enforceCaps(entity);
       result.sobrietyRecovered = recovery;
@@ -225,6 +216,7 @@
   function updateDrunkMomentum(dt) {
     const player = window.Combat?.deps?.player;
     if (!player || !mountDeps) return;
+
     const drunk = drunkFootingFraction(player);
     const mounted = window.Mounts?.rideState && window.Mounts.rideState !== 'none';
     if (!(drunk > 0) || player.prone || player.climbing || player.lunging || mounted) {
@@ -243,6 +235,7 @@
 
     const move = movementInput();
     const { legacy: legacyFootingMul, desired: desiredFootingMul } = footingSpeedMuls(player);
+
     if (move.active) {
       const analogEase = move.keyboard ? 1 : (0.28 + 0.72 * move.strength);
       const baseSpeed = (Number(mountDeps.MOVE_SPEED) || 238)
@@ -264,10 +257,13 @@
       inertiaVX = targetVx;
       inertiaVY = targetVy;
     } else {
-      const decay = Math.exp(-Math.max(0.1,
-        lerp(STOP_LAMBDA_LIGHT_DRUNK, STOP_LAMBDA_MAX_DRUNK, drunk)) * dt);
+      const decay = Math.exp(-Math.max(
+        0.1,
+        lerp(STOP_LAMBDA_LIGHT_DRUNK, STOP_LAMBDA_MAX_DRUNK, drunk)
+      ) * dt);
       inertiaVX *= decay;
       inertiaVY *= decay;
+
       let idealSpeed = Math.hypot(inertiaVX, inertiaVY);
       if (idealSpeed < 2) {
         inertiaVX = inertiaVY = 0;
@@ -276,7 +272,9 @@
 
       const px = Number(player.x) || 0;
       const py = Number(player.y) || 0;
-      if (lastPlayerX != null && Math.hypot(px - lastPlayerX, py - lastPlayerY) < 0.02 && idealSpeed > 30) {
+      if (lastPlayerX != null
+        && Math.hypot(px - lastPlayerX, py - lastPlayerY) < 0.02
+        && idealSpeed > 30) {
         inertiaVX = inertiaVY = 0;
         idealSpeed = 0;
       }
@@ -296,7 +294,8 @@
 
   function isPotionOrDrink(key, def) {
     if (!key || !def) return false;
-    if (window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.getPotionEffectsFromKey?.(key)) return true;
+    if (window.AlchemySystem?.POTION_ITEMS?.[key]
+      || window.AlchemySystem?.getPotionEffectsFromKey?.(key)) return true;
     const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
     return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirit|potion|drink|tea|juice|milk)\b/
       .test(`${def.label || ''} ${tags.join(' ')}`.toLowerCase());
@@ -306,7 +305,9 @@
     if (!def) return false;
     const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
     if (['crop', 'processed', 'food', 'meal'].includes(String(def.cat || '').toLowerCase())) return true;
-    return tags.some(tag => ['food', 'meal', 'crop', 'berry', 'fruit', 'vegetable', 'meat', 'noodles', 'cheese', 'curd'].includes(tag));
+    return tags.some(tag => [
+      'food', 'meal', 'crop', 'berry', 'fruit', 'vegetable', 'meat', 'noodles', 'cheese', 'curd',
+    ].includes(tag));
   }
 
   function consumeHeldItem() {
@@ -315,8 +316,8 @@
 
     const active = itemDeps?.getActiveInventoryItem?.();
     const key = active?.key;
-    const inventory = itemDeps?.inventory;
     const def = active;
+    const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
 
     if (isPotionOrDrink(key, def)) {
@@ -335,15 +336,19 @@
     if (!isFood(def)) return false;
     inventory[key]--;
     itemDeps.clampInventoryStack?.(key);
+
     const player = window.Combat?.deps?.player;
     const healthRestore = Number(def.healthRestore ?? def.restoreHealth ?? def.health) || 0;
     const staminaRestore = Number(def.staminaRestore ?? def.restoreStamina ?? def.stamina) || 0;
     if (player && healthRestore > 0) {
-      player.health = Math.min(Number(player.maxHealth) || 100, (Number(player.health) || 0) + healthRestore);
+      player.health = Math.min(Number(player.maxHealth) || 100,
+        (Number(player.health) || 0) + healthRestore);
     }
     if (player && staminaRestore > 0) {
-      player.stamina = Math.min(Number(player.maxStamina) || 100, (Number(player.stamina) || 0) + staminaRestore);
+      player.stamina = Math.min(Number(player.maxStamina) || 100,
+        (Number(player.stamina) || 0) + staminaRestore);
     }
+
     itemDeps.showToast?.(`${def.icon || '🍽️'} Ate ${def.label || key}.`, true);
     itemDeps.refreshItemScroll?.();
     itemDeps.buildInventoryGrid?.();
@@ -356,6 +361,8 @@
     return performance.now() < (Number(window.__hobunjiBlackoutTravelHoldUntil) || 0);
   }
 
+  // The player is incapacitated during the short blackout action-settle window:
+  // do not let a fresh old-grid action be queued just before travel executes.
   document.addEventListener('pointerdown', event => {
     const id = event.target?.closest?.('button')?.id || '';
     if (!blackoutSettling() || !/^btn(?:Item)?Action[1-5]$/.test(id)) return;
@@ -369,17 +376,17 @@
     event.stopImmediatePropagation();
   }, true);
 
+  // Held consumables own the action press rather than also firing the tile/tool
+  // action underneath them.
   document.addEventListener('pointerdown', event => {
     const id = event.target?.closest?.('button')?.id;
-    if (!/^btn(?:Item)?Action[1-5]$/.test(id || '')) return;
-    if (!consumeHeldItem()) return;
+    if (!/^btn(?:Item)?Action[1-5]$/.test(id || '') || !consumeHeldItem()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
 
   window.addEventListener('keydown', event => {
-    if (event.repeat || !['Space', 'Enter', 'KeyE'].includes(event.code)) return;
-    if (!consumeHeldItem()) return;
+    if (event.repeat || !['Space', 'Enter', 'KeyE'].includes(event.code) || !consumeHeldItem()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
@@ -417,7 +424,6 @@
         hasMountDeps: !!mountDeps,
         hasItemDeps: !!itemDeps,
         playerAttached: !!composer?.playerAttached,
-        bodyVisualRoots: composer?.visualRoots || [],
         bodyChannels: composer?.channels || [],
       };
     },
