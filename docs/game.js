@@ -5395,7 +5395,13 @@
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
               if (!c._treasureHintAnnounced) {
                 c._treasureHintAnnounced = true;
-                showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
+                // The companion keeps the existing Fable-style lead behavior,
+                // but announces the find through its species voice overhead.
+                // Fall back to the old mobile-visible toast if the secondary
+                // dialogue module failed to load for any reason.
+                if (!window.AmbientDialogue?.companionTreasure(c)) {
+                  showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
+                }
               }
               moving = wanderTick(c, dt, treasureHint.x, treasureHint.y, TILE * 1.4);
             } else {
@@ -12002,6 +12008,29 @@
       }
 
       function updateMovement(dt) {
+        if (window.PlayerChat?.isOpen) {
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
+        const heldSocialPose = window.PlayerSocialPoses?.active;
+        if (heldSocialPose) {
+          const poseKeyboard = getKeyboardVector();
+          const poseInputX = poseKeyboard.active ? poseKeyboard.x : input.x;
+          const poseInputY = poseKeyboard.active ? poseKeyboard.y : input.y;
+          if (Math.hypot(poseInputX, poseInputY) > 0.08) {
+            window.PlayerSocialPoses.stop('movement');
+          } else {
+            // A held social pose owns stillness and the current facing. Mouse
+            // and right-stick look state may keep updating, but rotation is
+            // deliberately not applied until manual movement cancels it.
+            player.vx = 0; player.vy = 0;
+            player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+            player.angle = facingAngle;
+            window.PlayerSocialPoses.update(dt);
+            return;
+          }
+        }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
@@ -16170,6 +16199,52 @@
         playerRoot: playerMesh,
         getActiveScene,
       });
+      // ambientDialogueRuntime owns only lightweight proximity checks and
+      // its temporary world-space speech planes. Game state, NPC routing,
+      // and creature treasure movement remain authoritative here in game.js.
+      const ambientDialogueRuntime = window.AmbientDialogue?.init({
+        THREE,
+        camera,
+        getActiveScene,
+        getDay: () => calendar.day,
+        getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
+        getDayPart: () => {
+          const hour = window.CalendarSystem.getHour(); // Used by ambient greeting {dayPart} substitutions.
+          if (hour < 8) return 'dawn';
+          if (hour < 12) return 'morning';
+          if (hour < 17) return 'afternoon';
+          if (hour < 20) return 'evening';
+          return 'night';
+        },
+        getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
+        getCurrentArea: () => currentArea,
+        getNpcWalkers: () => npcWalkers,
+        getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+          || (_playerData || window.__hobunjiPlayerProfile)?.displayName
+          || 'neighbor',
+        isDialogueOpen: () => dialogueOpen,
+        isPaused: () => paused,
+        debugLog,
+      });
+      const playerSocialPoseRuntime = window.PlayerSocialPoses?.init({ player, playerMesh });
+      const playerChatRuntime = window.PlayerChat?.init({
+        getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+          || (_playerData || window.__hobunjiPlayerProfile)?.displayName
+          || 'Player',
+        clearMovementInput: () => {
+          input.keys.clear();
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+        },
+        showPlayerMessage: text => window.AmbientDialogue?.show(playerMesh, text, {
+          speakerId: 'player',
+          mode: 'overhead',
+          durationMs: 5200,
+        }),
+        setHeldPose: pose => playerSocialPoseRuntime?.start(pose) || { ok: false, message: 'Pose system unavailable.' },
+      });
       // healthPopupAccumulator merges frame-by-frame regen/DoT into readable
       // Float+ events instead of emitting one plane every animation frame.
       const healthPopupAccumulator = new Map();
@@ -18892,6 +18967,9 @@
           updateNpcWalkers(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
+        // Run after NPC routing/facing so an active ambient greeting can hold
+        // its speaker toward the intended target for the rendered frame.
+        ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
           updateTownWaterMeshes();
           updateTownThreeLighting();

@@ -1,0 +1,291 @@
+{
+  "enabled": true,
+  "greetingRadiusTiles": 2.6,
+  "greetingCooldownMs": 1300,
+  "durationMs": 4200,
+  "textWorldHeight": 0.28,
+  "chatheadWorldSize": 0.48,
+  "anchorLiftTiles": 0.18,
+  "friendGroups": [],
+  "greetingTemplates": [
+    "{targetName}! Good to see you.",
+    "Hello, {targetName}!",
+    "Ah, {targetName} — there you are!"
+  ],
+  "npcGreetings": {
+    "kzubug": {
+      "player": [
+        "Good to see you, {targetName}."
+      ],
+      "friends": {
+        "sloomi": [
+          "Sloomi! How is that piece coming along?",
+          "Easy on your shoulders, Sloomi."
+        ]
+      }
+    },
+    "sloomi": {
+      "player": [
+        "Oh... Hi {targetName}!"
+      ],
+      "friends": {
+        "kzubug": [
+          "Kzubug! I finished the edge.",
+          "I’m all right, Kzubug. Promise."
+        ]
+      }
+    },
+    "gorobi_ginju": {
+      "player": [
+        "Howdy there, partner!"
+      ],
+      "friends": {}
+    },
+    "gikali_ginju": {
+      "player": [
+        "Good {dayPart}!"
+      ],
+      "friends": {}
+    },
+    "aliri_ginju": {
+      "player": [
+        "Howdy-hey, {targetName}!"
+      ],
+      "friends": {}
+    },
+    "gantami_ginju": {
+      "player": [
+        "Hi!"
+      ],
+      "friends": {}
+    },
+    "leaf": {
+      "player": [
+        "Hey..."
+      ],
+      "friends": {
+        "pahu": []
+      }
+    },
+    "pahu": {
+      "player": [
+        "Ahoy there, {targetName}!!!"
+      ],
+      "friends": {
+        "leaf": []
+      }
+    },
+    "furunji_funji": {
+      "player": [
+        "Hope your having a fine {dayPart}, {targetName}!"
+      ],
+      "friends": {
+        "foroji_funji": []
+      }
+    },
+    "foroji_funji": {
+      "player": [
+        "Hey, man!"
+      ],
+      "friends": {
+        "furunji_funji": []
+      }
+    },
+    "namui_u_hakaru": {
+      "player": [
+        "Heyo {targetName}!"
+      ],
+      "friends": {
+        "takua_ao_hakaru": [],
+        "father_hunundi_hodu": []
+      }
+    },
+    "takua_ao_hakaru": {
+      "player": [
+        "Hey-hey {targetName}!"
+      ],
+      "friends": {
+        "namui_u_hakaru": [],
+        "father_hunundi_hodu": []
+      }
+    },
+    "father_hunundi_hodu": {
+      "player": [
+        "A blessed {weekDay}, {targetName}!"
+      ],
+      "friends": {
+        "namui_u_hakaru": [],
+        "takua_ao_hakaru": []
+      }
+    },
+    "kaboku_kunji": {
+      "player": [
+        "Good {dayPart}, {targetName}!"
+      ],
+      "friends": {
+        "kinami_kunji": []
+      }
+    },
+    "kinami_kunji": {
+      "player": [
+        "Good {dayPart}, {targetName}!"
+      ],
+      "friends": {
+        "kaboku_kunji": []
+      }
+    },
+    "dzibim_khibu": {
+      "player": [
+        "Ah, {targetName}! My good friend!!!"
+      ],
+      "friends": {
+        "dzahiri_khibu": [],
+        "nashka_khibu": []
+      }
+    },
+    "dzahiri_khibu": {
+      "player": [
+        "How ya doin' there, {targetName}?"
+      ],
+      "friends": {
+        "dzibim_khibu": [],
+        "nashka_khibu": []
+      }
+    },
+    "nashka_khibu": {
+      "player": [
+        "Hi {targetName}!"
+      ],
+      "friends": {
+        "dzibim_khibu": [],
+        "dzahiri_khibu": []
+      }
+    },
+    "teacup_unumanuk": {
+      "player": [
+        "A blessed {dayPart}, {targetName}!"
+      ],
+      "friends": {
+        "spearhead_unumanuk": [],
+        "oddclaw_unumanuk": []
+      }
+    },
+    "spearhead_unumanuk": {
+      "player": [
+        "Stay vigilant, {targetName}!"
+      ],
+      "friends": {
+        "teacup_unumanuk": [],
+        "oddclaw_unumanuk": [],
+        "binding_hatayap": [],
+        "tooth_hatayap": []
+      }
+    },
+    "oddclaw_unumanuk": {
+      "player": [
+        "Good {dayPart}, {targetName}!"
+      ],
+      "friends": {
+        "teacup_unumanuk": [],
+        "spearhead_unumanuk": [],
+        "binding_hatayap": [],
+        "tooth_hatayap": []
+      }
+    },
+    "binding_hatayap": {
+      "player": [
+        "Good {dayPart}, {targetName}!"
+      ],
+      "friends": {
+        "tooth_hatayap": [],
+        "spearhead_unumanuk": [],
+        "oddclaw_unumanuk": []
+      }
+    },
+    "tooth_hatayap": {
+      "player": [
+        "Ha-ha! My friend, {targetName}! Good to see you!"
+      ],
+      "friends": {
+        "binding_hatayap": [],
+        "spearhead_unumanuk": [],
+        "oddclaw_unumanuk": []
+      }
+    },
+    "garanki_gabu": {
+      "player": [
+        "Greetings!"
+      ],
+      "friends": {}
+    },
+    "hreesh": {
+      "player": [
+        "If it isn't my good friend, {targetName}! How ya doin?"
+      ],
+      "friends": {}
+    },
+    "jubmir": {
+      "player": [
+        "Good {dayPart}, {targetName}!"
+      ],
+      "friends": {}
+    },
+    "khazud": {
+      "player": [],
+      "friends": {}
+    },
+    "bird_bone": {
+      "player": [],
+      "friends": {}
+    },
+    "nohuknuk": {
+      "player": [],
+      "friends": {}
+    },
+    "mother_rahayobi": {
+      "player": [],
+      "friends": {}
+    }
+  },
+  "companionTreasureLines": {
+    "dabinggi-hound": [
+      "Hreeeee!!!",
+      "Bzzzarf!!!",
+      "Bzee-bee-beee!!!"
+    ],
+    "gar-wolf": [
+      "Rrrrowf!",
+      "Awrf!",
+      "Snrrf…!"
+    ],
+    "grehlr": [
+      "Hrrrmm!",
+      "Mrrup!",
+      "Hrru-hrru!"
+    ],
+    "drenkirra": [
+      "Krrik-krrik!",
+      "Chrrup!",
+      "Tik-tik-tik!"
+    ],
+    "default": [
+      "?!",
+      "Hrrm!",
+      "Snff-snff!"
+    ]
+  },
+  "crowdLines": {
+    "cheer": [
+      "Hooray!",
+      "Again!",
+      "Wonderful!",
+      "Bravo!"
+    ],
+    "jeer": [
+      "Boo!",
+      "Oh, come on!",
+      "Was that it?",
+      "Try again!"
+    ]
+  }
+}
