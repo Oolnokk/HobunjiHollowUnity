@@ -61,7 +61,7 @@
   });
 
   // Current authored-map preset: every building without an explicit override
-  // starts at subtle elevation level 1 with a one-tile radius. Normalize map
+  // starts at subtle elevation level 0.5 with a one-tile radius. Normalize map
   // JSON before terrain construction so gameplay gets the same raised surface
   // the Map Editor previews, rather than only lifting the rigid building mesh.
   // Explicit future per-building overrides still win, so this is a default/
@@ -88,7 +88,7 @@
       const radius = Number(source?.radius);
       return {
         enabled: source && hasOwn(source, 'enabled') ? !!source.enabled : true,
-        value: clamp(Number.isFinite(value) ? value : 1, -1, 1),
+        value: clamp(Number.isFinite(value) ? value : 0.5, -1, 1),
         radius: clamp(Number.isFinite(radius) ? Math.round(radius) : 1, 0, 64),
       };
     }
@@ -332,6 +332,14 @@
         mesh.geometry.computeBoundingBox?.();
         mesh.geometry.computeBoundingSphere?.();
         mesh.userData.hobunjiTownVisualHeightApplied = true;
+        // The screen-space depth-outline pass hides objects tagged isBillboard.
+        // Reuse that existing exclusion for deformed merged floor buckets only:
+        // these are continuous terrain surfaces, so the new hill-foot depth
+        // gradient should not be interpreted as a solid-object silhouette.
+        // Material-ID terrain outlines still render because their layer-3 tag
+        // and onBeforeRender ID callback are left untouched.
+        mesh.userData.isBillboard = true;
+        mesh.userData.hobunjiExcludeDepthOutline = true;
         changedMeshes++;
         changedVertices += touched;
       }
