@@ -229,6 +229,11 @@
         const data = await response.clone().json();
         if (!Array.isArray(data?.buildings) || !data.buildings.length) return response;
         await applyBuildingDefaults(data);
+        // The live game's town loader predates visualHeights and can discard
+        // that field while copying map data into its private _townZone record.
+        // Keep the normalized source map available to the town-ground hook
+        // below so the actual rendered floor still receives the same stamp.
+        if (data.id === 'map_hobunji_town') root.__hobunjiTownElevationMap = data;
         const headers = new Headers(response.headers);
         headers.set('content-type', 'application/json; charset=utf-8');
         headers.delete('content-length');
@@ -244,4 +249,138 @@
     wrappedFetch.applyBuildingDefaults = applyBuildingDefaults;
     root.fetch = wrappedFetch;
   }
+})(typeof self !== 'undefined' ? self : globalThis);
+
+// Town visualHeights compatibility hook.
+//
+// The original runtime visual-height pass was only wired into wilderness/zone
+// geometry. Town uses its own merged ground meshes, so building overrides could
+// lift a house while leaving the lawn beneath it flat. TownZoneBuildings is
+// loaded after this config file but is called only after buildTownScene has
+// finished creating those floor meshes; capture its injected live scene/map
+// dependencies and deform the existing ground in place immediately before the
+// house meshes are spawned. No second surface is created, so this cannot add a
+// new coplanar layer or z-fighting surface.
+(function installTownVisualHeightCompatibility(root) {
+  'use strict';
+  if (typeof document === 'undefined') return;
+
+  let capturedDeps = null;
+
+  function visualHeightMap() {
+    const live = capturedDeps?.getTownZone?.();
+    const cached = root.__hobunjiTownElevationMap;
+    if (cached?.visualHeights && Object.keys(cached.visualHeights).length) return cached;
+    return live;
+  }
+
+  function sampleHeight(map, x, z) {
+    if (!map || !root.TerrainPreview?.sampleVisualHeight) return 0;
+    const cols = Math.max(1, Number(map.cols) || 1);
+    const rows = Math.max(1, Number(map.rows) || 1);
+    return root.TerrainPreview.sampleVisualHeight(map.visualHeights || {}, x, z, cols, rows) || 0;
+  }
+
+  function isLikelyMergedTownFloor(mesh, map) {
+    if (!mesh?.isMesh || mesh.isInstancedMesh || !mesh.visible) return false;
+    if (mesh.userData?.hobunjiTownVisualHeightApplied) return false;
+    const pos = mesh.geometry?.getAttribute?.('position');
+    if (!pos || pos.count < 12) return false;
+
+    const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+    if (!materials.length) return false;
+    // Grass is deliberately MeshBasicMaterial in the current renderer. Other
+    // opaque floor buckets may still be Lambert; ShaderMaterial meshes in the
+    // town are primarily grass billboards/weather and must not be reshaped.
+    if (materials.some(mat => mat.isShaderMaterial || mat.transparent || mat.opacity < 1)) return false;
+    if (!materials.every(mat => mat.isMeshBasicMaterial || mat.isMeshLambertMaterial)) return false;
+
+    // Merged floor geometry bakes world X/Z into its vertices and sits at the
+    // scene origin. Transition rings, sprites, props, etc. use local geometry
+    // translated to their tile and are rejected here.
+    if (Math.abs(Number(mesh.position?.x) || 0) > 1e-4 || Math.abs(Number(mesh.position?.z) || 0) > 1e-4) return false;
+    mesh.geometry.computeBoundingBox?.();
+    const bb = mesh.geometry.boundingBox;
+    if (!bb) return false;
+    const spanX = bb.max.x - bb.min.x;
+    const spanZ = bb.max.z - bb.min.z;
+    if (spanX < 4 && spanZ < 4) return false;
+    const cols = Math.max(1, Number(map?.cols) || 1);
+    const rows = Math.max(1, Number(map?.rows) || 1);
+    if (bb.max.x < -1 || bb.min.x > cols + 1 || bb.max.z < -1 || bb.min.z > rows + 1) return false;
+    return true;
+  }
+
+  function deformTownFloor() {
+    const scene = capturedDeps?.getTownScene?.();
+    const map = visualHeightMap();
+    if (!scene || !map?.visualHeights || !root.TerrainPreview?.sampleVisualHeight) return 0;
+
+    let changedMeshes = 0;
+    let changedVertices = 0;
+    // Only inspect direct scene children. The merged terrain buckets are direct
+    // children; grass billboard blades and authored buildings live inside
+    // groups, which keeps this pass from ever touching avatar/building meshes.
+    for (const mesh of scene.children || []) {
+      if (!isLikelyMergedTownFloor(mesh, map)) continue;
+      const pos = mesh.geometry.getAttribute('position');
+      let touched = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const lift = sampleHeight(map, pos.getX(i), pos.getZ(i));
+        if (Math.abs(lift) < 1e-7) continue;
+        pos.setY(i, pos.getY(i) + lift);
+        touched++;
+      }
+      if (!touched) continue;
+      pos.needsUpdate = true;
+      mesh.geometry.computeVertexNormals?.();
+      mesh.geometry.computeBoundingBox?.();
+      mesh.geometry.computeBoundingSphere?.();
+      mesh.userData.hobunjiTownVisualHeightApplied = true;
+      changedMeshes++;
+      changedVertices += touched;
+    }
+
+    if (changedMeshes) {
+      capturedDeps?.debugLog?.(`Town subtle elevation: displaced ${changedVertices} vertices across ${changedMeshes} existing ground mesh(es)`);
+    }
+    return changedMeshes;
+  }
+
+  function patchTownZoneBuildings(api) {
+    if (!api || api.__hobunjiTownVisualHeightCompatibility) return api;
+    const originalInit = api.init;
+    const originalSpawnTownBuildings = api.spawnTownBuildings;
+    if (typeof originalInit !== 'function' || typeof originalSpawnTownBuildings !== 'function') return api;
+
+    api.init = function (injectedDeps) {
+      capturedDeps = injectedDeps;
+      return originalInit.call(this, injectedDeps);
+    };
+    api.spawnTownBuildings = function (...args) {
+      deformTownFloor();
+      return originalSpawnTownBuildings.apply(this, args);
+    };
+    api.deformTownFloorForVisualHeights = deformTownFloor; // Pixel-probe/debug-console escape hatch.
+    api.__hobunjiTownVisualHeightCompatibility = true;
+    return api;
+  }
+
+  if (root.TownZoneBuildings) {
+    patchTownZoneBuildings(root.TownZoneBuildings);
+    return;
+  }
+
+  // config.js loads before town-zone-buildings.js. Intercept that single
+  // global assignment so the module is patched synchronously the moment its
+  // script finishes, long before game.js calls .init().
+  let assignedApi;
+  Object.defineProperty(root, 'TownZoneBuildings', {
+    configurable: true,
+    enumerable: true,
+    get() { return assignedApi; },
+    set(value) {
+      assignedApi = patchTownZoneBuildings(value);
+    },
+  });
 })(typeof self !== 'undefined' ? self : globalThis);
