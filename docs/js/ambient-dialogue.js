@@ -84,8 +84,16 @@
   }
 
   function templateLine(targetName, speakerId, targetId, day) {
-    return pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`)
-      .replaceAll('{targetName}', String(targetName || 'friend'));
+    const values = {
+      targetName: String(targetName || 'friend'),
+      weekDay: String(state.deps?.getWeekDay?.(day) || 'day'),
+      dayPart: String(state.deps?.getDayPart?.() || 'day'),
+    }; // Used here and by diagnostics to resolve every supported greeting placeholder.
+    const source = pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`);
+    const unresolved = [...source.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)]
+      .map(match => match[1]).filter(key => !(key in values));
+    if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
+    return source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
   }
 
   function friendSetFor(npcId) {
@@ -127,7 +135,7 @@
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     const fontPx = 58;
-    context.font = `900 ${fontPx}px ${FONT}`;
+    context.font = `400 ${fontPx}px ${FONT}`;
     canvas.width = Math.max(128, Math.ceil(context.measureText(text).width + 30));
     canvas.height = 92;
     const texture = canvasTexture(canvas);
@@ -142,14 +150,14 @@
   function drawText(event, visibleText) {
     const { canvas, context, fontPx, text } = event.textPart;
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = `900 ${fontPx}px ${FONT}`;
+    context.font = `400 ${fontPx}px ${FONT}`;
     context.textAlign = 'left';
     context.textBaseline = 'middle';
     context.lineJoin = 'round';
-    context.lineWidth = 10;
-    context.strokeStyle = 'rgba(15,10,8,.92)';
+    context.lineWidth = 8;
+    context.strokeStyle = '#000';
     context.strokeText(visibleText, 15, canvas.height / 2);
-    context.fillStyle = event.tone === 'jeer' ? '#ffb4a8' : event.tone === 'cheer' ? '#ffe68b' : '#fff8e9';
+    context.fillStyle = event.tone === 'jeer' ? '#ffb4a8' : event.tone === 'cheer' ? '#ffe68b' : '#fff6be';
     context.fillText(visibleText, 15, canvas.height / 2);
     event.textPart.texture.needsUpdate = true;
     event.visibleChars = visibleText.length;
@@ -161,14 +169,42 @@
     const THREE = state.deps.THREE;
     const canvas = document.createElement('canvas');
     canvas.width = 200;
-    canvas.height = 125;
+    canvas.height = 200;
     const texture = canvasTexture(canvas);
-    const geometry = new THREE.PlaneGeometry(1.6, 1);
+    const geometry = new THREE.PlaneGeometry(1, 1);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(geometry, material);
     plane.renderOrder = 1211;
     plane.frustumCulled = false;
     return { canvas, texture, geometry, material, plane, nextFrameAt: 0, busy: false };
+  }
+
+  function upperPortraitBounds(canvas, maxY = 125) {
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const width = canvas.width, height = Math.min(canvas.height, maxY);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    let minX = width, minY = height, maxX = -1, foundY = -1;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      if (pixels[(y * width + x) * 4 + 3] < 8) continue;
+      minX = Math.min(minX, x); minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x); foundY = Math.max(foundY, y);
+    }
+    return maxX < 0 ? { x: 0, y: 0, width, height }
+      : { x: minX, y: minY, width: maxX - minX + 1, height: foundY - minY + 1 };
+  }
+
+  function revealSchedule(text) {
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.npcDialogue?.text?.typewriter || {};
+    if (cfg.enabled === false) return [];
+    const charMs = Math.max(1, Number(cfg.msPerChar) || 22);
+    const punctuationMs = Math.max(0, Number(cfg.punctuationPauseMs) || 120);
+    const whitespaceMs = Math.max(0, Number(cfg.whitespacePauseMs) || 0);
+    let elapsed = charMs;
+    return [...text].map(char => {
+      const revealAt = elapsed;
+      elapsed += /[.!?,;:]/.test(char) ? punctuationMs : /\s/.test(char) ? whitespaceMs : charMs;
+      return revealAt;
+    });
   }
 
   function disposePart(part) {
@@ -196,10 +232,18 @@
       });
       if (!state.active.includes(event)) return;
       const context = event.headPart.canvas.getContext('2d');
-      context.clearRect(0, 0, 200, 125);
-      // The avatar portrait's head occupies its upper portion. Cropping here
-      // produces the reference tool's detached chathead without a bubble.
-      context.drawImage(source, 0, 0, 200, 125, 0, 0, 200, 125);
+      context.clearRect(0, 0, 200, 200);
+      context.imageSmoothingEnabled = false;
+      // Match the demo's alpha-fitted square detached-head slot instead of
+      // stretching the upper portrait crop or preserving empty side margins.
+      const bounds = upperPortraitBounds(source);
+      const padding = 7;
+      const sx = Math.max(0, bounds.x - padding), sy = Math.max(0, bounds.y - padding);
+      const sw = Math.min(200 - sx, bounds.width + padding * 2);
+      const sh = Math.min(125 - sy, bounds.height + padding * 2);
+      const scale = Math.min(192 / sw, 192 / sh);
+      const dw = sw * scale, dh = sh * scale;
+      context.drawImage(source, sx, sy, sw, sh, (200 - dw) / 2, (200 - dh) / 2, dw, dh);
       event.headPart.texture.needsUpdate = true;
     }).catch(error => state.deps?.debugLog?.(`[ambient-dialogue] chathead render failed: ${error?.message || error}`, 'warn'))
       .finally(() => { event.headPart.busy = false; });
@@ -223,9 +267,11 @@
       group.add(headPart.plane);
     }
     const textWidth = (textPart.canvas.width / textPart.canvas.height) * state.settings.textWorldHeight;
-    const headWidth = headPart ? 1.6 * state.settings.chatheadWorldSize : 0;
-    textPart.plane.position.x = (headWidth + textWidth) / 2;
-    if (headPart) headPart.plane.position.x = -textWidth / 2;
+    const headWidth = headPart ? state.settings.chatheadWorldSize : 0;
+    const gap = headPart ? state.settings.chatheadWorldSize * 0.14 : 0; // Used below to reproduce the demo's 7–14 px gap relative to its 60–90 px head.
+    const totalWidth = headWidth + gap + textWidth;
+    textPart.plane.position.x = -totalWidth / 2 + headWidth + gap + textWidth / 2;
+    if (headPart) headPart.plane.position.x = -totalWidth / 2 + headWidth / 2;
     scene.add(group);
     const now = performance.now();
       const event = {
@@ -235,6 +281,7 @@
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
+      revealAtMs: revealSchedule(message), // Used by updateActive() to match ordinary NPC dialogue timing and cumulative text reveal.
       visibleChars: -1,
     };
     state.active.push(event);
@@ -259,8 +306,10 @@
         state.active.splice(index, 1);
         continue;
       }
-      const revealProgress = Math.min(1, progress / 0.55);
-      const visibleChars = Math.ceil(event.textPart.text.length * revealProgress);
+      const elapsedMs = now - event.startedAt;
+      const visibleChars = event.revealAtMs.length
+        ? event.revealAtMs.filter(revealAt => revealAt <= elapsedMs).length
+        : event.textPart.text.length;
       if (visibleChars !== event.visibleChars) drawText(event, event.textPart.text.slice(0, visibleChars));
       event.group.position.copy(anchor);
       event.group.quaternion.copy(camera.quaternion);

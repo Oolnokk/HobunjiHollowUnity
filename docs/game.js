@@ -15896,6 +15896,15 @@
         camera,
         getActiveScene,
         getDay: () => calendar.day,
+        getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
+        getDayPart: () => {
+          const hour = window.CalendarSystem.getHour(); // Used by ambient greeting {dayPart} substitutions.
+          if (hour < 8) return 'dawn';
+          if (hour < 12) return 'morning';
+          if (hour < 17) return 'afternoon';
+          if (hour < 20) return 'evening';
+          return 'night';
+        },
         getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
         getCurrentArea: () => currentArea,
         getNpcWalkers: () => npcWalkers,

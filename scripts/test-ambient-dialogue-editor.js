@@ -19,7 +19,11 @@ assert(editor.includes('Audience reactions'), 'editor exposes cheers and jeers')
 assert(editor.includes('ambient-dialogue.json'), 'editor imports and exports the runtime config');
 assert(runtime.includes('npcGreetings'), 'runtime consumes per-NPC greeting pools');
 assert(runtime.includes('companionTreasureLines'), 'runtime consumes per-species treasure pools');
-assert(runtime.includes("replaceAll('{targetName}'"), 'runtime drops the intended target name into greetings');
+assert(runtime.includes('targetName:'), 'runtime drops the intended target name into greetings');
+assert(runtime.includes('getWeekDay'), 'runtime resolves {weekDay} through the game calendar');
+assert(runtime.includes('getDayPart'), 'runtime resolves {dayPart} through the game clock');
+assert(runtime.includes('SCRATCHBONES_CONFIG?.game?.npcDialogue?.text?.typewriter'), 'ambient text uses the ordinary NPC typewriter rules');
+assert(runtime.includes("event.textPart.text.slice(0, visibleChars)"), 'revealed letters accumulate instead of replacing one another');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
 
