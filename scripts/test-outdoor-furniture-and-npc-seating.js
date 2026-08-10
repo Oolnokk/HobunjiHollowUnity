@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards shared outdoor management and NPC seat integration.
-const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Guards the NPC avatar-sink measurement.
+const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Guards the NPC avatar-sink measurement and seated anatomy math.
 const dewVatSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8'); // Guards assignment migration when a processor moves.
 const inn = JSON.parse(fs.readFileSync('docs/config/maps/map_i_inn.json', 'utf8'));
 
@@ -53,5 +53,14 @@ assert.match(gameSource,
   'NPC portrait planes use deadzone facing while procedural feet retain exact logical facing');
 assert.match(legSource, /standingPosteriorY: posteriorY/,
   'the procedural-leg handle exposes the standing posterior height for NPC chair sinking');
+assert.match(legSource,
+  /const standingPosteriorY = chain\.hip\.position\.y;[\s\S]{0,700}const fullLegLength = Math\.max\(0\.001, standingPosteriorY - contactY\);/,
+  'seated bone lengths stay tied to the character posterior-to-foot anatomy instead of chair height');
+assert.match(legSource,
+  /planePoint: new THREE\.Vector3\(posteriorX, posteriorY, 0\)/,
+  'the seated surface plane is solved in the post-sink avatar-local posterior frame');
+assert.doesNotMatch(legSource,
+  /const posteriorY = \(Number\.isFinite\(seatY\)[\s\S]{0,250}const fullLegLength/,
+  'floor-relative seat height never replaces the character posterior when calculating bone length');
 
 console.log('outdoor furniture management and NPC seating tests passed');
