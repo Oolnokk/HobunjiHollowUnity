@@ -54,7 +54,10 @@
     _open = panel?.style.display !== 'flex';
     if (panel) panel.style.display = _open ? 'flex' : 'none';
     if (btn) btn.classList.toggle('fed-open', _open);
-    if (!_open) deps.armFurniturePlacement(null); // closing the panel also cancels any armed placement
+    if (!_open) {
+      deps.armFurniturePlacement(null);
+      deps.armFurnitureMove(null);
+    }
     if (_open) render();
   }
 
@@ -63,11 +66,15 @@
     const list = document.getElementById('furniturePlacerList');
     if (!list) return;
     const owned = _ownedPlaceableHere();
+    const placed = deps.getPlacedFurniture();
     const armed = deps.getArmedFurniturePlacementKey();
+    const moveArmedId = deps.getArmedFurnitureMoveId();
     if (hint) {
-      hint.textContent = owned.length
-        ? 'Pick a piece, then tap a clear tile to place it.'
-        : "You don't own any furniture yet — buy some from the General Store.";
+      hint.textContent = moveArmedId
+        ? 'Tap a clear tile to move the selected furniture there.'
+        : (owned.length || placed.length)
+          ? 'Place owned furniture, or move/remove furniture already in this area.'
+          : "You don't own or have any furniture placed here yet.";
     }
     list.innerHTML = '';
     owned.forEach(def => {
@@ -84,6 +91,42 @@
         render();
       });
       row.appendChild(btn);
+      list.appendChild(row);
+    });
+    if (placed.length) {
+      const title = document.createElement('div');
+      title.className = 'house-layout-section-title';
+      title.textContent = 'Placed Here';
+      list.appendChild(title);
+    }
+    placed.forEach(obj => {
+      const def = deps.getDecorativeFurnitureDefs()[obj.key];
+      if (!def) return;
+      const isMoveArmed = moveArmedId === obj.id;
+      const row = document.createElement('div');
+      row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
+      row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${obj.col}, ${obj.row}</span>`;
+      const moveBtn = document.createElement('button');
+      moveBtn.className = 'settings-small-btn';
+      moveBtn.textContent = isMoveArmed ? 'Cancel' : 'Move';
+      moveBtn.addEventListener('click', () => deps.armFurnitureMove(isMoveArmed ? null : obj.id));
+      const rotateBtn = document.createElement('button');
+      rotateBtn.className = 'settings-small-btn';
+      rotateBtn.textContent = 'Rotate 45°';
+      rotateBtn.addEventListener('click', () => {
+        const result = deps.rotateFurniture(obj.id, 45);
+        deps.showToast(result.message, result.ok);
+        render();
+      });
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'settings-small-btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => {
+        const result = deps.removeFurniture(obj.id);
+        deps.showToast(result.message, result.ok);
+        render();
+      });
+      row.append(moveBtn, rotateBtn, removeBtn);
       list.appendChild(row);
     });
   }
