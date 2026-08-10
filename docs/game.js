@@ -5372,10 +5372,13 @@
       }
 
       // Second pass for the real player's own shoulder pet(s), called after
-      // updatePlayerMesh in the main loop (updateCompanions itself runs
-      // before it — see the long comment in its shoulderPet branch for why
-      // that ordering is otherwise required, and why it leaves
-      // playerMesh.position one frame stale for this pin). Re-pins X/Z for
+      // updateToolMesh in the main loop (updateCompanions itself runs before
+      // updatePlayerMesh — see the long comment in its shoulderPet branch for
+      // why that ordering is otherwise required). Waiting through tool mesh
+      // animation matters because authored attack/tool poses apply bodyYaw to
+      // playerMesh.rotation.y after the ordinary player update; the shoulder
+      // pet must inherit that final body rotation, not the pre-swing facing.
+      // Re-pins X/Z for
       // BOTH the rig-anchor (perch/grip) and no-rig-data fallback cases —
       // both read playerMesh.position the same way, so both need this.
       // Y is only re-pinned for the perch/grip case: the fallback's Y is a
@@ -5390,14 +5393,17 @@
           const perch = playerAttachmentAnchor('shoulderPerch');
           const grip = creatureAttachmentAnchor(c.creatureKey, 'shoulderGrip', c.genotype);
           if (perch && grip) {
-            const { dx, dz } = _shoulderPetOffsetXZ(perch, grip);
+            const { dx, dz, gripYawRad } = _shoulderPetOffsetXZ(perch, grip); // Final attack-rotated attachment transform.
             c.avatarRef.group.position.x = playerMesh.position.x + dx;
             c.avatarRef.group.position.y = playerMesh.position.y + perch.y - grip.y;
             c.avatarRef.group.position.z = playerMesh.position.z + dz;
+            c.avatarRef.group.rotation.y = playerMesh.rotation.y - gripYawRad;
           } else {
-            const clingAngle = player.angle + Math.PI;
-            c.avatarRef.group.position.x = playerMesh.position.x + Math.cos(clingAngle) * 0.3;
-            c.avatarRef.group.position.z = playerMesh.position.z + Math.sin(clingAngle) * 0.3;
+            // Backward local offset expressed through the avatar's final
+            // THREE.js Y rotation, so fallback pets follow bodyYaw too.
+            c.avatarRef.group.position.x = playerMesh.position.x - Math.sin(playerMesh.rotation.y) * 0.3;
+            c.avatarRef.group.position.z = playerMesh.position.z - Math.cos(playerMesh.rotation.y) * 0.3;
+            c.avatarRef.group.rotation.y = playerMesh.rotation.y;
           }
         }
       }
@@ -6731,6 +6737,9 @@
       // to remove one shrub/tree immediately without rebuilding every
       // procedural tree and merged ground mesh in a wilderness zone.
       const _zoneVegetationMeshes = new Map();
+      // mapId -> Map("col,row" -> mineable rock Group). Resource rocks stay
+      // individually removable while structural ROCK terrain remains merged.
+      const _zoneMineableRockMeshes = new Map();
       // mapId → THREE.InstancedMesh (grass billboard tufts) — see
       // _buildZoneGrassBillboards/refreshZoneGroundVisuals above.
       const _zoneGrassMeshes = new Map();
@@ -6866,7 +6875,9 @@
       function _buildZoneFloorMeshes(zScene, zGrid, ZCOLS, ZROWS, mapId) {
         const meshes = [];
         const vegetationByTile = new Map(); // Used for O(1) runtime foliage removal by tile.
+        const mineableRocksByTile = new Map(); // Used for O(1) runtime ore-rock removal by tile.
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
+        _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -6934,6 +6945,30 @@
             _addToBucket(TileType.GRASS, makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
             if (denTileKeys.has(c + ',' + r)) continue; // plain grass under the den's own mound mesh — see above
             const { stoneGeo, grassGeo } = buildRockTileGeo(c, r);
+            if (tile.rockKind === 'diggableRockOre') {
+              // Keep resource rocks out of the merged terrain buckets so a
+              // completed pick swing can remove exactly one mound without a
+              // synchronous whole-zone geometry rebuild. Structural rocks
+              // continue through the merged path below.
+              const rockGroup = new THREE.Group(); // Owns this resource rock's disposable mound geometry.
+              // stoneGeo and grassGeo share their position buffer, so one
+              // displacement updates both layers and must only run once.
+              displaceZoneGeometry(stoneGeo || grassGeo, mapId, cx, cz);
+              for (const [geometry, matKey] of [[stoneGeo, TileType.ROCK], [grassGeo, TileType.GRASS]]) {
+                if (!geometry) continue;
+                geometry.computeVertexNormals();
+                const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
+                rockMesh.castShadow = rockMesh.receiveShadow = true;
+                _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
+                rockGroup.add(rockMesh);
+              }
+              rockGroup.position.set(cx, NORMAL_TOP + tierY, cz);
+              zScene.add(rockGroup);
+              _markOutline(rockGroup);
+              meshes.push(rockGroup);
+              mineableRocksByTile.set(`${c},${r}`, rockGroup);
+              continue;
+            }
             _addToBucket(TileType.ROCK,  stoneGeo, cx, NORMAL_TOP + tierY, cz);
             _addToBucket(TileType.GRASS, grassGeo, cx, NORMAL_TOP + tierY, cz);
             continue;
@@ -9902,6 +9937,7 @@
         _zoneMinedRockPersist.delete(mapId);
         _zoneFloorMeshGroups.delete(mapId);
         _zoneVegetationMeshes.delete(mapId);
+        _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
       }
@@ -9931,6 +9967,24 @@
         if (vegGroup.userData?.cullSphere) {
           zi.cullables = (zi.cullables || []).filter(obj => obj !== vegGroup);
         }
+        return true;
+      }
+
+      // Removes one separately-built wilderness resource rock. Its full
+      // grass floor tile is already in the merged ground mesh, so only the
+      // small mound group needs to disappear when mining completes.
+      function removeZoneMineableRockVisual(mapId, col, row) {
+        const zi = _zoneScenes.get(mapId);
+        const byTile = _zoneMineableRockMeshes.get(mapId);
+        const rockGroup = byTile?.get(`${col},${row}`);
+        if (!zi || !rockGroup) return false;
+        zi.scene.remove(rockGroup);
+        byTile.delete(`${col},${row}`);
+        rockGroup.traverse(object => object.geometry?.dispose());
+
+        const floorMeshes = _zoneFloorMeshGroups.get(mapId);
+        const floorIndex = floorMeshes?.indexOf(rockGroup) ?? -1;
+        if (floorIndex >= 0) floorMeshes.splice(floorIndex, 1);
         return true;
       }
 
@@ -13131,11 +13185,14 @@
           inventory.stone = Math.min(99, (inventory.stone || 0) + amount);
           const gotPebble = Math.random() < 0.35;
           if (gotPebble) inventory.pebble = Math.min(99, (inventory.pebble || 0) + 1);
-          // No markTileDirty here for the wilderness-zone case — see the axe
-          // branch above; completeChargeAction's own currentArea==='farm'
-          // branch already calls markTileDirty/recomputeWater for the farm.
+          // Farm rocks use ordinary per-tile mesh rebuilding. Wilderness
+          // resource rocks are individually indexed, so remove only this
+          // mound and skip the expensive full-zone ground reconstruction.
+          const zoneVisualsUpdated = currentArea === 'farm'
+            ? false
+            : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
-          return { ok: true, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
+          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -18683,10 +18740,6 @@
 
         // ── Three.js updates ─────────────────────────────────────
         updatePlayerMesh(dt);
-        // Must run right after updatePlayerMesh, not folded into
-        // updateCompanions (called earlier, before it) — see
-        // updateShoulderPetMeshPin's own comment for why.
-        updateShoulderPetMeshPin();
         updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
@@ -18711,6 +18764,10 @@
           window.Combat?.update(dt);
           updateReticleMesh();
         }
+        // Must run after updateToolMesh: attack/tool poses can rotate the
+        // player's body after updatePlayerMesh, and the attached pet needs
+        // that final transform in the same frame.
+        updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           updateWaterMeshes();
           updateCropMeshes();

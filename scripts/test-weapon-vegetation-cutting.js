@@ -16,6 +16,10 @@ assert.match(gameSource, /const zoneVisualsUpdated = removeZoneVegetationVisual\
   'tree felling removes its indexed visual directly');
 assert.match(gameSource, /!result\.zoneVisualsUpdated && \(tool === 'shovel'/,
   'successful targeted removal skips the full-zone ground rebuild');
+assert.match(gameSource, /tile\.rockKind === 'diggableRockOre'/,
+  'mineable wilderness rocks are built as individually removable groups');
+assert.match(gameSource, /const zoneVisualsUpdated = currentArea === 'farm'[\s\S]{0,160}removeZoneMineableRockVisual\(currentArea, col, row\)/,
+  'wilderness rock breaking removes one indexed mound directly');
 
 // path is used to verify every player combat ability calls the shared vegetation clear.
 for (const path of [
