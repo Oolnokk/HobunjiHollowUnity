@@ -1,27 +1,26 @@
-// Fetches docs/config/combat/attack-values.json once at boot and pushes each
-// section into the combat-*.js module that owns it.
+// Loads authored combat values after the synchronous combat defaults exist.
 (function () {
   'use strict';
-  const _load = window.LocalDBOverrides
+  const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
     : fetch('config/combat/attack-values.json').then(r => r.ok ? r.json() : null);
-  window.__attackValuesConfigPromise = _load
-    .then(cfg => {
-      if (!cfg) return null;
-      window.__attackValuesConfig = cfg;
-      window.Combat?.applyComboConfig?.(cfg.combo);
-      window.Combat?.applyQuickAttackConfig?.(cfg.quickAttacks);
-      window.Combat?.applyChargedBreakerConfig?.(cfg.chargedBreaker);
-      window.Combat?.applyFlurryConfig?.(cfg.flurry);
-      window.Combat?.applyCounterShieldConfig?.(cfg.counterShield);
-      window.Combat?.animalAttacks?.applyConfig?.(cfg.creatureAttacks);
-      window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: cfg }));
-      return cfg;
-    })
-    .catch(() => null);
+  window.__attackValuesConfigPromise = load.then(cfg => {
+    if (!cfg) return null;
+    window.__attackValuesConfig = cfg;
+    window.Combat?.applyComboConfig?.(cfg.combo);
+    window.Combat?.applyQuickAttackConfig?.(cfg.quickAttacks);
+    window.Combat?.applyChargedBreakerConfig?.(cfg.chargedBreaker);
+    window.Combat?.applyFlurryConfig?.(cfg.flurry);
+    window.Combat?.applyCounterShieldConfig?.(cfg.counterShield);
+    window.Combat?.animalAttacks?.applyConfig?.(cfg.creatureAttacks);
+    window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: cfg }));
+    return cfg;
+  }).catch(() => null);
 })();
 
-// Cross-module bridge for the alcohol extension installed by combat-core.js.
+// Cross-module seams needed by combat-core's alcohol extension. This script
+// runs after combat-core has installed its future-global setters but before
+// AlchemySystem/DevSpawner are assigned.
 (function installDrunkenCrossModuleBridges() {
   'use strict';
 
@@ -40,16 +39,35 @@
     });
   }
 
-  chainFutureSetter('AlchemySystem', null, (api) => {
+  chainFutureSetter('AlchemySystem', null, api => {
     if (api?.ALCHEMY_POTION_ITEMS) api.POTION_ITEMS = api.ALCHEMY_POTION_ITEMS;
   });
 
-  chainFutureSetter('DevSpawner', (api) => {
+  chainFutureSetter('DevSpawner', api => {
     if (!api?.init || api.__drunkenZoneCompatInstalled) return;
     const originalInit = api.init.bind(api);
     api.init = function drunkenZoneCompatInit(injectedDeps) {
       if (injectedDeps && !injectedDeps._isZoneArea) {
-        injectedDeps._isZoneArea = (area) => !!injectedDeps.EXTERIOR_ZONES?.[area];
+        injectedDeps._isZoneArea = area => !!injectedDeps.EXTERIOR_ZONES?.[area];
+      }
+      if (injectedDeps?.startSceneTransition && !injectedDeps.__drunkTransitionSettleWrapped) {
+        const originalStartSceneTransition = injectedDeps.startSceneTransition;
+        injectedDeps.startSceneTransition = function drunkSafeSceneTransition(callback) {
+          // Basic tool actions capture an old-grid reticle coordinate and fire
+          // at the strike frame. A blackout used to swap grids immediately,
+          // leaving game.js firePendingAction() to index old row/col into the
+          // new grid (the reported game.js:13529:42 crash). Hold only the
+          // blackout-triggered transition long enough for that existing swing
+          // to resolve against its original grid. Ordinary transitions see a
+          // zero hold and remain synchronous with their old behavior.
+          const wait = Math.max(0, (Number(window.__hobunjiBlackoutTravelHoldUntil) || 0) - performance.now());
+          if (wait > 0) {
+            setTimeout(() => originalStartSceneTransition(callback), wait);
+            return;
+          }
+          return originalStartSceneTransition(callback);
+        };
+        injectedDeps.__drunkTransitionSettleWrapped = true;
       }
       window.__hobunjiDrunkBridgeDevDeps = injectedDeps;
       return originalInit(injectedDeps);
@@ -58,7 +76,6 @@
   }, null);
 })();
 
-// Final gameplay seams for drunken locomotion/attachments and held consumables.
 (function installDrunkenGameplayBridges() {
   'use strict';
 
@@ -75,6 +92,7 @@
   const FOOTING_SPEED_MUL_MIN = 0.55;
   const STOP_LAMBDA_LIGHT_DRUNK = 9.0;
   const STOP_LAMBDA_MAX_DRUNK = 2.1;
+  const BLACKOUT_ACTION_SETTLE_MS = 750;
 
   let mountDeps = null;
   let itemDeps = null;
@@ -89,8 +107,7 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   function approach(current, target, maxDelta) {
     const d = target - current;
-    if (Math.abs(d) <= maxDelta) return target;
-    return current + Math.sign(d) * maxDelta;
+    return Math.abs(d) <= maxDelta ? target : current + Math.sign(d) * maxDelta;
   }
   function drunkFootingFraction(player) {
     const max = Math.max(0, Number(player?.maxFooting) || 0);
@@ -109,13 +126,28 @@
     };
   }
 
-  // A blackout advances the accelerated game clock, so sober the two drunk
-  // bands by the same amount of simulation time that actually elapsed.
+  // Predict the blackout before combat-core performs its synchronous travel,
+  // establishing the short old-grid action-settle window consumed by the
+  // DevSpawner transition wrapper above. Then apply elapsed-time sobriety.
   const originalAddDrunkenness = RS.addDrunkenness?.bind(RS);
   if (originalAddDrunkenness && !RS.__blackoutSobrietyRecoveryInstalled) {
     RS.addDrunkenness = function blackoutSobrietyAwareAdd(entity, footingAmount, healthAmount, opts = {}) {
+      const player = window.Combat?.deps?.player;
+      if (entity === player) {
+        const max = Math.max(0, Number(entity?.maxFooting) || 0);
+        const before = Math.max(0, Number(entity?.afflictions?.[DRUNK_FOOTING_ID]) || 0);
+        const attempted = before + Math.max(0, Number(footingAmount) || 0);
+        const willBlackout = max > 0 && attempted >= max && (before < max || attempted > max);
+        if (willBlackout) {
+          window.__hobunjiBlackoutTravelHoldUntil = Math.max(
+            Number(window.__hobunjiBlackoutTravelHoldUntil) || 0,
+            performance.now() + BLACKOUT_ACTION_SETTLE_MS
+          );
+        }
+      }
+
       const result = originalAddDrunkenness(entity, footingAmount, healthAmount, opts);
-      if (!result?.blackout || entity !== window.Combat?.deps?.player) return result;
+      if (!result?.blackout || entity !== player) return result;
       const skippedMinutes = Number(window.HobunjiAlcohol?.getDebug?.()?.lastBlackout?.skippedMinutes) || 0;
       const elapsedTickSeconds = skippedMinutes * GAME_DAY_SECONDS / GAME_DAY_MINUTES;
       const recovery = Math.max(0, elapsedTickSeconds * DRUNK_RECOVERY_PER_SEC);
@@ -156,9 +188,7 @@
     });
   }
 
-  // Mounts receives the authoritative movement inputs/speed constants.
   hookFutureInit('Mounts', deps => { mountDeps = deps; });
-  // FarmCrates already receives game.js's canonical active-inventory getter.
   hookFutureInit('FarmCrates', deps => { itemDeps = deps; });
 
   const drunkOwnedRoot = child => {
@@ -170,26 +200,20 @@
       || name.includes('procedural_leg');
   };
 
-  // Capture the actual player parent and the pre-leg direct children. We no
-  // longer write drunk quaternions into those children during update():
-  // game.js owns leg-group counter-yaw and avatar facing. The renderer seam
-  // below composes the drunk quaternion on the complete player parent only
-  // after all normal mouse/deadzone/attack transforms have finished.
+  // Capture only. Drunk body rotation is applied to the complete parent at
+  // render time; child-level writes would overwrite game.js's intentional
+  // procedural-leg Y counter-rotation used by mouse/deadzone facing.
   const previousAttach = legApi.attach.bind(legApi);
   legApi.attach = function drunkAttachmentAwareAttach(THREEArg, parent, options = {}) {
     const isPlayer = String(options.name || '').toLowerCase() === 'player';
     const childrenBefore = isPlayer ? Array.from(parent?.children || []) : null;
     const handle = previousAttach(THREEArg, parent, options);
     if (!childrenBefore || !handle) return handle;
-
     playerMeshRef = parent;
     passiveRoots = childrenBefore.filter(child => child?.isObject3D && !drunkOwnedRoot(child));
     const originalDispose = handle.dispose.bind(handle);
     handle.dispose = function drunkAttachmentAwareDispose() {
-      if (playerMeshRef === parent) {
-        playerMeshRef = null;
-        passiveRoots = [];
-      }
+      if (playerMeshRef === parent) { playerMeshRef = null; passiveRoots = []; }
       return originalDispose();
     };
     return handle;
@@ -198,31 +222,26 @@
   function localDrunkQuaternion() {
     if (window.ImpactRagdollPlayback?.isActive?.()) return new THREE.Quaternion();
     const debug = window.HobunjiDrunkWalk?.getDebug?.();
-    const e = new THREE.Euler(
+    return new THREE.Quaternion().setFromEuler(new THREE.Euler(
       (Number(debug?.pitchDeg) || 0) * Math.PI / 180,
       (Number(debug?.yawDeg) || 0) * Math.PI / 180,
       (Number(debug?.rollDeg) || 0) * Math.PI / 180,
       'YXZ'
-    );
-    return new THREE.Quaternion().setFromEuler(e);
+    ));
   }
 
-  function renderRotatedSibling(obj, pivot, worldDrunkQ, undo) {
+  function renderRotatedSibling(obj, pivot, worldQ, undo) {
     if (!obj?.isObject3D || !obj.visible) return;
     const oldPos = obj.position.clone();
     const oldQuat = obj.quaternion.clone();
-    const offset = obj.position.clone().sub(pivot).applyQuaternion(worldDrunkQ);
-    obj.position.copy(pivot).add(offset);
-    obj.quaternion.premultiply(worldDrunkQ);
+    obj.position.copy(pivot).add(obj.position.clone().sub(pivot).applyQuaternion(worldQ));
+    obj.quaternion.premultiply(worldQ);
     undo.push(() => { obj.position.copy(oldPos); obj.quaternion.copy(oldQuat); });
   }
 
-  // Render-time composition is the important ordering guarantee here:
-  // Qrender = Q(mouse/deadzone + attack) * Q(drunk). game.js can freely set
-  // playerMesh.rotation.y earlier in the frame and authored attacks can add
-  // bodyYaw later; neither can overwrite this because it is applied at the
-  // last possible moment and immediately restored after rendering. Children
-  // (PNG body, held-item holder, procedural legs) inherit it automatically.
+  // Final composition: Qrender = Q(mouse/deadzone + attack) * Q(drunk).
+  // It happens inside render(), after every game.js rotation writer, then is
+  // restored immediately so no transform drift can accumulate.
   if (window.THREE?.WebGLRenderer && !window.THREE.WebGLRenderer.prototype.__drunkAttachmentRenderHook) {
     const proto = window.THREE.WebGLRenderer.prototype;
     const originalRender = proto.render;
@@ -234,15 +253,8 @@
           const basePlayerQ = playerMeshRef.quaternion.clone();
           const worldQ = basePlayerQ.clone().multiply(localQ).multiply(basePlayerQ.clone().invert());
           const pivot = playerMeshRef.position.clone();
-
-          // Save/restore so gameplay state remains owned by game.js; only the
-          // pixels see the composed drunk transform.
           playerMeshRef.quaternion.copy(basePlayerQ).multiply(localQ);
           undo.push(() => playerMeshRef.quaternion.copy(basePlayerQ));
-
-          // Tool and shoulder pet are scene siblings rather than children, so
-          // rotate them around the same player pivot by the equivalent world
-          // quaternion for this render pass.
           renderRotatedSibling(window.__hobunjiDrunkBridgeDevDeps?.toolHolder, pivot, worldQ, undo);
           for (const c of window.Combat?.deps?.companionObjects || []) {
             if (c?.health <= 0 || c?.stableRole !== 'shoulderPet' || (c.master || window.Combat?.deps?.player) !== window.Combat?.deps?.player) continue;
@@ -289,7 +301,6 @@
       inertiaVX = inertiaVY = 0;
       return;
     }
-
     const move = movementInput();
     const { legacy: legacyFootingMul, desired: desiredFootingMul } = footingSpeedMuls(player);
     if (move.active) {
@@ -300,8 +311,7 @@
         * (mountDeps.getAlchemySpeedMul?.() ?? window.AlchemySystem?.getSpeedMul?.() ?? 1)
         * (mountDeps.getDevGlobalSpeedMul?.() ?? 1);
       const desiredSpeed = baseSpeed * desiredFootingMul;
-      const targetVx = move.x * desiredSpeed;
-      const targetVy = move.y * desiredSpeed;
+      const targetVx = move.x * desiredSpeed, targetVy = move.y * desiredSpeed;
       const accel = Math.max(1, Number(mountDeps.ACCEL) || 980);
       const legacyStep = accel * legacyFootingMul * dt;
       const prechargeX = targetVx + Math.sign(targetVx || move.x) * legacyStep;
@@ -309,46 +319,34 @@
       const catchup = accel * dt * 2.25;
       player.vx = approach(Number(player.vx) || 0, prechargeX, catchup);
       player.vy = approach(Number(player.vy) || 0, prechargeY, catchup);
-      inertiaVX = targetVx;
-      inertiaVY = targetVy;
+      inertiaVX = targetVx; inertiaVY = targetVy;
     } else {
-      const lambda = lerp(STOP_LAMBDA_LIGHT_DRUNK, STOP_LAMBDA_MAX_DRUNK, drunk);
-      const decay = Math.exp(-Math.max(0.1, lambda) * dt);
+      const decay = Math.exp(-Math.max(0.1, lerp(STOP_LAMBDA_LIGHT_DRUNK, STOP_LAMBDA_MAX_DRUNK, drunk)) * dt);
       inertiaVX *= decay; inertiaVY *= decay;
       let idealSpeed = Math.hypot(inertiaVX, inertiaVY);
       if (idealSpeed < 2) { inertiaVX = inertiaVY = 0; idealSpeed = 0; }
-
       const px = Number(player.x) || 0, py = Number(player.y) || 0;
       if (lastPlayerX != null && Math.hypot(px - lastPlayerX, py - lastPlayerY) < 0.02 && idealSpeed > 30) {
-        inertiaVX = inertiaVY = 0;
-        idealSpeed = 0;
+        inertiaVX = inertiaVY = 0; idealSpeed = 0;
       }
       if (idealSpeed > 0) {
-        const decelStep = Math.max(0, Number(mountDeps.DECEL) || 1850) * dt;
-        const prechargedSpeed = idealSpeed + decelStep;
+        const prechargedSpeed = idealSpeed + Math.max(0, Number(mountDeps.DECEL) || 1850) * dt;
         player.vx = inertiaVX / idealSpeed * prechargedSpeed;
         player.vy = inertiaVY / idealSpeed * prechargedSpeed;
-      } else {
-        player.vx = player.vy = 0;
-      }
+      } else player.vx = player.vy = 0;
     }
-    lastPlayerX = Number(player.x) || 0;
-    lastPlayerY = Number(player.y) || 0;
+    lastPlayerX = Number(player.x) || 0; lastPlayerY = Number(player.y) || 0;
   }
 
   function heldItemHolderVisible() {
-    if (!playerMeshRef) return false;
-    return passiveRoots.some(root => root?.visible && !root.name && root.type === 'Group');
+    return !!playerMeshRef && passiveRoots.some(root => root?.visible && !root.name && root.type === 'Group');
   }
-
   function isPotionOrDrink(key, def) {
     if (!key || !def) return false;
     if (window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.getPotionEffectsFromKey?.(key)) return true;
     const tags = (def.tags || []).map(t => String(t).toLowerCase());
-    const text = `${def.label || ''} ${tags.join(' ')}`.toLowerCase();
-    return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirit|potion|drink|tea|juice|milk)\b/.test(text);
+    return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirit|potion|drink|tea|juice|milk)\b/.test(`${def.label || ''} ${tags.join(' ')}`.toLowerCase());
   }
-
   function isFood(def) {
     if (!def) return false;
     const tags = (def.tags || []).map(t => String(t).toLowerCase());
@@ -359,25 +357,19 @@
   function consumeHeldItem() {
     if (performance.now() < consumeLockUntil || !heldItemHolderVisible()) return false;
     const active = itemDeps?.getActiveInventoryItem?.();
-    const key = active?.key;
-    const inventory = itemDeps?.inventory;
-    const def = active;
+    const key = active?.key, inventory = itemDeps?.inventory, def = active;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
-
     if (isPotionOrDrink(key, def)) {
       const result = window.AlchemySystem?.drinkPotion?.(key);
       if (!result) return false;
       itemDeps.showToast?.(result.message, result.ok !== false);
       if (result.ok !== false) {
-        itemDeps.refreshItemScroll?.();
-        itemDeps.buildInventoryGrid?.();
-        itemDeps.saveMemberWorldData?.();
+        itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.saveMemberWorldData?.();
       }
       consumeLockUntil = performance.now() + 180;
       return true;
     }
     if (!isFood(def)) return false;
-
     inventory[key]--;
     itemDeps.clampInventoryStack?.(key);
     const player = window.Combat?.deps?.player;
@@ -386,28 +378,40 @@
     if (player && healthRestore > 0) player.health = Math.min(Number(player.maxHealth) || 100, (Number(player.health) || 0) + healthRestore);
     if (player && staminaRestore > 0) player.stamina = Math.min(Number(player.maxStamina) || 100, (Number(player.stamina) || 0) + staminaRestore);
     itemDeps.showToast?.(`${def.icon || '🍽️'} Ate ${def.label || key}.`, true);
-    itemDeps.refreshItemScroll?.();
-    itemDeps.buildInventoryGrid?.();
-    itemDeps.saveMemberWorldData?.();
+    itemDeps.refreshItemScroll?.(); itemDeps.buildInventoryGrid?.(); itemDeps.saveMemberWorldData?.();
     consumeLockUntil = performance.now() + 180;
     return true;
   }
 
-  // Capture before game.js's action handlers so a held consumable owns the
-  // action press rather than also queueing the current tool/tile action.
+  function blackoutSettling() {
+    return performance.now() < (Number(window.__hobunjiBlackoutTravelHoldUntil) || 0);
+  }
+
+  // During the very short blackout settle window the player is incapacitated:
+  // do not allow another action-button/key press to create a fresh pending
+  // old-grid action just before the delayed scene transition executes.
+  document.addEventListener('pointerdown', event => {
+    const id = event.target?.closest?.('button')?.id || '';
+    if (!blackoutSettling() || !/^btn(?:Item)?Action[1-5]$/.test(id)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  }, true);
+  window.addEventListener('keydown', event => {
+    if (!blackoutSettling()) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  }, true);
+
+  // Held consumables own the primary action press rather than also firing the
+  // tile/tool action underneath them.
   document.addEventListener('pointerdown', event => {
     const id = event.target?.closest?.('button')?.id;
     if (!/^btn(?:Item)?Action[1-5]$/.test(id || '')) return;
     if (!consumeHeldItem()) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
+    event.preventDefault(); event.stopImmediatePropagation();
   }, true);
-
   window.addEventListener('keydown', event => {
     if (event.repeat || !['Space', 'Enter', 'KeyE'].includes(event.code)) return;
     if (!consumeHeldItem()) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
+    event.preventDefault(); event.stopImmediatePropagation();
   }, true);
 
   function postFrameLoop(now) {
@@ -433,6 +437,8 @@
         legacyFootingSpeedMul: muls.legacy,
         desiredFootingSpeedMul: muls.desired,
         inertiaVX, inertiaVY,
+        blackoutSettling: blackoutSettling(),
+        blackoutTravelHoldUntil: Number(window.__hobunjiBlackoutTravelHoldUntil) || 0,
         hasDevDeps: !!window.__hobunjiDrunkBridgeDevDeps,
         hasMountDeps: !!mountDeps,
         hasItemDeps: !!itemDeps,
