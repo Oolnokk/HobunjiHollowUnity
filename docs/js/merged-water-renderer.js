@@ -16,6 +16,9 @@
         row: source.row,
         surfaceY: source.surfaceY,
         depth: Math.max(0, Math.min(1, Number.isFinite(source.depth) ? source.depth : 1)),
+        coverage: Math.max(0, Math.min(1, Number.isFinite(source.coverage)
+          ? source.coverage
+          : (Number.isFinite(source.depth) ? source.depth : 1))),
         flowX: Number.isFinite(source.flowX) ? source.flowX : 0,
         flowZ: Number.isFinite(source.flowZ) ? source.flowZ : 0,
       };
@@ -77,6 +80,7 @@
     const positions = [];
     const uvs = [];
     const depths = [];
+    const coverages = []; // Used by the shader to separate visual opacity from water-color depth.
     const flows = [];
     const indices = [];
     let vertexIndex = 0;
@@ -94,6 +98,7 @@
         positions.push(x, y, z);
         uvs.push((x - uvMinX) / uvWidth, (z - uvMinZ) / uvHeight);
         depths.push(cell.depth);
+        coverages.push(cell.coverage);
         flows.push(cell.flowX, cell.flowZ);
       }
       indices.push(
@@ -103,7 +108,7 @@
       vertexIndex += 4;
     }
 
-    return { positions, uvs, depths, flows, indices, tileCount: byKey.size };
+    return { positions, uvs, depths, coverages, flows, indices, tileCount: byKey.size };
   }
 
   function createMaterial(THREE, options = {}) {
@@ -122,13 +127,16 @@
       uniforms,
       vertexShader: `
         attribute float aDepth;
+        attribute float aCoverage;
         attribute vec2 aFlow;
         varying vec2 vUv;
         varying float vDepth;
+        varying float vCoverage;
         varying vec2 vFlow;
         void main() {
           vUv = uv;
           vDepth = aDepth;
+          vCoverage = aCoverage;
           vFlow = aFlow;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -141,6 +149,7 @@
         uniform float uOpacity;
         varying vec2 vUv;
         varying float vDepth;
+        varying float vCoverage;
         varying vec2 vFlow;
         void main() {
           // Keep the PNG anchored to world X/Z so adjacent tiles and
@@ -155,10 +164,10 @@
           float flowSheen = min(1.0, length(vFlow)) * 0.045
             * (sin((vUv.x + vUv.y) * 28.0 - uTime * 2.0) * 0.5 + 0.5);
           surfaceColor += flowSheen;
-          // uOpacity is the authored maximum (80% in game.js); shallow film
-          // still fades with simulated depth instead of appearing suddenly
-          // as a fully opaque sheet after the first drop of rain.
-          float alpha = uOpacity * mix(0.075, 1.0, smoothstep(0.0, 1.0, vDepth));
+          // uOpacity is the authored maximum (80% in game.js). Coverage is
+          // full for permanent waterways, while temporary water supplies its
+          // simulated depth so a first drop of rain still fades in gently.
+          float alpha = uOpacity * mix(0.075, 1.0, smoothstep(0.0, 1.0, vCoverage));
           gl_FragColor = vec4(surfaceColor, alpha);
         }
       `,
@@ -188,6 +197,7 @@
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
     geometry.setAttribute('aDepth', new THREE.Float32BufferAttribute(data.depths, 1));
+    geometry.setAttribute('aCoverage', new THREE.Float32BufferAttribute(data.coverages, 1));
     geometry.setAttribute('aFlow', new THREE.Float32BufferAttribute(data.flows, 2));
     const IndexArray = data.indices.length > 65535 ? Uint32Array : Uint16Array;
     geometry.setIndex(new THREE.BufferAttribute(new IndexArray(data.indices), 1));

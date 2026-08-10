@@ -393,14 +393,14 @@
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
-  <script src="js/merged-water-renderer.js?v=20260809b"></script>
+  <script src="js/merged-water-renderer.js?v=20260809c"></script>
   <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
        (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20260809b"></script>
+  <script src="js/zone-terrain-features.js?v=20260809c"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
        other window.* system reads; must load before game.js, which calls
@@ -1685,7 +1685,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260809i"></script>
+  <script src="game.js?v=20260809j"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

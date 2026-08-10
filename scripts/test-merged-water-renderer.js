@@ -44,4 +44,11 @@ assert.deepEqual(disconnected.uvs.slice(8, 10), [0.7, 0.8], 'disconnected high w
 assert.equal(disconnected.tileCount, 2);
 assert.equal(disconnected.indices.length, 12, 'two tile quads become four triangles in one index buffer');
 
+const coverage = buildSurfaceData([
+  { col: 0, row: 0, surfaceY: 0, depth: 0.45, coverage: 1 },
+  { col: 1, row: 0, surfaceY: 0, depth: 0.2 },
+], { yOffset: 0 });
+assert.deepEqual(coverage.coverages.slice(0, 4), [1, 1, 1, 1], 'permanent streams can reach the authored 80% maximum independently of color depth');
+assert.deepEqual(coverage.coverages.slice(4, 8), [0.2, 0.2, 0.2, 0.2], 'temporary water defaults coverage to its simulated depth');
+
 console.log('merged water renderer tests passed');

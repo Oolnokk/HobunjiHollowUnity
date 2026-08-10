@@ -10084,6 +10084,7 @@
             col: c, row: r,
             surfaceY: NORMAL_TOP - (deep ? 0.10 : 0.05),
             depth: deep ? 0.8 : 0.45,
+            coverage: 1,
             flowX: fx, flowZ: fz,
           };
         });
