@@ -30,8 +30,51 @@
 (() => {
   'use strict';
 
+  // three.js r128 installs render() as an OWN method on every WebGLRenderer
+  // instance. PlayerBodyTransformComposer intentionally hooks the prototype so
+  // it can intercept every render pass, which means an untouched r128 instance
+  // shadows that hook completely. Make future renderer instances delegate their
+  // public render() lookup through the prototype while preserving the original
+  // r128 implementation as a private bound function on each instance.
+  function makeRendererPrototypeHookable() {
+    const OriginalWebGLRenderer = window.THREE?.WebGLRenderer; // Used to construct the real r128 renderer inside the compatibility wrapper.
+    if (!OriginalWebGLRenderer || OriginalWebGLRenderer.__hobunjiPrototypeHookable) return;
+
+    const rendererPrototype = OriginalWebGLRenderer.prototype; // Used as the stable hook surface PlayerBodyTransformComposer wraps next.
+    const preexistingPrototypeRender = rendererPrototype.render; // Preserved for Three builds that already expose prototype render().
+
+    if (typeof rendererPrototype.render !== 'function') {
+      rendererPrototype.render = function hobunjiBaseRendererRender(...args) {
+        if (typeof this.__hobunjiBaseRendererRender === 'function') {
+          return this.__hobunjiBaseRendererRender(...args);
+        }
+        return preexistingPrototypeRender?.apply(this, args);
+      };
+    }
+
+    function HookableWebGLRenderer(...args) {
+      const instance = new OriginalWebGLRenderer(...args); // Used as the renderer returned to game.js after its own render() is captured.
+      if (Object.prototype.hasOwnProperty.call(instance, 'render') && typeof instance.render === 'function') {
+        Object.defineProperty(instance, '__hobunjiBaseRendererRender', {
+          configurable: true,
+          value: instance.render.bind(instance),
+        });
+        delete instance.render;
+      }
+      return instance;
+    }
+
+    HookableWebGLRenderer.prototype = rendererPrototype;
+    Object.setPrototypeOf(HookableWebGLRenderer, OriginalWebGLRenderer);
+    HookableWebGLRenderer.__hobunjiPrototypeHookable = true;
+    HookableWebGLRenderer.__hobunjiOriginalWebGLRenderer = OriginalWebGLRenderer;
+    window.THREE.WebGLRenderer = HookableWebGLRenderer;
+  }
+
+  makeRendererPrototypeHookable();
+
   const modules = [
-    ['js/player-body-transform-composer.js?v=20260810a', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-transform-composer.js?v=20260810b', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
     ['js/drunk-locomotion.js?v=20260810a', () => !!window.HobunjiDrunkWalk],
     ['js/alcohol-gameplay-bridge.js?v=20260810a', () => !!window.HobunjiDrunkGameplayBridge],
