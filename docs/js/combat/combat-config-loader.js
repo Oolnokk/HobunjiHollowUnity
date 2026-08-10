@@ -1,23 +1,5 @@
 // Fetches docs/config/combat/attack-values.json once at boot and pushes each
-// section into the combat-*.js module that owns it, via the applyXConfig
-// functions those modules expose (see combat-combo.js's applyComboConfig for
-// the general in-place-mutation pattern every one of them follows). Runs
-// after every combat-*.js file has already registered its synchronous
-// hardcoded defaults, so those defaults are what's actually in play until
-// this fetch resolves — same "synchronous fallback, async override" shape
-// as docs/game.js's loadLootShopConfig().
-//
-// The full parsed config is also stashed on window.__attackValuesConfig so
-// game.js's weaponAbility()/CREATURE_DB attack-field merge (which don't have
-// their own combat-*.js-style module to push into) can read it directly, and
-// so the attack-animation-editor tool's live-preview can inspect the exact
-// values currently in effect.
-//
-// Routed through window.LocalDBOverrides.loadDatabase() (see docs/js/local-
-// db-overrides.js) instead of a bare fetch so the "Database Source" toggle on
-// the onboarding save-select screen can swap in a locally-saved edit of this
-// file without touching the repo copy — falls back to a direct fetch if that
-// module somehow isn't loaded.
+// section into the combat-*.js module that owns it.
 (function () {
   'use strict';
   const _load = window.LocalDBOverrides
@@ -39,6 +21,7 @@
     .catch(() => null);
 })();
 
+// Cross-module bridge for the alcohol extension installed by combat-core.js.
 (function installDrunkenCrossModuleBridges() {
   'use strict';
 
@@ -75,6 +58,7 @@
   }, null);
 })();
 
+// Final gameplay seams for drunken locomotion/attachments and held consumables.
 (function installDrunkenGameplayBridges() {
   'use strict';
 
@@ -96,7 +80,6 @@
   let itemDeps = null;
   let playerMeshRef = null;
   let passiveRoots = [];
-  let passiveBaseQuats = new Map();
   let inertiaVX = 0, inertiaVY = 0;
   let lastPlayerX = null, lastPlayerY = null;
   let lastPostAt = performance.now();
@@ -126,6 +109,8 @@
     };
   }
 
+  // A blackout advances the accelerated game clock, so sober the two drunk
+  // bands by the same amount of simulation time that actually elapsed.
   const originalAddDrunkenness = RS.addDrunkenness?.bind(RS);
   if (originalAddDrunkenness && !RS.__blackoutSobrietyRecoveryInstalled) {
     RS.addDrunkenness = function blackoutSobrietyAwareAdd(entity, footingAmount, healthAmount, opts = {}) {
@@ -171,7 +156,9 @@
     });
   }
 
+  // Mounts receives the authoritative movement inputs/speed constants.
   hookFutureInit('Mounts', deps => { mountDeps = deps; });
+  // FarmCrates already receives game.js's canonical active-inventory getter.
   hookFutureInit('FarmCrates', deps => { itemDeps = deps; });
 
   const drunkOwnedRoot = child => {
@@ -183,6 +170,11 @@
       || name.includes('procedural_leg');
   };
 
+  // Capture the actual player parent and the pre-leg direct children. We no
+  // longer write drunk quaternions into those children during update():
+  // game.js owns leg-group counter-yaw and avatar facing. The renderer seam
+  // below composes the drunk quaternion on the complete player parent only
+  // after all normal mouse/deadzone/attack transforms have finished.
   const previousAttach = legApi.attach.bind(legApi);
   legApi.attach = function drunkAttachmentAwareAttach(THREEArg, parent, options = {}) {
     const isPlayer = String(options.name || '').toLowerCase() === 'player';
@@ -192,37 +184,11 @@
 
     playerMeshRef = parent;
     passiveRoots = childrenBefore.filter(child => child?.isObject3D && !drunkOwnedRoot(child));
-    passiveBaseQuats = new Map(passiveRoots.map(child => [child, child.quaternion.clone()]));
-    const originalUpdate = handle.update.bind(handle);
     const originalDispose = handle.dispose.bind(handle);
-    const localEuler = new THREEArg.Euler(0, 0, 0, 'YXZ');
-    const localQ = new THREEArg.Quaternion();
-
-    handle.update = function drunkAttachmentAwareUpdate(...args) {
-      const result = originalUpdate(...args);
-      const debug = window.HobunjiDrunkWalk?.getDebug?.();
-      localEuler.set(
-        (Number(debug?.pitchDeg) || 0) * Math.PI / 180,
-        (Number(debug?.yawDeg) || 0) * Math.PI / 180,
-        (Number(debug?.rollDeg) || 0) * Math.PI / 180,
-        'YXZ'
-      );
-      localQ.setFromEuler(localEuler);
-      for (const root of passiveRoots) {
-        const base = passiveBaseQuats.get(root);
-        if (base && root?.quaternion) root.quaternion.copy(base).multiply(localQ);
-      }
-      return result;
-    };
     handle.dispose = function drunkAttachmentAwareDispose() {
-      for (const root of passiveRoots) {
-        const base = passiveBaseQuats.get(root);
-        if (base && root?.quaternion) root.quaternion.copy(base);
-      }
       if (playerMeshRef === parent) {
         playerMeshRef = null;
         passiveRoots = [];
-        passiveBaseQuats.clear();
       }
       return originalDispose();
     };
@@ -230,6 +196,7 @@
   };
 
   function localDrunkQuaternion() {
+    if (window.ImpactRagdollPlayback?.isActive?.()) return new THREE.Quaternion();
     const debug = window.HobunjiDrunkWalk?.getDebug?.();
     const e = new THREE.Euler(
       (Number(debug?.pitchDeg) || 0) * Math.PI / 180,
@@ -250,6 +217,12 @@
     undo.push(() => { obj.position.copy(oldPos); obj.quaternion.copy(oldQuat); });
   }
 
+  // Render-time composition is the important ordering guarantee here:
+  // Qrender = Q(mouse/deadzone + attack) * Q(drunk). game.js can freely set
+  // playerMesh.rotation.y earlier in the frame and authored attacks can add
+  // bodyYaw later; neither can overwrite this because it is applied at the
+  // last possible moment and immediately restored after rendering. Children
+  // (PNG body, held-item holder, procedural legs) inherit it automatically.
   if (window.THREE?.WebGLRenderer && !window.THREE.WebGLRenderer.prototype.__drunkAttachmentRenderHook) {
     const proto = window.THREE.WebGLRenderer.prototype;
     const originalRender = proto.render;
@@ -258,9 +231,18 @@
       if (playerMeshRef) {
         const localQ = localDrunkQuaternion();
         if (Math.abs(localQ.x) + Math.abs(localQ.y) + Math.abs(localQ.z) > 1e-7) {
-          const parentQ = playerMeshRef.quaternion.clone();
-          const worldQ = parentQ.clone().multiply(localQ).multiply(parentQ.clone().invert());
+          const basePlayerQ = playerMeshRef.quaternion.clone();
+          const worldQ = basePlayerQ.clone().multiply(localQ).multiply(basePlayerQ.clone().invert());
           const pivot = playerMeshRef.position.clone();
+
+          // Save/restore so gameplay state remains owned by game.js; only the
+          // pixels see the composed drunk transform.
+          playerMeshRef.quaternion.copy(basePlayerQ).multiply(localQ);
+          undo.push(() => playerMeshRef.quaternion.copy(basePlayerQ));
+
+          // Tool and shoulder pet are scene siblings rather than children, so
+          // rotate them around the same player pivot by the equivalent world
+          // quaternion for this render pass.
           renderRotatedSibling(window.__hobunjiDrunkBridgeDevDeps?.toolHolder, pivot, worldQ, undo);
           for (const c of window.Combat?.deps?.companionObjects || []) {
             if (c?.health <= 0 || c?.stableRole !== 'shoulderPet' || (c.master || window.Combat?.deps?.player) !== window.Combat?.deps?.player) continue;
@@ -411,6 +393,8 @@
     return true;
   }
 
+  // Capture before game.js's action handlers so a held consumable owns the
+  // action press rather than also queueing the current tool/tile action.
   document.addEventListener('pointerdown', event => {
     const id = event.target?.closest?.('button')?.id;
     if (!/^btn(?:Item)?Action[1-5]$/.test(id || '')) return;
