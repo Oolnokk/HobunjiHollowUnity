@@ -3,8 +3,9 @@
 // Gameplay-facing state (player.angle, aim cones, movement direction, mount
 // steering, etc.) deliberately stays outside this module. game.js can continue
 // resolving its existing base playerMesh transform (dead-zone facing, authored
-// attack/tool body yaw, and other legacy base-pose writers); this composer owns
-// only the FINAL visual-layer delta applied after those systems have finished.
+// attack/tool body yaw, movement bob, and other legacy base-pose writers); this
+// composer owns only the FINAL visual-layer delta applied after those systems
+// have finished.
 //
 // New systems should contribute named channels instead of writing shared body
 // rotations directly. Channels are ordered by priority and can be additive or
@@ -64,6 +65,11 @@
     return false;
   }
 
+  // Diagnostics only. Runtime composition deliberately does not depend on
+  // successfully identifying the current PNG child anymore: the player rig
+  // root is the same transform that already carries the game's ordinary walk
+  // bob/facing, so a render-only delta on that root necessarily reaches the
+  // current body PNG, procedural legs, and any in-rig held visuals together.
   function discoverAvatarBodyRoots() {
     if (!playerMesh?.isObject3D) return [];
     const candidates = [];
@@ -73,30 +79,32 @@
       if (isAvatarBodyRoot(obj) && hasRenderableDescendant(obj)) candidates.push(obj);
     });
 
-    // Only rotate the highest matching node in each visual branch. The PNG
-    // model can contain named portrait/hat/ghost descendants; applying the
-    // same channel to both parent and child would double the drunken tilt.
     return candidates.filter(candidate => !candidates.some(other =>
       other !== candidate && isDescendantOf(candidate, other)));
   }
 
   function isHeldVisualRoot(child) {
     if (!child?.isObject3D || child === playerLegRoot || isAvatarBodyRoot(child)) return false;
-    // The held-item assembly is the unnamed visible Group directly under the
-    // player root. Named helpers/colliders/HUD roots are intentionally not
-    // swept into body composition merely because they share a parent.
     return child.type === 'Group'
       && child.visible !== false
       && !String(child.name || '').trim()
       && hasRenderableDescendant(child);
   }
 
+  // The whole player rig is now the primary owned root. Previously the composer
+  // tried to rediscover and rotate individual PNG/leg children. That made the
+  // procedural feet visibly react while a rebuilt or differently-named body PNG
+  // could remain rigid. Applying the channel to playerMesh itself at the final
+  // renderer boundary removes that fragile child-identification dependency.
+  //
+  // Providers are still needed for visuals that intentionally live OUTSIDE the
+  // player rig (for example a shoulder-pet root parented directly to the scene).
+  // Descendants of playerMesh are skipped because they already inherit its delta.
   function currentOwnedRoots() {
     const roots = [];
     const add = root => {
-      if (!root?.isObject3D || root.visible === false || roots.includes(root) || !hasRenderableDescendant(root)) return;
-      // If a provider returns an object already contained by a root we own,
-      // rotating it again would compound the same visual delta.
+      if (!root?.isObject3D || root.visible === false || roots.includes(root)) return;
+      if (root !== playerMesh && isDescendantOf(root, playerMesh)) return;
       if (roots.some(existing => isDescendantOf(root, existing))) return;
       for (let i = roots.length - 1; i >= 0; i--) {
         if (isDescendantOf(roots[i], root)) roots.splice(i, 1);
@@ -104,12 +112,7 @@
       roots.push(root);
     };
 
-    for (const root of discoverAvatarBodyRoots()) add(root);
-    for (const child of playerMesh?.children || []) {
-      if (isHeldVisualRoot(child)) add(child);
-    }
-    add(playerLegRoot);
-
+    add(playerMesh);
     for (const provider of externalRootProviders.values()) {
       let supplied = null;
       try { supplied = provider?.(); } catch (_) { supplied = null; }
@@ -231,9 +234,8 @@
   }
 
   // Observe the existing rig constructor rather than requiring game.js to know
-  // about the composer. The root set itself is rediscovered every render, so an
-  // appearance/equipment rebuild cannot leave composition targeting stale PNG
-  // objects.
+  // about the composer. The render-time transform targets the already-resolved
+  // rig root, so appearance/equipment rebuilds do not require retargeting.
   const previousAttach = legApi.attach.bind(legApi);
   legApi.attach = function composerAwareLegAttach(THREEArg, parent, options = {}) {
     const handle = previousAttach(THREEArg, parent, options);
@@ -258,6 +260,10 @@
         const rotationMagnitude = Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z);
         const translationMagnitude = delta.translation.lengthSq();
         if (rotationMagnitude > 1e-8 || translationMagnitude > 1e-12) {
+          // game.js has already resolved facing, attack/tool poses, and its
+          // ordinary movement bob by this point. Convert the local composer
+          // delta into world space from that FINAL base transform, pivot around
+          // the standing posterior/hip point, render, then restore immediately.
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
           const worldRotation = baseWorldQuaternion.clone()
@@ -292,6 +298,7 @@
       return {
         playerAttached: !!playerMesh,
         posteriorY: playerPosteriorY,
+        renderRoot: playerMesh?.name || playerMesh?.type || null,
         avatarBodyRoots: discoverAvatarBodyRoots().map(root => root.name || root.type),
         visualRoots: currentOwnedRoots().map(root => root.name || root.type),
         externalProviders: Array.from(externalRootProviders.keys()),
