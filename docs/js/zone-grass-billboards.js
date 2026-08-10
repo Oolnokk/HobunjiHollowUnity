@@ -108,3 +108,182 @@
     buildRichFoliageBillboards,
   };
 })();
+
+// Town subtle-height followers for instanced ground cover and paved roads.
+//
+// Town grass is not a hierarchy of per-tile groups: it is one InstancedMesh
+// whose matrices are written by _fillBillboardInstances (28 instances per
+// grass tile). Likewise, paved roads are WallBuilder instance groups which are
+// generated, then compacted by the path-corridor filter before being added to
+// the scene. Work at those real matrix boundaries rather than guessing from
+// scene hierarchy. The shared visualHeights field remains the only elevation
+// authority; this code only makes these two renderers follow it.
+(() => {
+  'use strict';
+  if (typeof window === 'undefined' || typeof THREE === 'undefined') return;
+
+  let townDeps = null;
+  const matrix = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+
+  function sampleTownHeight(x, z) {
+    const fn = window.HobunjiTownSubtleElevation?.sampleHeightAt;
+    return typeof fn === 'function' ? (Number(fn(x, z)) || 0) : 0;
+  }
+
+  // Path panels have an exact authored id. Tag the returned WallBuilder group
+  // immediately, before game.js performs its corridor compaction. The tag then
+  // survives that compaction and gives the town-scene hook a precise identity;
+  // no group-name/cull-sphere inference is required.
+  function patchWallBuilderPathTag() {
+    const proto = window.WallBuilder?.prototype;
+    if (!proto || proto.__hobunjiPathSurfaceTagPatched || typeof proto.build !== 'function') return;
+    const originalBuild = proto.build;
+    proto.build = function (panels, opts) {
+      const group = originalBuild.call(this, panels, opts);
+      if (group && Array.isArray(panels) && panels.some(panel => panel?.id === 'path_surface_chunk')) {
+        group.userData = group.userData || {};
+        group.userData.hobunjiPathSurface = true;
+      }
+      return group;
+    };
+    proto.__hobunjiPathSurfaceTagPatched = true;
+  }
+
+  function isTownBillboardMesh(obj) {
+    // The farm/town/zone grass builders all identify their actual InstancedMesh
+    // this way. Restricting the adjustment to the town scene below keeps farm
+    // and wilderness matrices untouched.
+    return !!(obj?.isInstancedMesh && obj.userData?.isBillboard === true && obj.count > 0);
+  }
+
+  function elevateBillboardMesh(mesh) {
+    if (!isTownBillboardMesh(mesh)) return 0;
+    const requiredLength = mesh.instanceMatrix?.array?.length || 0;
+    if (!requiredLength) return 0;
+    if (!mesh.userData.hobunjiTownSubtleBaseMatrices || mesh.userData.hobunjiTownSubtleBaseMatrices.length !== requiredLength) {
+      // Capture the plateau-aware matrices already authored by
+      // _fillBillboardInstances. Re-running this follower is idempotent because
+      // every subsequent solve starts from these immutable originals.
+      mesh.userData.hobunjiTownSubtleBaseMatrices = new Float32Array(mesh.instanceMatrix.array);
+    }
+    const base = mesh.userData.hobunjiTownSubtleBaseMatrices;
+    let moved = 0;
+    for (let i = 0; i < mesh.count; i++) {
+      matrix.fromArray(base, i * 16);
+      matrix.decompose(pos, quat, scale);
+      const lift = sampleTownHeight(pos.x, pos.z);
+      pos.y += lift;
+      matrix.compose(pos, quat, scale);
+      mesh.setMatrixAt(i, matrix);
+      if (Math.abs(lift) > 1e-7) moved++;
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox?.();
+    mesh.computeBoundingSphere?.();
+    mesh.userData.hobunjiTownSubtleElevated = true;
+    return moved;
+  }
+
+  function isPathSurfaceGroup(obj) {
+    return !!(obj?.isGroup && obj.userData?.hobunjiPathSurface === true);
+  }
+
+  function elevatePathSurfaceGroup(group) {
+    if (!isPathSurfaceGroup(group)) return 0;
+    let moved = 0;
+    group.traverse(inst => {
+      if (!inst?.isInstancedMesh || !inst.count) return;
+      const requiredLength = inst.instanceMatrix?.array?.length || 0;
+      if (!requiredLength) return;
+      if (!inst.userData.hobunjiTownSubtleBaseMatrices || inst.userData.hobunjiTownSubtleBaseMatrices.length !== requiredLength) {
+        // This capture happens only after game.js has compacted the path chunk,
+        // so it includes the existing elevTier correction and final kept-brick
+        // order. Subtle Y is layered on top of that real runtime baseline.
+        inst.userData.hobunjiTownSubtleBaseMatrices = new Float32Array(inst.instanceMatrix.array);
+      }
+      const base = inst.userData.hobunjiTownSubtleBaseMatrices;
+      for (let i = 0; i < inst.count; i++) {
+        matrix.fromArray(base, i * 16);
+        matrix.decompose(pos, quat, scale);
+        const lift = sampleTownHeight(pos.x, pos.z);
+        pos.y += lift;
+        matrix.compose(pos, quat, scale);
+        inst.setMatrixAt(i, matrix);
+        if (Math.abs(lift) > 1e-7) moved++;
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      inst.computeBoundingBox?.();
+      inst.computeBoundingSphere?.();
+    });
+    group.userData.hobunjiTownSubtleElevated = true;
+    return moved;
+  }
+
+  function elevateObject(obj) {
+    if (!obj) return { grass: 0, road: 0 };
+    return {
+      grass: elevateBillboardMesh(obj),
+      road: elevatePathSurfaceGroup(obj),
+    };
+  }
+
+  function patchTownSceneAdd() {
+    const scene = townDeps?.getTownScene?.();
+    if (!scene || scene.userData.hobunjiExactSubtleFollowersAddPatched) return;
+    const originalAdd = scene.add;
+    scene.add = function (...objects) {
+      const result = originalAdd.apply(this, objects);
+      for (const obj of objects) elevateObject(obj);
+      return result;
+    };
+    scene.userData.hobunjiExactSubtleFollowersAddPatched = true;
+  }
+
+  function refreshTownFollowers() {
+    const scene = townDeps?.getTownScene?.();
+    if (!scene) return { grass: 0, road: 0 };
+    patchTownSceneAdd();
+    let grass = 0, road = 0;
+    for (const obj of scene.children || []) {
+      const result = elevateObject(obj);
+      grass += result.grass;
+      road += result.road;
+    }
+    if (grass || road) {
+      townDeps?.debugLog?.(`Town subtle elevation exact followers: moved ${grass} billboard instance(s), ${road} road-brick instance(s)`);
+    }
+    return { grass, road };
+  }
+
+  function patchTownZoneBuildings() {
+    const api = window.TownZoneBuildings;
+    if (!api || api.__hobunjiExactSubtleFollowersPatched) return;
+    const originalInit = api.init;
+    const originalSpawn = api.spawnTownBuildings;
+    if (typeof originalInit !== 'function' || typeof originalSpawn !== 'function') return;
+
+    api.init = function (injectedDeps) {
+      townDeps = injectedDeps;
+      const result = originalInit.call(this, injectedDeps);
+      // Town scene may not exist yet at init; the spawn wrapper below performs
+      // the first guaranteed scan and installs its async-add hook.
+      return result;
+    };
+    api.spawnTownBuildings = function (...args) {
+      // The compatibility wrapper installed from config.js runs first through
+      // originalSpawn and deforms the town ground. Follow that finished surface
+      // immediately afterward so grass/roads read the same height field.
+      const result = originalSpawn.apply(this, args);
+      refreshTownFollowers();
+      return result;
+    };
+    api.refreshTownSubtleHeightFollowersExact = refreshTownFollowers;
+    api.__hobunjiExactSubtleFollowersPatched = true;
+  }
+
+  patchWallBuilderPathTag();
+  patchTownZoneBuildings();
+})();
