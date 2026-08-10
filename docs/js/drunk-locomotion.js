@@ -10,6 +10,7 @@
   if (!api?.attach || api.__footingDrunkWalkInstalled) return;
 
   const DEG = Math.PI / 180;
+  const DRUNK_FOOTING_ID = 'drunkenFooting';
   const DRUNK_MAX_PITCH_DEG = 13;
   const DRUNK_MAX_ROLL_DEG = 30;
   const DRUNK_MAX_YAW_DEG = 22;
@@ -39,8 +40,13 @@
   function footingLoss() {
     if (forcedLoss != null) return clamp01(forcedLoss);
     const player = window.Combat?.deps?.player;
-    if (!player || !(Number(player.maxFooting) > 0)) return 0;
-    return 1 - clamp01(Number(player.footing) / Number(player.maxFooting));
+    const maxFooting = Number(player?.maxFooting) || 0;
+    if (!player || !(maxFooting > 0)) return 0;
+    const drunkenFooting = Math.max(0,
+      Number(window.ResourceSystem?.getAffliction?.(player, 'footing', DRUNK_FOOTING_ID))
+      || Number(player.afflictions?.[DRUNK_FOOTING_ID])
+      || 0);
+    return clamp01(drunkenFooting / maxFooting);
   }
 
   function legPart(root, name) {
