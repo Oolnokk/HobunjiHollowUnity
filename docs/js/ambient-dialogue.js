@@ -278,6 +278,8 @@
         root, group, textPart, headPart, profile: options.profile || null,
         faceWalker: options.faceWalker || null,
         faceTarget: options.faceTarget || null,
+        speakerId: options.speakerId || null,
+        greeting: options.greeting === true,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
@@ -331,6 +333,10 @@
     return `${day}:${speakerId}>${targetId}`;
   }
 
+  function hasActiveGreetingFor(speakerId) {
+    return state.active.some(event => event.greeting && event.speakerId === speakerId);
+  }
+
   function ensureGreetingLedger(day) {
     const worldId = String(state.deps?.getWorldId?.() || 'local');
     const ledgerKey = `hobunjiAmbientGreetings.v1:${worldId}`;
@@ -356,6 +362,9 @@
   function tryGreeting(walker, target, now, day) {
     const speakerId = walker?.rec?.id;
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
+    // The active event remains in this list through its final opacity fade,
+    // so this releases the NPC only after the prior greeting is fully gone.
+    if (hasActiveGreetingFor(speakerId)) return false;
     const targetId = target.id;
     const key = greetPairKey(day, speakerId, targetId);
     if (state.greeted.has(key)) return false;
@@ -377,6 +386,7 @@
       speakerId,
       profile: walker.profile,
       mode: 'chathead',
+      greeting: true,
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
     });
