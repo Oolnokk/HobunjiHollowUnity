@@ -5344,7 +5344,13 @@
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) {
               if (!c._treasureHintAnnounced) {
                 c._treasureHintAnnounced = true;
-                showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
+                // The companion keeps the existing Fable-style lead behavior,
+                // but announces the find through its species voice overhead.
+                // Fall back to the old mobile-visible toast if the secondary
+                // dialogue module failed to load for any reason.
+                if (!window.AmbientDialogue?.companionTreasure(c)) {
+                  showToast(`${c.def.label} perks up, sniffing at something nearby!`, true);
+                }
               }
               moving = wanderTick(c, dt, treasureHint.x, treasureHint.y, TILE * 1.4);
             } else {
@@ -15859,6 +15865,25 @@
         playerRoot: playerMesh,
         getActiveScene,
       });
+      // ambientDialogueRuntime owns only lightweight proximity checks and
+      // its temporary world-space speech planes. Game state, NPC routing,
+      // and creature treasure movement remain authoritative here in game.js.
+      const ambientDialogueRuntime = window.AmbientDialogue?.init({
+        THREE,
+        camera,
+        getActiveScene,
+        getDay: () => calendar.day,
+        getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
+        getCurrentArea: () => currentArea,
+        getNpcWalkers: () => npcWalkers,
+        getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+          || (_playerData || window.__hobunjiPlayerProfile)?.displayName
+          || 'neighbor',
+        isDialogueOpen: () => dialogueOpen,
+        isPaused: () => paused,
+        debugLog,
+      });
       // healthPopupAccumulator merges frame-by-frame regen/DoT into readable
       // Float+ events instead of emitting one plane every animation frame.
       const healthPopupAccumulator = new Map();
@@ -18581,6 +18606,9 @@
           updateNpcWalkers(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
+        // Run after NPC routing/facing so an active ambient greeting can hold
+        // its speaker toward the intended target for the rendered frame.
+        ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
           updateTownWaterMeshes();
           updateTownThreeLighting();
