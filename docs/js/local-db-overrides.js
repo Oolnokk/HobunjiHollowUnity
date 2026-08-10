@@ -49,6 +49,13 @@
     { id: 'locales',       label: 'Locales',             repoPath: 'config/locales/index.json' },
   ];
 
+  let _runtimeSuppressedNpcIds = []; // Used by runtime/debug inspection to report NPC records intentionally excluded from live spawning.
+  const LEGACY_NONSPAWN_NPC_IDS = new Set([
+    'talisman_hatayap',
+    'bowstring_hatayap',
+    'hammerhead_tuhupnuk',
+  ]); // Used to keep historically deceased/banished records out of the live scheduler even when an old local override lacks lifecycle metadata.
+
   function dbById(id) { return DATABASES.find(d => d.id === id) || null; }
   function overrideKey(id) { return OVERRIDE_KEY_PREFIX + id; }
 
@@ -185,6 +192,48 @@
     return merged;
   }
 
+  // Lifecycle is authored in the NPC record itself rather than a second
+  // runtime-only denylist. Existing deceased records predate a dedicated
+  // status field, so accept both explicit flags/status and the current
+  // role/tag/homeId convention (e.g. "deceased snow-watcher" and
+  // "hatayap_clan_deceased"). Deliberately do NOT scan bio/lore text: a
+  // living widow/widower can mention a deceased spouse without being dead.
+  function isNpcMarkedDeceased(npc) {
+    if (!npc || typeof npc !== 'object') return false;
+    if (LEGACY_NONSPAWN_NPC_IDS.has(String(npc.id || ''))) return true;
+    if (npc.isDeceased === true || npc.spawnEnabled === false || npc.spawn === false) return true;
+    const status = String(npc.lifecycleStatus ?? npc.lifeStatus ?? npc.status ?? '').trim().toLowerCase(); // Used for newer/explicit lifecycle fields if the schema gains them.
+    if (status === 'deceased' || status === 'dead' || status === 'banished') return true;
+    const authoredSignals = [npc.role, npc.homeId, ...(Array.isArray(npc.tags) ? npc.tags : [])]; // Used to recognize the database's existing deceased/banished naming convention without reading prose fields.
+    return authoredSignals.some(value => /(^|[^a-z])(deceased|dead|banished)([^a-z]|$)/i.test(String(value || '')));
+  }
+
+  // Editors must continue to see deceased people for family history, dialogue,
+  // lore, and authoring. Only the live game gets the spawnable projection of
+  // the database. Filtering at this shared runtime database boundary is more
+  // durable than the old workaround of merely deleting fallback schedule
+  // positions: no global event/schedule fallback can instantiate a record the
+  // runtime never receives in its active NPC list.
+  function filterRuntimeNpcDatabase(npcDatabase) {
+    const isToolPage = typeof location !== 'undefined' && /\/tools\//.test(location.pathname); // Used to keep editor/database views complete while filtering only the live game.
+    if (isToolPage || !npcDatabase || !Array.isArray(npcDatabase.npcs)) {
+      _runtimeSuppressedNpcIds = [];
+      return npcDatabase;
+    }
+    const suppressed = npcDatabase.npcs.filter(isNpcMarkedDeceased); // Used for both the filtered list and an inspectable/debuggable suppression summary.
+    _runtimeSuppressedNpcIds = suppressed.map(npc => npc.id || npc.name || '<unnamed>');
+    if (!_runtimeSuppressedNpcIds.length) return npcDatabase;
+
+    const message = `[schedule] [NPC lifecycle] Suppressed ${_runtimeSuppressedNpcIds.length} nonspawn NPC(s): ${_runtimeSuppressedNpcIds.join(', ')}`; // Used by the in-game schedule filter and console fallback.
+    if (typeof window.__farmLog === 'function') window.__farmLog(message, 'info');
+    else console.info(message);
+    return { ...npcDatabase, npcs: npcDatabase.npcs.filter(npc => !isNpcMarkedDeceased(npc)) };
+  }
+
+  function getRuntimeSuppressedNpcIds() {
+    return [..._runtimeSuppressedNpcIds];
+  }
+
   // What game.js/combat-config-loader.js actually call at boot in place of a
   // bare fetch(repoPath): local override wins only when the player has opted
   // into 'local' source mode AND actually saved one for this id; otherwise
@@ -194,13 +243,14 @@
   async function loadDatabase(id) {
     const data = await _loadRawDatabase(id); // Used as the selected raw local/repo database before optional composition.
     if (id !== 'npcDatabase') return data;
+    let composed = data; // Used as the NPC database after optional Shop-or-Chat composition and before live-runtime lifecycle filtering.
     try {
       const shopStock = await _loadRawDatabase('shopStock'); // Used to compose shopkeeper access trees into the loaded NPC database.
-      return applyShopDialogueAccess(data, shopStock);
+      composed = applyShopDialogueAccess(data, shopStock);
     } catch (error) {
       console.warn('[LocalDBOverrides] Could not compose Shop or Chat dialogue trees:', error);
-      return data;
     }
+    return filterRuntimeNpcDatabase(composed);
   }
 
   window.LocalDBOverrides = {
@@ -209,5 +259,169 @@
     hasOverride, getOverride, setOverride, clearOverride,
     listStatuses, loadDatabase,
     applyShopDialogueAccess,
+    isNpcMarkedDeceased, filterRuntimeNpcDatabase, getRuntimeSuppressedNpcIds,
   };
+
+  // Live-game compatibility hooks belong on this guaranteed-loaded script path
+  // rather than config/config.js. index.html loads this module synchronously
+  // before AudioSystem/Music, so their first assignment can be wrapped without
+  // timers or script-order races. Tool pages are intentionally untouched.
+  const _runtimeToolPage = typeof location !== 'undefined' && /\/tools\//.test(location.pathname);
+  if (_runtimeToolPage) return;
+
+  function runtimeAudioLog(message, level = 'audio') {
+    if (typeof window.__farmLog === 'function') window.__farmLog(message, level);
+    else console.info(message);
+  }
+
+  const HARDSTEP_PLACEHOLDER_URLS = [
+    'assets/audio/sfx/footsteps/sfx_footstep_hardstep1.mp3',
+    'assets/audio/sfx/footsteps/sfx_footstep_hardstep2.mp3',
+    'assets/audio/sfx/footsteps/sfx_footstep_hardstep3.mp3',
+  ]; // Used only for paths/ramps and authored building floors; the files intentionally do not exist yet.
+  let _runtimeHardStepPlayed = false; // Used to report the first hardstep placeholder request through the Audio debug filter.
+  let _runtimeFootstepCadence = false; // Used to report the first cadence trigger through the Audio debug filter.
+
+  function isHardstepPlaceholderSurface(area, tile) {
+    const areaId = String(area || ''); // Used to recognize the current interior-area naming convention without needing AudioSystem's private deps.
+    const tileType = String(tile?.type ?? '').toLowerCase(); // Used to recognize map-authored path/ramp values; town workspace stores these as strings.
+    return areaId === 'interior' || /^map_i_/i.test(areaId)
+      || tileType === 'path' || tileType === 'ramp';
+  }
+
+  function playHardstepPlaceholder(audioSystem, volumeScale = 1, heavy = false) {
+    const audioCfg = audioSystem.gameAudioConfig?.() || {}; // Used to preserve the existing global SFX/footstep volume controls when the placeholder files are eventually added.
+    if (audioCfg.enabled === false) return;
+    const footstepCfg = audioCfg.footsteps || {}; // Used to preserve the existing footstep enabled/volume controls.
+    if (footstepCfg.enabled === false) return;
+    const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65)); // Used to approximate the current gravel-path mix without procedural synthesis.
+    const sfxVolume = Math.max(0, Number(audioCfg.sfxVolume) || 1);
+    const volume = Math.min(1, baseVolume * sfxVolume * Math.max(0, Number(volumeScale) || 0) * 0.54 * (heavy ? 2 : 1));
+    if (volume <= 0.002) return;
+    const url = HARDSTEP_PLACEHOLDER_URLS[Math.floor(Math.random() * HARDSTEP_PLACEHOLDER_URLS.length)]; // Used to rotate evenly enough among the three future hardstep recordings.
+    const snd = new Audio(url);
+    snd.volume = volume;
+    snd.playbackRate = heavy ? (0.60 + Math.random() * 0.10) : (0.92 + Math.random() * 0.16);
+    snd.play().catch(() => {}); // Missing placeholder files are intentionally silent; there is no synth or gravel fallback.
+  }
+
+  function wrapRuntimeAudioSystem(audioSystem) {
+    if (!audioSystem || audioSystem.__hobunjiDirectHardStepWrapped) return audioSystem;
+    if (typeof audioSystem.playFootstepSfx !== 'function' || typeof audioSystem.footstepSurfaceKey !== 'function') return audioSystem;
+    const originalPlayFootstepSfx = audioSystem.playFootstepSfx;
+    audioSystem.playFootstepSfx = function (area, tile, volumeScale = 1, pan = 0, opts = {}) {
+      if (!isHardstepPlaceholderSurface(area, tile)) {
+        return originalPlayFootstepSfx.call(this, area, tile, volumeScale, pan, opts);
+      }
+      if (!_runtimeHardStepPlayed) {
+        _runtimeHardStepPlayed = true;
+        runtimeAudioLog(`[footsteps] hardstep placeholder route fired area=${area} tileType=${tile?.type ?? 'none'}; no fallback.`);
+      }
+      return playHardstepPlaceholder(audioSystem, volumeScale, !!opts.heavy);
+    };
+    const originalAdvance = audioSystem.footstepAdvance;
+    if (typeof originalAdvance === 'function') {
+      audioSystem.footstepAdvance = function (state, distPx, stridePx) {
+        const fires = originalAdvance.call(this, state, distPx, stridePx);
+        if (fires && !_runtimeFootstepCadence) {
+          _runtimeFootstepCadence = true;
+          const resolvedStride = stridePx ?? audioSystem.FOOTSTEP_PLAYER_STRIDE_PX; // Used so diagnostics report AudioSystem's default instead of NaN when callers omit the optional stride argument.
+          runtimeAudioLog(`[footsteps] cadence fired dist=${Number(distPx).toFixed(2)} stride=${Number(resolvedStride).toFixed(2)}.`);
+        }
+        return fires;
+      };
+    }
+    // Keep the legacy marker too: config.js's older delayed compatibility probe
+    // checks it and must not install its procedural-gravel wrapper on top of this route.
+    Object.defineProperty(audioSystem, '__hobunjiDirectHardStepWrapped', { value: true, configurable: true });
+    runtimeAudioLog('[footsteps] Path/floor hardstep placeholder route installed; procedural hard-step fallback disabled for those surfaces.');
+    return audioSystem;
+  }
+
+  function interceptRuntimeGlobal(name, wrapper) {
+    const existing = window[name]; // Used when a future script-order change defines the system before this module.
+    if (existing) { wrapper(existing); return; }
+    let assignedValue; // Used until the owning script performs its normal window.<System> assignment.
+    try {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        enumerable: true,
+        get() { return assignedValue; },
+        set(value) {
+          assignedValue = wrapper(value) || value;
+          Object.defineProperty(window, name, { configurable: true, enumerable: true, writable: true, value: assignedValue });
+        },
+      });
+    } catch (_) {}
+  }
+
+  interceptRuntimeGlobal('AudioSystem', wrapRuntimeAudioSystem);
+
+  const INDOOR_OUTDOOR_BGS_SCALE = 0.18;
+  let _runtimeMusicDeps = null; // Used to identify building interiors in Music's own injected area helpers.
+  let _runtimeIndoorBgsArea = ''; // Used to keep the BGS diagnostic one-shot per entered building.
+
+  function withIndoorOutdoorBgsProfile(callback) {
+    const musicDeps = _runtimeMusicDeps;
+    const actualArea = musicDeps?.getCurrentArea?.();
+    const indoors = actualArea === 'interior' || !!(musicDeps && musicDeps._isBuildingArea?.(actualArea));
+    if (!indoors) { _runtimeIndoorBgsArea = ''; return callback(); }
+    const audioCfg = window.AudioSystem?.gameAudioConfig?.();
+    const bgs = audioCfg?.bgs;
+    if (!bgs || typeof musicDeps.getCurrentArea !== 'function') return callback();
+
+    const originalGetCurrentArea = musicDeps.getCurrentArea;
+    const defaults = {
+      birdsVolume: 0.25, nightbugsVolume: 0.23, wind1Volume: 0.20, wind2Volume: 0.18,
+      gentlerainVolume: 0.45, midrainVolume: 0.55, heavyrainVolume: 0.65,
+    };
+    const saved = new Map();
+    try {
+      for (const [key, fallback] of Object.entries(defaults)) {
+        saved.set(key, { had: Object.prototype.hasOwnProperty.call(bgs, key), value: bgs[key] });
+        bgs[key] = Math.max(0, Number(bgs[key] ?? fallback) || 0) * INDOOR_OUTDOOR_BGS_SCALE;
+      }
+      musicDeps.getCurrentArea = () => 'farm';
+      if (_runtimeIndoorBgsArea !== actualArea) {
+        _runtimeIndoorBgsArea = actualArea;
+        runtimeAudioLog(`[bgs] Indoor outdoor-BGS bleed active area=${actualArea} scale=${INDOOR_OUTDOOR_BGS_SCALE}`, 'bgs');
+      }
+      return callback();
+    } finally {
+      musicDeps.getCurrentArea = originalGetCurrentArea;
+      for (const [key, state] of saved) {
+        if (state.had) bgs[key] = state.value;
+        else delete bgs[key];
+      }
+    }
+  }
+
+  function wrapRuntimeMusic(musicSystem) {
+    if (!musicSystem || musicSystem.__hobunjiIndoorBgsWrapped) return musicSystem;
+    const originalInit = musicSystem.init;
+    if (typeof originalInit === 'function') {
+      musicSystem.init = function (injectedDeps) {
+        _runtimeMusicDeps = injectedDeps;
+        return originalInit.call(this, injectedDeps);
+      };
+    }
+    const originalExterior = musicSystem.updateExteriorBgs;
+    if (typeof originalExterior === 'function') {
+      musicSystem.updateExteriorBgs = function (...args) {
+        return withIndoorOutdoorBgsProfile(() => originalExterior.apply(this, args));
+      };
+    }
+    const originalRain = musicSystem.updateRainAudio;
+    if (typeof originalRain === 'function') {
+      musicSystem.updateRainAudio = function (...args) {
+        return withIndoorOutdoorBgsProfile(() => originalRain.apply(this, args));
+      };
+    }
+    Object.defineProperty(musicSystem, '__hobunjiIndoorBgsWrapped', { value: true, configurable: true });
+    runtimeAudioLog('[bgs] Indoor outdoor-BGS hook installed from local-db-overrides.js.', 'bgs');
+    return musicSystem;
+  }
+
+  interceptRuntimeGlobal('Music', wrapRuntimeMusic);
+  runtimeAudioLog('[runtime patches] guaranteed-loaded lifecycle/audio hooks armed from local-db-overrides.js.');
 })();
