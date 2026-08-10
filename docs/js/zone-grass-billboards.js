@@ -459,53 +459,65 @@
     api.__hobunjiExactSubtleFollowersPatched = true;
   }
 
-  // config.js's first performance pass removed the expensive merged-ground
-  // raycast, but its replacement persisted the sampled subtle lift back into
-  // playerMesh.position.y. The ordinary movement loop then saw that lifted Y
-  // on the next frame and could feed it into its own smoothing, making the
-  // player climb an increasingly taller imaginary hill.
-  //
-  // PixelProbe.init is already wrapped by config.js by the time this module
-  // loads. Capture renderer.render *before* that wrapper installs its player-Y
-  // hook, let the normal init complete, then replace only that hook with a
-  // render-scoped lift: add the authored subtle height while a town scene pass
-  // is being drawn and restore the movement-owned Y immediately afterward.
-  // This keeps every visible town pass aligned to the deformed ground without
-  // putting a raycast or a history-dependent Y value back on the gameplay hot
-  // path. Full-screen post passes are left alone because they do not render the
-  // player scene graph at all.
+  // config.js installs its own future-PixelProbe setter because this module is
+  // loaded before game.js defines window.PixelProbe. Chain that setter rather
+  // than returning early: otherwise this replacement never installs at all and
+  // the older persistent player-Y hook remains active.
   function patchPlayerTownRenderHeight() {
-    const api = window.PixelProbe;
-    if (!api || api.__hobunjiTransientTownHeightRepair || typeof api.init !== 'function') return;
-    const compatibilityInit = api.init;
-    api.init = function (injectedDeps) {
-      const renderer = injectedDeps?.renderer;
-      const baseRender = renderer?.render;
-      const result = compatibilityInit.call(this, injectedDeps);
-      if (!renderer || typeof baseRender !== 'function' || renderer.__hobunjiTransientTownHeightRepair) return result;
+    function install(api) {
+      if (!api || api.__hobunjiTransientTownHeightRepair || typeof api.init !== 'function') return api;
+      const compatibilityInit = api.init;
+      api.init = function (injectedDeps) {
+        const renderer = injectedDeps?.renderer;
+        const baseRender = renderer?.render;
+        const result = compatibilityInit.call(this, injectedDeps);
+        if (!renderer || typeof baseRender !== 'function' || renderer.__hobunjiTransientTownHeightRepair) return result;
 
-      renderer.render = function (...args) {
-        const playerMesh = injectedDeps?.playerMesh;
-        const sit = injectedDeps?.getSitInteraction?.();
-        const townScene = townDeps?.getTownScene?.();
-        const isTownScenePass = injectedDeps?.getCurrentArea?.() === 'town' && (!townScene || args[0] === townScene);
-        if (!isTownScenePass || !playerMesh?.position || (sit && sit.phase !== 'out')) {
-          return baseRender.apply(this, args);
-        }
+        renderer.render = function (...args) {
+          const playerMesh = injectedDeps?.playerMesh;
+          const sit = injectedDeps?.getSitInteraction?.();
+          const townScene = townDeps?.getTownScene?.();
+          const isTownScenePass = injectedDeps?.getCurrentArea?.() === 'town' && (!townScene || args[0] === townScene);
+          if (!isTownScenePass || !playerMesh?.position || (sit && sit.phase !== 'out')) {
+            return baseRender.apply(this, args);
+          }
 
-        const baseY = Number(playerMesh.position.y) || 0;
-        const lift = sampleTownHeight(playerMesh.position.x, playerMesh.position.z);
-        playerMesh.position.y = baseY + lift;
-        try {
-          return baseRender.apply(this, args);
-        } finally {
-          playerMesh.position.y = baseY;
-        }
+          const baseY = Number(playerMesh.position.y) || 0;
+          const lift = sampleTownHeight(playerMesh.position.x, playerMesh.position.z);
+          playerMesh.position.y = baseY + lift;
+          try {
+            return baseRender.apply(this, args);
+          } finally {
+            playerMesh.position.y = baseY;
+          }
+        };
+        renderer.__hobunjiTransientTownHeightRepair = true;
+        return result;
       };
-      renderer.__hobunjiTransientTownHeightRepair = true;
-      return result;
-    };
-    api.__hobunjiTransientTownHeightRepair = true;
+      api.__hobunjiTransientTownHeightRepair = true;
+      return api;
+    }
+
+    const existing = window.PixelProbe;
+    if (existing) {
+      install(existing);
+      return;
+    }
+
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'PixelProbe');
+    if (!descriptor?.configurable || typeof descriptor.set !== 'function') return;
+    const priorGet = descriptor.get;
+    const priorSet = descriptor.set;
+    Object.defineProperty(window, 'PixelProbe', {
+      configurable: true,
+      enumerable: descriptor.enumerable !== false,
+      get() { return priorGet ? priorGet.call(window) : undefined; },
+      set(value) {
+        priorSet.call(window, value);
+        const patched = priorGet ? priorGet.call(window) : value;
+        install(patched);
+      },
+    });
   }
 
   patchWallBuilderPathTag();
