@@ -2,26 +2,13 @@
   "schema": "hobunji_furniture_authored_runtime.v1",
   "key": "stool",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
-  "footprint": {
-    "w": 1,
-    "d": 1
-  },
+  "footprint": { "w": 1, "d": 1 },
   "parts": [
     {
       "id": "part_msby0mjn_gmz3y",
       "kind": "disc",
       "name": "Standard Round Stool Seat",
-      "transform": {
-        "x": 0,
-        "y": 0.18200000000000002,
-        "z": 0,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.5157999999999999,
-        "sy": 0.06,
-        "sz": 0.4164
-      },
+      "transform": { "x": 0, "y": 0.18200000000000002, "z": 0, "rx": 0, "ry": 0, "rz": 0, "sx": 0.5157999999999999, "sy": 0.06, "sz": 0.4164 },
       "color": "#8b6540",
       "segments": 24,
       "taperAxis": "y",
@@ -56,17 +43,7 @@
       "id": "part_msby0mjn_s0i38",
       "kind": "legSquare",
       "name": "Inboard Stool Leg",
-      "transform": {
-        "x": -0.15474,
-        "y": 0.07600000000000001,
-        "z": -0.12491999999999999,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": -0.15474, "y": 0.07600000000000001, "z": -0.12491999999999999, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -101,17 +78,7 @@
       "id": "part_msby0mjn_4letl",
       "kind": "legSquare",
       "name": "Inboard Stool Leg",
-      "transform": {
-        "x": 0.15474,
-        "y": 0.07600000000000001,
-        "z": -0.12491999999999999,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": 0.15474, "y": 0.07600000000000001, "z": -0.12491999999999999, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -146,17 +113,7 @@
       "id": "part_msby0mjn_zalcs",
       "kind": "legSquare",
       "name": "Inboard Stool Leg",
-      "transform": {
-        "x": -0.15474,
-        "y": 0.07600000000000001,
-        "z": 0.12491999999999999,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": -0.15474, "y": 0.07600000000000001, "z": 0.12491999999999999, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -191,17 +148,7 @@
       "id": "part_msby0mjn_fu5n7",
       "kind": "legSquare",
       "name": "Inboard Stool Leg",
-      "transform": {
-        "x": 0.15474,
-        "y": 0.07600000000000001,
-        "z": 0.12491999999999999,
-        "rx": 0,
-        "ry": 0,
-        "rz": 0,
-        "sx": 0.0451325,
-        "sy": 0.15200000000000002,
-        "sz": 0.036435
-      },
+      "transform": { "x": 0.15474, "y": 0.07600000000000001, "z": 0.12491999999999999, "rx": 0, "ry": 0, "rz": 0, "sx": 0.0451325, "sy": 0.15200000000000002, "sz": 0.036435 },
       "color": "#8b6540",
       "segments": 4,
       "taperAxis": "y",
@@ -234,18 +181,7 @@
     }
   ],
   "seatAnchors": [
-    {
-      "position": {
-        "x": 2.600523709722882e-18,
-        "y": 0.3239999993294478,
-        "z": -5.201047419445764e-18
-      },
-      "rotationDeg": {
-        "x": -5,
-        "y": 0,
-        "z": 0
-      }
-    }
+    { "position": { "x": 2.600523709722882e-18, "y": 0.2339999993294478, "z": -5.201047419445764e-18 }, "rotationDeg": { "x": -5, "y": 0, "z": 0 } }
   ],
   "particleEmitters": [],
   "processingWarps": [],
