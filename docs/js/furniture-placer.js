@@ -2,14 +2,14 @@
   'use strict';
 
   // A discoverable, inventory-scoped alternative to the hidden "scroll the
-  // hotbar to a decor item, then aim and interact" flow that's the only way
+  // hotbar to a furniture item, then aim and interact" flow that's the only way
   // to place furniture otherwise. Deliberately NOT a spawn-for-free cheat
   // tool (unlike the farm editor/dev spawner, which are dev-mode-gated) —
   // works exactly like the farm editor's own paint brush: pick a piece here,
   // then tap/click a tile on the actual game view and it's placed
   // immediately, taken out of inventory. All placement validation (area,
   // tile clearance) and inventory consumption stays exactly where it
-  // already lived (placeDecorativeFurniture/canPlaceDecorativeFurnitureAt
+  // already lived (the decorative/processing placement functions
   // in game.js) — this module only decides which owned items are worth
   // listing and arms/disarms deps.armFurniturePlacement, the same "which
   // item is the next click-to-place tile for" state the farm editor's own
@@ -24,10 +24,17 @@
   function _ownedPlaceableHere() {
     const area = deps.getCurrentArea();
     if (area !== 'farm' && area !== 'interior') return [];
-    return Object.values(deps.getDecorativeFurnitureDefs())
+    const decorative = Object.values(deps.getDecorativeFurnitureDefs())
       .filter(def => !def.fixture)
       .filter(def => def.area === 'any' || def.area === area)
       .filter(def => (deps.inventory[def.itemKey] || 0) > 0);
+    // Processing stations use the outdoor farm grid and world-object map;
+    // list the same owned catalog here without pretending they are decor.
+    const processing = area === 'farm'
+      ? Object.values(deps.getProcessingFurnitureDefs())
+        .filter(def => (deps.inventory[def.itemKey] || 0) > 0)
+      : [];
+    return decorative.concat(processing);
   }
 
   // Only a normal ownership/permission check — NOT dev-mode gated, unlike
