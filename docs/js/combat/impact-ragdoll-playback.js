@@ -1,24 +1,7 @@
 // Impact/ragdoll clip playback for the player avatar — samples the baked
 // 4-directional blend clips docs/js/combat/impact-blend-library.js loads and
 // writes each frame's recorded pose straight onto the SAME rig objects
-// docs/js/procedural-leg-animation.js already owns (via its
-// applyRecordedLegPose(side, record), added alongside this file), plus a
-// couple of playerMesh fields nothing else in game.js ever touches.
-//
-// Deliberately narrow about what it writes on playerMesh: game.js has ~14
-// call sites across several per-frame functions (movement, tool-swing pose,
-// mount handling, …) that set playerMesh.rotation.y = <facing angle> in
-// whichever one is active that frame, so this module never touches
-// rotation.y or .quaternion wholesale (either would fight whichever of
-// those runs after it in the same frame — audited via grep, confirmed there
-// is no single choke point to guard instead). It only ever writes
-// rotation.x/rotation.z (nothing else in game.js sets those — confirmed via
-// the same grep) for the ragdoll body's pitch/roll "falling over" tilt, and
-// position.y (also untouched elsewhere) for the recorded rise/sink. Legs are
-// fully owned by applyRecordedLegPose, which is exclusively this module's to
-// call while active — procedural-leg-animation.js's own update() must be
-// skipped by the caller while isActive() is true (see game.js's per-frame
-// playerLegs?.update(...) site).
+// docs/js/procedural-leg-animation.js already owns.
 (() => {
   "use strict";
 
@@ -165,10 +148,12 @@
   window.ImpactRagdollPlayback = { attach, trigger, update, beginRecoveryArc, stop, isActive, isHolding, currentDirection };
 })();
 
-// Footing-driven Regular -> Drunken locomotion bridge. ProceduralLegAnimation
-// is loaded before this file; game.js attaches the player's legs later, so
-// wrapping attach() here catches the player without changing game.js's large
-// animation/update monolith. NPC/bandit handles pass through unchanged.
+// Footing-driven Regular -> Drunken locomotion bridge. This owns the leg
+// placement/twist and computes the body's drunk rotation, but deliberately
+// does NOT write that rotation into player child nodes. game.js owns both the
+// player-facing yaw and the leg group's deadzone counter-yaw every frame. The
+// final body transform is composed at render time by combat-config-loader.js,
+// after mouse facing and attack body rotation have both finished.
 (() => {
   "use strict";
 
@@ -206,20 +191,6 @@
     return 1 - clamp01(Number(player.footing) / Number(player.maxFooting));
   }
 
-  function avatarRotationTargets(childrenBeforeAttach, legGroup) {
-    const targets = [];
-    for (const child of (childrenBeforeAttach || [])) {
-      if (!child) continue;
-      const name = String(child.name || '').toLowerCase();
-      const avatarRoot = child.userData?.modelRole === 'temporary-npc-demo-model';
-      const visualHelper = name.includes('player_avatar') || name.includes('player_portrait') ||
-        name.includes('hat_xray') || name.includes('occlusion_ghost');
-      if (avatarRoot || visualHelper) targets.push(child);
-    }
-    if (legGroup) targets.push(legGroup);
-    return [...new Set(targets)];
-  }
-
   function legPart(root, name) {
     return root?.getObjectByName?.(name) || null;
   }
@@ -234,7 +205,7 @@
     foot.rotation.z = base.z + roll;
   }
 
-  function decoratePlayerHandle(THREE, options, handle, childrenBeforeAttach) {
+  function decoratePlayerHandle(THREE, options, handle) {
     if (!handle) return handle;
     const modelWidth = Math.max(0.001, Number(options.modelWidth) || 0.9);
     const modelHeight = Math.max(0.001, Number(options.modelHeight) || modelWidth);
@@ -242,10 +213,6 @@
       Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.referenceSpeedWorldUnitsPerSecond) || 4.3);
     const originalUpdate = handle.update.bind(handle);
     const originalDispose = handle.dispose.bind(handle);
-    const rotationTargets = avatarRotationTargets(childrenBeforeAttach, handle.group);
-    const baseQuaternions = new Map(rotationTargets.map(target => [target, target.quaternion.clone()]));
-    const drunkEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-    const drunkQuaternion = new THREE.Quaternion();
 
     const state = {
       phase: 0,
@@ -260,16 +227,6 @@
       disposed: false,
     };
 
-    function applyBodyRotation(pitch, yaw, roll) {
-      drunkEuler.set(pitch, yaw, roll, 'YXZ');
-      drunkQuaternion.setFromEuler(drunkEuler);
-      for (const target of rotationTargets) {
-        const base = baseQuaternions.get(target);
-        if (!base || !target?.quaternion) continue;
-        target.quaternion.copy(base).multiply(drunkQuaternion);
-      }
-    }
-
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
       const rawLoss = (suppressed || seatedPose) ? 0 : footingLoss();
@@ -283,17 +240,37 @@
       const p = state.phase;
       const irregular = Math.sin(p * 0.47 + 1.1) * 0.55 + Math.sin(p * 1.31 - 0.4) * 0.45;
       const correctionPulse = Math.pow(Math.max(0, Math.sin(p * 0.53 - 0.8)), 5);
+
+      // Explicitly share the same full-step phase with the torso. Previously
+      // the dramatic cross/wide catch steps below ran on sin(p), while torso
+      // roll/yaw ran on unrelated fractional frequencies; visually the feet
+      // could throw the body one way while the PNG torso calmly drifted the
+      // other. crossCatch and hesitationBias make the torso bank/yaw into the
+      // actual misplaced/catch foot that is carrying the gait this instant.
+      const stepWave = Math.sin(p);
+      const crossCatch = Math.sign(stepWave || 1) * Math.pow(Math.abs(stepWave), 1.8);
+      const hesitationL = Math.pow(Math.max(0, Math.sin(p - 0.55)), 7);
+      const hesitationR = Math.pow(Math.max(0, Math.sin(p + Math.PI - 0.55)), 7);
+      const hesitationBias = hesitationL - hesitationR;
+      const hesitationTotal = hesitationL + hesitationR;
+
       const pitchTarget = locomotionStrength * DRUNK_MAX_PITCH_DEG * DEG *
-        (0.50 * Math.sin(p * 0.73 + 0.9) + 0.30 * irregular - 0.38 * correctionPulse * extreme);
+        (0.50 * Math.sin(p * 0.73 + 0.9) + 0.30 * irregular
+          - 0.38 * correctionPulse * extreme
+          - 0.24 * crossCatch * crossCatch * extreme
+          + 0.16 * hesitationTotal * extreme);
       const rollTarget = locomotionStrength * DRUNK_MAX_ROLL_DEG * DEG *
-        (0.64 * Math.sin(p * 0.61 - 0.25) + 0.27 * Math.sin(p * 1.17 + 1.7) + 0.34 * correctionPulse * extreme);
+        (0.64 * Math.sin(p * 0.61 - 0.25) + 0.27 * Math.sin(p * 1.17 + 1.7)
+          + 0.34 * correctionPulse * extreme
+          + 0.42 * crossCatch * extreme
+          + 0.16 * hesitationBias * extreme);
       const yawTarget = locomotionStrength * DRUNK_MAX_YAW_DEG * DEG *
-        (0.61 * Math.sin(p * 0.49 + 0.3) + 0.29 * Math.sin(p * 1.09 - 1.0));
+        (0.61 * Math.sin(p * 0.49 + 0.3) + 0.29 * Math.sin(p * 1.09 - 1.0)
+          + 0.28 * crossCatch * extreme);
 
       state.pitch = damp(state.pitch, pitchTarget, 6.5, dt);
       state.roll = damp(state.roll, rollTarget, 6.0, dt);
       state.yaw = damp(state.yaw, yawTarget, 5.5, dt);
-      applyBodyRotation(state.pitch, state.yaw, state.roll);
 
       const sideEntries = [
         { key: 'left', thigh: legPart(handle.group, 'left_thigh'), side: -1, phase: p },
@@ -341,7 +318,7 @@
     handle.dispose = function footingDrunkWalkDispose() {
       if (state.disposed) return;
       state.disposed = true;
-      applyBodyRotation(0, 0, 0);
+      state.pitch = state.roll = state.yaw = 0;
       if (activePlayerState?.handle === handle) activePlayerState = null;
       originalDispose();
     };
@@ -353,9 +330,8 @@
   const originalAttach = api.attach.bind(api);
   api.attach = function footingAwareAttach(THREE, parent, options = {}) {
     const isPlayer = String(options.name || '').toLowerCase() === 'player';
-    const childrenBeforeAttach = isPlayer ? Array.from(parent?.children || []) : null;
     const handle = originalAttach(THREE, parent, options);
-    return isPlayer ? decoratePlayerHandle(THREE, options, handle, childrenBeforeAttach) : handle;
+    return isPlayer ? decoratePlayerHandle(THREE, options, handle) : handle;
   };
   api.__footingDrunkWalkInstalled = true;
 
