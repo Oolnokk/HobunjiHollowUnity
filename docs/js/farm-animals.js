@@ -242,7 +242,8 @@
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
     const ANIMAL_W = 1.275;
     const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
-    const halfH = ANIMAL_H / 2;
+    const sizeScale = window.CreatureGenetics.creatureSizeScale('uumkaoii', genotype); // Uses the Animation Author's class-specific proportions.
+    const halfH = ANIMAL_H * sizeScale.y / 2; // Grounds the visibly scaled farm animal.
 
     const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
@@ -251,6 +252,7 @@
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
+    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);
@@ -375,7 +377,8 @@
   function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
     const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
     const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
-    const halfH = ANIMAL_H / 2;
+    const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotype); // Uses the Animation Author's class-specific proportions.
+    const halfH = ANIMAL_H * sizeScale.y / 2; // Grounds the visibly scaled farm animal.
     const baseUrl = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base?.idle || `assets/creaturesprites/${kind}_idle.png`;
 
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, baseUrl, {
@@ -384,6 +387,7 @@
     });
     avatarRef.frontPlane = avatarRef.group.children[0] || null;
     avatarRef.backPlane  = avatarRef.group.children[1] || null;
+    avatarRef.group.scale.set(sizeScale.x, sizeScale.y, 1);
 
     const grid = deps.getGrid();
     const initSurfY = deps.tileSurfaceY(grid[row][col].type);

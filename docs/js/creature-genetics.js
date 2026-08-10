@@ -197,19 +197,87 @@
   // any species can eventually turn up as any role given enough luck.
   const CREATURE_SIZE_CLASSES = ['small', 'medium', 'large'];
   const CREATURE_SIZE_ROLE = { small: 'shoulderPet', medium: 'companion', large: 'mount' };
+  const CREATURE_SIZE_LABEL = { small: 'Small', medium: 'Medium', large: 'Large' }; // Used by Farm/Stable trait cards.
+  const CREATURE_ROLE_LABEL = { shoulderPet: 'Shoulder pet', companion: 'Companion', mount: 'Mount' }; // Used beside Size in trait cards.
   function normalizeCreatureSizeClass(value) {
     return CREATURE_SIZE_CLASSES.includes(value) ? value : 'medium';
   }
-  function stableEntryRole(entry) {
-    return CREATURE_SIZE_ROLE[normalizeCreatureSizeClass(entry?.genotype?.sizeClass)];
+  function creatureSizeClass(kind, genotype) {
+    const fallbackSize = deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'; // Used for legacy/no-genotype creatures.
+    return normalizeCreatureSizeClass(genotype?.sizeClass || fallbackSize);
   }
-  // Steps a Size one notch up or down (clamped at the ends, no wraparound)
-  // — the shape a rare breeding mutation takes, mirroring mutateFurColor's
-  // role for coat genes.
+  function creatureSizeScale(kind, genotypeOrSizeClass) {
+    const sizeClass = typeof genotypeOrSizeClass === 'string'
+      ? normalizeCreatureSizeClass(genotypeOrSizeClass)
+      : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the authored class used by renderer/anchors.
+    const profileKind = GENOTYPE_SPECIES_ALIAS[kind] || kind; // Reuses base-species rig data for variant creature keys.
+    const authored = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.sizeScales?.[sizeClass]; // Canonical Animation Author export.
+    const x = Number(authored?.x); // Applied to the creature plane's local width.
+    const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.
+    return {
+      sizeClass,
+      x: Number.isFinite(x) && x > 0 ? x : 1,
+      y: Number.isFinite(y) && y > 0 ? y : 1,
+    };
+  }
+  function creatureSizeTrait(kind, genotype) {
+    const sizeScale = creatureSizeScale(kind, genotype); // Supplies UI labels and the same percentages used in-world.
+    const defaultSizeClass = normalizeCreatureSizeClass(deps.CREATURE_DB[kind]?.defaultSizeClass || 'medium'); // Flags inherited non-default sizes.
+    const role = CREATURE_SIZE_ROLE[sizeScale.sizeClass]; // Maps the class to its stable equipment slot.
+    return {
+      ...sizeScale,
+      label: CREATURE_SIZE_LABEL[sizeScale.sizeClass],
+      role,
+      roleLabel: CREATURE_ROLE_LABEL[role],
+      isNonDefault: sizeScale.sizeClass !== defaultSizeClass,
+      defaultSizeClass,
+    };
+  }
+  function _traitLabel(id) {
+    const overrides = { bodystripes: 'Body stripes', colorpoint: 'Colorpoint', foxtail: 'Fox tail' }; // Keeps compact genetic IDs readable in the UI.
+    return overrides[id] || String(id || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').replace(/^./, char => char.toUpperCase());
+  }
+  function genotypeTraits(kind, genotype) {
+    const colors = []; // Rendered as named color chips in Farm and Stable.
+    const patterns = []; // Rendered as visible-pattern or carrier chips in Farm and Stable.
+    if (genotype?.fur || genotype?.plates) {
+      for (const id of ['fur', 'plates']) {
+        const layer = genotype?.[id]; // Supplies one always-visible dual-region color.
+        if (layer?.color) colors.push({ id, label: _traitLabel(id), color: layer.color, colorName: _furPaletteName(layer.color) });
+      }
+    } else if (genotype?.base) {
+      colors.push({ id: 'base', label: 'Base coat', color: genotype.base.color, colorName: _furPaletteName(genotype.base.color) });
+      for (const id of LIVESTOCK_PATTERN_DEFS[kind] || []) {
+        const layer = genotype?.[id] || {}; // Supplies expressed/carried allele details for one authored mask.
+        const copies = deps.clamp(Number(layer.copies) || 0, 0, 2); // Displayed as the inherited allele count.
+        const inheritance = layer.inheritance || 'dominant'; // Displayed so breeding implications are visible.
+        const enabled = !!layer.enabled && copies > 0; // Separates visible traits from hidden carriers.
+        const carrier = !enabled && (layer.carrier || (inheritance === 'recessive' && copies === 1)); // Surfaces hidden recessive traits.
+        if (!enabled && !carrier) continue;
+        patterns.push({
+          id,
+          label: _traitLabel(id),
+          color: layer.color || genotype.base.color,
+          colorName: _furPaletteName(layer.color || genotype.base.color),
+          copies,
+          inheritance,
+          enabled,
+          carrier,
+        });
+      }
+    }
+    return { size: creatureSizeTrait(kind, genotype), colors, patterns };
+  }
+  function stableEntryRole(entry) {
+    return CREATURE_SIZE_ROLE[creatureSizeClass(entry?.kind, entry?.genotype)];
+  }
+  // Steps a Size one notch up or down with no wraparound. Endpoint classes
+  // always step inward so a successful rare mutation can never silently
+  // resolve back to the parent's existing class.
   function mutateSizeClassStep(sizeClass) {
     const idx = CREATURE_SIZE_CLASSES.indexOf(normalizeCreatureSizeClass(sizeClass));
-    const dir = Math.random() < 0.5 ? -1 : 1;
-    return CREATURE_SIZE_CLASSES[deps.clamp(idx + dir, 0, CREATURE_SIZE_CLASSES.length - 1)];
+    const dir = idx === 0 ? 1 : idx === CREATURE_SIZE_CLASSES.length - 1 ? -1 : (Math.random() < 0.5 ? -1 : 1); // Endpoint mutations always change class.
+    return CREATURE_SIZE_CLASSES[idx + dir];
   }
   // Offspring Size: inherited from a randomly-chosen parent (falling back
   // to the species default for a parent with no sizeClass on record, e.g.
@@ -375,6 +443,10 @@
     sellValueFor,
     crossOffspring,
     stableEntryRole,
+    creatureSizeClass,
+    creatureSizeScale,
+    creatureSizeTrait,
+    genotypeTraits,
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,
     SPECIES_ALIAS: GENOTYPE_SPECIES_ALIAS,

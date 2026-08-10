@@ -801,16 +801,16 @@
     const pending = pairs.some(p => window.FarmAnimals.refsEqual(p.parentA, ref) || window.FarmAnimals.refsEqual(p.parentB, ref));
     const pickKey = `${ref.source}:${ref.id}`;
     const row = document.createElement('div');
-    row.className = 'farm-row';
+    row.className = 'farm-row livestock-trait-row';
     row.innerHTML =
       (canManage ? `<input type="checkbox" class="farm-pick" ${farmPairPicks.has(pickKey) ? 'checked' : ''} ${pending ? 'disabled' : ''}>` : '') +
       `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span>` +
       (onRename
         ? `<input class="farm-row-name" value="${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
         : `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}</span>`) +
-      _livestockSwatchesHtml(entry.genotype, entry.kind) +
       `<span class="farm-row-value${value ? ' tier-' + deps.esc(value.tier) : ''}">${value ? `${value.amount}g · ${deps.esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
-      (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '');
+      (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '') +
+      _livestockTraitsHtml(entry.genotype, entry.kind);
     if (canManage) {
       if (onRename) row.querySelector('.farm-row-name').addEventListener('change', e => onRename(e.target.value));
       row.querySelector('.farm-pick').addEventListener('change', e => {
@@ -1470,23 +1470,33 @@
     else deps.setActiveCompanionId(id);
   }
 
-  // Small color-swatch HTML shared by every livestock/stable row —
-  // Uumkao'ii shows its two permanent regions; pattern-layer species
-  // (gar-wolf/dabinggi-hound) show base color + first enabled pattern's
-  // color (there's only ever one shared pattern color per specimen).
-  function _livestockSwatchesHtml(genotype, kind) {
-    if (!genotype) return '';
-    if (genotype.fur || genotype.plates) {
-      return (genotype.fur ? `<span class="farm-swatch" style="background:${deps.esc(genotype.fur.color)}" title="Fur color"></span>` : '') +
-             (genotype.plates ? `<span class="farm-swatch" style="background:${deps.esc(genotype.plates.color)}" title="Plate color"></span>` : '');
-    }
-    const patterns = window.CreatureGenetics.PATTERN_DEFS[kind];
-    if (patterns && genotype.base) {
-      const enabledId = patterns.find(id => genotype[id]?.enabled);
-      return `<span class="farm-swatch" style="background:${deps.esc(genotype.base.color)}" title="Base color"></span>` +
-             (enabledId ? `<span class="farm-swatch" style="background:${deps.esc(genotype[enabledId].color)}" title="Pattern color"></span>` : '');
-    }
-    return '';
+  function _safeTraitColor(value) {
+    const normalized = String(value || '').trim(); // Used only in trait-chip swatch backgrounds.
+    return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : '#777777';
+  }
+
+  // Full trait strip shared by farm livestock, breeding-only stable entries,
+  // and the personal Stable tab. This intentionally keeps inheritance data
+  // visible on mobile rather than hiding it in hover-only titles.
+  function _livestockTraitsHtml(genotype, kind) {
+    const traits = window.CreatureGenetics.genotypeTraits(kind, genotype); // Single normalized view of size/color/pattern genes.
+    const size = traits.size; // Drives the prominent class/role/scale badge.
+    const scaleText = Math.abs(size.x - size.y) < 0.001
+      ? `${Math.round(size.x * 100)}% scale`
+      : `${Math.round(size.x * 100)}% wide · ${Math.round(size.y * 100)}% tall`; // Mirrors actual in-world authored scale.
+    const sizeHtml = `<div class="farm-size-trait size-${deps.esc(size.sizeClass)}"><span class="farm-size-name">${deps.esc(size.label)}</span><span>${deps.esc(size.roleLabel)} · ${deps.esc(scaleText)}</span>${size.isNonDefault ? '<b>Rare size</b>' : ''}</div>`; // First chip makes size immediately scannable.
+    const colorHtml = traits.colors.map(trait => {
+      const color = _safeTraitColor(trait.color); // Validated before use in an inline background.
+      return `<div class="farm-trait-chip"><i style="background:${color}"></i><span><strong>${deps.esc(trait.label)}</strong><small>${deps.esc(trait.colorName)}</small></span></div>`;
+    }).join(''); // All permanent/base color regions remain individually named.
+    const patternHtml = traits.patterns.map(trait => {
+      const color = _safeTraitColor(trait.color); // Validated before use in an inline background.
+      const copyText = `${trait.copies} cop${trait.copies === 1 ? 'y' : 'ies'} · ${trait.inheritance}`; // Exposes breeding behavior without a tooltip.
+      const heading = trait.carrier ? `Carries ${trait.label}` : trait.label; // Distinguishes hidden recessive genes from visible masks.
+      return `<div class="farm-trait-chip pattern${trait.carrier ? ' carrier' : ''}"><i style="background:${color}"></i><span><strong>${deps.esc(heading)}</strong><small>${deps.esc(trait.colorName)} · ${deps.esc(copyText)}</small></span></div>`;
+    }).join(''); // Shows every expressed pattern and every hidden carrier.
+    const plainHtml = genotype?.base && !traits.patterns.length ? '<div class="farm-trait-plain">No visible or carried patterns</div>' : ''; // Makes a plain coat explicit.
+    return `<div class="farm-traits">${sizeHtml}<div class="farm-color-traits">${colorHtml}${patternHtml}${plainHtml}</div></div>`;
   }
 
   // Your personal companion collection — character-scoped, untradeable,
@@ -1505,13 +1515,13 @@
       const roleMeta = STABLE_ROLE_META[role];
       const isActive = entry.id === activeStableIdForRole(role);
       const row = document.createElement('div');
-      row.className = 'farm-row';
+      row.className = 'farm-row livestock-trait-row';
       row.innerHTML =
         `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${isActive ? `Active ${roleMeta.label.toLowerCase()}` : `Set as ${roleMeta.label.toLowerCase()}`}">${roleMeta.icon}</button>` +
         `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
         `<input class="farm-row-name" value="${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" maxlength="30">` +
-        _livestockSwatchesHtml(entry.genotype, entry.kind) +
-        `<span class="farm-row-value">${deps.esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>`;
+        `<span class="farm-row-value">${deps.esc(roleMeta.label)} · Lv. ${entry.level || 0} <span style="opacity:.6">(leveling coming soon)</span></span>` +
+        _livestockTraitsHtml(entry.genotype, entry.kind);
       row.querySelector('.farm-companion-btn').addEventListener('click', () => {
         setActiveStableIdForRole(role, isActive ? null : entry.id);
         deps.saveStable();
