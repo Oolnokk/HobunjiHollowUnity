@@ -97,6 +97,9 @@
   let mountDeps = null;
   let itemDeps = null;
   let playerMeshRef = null;
+  let playerBodyRoots = [];
+  let playerLegRoot = null;
+  let playerPosteriorY = 0;
   let passiveRoots = [];
   let inertiaVX = 0, inertiaVY = 0;
   let lastPlayerX = null, lastPlayerY = null;
@@ -191,18 +194,29 @@
   hookFutureInit('Mounts', deps => { mountDeps = deps; });
   hookFutureInit('FarmCrates', deps => { itemDeps = deps; });
 
-  const drunkOwnedRoot = child => {
-    if (!child) return false;
+  function isPlayerBodyRoot(child) {
+    if (!child?.isObject3D) return false;
     const name = String(child.name || '').toLowerCase();
     return child.userData?.modelRole === 'temporary-npc-demo-model'
-      || name.includes('player_avatar') || name.includes('player_portrait')
-      || name.includes('hat_xray') || name.includes('occlusion_ghost')
-      || name.includes('procedural_leg');
-  };
+      || name.includes('player_avatar')
+      || name.includes('player_portrait')
+      || name.includes('hat_xray')
+      || name.includes('occlusion_ghost');
+  }
 
-  // Capture only. Drunk body rotation is applied to the complete parent at
-  // render time; child-level writes would overwrite game.js's intentional
-  // procedural-leg Y counter-rotation used by mouse/deadzone facing.
+  function hasRenderableDescendant(root) {
+    if (!root?.isObject3D) return false;
+    let renderable = !!(root.isMesh || root.isSprite || root.isLine || root.isPoints);
+    if (!renderable) root.traverse?.(obj => {
+      if (obj !== root && (obj.isMesh || obj.isSprite || obj.isLine || obj.isPoints)) renderable = true;
+    });
+    return renderable;
+  }
+
+  // Capture the visual roots as separate layers. playerMesh remains the base
+  // transform owned by game.js: deadzone facing, attack body rotations, idle
+  // tool poses and any future root-level animation all resolve there first.
+  // Drunken sway is never written to playerMesh itself.
   const previousAttach = legApi.attach.bind(legApi);
   legApi.attach = function drunkAttachmentAwareAttach(THREEArg, parent, options = {}) {
     const isPlayer = String(options.name || '').toLowerCase() === 'player';
@@ -210,10 +224,19 @@
     const handle = previousAttach(THREEArg, parent, options);
     if (!childrenBefore || !handle) return handle;
     playerMeshRef = parent;
-    passiveRoots = childrenBefore.filter(child => child?.isObject3D && !drunkOwnedRoot(child));
+    playerBodyRoots = childrenBefore.filter(isPlayerBodyRoot);
+    playerLegRoot = handle.group?.isObject3D ? handle.group : null;
+    playerPosteriorY = Number(handle.standingPosteriorY) || 0;
+    passiveRoots = childrenBefore.filter(child => child?.isObject3D && !playerBodyRoots.includes(child));
     const originalDispose = handle.dispose.bind(handle);
     handle.dispose = function drunkAttachmentAwareDispose() {
-      if (playerMeshRef === parent) { playerMeshRef = null; passiveRoots = []; }
+      if (playerMeshRef === parent) {
+        playerMeshRef = null;
+        playerBodyRoots = [];
+        playerLegRoot = null;
+        playerPosteriorY = 0;
+        passiveRoots = [];
+      }
       return originalDispose();
     };
     return handle;
@@ -230,18 +253,52 @@
     ));
   }
 
-  function renderRotatedSibling(obj, pivot, worldQ, undo) {
-    if (!obj?.isObject3D || !obj.visible) return;
+  // Applies one already-resolved world-space delta without replacing any
+  // animation's existing transform. The old local position/quaternion are
+  // restored immediately after render, so there is no accumulated drift.
+  function renderRotatedWorld(obj, pivotWorld, worldQ, undo) {
+    if (!obj?.isObject3D || obj.visible === false) return;
+    obj.updateWorldMatrix?.(true, false);
     const oldPos = obj.position.clone();
     const oldQuat = obj.quaternion.clone();
-    obj.position.copy(pivot).add(obj.position.clone().sub(pivot).applyQuaternion(worldQ));
-    obj.quaternion.premultiply(worldQ);
+    const worldPos = obj.getWorldPosition(new THREE.Vector3());
+    const worldQuat = obj.getWorldQuaternion(new THREE.Quaternion());
+    const nextWorldPos = pivotWorld.clone().add(worldPos.sub(pivotWorld).applyQuaternion(worldQ));
+    const nextWorldQuat = worldQ.clone().multiply(worldQuat);
+    if (obj.parent?.isObject3D) {
+      obj.parent.updateWorldMatrix?.(true, false);
+      const parentWorldQ = obj.parent.getWorldQuaternion(new THREE.Quaternion());
+      obj.position.copy(obj.parent.worldToLocal(nextWorldPos.clone()));
+      obj.quaternion.copy(parentWorldQ.invert().multiply(nextWorldQuat));
+    } else {
+      obj.position.copy(nextWorldPos);
+      obj.quaternion.copy(nextWorldQuat);
+    }
     undo.push(() => { obj.position.copy(oldPos); obj.quaternion.copy(oldQuat); });
   }
 
-  // Final composition: Qrender = Q(mouse/deadzone + attack) * Q(drunk).
-  // It happens inside render(), after every game.js rotation writer, then is
-  // restored immediately so no transform drift can accumulate.
+  function currentVisualRoots() {
+    const roots = [];
+    const add = obj => {
+      if (!obj?.isObject3D || roots.includes(obj) || !hasRenderableDescendant(obj)) return;
+      roots.push(obj);
+    };
+    for (const root of playerBodyRoots) add(root);
+    add(playerLegRoot);
+    // Held-item/attachment groups are already children of playerMesh. They
+    // should share the body's sway, but non-renderable helpers/colliders do
+    // not need any render-time transform at all.
+    for (const root of passiveRoots) add(root);
+    return roots;
+  }
+
+  // Final visual composition:
+  //   1. game.js resolves rotation deadzone / mouse facing
+  //   2. idle tool pose / tool animation / combat attack rotation resolve
+  //   3. this render hook reads those finished transforms and PREMULTIPLIES
+  //      one common world-space drunk delta onto every visible player layer.
+  // The parent playerMesh is untouched, so drunkenness cannot become the
+  // reference frame that any of those systems subsequently overwrite.
   if (window.THREE?.WebGLRenderer && !window.THREE.WebGLRenderer.prototype.__drunkAttachmentRenderHook) {
     const proto = window.THREE.WebGLRenderer.prototype;
     const originalRender = proto.render;
@@ -250,15 +307,15 @@
       if (playerMeshRef) {
         const localQ = localDrunkQuaternion();
         if (Math.abs(localQ.x) + Math.abs(localQ.y) + Math.abs(localQ.z) > 1e-7) {
-          const basePlayerQ = playerMeshRef.quaternion.clone();
-          const worldQ = basePlayerQ.clone().multiply(localQ).multiply(basePlayerQ.clone().invert());
-          const pivot = playerMeshRef.position.clone();
-          playerMeshRef.quaternion.copy(basePlayerQ).multiply(localQ);
-          undo.push(() => playerMeshRef.quaternion.copy(basePlayerQ));
-          renderRotatedSibling(window.__hobunjiDrunkBridgeDevDeps?.toolHolder, pivot, worldQ, undo);
+          playerMeshRef.updateWorldMatrix?.(true, false);
+          const playerWorldQ = playerMeshRef.getWorldQuaternion(new THREE.Quaternion());
+          const worldQ = playerWorldQ.clone().multiply(localQ).multiply(playerWorldQ.clone().invert());
+          const pivot = playerMeshRef.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
+          for (const root of currentVisualRoots()) renderRotatedWorld(root, pivot, worldQ, undo);
+          renderRotatedWorld(window.__hobunjiDrunkBridgeDevDeps?.toolHolder, pivot, worldQ, undo);
           for (const c of window.Combat?.deps?.companionObjects || []) {
             if (c?.health <= 0 || c?.stableRole !== 'shoulderPet' || (c.master || window.Combat?.deps?.player) !== window.Combat?.deps?.player) continue;
-            renderRotatedSibling(c.avatarRef?.group, pivot, worldQ, undo);
+            renderRotatedWorld(c.avatarRef?.group, pivot, worldQ, undo);
           }
         }
       }
@@ -443,6 +500,10 @@
         hasMountDeps: !!mountDeps,
         hasItemDeps: !!itemDeps,
         playerAttached: !!playerMeshRef,
+        bodyVisualRoots: playerBodyRoots.map(root => root.name || root.type),
+        legVisualAttached: !!playerLegRoot,
+        posteriorY: playerPosteriorY,
+        visualRootCount: currentVisualRoots().length,
       };
     },
   };
