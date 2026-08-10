@@ -2,6 +2,9 @@
   'use strict';
 
   const DEFAULT_JOIN_THRESHOLD = 0.275;
+  const DEFAULT_TEXTURE_TILE_SIZE = 4; // Used to repeat the water PNG across world X/Z coordinates.
+  const TEXTURE_SCROLL_U = 0.012; // Used by the shared shader to drift the tiled PNG sideways.
+  const TEXTURE_SCROLL_V = 0.035; // Used by the shared shader to move the tiled PNG along world Z.
   const stats = Object.create(null); // Used by the in-game Debug panel and mobile bug reports.
   const lastLoggedCounts = new Map();
 
@@ -73,10 +76,9 @@
       ? Math.max(0, options.joinThreshold)
       : DEFAULT_JOIN_THRESHOLD;
     const yOffset = Number.isFinite(options.yOffset) ? options.yOffset : 0.015;
-    const uvMinX = Number.isFinite(options.uvMinX) ? options.uvMinX : 0;
-    const uvMinZ = Number.isFinite(options.uvMinZ) ? options.uvMinZ : 0;
-    const uvWidth = Math.max(0.001, Number.isFinite(options.uvWidth) ? options.uvWidth : 1);
-    const uvHeight = Math.max(0.001, Number.isFinite(options.uvHeight) ? options.uvHeight : 1);
+    const textureTileSize = Math.max(0.001, Number.isFinite(options.textureTileSize)
+      ? options.textureTileSize
+      : DEFAULT_TEXTURE_TILE_SIZE); // Converts world coordinates into repeating texture-space units.
     const positions = [];
     const uvs = [];
     const depths = [];
@@ -96,7 +98,7 @@
         const touching = touchingCells(byKey, x, z);
         const y = cornerHeightFor(cell, touching, joinThreshold) + yOffset;
         positions.push(x, y, z);
-        uvs.push((x - uvMinX) / uvWidth, (z - uvMinZ) / uvHeight);
+        uvs.push(x / textureTileSize, z / textureTileSize);
         depths.push(cell.depth);
         coverages.push(cell.coverage);
         flows.push(cell.flowX, cell.flowZ);
@@ -152,11 +154,11 @@
         varying float vCoverage;
         varying vec2 vFlow;
         void main() {
-          // Keep the PNG anchored to world X/Z so adjacent tiles and
-          // disconnected puddles always sample the same stretched image.
-          // Flow adds a moving sheen instead of offsetting UVs per tile,
-          // which would reintroduce visible seams at direction changes.
-          vec2 textureUv = fract(vUv + vec2(0.0, uTime * 0.0015));
+          // The PNG repeats in world X/Z and one continuous offset moves the
+          // whole merged surface like the scrolling texture on a rain plane.
+          // Per-tile offsets would create seams where flow directions change.
+          vec2 textureOffset = vec2(uTime * ${TEXTURE_SCROLL_U.toFixed(3)}, uTime * ${TEXTURE_SCROLL_V.toFixed(3)});
+          vec2 textureUv = fract(vUv + textureOffset);
           vec3 textureColor = texture2D(uWaterTexture, textureUv).rgb;
           float pattern = dot(textureColor, vec3(0.299, 0.587, 0.114));
           vec3 baseColor = mix(uShallowColor, uDeepColor, clamp(vDepth, 0.0, 1.0));
@@ -213,6 +215,10 @@
       vertices: data.positions.length / 3,
       triangles: data.indices.length / 3,
       drawCalls: 1,
+      textureTileSize: Number.isFinite(options.textureTileSize)
+        ? options.textureTileSize
+        : DEFAULT_TEXTURE_TILE_SIZE,
+      textureScrollUvPerSecond: [TEXTURE_SCROLL_U, TEXTURE_SCROLL_V],
     };
     if (lastLoggedCounts.get(statKey) !== data.tileCount) {
       lastLoggedCounts.set(statKey, data.tileCount);
@@ -225,7 +231,17 @@
     if (statKey) delete stats[statKey];
   }
 
-  const api = { DEFAULT_JOIN_THRESHOLD, buildSurfaceData, createMaterial, createMesh, clearStats, stats };
+  const api = {
+    DEFAULT_JOIN_THRESHOLD,
+    DEFAULT_TEXTURE_TILE_SIZE,
+    TEXTURE_SCROLL_U,
+    TEXTURE_SCROLL_V,
+    buildSurfaceData,
+    createMaterial,
+    createMesh,
+    clearStats,
+    stats,
+  };
   if (typeof window !== 'undefined') {
     window.MergedWaterRenderer = api;
     window.__waterRenderStats = stats;

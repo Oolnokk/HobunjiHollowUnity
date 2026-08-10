@@ -309,7 +309,6 @@
     if (!cells.length) return [];
     const mesh = deps.buildMergedWaterMesh(zScene, cells, {
       name: `${mapId}_merged_water`, statKey: `${mapId} waterways`,
-      uvWidth: zcols, uvHeight: zrows,
     });
     if (!mesh) return [];
     deps.displaceZoneGeometry(mesh.geometry, mapId);
