@@ -15,7 +15,7 @@
   const MAX_VALUE = 1;
   const MAX_RADIUS = 64;
   const DEFAULT_ENABLED = true;
-  const DEFAULT_VALUE = 1;
+  const DEFAULT_VALUE = 0.5;
   const DEFAULT_RADIUS = 1;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
