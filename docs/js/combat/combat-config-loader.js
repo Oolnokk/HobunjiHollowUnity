@@ -25,13 +25,14 @@
 // parser-blocking point those integrations need: after their core dependencies
 // exist, but before game.js constructs the player rig and initializes late
 // systems. Keep the bootstrap tiny so each behavior remains independently
-// owned/testable. A future index cleanup can replace these three entries with
-// ordinary script tags without changing any module API.
+// owned/testable. A future index cleanup can replace these entries with normal
+// script tags without changing any module API.
 (() => {
   'use strict';
 
   const modules = [
     ['js/player-body-transform-composer.js?v=20260810a', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
     ['js/drunk-locomotion.js?v=20260810a', () => !!window.HobunjiDrunkWalk],
     ['js/alcohol-gameplay-bridge.js?v=20260810a', () => !!window.HobunjiDrunkGameplayBridge],
   ];
