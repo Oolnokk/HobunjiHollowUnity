@@ -24,6 +24,8 @@ for (const modulePath of [
 assert.ok(composer.includes('setChannel'), 'composer exposes named transform channels');
 assert.ok(composer.includes('registerExternalRootProvider'), 'composer exposes body-bound attachment providers');
 assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current visual roots instead of pinning stale avatar objects');
+assert.ok(composer.includes('discoverAvatarBodyRoots'), 'composer recursively discovers nested player PNG visual roots');
+assert.ok(composer.includes('isDescendantOf'), 'composer can dedupe nested visual branches before applying a body delta');
 assert.ok(composer.includes("mode === 'override'"), 'composer supports physical-state override channels');
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
@@ -38,9 +40,11 @@ assert.doesNotMatch(impact, /playerMeshRef\s*\.\s*position/, 'impact never write
 
 assert.ok(drunk.includes("BODY_CHANNEL = 'drunk'"), 'drunk gait publishes a drunk body channel');
 assert.ok(drunk.includes("DRUNK_FOOTING_ID = 'drunkenFooting'"), 'drunk gait keys off the alcohol affliction, not generic Footing loss');
-assert.ok(drunk.includes('foot.rotation.y += yaw'), 'drunk foot yaw is additive to the current frame pose');
-assert.ok(drunk.includes('foot.rotation.z += roll'), 'drunk foot roll is additive to the current frame pose');
-assert.doesNotMatch(drunk, /__drunkBaseRotation/, 'drunk feet no longer cache and restore stale base rotations');
+assert.ok(drunk.includes('removeTrackedFootTwist'), 'drunk gait removes its previous foot delta before the base solver runs');
+assert.ok(drunk.includes('applyTrackedFootTwist'), 'drunk gait composes one tracked foot delta onto the resolved base pose');
+assert.ok(drunk.includes('FOOT_TWIST_LIMIT'), 'drunk foot twist has a hard shortest-arc bound below 180 degrees');
+assert.doesNotMatch(drunk, /foot\.rotation\.[yz]\s*\+=/, 'drunk foot yaw/roll cannot accumulate frame over frame');
+assert.doesNotMatch(drunk, /__drunkBaseRotation/, 'drunk feet do not cache and restore stale base rotations');
 
 assert.doesNotMatch(alcohol, /registerExternalRootProvider/, 'alcohol integration does not own body attachments');
 assert.doesNotMatch(alcohol, /WebGLRenderer\.prototype/, 'alcohol integration no longer owns renderer transforms');
