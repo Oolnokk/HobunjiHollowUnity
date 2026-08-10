@@ -48,6 +48,9 @@ assert.match(gameSource,
 assert.match(gameSource,
   /root\.position\.x = seatTransform\.x[\s\S]{0,500}seatTransform\.y - standingPosteriorY[\s\S]{0,400}seatTransform\.facingRad/,
   'seated NPC bodies align, lower, and face using the authored seat transform');
+assert.match(gameSource,
+  /root\.rotation\.y = this\.rot;[\s\S]{0,240}this\.legs\?\.group[\s\S]{0,120}rawRot - root\.rotation\.y/,
+  'NPC portrait planes use deadzone facing while procedural feet retain exact logical facing');
 assert.match(legSource, /standingPosteriorY: posteriorY/,
   'the procedural-leg handle exposes the standing posterior height for NPC chair sinking');
 

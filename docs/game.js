@@ -8444,6 +8444,9 @@
               this.perpState, this.rot, rawRot, cameraRelativePerps(), lerp,
             );
             root.rotation.y = this.rot;
+            // The portrait plane obeys the camera-relative deadzone, but the
+            // procedural feet must keep the NPC's exact logical facing.
+            if (this.legs?.group) this.legs.group.rotation.y = rawRot - root.rotation.y;
           },
           resetRouteState() {
             this.state = 'idle';
