@@ -5426,10 +5426,11 @@
       // per Size-gated stable role — see STABLE_ROLE_META) to match the
       // stable's designated active entry for each slot, or (companion slot
       // only, falling back for any legacy whistle not represented in the
-      // stable) its equipped whistle. Called every farm/zone-area frame for
+      // stable) its equipped whistle. Called every playable-area frame for
       // the real player (master defaults to `player`); cheap no-op once in
       // sync. Also re-spawns into the new area's scene whenever the master
-      // travels. Takes an explicit `master` (rather than always reading the
+      // travels, including farmhouse and building interiors. Takes an
+      // explicit `master` (rather than always reading the
       // real player) so this same function can eventually drive a second
       // companion-bearing player's companion, or an NPC's, without change —
       // see the `master` field on the companion entity itself.
@@ -5482,7 +5483,10 @@
           const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
             isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
           });
-          if (companion) companionObjects.add(companion);
+          if (companion) {
+            companionObjects.add(companion);
+            window.__farmLog?.(`[companion] spawned ${role} ${desired.creatureKey} in ${currentArea}`, 'wildlife');
+          }
         }
       }
 
@@ -18644,25 +18648,29 @@
           window.AlchemySystem.update();
           window.BountyBoard.updateTracking(dt);
 
-          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
-            // Den-Mother caverns are the one building exception (boss arena,
-            // same reason tools/weapons/reticle still work in there — see
-            // enterBuilding/the combat-gate comment near updateToolMesh) —
-            // a companion should follow the player in and keep fighting
-            // alongside them, not sit frozen back in the farm/town/zone
-            // scene it was last synced into.
+          // Active companions and shoulder pets follow the player through
+          // every playable interior. A building still loading has no real
+          // destination scene yet, so wait behind the existing black scene
+          // transition rather than spawning a follower into `scene`'s
+          // fallback and leaving it there after the building finishes.
+          const companionSceneReady = !_isBuildingArea(currentArea) || !!_buildingScenes.get(currentArea); // Gates indoor follower scene attachment.
+          if (companionSceneReady) {
             syncCompanionFromWhistle();
             updateCompanions(dt);
-            window.Mounts?.updateMountRide(dt);
+          }
+          // Runs in every area so any phase of a mount transition is cleared
+          // immediately on entering an interior. Mounts remain exterior-only.
+          window.Mounts?.updateMountRide(dt);
+
+          if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
             window.BanditCamps.updateCompanionPerception(dt);
             window.BanditCamps.updateCampBanners(dt);
             window.WildlifeSpawn.updateHostileSpawning(dt);
             updateHostiles(dt);
             window.CreatureDeath.updateCorpses(dt);
           } else if (_isBuildingArea(currentArea)) {
-            // Ordinary building interiors (house/shop) intentionally have no
-            // companions or wild spawns — only Den-Mother mini-bosses still
-            // need to chase/attack/return there.
+            // Ordinary building interiors still have no wild spawns; this
+            // branch only keeps any authored interior hostile/corpse active.
             updateHostiles(dt);
             window.CreatureDeath.updateCorpses(dt);
           }
