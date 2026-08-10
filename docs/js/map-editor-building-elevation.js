@@ -9,6 +9,7 @@
   if (!/\/tools\/map-editor(?:\/index\.html)?\/?$/.test(location.pathname)) return;
 
   const WORKSPACE_KEY = 'hobunji_map_editor_workspace_v1'; // Persists override metadata and the rebuilt runtime visual heights.
+  const PRESET_MIGRATION_KEY = 'hobunji_map_editor_building_elevation_level1_radius1_v1'; // One-time overwrite of older off/0/0 test values.
   const CORE_URL = '../../js/building-subtle-elevation.js'; // Loads the pure footprint/height math used by this controller and tests.
   const PANEL_ID = 'bldgSubtleElevationPanel'; // Identifies the injected Building inspector controls across native rerenders.
   const footprintLoads = new Map(); // Deduplicates piece JSON requests while several UI events target one building.
@@ -78,6 +79,27 @@
     syntheticSave = true;
     try { save.click(); }
     finally { syntheticSave = false; }
+  }
+
+  function migratePresetOnce() {
+    if (!core) return false;
+    try {
+      if (localStorage.getItem(PRESET_MIGRATION_KEY) === '1') return false;
+    } catch (_) {}
+    const ws = workspace();
+    if (!Array.isArray(ws?.maps)) return false;
+
+    let changed = false;
+    for (const map of ws.maps) {
+      for (const building of (Array.isArray(map?.buildings) ? map.buildings : [])) {
+        building.subtleElevationOverride = { enabled: true, value: 1, radius: 1 };
+        changed = true;
+      }
+      if ((map.buildings || []).length) core.rebuildMapVisualHeights(map);
+    }
+    if (changed) persistWorkspace();
+    try { localStorage.setItem(PRESET_MIGRATION_KEY, '1'); } catch (_) {}
+    return changed;
   }
 
   function ensureDefaultsForWorkspace() {
@@ -337,6 +359,7 @@
     }
 
     if (window.MapEditorBuildingElevation) return;
+    migratePresetOnce();
     ensureDefaultsForWorkspace();
     installEventHooks();
     installObserver();
