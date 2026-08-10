@@ -14,6 +14,9 @@
   const MIN_VALUE = -1;
   const MAX_VALUE = 1;
   const MAX_RADIUS = 64;
+  const DEFAULT_ENABLED = true;
+  const DEFAULT_VALUE = 1;
+  const DEFAULT_RADIUS = 1;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const keyOf = (c, r) => `${c},${r}`;
@@ -110,12 +113,13 @@
   }
 
   function normalizeOverride(raw) {
-    const numberValue = Number(raw?.value);
-    const numberRadius = Number(raw?.radius);
+    const source = raw && typeof raw === 'object' ? raw : null;
+    const numberValue = Number(source?.value);
+    const numberRadius = Number(source?.radius);
     return {
-      enabled: !!raw?.enabled,
-      value: clamp(Number.isFinite(numberValue) ? numberValue : 0, MIN_VALUE, MAX_VALUE),
-      radius: clamp(Number.isFinite(numberRadius) ? Math.round(numberRadius) : 0, 0, MAX_RADIUS),
+      enabled: source && Object.prototype.hasOwnProperty.call(source, 'enabled') ? !!source.enabled : DEFAULT_ENABLED,
+      value: clamp(Number.isFinite(numberValue) ? numberValue : DEFAULT_VALUE, MIN_VALUE, MAX_VALUE),
+      radius: clamp(Number.isFinite(numberRadius) ? Math.round(numberRadius) : DEFAULT_RADIUS, 0, MAX_RADIUS),
     };
   }
 
@@ -255,6 +259,7 @@
 
   return {
     MIN_VALUE, MAX_VALUE, MAX_RADIUS,
+    DEFAULT_ENABLED, DEFAULT_VALUE, DEFAULT_RADIUS,
     normalizePieceData, pieceFootprintCells, deriveFootprintShape,
     rotateCell, worldFootprintCells, normalizeOverride, affectedCells,
     cloneHeights, ensureBuildingDefaults, rebuildMapVisualHeights,
