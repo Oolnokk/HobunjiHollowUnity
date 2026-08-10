@@ -85,4 +85,16 @@ function building(overrides = {}) {
   });
 }
 
+{
+  const b = building({ subtleElevationOverride: undefined });
+  const map = { cols:6, rows:6, visualHeights:{}, buildings:[b] };
+  assert.deepEqual(BSE.normalizeOverride(b.subtleElevationOverride), { enabled:true, value:1, radius:1 });
+  const stats = BSE.rebuildMapVisualHeights(map);
+  assert.equal(stats.activeOverrides, 1, 'legacy building without metadata is migrated on');
+  assert.deepEqual(b.subtleElevationOverride, { enabled:true, value:1, radius:1 });
+  assert.equal(map.visualHeights['1,1'], 1, 'legacy building footprint gets level 1');
+  assert.equal(map.visualHeights['0,0'], 1, 'legacy building gets radius 1 around footprint');
+  assert.equal(map.visualHeights['3,2'], 1, 'radius 1 includes the outer diagonal band');
+}
+
 console.log('building subtle elevation tests passed');
