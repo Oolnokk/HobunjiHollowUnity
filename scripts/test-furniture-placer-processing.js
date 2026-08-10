@@ -47,6 +47,7 @@ const decorativeDefs = {
 const inventory = { chairFurniture: 1 };
 Object.values(processingDefs).forEach(def => { inventory[def.itemKey] = 1; });
 let currentArea = 'farm'; // Switched below to prove processors stay outdoor-only.
+let placedFurniture = [{ id: 'processor_agingBarrel_3_4', key: 'agingBarrel', placementKind: 'processing', col: 3, row: 4 }]; // Exercises processor management rows.
 
 context.window.FurniturePlacer.init({
   getCurrentArea: () => currentArea,
@@ -58,7 +59,7 @@ context.window.FurniturePlacer.init({
   getArmedFurniturePlacementKey: () => null,
   armFurnitureMove() {},
   getArmedFurnitureMoveId: () => null,
-  getPlacedFurniture: () => [],
+  getPlacedFurniture: () => placedFurniture,
   removeFurniture() {},
   rotateFurniture() {},
   showToast() {},
@@ -72,9 +73,13 @@ const renderedNames = () => elements.furniturePlacerList.children.map(row => row
 for (const def of Object.values(processingDefs)) {
   assert(renderedNames().some(html => html.includes(def.name)), `${def.name} is listed by the farm placement tool`);
 }
+const placedBarrelRow = elements.furniturePlacerList.children.find(row => row.innerHTML.includes('Aging Barrel') && row.innerHTML.includes('3, 4'));
+assert(placedBarrelRow, 'placed processors appear in the management list');
+assert.equal(placedBarrelRow.children.length, 3, 'placed processors receive move, rotate, and remove controls');
 
 elements.furniturePlacerList.children = [];
 currentArea = 'interior';
+placedFurniture = [];
 context.window.FurniturePlacer.render();
 assert(renderedNames().some(html => html.includes('Chair')), 'area-compatible decorative furniture remains listed indoors');
 for (const def of Object.values(processingDefs)) {
@@ -86,7 +91,7 @@ assert.match(gameSource,
   /processingKey\s*\? placeProcessingFurniture\(col, row, processingKey\)/,
   'placement clicks route processing items through the existing processor placement function');
 assert.match(gameSource,
-  /kind: 'processing'[\s\S]{0,700}canPlaceFurnitureAt\(col, row\)/,
+  /kind: 'processing'[\s\S]{0,1400}canPlaceFurnitureAt\(col, row, spec\.ignoreObject\)/,
   'processing furniture previews use the existing farm placement validation');
 
 console.log('furniture placer processing catalog tests passed');

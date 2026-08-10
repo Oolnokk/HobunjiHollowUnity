@@ -107,7 +107,9 @@
       list.appendChild(title);
     }
     placed.forEach(obj => {
-      const def = deps.getDecorativeFurnitureDefs()[obj.key];
+      const def = obj.placementKind === 'processing'
+        ? deps.getProcessingFurnitureDefs()[obj.key]
+        : deps.getDecorativeFurnitureDefs()[obj.key];
       if (!def) return;
       const isMoveArmed = moveArmedId === obj.id;
       const row = document.createElement('div');

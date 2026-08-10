@@ -2227,9 +2227,10 @@
         return entry ? entry[0] : null;
       }
 
-      function canPlaceFurnitureAt(col, row) {
+      function canPlaceFurnitureAt(col, row, ignoreObject = null) {
         const tile = grid[row]?.[col];
-        if (!tile || getWorldObjectAt(col, row)) return false;
+        const occupyingObject = getWorldObjectAt(col, row); // Ignored only while moving this exact processor.
+        if (!tile || (occupyingObject && occupyingObject !== ignoreObject)) return false;
         if (tile.crop || tile.type === TileType.ROCK || tile.type === TileType.SHRUB || tile.type === TileType.WEEDS || tile.type === TileType.TRENCH) return false;
         return true;
       }
@@ -2249,11 +2250,12 @@
       // vfxActive()).
       const PROCESS_BURST_S = 1.2;
 
-      function makeProcessingFurniture(col, row, furnitureKey, savedJob) {
+      function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
         const mesh = buildFurnitureVisual(furnitureKey, def.color);
         mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        mesh.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(mesh);
         _markFurnitureEdgeId(mesh);
         scene.add(mesh);
@@ -2292,7 +2294,7 @@
 
         return {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
-          type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh,
+          type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh, rotYDeg,
           label: def.icon + ' ' + def.name,
           update: updateVfx,
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
@@ -2369,6 +2371,49 @@
         worldObjects.set(col + ',' + row, obj);
         processingFurnitureObjects.add(obj);
         return { ok: true, message: 'Placed ' + def.icon + ' ' + def.name + '.' };
+      }
+
+      function processingFurnitureById(id) {
+        return [...processingFurnitureObjects].find(obj => obj.id === id) || null;
+      }
+
+      function moveProcessingFurniture(id, col, row) {
+        const obj = processingFurnitureById(id);
+        if (!obj) return { ok: false, message: 'Processing furniture not found.' };
+        if (!canPlaceFurnitureAt(col, row, obj)) return { ok: false, message: 'Place furniture on an empty grass, tilled, or raised tile.' };
+        const oldId = obj.id; // Used to preserve any livestock assignment attached to a moved squeezing vat.
+        worldObjects.delete(obj.col + ',' + obj.row);
+        obj.col = col; obj.row = row;
+        obj.id = 'processor_' + obj.furnitureKey + '_' + col + '_' + row;
+        obj.mesh.position.set(col + 0.5, tileSurfaceY(grid[row][col].type), row + 0.5);
+        worldObjects.set(col + ',' + row, obj);
+        window.DewVats?.retargetAssignments(oldId, obj.id);
+        saveFarmLayout();
+        return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} moved.` };
+      }
+
+      function rotateProcessingFurniture(id, degrees = 45) {
+        const obj = processingFurnitureById(id);
+        if (!obj) return { ok: false, message: 'Processing furniture not found.' };
+        obj.rotYDeg = ((obj.rotYDeg || 0) + degrees + 360) % 360;
+        obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
+        saveFarmLayout();
+        return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} rotated 45°.` };
+      }
+
+      function removeProcessingFurniture(id) {
+        const obj = processingFurnitureById(id);
+        if (!obj) return { ok: false, message: 'Processing furniture not found.' };
+        const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
+        if (obj.getJob?.()) return { ok: false, message: `${def?.name || 'This processor'} cannot be removed until its contents are collected.` };
+        window.DewVats?.retargetAssignments(obj.id, null);
+        worldObjects.delete(obj.col + ',' + obj.row);
+        processingFurnitureObjects.delete(obj);
+        obj.reset?.();
+        if (def?.itemKey) { inventory[def.itemKey] = (inventory[def.itemKey] || 0) + 1; clampInventoryStack(def.itemKey); }
+        saveFarmLayout();
+        refreshItemScroll();
+        return { ok: true, message: `${def?.icon || '⚙️'} ${def?.name || 'Processing furniture'} returned to inventory.` };
       }
 
       function clearPlacedProcessingFurniture() {
@@ -2749,7 +2794,9 @@
       function furniturePlacementSpec() {
         if (furnitureMoveArmedId) {
           const obj = interiorFurnitureObjects.find(o => o.id === furnitureMoveArmedId && o.area === currentArea);
-          return obj ? { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id } : null;
+          if (obj) return { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id };
+          const processor = currentArea === 'farm' ? processingFurnitureById(furnitureMoveArmedId) : null;
+          return processor ? { kind: 'processing', key: processor.furnitureKey, rotYDeg: processor.rotYDeg || 0, ignoreId: processor.id, ignoreObject: processor } : null;
         }
         const decorativeKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
         if (decorativeKey) return { kind: 'decorative', key: decorativeKey, rotYDeg: 0, ignoreId: null };
@@ -2762,7 +2809,7 @@
         if (!spec) { clearFurniturePlacementGhost(); return; }
         const isProcessing = spec.kind === 'processing';
         const valid = isProcessing
-          ? canPlaceFurnitureAt(col, row)
+          ? canPlaceFurnitureAt(col, row, spec.ignoreObject)
           : canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
         if (!furniturePlacementGhost || furniturePlacementGhost.kind !== spec.kind || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
           clearFurniturePlacementGhost();
@@ -2924,7 +2971,7 @@
           }
           processingFurnitureObjects.forEach(obj => {
             const job = obj.getJob && obj.getJob();
-            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, ...(job ? { job } : {}) });
+            layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, rotYDeg: obj.rotYDeg || 0, ...(job ? { job } : {}) });
           });
           interiorFurnitureObjects.forEach(obj => {
             layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
@@ -3003,9 +3050,9 @@
             const nb = window.FarmCrates.makeSupplyBox(c, r); supplyBoxObject = nb; worldObjects.set(c + ',' + r, nb);
           }
         }
-        (layout.furniture || []).forEach(({ key, col, row, job }) => {
+        (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
           if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-            const obj = makeProcessingFurniture(col, row, key, job);
+            const obj = makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
             if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
           }
         });
@@ -3151,8 +3198,8 @@
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
       // placement's actual world position/facing. rotYDeg is the furniture's
-      // own placement yaw (0 for every current player-placed decorative/
-      // processing furniture path, since none of them support rotation yet).
+      // own placement yaw, including player-rotated decorative furniture and
+      // processing stations.
       function resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
         const data = window.AuthoredFurniture?.peek(furnitureKey);
         const anchor = data && window.AuthoredFurniture.seatAnchorFor(data, seatIndex);
@@ -3171,10 +3218,8 @@
           // through to the leg rig's faithful surface-flush seated solve
           // (see procedural-leg-animation.js's applySeatedPose). Read
           // straight off the anchor's own local rotation with no further
-          // rotation applied for rotYDeg — every current player-placed
-          // furniture path always places at rotYDeg 0 (see the comment
-          // above this function), so anchor-local and world pitch/roll
-          // already coincide.
+          // rotation applied for rotYDeg. Yaw is already represented by
+          // facingRad; the leg solver consumes seat-local pitch/roll.
           normalDeg: { x: anchor.rotationDeg.x || 0, z: anchor.rotationDeg.z || 0 },
           footprintHalfDepth: Math.max(0.05, (Number(data.footprint?.d) || 1) / 2),
           anchorZ: az,
@@ -7936,7 +7981,7 @@
         return true;
       }
 
-      function canNpcBeeline(area, fromX, fromZ, targetC, targetR) {
+      function canNpcBeeline(area, fromX, fromZ, targetC, targetR, allowOccupiedTarget = false) {
         const tx = targetC + 0.5, tz = targetR + 0.5;
         const dist = Math.hypot(tx - fromX, tz - fromZ);
         const step = npcMovementConfig().beelineSampleStepTiles ?? 0.25;
@@ -7945,7 +7990,7 @@
           const t = i / samples;
           const c = Math.floor(fromX + (tx - fromX) * t);
           const r = Math.floor(fromZ + (tz - fromZ) * t);
-          if (!isNpcTileWalkable(area, c, r)) return false;
+          if (!isNpcTileWalkable(area, c, r) && !(allowOccupiedTarget && c === targetC && r === targetR)) return false;
         }
         return true;
       }
@@ -7978,6 +8023,10 @@
           c, r,
           rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
           pose: station.pose || 'stand',
+          furnitureKey: station.furnitureKey
+            || getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
+            || (DECORATIVE_FURNITURE_DEFS[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
+          seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
           toolKey: station.toolKey || '',
           toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
           toolAnimStyle: station.toolAnimStyle || '',
@@ -8013,10 +8062,6 @@
       // placed — no map author has to hand-add an npcStations entry for
       // player-placed furniture. Deterministic id (area+tile) so placing the
       // same spot twice is idempotent and a schedule rule survives a reload.
-      // Only pose:'sit' is set here; there's no seated NPC pose animation
-      // yet (see beginSitInteraction's own player-side note on the same
-      // gap), so a scheduled NPC currently just stands at the chair like any
-      // other station — the registration/scheduling half of the request.
       function furnitureNpcStationId(area, col, row) {
         return `furniture_chair_${area}_${col}_${row}`;
       }
@@ -8025,7 +8070,7 @@
         if (!def?.sit) return;
         registerNpcStations([{
           id: furnitureNpcStationId(area, col, row), label: def.name,
-          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit',
+          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
         }], area);
       }
       function unregisterChairNpcStation(furnitureKey, col, row, area) {
@@ -8297,6 +8342,16 @@
       const NPC_STATION_WANDER_WAIT_MAX_S = 6;
       const NPC_STATION_WANDER_RETRY_S = 0.5;
 
+      function npcSeatTransformForTarget(target) {
+        if (target?.pose !== 'sit' || !target.furnitureKey) return null;
+        const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
+        if (!def?.sit) return null;
+        return resolveSeatWorldTransform(
+          target.furnitureKey, target.c, target.r, def.fw || 1, def.fd || 1,
+          target.rotY || 0, target.seatIndex || 0
+        );
+      }
+
       async function makeNpcWalker(rec, initialTarget) {
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
@@ -8378,6 +8433,7 @@
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
+          _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
@@ -8451,7 +8507,7 @@
             if (!window.TilePathfinding) return false;
             const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
             const path = window.TilePathfinding.findPath(startCol, startRow, target.c, target.r,
-              (c, r) => isNpcTileWalkable(this.area, c, r),
+              (c, r) => (target.pose === 'sit' && c === target.c && r === target.r) || isNpcTileWalkable(this.area, c, r),
               { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, 6) });
             if (!path || !path.length) return false;
             this._gridPath = path;
@@ -8567,14 +8623,31 @@
             // frame of lag; imperceptible at 60fps.
             const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
             this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
-            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false);
+            const target = resolveNpcScheduleTarget(this.rec);
+            const targetArea = target ? normalizeNpcArea(target.area) : null;
+            const cfg = npcMovementConfig();
+            const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
+            const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
+            const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
+            const seatedAtTarget = !!seatTransform && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival;
+            const seatedPose = seatedAtTarget ? {
+              seatY: seatTransform.y,
+              normalDeg: seatTransform.normalDeg,
+              footprintHalfDepth: seatTransform.footprintHalfDepth,
+              anchorZ: seatTransform.anchorZ,
+            } : undefined;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false, seatedPose);
+            const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
+            if (seatedStationKey !== this._seatedStationKey) {
+              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
+              this._seatedStationKey = seatedStationKey;
+            }
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
             if (this.pause === Infinity) return;
             this.applyFacingDeadzone(this.desiredRot, 0.15);
-            const target = resolveNpcScheduleTarget(this.rec);
             this.currentScheduleTarget = target || null;
             if (!target) return;
-            const targetArea = normalizeNpcArea(target.area);
             if (targetArea !== this.area) {
               if (!this._exitSpot) {
                 // May be several hops away (e.g. town → a building → one of its
@@ -8604,9 +8677,6 @@
               return;
             }
             this._exitSpot = null;
-            const cfg = npcMovementConfig();
-            const tx = target.c + 0.5, tz = target.r + 0.5;
-            const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
@@ -8637,8 +8707,17 @@
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               const groundY = npcSurfaceY(this.area, target.c, target.r);
-              root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
-              if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
+              if (seatTransform) {
+                root.position.x = seatTransform.x;
+                root.position.z = seatTransform.z;
+                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
+                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
+                root.position.y += (groundY + seatSink - root.position.y) * 0.18;
+                this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
+              } else {
+                root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+                if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
+              }
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
@@ -8679,7 +8758,7 @@
             }
             if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r)) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -20637,9 +20716,9 @@
         try {
           const _rl = loadFarmLayout();
           if (_rl) {
-            (_rl.furniture || []).forEach(({ key, col, row, job }) => {
+            (_rl.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
               if (PROCESSING_FURNITURE_DEFS[key] && canPlaceFurnitureAt(col, row)) {
-                const obj = makeProcessingFurniture(col, row, key, job);
+                const obj = makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
@@ -21496,7 +21575,9 @@
         e.stopImmediatePropagation();
         const { col, row } = furniturePlacementGhost;
         if (furnitureMoveArmedId) {
-          const result = moveDecorativeFurniture(furnitureMoveArmedId, col, row);
+          const result = processingFurnitureById(furnitureMoveArmedId)
+            ? moveProcessingFurniture(furnitureMoveArmedId, col, row)
+            : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
           showToast(result.message, result.ok);
           if (result.ok) furnitureMoveArmedId = null;
         } else {
@@ -21572,6 +21653,10 @@
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
         placeProcessing: placeProcessingFurniture,
+        moveProcessing: moveProcessingFurniture,
+        rotateProcessing: rotateProcessingFurniture,
+        removeProcessing: removeProcessingFurniture,
+        seatedNpcs: () => npcWalkers.filter(w => w._seatedStationKey).map(w => ({ id: w.rec?.id, stationId: w._seatedStationKey })),
         tickWorldObjectVfx: (col, row, dt) => { const o = getWorldObjectAt(col, row); if (o?.update) o.update(dt); return o ? { hasUpdate: !!o.update } : null; },
         loadWorldLivestock: () => _loadWorldLivestock(),
         saveWorldLivestock: (list) => _saveWorldLivestock(list),
@@ -22237,9 +22322,12 @@
         getArmedFurniturePlacementKey,
         armFurnitureMove,
         getArmedFurnitureMoveId,
-        getPlacedFurniture: () => interiorFurnitureObjects.filter(o => o.area === currentArea),
-        removeFurniture: removeDecorativeFurniture,
-        rotateFurniture: rotateDecorativeFurniture,
+        getPlacedFurniture: () => [
+          ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
+          ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
+        ],
+        removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
+        rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
         esc,
         isPaused: () => paused,
