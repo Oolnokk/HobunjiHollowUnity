@@ -9839,7 +9839,10 @@
       // materials are shared across every map and must outlive this.
       function _disposeZoneScene(mapId) {
         const zi = _zoneScenes.get(mapId);
-        if (zi?.scene) zi.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+        if (zi?.scene) zi.scene.traverse(o => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.userData?.mergedWaterStatKey) window.MergedWaterRenderer.clearStats(o.userData.mergedWaterStatKey);
+        });
         _zoneScenes.delete(mapId);
         _zoneWaterMeshes.delete(mapId);
         const buildingGroups = _zoneBuildingGroups.get(mapId);
@@ -10083,42 +10086,32 @@
           _markTerrainEdgeId(mesh, _terrainCategoryFor(matKey));
         }
 
-        // River/stream water surface — an animated translucent plane sitting
-        // above the sunken bed built above, so the banks read as real depth
-        // instead of a flat colored tile. Flow direction comes from which
-        // neighbouring tiles are also water, so the shader's flow-stripe mode
-        // animates along the channel rather than rippling in place.
+        // River/stream water surface — one world-UV merged mesh sitting above
+        // the sunken bed. Flow direction is still derived per tile, then stored
+        // as a vertex attribute so the single material can animate the whole
+        // channel without one plane/material/draw call for every tile.
         const isWaterTile = (cc, rr) => {
           const t = townGrid[rr]?.[cc]?.type;
           return t === TileType.RIVER || t === TileType.STREAM;
         };
-        _townRiverWaterMeshes = riverTiles.map(({ c, r, tp }) => {
+        const riverSurfaceCells = riverTiles.map(({ c, r, tp }) => {
           let fx = (isWaterTile(c + 1, r) ? 1 : 0) - (isWaterTile(c - 1, r) ? 1 : 0);
           let fz = (isWaterTile(c, r + 1) ? 1 : 0) - (isWaterTile(c, r - 1) ? 1 : 0);
           const flen = Math.hypot(fx, fz);
           if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
           const deep = tp === TileType.RIVER;
-          const mat = new THREE.ShaderMaterial({
-            uniforms: {
-              uTime:  { value: 0 },
-              uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
-              uDepth: { value: deep ? 0.8 : 0.45 },
-              uFlow:  { value: new THREE.Vector2(fx, fz) },
-              uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
-            },
-            vertexShader:   waterVertShader,
-            fragmentShader: waterFragShader,
-            transparent:    true,
-            depthWrite:     false,
-            side:           THREE.FrontSide,
-          });
-          const wm = new THREE.Mesh(waterGeo, mat);
-          wm.receiveShadow = false;
-          wm.position.set(c + 0.5, NORMAL_TOP - (deep ? 0.10 : 0.05), r + 0.5);
-          townScene.add(wm);
-          _markTerrainEdgeId(wm, 'water');
-          return wm;
+          return {
+            col: c, row: r,
+            surfaceY: NORMAL_TOP - (deep ? 0.10 : 0.05),
+            depth: deep ? 0.8 : 0.45,
+            coverage: 1,
+            flowX: fx, flowZ: fz,
+          };
         });
+        const townRiverMesh = _buildMergedWaterMesh(townScene, riverSurfaceCells, {
+          name: 'town_merged_river_water', statKey: 'town rivers',
+        });
+        _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
 
         _buildTownGrassBillboards(TCOLS, TROWS);
         window.BorderTerrain.buildTownBorderTerrain();
@@ -14680,12 +14673,10 @@
           _furnitureIdMat.uniformsNeedUpdate = true;
         };
       }
-      // ── Water shader — flow lines + ripple rings ───────────────────
-      // Each water plane gets its own ShaderMaterial instance with per-tile uniforms.
-      // uFlow: vec2 flow direction (normalised), zero = still water → ripple mode
-      // uDepth: 0..1 depth fraction
-      // uTime: global time
-      // uPhase: per-tile phase offset
+      // ── Vertical waterfall-curtain shader ──────────────────────────
+      // Horizontal surfaces use MergedWaterRenderer's shared PNG material.
+      // These shaders remain for the separately-oriented waterfall walls in
+      // zone-terrain-features.js, where vertical scrolling is still required.
       const waterVertShader = `
         varying vec2 vUv;
         void main() {
@@ -14755,21 +14746,34 @@
         }
       `;
 
-      function makeWaterMaterial(col, row) {
-        return new THREE.ShaderMaterial({
-          uniforms: {
-            uTime:  { value: 0 },
-            uPhase: { value: (col * 2.7 + row * 4.1) % 6.28 },
-            uDepth: { value: 0 },
-            uFlow:  { value: new THREE.Vector2(0, 0) },
-            uColor: { value: new THREE.Color(0x14a0c8) },
-          },
-          vertexShader:   waterVertShader,
-          fragmentShader: waterFragShader,
-          transparent:    true,
-          depthWrite:     false,
-          side:           THREE.FrontSide,
+      // The PNG tiles across world X/Z and scrolls as one continuous surface,
+      // like the shared rain-plane texture. Per-vertex depth and flow retain
+      // simulation tint/detail without returning to one material per tile.
+      const mergedWaterMaterial = window.MergedWaterRenderer.createMaterial(THREE, {
+        textureUrl: 'assets/textures/wibbly_surface.png',
+        opacity: 0.8,
+        log: debugLog,
+      });
+
+      function _disposeMergedWaterMesh(sceneObj, mesh, statKey) {
+        if (!mesh) return null;
+        sceneObj.remove(mesh);
+        mesh.geometry.dispose();
+        window.MergedWaterRenderer.clearStats(statKey);
+        return null;
+      }
+
+      function _buildMergedWaterMesh(sceneObj, cells, options) {
+        const mesh = window.MergedWaterRenderer.createMesh(THREE, mergedWaterMaterial, cells, {
+          joinThreshold: SLAB_H * 0.55,
+          yOffset: 0.015,
+          log: debugLog,
+          ...options,
         });
+        if (!mesh) return null;
+        sceneObj.add(mesh);
+        _markTerrainEdgeId(mesh, 'water');
+        return mesh;
       }
 
       // Global water time — updated in gameLoop
@@ -15766,8 +15770,6 @@
       // js/border-terrain.js — call via window.BorderTerrain.*.
 
       const rockGeo   = new THREE.BoxGeometry(0.9, ROCK_H,  0.9);
-      const waterGeo  = new THREE.PlaneGeometry(1.0, 1.0);
-      waterGeo.rotateX(-Math.PI / 2);
       const reticleGeo = new THREE.BoxGeometry(1.0, 0.06, 1.0);
 
       // Flat circle indicator for dig/raise — torus baked horizontal
@@ -15798,21 +15800,16 @@
       reticleWavyGroup.visible = false;
 
       // ── Mesh stores ───────────────────────────────────────────────
-      // Tile meshes: indexed by row*COLS+col
+      // Tile meshes are indexed by row*COLS+col. Water is intentionally not:
+      // the simulation remains tile-based, but every wet tile contributes its
+      // four height-aware vertices to one world-UV merged surface mesh.
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
-      const waterMeshes = new Array(ROWS * COLS).fill(null);
-      // Sparse index of occupied waterMeshes slots, kept in sync by setWaterMesh(),
-      // so the per-frame fast-path time-uniform update only visits live entries.
-      const _waterActive = new Set();
-      function setWaterMesh(i, val) {
-        waterMeshes[i] = val;
-        if (val) _waterActive.add(i); else _waterActive.delete(i);
-      }
+      let farmWaterMesh = null; // Rebuilt by updateWaterMeshes() after each farm simulation tick.
 
       // ── Town water (ditches fill with rain just like farm trenches) ────
       // Town tiles are keyed "col,row" (the town grid is independently sized
       // and isn't laid out in the farm's flat row*COLS+col mesh arrays).
-      const townWaterMeshes = new Map();
+      let townWaterMesh = null; // Rebuilt by updateTownWaterMeshes() after each town simulation tick.
       let _townWaterSimDirty = true;
       let _townFlowingTrenchTiles = [];
       // Static river/stream water-surface meshes built once in buildTownScene
@@ -15826,8 +15823,8 @@
       // keeps going out into the far terrain instead of stopping at the seam.
       const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
       const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
-      const farmFarAquiferMeshes = new Map();
-      const townFarAquiferMeshes = new Map();
+      let farmFarAquiferMesh = null; // Used by the farm's south-edge continuation renderer.
+      let townFarAquiferMesh = null; // Used by the town's south-edge continuation renderer.
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -17528,11 +17525,12 @@
       }
 
       function buildTileMeshes() {
+        farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
+        _waterSimDirty = true;
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
             if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-            if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         setWaterMesh(i, null); }
             if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
             if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
             cropGrowthBucket[i] = -1;
@@ -17546,7 +17544,6 @@
       function refreshTileMesh(col, row) {
         const i = row * COLS + col;
         if (tileMeshes[i])          { scene.remove(tileMeshes[i]);          tileMeshes[i]          = null; }
-        if (waterMeshes[i])         { scene.remove(waterMeshes[i]);         setWaterMesh(i, null); }
         if (cropMeshes[i])          { scene.remove(cropMeshes[i]);          cropMeshes[i]          = null; }
         if (vegFoliageMeshes[i])    { scene.remove(vegFoliageMeshes[i]);    setVegFoliageMesh(i, null); }
         cropGrowthBucket[i] = -1;
@@ -17554,207 +17551,109 @@
         _rebuildFarmBillboards();
       }
 
-      // ── Update water meshes each frame ─────────────────────────────
-      // Refreshes the shallow decorative puddle apron just past a grid's south
-      // edge (see farmFarAquiferMeshes/townFarAquiferMeshes) — one column-keyed
-      // mesh per apron row, depth tracking southLevel[col] with distance falloff.
-      function _updateFarAquiferApron(cols, seamRow, southLevel, meshMap, sceneObj) {
+      // ── Update merged water surfaces each frame ────────────────────
+      // The simulation remains a per-tile grid. This collector translates its
+      // current state into one batch of height/depth/flow vertices only when a
+      // sim tick marks the area dirty; the render fast path merely advances the
+      // shared texture uniform.
+      function _collectDynamicWaterCells(targetGrid, rows, cols, skipPermanentWater) {
+        const cells = []; // Used by _buildMergedWaterMesh for one simulation snapshot.
+        const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const tile = targetGrid[row][col];
+            if (isSolid(tile.type) || tile.water < 0.003
+                || (skipPermanentWater && (tile.type === TileType.RIVER || tile.type === TileType.STREAM))) {
+              tile._wCached = false;
+              continue;
+            }
+
+            if (tile.type === TileType.TRENCH && tile.flow) flowingTrenches.push({ col, row });
+            const depthFrac = tile.water / MAX_WATER;
+            const surfaceA = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
+            let fx = 0, fz = 0;
+            for (const { dc, dr, ax, az } of [
+              { dc: 0, dr: 1, ax: 0, az: 1 },
+              { dc: 0, dr: -1, ax: 0, az: -1 },
+              { dc: 1, dr: 0, ax: 1, az: 0 },
+              { dc: -1, dr: 0, ax: -1, az: 0 },
+            ]) {
+              const nc = col + dc, nr = row + dr;
+              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
+              const neighbor = targetGrid[nr][nc];
+              if (isSolid(neighbor.type)) continue;
+              const surfaceB = tileSurfaceY(neighbor.type) + neighbor.water * WATER_UNIT;
+              const head = surfaceA - surfaceB;
+              if (head > 0.01) { fx += ax * head; fz += az * head; }
+            }
+            const flowLength = Math.hypot(fx, fz);
+            const flowX = flowLength > 0.001 ? fx / flowLength : 0;
+            const flowZ = flowLength > 0.001 ? fz / flowLength : 0;
+            tile._wCached = true;
+            tile._wSurfA = surfaceA;
+            tile._wDepth = depthFrac;
+            tile._wFlowNX = flowX;
+            tile._wFlowNZ = flowZ;
+            cells.push({ col, row, surfaceY: surfaceA, depth: depthFrac, flowX, flowZ });
+          }
+        }
+        return { cells, flowingTrenches };
+      }
+
+      // The shallow decorative puddle apron is also one merged draw call. Its
+      // World-space UVs keep the tiled PNG continuous across the playable-grid
+      // seam without making a separate texture instance for the apron.
+      function _buildFarAquiferApron(cols, seamRow, southLevel, sceneObj, statKey) {
+        const cells = []; // Used by the shared merged-water geometry builder below.
         for (let col = 0; col < cols; col++) {
           const level = southLevel[col];
           for (let d = 0; d < FAR_APRON_ROWS; d++) {
-            const key = col + ',' + d;
             const depthFrac = level * Math.pow(FAR_APRON_FALLOFF, d);
-            if (depthFrac < 0.02) {
-              const old = meshMap.get(key);
-              if (old) { sceneObj.remove(old); meshMap.delete(key); }
-              continue;
-            }
+            if (depthFrac < 0.02) continue;
             const surfaceA = NORMAL_TOP + depthFrac * WATER_UNIT;
-            const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
-            const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
-            let wm = meshMap.get(key);
-            if (!wm) {
-              wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, seamRow + d));
-              wm.receiveShadow = false;
-              sceneObj.add(wm);
-              meshMap.set(key, wm);
-            }
-            wm.position.set(col + 0.5, surfaceA + 0.015, seamRow + d + 0.5);
-            const u = wm.material.uniforms;
-            u.uTime.value  = waterTime;
-            u.uDepth.value = depthFrac;
-            u.uFlow.value.set(0, 1); // gentle outward/southward drift
-            u.uColor.value.setRGB(r, g, 1.0);
+            cells.push({ col, row: seamRow + d, surfaceY: surfaceA, depth: depthFrac, flowX: 0, flowZ: 1 });
           }
         }
+        return _buildMergedWaterMesh(sceneObj, cells, {
+          name: statKey.replace(/\s+/g, '_') + '_mesh', statKey,
+        });
       }
 
       function updateWaterMeshes() {
         waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
 
         if (_waterSimDirty) {
-          // Full refresh: recompute flow direction, colour, depth, position.
-          // Runs only after recomputeWater() (~every 9 real seconds).
           _waterSimDirty = false;
-          _flowingTrenchTiles = [];
-          for (let row = 0; row < ROWS; row++) {
-            for (let col = 0; col < COLS; col++) {
-              const i    = row * COLS + col;
-              const tile = grid[row][col];
-
-              if (isSolid(tile.type) || tile.water < 0.003) {
-                if (waterMeshes[i]) { scene.remove(waterMeshes[i]); setWaterMesh(i, null); }
-                tile._wCached = false;
-                continue;
-              }
-
-              if (tile.type === TileType.TRENCH && tile.flow) _flowingTrenchTiles.push({ col, row });
-
-              const depthFrac = tile.water / MAX_WATER;
-              const surfaceA  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-
-              let fx = 0, fz = 0;
-              const nbrs = [
-                { dc:  0, dr:  1, ax: 0, az:  1 },
-                { dc:  0, dr: -1, ax: 0, az: -1 },
-                { dc:  1, dr:  0, ax: 1, az:  0 },
-                { dc: -1, dr:  0, ax: -1,az:  0 },
-              ];
-              for (const { dc, dr, ax, az } of nbrs) {
-                const nc = col + dc, nr = row + dr;
-                if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
-                const nt = grid[nr][nc];
-                if (isSolid(nt.type)) continue;
-                const surfB = tileSurfaceY(nt.type) + nt.water * WATER_UNIT;
-                const head  = surfaceA - surfB;
-                if (head > 0.01) { fx += ax * head; fz += az * head; }
-              }
-              const flowLen = Math.hypot(fx, fz);
-              const flowNX  = flowLen > 0.001 ? fx / flowLen : 0;
-              const flowNZ  = flowLen > 0.001 ? fz / flowLen : 0;
-              const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
-              const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
-
-              tile._wCached   = true;
-              tile._wSurfA    = surfaceA;
-              tile._wDepth    = depthFrac;
-              tile._wFlowNX   = flowNX;
-              tile._wFlowNZ   = flowNZ;
-              tile._wR        = r;
-              tile._wG        = g;
-
-              if (!waterMeshes[i]) {
-                const wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
-                wm.receiveShadow = false;
-                scene.add(wm);
-                // Only tag dedicated water-holding features (trench/paddy) for the
-                // material-edge outline — rain wets every non-solid tile, and tagging
-                // that incidental puddle film too would seam-outline the entire tile
-                // grid the moment it starts raining.
-                if (tile.type === TileType.TRENCH || tile.type === TileType.PADDY) _markTerrainEdgeId(wm, 'water');
-                setWaterMesh(i, wm);
-              }
-              const wm = waterMeshes[i];
-              wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
-              const u = wm.material.uniforms;
-              u.uTime.value  = waterTime;
-              u.uDepth.value = depthFrac;
-              u.uFlow.value.set(flowNX, flowNZ);
-              u.uColor.value.setRGB(r, g, 1.0);
-            }
-          }
-          _updateFarAquiferApron(COLS, ROWS, farSouthLevel, farmFarAquiferMeshes, scene);
-        } else {
-          // Fast path: only push updated time uniform — all other values are stable
-          // between sim ticks so no recomputation is needed.
-          for (const i of _waterActive) {
-            waterMeshes[i].material.uniforms.uTime.value = waterTime;
-          }
-          for (const wm of farmFarAquiferMeshes.values()) {
-            wm.material.uniforms.uTime.value = waterTime;
-          }
+          const snapshot = _collectDynamicWaterCells(grid, ROWS, COLS, false);
+          _flowingTrenchTiles = snapshot.flowingTrenches;
+          farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
+          farmWaterMesh = _buildMergedWaterMesh(scene, snapshot.cells, {
+            name: 'farm_merged_dynamic_water', statKey: 'farm dynamic',
+          });
+          farmFarAquiferMesh = _disposeMergedWaterMesh(scene, farmFarAquiferMesh, 'farm south apron');
+          farmFarAquiferMesh = _buildFarAquiferApron(COLS, ROWS, farSouthLevel, scene, 'farm south apron');
         }
+        mergedWaterMaterial.uniforms.uTime.value = waterTime;
       }
 
       // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
       // so town weather can fill them with water exactly like farm trenches.
       function updateTownWaterMeshes() {
         waterTime += 0.016;
-        for (const wm of _townRiverWaterMeshes) wm.material.uniforms.uTime.value = waterTime;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
         if (_townWaterSimDirty) {
           _townWaterSimDirty = false;
-          _townFlowingTrenchTiles = [];
-          for (let row = 0; row < TROWS; row++) {
-            for (let col = 0; col < TCOLS; col++) {
-              const key  = col + ',' + row;
-              const tile = townGrid[row][col];
-
-              // Town rivers/streams already have their own static water-surface
-              // mesh (_townRiverWaterMeshes, built in buildTownScene) — skip them
-              // here so this irrigation-style dynamic mesh doesn't double up.
-              if (isSolid(tile.type) || tile.water < 0.003 ||
-                  tile.type === TileType.RIVER || tile.type === TileType.STREAM) {
-                const old = townWaterMeshes.get(key);
-                if (old) { townScene.remove(old); townWaterMeshes.delete(key); }
-                continue;
-              }
-
-              if (tile.type === TileType.TRENCH && tile.flow) _townFlowingTrenchTiles.push({ col, row });
-
-              const depthFrac = tile.water / MAX_WATER;
-              const surfaceA  = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-
-              let fx = 0, fz = 0;
-              const nbrs = [
-                { dc:  0, dr:  1, ax: 0, az:  1 },
-                { dc:  0, dr: -1, ax: 0, az: -1 },
-                { dc:  1, dr:  0, ax: 1, az:  0 },
-                { dc: -1, dr:  0, ax: -1,az:  0 },
-              ];
-              for (const { dc, dr, ax, az } of nbrs) {
-                const nc = col + dc, nr = row + dr;
-                if (nc < 0 || nc >= TCOLS || nr < 0 || nr >= TROWS) continue;
-                const nt = townGrid[nr][nc];
-                if (isSolid(nt.type)) continue;
-                const surfB = tileSurfaceY(nt.type) + nt.water * WATER_UNIT;
-                const head  = surfaceA - surfB;
-                if (head > 0.01) { fx += ax * head; fz += az * head; }
-              }
-              const flowLen = Math.hypot(fx, fz);
-              const flowNX  = flowLen > 0.001 ? fx / flowLen : 0;
-              const flowNZ  = flowLen > 0.001 ? fz / flowLen : 0;
-              const r = clamp(180 - depthFrac * 160, 20, 180) / 255;
-              const g = clamp(220 - depthFrac * 100, 100, 220) / 255;
-
-              let wm = townWaterMeshes.get(key);
-              if (!wm) {
-                wm = new THREE.Mesh(waterGeo, makeWaterMaterial(col, row));
-                wm.receiveShadow = false;
-                townScene.add(wm);
-                // See farm updateWaterMeshes() — only outline dedicated water-holding
-                // ditches, not every tile's incidental rain puddle.
-                if (tile.type === TileType.TRENCH || tile.type === TileType.PADDY) _markTerrainEdgeId(wm, 'water');
-                townWaterMeshes.set(key, wm);
-              }
-              wm.position.set(col + 0.5, surfaceA + 0.015, row + 0.5);
-              const u = wm.material.uniforms;
-              u.uTime.value  = waterTime;
-              u.uDepth.value = depthFrac;
-              u.uFlow.value.set(flowNX, flowNZ);
-              u.uColor.value.setRGB(r, g, 1.0);
-            }
-          }
-          _updateFarAquiferApron(TCOLS, TROWS, townSouthLevel, townFarAquiferMeshes, townScene);
-        } else {
-          for (const wm of townWaterMeshes.values()) {
-            wm.material.uniforms.uTime.value = waterTime;
-          }
-          for (const wm of townFarAquiferMeshes.values()) {
-            wm.material.uniforms.uTime.value = waterTime;
-          }
+          const snapshot = _collectDynamicWaterCells(townGrid, TROWS, TCOLS, true);
+          _townFlowingTrenchTiles = snapshot.flowingTrenches;
+          townWaterMesh = _disposeMergedWaterMesh(townScene, townWaterMesh, 'town dynamic');
+          townWaterMesh = _buildMergedWaterMesh(townScene, snapshot.cells, {
+            name: 'town_merged_dynamic_water', statKey: 'town dynamic',
+          });
+          townFarAquiferMesh = _disposeMergedWaterMesh(townScene, townFarAquiferMesh, 'town south apron');
+          townFarAquiferMesh = _buildFarAquiferApron(TCOLS, TROWS, townSouthLevel, townScene, 'town south apron');
         }
+        mergedWaterMaterial.uniforms.uTime.value = waterTime;
       }
 
       // Animates a zone's waterfall curtain mesh(es) (see
@@ -17765,7 +17664,11 @@
         waterTime += 0.016;
         const meshes = _zoneWaterMeshes.get(mapId);
         if (!meshes) return;
-        for (const wm of meshes) wm.material.uniforms.uTime.value = waterTime;
+        for (const wm of meshes) {
+          if (wm.material === mergedWaterMaterial) continue;
+          if (wm.material.uniforms?.uTime) wm.material.uniforms.uTime.value = waterTime;
+        }
+        mergedWaterMaterial.uniforms.uTime.value = waterTime;
       }
 
       // ── Update player cube ────────────────────────────────────────
@@ -22136,6 +22039,7 @@
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,
+        buildMergedWaterMesh: _buildMergedWaterMesh,
       });
 
       window.ZoneDenTotemFeatures?.init({

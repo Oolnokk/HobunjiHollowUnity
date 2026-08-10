@@ -279,21 +279,16 @@
     return [mesh];
   }
 
-  // River/stream/waterfall water surface — an animated translucent plane
-  // sitting above the sunken bed built in buildZoneScene's tile loop, so a
-  // zone's waterways read as real water instead of just their bare bed
-  // color. Mirrors _townRiverWaterMeshes (built in buildTownScene), but
-  // each plane also carries its own tile's elevTier — a zone's water can
-  // sit on any plateau tier, unlike town's single flat grid — and a
-  // WATERFALL cell gets one too (the pool at the top/bottom of its
-  // curtain from buildWaterfallCurtainMeshes above), not just plain
-  // river/stream cells.
+  // River/stream/waterfall water surface — one world-UV merged textured mesh
+  // above the sunken beds. Each tile still contributes its own elevation,
+  // depth, and flow attributes, so plateau waterways and waterfall pools keep
+  // their authored heights without returning to one draw call per tile.
   function buildZoneRiverWaterMeshes(zScene, zGrid, zcols, zrows, mapId) {
     const isWaterTile = (cc, rr) => {
       const t = zGrid[rr]?.[cc]?.type;
       return t === deps.TileType.RIVER || t === deps.TileType.STREAM || t === deps.TileType.WATERFALL;
     };
-    const meshes = [];
+    const cells = [];
     for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
       const tile = zGrid[r][c];
       if (!isWaterTile(c, r)) continue;
@@ -303,39 +298,23 @@
       if (flen > 0.001) { fx /= flen; fz /= flen; } else { fx = 0; fz = 0; }
       const deep = tile.type !== deps.TileType.STREAM;
       const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
-      const mat = new THREE.ShaderMaterial({
-        uniforms: {
-          uTime:  { value: 0 },
-          uPhase: { value: (c * 2.7 + r * 4.1) % 6.28 },
-          uDepth: { value: deep ? 0.8 : 0.45 },
-          uFlow:  { value: new THREE.Vector2(fx, fz) },
-          uColor: { value: new THREE.Color(deep ? 0x1f6f9c : 0x4fb8d9) },
-        },
-        vertexShader:   deps.waterVertShader,
-        fragmentShader: deps.waterFragShader,
-        transparent:    true,
-        depthWrite:     false,
-        side:           THREE.FrontSide,
+      cells.push({
+        col: c, row: r,
+        surfaceY: deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05),
+        depth: deep ? 0.8 : 0.45,
+        coverage: 1,
+        flowX: fx, flowZ: fz,
       });
-      // A dedicated PlaneGeometry per mesh (not the shared module-level
-      // waterGeo used by farm/town) — _disposeZoneScene disposes every
-      // mesh's geometry when a zone is torn down (e.g. on a Tothal
-      // Shift), and that would take the shared geometry down with it,
-      // breaking every other scene still using it. rotateX matches
-      // waterGeo's own baked-in orientation so the plane lies flat.
-      const geo = new THREE.PlaneGeometry(1.0, 1.0);
-      geo.rotateX(-Math.PI / 2);
-      deps.displaceZoneGeometry(geo, mapId, c + 0.5, r + 0.5);
-      geo.computeVertexNormals();
-      const wm = new THREE.Mesh(geo, mat);
-      wm.receiveShadow = false;
-      wm.position.set(c + 0.5, deps.NORMAL_TOP + tierY - (deep ? 0.10 : 0.05), r + 0.5);
-      zScene.add(wm);
-      deps.markTerrainEdgeId(wm, 'water');
-      meshes.push(wm);
     }
-    if (meshes.length) console.log(`%c[zone:${mapId}] river/stream/waterfall water surface built: ${meshes.length} tile(s)`, 'color:#22c55e;font-weight:bold');
-    return meshes;
+    if (!cells.length) return [];
+    const mesh = deps.buildMergedWaterMesh(zScene, cells, {
+      name: `${mapId}_merged_water`, statKey: `${mapId} waterways`,
+    });
+    if (!mesh) return [];
+    deps.displaceZoneGeometry(mesh.geometry, mapId);
+    mesh.geometry.computeVertexNormals();
+    console.log(`%c[zone:${mapId}] merged river/stream/waterfall water surface built: ${cells.length} tile(s), 1 draw call`, 'color:#22c55e;font-weight:bold');
+    return [mesh];
   }
 
   window.ZoneTerrainFeatures = {
