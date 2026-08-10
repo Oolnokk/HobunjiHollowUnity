@@ -263,6 +263,9 @@
 
   let capturedDeps = null;
   let playerDeps = null;
+  let lastPlayerTownLift = 0;
+  let lastPlayerTownCorrectedY = null;
+  let townHeightCorrectedThisFrame = false;
   const townGroundMeshes = new Set();
   const raycaster = new THREE.Raycaster();
   const rayOrigin = new THREE.Vector3();
@@ -439,6 +442,10 @@
     if (grass || road) capturedDeps?.debugLog?.(`Town subtle elevation: raised ${grass} grass crosses and ${road} road-brick instances`);
   }
 
+  // Kept for debug/API callers that explicitly want the exact rendered floor.
+  // This is intentionally no longer on the gameplay hot path: Three.js raycasts
+  // a merged BufferGeometry by walking its triangles, which is far too costly
+  // to repeat every display frame in town.
   function groundYAt(x, z) {
     if (!townGroundMeshes.size) deformTownFloor();
     const meshes = [...townGroundMeshes].filter(mesh => mesh?.parent && mesh.visible !== false);
@@ -449,14 +456,36 @@
     return hits.length ? hits[0].point.y : null;
   }
 
+  function resetPlayerTownHeightCorrection() {
+    lastPlayerTownLift = 0;
+    lastPlayerTownCorrectedY = null;
+  }
+
   function correctPlayerTownHeight() {
-    if (!playerDeps || playerDeps.getCurrentArea?.() !== 'town') return;
+    if (!playerDeps || playerDeps.getCurrentArea?.() !== 'town') {
+      resetPlayerTownHeightCorrection();
+      return;
+    }
     const playerMesh = playerDeps.playerMesh;
     if (!playerMesh?.position) return;
     const sit = playerDeps.getSitInteraction?.();
-    if (sit && sit.phase !== 'out') return; // seat anchors own vertical placement while seated
-    const y = groundYAt(playerMesh.position.x, playerMesh.position.z);
-    if (Number.isFinite(y)) playerMesh.position.y = y;
+    if (sit && sit.phase !== 'out') {
+      resetPlayerTownHeightCorrection();
+      return; // seat anchors own vertical placement while seated
+    }
+
+    const currentY = Number(playerMesh.position.y) || 0;
+    // The normal movement loop may rewrite the player's base/tier Y before the
+    // render pass. If it did not, currentY is still our previous corrected Y;
+    // subtract the previous subtle lift so repeated frames never accumulate it.
+    const baseY = Number.isFinite(lastPlayerTownCorrectedY) && Math.abs(currentY - lastPlayerTownCorrectedY) < 1e-5
+      ? currentY - lastPlayerTownLift
+      : currentY;
+    const lift = sampleHeight(visualHeightMap(), playerMesh.position.x, playerMesh.position.z);
+    const targetY = baseY + lift;
+    playerMesh.position.y = targetY;
+    lastPlayerTownLift = lift;
+    lastPlayerTownCorrectedY = targetY;
   }
 
   function patchPixelProbe(api) {
@@ -469,7 +498,16 @@
       if (renderer && !renderer.__hobunjiTownHeightRenderHook) {
         const originalRender = renderer.render;
         renderer.render = function (...args) {
-          correctPlayerTownHeight();
+          // renderer.render is called once per post-process pass. Correct the
+          // player only once per browser animation frame rather than once per
+          // pass; the correction itself is now an O(1) height-field sample.
+          if (!townHeightCorrectedThisFrame) {
+            townHeightCorrectedThisFrame = true;
+            correctPlayerTownHeight();
+            const reset = () => { townHeightCorrectedThisFrame = false; };
+            if (typeof root.requestAnimationFrame === 'function') root.requestAnimationFrame(reset);
+            else setTimeout(reset, 0);
+          }
           return originalRender.apply(this, args);
         };
         renderer.__hobunjiTownHeightRenderHook = true;
