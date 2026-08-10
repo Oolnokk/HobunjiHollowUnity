@@ -1,8 +1,8 @@
 // Footing-driven Regular -> Drunken locomotion layer for the local player.
 //
 // This module owns ONLY the drunken gait contribution: procedural leg offsets,
-// per-frame additive foot twist, and a named body-rotation channel published to
-// PlayerBodyTransformComposer. It never owns playerMesh rotation itself.
+// non-accumulating additive foot twist, and a named body-rotation channel
+// published to PlayerBodyTransformComposer. It never owns playerMesh rotation.
 (() => {
   'use strict';
 
@@ -20,6 +20,7 @@
   const DRUNK_HESITATION_LIFT = 0.08;
   const BODY_CHANNEL = 'drunk';
   const BODY_PRIORITY = 200;
+  const FOOT_TWIST_LIMIT = Math.PI - 1e-4;
 
   let forcedLoss = null;
   let activePlayerState = null;
@@ -53,13 +54,20 @@
     return root?.getObjectByName?.(name) || null;
   }
 
-  function applyFootTwist(foot, yaw, roll) {
-    if (!foot) return;
-    // The base procedural/ragdoll pose has already resolved this frame.
-    // Add to THAT live result instead of caching an old "base" rotation and
-    // writing it back forever; this keeps future foot-pose systems composable.
-    foot.rotation.y += yaw;
-    foot.rotation.z += roll;
+  function removeTrackedFootTwist(foot, trackedQuaternion) {
+    if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
+    const hasDelta = Math.abs(trackedQuaternion.x) + Math.abs(trackedQuaternion.y) + Math.abs(trackedQuaternion.z) > 1e-10
+      || Math.abs(trackedQuaternion.w - 1) > 1e-10;
+    if (hasDelta) foot.quaternion.multiply(trackedQuaternion.clone().invert());
+    trackedQuaternion.identity();
+  }
+
+  function applyTrackedFootTwist(THREE, foot, yaw, roll, trackedQuaternion) {
+    if (!foot?.quaternion || !trackedQuaternion?.isQuaternion) return;
+    const safeYaw = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(yaw) || 0));
+    const safeRoll = Math.max(-FOOT_TWIST_LIMIT, Math.min(FOOT_TWIST_LIMIT, Number(roll) || 0));
+    trackedQuaternion.setFromEuler(new THREE.Euler(0, safeYaw, safeRoll, 'YXZ'));
+    foot.quaternion.multiply(trackedQuaternion);
   }
 
   function publishBodyChannel(state) {
@@ -90,11 +98,20 @@
       yaw: 0,
       left: { x: 0, y: 0, z: 0 },
       right: { x: 0, y: 0, z: 0 },
+      footTwist: {
+        left: new THREE.Quaternion(),
+        right: new THREE.Quaternion(),
+      },
       loss: 0,
       blend: 0,
       speed: 0,
       disposed: false,
     };
+
+    function clearPreviousFootTwist() {
+      removeTrackedFootTwist(legPart(handle.group, 'left_foot'), state.footTwist.left);
+      removeTrackedFootTwist(legPart(handle.group, 'right_foot'), state.footTwist.right);
+    }
 
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
@@ -160,12 +177,14 @@
       }
 
       const toeStrength = extreme * (0.35 + 0.65 * Math.sqrt(movement));
-      applyFootTwist(legPart(handle.group, 'left_foot'),
+      applyTrackedFootTwist(THREE, legPart(handle.group, 'left_foot'),
         toeStrength * DEG * (25 * Math.sin(p * 0.83 + 0.4) + 14 * Math.sin(p * 0.29 - 0.5)),
-        toeStrength * DEG * (12 * Math.sin(p * 0.67 - 0.2)));
-      applyFootTwist(legPart(handle.group, 'right_foot'),
+        toeStrength * DEG * (12 * Math.sin(p * 0.67 - 0.2)),
+        state.footTwist.left);
+      applyTrackedFootTwist(THREE, legPart(handle.group, 'right_foot'),
         toeStrength * DEG * (-27 * Math.sin(p * 0.79 + 1.1) + 13 * Math.sin(p * 0.33 + 0.8)),
-        toeStrength * DEG * (-13 * Math.sin(p * 0.71 + 0.6)));
+        toeStrength * DEG * (-13 * Math.sin(p * 0.71 + 0.6)),
+        state.footTwist.right);
 
       state.loss = rawLoss;
       state.blend = blend;
@@ -174,6 +193,10 @@
     }
 
     handle.update = function footingDrunkWalkUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
+      // Remove only the delta we added last frame. The normal procedural,
+      // ragdoll, seat, and future foot-pose writers then resolve a clean base
+      // quaternion before the current drunk twist is composed exactly once.
+      clearPreviousFootTwist();
       originalUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
       applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
     };
@@ -181,6 +204,7 @@
     handle.dispose = function footingDrunkWalkDispose() {
       if (state.disposed) return;
       state.disposed = true;
+      clearPreviousFootTwist();
       state.pitch = state.roll = state.yaw = 0;
       if (activePlayerState?.handle === handle) activePlayerState = null;
       window.PlayerBodyTransformComposer?.clearChannel(BODY_CHANNEL);
