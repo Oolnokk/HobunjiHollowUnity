@@ -11798,6 +11798,29 @@
       }
 
       function updateMovement(dt) {
+        if (window.PlayerChat?.isOpen) {
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
+        const heldSocialPose = window.PlayerSocialPoses?.active;
+        if (heldSocialPose) {
+          const poseKeyboard = getKeyboardVector();
+          const poseInputX = poseKeyboard.active ? poseKeyboard.x : input.x;
+          const poseInputY = poseKeyboard.active ? poseKeyboard.y : input.y;
+          if (Math.hypot(poseInputX, poseInputY) > 0.08) {
+            window.PlayerSocialPoses.stop('movement');
+          } else {
+            // A held social pose owns stillness and the current facing. Mouse
+            // and right-stick look state may keep updating, but rotation is
+            // deliberately not applied until manual movement cancels it.
+            player.vx = 0; player.vy = 0;
+            player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+            player.angle = facingAngle;
+            window.PlayerSocialPoses.update(dt);
+            return;
+          }
+        }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
@@ -15883,6 +15906,24 @@
         isDialogueOpen: () => dialogueOpen,
         isPaused: () => paused,
         debugLog,
+      });
+      const playerSocialPoseRuntime = window.PlayerSocialPoses?.init({ player, playerMesh });
+      const playerChatRuntime = window.PlayerChat?.init({
+        getWorldId: () => (_playerData || window.__hobunjiPlayerProfile)?.worldId || 'local',
+        getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
+          || (_playerData || window.__hobunjiPlayerProfile)?.displayName
+          || 'Player',
+        clearMovementInput: () => {
+          input.keys.clear();
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+        },
+        showPlayerMessage: text => window.AmbientDialogue?.show(playerMesh, text, {
+          speakerId: 'player',
+          mode: 'overhead',
+          durationMs: 5200,
+        }),
+        setHeldPose: pose => playerSocialPoseRuntime?.start(pose) || { ok: false, message: 'Pose system unavailable.' },
       });
       // healthPopupAccumulator merges frame-by-frame regen/DoT into readable
       // Float+ events instead of emitting one plane every animation frame.

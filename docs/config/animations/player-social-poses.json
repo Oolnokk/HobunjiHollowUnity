@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "poses": {
+    "sit": {
+      "animationId": "floor-sit",
+      "description": "Floor-sitting social pose. Intentionally empty until authored.",
+      "sourcePath": "config/animations/social-floor-sit.json",
+      "loop": true,
+      "frames": []
+    },
+    "lie": {
+      "animationId": "lie",
+      "description": "Voluntary lying social pose. Intentionally empty until authored.",
+      "sourcePath": "config/animations/social-lie.json",
+      "loop": true,
+      "frames": []
+    },
+    "kneel": {
+      "animationId": "kneel",
+      "description": "Kneeling social pose. Intentionally empty until authored.",
+      "sourcePath": "config/animations/social-kneel.json",
+      "loop": true,
+      "frames": []
+    }
+  }
+}

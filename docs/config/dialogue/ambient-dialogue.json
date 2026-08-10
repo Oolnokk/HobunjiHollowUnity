@@ -22,6 +22,20 @@
     "Hello, {targetName}!",
     "Ah, {targetName} — there you are!"
   ],
+  "npcGreetings": {
+    "kzubug": {
+      "player": ["{targetName}! Mind the hot metal in here.", "Good to see you, {targetName}."],
+      "friends": {
+        "sloomi": ["Sloomi! How is that piece coming along?", "Easy on your shoulders, Sloomi."]
+      }
+    },
+    "sloomi": {
+      "player": ["Oh—hello, {targetName}.", "Welcome back, {targetName}."],
+      "friends": {
+        "kzubug": ["Kzubug! I finished the edge.", "I’m all right, Kzubug. Promise."]
+      }
+    }
+  },
   "companionTreasureLines": {
     "dabinggi-hound": ["Arf! Arf!", "Rrruf!", "Snff-snff… arf!"],
     "gar-wolf": ["Rrrrowf!", "Awrf!", "Snrrf…!"],

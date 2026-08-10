@@ -14,6 +14,7 @@
     chatheadWorldSize: 0.48,
     anchorLiftTiles: 0.18,
     friendGroups: [],
+    npcGreetings: {},
     greetingTemplates: ['{targetName}! Good to see you.', 'Hello, {targetName}!', 'Ah, {targetName} — there you are!'],
     companionTreasureLines: {
       'dabinggi-hound': ['Arf! Arf!', 'Rrruf!', 'Snff-snff… arf!'],
@@ -50,6 +51,7 @@
       ...(authored || {}),
       companionTreasureLines: { ...DEFAULTS.companionTreasureLines, ...(authored?.companionTreasureLines || {}) },
       crowdLines: { ...DEFAULTS.crowdLines, ...(authored?.crowdLines || {}) },
+      npcGreetings: { ...DEFAULTS.npcGreetings, ...(authored?.npcGreetings || {}) },
     };
   }
 
@@ -74,8 +76,15 @@
     return list[seededIndex(seed, list.length)];
   }
 
-  function templateLine(targetName, speakerId, day) {
-    return pick(state.settings.greetingTemplates, `${speakerId}:${day}`)
+  function greetingLinesFor(speakerId, targetId) {
+    const authored = state.settings.npcGreetings?.[speakerId];
+    if (targetId === 'player' && authored?.player?.length) return authored.player;
+    if (targetId !== 'player' && authored?.friends?.[targetId]?.length) return authored.friends[targetId];
+    return state.settings.greetingTemplates;
+  }
+
+  function templateLine(targetName, speakerId, targetId, day) {
+    return pick(greetingLinesFor(speakerId, targetId), `${speakerId}:${targetId}:${day}`)
       .replaceAll('{targetName}', String(targetName || 'friend'));
   }
 
@@ -85,6 +94,7 @@
       if (!Array.isArray(group) || !group.includes(npcId)) continue;
       group.forEach(id => { if (id !== npcId) set.add(id); });
     }
+    Object.keys(state.settings.npcGreetings?.[npcId]?.friends || {}).forEach(id => set.add(id));
     return set;
   }
 
@@ -314,7 +324,7 @@
     state.lastGreetingAt = now;
     const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2;
     walker.applyFacingDeadzone?.(angle, 0.34);
-    show(walker.root, templateLine(target.name, speakerId, day), {
+    show(walker.root, templateLine(target.name, speakerId, targetId, day), {
       speakerId,
       profile: walker.profile,
       mode: 'chathead',
