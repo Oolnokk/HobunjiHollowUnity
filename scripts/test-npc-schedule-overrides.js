@@ -23,6 +23,8 @@ assert.equal(typeof apply, 'function', 'schedule override composer is exported')
 
 const db = {
   npcs: [
+    { id: 'hammerhead_tuhupnuk', name: 'Hammerhead Tuhupnuk', scheduleHooks: { rules: [] } },
+    { id: 'hammerhead_tuhupnuk', name: 'Hammerhead Tuhupnuk', scheduleHooks: { rules: [] } },
     { id: 'foroji_funji', scheduleHooks: { rules: [
       { day: 'Naru', from: '08:00', to: '19:00', mapId: 'map_hobunji_town', stationId: 'station_foroji_music', activity: 'playing music all day, day off' },
       { from: '14:00', to: '19:00', mapId: 'map_hobunji_town', stationId: 'station_foroji_music', activity: 'playing music' },
@@ -50,6 +52,9 @@ const db = {
 
 const composed = apply(db, overrides);
 const byId = id => composed.npcs.find(npc => npc.id === id);
+assert.equal(composed.npcs.filter(npc => npc.id === 'hammerhead_tuhupnuk').length, 0, 'all duplicate Hammerhead records are removed before runtime spawning');
+assert(overrides.removeNpcIds.includes('hammerhead_tuhupnuk'), 'Hammerhead is explicitly marked removed in the runtime NPC corrections');
+
 for (const [npcId, stationId] of [
   ['dzibim_khibu', 'furniture_chair_map_i_carpenters_12_8'],
   ['dzahiri_khibu', 'furniture_chair_map_i_carpenters_13_8'],
