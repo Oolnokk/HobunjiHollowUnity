@@ -16,23 +16,28 @@ const recolorSource = fs.readFileSync(path.join(root, 'docs/js/sprite-recolor.js
 const pixelProbe = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 
 assert.match(recolorSource, /CreatureGeneticsRender\?\.recolorPixels[\s\S]*?CreatureGeneticsRender\.recolorPixels/,
-  'bottle fills delegate to the exact animal-color recolorer in the main game');
+  'direct whole-sprite fills still delegate to the animal shade-fill recolorer');
 assert.match(recolorSource, /img\.crossOrigin = 'anonymous';[\s\S]*?img\.src = spritePath/,
   'item sprites use the animal loader CORS mode before canvas pixel readback');
 
 const recolorContext = { window: {} };
 vm.runInNewContext(recolorSource, recolorContext);
-const { recolorImageData, relativeLuminance } = recolorContext.window.SpriteRecolor;
-const sourcePixel = new Uint8ClampedArray([0x9E, 0xD7, 0x75, 137]);
-const sourceLuminance = relativeLuminance(sourcePixel[0], sourcePixel[1], sourcePixel[2]);
-recolorImageData(sourcePixel, 0xF0D15A, 'keyed');
-const sourceShade = Math.max(0.18, Math.min(1.18, sourceLuminance / 0.55));
-assert.deepEqual(Array.from(sourcePixel.slice(0, 3)), [
-  Math.max(0, Math.min(255, Math.round(0xF0 * sourceShade))),
-  Math.max(0, Math.min(255, Math.round(0xD1 * sourceShade))),
-  Math.max(0, Math.min(255, Math.round(0x5A * sourceShade))),
-], 'bottle fill uses the same luminance-scaled target RGB as animal colors');
-assert.equal(sourcePixel[3], 137, 'bottle fill retains the source pixel transparency');
+const { recolorImageData } = recolorContext.window.SpriteRecolor;
+const keyedPixels = new Uint8ClampedArray([
+  0x9E, 0xD7, 0x75, 137, // Authored bright placeholder green.
+  0x69, 0x8F, 0x4E, 91,  // Authored dark shaded placeholder green.
+  0x44, 0x4B, 0x6F, 203, // Blue-gray bottle detail that must remain unchanged.
+]);
+recolorImageData(keyedPixels, 0xF0D15A, 'keyed');
+assert.deepEqual(Array.from(keyedPixels), [
+  215, 187, 81, 137,
+  143, 125, 54, 91,
+  0x44, 0x4B, 0x6F, 203,
+], 'keyed bottles recolor bright and dark green hues while preserving each pixel value and alpha');
+assert.equal(Math.max(...keyedPixels.slice(0, 3)), 0xD7,
+  'the bright recolored fill retains its source HSV value');
+assert.equal(Math.max(...keyedPixels.slice(4, 7)), 0x8F,
+  'the dark recolored fill retains its source HSV value');
 
 assert.match(game,
   /function normalizeAlcoholItemDef[\s\S]*?def\.spriteIcon = 'bottle_wine\.png';[\s\S]*?def\.spriteColor = mixedIngredientColor/,
