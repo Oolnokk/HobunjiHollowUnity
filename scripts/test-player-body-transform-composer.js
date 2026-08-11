@@ -42,6 +42,9 @@ assert.ok(composer.includes("mode === 'override'"), 'composer supports physical-
 assert.ok(composer.includes('hierarchyWorldQuaternion'), 'composer derives facing orientation from quaternion hierarchy only');
 assert.ok(composer.includes('target.multiply(chain[i].quaternion)'), 'hierarchy orientation is composed parent-first without matrix decomposition');
 assert.doesNotMatch(composer, /\.\s*getWorldQuaternion\s*\(/, 'mirrored matrix scale cannot be interpreted as a body-facing rotation');
+assert.ok(composer.includes('preserveSkinnedPortraitFacingSide'), 'composer can preserve the pre-delta front/back portrait choice');
+assert.ok(composer.includes('selectedMaterial.side = THREE.DoubleSide'), 'selected portrait remains renderable through additive tilt');
+assert.ok(composer.includes('frontMaterial.visible = showFront'), 'mirrored rear portrait cannot render over the selected front side');
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
 assert.ok(attachments.includes("registerExternalRootProvider('shoulderPets'"), 'shoulder pets register in the attachment adapter');
@@ -63,6 +66,7 @@ assert.doesNotMatch(drunk, /__drunkBaseRotation/, 'drunk feet do not cache and r
 assert.doesNotMatch(drunk, /yaw:\s*state\.yaw/, 'drunk body channel never competes with the player facing yaw');
 assert.doesNotMatch(drunk, /DRUNK_MAX_YAW_DEG|yawTarget/, 'drunk gait does not synthesize a second whole-body yaw target');
 assert.ok(drunk.includes('bodyYawOwnedByFacing: true'), 'debug output exposes that facing exclusively owns body yaw');
+assert.ok(drunk.includes('preserveFacingSide: true'), 'drunk tilt preserves the front/back side selected by ordinary facing');
 
 assert.doesNotMatch(alcohol, /registerExternalRootProvider/, 'alcohol integration does not own body attachments');
 assert.doesNotMatch(alcohol, /WebGLRenderer\.prototype/, 'alcohol integration no longer owns renderer transforms');
