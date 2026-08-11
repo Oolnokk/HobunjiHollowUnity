@@ -13369,6 +13369,11 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (activeAction === 'consume_held_item') {
+          window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
+          refreshActionBar();
+          return;
+        }
         if (activeAction === 'climb') {
           if (player.climbing) return;
           const climb = window.ClimbSystem.getClimbTarget();
@@ -15118,13 +15123,17 @@
 
       function _disposeMergedWaterMesh(sceneObj, mesh, statKey) {
         if (!mesh) return null;
-        sceneObj.remove(mesh);
+        if (sceneObj?.remove) sceneObj.remove(mesh);
         mesh.geometry.dispose();
         window.MergedWaterRenderer.clearStats(statKey);
         return null;
       }
 
       function _buildMergedWaterMesh(sceneObj, cells, options) {
+        if (!sceneObj?.add) {
+          debugLog(`[water-render] deferred ${options?.name || options?.statKey || 'merged water'} until its scene exists`, 'warn');
+          return null;
+        }
         const mesh = window.MergedWaterRenderer.createMesh(THREE, mergedWaterMaterial, cells, {
           joinThreshold: SLAB_H * 0.55,
           yOffset: 0.015,
@@ -18047,6 +18056,7 @@
       // so town weather can fill them with water exactly like farm trenches.
       function updateTownWaterMeshes() {
         waterTime += 0.016;
+        if (!townScene) return;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
         if (_townWaterSimDirty) {
@@ -20116,6 +20126,11 @@
         // 2+3. Item context actions — only in item mode
         if (heldMode !== 'item') return btns;
 
+        // A selected consumable is Item Action 1. Its configured binding owns
+        // consumption; raw Space/Enter/Interact keys have no special behavior.
+        const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+        if (consumeAction) btns.unshift(consumeAction);
+
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
         if (item && item.seedFor) {
@@ -20187,6 +20202,10 @@
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
           : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
+        // Consumable counts must invalidate the cached action after the last item is used.
+        const selectedItem = getActiveInventoryItem();
+        const selectedItemKey = selectedItem?.key || '';
+        const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -20196,7 +20215,7 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -20208,9 +20227,11 @@
 
         if (!needsRebuild) return;
 
-        // Split into tool actions (dig/fill/till/cut…) vs item actions (plant_*/harvest)
-        const toolBtns = btns.filter(b => !b.action.startsWith('plant_') && !b.action.startsWith('place_') && !b.action.startsWith('spawn_') && b.action !== 'harvest');
-        const itemBtns = btns.filter(b =>  b.action.startsWith('plant_') || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest');
+        // Split tool actions from item-owned consume/plant/place/harvest actions.
+        const isItemButton = b => b.action === 'consume_held_item' || b.action.startsWith('plant_')
+          || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
+        const toolBtns = btns.filter(b => !isItemButton(b));
+        const itemBtns = btns.filter(isItemButton);
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -21121,15 +21142,14 @@
         useActiveAction();
       }
       function runInteractAction() {
-        // Excludes raw tool-swing actions (dig/till/chop/etc — those belong
-        // to the tool/item action-slot buttons, not the Interact key/button),
-        // but NOT plant_/place_/harvest: those are context actions exactly
-        // like "open this door" or "talk to this NPC", and a player holding
-        // a seed reasonably expects the same Interact input that does
-        // everything else to also plant it, instead of only the separate
-        // primary tool/item action button working.
+        // Interact is reserved for world targets such as doors, NPCs, and
+        // furniture. Tool swings and every held-item action use action slots.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action));
+        const isItemAction = action => action === 'consume_held_item'
+          || action === 'harvest'
+          || /^(?:plant_|place_|spawn_)/.test(action);
+        const btn = computeActionButtons().find(b => b.allowed !== false
+          && !toolSet.has(b.action) && !isItemAction(b.action));
         if (!btn) return;
         activeAction = btn.action;
         useActiveAction();
@@ -21319,7 +21339,8 @@
           return;
         }
 
-        // Primary action: Space, Enter, or E (E only taps on desktop; hold opens tool selection)
+        // Legacy unbound primary keys. Configured action bindings return above;
+        // desktop E is handled as Interact on keyup after its tool-wheel hold.
         if (key === ' ' || key === 'enter' || key === 'e') {
           event.preventDefault();
           if (!event.repeat) {
@@ -21397,7 +21418,7 @@
         if (key === 'e' && isDesktop) {
           event.preventDefault();
           const wasHeld = finishDesktopHoldKey('e');
-          if (!wasHeld) { actionHeldDown = true; useActiveAction(); actionHeldDown = false; }
+          if (!wasHeld) runInteractAction();
           return;
         }
         if (key === 'q' && isDesktop) {
@@ -22343,6 +22364,7 @@
         clampInventoryStack,
         buildInventoryGrid,
         refreshItemScroll,
+        refreshActionBar,
         saveMemberWorldData,
       });
 
@@ -22370,6 +22392,7 @@
         showToast,
         closeMenu,
         EXTERIOR_ZONES,
+        buildTownScene,
         buildZoneScene,
         COLS, ROWS, TILE,
         CREATURE_DB,

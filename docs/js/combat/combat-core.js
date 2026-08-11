@@ -588,7 +588,10 @@
       }
       if (devDeps._isBuildingArea?.(currentArea)) devDeps.setCurrentBuildingMapId?.(null);
       devDeps.setCurrentArea(targetArea);
-      if (devDeps._isZoneArea?.(targetArea)) devDeps.buildZoneScene?.(targetArea);
+      // Construct the destination before asking for its grid/scene. In town this
+      // also activates the latest render-only subtle-elevation scene lifecycle.
+      if (targetArea === "town") devDeps.buildTownScene?.();
+      else if (devDeps._isZoneArea?.(targetArea)) devDeps.buildZoneScene?.(targetArea);
       const grid = devDeps.getActiveGrid?.();
       const cols = Number(devDeps.getActiveCols?.()) || grid?.[0]?.length || 1;
       const rows = Number(devDeps.getActiveRows?.()) || grid?.length || 1;
