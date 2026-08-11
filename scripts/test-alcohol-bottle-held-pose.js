@@ -24,8 +24,11 @@ assert.match(game,
   /function usesThrustHeldPose[\s\S]*?startsWith\('potion_'\)[\s\S]*?isAlcoholItemDef\(def\)/,
   'potions and alcohol share the thrust-held-pose classifier');
 assert.match(game,
-  /heldItemHolder\.position\.set\(playerToolBaseX, playerToolBaseY, 0\)[\s\S]*?degToRad\(10\.31\)[\s\S]*?_heldItemPlane\.rotation\.x = -Math\.PI \/ 2/,
-  'thrust-held consumables use the weapon hand anchor, idle pitch, and flat sprite orientation');
+  /heldItemHolder\.position\.set\(playerToolBaseX, playerToolBaseY, 0\)[\s\S]*?degToRad\(10\.31\)[\s\S]*?scale\.setScalar\(0\.5\)[\s\S]*?_heldItemPlane\.rotation\.x = Math\.PI \/ 2/,
+  'thrust-held consumables keep the weapon hand pivot while rendering half-size and flipped end-for-end');
+assert.match(game,
+  /else \{[\s\S]*?heldItemHolder\.scale\.setScalar\(1\)[\s\S]*?_heldItemPlane\.rotation\.x = 0/,
+  'ordinary held items restore their full-size chest pose');
 assert.match(game,
   /SpriteRecolor\.getRecoloredCanvas\(spritePath,[\s\S]*?plane\.scale\.y = canvas\.height/,
   'held authored item sprites preserve their recolor and source aspect ratio');

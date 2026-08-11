@@ -16947,10 +16947,14 @@
         if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
-          if (_heldItemPlane) _heldItemPlane.rotation.x = -Math.PI / 2;
+          // Potion/alcohol sprites stay on the same hand pivot, but render
+          // half-size and end-for-end relative to the previous flat hold.
+          heldItemHolder.scale.setScalar(0.5);
+          if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
         } else {
           heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
           heldItemHolder.rotation.set(0, 0, 0);
+          heldItemHolder.scale.setScalar(1);
           if (_heldItemPlane) _heldItemPlane.rotation.x = 0;
         }
         heldItemHolder.visible = !!_heldItemPlane;
