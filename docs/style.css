@@ -1952,7 +1952,10 @@
       letter-spacing: -.04em; white-space: nowrap; pointer-events: none;
       text-shadow: -1px 0 1px #000, 1px 0 1px #000, 0 -1px 1px #000, 0 1px 1px #000, 0 0 3px #000;
     }
-    #itemBtn, .kh-item-icon, .ii-icon { position: relative; overflow: visible; }
+    /* itemBtn must stay absolutely positioned by the outer-arch rule above;
+       only its overflow changes so the fraction can draw over the icon. */
+    #itemBtn { overflow: visible; }
+    .kh-item-icon, .ii-icon { position: relative; overflow: visible; }
     #itemBtn .alcohol-swig-badge { font-size: .52em; }
     .kh-item-icon .alcohol-swig-badge { font-size: .48em; }
     .ii-icon .alcohol-swig-badge { font-size: .35em; }

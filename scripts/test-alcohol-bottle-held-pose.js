@@ -14,6 +14,8 @@ const combatCore = fs.readFileSync(path.join(root, 'docs/js/combat/combat-core.j
 const recolorSource = fs.readFileSync(path.join(root, 'docs/js/sprite-recolor.js'), 'utf8');
 // Pixel Probe source verifies mobile-visible diagnostics for asynchronous recolor failures.
 const pixelProbe = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
+// Stylesheet checks below guard the mobile outer-arch position against badge CSS overrides.
+const style = fs.readFileSync(path.join(root, 'docs/style.css'), 'utf8');
 
 assert.match(recolorSource, /CreatureGeneticsRender\?\.recolorPixels[\s\S]*?CreatureGeneticsRender\.recolorPixels/,
   'direct whole-sprite fills still delegate to the animal shade-fill recolorer');
@@ -88,6 +90,10 @@ assert.match(game,
 assert.match(game,
   /slots\.push\(\{ type:'item',[^\n]*key:stacks\[[^\n]*[\s\S]*?applyItemSpriteIcon\(iconEl, ITEM_DEFS\[s\.key\], s\.key\)/,
   'the item-selection arc upgrades alcohol emoji to the bottle sprite');
+assert.match(style, /#itemBtn\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?var\(--ar2\)/,
+  'the item-selection button remains absolutely positioned on the outer arch');
+assert.doesNotMatch(style, /#itemBtn(?:\s*,[^{}]*)?\s*\{[^}]*position:\s*relative/,
+  'fraction-badge styling cannot override the item-selection button arch position');
 assert.match(game,
   /const fallbackTexture = spritePath[\s\S]*?_toolTexLoader\.load\(spritePath/,
   'held authored items start with their PNG rather than an emoji while recoloring');
