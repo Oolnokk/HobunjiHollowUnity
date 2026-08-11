@@ -310,8 +310,9 @@
     ].includes(tag));
   }
 
-  function consumeHeldItem() {
-    if (performance.now() < consumeLockUntil) return false;
+  // Describes the selected, visibly held consumable without mutating inventory.
+  // The action bar uses this to make consumption a normal configurable item action.
+  function getHeldConsumable() {
     if (!window.PlayerBodyTransformComposer?.hasVisibleHeldItem?.()) return false;
 
     const active = itemDeps?.getActiveInventoryItem?.();
@@ -319,21 +320,43 @@
     const def = active;
     const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
+    if (isPotionOrDrink(key, def)) return { key, def, inventory, kind: 'drink' };
+    if (isFood(def)) return { key, def, inventory, kind: 'food' };
+    return null;
+  }
 
-    if (isPotionOrDrink(key, def)) {
+  function getHeldItemAction() {
+    const held = getHeldConsumable();
+    if (!held) return null;
+    return {
+      icon: held.def.icon || (held.kind === 'drink' ? '🥤' : '🍽️'),
+      label: `${held.kind === 'drink' ? 'Drink' : 'Eat'} ${held.def.label || held.key}`,
+      action: 'consume_held_item',
+      style: 'primary',
+      allowed: true,
+    };
+  }
+
+  function consumeHeldItem() {
+    if (performance.now() < consumeLockUntil) return false;
+    const held = getHeldConsumable();
+    if (!held) return false;
+    const { key, def, inventory } = held;
+
+    if (held.kind === 'drink') {
       const result = window.AlchemySystem?.drinkPotion?.(key);
       if (!result) return false;
       itemDeps.showToast?.(result.message, result.ok !== false);
       if (result.ok !== false) {
         itemDeps.refreshItemScroll?.();
         itemDeps.buildInventoryGrid?.();
+        itemDeps.refreshActionBar?.();
         itemDeps.saveMemberWorldData?.();
       }
       consumeLockUntil = performance.now() + 180;
       return true;
     }
 
-    if (!isFood(def)) return false;
     inventory[key]--;
     itemDeps.clampInventoryStack?.(key);
 
@@ -352,6 +375,7 @@
     itemDeps.showToast?.(`${def.icon || '🍽️'} Ate ${def.label || key}.`, true);
     itemDeps.refreshItemScroll?.();
     itemDeps.buildInventoryGrid?.();
+    itemDeps.refreshActionBar?.();
     itemDeps.saveMemberWorldData?.();
     consumeLockUntil = performance.now() + 180;
     return true;
@@ -376,21 +400,6 @@
     event.stopImmediatePropagation();
   }, true);
 
-  // Held consumables own the action press rather than also firing the tile/tool
-  // action underneath them.
-  document.addEventListener('pointerdown', event => {
-    const id = event.target?.closest?.('button')?.id;
-    if (!/^btn(?:Item)?Action[1-5]$/.test(id || '') || !consumeHeldItem()) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, true);
-
-  window.addEventListener('keydown', event => {
-    if (event.repeat || !['Space', 'Enter', 'KeyE'].includes(event.code) || !consumeHeldItem()) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, true);
-
   function postFrameLoop(now) {
     const dt = Math.min(0.05, Math.max(0.001, (now - lastPostAt) / 1000));
     lastPostAt = now;
@@ -408,6 +417,7 @@
 
   window.HobunjiDrunkGameplayBridge = {
     consumeHeldItem,
+    getHeldItemAction,
     getDebug() {
       const player = window.Combat?.deps?.player;
       const muls = footingSpeedMuls(player);

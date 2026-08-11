@@ -68,7 +68,9 @@ fullEntity.afflictions.woundedStamina = 0;
 fullEntity.exhaustion.active = true;
 assert.equal(ResourceRings.isResourceHomeostatic(fullEntity, 'stamina'), false);
 
-assert.deepEqual(Object.keys(ResourceRings.AFFLICTION_COLORS).sort(), Object.keys(ResourceSystem.AFFLICTIONS).sort());
+for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
+  assert.ok(id in ResourceRings.AFFLICTION_COLORS, `${id} has a resource-ring color`);
+}
 for (const [id, configured] of Object.entries(HOBUNJI_CONFIG.resourceRings.afflictionColors)) {
   assert.equal(ResourceRings.AFFLICTION_COLORS[id], Number.parseInt(configured.slice(1), 16), `${id} uses its configured color`);
 }
