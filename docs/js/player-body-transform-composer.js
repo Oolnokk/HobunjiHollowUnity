@@ -29,6 +29,24 @@
     return Number.isFinite(n) ? n : fallback;
   }
 
+  // Compose orientation strictly from the quaternion hierarchy. Three.js's
+  // getWorldQuaternion() decomposes matrixWorld; when any ancestor has a
+  // negative scale (the PNG-facing mirror), that reflection can be folded into
+  // the returned quaternion as a spurious 180-degree turn. Position conversion
+  // should still use matrixWorld so mirrored offsets remain correct, but facing
+  // and body-channel rotation must never derive from scale.
+  function hierarchyWorldQuaternion(node, target = new THREE.Quaternion()) {
+    const chain = []; // Used below to apply local quaternions parent-first.
+    let cursor = node; // Walks from the requested node to the scene root.
+    while (cursor?.isObject3D) {
+      chain.push(cursor);
+      cursor = cursor.parent;
+    }
+    target.identity();
+    for (let i = chain.length - 1; i >= 0; i--) target.multiply(chain[i].quaternion);
+    return target.normalize();
+  }
+
   function hasRenderableDescendant(root) {
     if (!root?.isObject3D) return false;
     if (root.isMesh || root.isSprite || root.isLine || root.isPoints) return true;
@@ -165,7 +183,7 @@
     const oldPosition = root.position.clone();
     const oldQuaternion = root.quaternion.clone();
     const worldPosition = root.getWorldPosition(new THREE.Vector3());
-    const worldQuaternion = root.getWorldQuaternion(new THREE.Quaternion());
+    const worldQuaternion = hierarchyWorldQuaternion(root);
 
     const nextWorldPosition = pivotWorld.clone()
       .add(worldPosition.sub(pivotWorld).applyQuaternion(worldRotation))
@@ -174,7 +192,7 @@
 
     if (root.parent?.isObject3D) {
       root.parent.updateWorldMatrix?.(true, false);
-      const parentWorldQuaternion = root.parent.getWorldQuaternion(new THREE.Quaternion());
+      const parentWorldQuaternion = hierarchyWorldQuaternion(root.parent);
       root.position.copy(root.parent.worldToLocal(nextWorldPosition.clone()));
       root.quaternion.copy(parentWorldQuaternion.invert().multiply(nextWorldQuaternion));
     } else {
@@ -265,7 +283,7 @@
           // delta into world space from that FINAL base transform, pivot around
           // the standing posterior/hip point, render, then restore immediately.
           playerMesh.updateWorldMatrix?.(true, false);
-          const baseWorldQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
+          const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
           const worldRotation = baseWorldQuaternion.clone()
             .multiply(delta.rotation)
             .multiply(baseWorldQuaternion.clone().invert());
