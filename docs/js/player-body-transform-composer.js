@@ -245,7 +245,7 @@
     root.updateWorldMatrix?.(true, false);
 
     const oldPosition = root.position.clone();
-    const oldQuaternion = root.quaternion.clone();
+    const oldRotation = root.rotation.clone(); // Restored after render so Three cannot rewrite a >90° yaw into equivalent 180° X/Z Euler angles.
     const worldPosition = root.getWorldPosition(new THREE.Vector3());
     const worldQuaternion = hierarchyWorldQuaternion(root);
 
@@ -266,7 +266,7 @@
 
     undo.push(() => {
       root.position.copy(oldPosition);
-      root.quaternion.copy(oldQuaternion);
+      root.rotation.copy(oldRotation);
     });
   }
 

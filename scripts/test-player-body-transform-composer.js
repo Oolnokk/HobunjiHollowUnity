@@ -42,6 +42,9 @@ assert.ok(composer.includes("mode === 'override'"), 'composer supports physical-
 assert.ok(composer.includes('hierarchyWorldQuaternion'), 'composer derives facing orientation from quaternion hierarchy only');
 assert.ok(composer.includes('target.multiply(chain[i].quaternion)'), 'hierarchy orientation is composed parent-first without matrix decomposition');
 assert.doesNotMatch(composer, /\.\s*getWorldQuaternion\s*\(/, 'mirrored matrix scale cannot be interpreted as a body-facing rotation');
+assert.ok(composer.includes('const oldRotation = root.rotation.clone()'), 'render restoration preserves the authored Euler representation');
+assert.ok(composer.includes('root.rotation.copy(oldRotation)'), 'temporary composition cannot leave equivalent 180-degree X/Z Euler values behind');
+assert.doesNotMatch(composer, /root\.quaternion\.copy\(oldQuaternion\)/, 'render restoration cannot rewrite the next frame\'s yaw basis through quaternion decomposition');
 assert.ok(composer.includes('preserveSkinnedPortraitFacingSide'), 'composer can preserve the pre-delta front/back portrait choice');
 assert.ok(composer.includes('selectedMaterial.side = THREE.DoubleSide'), 'selected portrait remains renderable through additive tilt');
 assert.ok(composer.includes('frontMaterial.visible = showFront'), 'mirrored rear portrait cannot render over the selected front side');
