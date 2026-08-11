@@ -6,7 +6,8 @@
     "masteryXp": "centeredFiveRow",
     "favor": "centeredFiveRow",
     "currency": "centeredFiveRow",
-    "loot": "centeredFiveRow"
+    "loot": "centeredFiveRow",
+    "interaction": "centeredFiveRow"
   },
   "floatPlus": {
     "worldHeight": 0.36,
@@ -30,6 +31,7 @@
     "masteryXp": "#78cfff",
     "favor": "#ff9fd7",
     "currency": "#ffe181",
-    "loot": "#ffffff"
+    "loot": "#ffffff",
+    "interaction": "#ffffff"
   }
 }

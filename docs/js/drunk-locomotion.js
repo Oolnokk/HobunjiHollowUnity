@@ -1,4 +1,4 @@
-// Footing-driven Regular -> Drunken locomotion layer for the local player.
+// Regular -> Drunken locomotion layer shared by the local player and NPCs.
 //
 // This module owns ONLY the drunken gait contribution: procedural leg offsets,
 // non-accumulating additive foot twist, and a named body-tilt channel
@@ -86,7 +86,7 @@
     });
   }
 
-  function decoratePlayerHandle(THREE, options, handle) {
+  function decorateDrunkHandle(THREE, options, handle, lossProvider, isPlayer) {
     if (!handle) return handle;
     const modelWidth = Math.max(0.001, Number(options.modelWidth) || 0.9);
     const modelHeight = Math.max(0.001, Number(options.modelHeight) || modelWidth);
@@ -105,6 +105,7 @@
         left: new THREE.Quaternion(),
         right: new THREE.Quaternion(),
       },
+      bodyTilt: new THREE.Quaternion(), // Removed before each update so NPC body sway never accumulates.
       loss: 0,
       blend: 0,
       speed: 0,
@@ -116,9 +117,29 @@
       removeTrackedFootTwist(legPart(handle.group, 'right_foot'), state.footTwist.right);
     }
 
+    function clearPreviousBodyTilt() {
+      const bodyRoot = options.drunkBodyRoot;
+      if (!bodyRoot?.quaternion || !state.bodyTilt?.isQuaternion) return;
+      const hasDelta = Math.abs(state.bodyTilt.x) + Math.abs(state.bodyTilt.y) + Math.abs(state.bodyTilt.z) > 1e-10
+        || Math.abs(state.bodyTilt.w - 1) > 1e-10;
+      if (hasDelta) bodyRoot.quaternion.multiply(state.bodyTilt.clone().invert());
+      state.bodyTilt.identity();
+    }
+
+    function publishOrApplyBodyTilt() {
+      if (isPlayer) {
+        publishBodyChannel(state);
+        return;
+      }
+      const bodyRoot = options.drunkBodyRoot;
+      if (!bodyRoot?.quaternion) return;
+      state.bodyTilt.setFromEuler(new THREE.Euler(state.pitch, 0, state.roll, 'YXZ'));
+      bodyRoot.quaternion.multiply(state.bodyTilt);
+    }
+
     function applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
       const speed = Math.max(0, Number(speedWorldUnitsPerSecond) || 0);
-      const rawLoss = (suppressed || seatedPose) ? 0 : footingLoss();
+      const rawLoss = (suppressed || seatedPose) ? 0 : clamp01(lossProvider?.() || 0);
       const blend = smoothstep01(rawLoss);
       const extreme = blend * blend;
       const movement = clamp01(speed / referenceSpeed);
@@ -188,7 +209,7 @@
       state.loss = rawLoss;
       state.blend = blend;
       state.speed = speed;
-      publishBodyChannel(state);
+      publishOrApplyBodyTilt();
     }
 
     handle.update = function footingDrunkWalkUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
@@ -196,6 +217,7 @@
       // ragdoll, seat, and future foot-pose writers then resolve a clean base
       // quaternion before the current drunk twist is composed exactly once.
       clearPreviousFootTwist();
+      clearPreviousBodyTilt();
       originalUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
       applyDrunkenLayer(dt, speedWorldUnitsPerSecond, suppressed, seatedPose);
     };
@@ -204,14 +226,17 @@
       if (state.disposed) return;
       state.disposed = true;
       clearPreviousFootTwist();
+      clearPreviousBodyTilt();
       state.pitch = state.roll = 0;
-      if (activePlayerState?.handle === handle) activePlayerState = null;
-      window.PlayerBodyTransformComposer?.clearChannel(BODY_CHANNEL);
+      if (isPlayer && activePlayerState?.handle === handle) activePlayerState = null;
+      if (isPlayer) window.PlayerBodyTransformComposer?.clearChannel(BODY_CHANNEL);
       originalDispose();
     };
 
-    activePlayerState = { handle, state };
-    publishBodyChannel(state);
+    if (isPlayer) {
+      activePlayerState = { handle, state };
+      publishBodyChannel(state);
+    }
     return handle;
   }
 
@@ -219,7 +244,10 @@
   api.attach = function footingAwareAttach(THREE, parent, options = {}) {
     const isPlayer = String(options.name || '').toLowerCase() === 'player';
     const handle = originalAttach(THREE, parent, options);
-    return isPlayer ? decoratePlayerHandle(THREE, options, handle) : handle;
+    const npcLossProvider = typeof options.drunkLossProvider === 'function' ? options.drunkLossProvider : null;
+    return isPlayer || npcLossProvider
+      ? decorateDrunkHandle(THREE, options, handle, isPlayer ? footingLoss : npcLossProvider, isPlayer)
+      : handle;
   };
   api.__footingDrunkWalkInstalled = true;
 
