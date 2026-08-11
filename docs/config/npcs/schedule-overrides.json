@@ -1,6 +1,9 @@
 {
   "schema": "hobunji_npc_schedule_overrides.v1",
-  "note": "Small runtime schedule corrections that depend on map layout or other NPC schedules. Applied by LocalDBOverrides after the NPC database loads so these tweaks stay out of game.js and the large NPC database.",
+  "note": "Small runtime NPC corrections that depend on map layout, other NPC schedules, or authoritative living/deceased state. Applied by LocalDBOverrides after the NPC database loads so these tweaks stay out of game.js and the large NPC database.",
+  "removeNpcIds": [
+    "hammerhead_tuhupnuk"
+  ],
   "stationRedirects": [
     {
       "npcId": "dzibim_khibu",
