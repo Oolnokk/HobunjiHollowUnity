@@ -2,7 +2,7 @@
   'use strict';
 
   // Runtime adapter that applies the Map Editor/town-building subtle-height
-  // contract to the farm's dynamic modular-house footprint. The actual
+  // contract to the farm's dynamic modular-house footprint.  The actual
   // stamping rules stay owned by BuildingSubtleElevation; this file only
   // translates live house rectangles into that shared footprint format and
   // applies the resulting heightfield to the farm's already-existing meshes.
@@ -29,6 +29,7 @@
     let visualMeshKeys = new Set(); // A one-cell halo around affected centers, where bilinear interpolation can still move vertices.
     let baseElevTiers = new Map(); // Original per-tile elevTier values restored when the modular footprint moves away.
     let lastDebug = null; // Most recent recalculation summary, exposed for the in-game/mobile debug surface.
+    let sceneAddOriginal = null; // Scene.add hook keeps later shovel/tile refreshes deformed while this controller is active.
 
     const keyOf = (c, r) => `${c},${r}`;
     const parseKey = key => key.split(',').map(Number);
@@ -127,7 +128,7 @@
         if (!tile) continue;
         const base = Number(tile.elevTier) || 0;
         baseElevTiers.set(key, base);
-        // Farm grounding/billboard code already consumes elevTier. A
+        // Farm grounding/billboard code already consumes elevTier.  A
         // fractional tier lets those systems inherit the subtle lift without
         // pretending this is a real plateau tier; terrain vertices themselves
         // are still deformed continuously below with the exact bilinear sampler.
@@ -144,26 +145,52 @@
       return Math.abs(obj.position.x - (c + 0.5)) < 0.02 && Math.abs(obj.position.z - (r + 0.5)) < 0.02;
     }
 
+    function _deformTerrainMesh(obj) {
+      if (!_isFarmTerrainMesh(obj, visualMeshKeys)) return false;
+      const stamp = footprintFingerprint || '__pending__';
+      if (obj.userData?.playerHouseElevationStamp === stamp) return false;
+      // Some farm tile types reuse template geometry. Clone before writing
+      // vertex Y so one elevated house tile cannot deform every instance of
+      // that geometry elsewhere on the farm.
+      obj.geometry = obj.geometry.clone();
+      const pos = obj.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const wx = obj.position.x + pos.getX(i);
+        const wz = obj.position.z + pos.getZ(i);
+        pos.setY(i, pos.getY(i) + sampleWorldY(wx, wz));
+      }
+      pos.needsUpdate = true;
+      if (obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
+      obj.geometry.computeBoundingBox?.();
+      obj.geometry.computeBoundingSphere?.();
+      obj.userData = obj.userData || {};
+      obj.userData.playerHouseElevationStamp = stamp;
+      return true;
+    }
+
     function _deformTerrainMeshes(keySet) {
       if (!scene || !keySet.size) return;
       for (const obj of [...scene.children]) {
-        if (!_isFarmTerrainMesh(obj, keySet)) continue;
-        // Some farm tile types reuse template geometry. Clone before writing
-        // vertex Y so one elevated house tile cannot deform every instance of
-        // that geometry elsewhere on the farm.
-        obj.geometry = obj.geometry.clone();
-        const pos = obj.geometry.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-          const wx = obj.position.x + pos.getX(i);
-          const wz = obj.position.z + pos.getZ(i);
-          pos.setY(i, pos.getY(i) + sampleWorldY(wx, wz));
-        }
-        pos.needsUpdate = true;
-        if (obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
-        obj.geometry.computeBoundingBox?.();
-        obj.geometry.computeBoundingSphere?.();
+        if (_isFarmTerrainMesh(obj, keySet)) _deformTerrainMesh(obj);
       }
     }
+
+    function _installSceneAddHook() {
+      if (!scene || sceneAddOriginal) return;
+      sceneAddOriginal = scene.add;
+      scene.add = function (...objects) {
+        const result = sceneAddOriginal.apply(this, objects);
+        // _markTerrainEdgeId runs immediately after scene.add in game.js, so
+        // defer one microtask before checking layer 3. This catches every later
+        // shovel/weather tile rebuild without coupling game.js back to houses.
+        queueMicrotask(() => {
+          for (const obj of objects) _deformTerrainMesh(obj);
+        });
+        return result;
+      };
+    }
+
+    _installSceneAddHook();
 
     function sync(force = false) {
       const footprintKeys = _pieceFootprintKeys();
@@ -210,6 +237,10 @@
         markTileDirty(c, r);
       }
       if (old.size) recomputeWater(false);
+      if (scene && sceneAddOriginal) {
+        scene.add = sceneAddOriginal;
+        sceneAddOriginal = null;
+      }
     }
 
     function debugSnapshot() {
