@@ -159,6 +159,7 @@
     const rotation = new THREE.Quaternion();
     const translation = new THREE.Vector3();
     const applied = [];
+    let preserveFacingSide = false; // Used by render() to keep additive tilt from swapping portrait sides.
 
     for (const [name, channel] of ordered) {
       const q = channelQuaternion(channel);
@@ -171,9 +172,51 @@
         if (channel.translationMode === 'override') translation.copy(next);
         else translation.add(next);
       }
+      if (channel.preserveFacingSide === true) preserveFacingSide = true;
       applied.push(name);
     }
-    return { rotation, translation, applied };
+    return { rotation, translation, applied, preserveFacingSide };
+  }
+
+  // The neck-rigged player portrait stores its front and mirrored rear artwork
+  // as two material groups on one SkinnedMesh. Ordinarily GPU face culling picks
+  // the correct group from the game's resolved yaw. An additive pitch/roll can
+  // move a nearly edge-on portrait across that culling boundary after facing has
+  // already resolved, making the X-flipped rear portrait flash as a false 180°
+  // turn. Capture the pre-delta side, render only it as double-sided during the
+  // temporary body tilt, then restore both materials immediately after render.
+  function preserveSkinnedPortraitFacingSide(root, camera, undo) {
+    if (!root?.isObject3D || !camera?.isObject3D) return;
+    root.updateWorldMatrix?.(true, true);
+    camera.updateWorldMatrix?.(true, false);
+    const cameraWorldPosition = camera.getWorldPosition(new THREE.Vector3()); // Used for the pre-delta view vector.
+
+    root.traverse?.(object => {
+      const materials = Array.isArray(object?.material) ? object.material : null; // Material groups inspected for a front/rear pair.
+      if (!object?.isSkinnedMesh || !materials?.length) return;
+      const frontMaterial = materials.find(material => /front_material$/i.test(String(material?.name || ''))); // Pre-tilt front portrait material.
+      const backMaterial = materials.find(material => /back_material$/i.test(String(material?.name || ''))); // Pre-tilt mirrored rear portrait material.
+      if (!frontMaterial || !backMaterial) return;
+
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(object.matrixWorld); // Converts the plane's local front normal into base world space.
+      const frontNormal = new THREE.Vector3(0, 0, 1).applyMatrix3(normalMatrix).normalize(); // Compared with the camera before composer tilt.
+      const objectWorldPosition = object.getWorldPosition(new THREE.Vector3()); // Origin for the camera-facing direction below.
+      const viewDirection = cameraWorldPosition.clone().sub(objectWorldPosition).normalize(); // Selects the portrait side chosen by ordinary yaw.
+      const showFront = frontNormal.dot(viewDirection) >= 0;
+      const oldFrontVisible = frontMaterial.visible;
+      const oldBackVisible = backMaterial.visible;
+      const selectedMaterial = showFront ? frontMaterial : backMaterial; // Kept renderable even if additive tilt crosses the culling plane.
+      const oldSelectedSide = selectedMaterial.side;
+
+      frontMaterial.visible = showFront;
+      backMaterial.visible = !showFront;
+      selectedMaterial.side = THREE.DoubleSide;
+      undo.push(() => {
+        frontMaterial.visible = oldFrontVisible;
+        backMaterial.visible = oldBackVisible;
+        selectedMaterial.side = oldSelectedSide;
+      });
+    });
   }
 
   function applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo) {
@@ -214,6 +257,7 @@
       translationMode: contribution.translationMode === 'override' ? 'override' : 'additive',
       enabled: contribution.enabled !== false,
       order: contribution.order || 'YXZ',
+      preserveFacingSide: contribution.preserveFacingSide === true,
       rotation: contribution.rotation ? { ...contribution.rotation } : undefined,
       quaternion: contribution.quaternion?.isQuaternion ? contribution.quaternion.clone() : undefined,
       translation: contribution.translation ? { ...contribution.translation } : contribution.position ? { ...contribution.position } : undefined,
@@ -289,6 +333,7 @@
             .multiply(baseWorldQuaternion.clone().invert());
           const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
+          if (delta.preserveFacingSide) preserveSkinnedPortraitFacingSide(playerMesh, camera, undo);
           for (const root of currentOwnedRoots()) {
             applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo);
           }
@@ -327,6 +372,7 @@
           enabled: channel.enabled !== false,
           rotation: channel.rotation || null,
           translation: channel.translation || null,
+          preserveFacingSide: channel.preserveFacingSide === true,
         })),
         appliedOrder: delta.applied,
       };
