@@ -486,6 +486,21 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const held = deps.getHeldObjectDebug?.();
+    if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
+    if (held?.actionArch?.length) {
+      const archState = held.actionArch.map(button => `${button.id}=${button.hidden ? 'hidden' : (button.action || 'empty')}${button.blocked ? '/blocked' : ''}`).join(' ');
+      lines.push(`Mobile action arch: ${archState}`);
+    }
+    const itemIcon = deps.getItemSpriteIconDebug?.();
+    if (itemIcon) {
+      const iconState = entry => entry ? `${entry.state}/${entry.hasBackground ? 'image' : 'none'}` : 'missing';
+      const target = itemIcon.targetColor == null ? '-' : `#${Number(itemIcon.targetColor).toString(16).padStart(6, '0')}`;
+      lines.push(`Item sprite icon: key=${itemIcon.key || '-'} sprite=${itemIcon.spriteIcon || '-'} target=${target} strip=${iconState(itemIcon.strip)} button=${iconState(itemIcon.button)} keyboard=${iconState(itemIcon.keyboard)}`);
+      // Deduplicate failures shared by several HUD copies so mobile reports stay compact.
+      const iconErrors = [...new Set([itemIcon.strip?.error, itemIcon.button?.error, itemIcon.keyboard?.error].filter(Boolean))];
+      if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);
+    }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
     if (facingAtClick) {
       lines.push('');

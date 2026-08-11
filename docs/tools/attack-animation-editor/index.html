@@ -92,18 +92,19 @@ canvas{display:block;width:100%;height:100%}
 <div id="app">
 <aside id="sidebar">
   <div class="card section" style="--sec:#6aa7ff;--secBg:rgba(106,167,255,.10)">
-    <div class="sectionTitle"><b>Attack animation</b><span class="sectionTag">meta</span></div>
+    <div class="sectionTitle"><b>Tool / held action animation</b><span class="sectionTag">meta</span></div>
     <div class="field"><label>Name</label><input id="animName" value="New Attack"></div>
-    <div class="field"><label>Swing style (reference only)</label>
+    <div class="field"><label>Animation style (reference only)</label>
       <select id="animStyle">
         <option value="thrust">thrust</option>
         <option value="chop">chop</option>
         <option value="sweep" selected>sweep</option>
         <option value="toss">toss</option>
+        <option value="drink">drink</option>
       </select>
     </div>
-    <div class="field"><label>Weapon sprite (visual reference)</label><select id="toolSpriteSelect"></select></div>
-    <div class="help">Style is just a label saved with the export — it doesn't change how the rig moves here. The weapon sprite is the actual in-game PNG plane, so you can see which end is the business end.</div>
+    <div class="field"><label>Tool / held sprite (visual reference)</label><select id="toolSpriteSelect"></select></div>
+    <div class="help">Style is saved with the export but does not constrain the rig. Tool and bottle previews use their actual in-game PNG orientation and scale.</div>
   </div>
 
   <div class="card section" style="--sec:#a78bfa;--secBg:rgba(167,139,250,.10)">
@@ -253,6 +254,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -466,6 +468,7 @@ const TOOL_SPRITE_DEFS = {
   bronzehoe:    { label: 'Bronze Hoe (chop)',     sprite: '../../assets/toolsprites/hoe_bronzehoe.png',       animStyle: 'chop'   },
   fishingspear: { label: 'Fishing Spear (sweep)', sprite: '../../assets/toolsprites/harpoon_fishingspear.png',animStyle: 'sweep'  },
   fishingmace:  { label: 'Fishing Mace (sweep)',  sprite: '../../assets/toolsprites/harpoon_fishingmace.png', animStyle: 'sweep'  },
+  bottle:       { label: 'Wine bottle (drink)',    sprite: '../../assets/objectsprites/bottle_wine.png',       animStyle: 'drink', scale: 0.5, flip: true },
 };
 const toolTexLoader = new THREE.TextureLoader();
 let toolPlaneMesh = null;
@@ -483,12 +486,12 @@ function buildToolPlaneMesh(toolKey) {
     toolTexLoader.load(def.sprite, tex => {
       tex.magFilter = tex.minFilter = THREE.NearestFilter;
       const imgW = tex.image.width || 1, imgH = tex.image.height || 1;
-      const planeW = TOOL_MODEL_WIDTH;
+      const planeW = TOOL_MODEL_WIDTH * (def.scale ?? 1);
       const planeH = planeW * (imgH / imgW);
       const geo = new THREE.PlaneGeometry(planeW, planeH);
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
-      plane.rotation.x = -Math.PI / 2;
+      plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
       if (def.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
       const g = new THREE.Group();
       g.add(plane);
@@ -535,6 +538,7 @@ const STYLE_NEUTRAL_POSE = {
   thrust: defaultPose(0, 0, 0, 10.31, 0, 0),
   sweep:  defaultPose(0, 0, 0.16, 0, 0, 0),
   chop:   defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+  drink:  defaultPose(0, 0, 0, 10.31, 0, 0),
 };
 function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || defaultPose(0, 0, 0, 0, 0, 0); }
 
@@ -689,6 +693,17 @@ $('resetPosesBtn').onclick = () => {
 // Hold (idle) poses are each style's progress=0 values; windup/strike are each
 // style's WF/SF (0.16/0.28) keyframe extremes.
 const TOOL_PRESETS = [
+  ...(window.HeldActionAnimations?.drink ? [{
+    id: 'drink', label: 'Bottle — Drink', style: 'drink', toolKey: 'bottle', still: false,
+    name: window.HeldActionAnimations.drink.name,
+    neutral: { ...window.HeldActionAnimations.drink.poses.neutral },
+    windup: { ...window.HeldActionAnimations.drink.poses.windup },
+    strike: { ...window.HeldActionAnimations.drink.poses.strike },
+    durationS: window.HeldActionAnimations.drink.durationS,
+    windupFrac: window.HeldActionAnimations.drink.windupFrac,
+    strikeFrac: window.HeldActionAnimations.drink.strikeFrac,
+    holdFrac: window.HeldActionAnimations.drink.holdFrac,
+  }] : []),
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
@@ -728,6 +743,10 @@ const TOOL_PRESETS = [
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
 function applyPreset(preset) {
+  if (preset.name) {
+    anim.name = preset.name;
+    $('animName').value = anim.name;
+  }
   anim.poses.neutral = { ...(preset.neutral || neutralPoseFor(preset.style)) };
   anim.poses.windup = { ...preset.windup };
   anim.poses.strike = { ...preset.strike };
@@ -737,6 +756,10 @@ function applyPreset(preset) {
   // derives from SF when no hold is authored — 30% of whatever's left after
   // the strike — unless the preset itself specifies one.
   anim.holdFrac = preset.holdFrac ?? Math.min(0.99, preset.strikeFrac + (1 - preset.strikeFrac) * 0.3);
+  if (Number.isFinite(preset.durationS) && preset.durationS > 0) {
+    anim.durationS = preset.durationS;
+    $('durationS').value = anim.durationS;
+  }
   anim.style = preset.style;
   clampFracs();
   $('animStyle').value = anim.style;
@@ -1050,7 +1073,7 @@ function refreshJsonView() {
 function exportAnimObject() {
   return {
     version: 1,
-    kind: 'hobunji_attack_animation',
+    kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
     style: anim.style,
     windupFrac: anim.windupFrac,

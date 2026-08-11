@@ -9636,8 +9636,9 @@
           }
           if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
             bScene.add(playerMesh); bScene.add(playerGroundShadow);
+            bScene.add(toolHolder);
             if (_isCavernBuildingArea(mapId)) {
-              bScene.add(toolHolder); bScene.add(reticleMesh);
+              bScene.add(reticleMesh);
               bScene.add(reticleCircleMesh); bScene.add(reticleRingMesh);
               bScene.add(reticleWavyGroup);
             }
@@ -9705,6 +9706,7 @@
         }
         if (_currentBuildingMapId === mapId && _isBuildingArea(currentArea)) {
           bScene.add(playerMesh); bScene.add(playerGroundShadow);
+          bScene.add(toolHolder);
         }
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
@@ -9747,7 +9749,8 @@
         const fallback = !!extra.fallback;
         const loading = !!extra.loading;
         const target = extra.target ? ` target=${extra.target}` : '';
-        window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target}`, fallback ? 'warn' : 'info');
+        const heldObjectAttachment = toolHolder?.parent === getActiveScene() ? 'active-scene' : (toolHolder?.parent ? 'wrong-scene' : 'detached');
+        window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
       function enterBuilding(mapId, defaultCol, defaultRow) {
@@ -9781,8 +9784,9 @@
         }
         if (bi?.scene) {
           bi.scene.add(playerMesh); bi.scene.add(playerGroundShadow);
+          bi.scene.add(toolHolder);
           if (_isCavernBuildingArea(mapId)) {
-            bi.scene.add(toolHolder); bi.scene.add(reticleMesh);
+            bi.scene.add(reticleMesh);
             bi.scene.add(reticleCircleMesh); bi.scene.add(reticleRingMesh);
             bi.scene.add(reticleWavyGroup);
           }
@@ -9796,7 +9800,7 @@
         startSceneTransition(() => {
           const fromScene = _buildingScenes.get(currentArea)?.scene || null;
           const returnArea = farmPlayerSave?.area ?? 'town';
-          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); }
+          if (fromScene) { fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow); fromScene.remove(toolHolder); }
           _currentBuildingMapId = null;
           currentArea = returnArea;
           if (farmPlayerSave) {
@@ -10444,6 +10448,60 @@
         whiteberries: 0xF2EFE6, blackberries: 0x241A2E,
       };
 
+      // Ingredient colors used by alcohol recipes whose raw item has no
+      // recolorable sprite of its own. These feed mixedIngredientColor below.
+      const ALCOHOL_INGREDIENT_COLORS = {
+        needlegrain: 0x2F4A2E,
+        // Match ripe heftroot: vodka uses the animal-color shade-fill so the
+        // bottle keeps its painted highlights, shadows, and transparency.
+        heftroot: 0xF0D15A,
+      };
+      // Alcohol words accepted by normalizeAlcoholItemDef, shared with the
+      // drinking system's classification so every alcoholic output gets the
+      // same bottle treatment even when a new recipe is added later.
+      const ALCOHOL_ITEM_TERMS = new Set(['alcohol', 'wine', 'sake', 'vodka', 'nectar', 'airag', 'liquor', 'spirit', 'spirits', 'beer', 'ale', 'mead', 'cider']);
+
+      function isAlcoholItemDef(def) {
+        if (!def) return false;
+        // Normalized tags are checked exactly before the label/tag text fallback.
+        const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
+        if (tags.some(tag => ALCOHOL_ITEM_TERMS.has(tag))) return true;
+        // The fallback catches authored alcohol labels that omitted a canonical tag.
+        const searchable = `${def.label || ''} ${tags.join(' ')}`.toLowerCase();
+        return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirits?|beer|ale|mead|cider)\b/.test(searchable);
+      }
+
+      function ingredientColorForItem(key) {
+        // The resolved definition supplies colors for bottled milk/dew ingredients.
+        const def = ITEM_DEFS[key];
+        return def?.spriteColor ?? BERRY_COLORS[key] ?? ALCOHOL_INGREDIENT_COLORS[key] ?? null;
+      }
+
+      function mixedIngredientColor(ingredientKeys, fallback = 0x8A5FB0) {
+        // Valid ingredient colors are averaged here for multi-ingredient alcohol.
+        const colors = (ingredientKeys || []).map(ingredientColorForItem).filter(color => Number.isFinite(color));
+        if (!colors.length) return fallback;
+        // RGB totals are consumed by the average returned below.
+        const totals = colors.reduce((sum, color) => ({
+          r: sum.r + ((color >> 16) & 255),
+          g: sum.g + ((color >> 8) & 255),
+          b: sum.b + (color & 255),
+        }), { r: 0, g: 0, b: 0 });
+        // Count keeps each channel's ingredient average consistent.
+        const count = colors.length;
+        return (Math.round(totals.r / count) << 16)
+          | (Math.round(totals.g / count) << 8)
+          | Math.round(totals.b / count);
+      }
+
+      function normalizeAlcoholItemDef(def) {
+        if (!isAlcoholItemDef(def)) return def;
+        def.spriteIcon = 'bottle_wine.png';
+        def.spriteMode = 'keyed';
+        def.spriteColor = mixedIngredientColor(def.ingredientKeys, def.spriteColor ?? 0x8A5FB0);
+        return def;
+      }
+
       // The 7 Uumkao'ii dew colors and their per-color processed-item keys —
       // shared by getProcessingOutputs (squeezing dew -> milk+curds) and
       // getProcessingOutput's barrelAging branch (milk -> nectar). "white"
@@ -10490,21 +10548,21 @@
         if (methodId === 'drying' && isBerryKey(inputKey)) return { key: inputKey + 'Dried', icon: input.icon, label: 'Dried ' + input.label, cat: 'processed', sellPrice: Math.max(4, (input.sellPrice || 4) + 4), tags: ['Processed', 'Dried', 'Fruit'], desc: 'Dried berries. Dry-default crops are not valid drying inputs.' };
         if (methodId === 'barrelAging' && /Juice$/.test(inputKey)) {
           const berryKey = inputKey.replace(/Juice$/, '');
-          return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
+          return { key: inputKey.replace(/Juice$/, 'Wine'), icon: '🍷', label: input.label.replace(/ Juice$/, ' Wine'), cat: 'processed', sellPrice: Math.max(10, (input.sellPrice || 10) + 12), tags: ['Processed', 'Wine', 'Aged'], desc: 'Barrel-aged fruit wine.', ingredientKeys: [berryKey], spriteIcon: 'bottle_wine.png', spriteColor: BERRY_COLORS[berryKey], spriteMode: 'keyed' };
         }
         if (methodId === 'barrelAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Milk$/.test(inputKey)) {
           const color = dewColorFromMilkOrCurdsKey(inputKey);
           const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
-          return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+          return { key: inputKey.replace(/Milk$/, 'Nectar'), icon: '🍷', label: properLabel + " Uumkao'ii Nectar", cat: 'processed', sellPrice: Math.max(14, (input.sellPrice || 14) + 10), tags: ['Processed', 'Nectar', "Uumkao'ii", 'Aged'], desc: 'Barrel-aged Uumkao\'ii milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
         }
         if (methodId === 'barrelAging' && inputKey === 'needlegrain') {
-          return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
+          return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
         }
         if (methodId === 'barrelAging' && inputKey === 'heftroot') {
-          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, clear white.', spriteIcon: 'bottle_wine.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' };
+          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xF0D15A, spriteMode: 'keyed' };
         }
         if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
-          return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
+          return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };
         }
         if (methodId === 'vaseAging' && dewColorFromMilkOrCurdsKey(inputKey) && /Curds$/.test(inputKey)) {
           return { key: 'uumkaoiiCheese', icon: '🧀', label: "Uumkao'ii Cheese", cat: 'processed', sellPrice: 28, tags: ['Processed', 'Cheese', "Uumkao'ii", 'Aged'], desc: 'Vase-aged Uumkao\'ii curds — every dew color ferments into the same cheese.', spriteIcon: 'cheese.png', spriteColor: 0xD9A441, spriteMode: 'direct' };
@@ -10536,16 +10594,21 @@
       }
 
       function ensureProcessedItemDef(output) {
-        if (ITEM_DEFS[output.key]) return;
-        ITEM_DEFS[output.key] = {
+        if (ITEM_DEFS[output.key]) {
+          if (output.ingredientKeys?.length) ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
+          normalizeAlcoholItemDef(ITEM_DEFS[output.key]);
+          return;
+        }
+        ITEM_DEFS[output.key] = normalizeAlcoholItemDef({
           icon: output.icon,
           label: output.label,
           cat: output.cat || 'processed',
           sellPrice: output.sellPrice || 1,
           tags: output.tags || ['Processed'],
           desc: output.desc || 'Processed food item.',
+          ingredientKeys: output.ingredientKeys || [],
           ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
-        };
+        });
       }
 
       // ── Farm buildings: barns (movable, buildable via the Farm tab) ────
@@ -10717,6 +10780,7 @@
         clearTargetHighlights();
         interiorScene.add(playerMesh);
         interiorScene.add(playerGroundShadow);
+        interiorScene.add(toolHolder);
         refreshActionBar();
       }
 
@@ -11193,14 +11257,79 @@
       // as the instant, zero-risk fallback — el.color is only hidden once
       // the background-image actually lands, and never touched at all for
       // plain items or if the recolor fails.
+      function clearItemSpriteIcon(el) {
+        if (!el) return;
+        el.style.backgroundImage = '';
+        el.classList.remove('sprited-icon');
+        delete el.dataset.itemSpriteRequest;
+        delete el.dataset.itemSpriteState;
+        delete el.dataset.itemSpriteError;
+      }
+
+      // Tracks one success message per resolved sprite/color combination for
+      // the in-game debug log without logging every DOM icon instance.
+      const _itemSpriteReadyLogged = new Set();
+
       function applyItemSpriteIcon(el, def) {
-        if (!el || !def?.spriteIcon || !window.SpriteRecolor) return;
-        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/' + def.spriteIcon, def.spriteColor, def.spriteMode)
+        if (!el || !def) return;
+        normalizeAlcoholItemDef(def);
+        if (!def.spriteIcon) { clearItemSpriteIcon(el); return; }
+        // The source PNG replaces the emoji immediately; the recolored canvas
+        // upgrades it below without leaving alcohol as an emoji while loading.
+        const spritePath = 'assets/objectsprites/' + def.spriteIcon;
+        const targetColor = def.spriteColor ?? 0xFFFFFF;
+        const spriteMode = def.spriteMode || 'direct';
+        const requestKey = `${def.spriteIcon}|${targetColor}|${spriteMode}`;
+        // updateHud refreshes the item strip every frame. Keep an identical
+        // pending/ready request intact instead of resetting it to the source
+        // green PNG before the asynchronous recolor can be painted.
+        if (el.dataset.itemSpriteRequest === requestKey
+          && (el.dataset.itemSpriteState === 'pending' || el.dataset.itemSpriteState === 'ready')) return;
+        clearItemSpriteIcon(el);
+        el.dataset.itemSpriteRequest = requestKey;
+        el.dataset.itemSpriteState = 'pending';
+        el.style.backgroundImage = `url("${spritePath}")`;
+        el.classList.add('sprited-icon');
+        if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
+        window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
           .then(canvas => {
+            if (el.dataset.itemSpriteRequest !== requestKey) return;
             el.style.backgroundImage = `url(${canvas.toDataURL()})`;
-            el.classList.add('sprited-icon');
+            el.dataset.itemSpriteState = 'ready';
+            if (!_itemSpriteReadyLogged.has(requestKey)) {
+              _itemSpriteReadyLogged.add(requestKey);
+              window.__farmLog?.(`[item-icon] ready ${def.label || def.spriteIcon}: #${targetColor.toString(16).padStart(6, '0')} mode=${spriteMode}`, 'items');
+            }
           })
-          .catch(() => {});
+          .catch(error => {
+            if (el.dataset.itemSpriteRequest === requestKey) {
+              el.dataset.itemSpriteState = 'fallback';
+              // Pixel Probe reports this on mobile when the source image or canvas fails.
+              el.dataset.itemSpriteError = String(error?.message || error || 'unknown recolor error');
+            }
+            window.__farmLog?.(`[item-icon] ${def.label || def.spriteIcon} recolor failed; using source sprite: ${error.message}`, 'warn');
+          });
+      }
+
+      // Pixel Probe reads the active icon states so a mobile report can show
+      // whether color generation is pending, ready, or using its fallback.
+      function getItemSpriteIconDebug() {
+        const active = getActiveInventoryItem();
+        const def = active ? ITEM_DEFS[active.key] : null;
+        const inspect = el => el ? {
+          request: el.dataset.itemSpriteRequest || null,
+          state: el.dataset.itemSpriteState || 'emoji',
+          hasBackground: !!el.style.backgroundImage,
+          error: el.dataset.itemSpriteError || null,
+        } : null;
+        return {
+          key: active?.key || null,
+          spriteIcon: def?.spriteIcon || null,
+          targetColor: def?.spriteColor ?? null,
+          strip: inspect(itemIcon),
+          button: inspect(document.getElementById('itemBtn')),
+          keyboard: inspect(keyHudEl?.querySelector('.kh-item-icon')),
+        };
       }
 
       // ── Inventory panel state ──────────────────────────────────────
@@ -16764,12 +16893,9 @@
       // While heldMode === 'item' (an inventory item is selected — the arch
       // shows its use actions instead of a tool wheel), the equipped
       // tool/weapon mesh above is hidden and this plane shows instead: the
-      // active bag item's icon on a small PNG-style plane held a little in
-      // front of the chest, since these avatars have no arms to actually
-      // grip anything. Bag items only carry an emoji `icon` (no PNG sprite
-      // like TOOL_ITEM_DEFS), so the icon is rasterized onto a canvas once
-      // per glyph and reused as a texture, same idea as the tool/avatar PNG
-      // planes above just built from a drawn glyph instead of a loaded file.
+      // active bag item's sprite (or emoji fallback) on a small PNG-style
+      // plane. Ordinary items stay in front of the chest; potion and alcohol
+      // bottles use the same hand anchor and rest angle as a thrust weapon.
       const HELD_ITEM_PLANE_WIDTH = 0.45; // ~50% of the avatar's ~0.9 world-unit portrait width
       const HELD_ITEM_FORWARD_OFFSET = 0.1; // a quarter of the original 0.4 — just enough clearance from the chest
       // Per-item-key overrides for HELD_ITEM_PLANE_WIDTH — most icons read fine
@@ -16796,17 +16922,61 @@
 
       function makeHeldItemPlaneMesh(item) {
         if (!item) return null;
+        // The full item definition supplies procedural bottle art and tint data.
+        const def = ITEM_DEFS[item.key] || item;
+        normalizeAlcoholItemDef(def);
+        // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
         const geo = new THREE.PlaneGeometry(w, w);
+        // Authored items start with their PNG, so a bottle never flashes or
+        // remains as an emoji while the ingredient recolor resolves.
+        const spritePath = def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null;
+        // Plane is assigned below and read only from the texture loader's async callback.
+        let plane = null;
+        const fallbackTexture = spritePath
+          ? _toolTexLoader.load(spritePath, texture => {
+              if (plane.userData.disposed) return;
+              const image = texture.image;
+              if (image) plane.scale.y = image.naturalHeight / Math.max(1, image.naturalWidth);
+            }, undefined, error => window.__farmLog?.(`[held-item] ${item.key} source sprite failed: ${error.message}`, 'warn'))
+          : _getItemIconTexture(item.icon);
         const mat = new THREE.MeshBasicMaterial({
-          map: _getItemIconTexture(item.icon),
+          map: fallbackTexture,
           transparent: true,
           alphaTest: 0.05,
           side: THREE.DoubleSide,
         });
-        const plane = new THREE.Mesh(geo, mat);
+        plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
+        plane.userData.ownsTexture = !!spritePath;
+        if (def.spriteIcon && window.SpriteRecolor) {
+          window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor ?? 0xFFFFFF, def.spriteMode || 'direct')
+            .then(canvas => {
+              if (plane.userData.disposed) return;
+              // Authored texture replaces the emoji without rebuilding the held item.
+              const spriteTexture = new THREE.CanvasTexture(canvas);
+              spriteTexture.magFilter = THREE.NearestFilter;
+              spriteTexture.minFilter = THREE.NearestFilter;
+              const sourceTexture = plane.userData.ownsTexture ? plane.material.map : null;
+              plane.material.map = spriteTexture;
+              plane.material.needsUpdate = true;
+              plane.scale.y = canvas.height / Math.max(1, canvas.width);
+              plane.userData.ownsTexture = true;
+              sourceTexture?.dispose();
+            })
+            .catch(error => window.__farmLog?.(`[held-item] ${item.key} sprite failed: ${error.message}`, 'warn'));
+        }
         return plane;
+      }
+
+      function usesThrustHeldPose(item) {
+        if (!item) return false;
+        // Definition is checked for both procedural potion identity and alcohol tags.
+        const def = ITEM_DEFS[item.key] || item;
+        return item.key.startsWith('potion_')
+          || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
+          || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
+          || isAlcoholItemDef(def);
       }
 
       // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
@@ -16819,21 +16989,124 @@
       _markPngPlane(heldItemHolder);
 
       let _heldItemPlane = null, _heldItemKey = null;
-      function updateHeldItemHolder() {
+      // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
+      let _heldDrinkAnimT = 0;
+      // Full duration used to normalize the drink countdown into animation progress.
+      let _heldDrinkAnimDuration = 0;
+
+      function heldActionPoseAt(animation, progress) {
+        const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
+        const strikeFrac = clamp(Number(animation.strikeFrac) || 0.62, windupFrac + 0.01, 0.98);
+        const holdFrac = clamp(Number(animation.holdFrac) || 0.78, strikeFrac, 0.99);
+        const neutral = animation.poses?.neutral || {};
+        const windup = animation.poses?.windup || neutral;
+        const strike = animation.poses?.strike || windup;
+        const channel = key => fourPhaseLerp(progress, windupFrac, strikeFrac, holdFrac,
+          Number(windup[key]) || 0, Number(strike[key]) || 0, Number(neutral[key]) || 0);
+        return {
+          x: channel('x'), y: channel('y'), z: channel('z'),
+          pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
+          bodyYaw: channel('bodyYaw'),
+        };
+      }
+
+      function applyHeldDrinkPose(animation, progress) {
+        const pose = heldActionPoseAt(animation, progress);
+        heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+        heldItemHolder.scale.setScalar(0.5);
+        _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+        _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+        _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+        heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+      }
+
+      function triggerHeldDrinkAnimation(itemKey) {
+        const animation = window.HeldActionAnimations?.drink;
+        if (!animation) {
+          window.__farmLog?.('[held-item] Drink animation unavailable: HeldActionAnimations.drink is missing.', 'warn');
+          return 0;
+        }
+        // Consumption calls this before the next render update, so retain the
+        // plane that was visibly held instead of rebuilding from a newly
+        // selected stack after the consumed item reaches zero.
+        if (!_heldItemPlane || _heldItemKey !== itemKey) return 0;
+        _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
+        _heldDrinkAnimT = _heldDrinkAnimDuration;
+        heldItemHolder.visible = true;
+        window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
+        return Math.round(_heldDrinkAnimDuration * 1000);
+      }
+
+      function updateHeldItemHolder(dt = 0) {
         const item = getActiveInventoryItem();
+        const drinkAnimating = _heldDrinkAnimT > 0 && !!_heldItemPlane;
+        if (drinkAnimating) {
+          _heldDrinkAnimT = Math.max(0, _heldDrinkAnimT - Math.max(0, dt));
+          const progress = 1 - _heldDrinkAnimT / Math.max(0.001, _heldDrinkAnimDuration);
+          applyHeldDrinkPose(window.HeldActionAnimations.drink, progress);
+          heldItemHolder.visible = true;
+          return;
+        }
         if (!item) { heldItemHolder.visible = false; return; }
         if (item.key !== _heldItemKey) {
           if (_heldItemPlane) {
+            _heldItemPlane.userData.disposed = true;
+            // A loaded sprite CanvasTexture is item-owned; the emoji fallback is shared.
+            const ownedTexture = _heldItemPlane.userData.ownsTexture ? _heldItemPlane.material.map : null;
             heldItemHolder.remove(_heldItemPlane);
             _heldItemPlane.geometry.dispose();
             _heldItemPlane.material.dispose();
+            ownedTexture?.dispose();
           }
           _heldItemPlane = makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
+          window.__farmLog?.(`[held-item] ${item.key}: pose=${usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${ITEM_DEFS[item.key]?.spriteIcon || 'emoji'}`);
         }
-        heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
+        if (usesThrustHeldPose(item)) {
+          heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
+          heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
+          // Potion/alcohol sprites stay on the same hand pivot, but render
+          // half-size and end-for-end relative to the previous flat hold.
+          heldItemHolder.scale.setScalar(0.5);
+          if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        } else {
+          heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
+          heldItemHolder.rotation.set(0, 0, 0);
+          heldItemHolder.scale.setScalar(1);
+          if (_heldItemPlane) _heldItemPlane.rotation.x = 0;
+        }
         heldItemHolder.visible = !!_heldItemPlane;
+      }
+
+      // Pixel Probe reads this snapshot so interior attachment failures can
+      // be diagnosed from its mobile-friendly copied report.
+      function getHeldObjectDebug() {
+        const activeScene = getActiveScene();
+        // Captures the five mobile arch slots after refreshActionBar populates them.
+        const actionArch = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']
+          .map(id => document.getElementById(id))
+          .filter(Boolean)
+          .map(button => ({
+            id: button.id,
+            action: button.dataset.action || null,
+            hidden: button.classList.contains('abt-hidden'),
+            blocked: button.classList.contains('blocked'),
+          }));
+        return {
+          area: currentArea,
+          mode: heldMode,
+          toolParent: toolHolder.parent === activeScene ? 'active-scene' : (toolHolder.parent ? 'wrong-scene' : 'detached'),
+          toolVisible: !!toolHolder.visible,
+          heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
+          heldItemVisible: !!heldItemHolder.visible,
+          heldItemKey: _heldItemKey,
+          drinkAnimating: _heldDrinkAnimT > 0,
+          drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
+          actionArch,
+        };
       }
 
       // Pre-allocated objects to avoid per-frame GC in updateToolMesh
@@ -16888,9 +17161,9 @@
         // its use actions), show the held-item chest plane instead of
         // whatever tool/weapon is equipped; the tool mesh comes back the
         // moment the player returns to tool mode.
-        if (heldMode === 'item') {
+        if (heldMode === 'item' || _heldDrinkAnimT > 0) {
           toolHolder.visible = false;
-          updateHeldItemHolder();
+          updateHeldItemHolder(dt);
           return;
         }
         heldItemHolder.visible = false;
@@ -18987,13 +19260,12 @@
         if (_isZoneArea(currentArea)) {
           updateZoneWaterMeshes(currentArea);
         }
-        // The player can wield tools/weapons outside the farm too (town,
-        // exterior zones) — buildings/farmhouse interior intentionally
-        // exclude toolHolder/reticle meshes from their scene graph instead.
-        // A den's cavern is the one building exception: it's a boss-fight
-        // arena, so combat has to work there too (see _isCavernBuildingArea).
+        // Tools and held bag items render and animate in every playable map.
+        // Ordinary interiors still omit combat/reticle updates below; this
+        // visual pass does not enable farm or combat actions there.
+        updateToolMesh(dt);
+        // Combat and targeting remain limited to exterior maps and den caverns.
         if (currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea) || _isCavernBuildingArea(currentArea)) {
-          updateToolMesh(dt);
           updateCombatConeTrail();
           updateChargeAction();
           window.Combat?.update(dt);
@@ -19768,7 +20040,7 @@
           const slots = [];
           if (_iScroll > 0) slots.push({ type:'arrow', dir:-1, icon:'◀', label:'' });
           for (let i = 0; i < ITEM_VIS && _iScroll + i < total; i++)
-            slots.push({ type:'item', index:_iScroll+i, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
+            slots.push({ type:'item', index:_iScroll+i, key:stacks[_iScroll+i].key, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
           if (_iScroll + ITEM_VIS < total) slots.push({ type:'arrow', dir:1, icon:'▶', label:'' });
           const sn = slots.length, step = sn > 1 ? (ARC_S - ARC_E) / (sn - 1) : 0;
 
@@ -19797,6 +20069,9 @@
               requestAnimationFrame(() => { el.style.opacity = '1'; });
               newSlots.push({ angle: deg, el, data: s });
             }
+            const iconEl = newSlots[newSlots.length - 1].el.querySelector('.arc-icon');
+            if (s.type === 'item') applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key]);
+            else clearItemSpriteIcon(iconEl);
           });
 
           _arcSlots.forEach(s => {
@@ -20206,6 +20481,10 @@
         const selectedItem = getActiveInventoryItem();
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
+        const btns = computeActionButtons();
+        // Dynamic providers (including the asynchronously loaded consumable
+        // bridge) can change the resolved arch without changing tile/item state.
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -20215,11 +20494,9 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${actionButtonKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
-
-        const btns = computeActionButtons();
 
         // Update activeAction even without DOM rebuild
         const first = btns.find(b => b.allowed) || btns[0];
@@ -20444,7 +20721,7 @@
           parts.push(
             `<div class="kh-group">` +
             `<span class="kh-key">,</span><span class="kh-label"> </span>` +
-            `<span class="kh-item">${item.icon} ${item.label} ×${count}</span>` +
+            `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
             `<span class="kh-label"> </span><span class="kh-key">.</span>` +
             `</div>`
           );
@@ -20467,6 +20744,7 @@
         parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
 
         keyHudEl.innerHTML = parts.join('');
+        if (item) applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key]);
       }
 
       function contextualActionLabel(action, tile) {
@@ -20500,8 +20778,12 @@
           if (iBtnEl) iBtnEl.textContent = '□';
           const prevEl = document.getElementById('isPrevIcon');
           const nextEl = document.getElementById('isNextIcon');
+          clearItemSpriteIcon(itemIcon);
+          clearItemSpriteIcon(iBtnEl);
           if (prevEl) prevEl.textContent = '□';
           if (nextEl) nextEl.textContent = '□';
+          clearItemSpriteIcon(prevEl);
+          clearItemSpriteIcon(nextEl);
           return;
         }
         if (activeItemIndex >= n) activeItemIndex = 0;
@@ -20514,13 +20796,21 @@
         itemIcon.textContent  = curr.icon;
         itemName.textContent  = curr.label;
         if (iBtnEl) iBtnEl.textContent = curr.icon;
+        applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key]);
+        applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key]);
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)
         const prevEl = document.getElementById('isPrevIcon');
         const nextEl = document.getElementById('isNextIcon');
-        if (prevEl) prevEl.textContent = prev.icon;
-        if (nextEl) nextEl.textContent = next.icon;
+        if (prevEl) {
+          prevEl.textContent = prev.icon;
+          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key]);
+        }
+        if (nextEl) {
+          nextEl.textContent = next.icon;
+          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key]);
+        }
       }
       itemPrev.addEventListener('click', () => {
         cycleActiveInventoryItem(-1);
@@ -21854,6 +22144,8 @@
         getSitInteraction: () => sitInteraction,
         getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,
+        getHeldObjectDebug,
+        getItemSpriteIconDebug,
         SHOULDER_PET_PLANE_RENDER_ORDER,
         playerAttachmentAnchor,
         creatureAttachmentAnchor,
@@ -22891,6 +23183,7 @@
         calendar,
         clampInventoryStack,
         getActiveInventoryItem,
+        getHeldMode: () => heldMode,
         itemIconForKey,
         getHour: window.CalendarSystem.getHour,
         hasFarmPermission,
@@ -22904,6 +23197,7 @@
         getDeliveryLog: () => deliveryLog,
         getPendingOrders: () => pendingOrders,
         getMenuOpen: () => menuOpen,
+        triggerHeldDrinkAnimation,
       });
 
       window.ProceduralTasks?.init({

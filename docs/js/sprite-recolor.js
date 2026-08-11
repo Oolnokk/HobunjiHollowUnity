@@ -1,16 +1,10 @@
-// Sprite recolor utility — recolors an item/object PNG by replacing each
-// matching pixel's HUE and SATURATION with a target color's hue/saturation
-// while leaving that pixel's own VALUE (brightness) and ALPHA untouched.
-// This is the inverse of the luminance-multiply "shade fill" tint used by
-// creature-genetics-render.js/portrait-utils.js (which floods a flat target
-// RGB and only lets the source's luminance modulate its brightness,
-// discarding the source's own hue/saturation *and* not tracking its exact
-// per-pixel value) — here the source's shading/highlights survive exactly
-// because V comes straight from the source pixel, not a derived multiplier.
+// Sprite recolor utility for authored item/object PNGs. Keyed liquid fills
+// replace hue+saturation while retaining each pixel's painted HSV value and
+// alpha; direct whole-sprite fills retain the animal shade-fill method.
 // Two modes:
-//   - "keyed": only pixels near a source reference color (or the segment
-//     between two reference colors, for a shaded two-tone placeholder fill)
-//     get recolored; everything else (glass, cork, outline...) is untouched.
+//   - "keyed": only pixels whose hue is near the placeholder green get
+//     recolored, regardless of their saturation or value. Everything else
+//     (glass, cork, outline...) is untouched.
 //     Used by jar_liquid.png / bottle_potion.png / bottle_wine.png, whose
 //     placeholder liquid fill uses exactly #9ED775 (highlight) and #698F4E
 //     (shadow) plus antialiased blends between them.
@@ -23,80 +17,106 @@
   // The exact two placeholder-green tones authored into jar_liquid.png,
   // bottle_potion.png, and bottle_wine.png's liquid-fill region (verified
   // against the actual PNG pixel data: (158,215,117)=#9ED775 highlight,
-  // (105,143,78)=#698F4E shadow). "Near" means within KEY_TOLERANCE of the
-  // line segment between them, which catches every antialiased blend pixel
-  // while staying well clear of the grayish glass/cork detailing (~48-90
-  // units away) in all three sprites.
+  // (105,143,78)=#698F4E shadow). Both have an HSV hue near 95 degrees;
+  // hue-only matching deliberately includes the darkest shaded greens.
   const DEFAULT_KEY_A = [0x9E, 0xD7, 0x75];
   const DEFAULT_KEY_B = [0x69, 0x8F, 0x4E];
-  const KEY_TOLERANCE = 40;
+  const KEY_HUE_TOLERANCE = 35;
+
+  function clampByte(value) {
+    return Math.max(0, Math.min(255, Math.round(value)));
+  }
+
+  function relativeLuminance(r, g, b) {
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  }
 
   function rgbToHsv(r, g, b) {
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const d = max - min;
-    let h = 0;
-    if (d !== 0) {
-      if (max === r) h = ((g - b) / d) % 6;
-      else if (max === g) h = (b - r) / d + 2;
-      else h = (r - g) / d + 4;
-      h *= 60;
-      if (h < 0) h += 360;
+    const delta = max - min;
+    let hue = 0;
+    if (delta !== 0) {
+      if (max === r) hue = ((g - b) / delta) % 6;
+      else if (max === g) hue = (b - r) / delta + 2;
+      else hue = (r - g) / delta + 4;
+      hue *= 60;
+      if (hue < 0) hue += 360;
     }
-    const s = max === 0 ? 0 : d / max;
-    return [h, s, max];
+    return { h: hue, s: max === 0 ? 0 : delta / max, v: max };
   }
 
   function hsvToRgb(h, s, v) {
-    const c = v * s;
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    const m = v - c;
+    const hue = ((Number(h) % 360) + 360) % 360;
+    const chroma = v * s;
+    const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const offset = v - chroma;
     let r = 0, g = 0, b = 0;
-    if (h < 60)       { r = c; g = x; b = 0; }
-    else if (h < 120) { r = x; g = c; b = 0; }
-    else if (h < 180) { r = 0; g = c; b = x; }
-    else if (h < 240) { r = 0; g = x; b = c; }
-    else if (h < 300) { r = x; g = 0; b = c; }
-    else              { r = c; g = 0; b = x; }
-    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+    if (hue < 60) { r = chroma; g = secondary; }
+    else if (hue < 120) { r = secondary; g = chroma; }
+    else if (hue < 180) { g = chroma; b = secondary; }
+    else if (hue < 240) { g = secondary; b = chroma; }
+    else if (hue < 300) { r = secondary; b = chroma; }
+    else { r = chroma; b = secondary; }
+    return [clampByte((r + offset) * 255), clampByte((g + offset) * 255), clampByte((b + offset) * 255)];
   }
 
-  // hex: 0xRRGGBB integer (matches ALCHEMY_REAGENT_DEFS/THREE.Color convention
-  // used elsewhere in the codebase). Only hue+saturation are read from it —
-  // its own value/brightness is discarded, since every recolored pixel's
-  // value always comes from that pixel's own source value instead.
-  function targetHueSat(hex) {
-    const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
-    const [h, s] = rgbToHsv(r, g, b);
-    return [h, s];
+  function hueDistance(a, b) {
+    const difference = Math.abs(a - b) % 360;
+    return Math.min(difference, 360 - difference);
   }
 
-  function segmentDistSq(px, py, pz, ax, ay, az, bx, by, bz) {
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const apx = px - ax, apy = py - ay, apz = pz - az;
-    const ab2 = abx * abx + aby * aby + abz * abz;
-    let t = ab2 > 0 ? (apx * abx + apy * aby + apz * abz) / ab2 : 0;
-    t = Math.max(0, Math.min(1, t));
-    const dx = px - (ax + t * abx), dy = py - (ay + t * aby), dz = pz - (az + t * abz);
-    return dx * dx + dy * dy + dz * dz;
+  // Keep these defaults in lockstep with CreatureGeneticsRender's animal
+  // shade-fill so both systems respond to the same portrait tinting config.
+  function shadeFillConfig() {
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+    return {
+      shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
+      highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
+      neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
+      gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
+      preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
+      outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
+    };
   }
 
   function recolorImageData(data, targetHex, mode, opts) {
-    const [th, ts] = targetHueSat(targetHex);
-    const keyA = opts?.keyColors?.[0] || DEFAULT_KEY_A;
-    const keyB = opts?.keyColors?.[1] || DEFAULT_KEY_A;
-    const tol2 = (opts?.tolerance ?? KEY_TOLERANCE) ** 2;
+    const tr = (targetHex >> 16) & 255, tg = (targetHex >> 8) & 255, tb = targetHex & 255;
+    if (mode === 'keyed') {
+      const keyColor = opts?.keyColors?.[0] || DEFAULT_KEY_A;
+      const keyHue = Number.isFinite(Number(opts?.keyHue)) ? Number(opts.keyHue) : rgbToHsv(...keyColor).h;
+      const hueTolerance = Number.isFinite(Number(opts?.hueTolerance)) ? Number(opts.hueTolerance) : KEY_HUE_TOLERANCE;
+      const target = rgbToHsv(tr, tg, tb);
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const source = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+        if (hueDistance(source.h, keyHue) > hueTolerance) continue;
+        const [r, g, b] = hsvToRgb(target.h, target.s, source.v);
+        data[i] = r; data[i + 1] = g; data[i + 2] = b;
+      }
+      return;
+    }
+
+    // Direct whole-sprite fills continue to share the animal recolorer. The
+    // local fallback keeps standalone tools independent of its load order.
+    if (window.CreatureGeneticsRender?.recolorPixels) {
+      window.CreatureGeneticsRender.recolorPixels(data, [tr, tg, tb], null);
+      return;
+    }
+
+    const cfg = shadeFillConfig();
+    const neutral = Math.max(0.0001, cfg.neutralLuminance);
     for (let i = 0; i < data.length; i += 4) {
       const a = data[i + 3];
       if (a === 0) continue;
       const r = data[i], g = data[i + 1], b = data[i + 2];
-      if (mode === 'keyed') {
-        const d2 = segmentDistSq(r, g, b, keyA[0], keyA[1], keyA[2], keyB[0], keyB[1], keyB[2]);
-        if (d2 > tol2) continue;
-      }
-      const v = Math.max(r, g, b) / 255;
-      const [nr, ng, nb] = hsvToRgb(th, ts, v);
-      data[i] = nr; data[i + 1] = ng; data[i + 2] = nb;
+      const lum = relativeLuminance(r, g, b);
+      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
+      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
+      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
+      data[i] = clampByte(tr * shade);
+      data[i + 1] = clampByte(tg * shade);
+      data[i + 2] = clampByte(tb * shade);
     }
   }
 
@@ -109,8 +129,11 @@
     img = new Image();
     const p = new Promise((resolve, reject) => {
       img.onload = () => resolve(img);
-      img.onerror = reject;
+      img.onerror = () => reject(new Error('Failed to load recolorable sprite ' + spritePath));
     });
+    // Matches the animal-color image loader: CDN redirects can otherwise
+    // display normally but taint the canvas when getImageData reads it.
+    img.crossOrigin = 'anonymous';
     img.__loadPromise = p;
     img.src = spritePath;
     _imgCache.set(spritePath, img);
@@ -121,9 +144,9 @@
   // (spritePath, mode, targetHex) so repeated calls (e.g. every uumkao'ii
   // rendering the same dew color, or the same jar item appearing in several
   // inventory slots) reuse one canvas instead of re-decoding/re-walking pixels.
-  // opts: { tolerance, keyColors: [[r,g,b],[r,g,b]] } — only relevant to 'keyed'.
+  // opts: { keyHue, hueTolerance, keyColors: [[r,g,b]] } — keyed mode only.
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
-    const cacheKey = spritePath + '|' + mode + '|' + targetHex;
+    const cacheKey = 'hue-key-value-v2|' + spritePath + '|' + mode + '|' + targetHex;
     const cached = _canvasCache.get(cacheKey);
     if (cached) return Promise.resolve(cached);
     return loadImage(spritePath).then(img => {
@@ -135,6 +158,7 @@
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       recolorImageData(imageData.data, targetHex, mode, opts);
       ctx.putImageData(imageData, 0, 0);
+      window.__farmLog?.(`[sprite-recolor] ${mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'} ${spritePath} -> #${targetHex.toString(16).padStart(6, '0')}`, 'items');
       _canvasCache.set(cacheKey, canvas);
       return canvas;
     });
@@ -142,7 +166,7 @@
 
   window.SpriteRecolor = {
     getRecoloredCanvas,
-    rgbToHsv, hsvToRgb, targetHueSat,
-    DEFAULT_KEY_A, DEFAULT_KEY_B, KEY_TOLERANCE,
+    recolorImageData, relativeLuminance, shadeFillConfig,
+    DEFAULT_KEY_A, DEFAULT_KEY_B, KEY_HUE_TOLERANCE,
   };
 })();

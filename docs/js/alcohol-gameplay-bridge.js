@@ -310,10 +310,14 @@
     ].includes(tag));
   }
 
-  // Describes the selected, visibly held consumable without mutating inventory.
+  // Describes the selected held consumable without mutating inventory.
   // The action bar uses this to make consumption a normal configurable item action.
   function getHeldConsumable() {
-    if (!window.PlayerBodyTransformComposer?.hasVisibleHeldItem?.()) return false;
+    // Held mode changes synchronously when the mobile item dial is released;
+    // the rendered plane becomes visible on the following animation frame.
+    // Using semantic mode prevents that one-frame delay from caching an empty arch.
+    const heldMode = itemDeps?.getHeldMode?.();
+    if (heldMode != null ? heldMode !== 'item' : !window.PlayerBodyTransformComposer?.hasVisibleHeldItem?.()) return false;
 
     const active = itemDeps?.getActiveInventoryItem?.();
     const key = active?.key;
@@ -348,12 +352,17 @@
       if (!result) return false;
       itemDeps.showToast?.(result.message, result.ok !== false);
       if (result.ok !== false) {
+        // Used to retain the just-consumed bottle and lock repeat consumption
+        // until its authored raise/drink/return animation has completed.
+        const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key)) || 0;
         itemDeps.refreshItemScroll?.();
         itemDeps.buildInventoryGrid?.();
         itemDeps.refreshActionBar?.();
         itemDeps.saveMemberWorldData?.();
+        consumeLockUntil = performance.now() + Math.max(180, animationMs);
+      } else {
+        consumeLockUntil = performance.now() + 180;
       }
-      consumeLockUntil = performance.now() + 180;
       return true;
     }
 
