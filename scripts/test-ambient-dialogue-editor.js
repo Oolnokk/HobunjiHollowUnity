@@ -4,6 +4,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -12,6 +13,7 @@ const editor = read('docs/tools/ambient-dialogue-editor/index.html');
 const runtime = read('docs/js/ambient-dialogue.js');
 const config = JSON.parse(read('docs/config/dialogue/ambient-dialogue.json'));
 
+assert.doesNotThrow(() => new vm.Script(runtime), 'ambient dialogue runtime parses as JavaScript');
 assert(hub.includes('ambient-dialogue-editor/index.html'), 'tool hub links the Ambient Dialogue editor');
 assert(editor.includes('Greeting pool'), 'editor exposes NPC greeting settings');
 assert(editor.includes('Treasure announcements'), 'editor exposes animal treasure announcements');
