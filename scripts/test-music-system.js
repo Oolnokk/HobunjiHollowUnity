@@ -31,6 +31,10 @@ assert.match(music, /cue conditions expired[\s\S]*?bgm conditions expired/,
   'active authored conditions are rechecked while music is playing');
 assert.match(music, /isAudioEntryEligible\(cue, currentArea\)/,
   'ineligible weather/map/time cues are excluded before selection');
+assert.match(music, /if \(track\.rainingOnly && !deps\.calendar\.isRaining\) return false;/,
+  'rain-only BGM uses the live rain window rather than the daily forecast');
+assert.match(music, /stopMusicSlot\('currentBgm', 'bgm conditions expired', musicFadeConfig\(\)\.songFadeOutMs\)/,
+  'BGM whose live conditions expire uses the slow authored song fade');
 assert.match(music, /Math\.exp\(-4\.6 \* elapsedMs \/ fadeMs\)/,
   'looping background layers converge smoothly when weather or area changes');
 assert.match(music, /if \(intensity <= 0\) return \{ gentle: 0, mid: 0, heavy: 0 \};/,
@@ -48,7 +52,11 @@ assert.match(config, /"nightbugsVolume": 0\.34/,
   'nightbugs use the reviewed post-normalization mix level');
 assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3"/,
   'runtime config uses the normalized nightbugs recording');
-assert.match(index, /music-system\.js\?v=20260811b/,
+assert.equal((config.match(/"url": "assets\/audio\/music\/bgm\/bgm_farm1\.m4a", "fallback": true, "rainingOnly": true/g) || []).length, 2,
+  'the shared farm/town theme is authored as rain-only in both playlists');
+assert.match(index, /scratchbones-config\.js\?v=20260811b/,
+  'the browser cache key loads the rain-only playlist');
+assert.match(index, /music-system\.js\?v=20260811c/,
   'the browser cache key loads the fixed scheduler');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,

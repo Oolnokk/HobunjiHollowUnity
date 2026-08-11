@@ -437,16 +437,16 @@
     describeAudioConfigForArea(area);
   }
 
-  function stopMusicSlot(key, reason = 'conditions changed') {
-    const fade = musicFadeConfig();
+  function stopMusicSlot(key, reason = 'conditions changed', fadeMs = musicFadeConfig().interruptFadeMs) {
     const snd = _ambientCueState[key];
     _ambientCueState[key] = null;
     if (!snd) return false;
-    if (snd._stopMusic) snd._stopMusic(fade.interruptFadeMs);
+    const stopFadeMs = Math.max(0, Number(fadeMs) || 0); // Controls the fade and replacement delay for this retiring scheduler slot.
+    if (snd._stopMusic) snd._stopMusic(stopFadeMs);
     else retireMusicTrack(snd);
     // Hold off starting anything new until this one has actually faded
     // out, not just been handed off — see blockUntil's declaration.
-    _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + fade.interruptFadeMs);
+    _ambientCueState.blockUntil = Math.max(_ambientCueState.blockUntil, performance.now() + stopFadeMs);
     audioDebug('fading ' + key + ' reason=' + reason + ' url=' + snd.src, 'music-stop-' + key + '-' + reason + '-' + snd.src, 0, key === 'currentCue' ? 'cue' : 'bgm');
     return true;
   }
@@ -504,6 +504,7 @@
 
   function isBgmTrackEligible(track, area = deps.getCurrentArea(), { alreadyPlaying = false } = {}) {
     if (!track?.url) return false;
+    if (track.rainingOnly && !deps.calendar.isRaining) return false;
     if (track.nightOnly && !isNightTime()) return false;
     if (!isSunriseBgmEligible(track)) return false;
     if (!alreadyPlaying && track.oncePerDay && _dailyBgmPlayed.has(bgmDailyKey(track))) return false;
@@ -592,7 +593,9 @@
       _ambientCueState.nextAt = _ambientCueState.blockUntil;
     }
     if (_ambientCueState.currentBgm && !areaBgmIncludesTrack(currentArea, _ambientCueState.currentBgm)) {
-      stopMusicSlot('currentBgm', 'bgm conditions expired');
+      // Authored BGM conditions (including active rain) should dissolve
+      // musically rather than cut with the short map/combat interruption.
+      stopMusicSlot('currentBgm', 'bgm conditions expired', musicFadeConfig().songFadeOutMs);
       _ambientCueState.mode = 'bgm';
       _ambientCueState.nextAt = _ambientCueState.blockUntil;
     }
@@ -952,6 +955,7 @@
       ' url=' + (activeSnd?._trackUrl || 'none') +
       ' blockForMs=' + Math.max(0, Math.round(_ambientCueState.blockUntil - performance.now())) +
       ' conditions=' + [world.maps, world.weather, world.timesOfDay, world.seasons, world.weekdays].join('/') +
+      ' rainActive=' + deps.calendar.isRaining +
       ' ctxState=' + (_musicAudioCtx?.state || 'none') +
       ' liveGain=' + (gainNode ? gainNode.gain.gain.value.toFixed(3) : 'n/a') +
       ' targetGain=' + (gainNode ? gainNode.target.toFixed(3) : 'n/a') +
