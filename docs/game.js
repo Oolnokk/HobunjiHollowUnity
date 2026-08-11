@@ -15118,13 +15118,23 @@
 
       function _disposeMergedWaterMesh(sceneObj, mesh, statKey) {
         if (!mesh) return null;
-        sceneObj.remove(mesh);
+        // A town preview/dev-area switch can run one frame before the town's
+        // lazily-built scene exists. The geometry still needs disposing, but
+        // there is no scene parent to detach it from in that frame.
+        if (sceneObj?.remove) sceneObj.remove(mesh);
         mesh.geometry.dispose();
         window.MergedWaterRenderer.clearStats(statKey);
         return null;
       }
 
       function _buildMergedWaterMesh(sceneObj, cells, options) {
+        // Do not allocate an orphan geometry while a lazy scene is still
+        // loading. Its dirty flag remains set at the caller, so the normal
+        // rebuild runs as soon as the destination scene becomes available.
+        if (!sceneObj?.add) {
+          debugLog(`[water-render] deferred ${options?.statKey || options?.name || 'merged water'}: target scene is not ready`, 'warn');
+          return null;
+        }
         const mesh = window.MergedWaterRenderer.createMesh(THREE, mergedWaterMaterial, cells, {
           joinThreshold: SLAB_H * 0.55,
           yOffset: 0.015,
@@ -18047,6 +18057,10 @@
       // so town weather can fill them with water exactly like farm trenches.
       function updateTownWaterMeshes() {
         waterTime += 0.016;
+        // townScene is intentionally built lazily. Dev/cutscene area changes
+        // can select town one frame before that build completes; keep the
+        // dirty flag intact so this update retries once the scene is ready.
+        if (!townScene) return;
         const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
 
         if (_townWaterSimDirty) {
