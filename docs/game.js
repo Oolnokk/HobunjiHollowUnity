@@ -17125,7 +17125,6 @@
         actionLocks: window.CharacterActionLocks,
         playerParticipantId: PLAYER_ACTION_LOCK_ID,
         npcParticipantId: npcId => window.NpcCharacterState?.participantId?.(npcId) || `npc:${npcId || 'unknown'}`,
-        modelWidthFallback: MODEL_W,
         clamp,
         getCurrentArea: () => currentArea,
         getActiveScene,

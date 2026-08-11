@@ -20,8 +20,8 @@
 
   function npcHandAnchor(walker) {
     const avatar = walker?.avatarGroup;
-    const width = Number(avatar?.userData?.portraitModelWidth) || Number(deps?.modelWidthFallback) || 1;
-    const height = Number(avatar?.userData?.portraitModelHeight) || Number(deps?.modelWidthFallback) || 1;
+    const width = Number(avatar?.userData?.portraitModelWidth) || 1;
+    const height = Number(avatar?.userData?.portraitModelHeight) || 1;
     return {
       x: Number.isFinite(Number(avatar?.userData?.handAttachX)) ? Number(avatar.userData.handAttachX) : -width / 2,
       y: Number.isFinite(Number(avatar?.userData?.handAttachY)) ? Number(avatar.userData.handAttachY) : height / 2,

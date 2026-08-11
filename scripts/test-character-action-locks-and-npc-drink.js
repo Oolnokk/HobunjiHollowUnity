@@ -59,6 +59,8 @@ assert.match(interaction, /progress >= \(Number\(animation\.strikeFrac\)/,
   'the swig effect lands at the authored drink strike rather than before handoff');
 assert.match(game, /NpcDrinkInteraction\?\.init[\s\S]*?getPlayerDrinkSourceTransform[\s\S]*?cancelPlayerToolAnimation/,
   'game.js exposes only dependency adapters needed for its private player state');
+assert.doesNotMatch(game, /modelWidthFallback:\s*MODEL_W/,
+  'drink interaction initialization cannot reference makeNpcWalker-local avatar constants');
 assert.match(game, /NpcDrinkInteraction\?\.update\?\.\(dt\)/,
   'the game loop advances the decoupled interaction module through its public API');
 assert.doesNotMatch(game, /activeNpcDrinkInteractions|phase: 'handoff'|slerpQuaternions|finishNpcDrinkInteraction/,
