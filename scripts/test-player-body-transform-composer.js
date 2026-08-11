@@ -39,6 +39,9 @@ assert.ok(composer.includes('currentOwnedRoots'), 'composer rediscovers current 
 assert.ok(composer.includes('discoverAvatarBodyRoots'), 'composer recursively discovers nested player PNG visual roots');
 assert.ok(composer.includes('isDescendantOf'), 'composer can dedupe nested visual branches before applying a body delta');
 assert.ok(composer.includes("mode === 'override'"), 'composer supports physical-state override channels');
+assert.ok(composer.includes('hierarchyWorldQuaternion'), 'composer derives facing orientation from quaternion hierarchy only');
+assert.ok(composer.includes('target.multiply(chain[i].quaternion)'), 'hierarchy orientation is composed parent-first without matrix decomposition');
+assert.doesNotMatch(composer, /\.\s*getWorldQuaternion\s*\(/, 'mirrored matrix scale cannot be interpreted as a body-facing rotation');
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
 assert.ok(attachments.includes("registerExternalRootProvider('shoulderPets'"), 'shoulder pets register in the attachment adapter');
