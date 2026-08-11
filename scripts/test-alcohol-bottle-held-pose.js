@@ -29,6 +29,21 @@ assert.match(game,
 assert.match(game,
   /SpriteRecolor\.getRecoloredCanvas\(spritePath,[\s\S]*?plane\.scale\.y = canvas\.height/,
   'held authored item sprites preserve their recolor and source aspect ratio');
+assert.match(game,
+  /function refreshItemScroll[\s\S]*?applyItemSpriteIcon\(itemIcon, ITEM_DEFS\[curr\.key\]\)[\s\S]*?applyItemSpriteIcon\(iBtnEl, ITEM_DEFS\[curr\.key\]\)/,
+  'the current-item HUD and item button upgrade alcohol emoji to the bottle sprite');
+assert.match(game,
+  /style\.backgroundImage = `url\("\$\{spritePath\}"\)`;[\s\S]*?if \(!window\.SpriteRecolor\) return;/,
+  'authored item icons show their source PNG even if procedural recoloring is unavailable');
+assert.match(game,
+  /kh-item-icon[\s\S]*?applyItemSpriteIcon\(keyHudEl\.querySelector\('\.kh-item-icon'\), ITEM_DEFS\[item\.key\]\)/,
+  'the desktop keyboard HUD upgrades alcohol emoji to the bottle sprite');
+assert.match(game,
+  /slots\.push\(\{ type:'item',[^\n]*key:stacks\[[^\n]*[\s\S]*?applyItemSpriteIcon\(iconEl, ITEM_DEFS\[s\.key\]\)/,
+  'the item-selection arc upgrades alcohol emoji to the bottle sprite');
+assert.match(game,
+  /const fallbackTexture = spritePath[\s\S]*?_toolTexLoader\.load\(spritePath/,
+  'held authored items start with their PNG rather than an emoji while recoloring');
 
 for (const term of ['beer', 'ale', 'mead', 'cider']) {
   assert(game.includes(`'${term}'`), `${term} is recognized by the visual alcohol classifier`);

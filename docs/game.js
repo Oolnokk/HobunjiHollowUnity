@@ -11250,16 +11250,32 @@
       // as the instant, zero-risk fallback — el.color is only hidden once
       // the background-image actually lands, and never touched at all for
       // plain items or if the recolor fails.
+      function clearItemSpriteIcon(el) {
+        if (!el) return;
+        el.style.backgroundImage = '';
+        el.classList.remove('sprited-icon');
+        delete el.dataset.itemSpriteRequest;
+      }
+
       function applyItemSpriteIcon(el, def) {
         if (!el || !def) return;
+        clearItemSpriteIcon(el);
         normalizeAlcoholItemDef(def);
-        if (!def.spriteIcon || !window.SpriteRecolor) return;
-        window.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/' + def.spriteIcon, def.spriteColor, def.spriteMode)
+        if (!def.spriteIcon) return;
+        // The source PNG replaces the emoji immediately; the recolored canvas
+        // upgrades it below without leaving alcohol as an emoji while loading.
+        const spritePath = 'assets/objectsprites/' + def.spriteIcon;
+        const requestKey = `${def.spriteIcon}|${def.spriteColor}|${def.spriteMode}`;
+        el.dataset.itemSpriteRequest = requestKey;
+        el.style.backgroundImage = `url("${spritePath}")`;
+        el.classList.add('sprited-icon');
+        if (!window.SpriteRecolor) return;
+        window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor, def.spriteMode)
           .then(canvas => {
+            if (el.dataset.itemSpriteRequest !== requestKey) return;
             el.style.backgroundImage = `url(${canvas.toDataURL()})`;
-            el.classList.add('sprited-icon');
           })
-          .catch(() => {});
+          .catch(error => window.__farmLog?.(`[item-icon] ${def.label || def.spriteIcon} recolor failed; using source sprite: ${error.message}`, 'warn'));
       }
 
       // ── Inventory panel state ──────────────────────────────────────
@@ -16849,19 +16865,28 @@
         // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
         const geo = new THREE.PlaneGeometry(w, w);
-        // Emoji is the immediate fallback while an authored sprite loads asynchronously.
-        const fallbackTexture = _getItemIconTexture(item.icon);
+        // Authored items start with their PNG, so a bottle never flashes or
+        // remains as an emoji while the ingredient recolor resolves.
+        const spritePath = def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null;
+        // Plane is assigned below and read only from the texture loader's async callback.
+        let plane = null;
+        const fallbackTexture = spritePath
+          ? _toolTexLoader.load(spritePath, texture => {
+              if (plane.userData.disposed) return;
+              const image = texture.image;
+              if (image) plane.scale.y = image.naturalHeight / Math.max(1, image.naturalWidth);
+            }, undefined, error => window.__farmLog?.(`[held-item] ${item.key} source sprite failed: ${error.message}`, 'warn'))
+          : _getItemIconTexture(item.icon);
         const mat = new THREE.MeshBasicMaterial({
           map: fallbackTexture,
           transparent: true,
           alphaTest: 0.05,
           side: THREE.DoubleSide,
         });
-        const plane = new THREE.Mesh(geo, mat);
+        plane = new THREE.Mesh(geo, mat);
         plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
+        plane.userData.ownsTexture = !!spritePath;
         if (def.spriteIcon && window.SpriteRecolor) {
-          // Sprite path is consumed by SpriteRecolor's cached image pipeline.
-          const spritePath = 'assets/objectsprites/' + def.spriteIcon;
           window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor ?? 0xFFFFFF, def.spriteMode || 'direct')
             .then(canvas => {
               if (plane.userData.disposed) return;
@@ -16869,10 +16894,12 @@
               const spriteTexture = new THREE.CanvasTexture(canvas);
               spriteTexture.magFilter = THREE.NearestFilter;
               spriteTexture.minFilter = THREE.NearestFilter;
+              const sourceTexture = plane.userData.ownsTexture ? plane.material.map : null;
               plane.material.map = spriteTexture;
               plane.material.needsUpdate = true;
               plane.scale.y = canvas.height / Math.max(1, canvas.width);
               plane.userData.ownsTexture = true;
+              sourceTexture?.dispose();
             })
             .catch(error => window.__farmLog?.(`[held-item] ${item.key} sprite failed: ${error.message}`, 'warn'));
         }
@@ -19860,7 +19887,7 @@
           const slots = [];
           if (_iScroll > 0) slots.push({ type:'arrow', dir:-1, icon:'◀', label:'' });
           for (let i = 0; i < ITEM_VIS && _iScroll + i < total; i++)
-            slots.push({ type:'item', index:_iScroll+i, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
+            slots.push({ type:'item', index:_iScroll+i, key:stacks[_iScroll+i].key, icon:stacks[_iScroll+i].icon, label:stacks[_iScroll+i].label });
           if (_iScroll + ITEM_VIS < total) slots.push({ type:'arrow', dir:1, icon:'▶', label:'' });
           const sn = slots.length, step = sn > 1 ? (ARC_S - ARC_E) / (sn - 1) : 0;
 
@@ -19889,6 +19916,9 @@
               requestAnimationFrame(() => { el.style.opacity = '1'; });
               newSlots.push({ angle: deg, el, data: s });
             }
+            const iconEl = newSlots[newSlots.length - 1].el.querySelector('.arc-icon');
+            if (s.type === 'item') applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key]);
+            else clearItemSpriteIcon(iconEl);
           });
 
           _arcSlots.forEach(s => {
@@ -20525,7 +20555,7 @@
           parts.push(
             `<div class="kh-group">` +
             `<span class="kh-key">,</span><span class="kh-label"> </span>` +
-            `<span class="kh-item">${item.icon} ${item.label} ×${count}</span>` +
+            `<span class="kh-item"><span class="kh-item-icon">${item.icon}</span> ${item.label} ×${count}</span>` +
             `<span class="kh-label"> </span><span class="kh-key">.</span>` +
             `</div>`
           );
@@ -20548,6 +20578,7 @@
         parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
 
         keyHudEl.innerHTML = parts.join('');
+        if (item) applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key]);
       }
 
       function contextualActionLabel(action, tile) {
@@ -20581,8 +20612,12 @@
           if (iBtnEl) iBtnEl.textContent = '□';
           const prevEl = document.getElementById('isPrevIcon');
           const nextEl = document.getElementById('isNextIcon');
+          clearItemSpriteIcon(itemIcon);
+          clearItemSpriteIcon(iBtnEl);
           if (prevEl) prevEl.textContent = '□';
           if (nextEl) nextEl.textContent = '□';
+          clearItemSpriteIcon(prevEl);
+          clearItemSpriteIcon(nextEl);
           return;
         }
         if (activeItemIndex >= n) activeItemIndex = 0;
@@ -20595,13 +20630,21 @@
         itemIcon.textContent  = curr.icon;
         itemName.textContent  = curr.label;
         if (iBtnEl) iBtnEl.textContent = curr.icon;
+        applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key]);
+        applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key]);
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)
         const prevEl = document.getElementById('isPrevIcon');
         const nextEl = document.getElementById('isNextIcon');
-        if (prevEl) prevEl.textContent = prev.icon;
-        if (nextEl) nextEl.textContent = next.icon;
+        if (prevEl) {
+          prevEl.textContent = prev.icon;
+          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key]);
+        }
+        if (nextEl) {
+          nextEl.textContent = next.icon;
+          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key]);
+        }
       }
       itemPrev.addEventListener('click', () => {
         cycleActiveInventoryItem(-1);
