@@ -16,6 +16,8 @@
   "use strict";
   const SOURCE_MODE_KEY = 'hobunji_db_source_mode_v1'; // 'repo' | 'local'
   const OVERRIDE_KEY_PREFIX = 'hobunji_local_db_override_v1_';
+  const NPC_SCHEDULE_OVERRIDES_PATH = 'config/npcs/schedule-overrides.json'; // Runtime-authored schedule corrections kept out of game.js and the giant NPC database.
+  const NPC_SCHEDULE_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to expand presence-dependent schedule choices deterministically at load time.
 
   // The set of repo-tracked JSON databases this system knows how to
   // override. `repoPath` is relative to docs/ (same base every other fetch
@@ -185,6 +187,161 @@
     return merged;
   }
 
+  function _scheduleTimeMinutes(value) {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+    const hours = Number(match[1]); // Used to convert an authored HH:MM schedule time to minutes after midnight.
+    const minutes = Number(match[2]); // Used with hours to compare schedule windows numerically.
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }
+
+  function _scheduleTimeString(minutes) {
+    const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440; // Used to serialize generated schedule boundaries back to HH:MM.
+    return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
+  }
+
+  function _ruleRunsOnDay(rule, day) {
+    if (rule?.day) return rule.day === day;
+    if (Array.isArray(rule?.days)) return rule.days.includes(day);
+    return true;
+  }
+
+  function _ruleActiveAt(rule, day, minute) {
+    if (!rule || rule.contentIncomplete || !_ruleRunsOnDay(rule, day)) return false;
+    const start = _scheduleTimeMinutes(rule.start ?? rule.from); // Used as the inclusive start of this authored schedule window.
+    const end = _scheduleTimeMinutes(rule.end ?? rule.to); // Used as the exclusive end of this authored schedule window.
+    if (start == null || end == null || start === end) return false;
+    return start < end ? minute >= start && minute < end : minute >= start || minute < end;
+  }
+
+  function _ruleTargetMap(rule, hooks) {
+    return rule?.mapId || rule?.area || hooks?.defaultMapId || '';
+  }
+
+  function _activeScheduleRule(npc, day, minute) {
+    const rules = npc?.scheduleHooks?.rules || []; // Used in authored priority order, matching game.js's first-active-rule behavior.
+    return rules.find(rule => _ruleActiveAt(rule, day, minute)) || null;
+  }
+
+  function _matchingStationRule(rule, stationId) {
+    return !!rule && (rule.stationId === stationId || rule.sourceStationId === stationId);
+  }
+
+  function _applyStationRedirect(merged, redirect) {
+    const npc = merged.npcs.find(entry => entry.id === redirect.npcId); // Used to scope the station redirect to one NPC instead of globally rewriting shared station ids.
+    const hooks = npc?.scheduleHooks;
+    if (!hooks || !redirect.fromStationId || !redirect.toStationId) return;
+    for (const rule of hooks.rules || []) {
+      if (!_matchingStationRule(rule, redirect.fromStationId)) continue;
+      if (!rule.sourceStationId) rule.sourceStationId = redirect.fromStationId;
+      rule.stationId = redirect.toStationId;
+      if (redirect.mapId) rule.mapId = redirect.mapId;
+      delete rule.c;
+      delete rule.r;
+      delete rule.position;
+    }
+    if (hooks.defaultStationId === redirect.fromStationId || hooks.defaultStationId === redirect.toStationId) {
+      hooks.defaultStationId = redirect.toStationId;
+    }
+  }
+
+  function _applyPositionRedirect(merged, redirect) {
+    const npc = merged.npcs.find(entry => entry.id === redirect.npcId); // Used to move one NPC's station-backed activity without rewriting the large town map file.
+    const hooks = npc?.scheduleHooks;
+    if (!hooks || !redirect.fromStationId || !Number.isFinite(redirect.c) || !Number.isFinite(redirect.r)) return;
+    for (const rule of hooks.rules || []) {
+      if (!_matchingStationRule(rule, redirect.fromStationId)) continue;
+      if (!rule.sourceStationId) rule.sourceStationId = redirect.fromStationId;
+      delete rule.stationId;
+      rule.c = redirect.c;
+      rule.r = redirect.r;
+      if (redirect.mapId) rule.mapId = redirect.mapId;
+    }
+  }
+
+  function _presenceBoundaries(choice, npcById, day) {
+    const start = _scheduleTimeMinutes(choice.from); // Used as the beginning of the conditional social window.
+    const end = _scheduleTimeMinutes(choice.to); // Used as the end of the conditional social window.
+    if (start == null || end == null || start >= end) return [];
+    const boundaries = new Set([start, end]); // Used to split only where a watched NPC could change schedule target.
+    for (const npcId of choice.whenAnyNpcIds || []) {
+      const watched = npcById.get(npcId);
+      for (const rule of watched?.scheduleHooks?.rules || []) {
+        if (!_ruleRunsOnDay(rule, day) || rule.contentIncomplete) continue;
+        const ruleStart = _scheduleTimeMinutes(rule.start ?? rule.from);
+        const ruleEnd = _scheduleTimeMinutes(rule.end ?? rule.to);
+        if (ruleStart != null && ruleStart > start && ruleStart < end) boundaries.add(ruleStart);
+        if (ruleEnd != null && ruleEnd > start && ruleEnd < end) boundaries.add(ruleEnd);
+      }
+    }
+    return [...boundaries].sort((a, b) => a - b);
+  }
+
+  function _makePresenceRule(choice, day, from, to, visiting) {
+    const target = visiting ? choice.whenPresent : choice.fallback; // Used to choose the family visit seat or the ordinary avoidance seat for this segment.
+    return {
+      day,
+      from: _scheduleTimeString(from),
+      to: _scheduleTimeString(to),
+      mapId: target.mapId,
+      stationId: target.stationId,
+      activity: target.activity || '',
+      sourceStationId: choice.replaceStationId,
+      generatedScheduleOverride: choice.id,
+    };
+  }
+
+  function _applyPresenceChoice(merged, choice) {
+    const npcById = new Map(merged.npcs.map(npc => [npc.id, npc])); // Used both for the target NPC and the family members whose schedules decide the destination.
+    const npc = npcById.get(choice.npcId);
+    const hooks = npc?.scheduleHooks;
+    if (!hooks || !choice.id || !choice.replaceStationId || !choice.whenPresent || !choice.fallback) return;
+    const rules = hooks.rules || [];
+    let insertionIndex = rules.findIndex(rule => _matchingStationRule(rule, choice.replaceStationId) || rule.generatedScheduleOverride === choice.id); // Used to preserve the original rule priority relative to day-off rules.
+    if (insertionIndex < 0) return;
+    hooks.rules = rules.filter(rule => !_matchingStationRule(rule, choice.replaceStationId) && rule.generatedScheduleOverride !== choice.id);
+    insertionIndex = Math.min(insertionIndex, hooks.rules.length);
+
+    const generated = [];
+    for (const day of NPC_SCHEDULE_WEEKDAYS) {
+      const boundaries = _presenceBoundaries(choice, npcById, day);
+      for (let i = 0; i + 1 < boundaries.length; i++) {
+        const from = boundaries[i];
+        const to = boundaries[i + 1];
+        if (to <= from) continue;
+        const probeMinute = from + (to - from) / 2; // Used to inspect the stable schedule state within this boundary-delimited segment.
+        const visiting = (choice.whenAnyNpcIds || []).some(npcId => {
+          const watched = npcById.get(npcId);
+          const active = _activeScheduleRule(watched, day, probeMinute);
+          return !!active && _ruleTargetMap(active, watched?.scheduleHooks) === choice.whenPresent.mapId;
+        });
+        const next = _makePresenceRule(choice, day, from, to, visiting);
+        const prev = generated[generated.length - 1];
+        if (prev && prev.day === next.day && prev.to === next.from && prev.mapId === next.mapId
+          && prev.stationId === next.stationId && prev.activity === next.activity) {
+          prev.to = next.to;
+        } else {
+          generated.push(next);
+        }
+      }
+    }
+    hooks.rules.splice(insertionIndex, 0, ...generated);
+  }
+
+  // Applies small, reviewable schedule corrections after loading either the
+  // repo NPC database or a local editor override. This keeps map movement and
+  // relationship-aware routine policy out of game.js while avoiding direct
+  // hand-edits to the very large NPC database for every town-layout tweak.
+  function applyNpcScheduleOverrides(npcDatabase, scheduleOverrides) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs) || !scheduleOverrides) return npcDatabase;
+    const merged = JSON.parse(JSON.stringify(npcDatabase)); // Used as a non-mutating NPC database copy for composed runtime schedules.
+    for (const redirect of scheduleOverrides.stationRedirects || []) _applyStationRedirect(merged, redirect);
+    for (const redirect of scheduleOverrides.positionRedirects || []) _applyPositionRedirect(merged, redirect);
+    for (const choice of scheduleOverrides.presenceChoices || []) _applyPresenceChoice(merged, choice);
+    return merged;
+  }
+
   // What game.js/combat-config-loader.js actually call at boot in place of a
   // bare fetch(repoPath): local override wins only when the player has opted
   // into 'local' source mode AND actually saved one for this id; otherwise
@@ -194,13 +351,21 @@
   async function loadDatabase(id) {
     const data = await _loadRawDatabase(id); // Used as the selected raw local/repo database before optional composition.
     if (id !== 'npcDatabase') return data;
+    let composed = data; // Used to carry independent schedule and shop composition forward even if either optional source fails.
+    try {
+      const resp = await fetch(NPC_SCHEDULE_OVERRIDES_PATH); // Used to load small repo-authored schedule corrections independently of local database selection.
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      composed = applyNpcScheduleOverrides(composed, await resp.json());
+    } catch (error) {
+      console.warn('[LocalDBOverrides] Could not compose NPC schedule overrides:', error);
+    }
     try {
       const shopStock = await _loadRawDatabase('shopStock'); // Used to compose shopkeeper access trees into the loaded NPC database.
-      return applyShopDialogueAccess(data, shopStock);
+      composed = applyShopDialogueAccess(composed, shopStock);
     } catch (error) {
       console.warn('[LocalDBOverrides] Could not compose Shop or Chat dialogue trees:', error);
-      return data;
     }
+    return composed;
   }
 
   window.LocalDBOverrides = {
@@ -209,5 +374,6 @@
     hasOverride, getOverride, setOverride, clearOverride,
     listStatuses, loadDatabase,
     applyShopDialogueAccess,
+    applyNpcScheduleOverrides,
   };
 })();
