@@ -45,6 +45,13 @@ assert.doesNotMatch(composer, /\.\s*getWorldQuaternion\s*\(/, 'mirrored matrix s
 assert.ok(composer.includes('preserveSkinnedPortraitFacingSide'), 'composer can preserve the pre-delta front/back portrait choice');
 assert.ok(composer.includes('selectedMaterial.side = THREE.DoubleSide'), 'selected portrait remains renderable through additive tilt');
 assert.ok(composer.includes('frontMaterial.visible = showFront'), 'mirrored rear portrait cannot render over the selected front side');
+assert.ok(composer.includes('lastRenderDebug'), 'composer preserves temporary render state for post-render diagnostics');
+assert.ok(composer.includes('portraitSelections'), 'composer diagnostics expose the selected portrait side and boundary dot');
+assert.ok(composer.includes('quaternionFacingDot'), 'composer diagnostics compare matrix and scale-free quaternion facing bases');
+assert.ok(composer.includes('worldMatrixDeterminant'), 'composer diagnostics expose mirrored world matrices');
+assert.ok(composer.includes('basisDisagrees'), 'composer diagnostics identify reflected-basis side disagreement directly');
+assert.ok(composer.includes('baseWorldEulerDeg'), 'composer diagnostics expose the pre-delta quaternion-only orientation');
+assert.ok(composer.includes('composedWorldEulerDeg'), 'composer diagnostics expose orientation while the channel delta is applied');
 
 assert.ok(attachments.includes("registerExternalRootProvider('equippedTool'"), 'tool visuals register in the attachment adapter');
 assert.ok(attachments.includes("registerExternalRootProvider('shoulderPets'"), 'shoulder pets register in the attachment adapter');

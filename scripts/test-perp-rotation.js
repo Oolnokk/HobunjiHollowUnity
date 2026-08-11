@@ -34,6 +34,14 @@ for (const jitterDeg of [-1, 0.8, -0.6, 1.2, -0.4, 2.9]) {
 result = api.perpClamp(state, center + deg(3.1), [center, -center], deadRadius);
 assert.equal(result.effectiveTarget, center + deadRadius, 'a deliberate crossing beyond hysteresis changes sides');
 assert.equal(result.snapTo, center + deadRadius, 'the deliberate crossing performs exactly one edge swap');
+assert.equal(state.pixelProbeDebug.rawTargetRotY, center + deg(3.1), 'probe debug retains the raw clamp target');
+assert.equal(state.pixelProbeDebug.effectiveTargetRotY, result.effectiveTarget, 'probe debug retains the effective clamp target');
+assert.equal(state.pixelProbeDebug.snapToRotY, result.snapTo, 'probe debug identifies the hard-snap frame');
+assert.equal(state.pixelProbeDebug.previousSide, -1, 'probe debug retains the pre-crossing side');
+assert.equal(state.pixelProbeDebug.selectedSide, 1, 'probe debug exposes the newly selected side');
+assert.equal(state.pixelProbeDebug.nearestPerpIndex, 0, 'probe debug identifies the evaluated camera perp');
+assert.deepEqual(state.pixelProbeDebug.perpSides, state.perpSides, 'probe debug snapshots every side latch');
+assert.deepEqual(state.pixelProbeDebug.perpLocked, state.locked, 'probe debug snapshots every lock latch');
 
 for (const jitterDeg of [1, -1, 0.5, -2.5]) {
   result = api.perpClamp(state, center + deg(jitterDeg), [center, -center], deadRadius);

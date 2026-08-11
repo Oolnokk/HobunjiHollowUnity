@@ -21,6 +21,89 @@
   let _pixelProbeArmed = false;
   const _pixelProbeRaycaster = new THREE.Raycaster();
 
+  function _pixelProbeAngleDeg(radians) {
+    if (radians == null || !Number.isFinite(Number(radians))) return null;
+    let degrees = Number(radians) * 180 / Math.PI; // Normalized below for compact copied reports.
+    while (degrees > 180) degrees -= 360;
+    while (degrees <= -180) degrees += 360;
+    return degrees;
+  }
+
+  function _pixelProbeAngleStepDeg(nextRadians, previousRadians) {
+    if (nextRadians == null || previousRadians == null || !Number.isFinite(Number(nextRadians)) || !Number.isFinite(Number(previousRadians))) return 0;
+    let delta = (Number(nextRadians) - Number(previousRadians)) * 180 / Math.PI; // Wrapped to the shortest per-frame step.
+    while (delta > 180) delta -= 360;
+    while (delta < -180) delta += 360;
+    return delta;
+  }
+
+  function _pixelProbeFmtAngle(radians) {
+    const degrees = _pixelProbeAngleDeg(radians); // Printed by both click and temporal facing diagnostics.
+    return degrees == null ? '-' : `${degrees.toFixed(2)}°`;
+  }
+
+  function _pixelProbeAngleDeltaRad(nextRadians, previousRadians) {
+    if (nextRadians == null || previousRadians == null) return null;
+    let delta = Number(nextRadians) - Number(previousRadians); // Shortest-arc delta used to compare render yaw with its clamp target.
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    return delta;
+  }
+
+  function _pixelProbeCurrentFacingDebug() {
+    const clamp = deps.player?.perpState?.pixelProbeDebug || {}; // Last clamp decision made specifically for the player state object.
+    const renderYawRad = deps.playerMesh?.rotation?.y; // Final persistent body yaw after clamp and any tool/sweep override.
+    return {
+      ...clamp,
+      mode: clamp.timestampMs == null ? 'no-clamp-state' : 'perp-clamp',
+      logicalFacingRad: deps.player?.angle,
+      renderYawRad,
+      renderVsEffectiveDeltaRad: _pixelProbeAngleDeltaRad(renderYawRad, clamp.effectiveTargetRotY),
+    };
+  }
+
+  function _pixelProbeFacingTraceLine(sample, index, previous = null) {
+    const facing = sample.facing || {}; // Authoritative/logical and dead-zone state captured after this frame.
+    const drunk = sample.drunk || {}; // Current alcohol-driven pitch/roll contribution for this frame.
+    const composer = sample.composer?.lastRender || {}; // Temporary render transform captured before restoration.
+    const portrait = composer.portraitSelections?.[0] || null; // Front/back material selected before additive tilt.
+    const clampSides = Array.isArray(facing.perpSides) ? facing.perpSides.map(value => value == null ? '-' : value > 0 ? '+' : '-').join('') : '-'; // Compact per-perp side state.
+    const clampLocks = Array.isArray(facing.perpLocked) ? facing.perpLocked.map(Boolean).map(value => value ? '1' : '0').join('') : '-'; // Compact per-perp lock state.
+    const renderStep = previous ? _pixelProbeAngleStepDeg(facing.renderYawRad, previous.facing?.renderYawRad) : 0; // Highlights final-yaw discontinuities.
+    const colorDistance = previous ? Math.hypot(
+      sample.color[0] - previous.color[0],
+      sample.color[1] - previous.color[1],
+      sample.color[2] - previous.color[2]
+    ) : 0; // Correlates a visible pixel change with the transform state that accompanied it.
+    const previousPortrait = previous?.composer?.lastRender?.portraitSelections?.[0]?.side || null; // Used only to mark portrait-side transitions.
+    const stateChanged = !previous
+      || colorDistance >= 10
+      || Math.abs(renderStep) >= 5
+      || facing.snapToRotY != null
+      || portrait?.side !== previousPortrait
+      || JSON.stringify(facing.perpSides || []) !== JSON.stringify(previous?.facing?.perpSides || [])
+      || JSON.stringify(facing.perpLocked || []) !== JSON.stringify(previous?.facing?.perpLocked || []);
+    const marker = stateChanged ? '!' : ' '; // Makes consequential frames easy to spot in a mobile text copy.
+    const pixel = `rgba(${sample.color.join(',')})`; // Exact framebuffer result associated with this state.
+    const portraitLabel = portrait
+      ? `${portrait.side}@matrixDot=${Number(portrait.facingDot).toFixed(4)}/quatDot=${Number(portrait.quaternionFacingDot).toFixed(4)}/det=${Number(portrait.worldMatrixDeterminant).toFixed(4)}/disagree=${portrait.basisDisagrees ? 'YES' : 'no'}`
+      : 'none'; // Directly exposes a negative-scale basis disagreeing with quaternion-only facing.
+    const baseEuler = composer.baseWorldEulerDeg; // Quaternion-only base orientation immediately before the composer delta.
+    const composedEuler = composer.composedWorldEulerDeg; // Final orientation while drunk tilt is temporarily applied.
+    const eulerLabel = value => value
+      ? `${Number(value.pitch).toFixed(2)}°/${Number(value.yaw).toFixed(2)}°/${Number(value.roll).toFixed(2)}°`
+      : '-'; // Compact pitch/yaw/roll tuple for mobile report copying.
+    const nearestClamp = facing.nearestPerpIndex == null
+      ? '-'
+      : `${facing.nearestPerpIndex}@${_pixelProbeFmtAngle(facing.nearestDeltaRad)} side=${facing.previousSide ?? '-'}→${facing.selectedSide ?? '-'} lock=${facing.wasLocked ? 1 : 0}→${facing.isLocked ? 1 : 0}`; // Full decision for the nearest edge-on dead zone.
+    return `${marker}f${String(index).padStart(2, '0')} px=${pixel} mode=${facing.mode || '-'} `
+      + `logical=${_pixelProbeFmtAngle(facing.logicalFacingRad)} `
+      + `raw=${_pixelProbeFmtAngle(facing.rawTargetRotY)} effective=${_pixelProbeFmtAngle(facing.effectiveTargetRotY)} snap=${_pixelProbeFmtAngle(facing.snapToRotY)} `
+      + `render=${_pixelProbeFmtAngle(facing.renderYawRad)} step=${renderStep.toFixed(2)}° renderΔeff=${_pixelProbeFmtAngle(facing.renderVsEffectiveDeltaRad)} `
+      + `nearest=${nearestClamp} perpSides=${clampSides} locks=${clampLocks} drunkPR=${Number(drunk.pitchDeg || 0).toFixed(2)}°/${Number(drunk.rollDeg || 0).toFixed(2)}° `
+      + `composerPYR=${eulerLabel(baseEuler)}→${eulerLabel(composedEuler)} portrait=${portraitLabel} render#=${composer.sequence ?? '-'}`;
+  }
+
   function _pixelProbeMatSummary(mat) {
     if (!mat) return '(no material)';
     const colorHex = mat.color?.isColor ? `#${mat.color.getHexString()}` : '-';
@@ -272,6 +355,9 @@
 
     const renderer = deps.renderer, camera = deps.camera, playerMesh = deps.playerMesh;
     const currentArea = deps.getCurrentArea();
+    const facingAtClick = _pixelProbeCurrentFacingDebug(); // Preserves the state of the visibly bad frame before probe re-renders run.
+    const drunkAtClick = window.HobunjiDrunkWalk?.getDebug?.() || null; // Captures the gait contribution at the clicked frame.
+    const composerAtClick = window.PlayerBodyTransformComposer?.getDebug?.() || null; // Captures the last normal render's temporary transform choice.
 
     const canvas = renderer.domElement;
     const rect = canvas.getBoundingClientRect();
@@ -401,6 +487,16 @@
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
+    if (facingAtClick) {
+      lines.push('');
+      lines.push('=== Player facing state at the clicked frame (captured before probe-forced renders) ===');
+      lines.push(_pixelProbeFacingTraceLine({
+        color: pxBuf ? Array.from(pxBuf) : [0, 0, 0, 0],
+        facing: facingAtClick,
+        drunk: drunkAtClick,
+        composer: composerAtClick,
+      }, 0));
+    }
     lines.push(`${hits.length} mesh(es) along this ray, nearest first:`);
     hits.slice(0, 25).forEach((hit, i) => {
       const o = hit.object;
@@ -464,6 +560,7 @@
     // recomputing) — capturing after that would only ever see a static
     // scene by construction, guaranteeing a false "no flicker" result.
     const flickerSamples = [];
+    const facingSamples = []; // Parallel 45-frame transform trace correlated one-to-one with flickerSamples.
     try {
       const glF = renderer.getContext();
       const bufF = new Uint8Array(4);
@@ -481,7 +578,14 @@
       for (let i = 0; i < 45 && !deps.getPaused() && (Date.now() - captureStart) < 4000; i++) {
         await nextTick();
         glF.readPixels(fbX, fbY, 1, 1, glF.RGBA, glF.UNSIGNED_BYTE, bufF);
-        flickerSamples.push([bufF[0], bufF[1], bufF[2], bufF[3]]);
+        const color = [bufF[0], bufF[1], bufF[2], bufF[3]]; // Frozen before the reused readPixels buffer changes next frame.
+        flickerSamples.push(color);
+        facingSamples.push({
+          color,
+          facing: _pixelProbeCurrentFacingDebug(),
+          drunk: window.HobunjiDrunkWalk?.getDebug?.() || null,
+          composer: window.PlayerBodyTransformComposer?.getDebug?.() || null,
+        });
       }
     } catch (e) { /* best-effort — the rest of the report still stands without it */ }
 
@@ -505,6 +609,30 @@
     } else {
       lines.push('');
       lines.push('=== Temporal flicker check: skipped (game was already paused when the probe fired) ===');
+    }
+
+    if (facingSamples.length) {
+      let maxRenderStep = 0; // Largest shortest-arc jump in the final game-owned playerMesh yaw.
+      let maxLogicalStep = 0; // Largest shortest-arc jump in authoritative aiming/facing.
+      let hardSnapFrames = 0; // Counts clamp calls that explicitly requested a dead-zone edge snap.
+      let portraitSideChanges = 0; // Counts composer front/back selections changing across sampled renders.
+      for (let i = 1; i < facingSamples.length; i++) {
+        const current = facingSamples[i]; // Compared against previous frame for all transition counts below.
+        const previous = facingSamples[i - 1]; // Baseline for this frame's deltas.
+        maxRenderStep = Math.max(maxRenderStep, Math.abs(_pixelProbeAngleStepDeg(current.facing?.renderYawRad, previous.facing?.renderYawRad)));
+        maxLogicalStep = Math.max(maxLogicalStep, Math.abs(_pixelProbeAngleStepDeg(current.facing?.logicalFacingRad, previous.facing?.logicalFacingRad)));
+        if (current.facing?.snapToRotY != null) hardSnapFrames++;
+        const currentSide = current.composer?.lastRender?.portraitSelections?.[0]?.side || null; // Compared with the preceding sampled render.
+        const previousSide = previous.composer?.lastRender?.portraitSelections?.[0]?.side || null; // Previous composer-selected portrait side.
+        if (currentSide !== previousSide) portraitSideChanges++;
+      }
+      if (facingSamples[0].facing?.snapToRotY != null) hardSnapFrames++;
+      lines.push('');
+      lines.push(`=== Player facing/render trace (${facingSamples.length} frames; ! marks a color, yaw, clamp, or portrait transition) ===`);
+      lines.push(`Summary: maxLogicalStep=${maxLogicalStep.toFixed(2)}° maxRenderStep=${maxRenderStep.toFixed(2)}° hardSnapFrames=${hardSnapFrames} portraitSideChanges=${portraitSideChanges}`);
+      for (let i = 0; i < facingSamples.length; i++) {
+        lines.push(_pixelProbeFacingTraceLine(facingSamples[i], i, i ? facingSamples[i - 1] : null));
+      }
     }
 
     const resultEl = document.getElementById('debugProbeResult');

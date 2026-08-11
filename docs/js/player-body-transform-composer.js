@@ -23,6 +23,8 @@
   let playerMesh = null;
   let playerLegRoot = null;
   let playerPosteriorY = 0;
+  let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
+  let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
 
   function finite(value, fallback = 0) {
     const n = Number(value);
@@ -45,6 +47,12 @@
     target.identity();
     for (let i = chain.length - 1; i >= 0; i--) target.multiply(chain[i].quaternion);
     return target.normalize();
+  }
+
+  function quaternionEulerDegrees(quaternion) {
+    const euler = new THREE.Euler().setFromQuaternion(quaternion, 'YXZ'); // Converted below for compact probe output.
+    const degrees = 180 / Math.PI; // Used for all three reported composer axes.
+    return { pitch: euler.x * degrees, yaw: euler.y * degrees, roll: euler.z * degrees };
   }
 
   function hasRenderableDescendant(root) {
@@ -186,7 +194,8 @@
   // turn. Capture the pre-delta side, render only it as double-sided during the
   // temporary body tilt, then restore both materials immediately after render.
   function preserveSkinnedPortraitFacingSide(root, camera, undo) {
-    if (!root?.isObject3D || !camera?.isObject3D) return;
+    const selections = []; // Returned to the render diagnostic after every matching portrait is locked.
+    if (!root?.isObject3D || !camera?.isObject3D) return selections;
     root.updateWorldMatrix?.(true, true);
     camera.updateWorldMatrix?.(true, false);
     const cameraWorldPosition = camera.getWorldPosition(new THREE.Vector3()); // Used for the pre-delta view vector.
@@ -200,9 +209,12 @@
 
       const normalMatrix = new THREE.Matrix3().getNormalMatrix(object.matrixWorld); // Converts the plane's local front normal into base world space.
       const frontNormal = new THREE.Vector3(0, 0, 1).applyMatrix3(normalMatrix).normalize(); // Compared with the camera before composer tilt.
+      const quaternionFrontNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(object)).normalize(); // Scale-free facing basis used to expose mirror disagreement.
       const objectWorldPosition = object.getWorldPosition(new THREE.Vector3()); // Origin for the camera-facing direction below.
       const viewDirection = cameraWorldPosition.clone().sub(objectWorldPosition).normalize(); // Selects the portrait side chosen by ordinary yaw.
-      const showFront = frontNormal.dot(viewDirection) >= 0;
+      const facingDot = frontNormal.dot(viewDirection); // Reported to show proximity to the GPU side boundary.
+      const quaternionFacingDot = quaternionFrontNormal.dot(viewDirection); // Compared with facingDot to identify a scale-reflected basis.
+      const showFront = facingDot >= 0;
       const oldFrontVisible = frontMaterial.visible;
       const oldBackVisible = backMaterial.visible;
       const selectedMaterial = showFront ? frontMaterial : backMaterial; // Kept renderable even if additive tilt crosses the culling plane.
@@ -211,12 +223,21 @@
       frontMaterial.visible = showFront;
       backMaterial.visible = !showFront;
       selectedMaterial.side = THREE.DoubleSide;
+      selections.push({
+        mesh: object.name || object.type,
+        side: showFront ? 'front' : 'back',
+        facingDot,
+        quaternionFacingDot,
+        worldMatrixDeterminant: object.matrixWorld.determinant(),
+        basisDisagrees: (facingDot >= 0) !== (quaternionFacingDot >= 0),
+      });
       undo.push(() => {
         frontMaterial.visible = oldFrontVisible;
         backMaterial.visible = oldBackVisible;
         selectedMaterial.side = oldSelectedSide;
       });
     });
+    return selections;
   }
 
   function applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo) {
@@ -317,8 +338,19 @@
     const originalRender = proto.render;
     proto.render = function composedPlayerBodyRender(scene, camera) {
       const undo = [];
+      const renderDebug = {
+        sequence: ++renderSequence,
+        timestampMs: performance.now(),
+        appliedOrder: [],
+        preserveFacingSideRequested: false,
+        portraitSelections: [],
+        baseWorldEulerDeg: null,
+        composedWorldEulerDeg: null,
+      }; // Persisted below before temporary transforms are restored.
       if (playerMesh) {
         const delta = resolveDelta();
+        renderDebug.appliedOrder = delta.applied.slice();
+        renderDebug.preserveFacingSideRequested = delta.preserveFacingSide;
         const rotationMagnitude = Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z);
         const translationMagnitude = delta.translation.lengthSq();
         if (rotationMagnitude > 1e-8 || translationMagnitude > 1e-12) {
@@ -328,17 +360,21 @@
           // the standing posterior/hip point, render, then restore immediately.
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
+          renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
           const worldRotation = baseWorldQuaternion.clone()
             .multiply(delta.rotation)
             .multiply(baseWorldQuaternion.clone().invert());
           const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
-          if (delta.preserveFacingSide) preserveSkinnedPortraitFacingSide(playerMesh, camera, undo);
+          if (delta.preserveFacingSide) renderDebug.portraitSelections = preserveSkinnedPortraitFacingSide(playerMesh, camera, undo);
           for (const root of currentOwnedRoots()) {
             applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo);
           }
+          renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
         }
       }
+
+      lastRenderDebug = renderDebug;
 
       try { return originalRender.call(this, scene, camera); }
       finally {
@@ -375,6 +411,13 @@
           preserveFacingSide: channel.preserveFacingSide === true,
         })),
         appliedOrder: delta.applied,
+        lastRender: lastRenderDebug ? {
+          ...lastRenderDebug,
+          appliedOrder: lastRenderDebug.appliedOrder.slice(),
+          portraitSelections: lastRenderDebug.portraitSelections.map(selection => ({ ...selection })),
+          baseWorldEulerDeg: lastRenderDebug.baseWorldEulerDeg ? { ...lastRenderDebug.baseWorldEulerDeg } : null,
+          composedWorldEulerDeg: lastRenderDebug.composedWorldEulerDeg ? { ...lastRenderDebug.composedWorldEulerDeg } : null,
+        } : null,
       };
     },
   };

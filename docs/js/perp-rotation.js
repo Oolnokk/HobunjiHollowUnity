@@ -79,6 +79,21 @@
     state.perpSides[nearestI] = newSide;
     const effectiveTarget = isLocked ? P + state.perpSides[nearestI] * deadRad : rawTarget;
     state.locked[nearestI] = isLocked;
+    state.pixelProbeDebug = {
+      timestampMs: typeof performance !== 'undefined' ? performance.now() : Date.now(), // Lets the probe identify stale clamp state.
+      rawTargetRotY: rawTarget,
+      effectiveTargetRotY: effectiveTarget,
+      snapToRotY: snapTo,
+      cameraPerpsRad: perps.slice(),
+      perpSides: state.perpSides.slice(),
+      perpLocked: state.locked.slice(),
+      nearestPerpIndex: nearestI,
+      nearestDeltaRad: nearestDT,
+      previousSide,
+      selectedSide: newSide,
+      wasLocked,
+      isLocked,
+    };
     return { effectiveTarget, snapTo };
   }
 
