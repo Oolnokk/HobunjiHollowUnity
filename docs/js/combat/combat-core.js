@@ -152,7 +152,7 @@
   const BLACKOUT_LOCAL_LIMIT_PERCENT = 25;
   const BLACKOUT_MIN_SKIP_MINUTES = 30;
   const BLACKOUT_MINUTES_PER_PERCENT = 10;
-  const ALCOHOL_TAGS = new Set(["alcohol", "wine", "sake", "vodka", "nectar", "airag", "liquor", "spirit", "spirits"]);
+  const ALCOHOL_TAGS = new Set(["alcohol", "wine", "sake", "vodka", "nectar", "airag", "liquor", "spirit", "spirits", "beer", "ale", "mead", "cider"]);
   const INN_DRINKS = [
     { key: "needlegrainSake", buyPrice: 32 },
     { key: "heftrootVodka", buyPrice: 36 },
@@ -354,12 +354,14 @@
       icon: "🍶", label: "Needlegrain Sake", cat: "processed", sellPrice: 24,
       tags: ["Processed", "Sake", "Aged", "Needlegrain"],
       desc: "Barrel-aged needlegrain liquor, colored like dark pine needles.",
+      ingredientKeys: ["needlegrain"],
       spriteIcon: "bottle_wine.png", spriteColor: 0x2F4A2E, spriteMode: "keyed"
     };
     itemDefs.heftrootVodka ||= {
       icon: "🥃", label: "Heftroot Vodka", cat: "processed", sellPrice: 26,
       tags: ["Processed", "Vodka", "Aged", "Heftroot"],
       desc: "Barrel-aged heftroot spirit, clear white.",
+      ingredientKeys: ["heftroot"],
       spriteIcon: "bottle_wine.png", spriteColor: 0xFFFFFF, spriteMode: "keyed"
     };
   }
@@ -368,7 +370,7 @@
     if (!def) return null;
     const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
     const haystack = `${tags.join(" ")} ${String(def.label || "").toLowerCase()}`;
-    const alcoholic = tags.some(tag => ALCOHOL_TAGS.has(tag)) || /\b(wine|sake|vodka|nectar|airag|liquor|spirit|alcohol)\b/.test(haystack);
+    const alcoholic = tags.some(tag => ALCOHOL_TAGS.has(tag)) || /\b(wine|sake|vodka|nectar|airag|liquor|spirit|alcohol|beer|ale|mead|cider)\b/.test(haystack);
     if (!alcoholic) return null;
     if (haystack.includes("vodka") || haystack.includes("spirit") || haystack.includes("liquor")) return { footing: 32, health: 14, strength: "strong" };
     if (haystack.includes("sake")) return { footing: 24, health: 11, strength: "medium" };
