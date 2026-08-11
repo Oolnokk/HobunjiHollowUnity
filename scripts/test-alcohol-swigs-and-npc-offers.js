@@ -60,6 +60,8 @@ windowStub.FarmCrates.init({
   getActiveInventoryItem: () => wine,
   clampInventoryStack: key => { if (inventory[key] <= 0) delete inventory[key]; },
   triggerHeldDrinkAnimation: () => 0,
+  canPlayNpcDrinkInteraction: () => true,
+  playNpcDrinkInteraction: (walker, key, onDrink) => { onDrink(); return 180; },
   showToast() {}, refreshItemScroll() {}, buildInventoryGrid() {}, refreshActionBar() {}, saveMemberWorldData() {},
 });
 
@@ -89,6 +91,8 @@ assert.match(game, /alcohol-swig-badge[\s\S]*?remaining.*total/,
   'inventory and HUD icons render remaining/total serving badges');
 assert.match(game, /getNpcSwigOfferAction[\s\S]*?npc_offer_alcohol_swig/,
   'nearby NPC actions include the contextual held-bottle offer');
+assert.match(bridgeSource, /playNpcDrinkInteraction[\s\S]*?applyNpcSwig/,
+  'accepted offers defer NPC sobriety application to synchronized drink playback');
 assert.match(game, /worldInteractions\.length > 1[\s\S]*?setInteractionPrompts/,
   'multiple world interactions use the shared popup-list prompt path');
 assert.match(popup, /function setInteractionPrompts[\s\S]*?interactionPrompt: true/,

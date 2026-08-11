@@ -6589,6 +6589,8 @@
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
       window._npcWalkers = npcWalkers;
+      const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
+      const npcActionLockId = npcId => `npc:${npcId || 'unknown'}`; // Maps NPC records into the same lock registry namespace.
       // dialogueOpen/_dialogueWalker are read/written both here (camera/
       // staging code) and by js/dialogue-content.js (via deps.getDialogueOpen/
       // getDialogueWalker) — the dialogue-flow state that module owns
@@ -8644,6 +8646,21 @@
             // frame of lag; imperceptible at 60fps.
             const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
             this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
+            const npcLockKey = npcActionLockId(rec?.id); // Queried below to pause this walker's movement and station-tool writers.
+            const movementLocked = window.CharacterActionLocks?.isLocked?.(npcLockKey, 'movement') || false;
+            const toolsLocked = window.CharacterActionLocks?.isLocked?.(npcLockKey, 'tools') || false;
+            if (this.stationToolMesh) this.stationToolMesh.visible = !toolsLocked;
+            if (movementLocked) {
+              this.legs?.update?.(dt, 0, true);
+              this._legsPrevX = root.position.x;
+              this._legsPrevZ = root.position.z;
+              this._moveSpeedTiles = 0;
+              this.currentScheduleTarget = resolveNpcScheduleTarget(this.rec) || null;
+              const lockedGroundY = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y += (lockedGroundY - root.position.y) * 0.2;
+              groundShadow.position.y = lockedGroundY - root.position.y + characterGroundShadowSurfaceOffset();
+              return;
+            }
             const alcoholBlackout = window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(rec?.id) || false;
             alcoholPoseGroup.rotation.z = alcoholBlackout ? -Math.PI / 2 : 0;
             alcoholPoseGroup.position.x = alcoholBlackout ? -avatarHeight * 0.5 : 0;
@@ -12188,6 +12205,12 @@
       }
 
       function updateMovement(dt) {
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) {
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
         if (window.PlayerChat?.isOpen) {
           player.vx = 0; player.vy = 0;
           player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
@@ -13539,6 +13562,7 @@
       }
 
       function useActiveAction() {
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
@@ -17053,6 +17077,8 @@
       let _heldDrinkAnimT = 0;
       // Full duration used to normalize the drink countdown into animation progress.
       let _heldDrinkAnimDuration = 0;
+      const activeNpcDrinkInteractions = new Set(); // Advanced each frame by updateNpcDrinkInteractions after NPC routing is suppressed.
+      const NPC_DRINK_HANDOFF_DURATION_S = 0.34; // Used to lerp the bottle from the player's hand to the NPC's neutral drink pose.
 
       function heldActionPoseAt(animation, progress) {
         const windupFrac = clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
@@ -17097,6 +17123,178 @@
         heldItemHolder.visible = true;
         window.__farmLog?.(`[held-item] drink start: item=${itemKey || _heldItemKey || '(unknown)'} area=${currentArea} duration=${_heldDrinkAnimDuration.toFixed(2)}s`, 'items');
         return Math.round(_heldDrinkAnimDuration * 1000);
+      }
+
+      function npcDrinkHandAnchor(walker) {
+        const avatar = walker?.avatarGroup;
+        const width = Number(avatar?.userData?.portraitModelWidth) || MODEL_W;
+        const height = Number(avatar?.userData?.portraitModelHeight) || MODEL_W;
+        return {
+          x: Number.isFinite(Number(avatar?.userData?.handAttachX)) ? Number(avatar.userData.handAttachX) : -width / 2,
+          y: Number.isFinite(Number(avatar?.userData?.handAttachY)) ? Number(avatar.userData.handAttachY) : height / 2,
+        };
+      }
+
+      function applyNpcDrinkHolderPose(interaction, pose) {
+        const { holder, bottlePlane, hand, poseQuaternion } = interaction;
+        holder.position.set(hand.x + pose.x, hand.y + pose.y, pose.z);
+        holder.scale.setScalar(0.5);
+        poseQuaternion.yaw.setFromAxisAngle(poseQuaternion.up, THREE.MathUtils.degToRad(pose.yaw));
+        poseQuaternion.pitch.setFromAxisAngle(poseQuaternion.right, THREE.MathUtils.degToRad(pose.pitch));
+        poseQuaternion.roll.setFromAxisAngle(poseQuaternion.forward, THREE.MathUtils.degToRad(pose.roll));
+        holder.quaternion.copy(poseQuaternion.yaw).multiply(poseQuaternion.pitch).multiply(poseQuaternion.roll);
+        if (bottlePlane) bottlePlane.rotation.x = Math.PI / 2;
+      }
+
+      function disposeInteractionBottle(interaction) {
+        const plane = interaction?.bottlePlane;
+        if (!plane) return;
+        plane.userData.disposed = true;
+        const ownedTexture = plane.userData.ownsTexture ? plane.material?.map : null;
+        interaction.holder?.remove(plane);
+        plane.geometry?.dispose?.();
+        plane.material?.dispose?.();
+        ownedTexture?.dispose?.();
+      }
+
+      function finishNpcDrinkInteraction(interaction, reason = 'complete') {
+        if (!interaction || interaction.finished) return;
+        interaction.finished = true;
+        if (!interaction.effectApplied) {
+          interaction.effectApplied = true;
+          interaction.onDrink?.();
+        }
+        interaction.walker.root.rotation.y = interaction.baseNpcFacing;
+        interaction.holder.parent?.remove(interaction.holder);
+        disposeInteractionBottle(interaction);
+        interaction.lockHandle?.release?.();
+        activeNpcDrinkInteractions.delete(interaction);
+        refreshActionBar();
+        window.__farmLog?.(`[held-item] NPC drink ${reason}: npc=${interaction.walker.rec?.id || 'unknown'} item=${interaction.itemKey}`, 'items');
+      }
+
+      function canPlayNpcDrinkInteraction(walker, itemKey) {
+        const npcLockKey = npcActionLockId(walker?.rec?.id);
+        return !!walker?.root && !!itemKey && walker.area === currentArea
+          && !window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')
+          && !window.CharacterActionLocks?.isLocked?.(npcLockKey, 'actions');
+      }
+
+      function playNpcDrinkInteraction(walker, itemKey, onDrink) {
+        const animation = window.HeldActionAnimations?.drink;
+        if (!animation || !canPlayNpcDrinkInteraction(walker, itemKey)) return 0;
+        const def = ITEM_DEFS[itemKey];
+        if (!def) return 0;
+
+        const durationS = Math.max(0.1, Number(animation.durationS) || 0.95);
+        const totalDurationMs = Math.round((NPC_DRINK_HANDOFF_DURATION_S + durationS) * 1000);
+        const npcLockKey = npcActionLockId(walker.rec?.id);
+        const lockHandle = window.CharacterActionLocks?.acquire?.({
+          owner: 'npc-drink-interaction',
+          reason: `offer ${itemKey} to ${walker.rec?.id || 'npc'}`,
+          participants: [PLAYER_ACTION_LOCK_ID, npcLockKey],
+          channels: ['movement', 'tools', 'actions'],
+        });
+        if (!lockHandle) return 0;
+
+        // Any old player swing would otherwise resume halfway through once
+        // this reusable lock releases; the accepted interaction owns the pose.
+        toolSwingT = 0;
+        combatSwingHeld = false;
+        combatSwingAnim = null;
+        combatSwingPose = null;
+        pendingAction = null;
+
+        const holder = new THREE.Group(); // Reparented from scene-space handoff into the NPC root for drink playback.
+        holder.name = `npc_drink_holder_${walker.rec?.id || 'npc'}`;
+        const bottlePlane = makeHeldItemPlaneMesh({ key: itemKey, icon: def.icon, label: def.label });
+        if (!bottlePlane) { lockHandle.release(); return 0; }
+        holder.add(bottlePlane);
+
+        const interaction = {
+          walker, itemKey, holder, bottlePlane, lockHandle, onDrink,
+          phase: 'handoff', elapsed: 0, durationS, effectApplied: false, finished: false,
+          hand: npcDrinkHandAnchor(walker),
+          baseNpcFacing: walker.root.rotation.y,
+          startPosition: new THREE.Vector3(), targetPosition: new THREE.Vector3(),
+          startQuaternion: new THREE.Quaternion(), targetQuaternion: new THREE.Quaternion(),
+          startScale: new THREE.Vector3(), targetScale: new THREE.Vector3(),
+          poseQuaternion: {
+            up: new THREE.Vector3(0, 1, 0), right: new THREE.Vector3(1, 0, 0), forward: new THREE.Vector3(0, 0, 1),
+            yaw: new THREE.Quaternion(), pitch: new THREE.Quaternion(), roll: new THREE.Quaternion(),
+          },
+        };
+
+        const neutralPose = heldActionPoseAt(animation, 0);
+        const sourceProbe = new THREE.Group(); // Captures the player's neutral bottle hand transform when its rendered holder is unavailable.
+        playerMesh.add(sourceProbe);
+        sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
+        sourceProbe.scale.setScalar(0.5);
+        sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
+        sourceObject.updateWorldMatrix(true, false);
+        sourceObject.getWorldPosition(interaction.startPosition);
+        sourceObject.getWorldQuaternion(interaction.startQuaternion);
+        sourceObject.getWorldScale(interaction.startScale);
+        playerMesh.remove(sourceProbe);
+
+        const targetProbe = new THREE.Group(); // Resolves the NPC hand pose into scene coordinates for the handoff lerp.
+        walker.root.add(targetProbe);
+        interaction.holder = targetProbe;
+        interaction.bottlePlane = null;
+        applyNpcDrinkHolderPose(interaction, neutralPose);
+        targetProbe.updateWorldMatrix(true, false);
+        targetProbe.getWorldPosition(interaction.targetPosition);
+        targetProbe.getWorldQuaternion(interaction.targetQuaternion);
+        targetProbe.getWorldScale(interaction.targetScale);
+        walker.root.remove(targetProbe);
+        interaction.holder = holder;
+        interaction.bottlePlane = bottlePlane;
+
+        holder.position.copy(interaction.startPosition);
+        holder.quaternion.copy(interaction.startQuaternion);
+        holder.scale.copy(interaction.startScale);
+        getActiveScene().add(holder);
+        heldItemHolder.visible = false;
+        activeNpcDrinkInteractions.add(interaction);
+        window.__farmLog?.(`[held-item] NPC drink start: npc=${walker.rec?.id || 'unknown'} item=${itemKey} handoff=${NPC_DRINK_HANDOFF_DURATION_S.toFixed(2)}s drink=${durationS.toFixed(2)}s`, 'items');
+        return totalDurationMs;
+      }
+
+      function updateNpcDrinkInteractions(dt) {
+        const step = Math.max(0, Number(dt) || 0);
+        for (const interaction of [...activeNpcDrinkInteractions]) {
+          if (interaction.walker.area !== currentArea || !interaction.walker.root.parent) {
+            finishNpcDrinkInteraction(interaction, 'cancelled');
+            continue;
+          }
+          interaction.elapsed += step;
+          if (interaction.phase === 'handoff') {
+            const t = clamp(interaction.elapsed / NPC_DRINK_HANDOFF_DURATION_S, 0, 1);
+            const eased = t * t * (3 - 2 * t);
+            interaction.holder.position.lerpVectors(interaction.startPosition, interaction.targetPosition, eased);
+            interaction.holder.quaternion.slerpQuaternions(interaction.startQuaternion, interaction.targetQuaternion, eased);
+            interaction.holder.scale.lerpVectors(interaction.startScale, interaction.targetScale, eased);
+            if (t >= 1) {
+              interaction.holder.parent?.remove(interaction.holder);
+              interaction.walker.root.add(interaction.holder);
+              interaction.phase = 'drink';
+              interaction.elapsed = 0;
+              applyNpcDrinkHolderPose(interaction, heldActionPoseAt(window.HeldActionAnimations.drink, 0));
+            }
+            continue;
+          }
+
+          const progress = clamp(interaction.elapsed / interaction.durationS, 0, 1);
+          const pose = heldActionPoseAt(window.HeldActionAnimations.drink, progress);
+          applyNpcDrinkHolderPose(interaction, pose);
+          interaction.walker.root.rotation.y = interaction.baseNpcFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+          if (!interaction.effectApplied && progress >= (Number(window.HeldActionAnimations.drink.strikeFrac) || 0.62)) {
+            interaction.effectApplied = true;
+            interaction.onDrink?.();
+          }
+          if (progress >= 1) finishNpcDrinkInteraction(interaction);
+        }
       }
 
       function updateHeldItemHolder(dt = 0) {
@@ -17165,6 +17363,15 @@
           heldItemKey: _heldItemKey,
           drinkAnimating: _heldDrinkAnimT > 0,
           drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
+          characterActionLocks: window.CharacterActionLocks?.getDebug?.() || [],
+          npcDrinkInteractions: [...activeNpcDrinkInteractions].map(interaction => ({
+            npcId: interaction.walker.rec?.id || null,
+            itemKey: interaction.itemKey,
+            phase: interaction.phase,
+            progress: interaction.phase === 'handoff'
+              ? clamp(interaction.elapsed / NPC_DRINK_HANDOFF_DURATION_S, 0, 1)
+              : clamp(interaction.elapsed / interaction.durationS, 0, 1),
+          })),
           actionArch,
         };
       }
@@ -17217,6 +17424,11 @@
       };
 
       function updateToolMesh(dt) {
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
+          toolHolder.visible = false;
+          heldItemHolder.visible = false;
+          return;
+        }
         // While a bag item is selected (heldMode === 'item' — the arch shows
         // its use actions), show the held-item chest plane instead of
         // whatever tool/weapon is equipped; the tool mesh comes back the
@@ -19308,6 +19520,7 @@
         updateLungeTrailStamps(dt);
         if (!paused) {
           updateNpcWalkers(dt);
+          updateNpcDrinkInteractions(dt);
           if (dialogueOpen) faceNpcDialogueParticipants();
         }
         // Run after NPC routing/facing so an active ambient greeting can hold
@@ -23281,6 +23494,8 @@
         clampInventoryStack,
         getActiveInventoryItem,
         getHeldMode: () => heldMode,
+        canPlayNpcDrinkInteraction,
+        playNpcDrinkInteraction,
         itemIconForKey,
         getHour: window.CalendarSystem.getHour,
         hasFarmPermission,

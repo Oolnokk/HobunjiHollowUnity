@@ -34,6 +34,8 @@
   <script src="js/png-plane-avatar.js?v=20260712d"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260811b"></script>
+  <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
+  <script src="js/character-action-locks.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20260801a"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
@@ -1635,7 +1637,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260811e"></script>
+  <script src="js/pixel-probe.js?v=20260811f"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1692,7 +1694,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811g"></script>
+  <script src="game.js?v=20260811h"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

@@ -492,6 +492,14 @@
       const archState = held.actionArch.map(button => `${button.id}=${button.hidden ? 'hidden' : (button.action || 'empty')}${button.blocked ? '/blocked' : ''}`).join(' ');
       lines.push(`Mobile action arch: ${archState}`);
     }
+    if (held?.characterActionLocks?.length) {
+      const lockState = held.characterActionLocks.map(lock => `${lock.owner}[${lock.participants.map(participant => `${participant.id}:${participant.channels.join('+')}`).join(',')}]`).join(' ');
+      lines.push(`Character action locks: ${lockState}`);
+    }
+    if (held?.npcDrinkInteractions?.length) {
+      const drinkState = held.npcDrinkInteractions.map(interaction => `${interaction.npcId}:${interaction.itemKey}/${interaction.phase}/${Math.round(interaction.progress * 100)}%`).join(' ');
+      lines.push(`NPC drink interactions: ${drinkState}`);
+    }
     const itemIcon = deps.getItemSpriteIconDebug?.();
     if (itemIcon) {
       const iconState = entry => entry ? `${entry.state}/${entry.hasBackground ? 'image' : 'none'}` : 'missing';

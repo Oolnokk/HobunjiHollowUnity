@@ -468,6 +468,7 @@
   // Describes the selected held consumable without mutating inventory.
   // The action bar uses this to make consumption a normal configurable item action.
   function getHeldConsumable() {
+    if (window.CharacterActionLocks?.isLocked?.('player', 'actions')) return null;
     // Held mode changes synchronously when the mobile item dial is released;
     // the rendered plane becomes visible on the following animation frame.
     // Using semantic mode prevents that one-frame delay from caching an empty arch.
@@ -528,24 +529,33 @@
     const npcId = walker?.rec?.id;
     if (!held || !npcId || isNpcBlackedOut(npcId)) return false;
     const response = window.AmbientDialogue?.resolveAlcoholOffer?.(walker) || { accepted: true };
-    window.AmbientDialogue?.showAlcoholOfferResponse?.(walker, response);
     if (!response.accepted) {
+      window.AmbientDialogue?.showAlcoholOfferResponse?.(walker, response);
       consumeLockUntil = performance.now() + 180;
       return true;
     }
+    if (!itemDeps?.canPlayNpcDrinkInteraction?.(walker, held.key)) return false;
     const profile = window.HobunjiAlcohol?.profileForItem?.(held.key);
     if (!profile) return false;
+    window.AmbientDialogue?.showAlcoholOfferResponse?.(walker, response);
     const serving = consumeBottleSwig(held.key, held.def, held.inventory);
     if (!serving.ok) return false;
-    const result = addNpcDrunkenness(npcId, profile.footing, held.key);
-    const animationMs = Number(itemDeps?.triggerHeldDrinkAnimation?.(held.key)) || 0;
+    let result = null; // Filled at the drink animation's strike frame and used by the mobile-visible alcohol log.
+    const applyNpcSwig = () => {
+      if (result) return result;
+      result = addNpcDrunkenness(npcId, profile.footing, held.key);
+      itemDeps?.saveMemberWorldData?.();
+      window.__farmLog?.(`[alcohol] NPC swig: npc=${npcId} item=${held.key} sobriety=${result.sobriety.toFixed(2)} blackout=${result.blackout ? `${result.blackoutMinutes}m` : 'no'}`, 'items');
+      return result;
+    };
+    const animationMs = Number(itemDeps?.playNpcDrinkInteraction?.(walker, held.key, applyNpcSwig)) || 0;
+    if (!(animationMs > 0)) applyNpcSwig();
     itemDeps?.showToast?.(`${walker.rec.name || 'They'} accepted a swig of ${held.def.label || held.key}.`, true);
     itemDeps?.refreshItemScroll?.();
     itemDeps?.buildInventoryGrid?.();
     itemDeps?.refreshActionBar?.();
     itemDeps?.saveMemberWorldData?.();
     consumeLockUntil = performance.now() + Math.max(180, animationMs);
-    window.__farmLog?.(`[alcohol] NPC swig: npc=${npcId} item=${held.key} sobriety=${result.sobriety.toFixed(2)} blackout=${result.blackout ? `${result.blackoutMinutes}m` : 'no'}`, 'items');
     return true;
   }
 
