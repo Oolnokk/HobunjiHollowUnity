@@ -13,6 +13,8 @@ const game = source('docs/game.js');
 const alcohol = source('docs/js/alcohol-gameplay-bridge.js');
 const combat = source('docs/js/combat/combat-core.js');
 const loader = source('docs/js/combat/combat-config-loader.js');
+// Mobile Pixel Probe diagnostics expose the populated action-arch slots.
+const pixelProbe = source('docs/js/pixel-probe.js');
 
 assert.doesNotMatch(alcohol, /\['Space', 'Enter', 'KeyE'\]/,
   'consumption must not intercept literal desktop keys');
@@ -20,9 +22,15 @@ assert.doesNotMatch(alcohol, /btn\(\?:Item\)\?Action\[1-5\][\s\S]{0,200}consumeH
   'consumption must not intercept action-button pointer events outside normal dispatch');
 assert.match(alcohol, /getHeldItemAction[\s\S]*?action: 'consume_held_item'/,
   'the alcohol bridge exposes a semantic consumable action');
+assert.match(alcohol, /const heldMode = itemDeps\?\.getHeldMode\?\.\(\);[\s\S]*?heldMode !== 'item'/,
+  'consumable eligibility uses synchronous held mode instead of waiting for a rendered plane');
 
 assert.match(game, /getHeldItemAction\?\.\(\);\s*if \(consumeAction\) btns\.unshift\(consumeAction\);/,
   'a held consumable occupies item action slot 1');
+assert.match(game, /window\.FarmCrates\?\.init\(\{[\s\S]*?getHeldMode: \(\) => heldMode/,
+  'the consumable bridge receives the current semantic held mode');
+assert.match(game, /const actionButtonKey = btns\.map[\s\S]*?\|\$\{actionButtonKey\}`/,
+  'the action-bar cache invalidates when a dynamic item action appears');
 assert.match(game, /activeAction === 'consume_held_item'[\s\S]*?consumeHeldItem\?\.\(\)/,
   'normal action dispatch consumes the selected item');
 assert.match(game, /\^action\(\\d\+\)\$[\s\S]*?runActionButtonAtSlot/,
@@ -31,6 +39,8 @@ assert.match(game, /function runInteractAction\(\)[\s\S]*?action === 'consume_he
   'Interact excludes consume, plant, place, and harvest item actions');
 assert.match(game, /if \(key === 'e' && isDesktop\)[\s\S]*?if \(!wasHeld\) runInteractAction\(\);/,
   'a desktop E tap uses world Interact after the tool-wheel hold check');
+assert.match(pixelProbe, /Mobile action arch:/,
+  'Pixel Probe reports all mobile action-arch slots without desktop devtools');
 
 const areaSet = combat.indexOf('devDeps.setCurrentArea(targetArea);');
 const townBuild = combat.indexOf('devDeps.buildTownScene?.();', areaSet);
@@ -41,7 +51,7 @@ assert.match(game, /window\.DevSpawner\?\.init\(\{[\s\S]*?buildTownScene,[\s\S]*
   'blackout travel receives the town-scene builder');
 
 const elevationBridge = loader.indexOf('town-player-body-elevation-bridge.js');
-const alcoholBridge = loader.indexOf('alcohol-gameplay-bridge.js?v=20260811c');
+const alcoholBridge = loader.indexOf('alcohol-gameplay-bridge.js?v=20260811d');
 assert.ok(elevationBridge >= 0 && alcoholBridge > elevationBridge,
   'the latest town body-elevation bridge remains loaded before alcohol gameplay');
 

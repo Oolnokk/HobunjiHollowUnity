@@ -17085,6 +17085,16 @@
       // be diagnosed from its mobile-friendly copied report.
       function getHeldObjectDebug() {
         const activeScene = getActiveScene();
+        // Captures the five mobile arch slots after refreshActionBar populates them.
+        const actionArch = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']
+          .map(id => document.getElementById(id))
+          .filter(Boolean)
+          .map(button => ({
+            id: button.id,
+            action: button.dataset.action || null,
+            hidden: button.classList.contains('abt-hidden'),
+            blocked: button.classList.contains('blocked'),
+          }));
         return {
           area: currentArea,
           mode: heldMode,
@@ -17095,6 +17105,7 @@
           heldItemKey: _heldItemKey,
           drinkAnimating: _heldDrinkAnimT > 0,
           drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
+          actionArch,
         };
       }
 
@@ -20470,6 +20481,10 @@
         const selectedItem = getActiveInventoryItem();
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
+        const btns = computeActionButtons();
+        // Dynamic providers (including the asynchronously loaded consumable
+        // bridge) can change the resolved arch without changing tile/item state.
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -20479,11 +20494,9 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${actionButtonKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
-
-        const btns = computeActionButtons();
 
         // Update activeAction even without DOM rebuild
         const first = btns.find(b => b.allowed) || btns[0];
@@ -23170,6 +23183,7 @@
         calendar,
         clampInventoryStack,
         getActiveInventoryItem,
+        getHeldMode: () => heldMode,
         itemIconForKey,
         getHour: window.CalendarSystem.getHour,
         hasFarmPermission,

@@ -310,10 +310,14 @@
     ].includes(tag));
   }
 
-  // Describes the selected, visibly held consumable without mutating inventory.
+  // Describes the selected held consumable without mutating inventory.
   // The action bar uses this to make consumption a normal configurable item action.
   function getHeldConsumable() {
-    if (!window.PlayerBodyTransformComposer?.hasVisibleHeldItem?.()) return false;
+    // Held mode changes synchronously when the mobile item dial is released;
+    // the rendered plane becomes visible on the following animation frame.
+    // Using semantic mode prevents that one-frame delay from caching an empty arch.
+    const heldMode = itemDeps?.getHeldMode?.();
+    if (heldMode != null ? heldMode !== 'item' : !window.PlayerBodyTransformComposer?.hasVisibleHeldItem?.()) return false;
 
     const active = itemDeps?.getActiveInventoryItem?.();
     const key = active?.key;
