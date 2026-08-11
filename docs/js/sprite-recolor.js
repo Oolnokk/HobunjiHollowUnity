@@ -101,8 +101,11 @@
     img = new Image();
     const p = new Promise((resolve, reject) => {
       img.onload = () => resolve(img);
-      img.onerror = reject;
+      img.onerror = () => reject(new Error('Failed to load recolorable sprite ' + spritePath));
     });
+    // Matches the animal-color image loader: CDN redirects can otherwise
+    // display normally but taint the canvas when getImageData reads it.
+    img.crossOrigin = 'anonymous';
     img.__loadPromise = p;
     img.src = spritePath;
     _imgCache.set(spritePath, img);

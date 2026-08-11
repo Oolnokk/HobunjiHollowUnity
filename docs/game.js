@@ -11263,6 +11263,7 @@
         el.classList.remove('sprited-icon');
         delete el.dataset.itemSpriteRequest;
         delete el.dataset.itemSpriteState;
+        delete el.dataset.itemSpriteError;
       }
 
       // Tracks one success message per resolved sprite/color combination for
@@ -11301,7 +11302,11 @@
             }
           })
           .catch(error => {
-            if (el.dataset.itemSpriteRequest === requestKey) el.dataset.itemSpriteState = 'fallback';
+            if (el.dataset.itemSpriteRequest === requestKey) {
+              el.dataset.itemSpriteState = 'fallback';
+              // Pixel Probe reports this on mobile when the source image or canvas fails.
+              el.dataset.itemSpriteError = String(error?.message || error || 'unknown recolor error');
+            }
             window.__farmLog?.(`[item-icon] ${def.label || def.spriteIcon} recolor failed; using source sprite: ${error.message}`, 'warn');
           });
       }
@@ -11315,6 +11320,7 @@
           request: el.dataset.itemSpriteRequest || null,
           state: el.dataset.itemSpriteState || 'emoji',
           hasBackground: !!el.style.backgroundImage,
+          error: el.dataset.itemSpriteError || null,
         } : null;
         return {
           key: active?.key || null,

@@ -12,9 +12,13 @@ const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
 // Combat source is inspected below to keep drinking and visual alcohol classification aligned.
 const combatCore = fs.readFileSync(path.join(root, 'docs/js/combat/combat-core.js'), 'utf8');
 const recolorSource = fs.readFileSync(path.join(root, 'docs/js/sprite-recolor.js'), 'utf8');
+// Pixel Probe source verifies mobile-visible diagnostics for asynchronous recolor failures.
+const pixelProbe = fs.readFileSync(path.join(root, 'docs/js/pixel-probe.js'), 'utf8');
 
 assert.match(recolorSource, /CreatureGeneticsRender\?\.recolorPixels[\s\S]*?CreatureGeneticsRender\.recolorPixels/,
   'bottle fills delegate to the exact animal-color recolorer in the main game');
+assert.match(recolorSource, /img\.crossOrigin = 'anonymous';[\s\S]*?img\.src = spritePath/,
+  'item sprites use the animal loader CORS mode before canvas pixel readback');
 
 const recolorContext = { window: {} };
 vm.runInNewContext(recolorSource, recolorContext);
@@ -69,6 +73,10 @@ assert(iconRenderer.indexOf("el.dataset.itemSpriteState === 'ready'") < newReque
   'finished item-icon recolors are not reset to their green source PNG each frame');
 assert.match(iconRenderer, /getRecoloredCanvas\(spritePath, targetColor, spriteMode\)[\s\S]*?itemSpriteState = 'ready'/,
   'item icons record when the recolored canvas has replaced the source sprite');
+assert.match(iconRenderer, /itemSpriteState = 'fallback'[\s\S]*?itemSpriteError = String/,
+  'failed mobile icon recolors retain their exact Pixel Probe diagnostic');
+assert.match(pixelProbe, /Item sprite recolor error:/,
+  'Pixel Probe prints the captured item-sprite failure on mobile');
 assert.match(game,
   /kh-item-icon[\s\S]*?applyItemSpriteIcon\(keyHudEl\.querySelector\('\.kh-item-icon'\), ITEM_DEFS\[item\.key\]\)/,
   'the desktop keyboard HUD upgrades alcohol emoji to the bottle sprite');

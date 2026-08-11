@@ -493,6 +493,9 @@
       const iconState = entry => entry ? `${entry.state}/${entry.hasBackground ? 'image' : 'none'}` : 'missing';
       const target = itemIcon.targetColor == null ? '-' : `#${Number(itemIcon.targetColor).toString(16).padStart(6, '0')}`;
       lines.push(`Item sprite icon: key=${itemIcon.key || '-'} sprite=${itemIcon.spriteIcon || '-'} target=${target} strip=${iconState(itemIcon.strip)} button=${iconState(itemIcon.button)} keyboard=${iconState(itemIcon.keyboard)}`);
+      // Deduplicate failures shared by several HUD copies so mobile reports stay compact.
+      const iconErrors = [...new Set([itemIcon.strip?.error, itemIcon.button?.error, itemIcon.keyboard?.error].filter(Boolean))];
+      if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);
     }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
     if (facingAtClick) {
