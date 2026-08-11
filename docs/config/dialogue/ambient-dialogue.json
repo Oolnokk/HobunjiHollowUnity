@@ -6,7 +6,45 @@
   "textWorldHeight": 0.28,
   "chatheadWorldSize": 0.48,
   "anchorLiftTiles": 0.18,
-  "friendGroups": [],
+  "friendGroups": [
+    [
+      "gorobi_ginju",
+      "gikali_ginju",
+      "aliri_ginju",
+      "gantami_ginju"
+    ]
+  ],
+  "npcNicknames": {
+    "sloomi": {
+      "kzubug": "Dad"
+    },
+    "nashka_khibu": {
+      "dzahiri_khibu": "Mom",
+      "dzibim_khibu": "Dad",
+      "kaboku_kunji": "Grandpa"
+    },
+    "spearhead_unumanuk": {
+      "teacup_unumanuk": "Mother"
+    },
+    "oddclaw_unumanuk": {
+      "spearhead_unumanuk": "Father",
+      "teacup_unumanuk": "Grandmother"
+    },
+    "aliri_ginju": {
+      "gikali_ginju": "Mama",
+      "gorobi_ginju": "Papa"
+    },
+    "gantami_ginju": {
+      "gikali_ginju": "Mama",
+      "gorobi_ginju": "Papa"
+    },
+    "takua_ao_hakaru": {
+      "namui_u_hakaru": "Sis"
+    },
+    "namui_u_hakaru": {
+      "takua_ao_hakaru": "Tak"
+    }
+  },
   "greetingTemplates": [
     "{targetName}! Good to see you.",
     "Hello, {targetName}!",
@@ -19,8 +57,8 @@
       ],
       "friends": {
         "sloomi": [
-          "Sloomi! How is that piece coming along?",
-          "Easy on your shoulders, Sloomi."
+          "{targetName}! How is that piece coming along?",
+          "Easy on your shoulders, {targetName}."
         ]
       }
     },
@@ -30,8 +68,8 @@
       ],
       "friends": {
         "kzubug": [
-          "Kzubug! I finished the edge.",
-          "I’m all right, Kzubug. Promise."
+          "{targetName}! I finished the edge.",
+          "I’m all right, {targetName}. Promise."
         ]
       }
     },
@@ -123,7 +161,8 @@
         "Good {dayPart}, {targetName}!"
       ],
       "friends": {
-        "kinami_kunji": []
+        "kinami_kunji": [],
+        "nashka_khibu": []
       }
     },
     "kinami_kunji": {
@@ -158,7 +197,8 @@
       ],
       "friends": {
         "dzibim_khibu": [],
-        "dzahiri_khibu": []
+        "dzahiri_khibu": [],
+        "kaboku_kunji": []
       }
     },
     "teacup_unumanuk": {

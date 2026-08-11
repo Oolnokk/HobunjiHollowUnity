@@ -29,6 +29,41 @@
       "system": "Tothal Shift — Researcher's Tent locale",
       "codeRef": "docs/game.js — tent decor station registration",
       "description": "Same as station_researchers_tent_desk, for the third specimen statue prop."
+    },
+    {
+      "idPattern": "furniture_chair_map_i_carpenters_12_8",
+      "label": "Dzibim Home Stool",
+      "system": "Carpenter / Khibu house seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Authored stool at (12,8); game.js auto-registers sit furniture as deterministic NPC stations."
+    },
+    {
+      "idPattern": "furniture_chair_map_i_carpenters_13_8",
+      "label": "Dzahiri Home Stool",
+      "system": "Carpenter / Khibu house seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Authored stool at (13,8); game.js auto-registers sit furniture as deterministic NPC stations."
+    },
+    {
+      "idPattern": "furniture_chair_map_i_carpenters_12_9",
+      "label": "Nashka Home Stool",
+      "system": "Carpenter / Khibu house seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Authored stool at (12,9); game.js auto-registers sit furniture as deterministic NPC stations."
+    },
+    {
+      "idPattern": "furniture_chair_map_i_carpenters_13_9",
+      "label": "Khibu Family Guest Stool",
+      "system": "Carpenter / Khibu house seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Authored guest stool at (13,9), used by Kaboku when Dzahiri or Nashka is home."
+    },
+    {
+      "idPattern": "furniture_chair_map_i_inn_16_9",
+      "label": "Inn Patron Stool",
+      "system": "Inn seating",
+      "codeRef": "docs/game.js — registerChairNpcStation / furnitureNpcStationId",
+      "description": "Existing authored stool at (16,9), used by Kaboku when he is avoiding Kinami and no family visit is available."
     }
   ]
 }

@@ -14,6 +14,7 @@
     chatheadWorldSize: 0.48,
     anchorLiftTiles: 0.18,
     friendGroups: [],
+    npcNicknames: {},
     npcGreetings: {},
     npcAlcoholOffers: {
       default: {
@@ -39,6 +40,7 @@
 
   const state = {
     deps: null,
+    dialogueDeps: null,
     settings: structuredCloneSafe(DEFAULTS),
     active: [],
     greeted: new Set(),
@@ -59,6 +61,7 @@
       ...(authored || {}),
       companionTreasureLines: { ...DEFAULTS.companionTreasureLines, ...(authored?.companionTreasureLines || {}) },
       crowdLines: { ...DEFAULTS.crowdLines, ...(authored?.crowdLines || {}) },
+      npcNicknames: { ...DEFAULTS.npcNicknames, ...(authored?.npcNicknames || {}) },
       npcGreetings: { ...DEFAULTS.npcGreetings, ...(authored?.npcGreetings || {}) },
       npcAlcoholOffers: {
         ...DEFAULTS.npcAlcoholOffers,
@@ -77,6 +80,21 @@
     }
     return structuredCloneSafe(state.settings);
   }
+
+  // DialogueContent already owns every condition input used by its phrase-pool
+  // selector. Capture that injected dependency bag once so ambient {targetName}
+  // can consult the same nickname pools without duplicating those inputs in game.js.
+  function installDialogueDependencyBridge() {
+    const dialogue = window.DialogueContent;
+    if (!dialogue?.init || dialogue.__ambientNicknameBridgeWrapped) return;
+    const originalInit = dialogue.init; // Used to preserve DialogueContent's normal initialization after capturing the dependency bag.
+    dialogue.init = function ambientAwareDialogueInit(injectedDeps) {
+      state.dialogueDeps = injectedDeps;
+      return originalInit.call(dialogue, injectedDeps);
+    };
+    dialogue.__ambientNicknameBridgeWrapped = true;
+  }
+  installDialogueDependencyBridge();
 
   function seededIndex(seed, length) {
     let hash = 2166136261;
@@ -117,6 +135,98 @@
     }
     Object.keys(state.settings.npcGreetings?.[npcId]?.friends || {}).forEach(id => set.add(id));
     return set;
+  }
+
+  function firstNameWord(name) {
+    return String(name || '').trim().split(/\s+/)[0] || 'friend';
+  }
+
+  function dialogueWorldStateFor(rec, walker) {
+    const deps = state.dialogueDeps;
+    const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
+    const scheduleTarget = walker?.currentScheduleTarget || null; // Used so nickname station conditions see the ambient speaker's station rather than an inactive dialogue walker.
+    return {
+      weekdays: deps?.currentWeekdayName?.(),
+      seasons: deps?.currentSeason?.()?.name,
+      weather: deps?.calendar?.weather,
+      timesOfDay: deps?.fishingTimeOfDay?.(),
+      encounter: (dlgState.heardTrees || []).length ? 'returning' : 'first',
+      maps: deps?.getCurrentArea?.(),
+      stations: scheduleTarget ? (deps?.normalizeStationLabel?.(scheduleTarget.label) || '') : '',
+      playerSpecies: deps?.getPlayerData?.()?.appearance?.speciesId || '',
+      relationship: dlgState.favor ?? 0,
+    };
+  }
+
+  function nicknamePoolFor(rec) {
+    return (rec?.phrasePools || []).find(pool => {
+      const label = `${pool?.id || ''} ${pool?.name || ''}`; // Used to recognize the per-NPC "Nicknames" phrase pool authored by the main Dialogue Editor.
+      return /(?:^|[\s_-])nicknames?(?:$|[\s_-])/i.test(label);
+    }) || null;
+  }
+
+  function pickConditionedPoolEntry(pool, rec, walker) {
+    if (!pool?.entries?.length || !window.ConditionRegistry?.pickBestEntry) return null;
+    const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
+    return window.ConditionRegistry.pickBestEntry(
+      pool.entries,
+      dialogueWorldStateFor(rec, walker),
+      dlgState.heardPoolEntries || []
+    );
+  }
+
+  function resolveDialogueNicknameTokens(text, rec, walker, depth = 0) {
+    const deps = state.dialogueDeps;
+    const player = deps?.getPlayerData?.() || null;
+    const playerName = player?.nickname || state.deps?.getPlayerName?.() || 'Farmer';
+    const gender = player?.appearance?.gender || 'male';
+    const pr1 = gender === 'female' ? 'she' : gender === 'neutral' ? 'they' : 'he';
+    const pr2 = gender === 'female' ? 'her' : gender === 'neutral' ? 'them' : 'him';
+    const pr3 = gender === 'female' ? 'her' : gender === 'neutral' ? 'their' : 'his';
+    const prSelf = gender === 'female' ? 'herself' : gender === 'neutral' ? 'themself' : 'himself';
+    const vowels = new Set('aeiouAEIOU');
+    let firstL2V1 = '';
+    for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
+    const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
+    const localNickname = dlgState.localNickname || playerName;
+    let out = String(text || '')
+      .replace(/\{\{npcName\}\}/g, rec?.name || '')
+      .replace(/\{\{playerName\}\}/g, playerName)
+      .replace(/\{\{playerNickname\}\}/g, playerName)
+      .replace(/\{\{playerLocalNickname\}\}/g, localNickname)
+      .replace(/\{\{playerPronoun1\}\}/g, pr1)
+      .replace(/\{\{playerPronoun2\}\}/g, pr2)
+      .replace(/\{\{playerPronoun3\}\}/g, pr3)
+      .replace(/\{\{playerPronounSelf\}\}/g, prSelf)
+      .replace(/\{\{playerFirstL2V1\}\}/g, firstL2V1)
+      .replace(/\{\{role\}\}/g, rec?.role || '')
+      .replace(/\{\{npcSpecies\}\}/g, rec?.appearance?.speciesId || rec?.species || '')
+      .replace(/\{\{playerSpecies\}\}/g, player?.appearance?.speciesId || '');
+    if (depth < 4) {
+      out = out.replace(/\{\{pool:([^}]+)\}\}/g, (_token, poolId) => {
+        const nested = (rec?.phrasePools || []).find(pool => pool.id === poolId.trim() || pool.name === poolId.trim());
+        const entry = pickConditionedPoolEntry(nested, rec, walker);
+        return entry ? resolveDialogueNicknameTokens(entry.text, rec, walker, depth + 1) : '';
+      });
+    }
+    return out;
+  }
+
+  function playerNicknameFor(walker) {
+    const rec = walker?.rec;
+    const pool = nicknamePoolFor(rec);
+    const entry = pickConditionedPoolEntry(pool, rec, walker);
+    if (entry) {
+      const resolved = resolveDialogueNicknameTokens(entry.text, rec, walker).trim();
+      if (resolved) return resolved;
+    }
+    return state.dialogueDeps?.getPlayerData?.()?.nickname || state.deps?.getPlayerName?.() || 'neighbor';
+  }
+
+  function resolveTargetName(walker, target) {
+    if (target?.id === 'player') return playerNicknameFor(walker);
+    const authored = state.settings.npcNicknames?.[walker?.rec?.id]?.[target?.id]; // Used for directional family/personal nicknames such as Dad, Mom, Sis, and Tak.
+    return String(authored || '').trim() || firstNameWord(target?.name);
   }
 
   function anchorFor(root) {
@@ -303,13 +413,13 @@
     if (headPart) headPart.plane.position.x = -totalWidth / 2 + headWidth / 2;
     scene.add(group);
     const now = performance.now();
-      const event = {
-        root, group, textPart, headPart, profile: options.profile || null,
-        chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
-        faceWalker: options.faceWalker || null,
-        faceTarget: options.faceTarget || null,
-        speakerId: options.speakerId || null,
-        greeting: options.greeting === true,
+    const event = {
+      root, group, textPart, headPart, profile: options.profile || null,
+      chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
+      faceWalker: options.faceWalker || null,
+      faceTarget: options.faceTarget || null,
+      speakerId: options.speakerId || null,
+      greeting: options.greeting === true,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
@@ -413,7 +523,8 @@
     state.lastGreetingAt = now;
     const angle = -Math.atan2(target.z - walker.root.position.z, target.x - walker.root.position.x) + Math.PI / 2;
     walker.applyFacingDeadzone?.(angle, 0.34);
-    show(walker.root, templateLine(target.name, speakerId, targetId, day), {
+    const targetName = resolveTargetName(walker, target); // Used so {targetName} follows main-dialogue player nicknames or directional NPC family nicknames.
+    show(walker.root, templateLine(targetName, speakerId, targetId, day), {
       speakerId,
       profile: walker.profile,
       mode: 'chathead',
@@ -533,11 +644,18 @@
   }
 
   const api = {
-    init, update, show, companionTreasure, crowd,
+    init,
+    update,
+    show,
+    companionTreasure,
+    crowd,
     cheer: (root, options) => crowd(root, 'cheer', options),
     jeer: (root, options) => crowd(root, 'jeer', options),
-    resolveAlcoholOffer, showAlcoholOfferResponse,
-    clear, loadSettings,
+    resolveAlcoholOffer,
+    showAlcoholOfferResponse,
+    clear,
+    loadSettings,
+    resolveTargetName,
   };
   window.AmbientDialogue = api;
 })();
