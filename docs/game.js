@@ -11262,27 +11262,68 @@
         el.style.backgroundImage = '';
         el.classList.remove('sprited-icon');
         delete el.dataset.itemSpriteRequest;
+        delete el.dataset.itemSpriteState;
       }
+
+      // Tracks one success message per resolved sprite/color combination for
+      // the in-game debug log without logging every DOM icon instance.
+      const _itemSpriteReadyLogged = new Set();
 
       function applyItemSpriteIcon(el, def) {
         if (!el || !def) return;
-        clearItemSpriteIcon(el);
         normalizeAlcoholItemDef(def);
-        if (!def.spriteIcon) return;
+        if (!def.spriteIcon) { clearItemSpriteIcon(el); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
         // upgrades it below without leaving alcohol as an emoji while loading.
         const spritePath = 'assets/objectsprites/' + def.spriteIcon;
-        const requestKey = `${def.spriteIcon}|${def.spriteColor}|${def.spriteMode}`;
+        const targetColor = def.spriteColor ?? 0xFFFFFF;
+        const spriteMode = def.spriteMode || 'direct';
+        const requestKey = `${def.spriteIcon}|${targetColor}|${spriteMode}`;
+        // updateHud refreshes the item strip every frame. Keep an identical
+        // pending/ready request intact instead of resetting it to the source
+        // green PNG before the asynchronous recolor can be painted.
+        if (el.dataset.itemSpriteRequest === requestKey
+          && (el.dataset.itemSpriteState === 'pending' || el.dataset.itemSpriteState === 'ready')) return;
+        clearItemSpriteIcon(el);
         el.dataset.itemSpriteRequest = requestKey;
+        el.dataset.itemSpriteState = 'pending';
         el.style.backgroundImage = `url("${spritePath}")`;
         el.classList.add('sprited-icon');
-        if (!window.SpriteRecolor) return;
-        window.SpriteRecolor.getRecoloredCanvas(spritePath, def.spriteColor, def.spriteMode)
+        if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
+        window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
           .then(canvas => {
             if (el.dataset.itemSpriteRequest !== requestKey) return;
             el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            el.dataset.itemSpriteState = 'ready';
+            if (!_itemSpriteReadyLogged.has(requestKey)) {
+              _itemSpriteReadyLogged.add(requestKey);
+              window.__farmLog?.(`[item-icon] ready ${def.label || def.spriteIcon}: #${targetColor.toString(16).padStart(6, '0')} mode=${spriteMode}`, 'items');
+            }
           })
-          .catch(error => window.__farmLog?.(`[item-icon] ${def.label || def.spriteIcon} recolor failed; using source sprite: ${error.message}`, 'warn'));
+          .catch(error => {
+            if (el.dataset.itemSpriteRequest === requestKey) el.dataset.itemSpriteState = 'fallback';
+            window.__farmLog?.(`[item-icon] ${def.label || def.spriteIcon} recolor failed; using source sprite: ${error.message}`, 'warn');
+          });
+      }
+
+      // Pixel Probe reads the active icon states so a mobile report can show
+      // whether color generation is pending, ready, or using its fallback.
+      function getItemSpriteIconDebug() {
+        const active = getActiveInventoryItem();
+        const def = active ? ITEM_DEFS[active.key] : null;
+        const inspect = el => el ? {
+          request: el.dataset.itemSpriteRequest || null,
+          state: el.dataset.itemSpriteState || 'emoji',
+          hasBackground: !!el.style.backgroundImage,
+        } : null;
+        return {
+          key: active?.key || null,
+          spriteIcon: def?.spriteIcon || null,
+          targetColor: def?.spriteColor ?? null,
+          strip: inspect(itemIcon),
+          button: inspect(document.getElementById('itemBtn')),
+          keyboard: inspect(keyHudEl?.querySelector('.kh-item-icon')),
+        };
       }
 
       // ── Inventory panel state ──────────────────────────────────────
@@ -22085,6 +22126,7 @@
         getSeatedCameraDebug: () => _seatedCameraDebug,
         getPaused: () => paused,
         getHeldObjectDebug,
+        getItemSpriteIconDebug,
         SHOULDER_PET_PLANE_RENDER_ORDER,
         playerAttachmentAnchor,
         creatureAttachmentAnchor,

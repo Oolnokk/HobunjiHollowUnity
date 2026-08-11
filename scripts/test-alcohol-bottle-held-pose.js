@@ -59,8 +59,16 @@ assert.match(game,
   /function refreshItemScroll[\s\S]*?applyItemSpriteIcon\(itemIcon, ITEM_DEFS\[curr\.key\]\)[\s\S]*?applyItemSpriteIcon\(iBtnEl, ITEM_DEFS\[curr\.key\]\)/,
   'the current-item HUD and item button upgrade alcohol emoji to the bottle sprite');
 assert.match(game,
-  /style\.backgroundImage = `url\("\$\{spritePath\}"\)`;[\s\S]*?if \(!window\.SpriteRecolor\) return;/,
+  /style\.backgroundImage = `url\("\$\{spritePath\}"\)`;[\s\S]*?if \(!window\.SpriteRecolor\)/,
   'authored item icons show their source PNG even if procedural recoloring is unavailable');
+const iconRenderer = game.slice(game.indexOf('function applyItemSpriteIcon'), game.indexOf('// ── Inventory panel state'));
+const newRequestReset = iconRenderer.indexOf("clearItemSpriteIcon(el);\n        el.dataset.itemSpriteRequest");
+assert(iconRenderer.indexOf("el.dataset.itemSpriteState === 'pending'") < newRequestReset,
+  'identical pending item-icon recolors survive the per-frame HUD refresh');
+assert(iconRenderer.indexOf("el.dataset.itemSpriteState === 'ready'") < newRequestReset,
+  'finished item-icon recolors are not reset to their green source PNG each frame');
+assert.match(iconRenderer, /getRecoloredCanvas\(spritePath, targetColor, spriteMode\)[\s\S]*?itemSpriteState = 'ready'/,
+  'item icons record when the recolored canvas has replaced the source sprite');
 assert.match(game,
   /kh-item-icon[\s\S]*?applyItemSpriteIcon\(keyHudEl\.querySelector\('\.kh-item-icon'\), ITEM_DEFS\[item\.key\]\)/,
   'the desktop keyboard HUD upgrades alcohol emoji to the bottle sprite');

@@ -488,6 +488,12 @@
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
+    const itemIcon = deps.getItemSpriteIconDebug?.();
+    if (itemIcon) {
+      const iconState = entry => entry ? `${entry.state}/${entry.hasBackground ? 'image' : 'none'}` : 'missing';
+      const target = itemIcon.targetColor == null ? '-' : `#${Number(itemIcon.targetColor).toString(16).padStart(6, '0')}`;
+      lines.push(`Item sprite icon: key=${itemIcon.key || '-'} sprite=${itemIcon.spriteIcon || '-'} target=${target} strip=${iconState(itemIcon.strip)} button=${iconState(itemIcon.button)} keyboard=${iconState(itemIcon.keyboard)}`);
+    }
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
     if (facingAtClick) {
       lines.push('');
