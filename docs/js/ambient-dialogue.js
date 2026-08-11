@@ -179,18 +179,33 @@
     return { canvas, texture, geometry, material, plane, nextFrameAt: 0, busy: false };
   }
 
-  function upperPortraitBounds(canvas, maxY = 125) {
+  function portraitBounds(canvas) {
     const context = canvas.getContext('2d', { willReadFrequently: true });
-    const width = canvas.width, height = Math.min(canvas.height, maxY);
+    const width = canvas.width, height = canvas.height;
     const pixels = context.getImageData(0, 0, width, height).data;
-    let minX = width, minY = height, maxX = -1, foundY = -1;
+    let minX = width, minY = height, maxX = -1, maxY = -1;
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
       if (pixels[(y * width + x) * 4 + 3] < 8) continue;
       minX = Math.min(minX, x); minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x); foundY = Math.max(foundY, y);
+      maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
     }
     return maxX < 0 ? { x: 0, y: 0, width, height }
-      : { x: minX, y: minY, width: maxX - minX + 1, height: foundY - minY + 1 };
+      : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+  }
+
+  function buildChatheadProfile(profile) {
+    if (!profile?.fighter) return profile;
+    return {
+      ...profile,
+      fighter: {
+        ...profile.fighter,
+        id: `ambient-head-only:${profile.fighter.id || 'fighter'}`,
+        headUrl: String(profile.fighter.headUrl || '').replace(/([^/]+)$/, './$1'),
+        bodyLayers: [],
+      },
+      torsoCosmetic: null,
+      armCosmetic: null,
+    };
   }
 
   function revealSchedule(text) {
@@ -226,7 +241,7 @@
     event.headPart.busy = true;
     event.headPart.nextFrameAt = now + 110;
     state.renderQueue = state.renderQueue.then(async () => {
-      await window.NpcAvatarPreview?.renderProfileToCanvas(source, event.profile, {
+      await window.NpcAvatarPreview?.renderProfileToCanvas(source, event.chatheadProfile || event.profile, {
         seatId: event.seatId,
         breathingComposer: window.portraitBreathingComposer || null,
       });
@@ -234,16 +249,17 @@
       const context = event.headPart.canvas.getContext('2d');
       context.clearRect(0, 0, 200, 200);
       context.imageSmoothingEnabled = false;
-      // Match the demo's alpha-fitted square detached-head slot instead of
-      // stretching the upper portrait crop or preserving empty side margins.
-      const bounds = upperPortraitBounds(source);
+      // Fit every visible head/head-cosmetic pixel into the square; torso, arms,
+      // and body cosmetics were omitted from the render-only profile above.
+      const bounds = portraitBounds(source);
       const padding = 7;
       const sx = Math.max(0, bounds.x - padding), sy = Math.max(0, bounds.y - padding);
       const sw = Math.min(200 - sx, bounds.width + padding * 2);
-      const sh = Math.min(125 - sy, bounds.height + padding * 2);
+      const sh = Math.min(200 - sy, bounds.height + padding * 2);
       const scale = Math.min(192 / sw, 192 / sh);
       const dw = sw * scale, dh = sh * scale;
       context.drawImage(source, sx, sy, sw, sh, (200 - dw) / 2, (200 - dh) / 2, dw, dh);
+      event.headPart.plane.userData.portraitBounds = { ...bounds }; // Mobile Pixel Probe/debug inspection hook.
       event.headPart.texture.needsUpdate = true;
     }).catch(error => state.deps?.debugLog?.(`[ambient-dialogue] chathead render failed: ${error?.message || error}`, 'warn'))
       .finally(() => { event.headPart.busy = false; });
@@ -276,8 +292,11 @@
     const now = performance.now();
       const event = {
         root, group, textPart, headPart, profile: options.profile || null,
+        chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
         faceWalker: options.faceWalker || null,
         faceTarget: options.faceTarget || null,
+        speakerId: options.speakerId || null,
+        greeting: options.greeting === true,
       seatId: `ambient:${options.speakerId || 'speaker'}:${Math.round(now)}`,
       tone: options.tone || 'greeting', startedAt: now,
       durationMs: Number(options.durationMs) || state.settings.durationMs,
@@ -331,6 +350,10 @@
     return `${day}:${speakerId}>${targetId}`;
   }
 
+  function hasActiveGreetingFor(speakerId) {
+    return state.active.some(event => event.greeting && event.speakerId === speakerId);
+  }
+
   function ensureGreetingLedger(day) {
     const worldId = String(state.deps?.getWorldId?.() || 'local');
     const ledgerKey = `hobunjiAmbientGreetings.v1:${worldId}`;
@@ -356,6 +379,9 @@
   function tryGreeting(walker, target, now, day) {
     const speakerId = walker?.rec?.id;
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
+    // The active event remains in this list through its final opacity fade,
+    // so this releases the NPC only after the prior greeting is fully gone.
+    if (hasActiveGreetingFor(speakerId)) return false;
     const targetId = target.id;
     const key = greetPairKey(day, speakerId, targetId);
     if (state.greeted.has(key)) return false;
@@ -377,6 +403,7 @@
       speakerId,
       profile: walker.profile,
       mode: 'chathead',
+      greeting: true,
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
     });

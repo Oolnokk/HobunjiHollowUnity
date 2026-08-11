@@ -1,40 +1,96 @@
-// Fetches docs/config/combat/attack-values.json once at boot and pushes each
-// section into the combat-*.js module that owns it, via the applyXConfig
-// functions those modules expose (see combat-combo.js's applyComboConfig for
-// the general in-place-mutation pattern every one of them follows). Runs
-// after every combat-*.js file has already registered its synchronous
-// hardcoded defaults, so those defaults are what's actually in play until
-// this fetch resolves — same "synchronous fallback, async override" shape
-// as docs/game.js's loadLootShopConfig().
-//
-// The full parsed config is also stashed on window.__attackValuesConfig so
-// game.js's weaponAbility()/CREATURE_DB attack-field merge (which don't have
-// their own combat-*.js-style module to push into) can read it directly, and
-// so the attack-animation-editor tool's live-preview can inspect the exact
-// values currently in effect.
-//
-// Routed through window.LocalDBOverrides.loadDatabase() (see docs/js/local-
-// db-overrides.js) instead of a bare fetch so the "Database Source" toggle on
-// the onboarding save-select screen can swap in a locally-saved edit of this
-// file without touching the repo copy — falls back to a direct fetch if that
-// module somehow isn't loaded.
-(function () {
+// Loads authored combat values after the synchronous combat defaults exist.
+(() => {
   'use strict';
-  const _load = window.LocalDBOverrides
+
+  const load = window.LocalDBOverrides
     ? window.LocalDBOverrides.loadDatabase('attackValues')
-    : fetch('config/combat/attack-values.json').then(r => r.ok ? r.json() : null);
-  window.__attackValuesConfigPromise = _load
-    .then(cfg => {
-      if (!cfg) return null;
-      window.__attackValuesConfig = cfg;
-      window.Combat?.applyComboConfig?.(cfg.combo);
-      window.Combat?.applyQuickAttackConfig?.(cfg.quickAttacks);
-      window.Combat?.applyChargedBreakerConfig?.(cfg.chargedBreaker);
-      window.Combat?.applyFlurryConfig?.(cfg.flurry);
-      window.Combat?.applyCounterShieldConfig?.(cfg.counterShield);
-      window.Combat?.animalAttacks?.applyConfig?.(cfg.creatureAttacks);
-      window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: cfg }));
-      return cfg;
-    })
-    .catch(() => null);
+    : fetch('config/combat/attack-values.json').then(response => response.ok ? response.json() : null);
+
+  window.__attackValuesConfigPromise = load.then(config => {
+    if (!config) return null;
+    window.__attackValuesConfig = config;
+    window.Combat?.applyComboConfig?.(config.combo);
+    window.Combat?.applyQuickAttackConfig?.(config.quickAttacks);
+    window.Combat?.applyChargedBreakerConfig?.(config.chargedBreaker);
+    window.Combat?.applyFlurryConfig?.(config.flurry);
+    window.Combat?.applyCounterShieldConfig?.(config.counterShield);
+    window.Combat?.animalAttacks?.applyConfig?.(config.creatureAttacks);
+    window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: config }));
+    return config;
+  }).catch(() => null);
+})();
+
+// Compatibility bootstrap for runtime modules extracted from this loader and
+// impact-ragdoll-playback.js. index.html already loads this file at the exact
+// parser-blocking point those integrations need: after their core dependencies
+// exist, but before game.js constructs the player rig and initializes late
+// systems. Keep the bootstrap tiny so each behavior remains independently
+// owned/testable. A future index cleanup can replace these entries with normal
+// script tags without changing any module API.
+(() => {
+  'use strict';
+
+  // three.js r128 installs render() as an OWN method on every WebGLRenderer
+  // instance. PlayerBodyTransformComposer intentionally hooks the prototype so
+  // it can intercept every render pass, which means an untouched r128 instance
+  // shadows that hook completely. Make future renderer instances delegate their
+  // public render() lookup through the prototype while preserving the original
+  // r128 implementation as a private bound function on each instance.
+  function makeRendererPrototypeHookable() {
+    const OriginalWebGLRenderer = window.THREE?.WebGLRenderer; // Used to construct the real r128 renderer inside the compatibility wrapper.
+    if (!OriginalWebGLRenderer || OriginalWebGLRenderer.__hobunjiPrototypeHookable) return;
+
+    const rendererPrototype = OriginalWebGLRenderer.prototype; // Used as the stable hook surface PlayerBodyTransformComposer wraps next.
+    const preexistingPrototypeRender = rendererPrototype.render; // Preserved for Three builds that already expose prototype render().
+
+    if (typeof rendererPrototype.render !== 'function') {
+      rendererPrototype.render = function hobunjiBaseRendererRender(...args) {
+        if (typeof this.__hobunjiBaseRendererRender === 'function') {
+          return this.__hobunjiBaseRendererRender(...args);
+        }
+        return preexistingPrototypeRender?.apply(this, args);
+      };
+    }
+
+    function HookableWebGLRenderer(...args) {
+      const instance = new OriginalWebGLRenderer(...args); // Used as the renderer returned to game.js after its own render() is captured.
+      if (Object.prototype.hasOwnProperty.call(instance, 'render') && typeof instance.render === 'function') {
+        Object.defineProperty(instance, '__hobunjiBaseRendererRender', {
+          configurable: true,
+          value: instance.render.bind(instance),
+        });
+        delete instance.render;
+      }
+      return instance;
+    }
+
+    HookableWebGLRenderer.prototype = rendererPrototype;
+    Object.setPrototypeOf(HookableWebGLRenderer, OriginalWebGLRenderer);
+    HookableWebGLRenderer.__hobunjiPrototypeHookable = true;
+    HookableWebGLRenderer.__hobunjiOriginalWebGLRenderer = OriginalWebGLRenderer;
+    window.THREE.WebGLRenderer = HookableWebGLRenderer;
+  }
+
+  makeRendererPrototypeHookable();
+
+  const modules = [
+    ['js/player-body-transform-composer.js?v=20260810b', () => !!window.PlayerBodyTransformComposer],
+    ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
+    ['js/drunk-locomotion.js?v=20260810a', () => !!window.HobunjiDrunkWalk],
+    ['js/alcohol-gameplay-bridge.js?v=20260810a', () => !!window.HobunjiDrunkGameplayBridge],
+  ];
+
+  function loadModule(src, alreadyLoaded) {
+    if (alreadyLoaded()) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}"></` + 'script>');
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  }
+
+  for (const [src, alreadyLoaded] of modules) loadModule(src, alreadyLoaded);
 })();

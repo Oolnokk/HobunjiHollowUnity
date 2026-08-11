@@ -24,6 +24,8 @@ assert(runtime.includes('getWeekDay'), 'runtime resolves {weekDay} through the g
 assert(runtime.includes('getDayPart'), 'runtime resolves {dayPart} through the game clock');
 assert(runtime.includes('SCRATCHBONES_CONFIG?.game?.npcDialogue?.text?.typewriter'), 'ambient text uses the ordinary NPC typewriter rules');
 assert(runtime.includes("event.textPart.text.slice(0, visibleChars)"), 'revealed letters accumulate instead of replacing one another');
+assert(runtime.includes('hasActiveGreetingFor(speakerId)'), 'an NPC cannot start another greeting until its active greeting has fully faded');
+assert(runtime.includes('greeting: true'), 'proximity greetings are marked separately from companion and crowd speech');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
 
