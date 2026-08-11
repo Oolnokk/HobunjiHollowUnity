@@ -329,13 +329,15 @@
     hooks.rules.splice(insertionIndex, 0, ...generated);
   }
 
-  // Applies small, reviewable schedule corrections after loading either the
-  // repo NPC database or a local editor override. This keeps map movement and
-  // relationship-aware routine policy out of game.js while avoiding direct
-  // hand-edits to the very large NPC database for every town-layout tweak.
+  // Applies small, reviewable NPC corrections after loading either the repo
+  // database or a local editor override. This keeps map movement, living/dead
+  // state, and relationship-aware routine policy out of game.js while avoiding
+  // direct hand-edits to the very large NPC database for every town tweak.
   function applyNpcScheduleOverrides(npcDatabase, scheduleOverrides) {
     if (!npcDatabase || !Array.isArray(npcDatabase.npcs) || !scheduleOverrides) return npcDatabase;
     const merged = JSON.parse(JSON.stringify(npcDatabase)); // Used as a non-mutating NPC database copy for composed runtime schedules.
+    const removedNpcIds = new Set(scheduleOverrides.removeNpcIds || []); // Used to remove authoritative deceased/invalid records before any schedule logic can spawn them.
+    if (removedNpcIds.size) merged.npcs = merged.npcs.filter(npc => !removedNpcIds.has(npc.id));
     for (const redirect of scheduleOverrides.stationRedirects || []) _applyStationRedirect(merged, redirect);
     for (const redirect of scheduleOverrides.positionRedirects || []) _applyPositionRedirect(merged, redirect);
     for (const choice of scheduleOverrides.presenceChoices || []) _applyPresenceChoice(merged, choice);
