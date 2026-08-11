@@ -16,9 +16,20 @@ assert(hub.includes('ambient-dialogue-editor/index.html'), 'tool hub links the A
 assert(editor.includes('Greeting pool'), 'editor exposes NPC greeting settings');
 assert(editor.includes('Treasure announcements'), 'editor exposes animal treasure announcements');
 assert(editor.includes('Audience reactions'), 'editor exposes cheers and jeers');
+assert(editor.includes('Nickname this NPC uses'), 'editor exposes directional NPC-to-NPC nickname settings');
+assert(editor.includes('Blank ='), 'editor explains the first-name fallback for NPC targets');
 assert(editor.includes('ambient-dialogue.json'), 'editor imports and exports the runtime config');
 assert(runtime.includes('npcGreetings'), 'runtime consumes per-NPC greeting pools');
-assert(runtime.includes('companionTreasureLines'), 'runtime consumes per-species treasure pools');
+assert(runtime.includes('npcNicknames'), 'runtime consumes directional NPC-to-NPC nicknames');
+assert(runtime.includes('firstNameWord'), 'runtime defaults NPC {targetName} to the first word of the target name');
+assert(runtime.includes('ConditionRegistry.pickBestEntry'), 'player ambient nicknames use the main dialogue condition selector');
+assert(runtime.includes('heardPoolEntries'), 'player ambient nickname selection respects main dialogue phrase-pool history/ranking');
+assert(runtime.includes('currentWeekdayName'), 'player ambient nickname conditions use the main dialogue weekday world state');
+assert(runtime.includes('currentSeason'), 'player ambient nickname conditions use the main dialogue season world state');
+assert(runtime.includes('calendar?.weather'), 'player ambient nickname conditions use the main dialogue weather world state');
+assert(runtime.includes('fishingTimeOfDay'), 'player ambient nickname conditions use the main dialogue time-of-day world state');
+assert(runtime.includes('normalizeStationLabel'), 'player ambient nickname conditions use the speaker schedule station');
+assert(runtime.includes('getPlayerData'), 'player ambient nickname tokens/species use main dialogue player data');
 assert(runtime.includes('targetName:'), 'runtime drops the intended target name into greetings');
 assert(runtime.includes('getWeekDay'), 'runtime resolves {weekDay} through the game calendar');
 assert(runtime.includes('getDayPart'), 'runtime resolves {dayPart} through the game clock');
@@ -28,5 +39,22 @@ assert(runtime.includes('hasActiveGreetingFor(speakerId)'), 'an NPC cannot start
 assert(runtime.includes('greeting: true'), 'proximity greetings are marked separately from companion and crowd speech');
 assert(Object.keys(config.npcGreetings || {}).length, 'sample per-NPC greeting data is present');
 assert(Object.keys(config.companionTreasureLines || {}).length, 'sample per-species treasure data is present');
+
+const nick = config.npcNicknames || {};
+assert.equal(nick.sloomi?.kzubug, 'Dad');
+assert.equal(nick.nashka_khibu?.dzahiri_khibu, 'Mom');
+assert.equal(nick.nashka_khibu?.dzibim_khibu, 'Dad');
+assert.equal(nick.nashka_khibu?.kaboku_kunji, 'Grandpa');
+assert.equal(nick.spearhead_unumanuk?.teacup_unumanuk, 'Mother');
+assert.equal(nick.oddclaw_unumanuk?.spearhead_unumanuk, 'Father');
+assert.equal(nick.oddclaw_unumanuk?.teacup_unumanuk, 'Grandmother');
+assert.equal(nick.aliri_ginju?.gikali_ginju, 'Mama');
+assert.equal(nick.aliri_ginju?.gorobi_ginju, 'Papa');
+assert.equal(nick.gantami_ginju?.gikali_ginju, 'Mama');
+assert.equal(nick.gantami_ginju?.gorobi_ginju, 'Papa');
+assert.equal(nick.takua_ao_hakaru?.namui_u_hakaru, 'Sis');
+assert.equal(nick.namui_u_hakaru?.takua_ao_hakaru, 'Tak');
+assert((config.friendGroups || []).some(group => ['gorobi_ginju', 'gikali_ginju', 'aliri_ginju', 'gantami_ginju'].every(id => group.includes(id))), 'Ginju family may greet one another');
+assert(Object.hasOwn(config.npcGreetings?.nashka_khibu?.friends || {}, 'kaboku_kunji'), 'Nashka can greet Grandpa Kaboku');
 
 console.log('Ambient Dialogue editor and runtime config checks passed.');
