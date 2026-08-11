@@ -264,6 +264,30 @@
     });
   }
 
+  function syncInteractionPrompts(options = {}) {
+    const buttons = Array.isArray(options.buttons) ? options.buttons : [];
+    const isWorldInteraction = typeof options.isWorldInteraction === 'function'
+      ? options.isWorldInteraction
+      : button => !!button?.worldInteraction;
+    const worldInteractions = buttons.filter(isWorldInteraction);
+    const show = options.enabled !== false
+      && (worldInteractions.some(button => button.contextualHeldItem)
+        || worldInteractions.length > 1);
+    if (!show || !options.root) {
+      clearInteractionPrompts();
+      return [];
+    }
+    const promptKeys = options.promptKeys || ['E', 'Q', 'F3', 'F4', 'F5'];
+    const prompts = worldInteractions.map(button => {
+      const slot = buttons.indexOf(button);
+      const keyHint = options.desktop && slot >= 0
+        ? `${promptKeys[slot] || `F${slot + 1}`}  `
+        : '';
+      return { ...button, text: `${keyHint}${button.label}` };
+    });
+    return setInteractionPrompts(options.root, prompts, { scene: options.scene });
+  }
+
   function update(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
@@ -317,6 +341,6 @@
     return clone(state.settings);
   }
 
-  const api = { init, update, showChange, queueReward, setInteractionPrompts, clearInteractionPrompts, avatarCentroidWorld, loadSettings, applySettings, clear, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
+  const api = { init, update, showChange, queueReward, setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts, avatarCentroidWorld, loadSettings, applySettings, clear, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
   window.WorldPopupText = api;
 })();

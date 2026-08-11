@@ -36,6 +36,12 @@
   <script src="js/held-action-animations.js?v=20260811b"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20260811a"></script>
+  <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
+  <script src="js/npc-character-state.js?v=20260811a"></script>
+  <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
+  <script src="js/npc-drink-interaction.js?v=20260811a"></script>
+  <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
+  <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20260801a"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
@@ -1646,7 +1652,7 @@
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260806a"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20260811a"></script>
+  <script src="js/world-popup-text.js?v=20260811b"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20260811a"></script>
@@ -1694,7 +1700,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811h"></script>
+  <script src="game.js?v=20260811i"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

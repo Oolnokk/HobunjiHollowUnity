@@ -65,7 +65,7 @@ assert.match(game,
   /SpriteRecolor\.getRecoloredCanvas\(spritePath,[\s\S]*?plane\.scale\.y = canvas\.height/,
   'held authored item sprites preserve their recolor and source aspect ratio');
 assert.match(game,
-  /function refreshItemScroll[\s\S]*?applyItemSpriteIcon\(itemIcon, ITEM_DEFS\[curr\.key\]\)[\s\S]*?applyItemSpriteIcon\(iBtnEl, ITEM_DEFS\[curr\.key\]\)/,
+  /function refreshItemScroll[\s\S]*?applyItemSpriteIcon\(itemIcon, ITEM_DEFS\[curr\.key\], curr\.key\)[\s\S]*?applyItemSpriteIcon\(iBtnEl, ITEM_DEFS\[curr\.key\], curr\.key\)/,
   'the current-item HUD and item button upgrade alcohol emoji to the bottle sprite');
 assert.match(game,
   /style\.backgroundImage = `url\("\$\{spritePath\}"\)`;[\s\S]*?if \(!window\.SpriteRecolor\)/,
@@ -83,10 +83,10 @@ assert.match(iconRenderer, /itemSpriteState = 'fallback'[\s\S]*?itemSpriteError 
 assert.match(pixelProbe, /Item sprite recolor error:/,
   'Pixel Probe prints the captured item-sprite failure on mobile');
 assert.match(game,
-  /kh-item-icon[\s\S]*?applyItemSpriteIcon\(keyHudEl\.querySelector\('\.kh-item-icon'\), ITEM_DEFS\[item\.key\]\)/,
+  /kh-item-icon[\s\S]*?applyItemSpriteIcon\(keyHudEl\.querySelector\('\.kh-item-icon'\), ITEM_DEFS\[item\.key\], item\.key\)/,
   'the desktop keyboard HUD upgrades alcohol emoji to the bottle sprite');
 assert.match(game,
-  /slots\.push\(\{ type:'item',[^\n]*key:stacks\[[^\n]*[\s\S]*?applyItemSpriteIcon\(iconEl, ITEM_DEFS\[s\.key\]\)/,
+  /slots\.push\(\{ type:'item',[^\n]*key:stacks\[[^\n]*[\s\S]*?applyItemSpriteIcon\(iconEl, ITEM_DEFS\[s\.key\], s\.key\)/,
   'the item-selection arc upgrades alcohol emoji to the bottle sprite');
 assert.match(game,
   /const fallbackTexture = spritePath[\s\S]*?_toolTexLoader\.load\(spritePath/,
