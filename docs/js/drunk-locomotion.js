@@ -74,6 +74,7 @@
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
       mode: 'additive',
+      preserveFacingSide: true,
       // Facing/dead-zone code owns Y rotation. Adding a second body-yaw here
       // can push the PNG plane across its north-facing front/back boundary
       // after facing has already resolved, producing a rapid flip-flop. Drunk
