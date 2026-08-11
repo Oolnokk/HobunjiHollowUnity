@@ -12,8 +12,9 @@
 
   const DEG = Math.PI / 180;
   const DRUNK_FOOTING_ID = 'drunkenFooting';
-  const DRUNK_MAX_PITCH_DEG = 13;
-  const DRUNK_MAX_ROLL_DEG = 30;
+  const DRUNK_MAX_PITCH_DEG = 26;
+  const DRUNK_MAX_ROLL_DEG = 60;
+  const DRUNK_LEG_SWAY_SCALE = 0.5; // Applied to drunken leg offsets/twist without reducing the normal procedural gait.
   const DRUNK_CROSS_STEP_WIDTH = 0.32;
   const DRUNK_WIDE_STEP_WIDTH = 0.30;
   const DRUNK_STEP_DEPTH = 0.18;
@@ -182,11 +183,11 @@
         const wide = Math.pow(Math.max(0, -wave), 1.8);
         const hesitation = Math.pow(Math.max(0, Math.sin(entry.phase - 0.55)), 7);
         const lateralNoise = Math.sin(entry.phase * 0.41 + entry.side * 1.9) * 0.04 * modelWidth * blend;
-        const xTarget = lateralNoise + extreme * modelWidth *
-          (entry.side * DRUNK_WIDE_STEP_WIDTH * wide - entry.side * DRUNK_CROSS_STEP_WIDTH * cross);
-        const zTarget = blend * modelHeight * DRUNK_STEP_DEPTH *
+        const xTarget = DRUNK_LEG_SWAY_SCALE * (lateralNoise + extreme * modelWidth *
+          (entry.side * DRUNK_WIDE_STEP_WIDTH * wide - entry.side * DRUNK_CROSS_STEP_WIDTH * cross));
+        const zTarget = DRUNK_LEG_SWAY_SCALE * blend * modelHeight * DRUNK_STEP_DEPTH *
           (0.56 * Math.sin(entry.phase * 0.57 + 0.7) + 0.44 * Math.sin(entry.phase * 1.37 - 0.9));
-        const yTarget = extreme * modelHeight * DRUNK_HESITATION_LIFT * hesitation;
+        const yTarget = DRUNK_LEG_SWAY_SCALE * extreme * modelHeight * DRUNK_HESITATION_LIFT * hesitation;
         const sideState = state[entry.key];
         sideState.x = damp(sideState.x, xTarget, 8.5, dt);
         sideState.y = damp(sideState.y, yTarget, 10.5, dt);
@@ -196,7 +197,7 @@
         entry.thigh.position.z += sideState.z;
       }
 
-      const toeStrength = extreme * (0.35 + 0.65 * Math.sqrt(movement));
+      const toeStrength = DRUNK_LEG_SWAY_SCALE * extreme * (0.35 + 0.65 * Math.sqrt(movement));
       applyTrackedFootTwist(THREE, legPart(handle.group, 'left_foot'),
         toeStrength * DEG * (25 * Math.sin(p * 0.83 + 0.4) + 14 * Math.sin(p * 0.29 - 0.5)),
         toeStrength * DEG * (12 * Math.sin(p * 0.67 - 0.2)),
