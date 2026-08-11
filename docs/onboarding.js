@@ -472,6 +472,8 @@
       packClothing:     [],           // unequipped clothing sitting in this world's pack
       npcRelationships: {},           // { [npcId]: { favor, memory: [{event, day, ts}] } }
       questProgress:    {},           // { [questId]: { status, progress, completedAt } }
+      alcoholBottleSwigs: {},         // { [itemKey]: remainingSwigs } for the currently open bottle in each stack
+      npcAlcoholState: {},            // { [npcId]: { sobriety, blackoutUntilMinute, lastDrinkKey } }
       alchemyKnownEffects: {},        // { [reagentKey]: [effectIndex, ...] } — discovered reagent effects
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
@@ -1196,6 +1198,8 @@
       packClothing:      [...(memberState.packClothing || [])],
       npcRelationships:  { ...(memberState.npcRelationships || {}) },
       questProgress:     { ...(memberState.questProgress || {}) },
+      alcoholBottleSwigs: { ...(memberState.alcoholBottleSwigs || {}) },
+      npcAlcoholState: { ...(memberState.npcAlcoholState || {}) },
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
@@ -1536,6 +1540,8 @@
       playerData.packClothing   = [...memberState.packClothing];
       playerData.npcRelationships = { ...memberState.npcRelationships };
       playerData.questProgress  = { ...memberState.questProgress };
+      playerData.alcoholBottleSwigs = { ...(memberState.alcoholBottleSwigs || {}) };
+      playerData.npcAlcoholState = { ...(memberState.npcAlcoholState || {}) };
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };

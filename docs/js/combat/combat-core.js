@@ -355,6 +355,7 @@
       tags: ["Processed", "Sake", "Aged", "Needlegrain"],
       desc: "Barrel-aged needlegrain liquor, colored like dark pine needles.",
       ingredientKeys: ["needlegrain"],
+      swigsPerBottle: 4,
       spriteIcon: "bottle_wine.png", spriteColor: 0x2F4A2E, spriteMode: "keyed"
     };
     itemDefs.heftrootVodka ||= {
@@ -362,6 +363,7 @@
       tags: ["Processed", "Vodka", "Aged", "Heftroot"],
       desc: "Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.",
       ingredientKeys: ["heftroot"],
+      swigsPerBottle: 4,
       spriteIcon: "bottle_wine.png", spriteColor: 0xF0D15A, spriteMode: "keyed"
     };
   }
@@ -431,8 +433,16 @@
       const profile = alcoholProfileForDef(def);
       const player = window.Combat?.deps?.player;
       if (!inventory || !player || !profile || (inventory[key] || 0) < 1) return { ok: false, message: "No alcoholic drink to consume." };
-      inventory[key]--;
-      alchemyDeps?.clampInventoryStack?.(key);
+      // Alcohol bottles are multi-serving. The bridge persists the currently
+      // open bottle's remaining swigs and removes the inventory item only when
+      // its last swig is consumed; the full legacy effect below still applies
+      // on every swig. Fall back to whole-item consumption during early boot.
+      const serving = window.HobunjiDrunkGameplayBridge?.consumeBottleSwig?.(key, def, inventory);
+      if (serving && serving.ok === false) return serving;
+      if (!serving) {
+        inventory[key]--;
+        alchemyDeps?.clampInventoryStack?.(key);
+      }
       const result = RS.addDrunkenness(player, profile.footing, profile.health, { source: key, label: def?.label || key });
       lastDrink = {
         key, label: def?.label || key,
@@ -442,7 +452,14 @@
         at: performance.now()
       };
       const blackoutText = result.blackout ? ` Blackout: ${Math.round(result.deficitPercent)}% deficit.` : "";
-      return { ok: true, message: `${def?.icon || "🍷"} Drank ${def?.label || key}.${blackoutText}` };
+      const servingText = serving
+        ? ` ${serving.remaining}/${serving.total} swigs remain${serving.bottleFinished && serving.bottleCount <= 0 ? ' — bottle emptied' : ''}.`
+        : '';
+      return {
+        ok: true,
+        message: `${def?.icon || "🍷"} Drank a swig of ${def?.label || key}.${servingText}${blackoutText}`,
+        serving,
+      };
     };
     api.__hobunjiAlcoholDrinkHooked = true;
   }
@@ -729,6 +746,11 @@
   RS.__drunkenAfflictionsInstalled = true;
 
   window.HobunjiAlcohol = {
+    profileForItem(key) { return alcoholProfileForDef(itemDefs()?.[key]); },
+    blackoutMinutesForDeficit(deficitPercent) {
+      return Math.max(BLACKOUT_MIN_SKIP_MINUTES,
+        Math.round(Math.max(1, Number(deficitPercent) || 0) * BLACKOUT_MINUTES_PER_PERCENT));
+    },
     getDebug() {
       const player = window.Combat?.deps?.player;
       return {

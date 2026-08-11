@@ -492,11 +492,21 @@
       const archState = held.actionArch.map(button => `${button.id}=${button.hidden ? 'hidden' : (button.action || 'empty')}${button.blocked ? '/blocked' : ''}`).join(' ');
       lines.push(`Mobile action arch: ${archState}`);
     }
+    if (held?.characterActionLocks?.length) {
+      const lockState = held.characterActionLocks.map(lock => `${lock.owner}[${lock.participants.map(participant => `${participant.id}:${participant.channels.join('+')}`).join(',')}]`).join(' ');
+      lines.push(`Character action locks: ${lockState}`);
+    }
+    if (held?.npcDrinkInteractions?.length) {
+      const drinkState = held.npcDrinkInteractions.map(interaction => `${interaction.npcId}:${interaction.itemKey}/${interaction.phase}/${Math.round(interaction.progress * 100)}%`).join(' ');
+      lines.push(`NPC drink interactions: ${drinkState}`);
+    }
     const itemIcon = deps.getItemSpriteIconDebug?.();
     if (itemIcon) {
       const iconState = entry => entry ? `${entry.state}/${entry.hasBackground ? 'image' : 'none'}` : 'missing';
       const target = itemIcon.targetColor == null ? '-' : `#${Number(itemIcon.targetColor).toString(16).padStart(6, '0')}`;
       lines.push(`Item sprite icon: key=${itemIcon.key || '-'} sprite=${itemIcon.spriteIcon || '-'} target=${target} strip=${iconState(itemIcon.strip)} button=${iconState(itemIcon.button)} keyboard=${iconState(itemIcon.keyboard)}`);
+      if (itemIcon.swigs) lines.push(`Alcohol swigs: ${itemIcon.swigs.remaining}/${itemIcon.swigs.total} in open bottle; bottles in stack=${itemIcon.swigs.bottleCount}`);
+      if (itemIcon.nearbyNpcAlcohol) lines.push(`Nearby NPC alcohol: id=${itemIcon.nearbyNpcAlcohol.id} sobriety=${Number(itemIcon.nearbyNpcAlcohol.sobriety).toFixed(2)} blackoutUntilMinute=${Number(itemIcon.nearbyNpcAlcohol.blackoutUntilMinute || 0).toFixed(2)}`);
       // Deduplicate failures shared by several HUD copies so mobile reports stay compact.
       const iconErrors = [...new Set([itemIcon.strip?.error, itemIcon.button?.error, itemIcon.keyboard?.error].filter(Boolean))];
       if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);
