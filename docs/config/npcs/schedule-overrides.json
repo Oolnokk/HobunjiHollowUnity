@@ -1,0 +1,57 @@
+{
+  "schema": "hobunji_npc_schedule_overrides.v1",
+  "note": "Small runtime schedule corrections that depend on map layout or other NPC schedules. Applied by LocalDBOverrides after the NPC database loads so these tweaks stay out of game.js and the large NPC database.",
+  "stationRedirects": [
+    {
+      "npcId": "dzibim_khibu",
+      "fromStationId": "station_dzibim_home",
+      "toStationId": "furniture_chair_map_i_carpenters_12_8",
+      "mapId": "map_i_carpenters"
+    },
+    {
+      "npcId": "dzahiri_khibu",
+      "fromStationId": "station_dzahiri_home",
+      "toStationId": "furniture_chair_map_i_carpenters_13_8",
+      "mapId": "map_i_carpenters"
+    },
+    {
+      "npcId": "nashka_khibu",
+      "fromStationId": "station_nashka_home",
+      "toStationId": "furniture_chair_map_i_carpenters_12_9",
+      "mapId": "map_i_carpenters"
+    }
+  ],
+  "positionRedirects": [
+    {
+      "npcId": "foroji_funji",
+      "fromStationId": "station_foroji_music",
+      "mapId": "map_hobunji_town",
+      "c": 26,
+      "r": 34,
+      "note": "Main town-square path convergence."
+    }
+  ],
+  "presenceChoices": [
+    {
+      "id": "kaboku_afternoon_family_or_inn",
+      "npcId": "kaboku_kunji",
+      "replaceStationId": "station_kaboku_avoid",
+      "from": "12:00",
+      "to": "19:00",
+      "whenAnyNpcIds": [
+        "dzahiri_khibu",
+        "nashka_khibu"
+      ],
+      "whenPresent": {
+        "mapId": "map_i_carpenters",
+        "stationId": "furniture_chair_map_i_carpenters_13_9",
+        "activity": "visiting family"
+      },
+      "fallback": {
+        "mapId": "map_i_inn",
+        "stationId": "furniture_chair_map_i_inn_16_9",
+        "activity": "avoiding Kinami"
+      }
+    }
+  ]
+}
