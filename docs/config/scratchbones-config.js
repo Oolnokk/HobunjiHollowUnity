@@ -3445,6 +3445,7 @@ window.SCRATCHBONES_CONFIG = {
         "musicFadeMs": 280,
         "songFadeInMs": 2200,
         "songFadeOutMs": 2600,
+        "bgsFadeMs": 1600,
         "ambientCueMinDelaySec": 20,
         "ambientCueMaxDelaySec": 45,
         "areaBgm": {
@@ -3475,8 +3476,8 @@ window.SCRATCHBONES_CONFIG = {
         "bgs": {
           "birds": "assets/audio/sfx/bgs/bgs_birds1.mp3",
           "birdsVolume": 0.24,
-          "nightbugs": "assets/audio/sfx/bgs/bgs_nightbugs1.wav",
-          "nightbugsVolume": 0.22,
+          "nightbugs": "assets/audio/sfx/bgs/bgs_nightbugs1.mp3",
+          "nightbugsVolume": 0.34,
           "wind1": "assets/audio/sfx/bgs/bgs_wind1.mp3",
           "wind1Volume": 0.24,
           "wind2": "assets/audio/sfx/bgs/bgs_wind2.mp3",
