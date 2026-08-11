@@ -15,9 +15,9 @@
     strikeFrac: 0.62,
     holdFrac: 0.78,
     poses: {
-      neutral: { x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-      windup: { x: 0.10, y: 0.18, z: 0.02, pitch: -38, yaw: -12, roll: -8, bodyYaw: -6 },
-      strike: { x: 0.12, y: 0.32, z: 0.04, pitch: -78, yaw: -15, roll: -10, bodyYaw: -8 },
+      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
+      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0 },
+      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 },
     },
   };
 
