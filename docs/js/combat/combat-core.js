@@ -588,7 +588,11 @@
       }
       if (devDeps._isBuildingArea?.(currentArea)) devDeps.setCurrentBuildingMapId?.(null);
       devDeps.setCurrentArea(targetArea);
-      if (devDeps._isZoneArea?.(targetArea)) devDeps.buildZoneScene?.(targetArea);
+      // Town and wilderness scenes are both lazy. A cross-map blackout must
+      // build its destination before getActiveGrid/getActiveScene are read,
+      // just like ordinary gate travel does.
+      if (targetArea === "town") devDeps.buildTownScene?.();
+      else if (devDeps._isZoneArea?.(targetArea)) devDeps.buildZoneScene?.(targetArea);
       const grid = devDeps.getActiveGrid?.();
       const cols = Number(devDeps.getActiveCols?.()) || grid?.[0]?.length || 1;
       const rows = Number(devDeps.getActiveRows?.()) || grid?.length || 1;

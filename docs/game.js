@@ -21135,15 +21135,14 @@
         useActiveAction();
       }
       function runInteractAction() {
-        // Excludes raw tool-swing actions (dig/till/chop/etc — those belong
-        // to the tool/item action-slot buttons, not the Interact key/button),
-        // but NOT plant_/place_/harvest: those are context actions exactly
-        // like "open this door" or "talk to this NPC", and a player holding
-        // a seed reasonably expects the same Interact input that does
-        // everything else to also plant it, instead of only the separate
-        // primary tool/item action button working.
+        // Interact is reserved for the world: doors, NPCs, furniture, nests,
+        // transition spots, and similar objects. Tool actions and held-item
+        // actions stay on their dedicated action-slot inputs.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const btn = computeActionButtons().find(b => b.allowed !== false && !toolSet.has(b.action));
+        const isItemAction = action => action === 'harvest'
+          || action.startsWith('plant_') || action.startsWith('place_') || action.startsWith('spawn_');
+        const btn = computeActionButtons().find(b => b.allowed !== false
+          && !toolSet.has(b.action) && !isItemAction(b.action));
         if (!btn) return;
         activeAction = btn.action;
         useActiveAction();
@@ -21333,7 +21332,8 @@
           return;
         }
 
-        // Primary action: Space, Enter, or E (E only taps on desktop; hold opens tool selection)
+        // Primary action: Space/Enter, plus the non-desktop E fallback. On
+        // desktop E is handled above as Interact/hold-to-select-tool.
         if (key === ' ' || key === 'enter' || key === 'e') {
           event.preventDefault();
           if (!event.repeat) {
@@ -21411,7 +21411,7 @@
         if (key === 'e' && isDesktop) {
           event.preventDefault();
           const wasHeld = finishDesktopHoldKey('e');
-          if (!wasHeld) { actionHeldDown = true; useActiveAction(); actionHeldDown = false; }
+          if (!wasHeld) runInteractAction();
           return;
         }
         if (key === 'q' && isDesktop) {
@@ -22384,6 +22384,7 @@
         showToast,
         closeMenu,
         EXTERIOR_ZONES,
+        buildTownScene,
         buildZoneScene,
         COLS, ROWS, TILE,
         CREATURE_DB,

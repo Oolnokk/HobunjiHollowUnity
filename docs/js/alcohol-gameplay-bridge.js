@@ -386,7 +386,9 @@
   }, true);
 
   window.addEventListener('keydown', event => {
-    if (event.repeat || !['Space', 'Enter', 'KeyE'].includes(event.code) || !consumeHeldItem()) return;
+    // Desktop E is reserved for world interaction and hold-to-open tool
+    // selection. Consumables use the dedicated primary-action inputs only.
+    if (event.repeat || !['Space', 'Enter'].includes(event.code) || !consumeHeldItem()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
