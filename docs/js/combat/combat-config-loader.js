@@ -76,6 +76,7 @@
   const modules = [
     ['js/player-body-transform-composer.js?v=20260810b', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
+    ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260810a', () => !!window.HobunjiDrunkWalk],
     ['js/alcohol-gameplay-bridge.js?v=20260810a', () => !!window.HobunjiDrunkGameplayBridge],
   ];

@@ -16,6 +16,38 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Rigid buildings stay level, but their whole mesh follows one subtle-height
+  // sample at its authored anchor. This is the same sampler used to displace
+  // terrain geometry, so Map Editor visualHeights are real runtime height data
+  // instead of a 3D-preview-only effect. A building-specific override wins
+  // directly so sparse/L-shaped footprints never miss their own stamp merely
+  // because the bbox corner used as gridX/gridZ is not itself occupied.
+  function _buildingVisualHeight(mapData, bldg) {
+    const terrain = window.TerrainPreview;
+    if (!terrain || !bldg) return 0;
+    const override = bldg.subtleElevationOverride;
+    if (override?.enabled && Number.isFinite(Number(override.value))) {
+      const lo = Number.isFinite(terrain.VISUAL_HEIGHT_MIN) ? terrain.VISUAL_HEIGHT_MIN : -1;
+      const hi = Number.isFinite(terrain.VISUAL_HEIGHT_MAX) ? terrain.VISUAL_HEIGHT_MAX : 1;
+      const displacement = Number.isFinite(terrain.VISUAL_HEIGHT_DISPLACEMENT) ? terrain.VISUAL_HEIGHT_DISPLACEMENT : 0;
+      return Math.max(lo, Math.min(hi, Number(override.value))) * displacement;
+    }
+    if (typeof terrain.sampleVisualHeight !== 'function' || !mapData) return 0;
+    const cols = Math.max(1, Number(mapData.cols) || 1);
+    const rows = Math.max(1, Number(mapData.rows) || 1);
+    const x = (Number(bldg.gridX) || 0) + 0.5;
+    const z = (Number(bldg.gridZ) || 0) + 0.5;
+    return terrain.sampleVisualHeight(mapData.visualHeights || {}, x, z, cols, rows) || 0;
+  }
+
+  function _tileVisualHeight(mapData, col, row) {
+    const terrain = window.TerrainPreview;
+    if (!terrain || typeof terrain.sampleVisualHeight !== 'function' || !mapData) return 0;
+    const cols = Math.max(1, Number(mapData.cols) || 1);
+    const rows = Math.max(1, Number(mapData.rows) || 1);
+    return terrain.sampleVisualHeight(mapData.visualHeights || {}, Number(col) + 0.5, Number(row) + 0.5, cols, rows) || 0;
+  }
+
   // Retints the shared wall-brick GLB (Roughbrick1.glb, via WallBuilder) and
   // the shared shingle GLB (HighlandLongshingle_boned.glb, via HousePieceGen)
   // from their baked textures to a repo PNG + shade-fill color, the same way
@@ -117,7 +149,8 @@
     })).then(results => {
       const townScene2 = deps.getTownScene();
       if (!townScene2) return;
-      const TROWS_ENT = deps.getTownZone()?.rows || 50;
+      const townMap = deps.getTownZone();
+      const TROWS_ENT = townMap?.rows || 50;
       const _entranceRingGeo = new THREE.RingGeometry(0.22, 0.36, 24);
       const _entranceMat = new THREE.MeshBasicMaterial({ color: 0x7c3008, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
 
@@ -125,13 +158,14 @@
       for (const { bldg, piece } of results) {
         const wbOpts      = bldg.wbOpts      || _wbDefaults;
         const wbGableOpts = bldg.wbGableOpts || undefined;
+        const elevationY = deps.NORMAL_TOP + _buildingVisualHeight(townMap, bldg);
 
         let g = new THREE.Group();
         if (piece) {
           g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
             wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true,
             wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-            rotationDeg: bldg.rotationDeg || 0,
+            rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
         }
         townScene2.add(g);
@@ -177,7 +211,7 @@
             const entranceTile = deps.getTownGrid()?.[eRow]?.[eCol];
             linkedRing.position.set(
               eCol + 0.5,
-              deps.tileSurfaceY(entranceTile?.type || deps.TileType.GRASS) + 0.02,
+              deps.tileSurfaceY(entranceTile?.type || deps.TileType.GRASS) + _tileVisualHeight(townMap, eCol, eRow) + 0.02,
               eRow + 0.5
             );
           }
@@ -198,7 +232,7 @@
           });
           const ring = new THREE.Mesh(_entranceRingGeo, _entranceMat);
           ring.rotation.x = -Math.PI / 2;
-          ring.position.set(eCol + 0.5, deps.tileSurfaceY(deps.TileType.GRASS) + 0.02, eRow + 0.5);
+          ring.position.set(eCol + 0.5, deps.tileSurfaceY(deps.TileType.GRASS) + _tileVisualHeight(townMap, eCol, eRow) + 0.02, eRow + 0.5);
           townScene2.add(ring);
         }
       }
@@ -220,6 +254,7 @@
           const prev = deps.getTownBuildingGroups().slice();
           const upgraded = [];
           deps.setTownBuildingGroups(upgraded);
+          const townMap2 = deps.getTownZone();
           for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
             townScene3.remove(group);
             group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
@@ -228,10 +263,11 @@
             // it here previously meant isTownBuildingCollisionTile could
             // never bbox-fallback for it again for the rest of the session.
             if (!piece) { upgraded.push({ group: new THREE.Group(), bldg, piece: null, wbOpts, wbGableOpts }); continue; }
+            const elevationY = deps.NORMAL_TOP + _buildingVisualHeight(townMap2, bldg);
             const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
               wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: false,
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
-              rotationDeg: bldg.rotationDeg || 0,
+              rotationDeg: bldg.rotationDeg || 0, elevationY,
             });
             townScene3.add(g);
             upgraded.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
@@ -243,10 +279,9 @@
 
   // Mirrors spawnTownBuildings for an exterior zone map (Northern Cliffs,
   // its plateau-tier sub-maps, etc.) — buildings placed there get the same
-  // piece-JSON geometry, but lifted to their anchor tile's plateau tier
-  // (zoneData.buildings[].elevTier, resolved in game.js's mergeZoneTiles
-  // loop) via HousePieceGen's elevationY option, instead of always sitting
-  // at world Y 0 the way town buildings do today.
+  // piece-JSON geometry, lifted to their anchor tile's discrete plateau tier
+  // plus the same subtle visual-height sample used by terrain. Buildings stay
+  // rigid/level: only the whole group's Y origin moves.
   function spawnZoneBuildings(mapId) {
     const zoneData = deps.zoneLayouts.get(mapId);
     const buildingDefs = zoneData?.buildings || [];
@@ -280,7 +315,7 @@
       for (const { bldg, piece } of results) {
         const wbOpts      = bldg.wbOpts      || _wbDefaults;
         const wbGableOpts = bldg.wbGableOpts || undefined;
-        const elevationY  = deps.NORMAL_TOP + (bldg.elevTier || 0) * deps.PLATEAU_UNIT;
+        const elevationY  = deps.NORMAL_TOP + (bldg.elevTier || 0) * deps.PLATEAU_UNIT + _buildingVisualHeight(zoneData, bldg);
 
         let g = new THREE.Group();
         if (piece) {
@@ -317,7 +352,7 @@
             // instead of dropping it, so its collision bbox fallback
             // keeps working for the rest of the session.
             if (!piece) { groups.push({ group: new THREE.Group(), bldg, piece: null, wbOpts, wbGableOpts }); continue; }
-            const elevationY = deps.NORMAL_TOP + (bldg.elevTier || 0) * deps.PLATEAU_UNIT;
+            const elevationY = deps.NORMAL_TOP + (bldg.elevTier || 0) * deps.PLATEAU_UNIT + _buildingVisualHeight(zoneData, bldg);
             const g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
               wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: false,
               wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
