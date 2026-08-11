@@ -203,6 +203,10 @@
       affectedKeys = new Set(Object.keys(visualHeights).filter(key => Number(visualHeights[key]) !== 0));
       visualMeshKeys = _expandOneCell(affectedKeys);
       _applyCenterElevTiers(affectedKeys);
+      // Publish the new stamp before markTileDirty() starts adding replacement
+      // meshes. The scene.add microtasks then see the same stamp as the eager
+      // deformation pass below and cannot apply the lift twice.
+      footprintFingerprint = nextFingerprint;
 
       const rebuildKeys = new Set([...oldVisualKeys, ...visualMeshKeys]);
       for (const key of rebuildKeys) {
@@ -212,7 +216,6 @@
       _deformTerrainMeshes(visualMeshKeys);
       if (rebuildKeys.size) recomputeWater(false);
 
-      footprintFingerprint = nextFingerprint;
       lastDebug = {
         footprintCells: footprintKeys.size,
         affectedCenters: affectedKeys.size,
