@@ -486,6 +486,8 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const held = deps.getHeldObjectDebug?.();
+    if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     lines.push(pxBuf ? `Raw color under cursor: rgba(${pxBuf[0]},${pxBuf[1]},${pxBuf[2]},${pxBuf[3]})` : 'Raw color under cursor: (readback failed)');
     if (facingAtClick) {
       lines.push('');

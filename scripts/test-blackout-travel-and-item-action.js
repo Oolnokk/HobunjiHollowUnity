@@ -41,7 +41,7 @@ assert.match(game, /window\.DevSpawner\?\.init\(\{[\s\S]*?buildTownScene,[\s\S]*
   'blackout travel receives the town-scene builder');
 
 const elevationBridge = loader.indexOf('town-player-body-elevation-bridge.js');
-const alcoholBridge = loader.indexOf('alcohol-gameplay-bridge.js?v=20260811b');
+const alcoholBridge = loader.indexOf('alcohol-gameplay-bridge.js?v=20260811c');
 assert.ok(elevationBridge >= 0 && alcoholBridge > elevationBridge,
   'the latest town body-elevation bridge remains loaded before alcohol gameplay');
 

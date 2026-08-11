@@ -348,12 +348,17 @@
       if (!result) return false;
       itemDeps.showToast?.(result.message, result.ok !== false);
       if (result.ok !== false) {
+        // Used to retain the just-consumed bottle and lock repeat consumption
+        // until its authored raise/drink/return animation has completed.
+        const animationMs = Number(itemDeps.triggerHeldDrinkAnimation?.(key)) || 0;
         itemDeps.refreshItemScroll?.();
         itemDeps.buildInventoryGrid?.();
         itemDeps.refreshActionBar?.();
         itemDeps.saveMemberWorldData?.();
+        consumeLockUntil = performance.now() + Math.max(180, animationMs);
+      } else {
+        consumeLockUntil = performance.now() + 180;
       }
-      consumeLockUntil = performance.now() + 180;
       return true;
     }
 
