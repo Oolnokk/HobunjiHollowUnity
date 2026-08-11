@@ -22,6 +22,12 @@
   // at the dead zone's edge (e.g. from per-frame tracking noise while chasing a
   // moving target) flips in and out every frame — visible as rotation flicker.
   const PERP_DEAD_HYSTERESIS_RAD = THREE.MathUtils.degToRad(6);
+  // Once a plane has chosen one edge of a dead zone, raw aim must cross this
+  // far past the zone center before the side changes. Used inside perpClamp
+  // to absorb sub-degree mouse/raycast noise when aiming through the player;
+  // without it, nearestDT can alternate signs and hard-snap the portrait
+  // between both edges every frame.
+  const PERP_CENTER_HYSTERESIS_RAD = THREE.MathUtils.degToRad(3);
 
   // Keeps model rotation outside dead zones around each perp angle (radius given
   // by deadRad, defaulting to PERP_DEAD_RAD).
@@ -61,9 +67,13 @@
     // Always snapping to whichever edge is nearest keeps the held
     // rotation the closest acceptable one to rawTarget at all times,
     // snapping again immediately if it keeps going past the far edge.
-    const newSide = nearestDT > 0 ? 1 : -1;
+    const previousSide = state.perpSides[nearestI]; // Retained within the center band to prevent side chatter.
+    const candidateSide = nearestDT > 0 ? 1 : -1; // Used once aim clearly crosses beyond the center band.
+    const newSide = previousSide !== null && Math.abs(nearestDT) < PERP_CENTER_HYSTERESIS_RAD
+      ? previousSide
+      : candidateSide;
     let snapTo = null;
-    if (state.perpSides[nearestI] !== null && state.perpSides[nearestI] !== newSide) {
+    if (previousSide !== null && previousSide !== newSide) {
       snapTo = P + newSide * deadRad;
     }
     state.perpSides[nearestI] = newSide;
@@ -206,6 +216,7 @@
     creatureSnapSwayTarget,
     nearestCardinalAngle,
     PERP_DEAD_RAD,
+    PERP_CENTER_HYSTERESIS_RAD,
     CREATURE_PERP_DEAD_RAD,
     CREATURE_PLANE_ROT_MODE,
   };
