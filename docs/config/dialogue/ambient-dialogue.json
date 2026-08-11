@@ -247,6 +247,21 @@
       "friends": {}
     }
   },
+  "npcAlcoholOffers": {
+    "default": {
+      "acceptMode": "always",
+      "acceptConditions": {},
+      "acceptLines": [
+        "Gladly.",
+        "Don't mind if I do.",
+        "Just one swig."
+      ],
+      "refuseLines": [
+        "No, thank you.",
+        "Not right now."
+      ]
+    }
+  },
   "companionTreasureLines": {
     "dabinggi-hound": [
       "Hreeeee!!!",

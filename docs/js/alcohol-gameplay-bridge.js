@@ -18,6 +18,10 @@
   const DRUNK_RECOVERY_PER_SEC = 0.02;
   const GAME_DAY_SECONDS = 288;
   const GAME_DAY_MINUTES = 16 * 60;
+  const DEFAULT_SWIGS_PER_BOTTLE = 4;
+  const NPC_MAX_SOBRIETY = 100;
+  const BLACKOUT_MIN_SKIP_MINUTES = 30;
+  const BLACKOUT_MINUTES_PER_PERCENT = 10;
   const FOOTING_SPEED_MUL_MIN = 0.55;
   const STOP_LAMBDA_LIGHT_DRUNK = 9.0;
   const STOP_LAMBDA_MAX_DRUNK = 2.1;
@@ -32,9 +36,160 @@
   let lastPlayerY = null;
   let lastPostAt = performance.now();
   let consumeLockUntil = 0;
+  let bottleSwigs = {}; // Persisted by game.js; stores the remaining swigs in each stack's currently open bottle.
+  let npcAlcoholState = {}; // Persisted by game.js; stores NPC sobriety and no-teleport blackout deadlines.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
   const lerp = (a, b, t) => a + (b - a) * t;
+
+  function isAlcoholDef(def) {
+    if (!def) return false;
+    const tags = (def.tags || []).map(tag => String(tag).toLowerCase());
+    return /\b(alcohol|wine|sake|vodka|nectar|airag|liquor|spirits?|beer|ale|mead|cider)\b/
+      .test(`${def.label || ''} ${tags.join(' ')}`.toLowerCase());
+  }
+
+  function swigsPerBottle(def) {
+    return Math.max(1, Math.round(Number(def?.swigsPerBottle) || DEFAULT_SWIGS_PER_BOTTLE));
+  }
+
+  function getBottleSwigStatus(key, def, inventory = itemDeps?.inventory) {
+    if (!key || !isAlcoholDef(def) || !(Number(inventory?.[key]) > 0)) return null;
+    const total = swigsPerBottle(def);
+    const saved = Math.round(Number(bottleSwigs[key]));
+    const remaining = Number.isFinite(saved) && saved > 0 && saved <= total ? saved : total;
+    return { key, remaining, total, bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)) };
+  }
+
+  function consumeBottleSwig(key, def, inventory = itemDeps?.inventory) {
+    const status = getBottleSwigStatus(key, def, inventory);
+    if (!status) return { ok: false, message: 'No alcoholic drink to consume.' };
+    const remaining = status.remaining - 1;
+    let bottleFinished = false;
+    if (remaining <= 0) {
+      inventory[key] = Math.max(0, (Number(inventory[key]) || 0) - 1);
+      itemDeps?.clampInventoryStack?.(key);
+      delete bottleSwigs[key];
+      bottleFinished = true;
+    } else {
+      bottleSwigs[key] = remaining;
+    }
+    return {
+      ok: true,
+      bottleFinished,
+      remaining: bottleFinished && (Number(inventory[key]) || 0) > 0 ? status.total : Math.max(0, remaining),
+      total: status.total,
+      bottleCount: Math.max(0, Math.floor(Number(inventory[key]) || 0)),
+    };
+  }
+
+  function serializeBottleSwigs() {
+    return Object.fromEntries(Object.entries(bottleSwigs)
+      .filter(([key, remaining]) => (!itemDeps?.inventory || Number(itemDeps.inventory[key]) > 0)
+        && Number.isFinite(Number(remaining)) && Number(remaining) > 0)
+      .map(([key, remaining]) => [key, Math.round(Number(remaining))]));
+  }
+
+  function restoreBottleSwigs(saved) {
+    bottleSwigs = saved && typeof saved === 'object' && !Array.isArray(saved)
+      ? serializeSwigObject(saved)
+      : {};
+    return serializeBottleSwigs();
+  }
+
+  function serializeSwigObject(source) {
+    return Object.fromEntries(Object.entries(source || {})
+      .filter(([, remaining]) => Number.isFinite(Number(remaining)) && Number(remaining) > 0)
+      .map(([key, remaining]) => [key, Math.max(1, Math.round(Number(remaining)))]));
+  }
+
+  function absoluteGameMinute() {
+    const calendar = itemDeps?.calendar;
+    if (!calendar) return 0;
+    return Math.max(0, (Math.max(1, Number(calendar.day) || 1) - 1) * GAME_DAY_MINUTES
+      + clamp01(calendar.time01) * GAME_DAY_MINUTES);
+  }
+
+  function npcState(npcId) {
+    const id = String(npcId || '');
+    if (!id) return null;
+    const existing = npcAlcoholState[id] || {};
+    const normalized = {
+      sobriety: Math.max(0, Math.min(NPC_MAX_SOBRIETY,
+        Number.isFinite(Number(existing.sobriety)) ? Number(existing.sobriety) : NPC_MAX_SOBRIETY)),
+      blackoutUntilMinute: Math.max(0, Number(existing.blackoutUntilMinute) || 0),
+      lastDrinkKey: existing.lastDrinkKey || null,
+    };
+    npcAlcoholState[id] = normalized;
+    return normalized;
+  }
+
+  function npcDrunkFraction(npcId) {
+    const state = npcState(npcId);
+    return state ? clamp01(1 - state.sobriety / NPC_MAX_SOBRIETY) : 0;
+  }
+
+  function npcBlackoutMinutes(deficitPercent) {
+    return Math.max(BLACKOUT_MIN_SKIP_MINUTES,
+      Math.round(Math.max(1, Number(deficitPercent) || 0) * BLACKOUT_MINUTES_PER_PERCENT));
+  }
+
+  function addNpcDrunkenness(npcId, amount, sourceKey) {
+    const state = npcState(npcId);
+    if (!state) return { ok: false };
+    const before = state.sobriety;
+    const attempted = before - Math.max(0, Number(amount) || 0);
+    state.sobriety = Math.max(0, attempted);
+    state.lastDrinkKey = sourceKey || null;
+    const overflow = Math.max(0, -attempted);
+    const reachedZero = before > 0 && state.sobriety <= 0;
+    const blackout = reachedZero || overflow > 0;
+    const deficitPercent = blackout ? Math.max(1, overflow / NPC_MAX_SOBRIETY * 100) : 0;
+    const blackoutMinutes = blackout ? npcBlackoutMinutes(deficitPercent) : 0;
+    if (blackout) {
+      state.blackoutUntilMinute = Math.max(state.blackoutUntilMinute,
+        absoluteGameMinute() + blackoutMinutes);
+    }
+    return {
+      ok: true,
+      sobrietyBefore: before,
+      sobriety: state.sobriety,
+      drunkFraction: npcDrunkFraction(npcId),
+      blackout,
+      deficitPercent,
+      blackoutMinutes,
+    };
+  }
+
+  function isNpcBlackedOut(npcId) {
+    const state = npcState(npcId);
+    return !!state && state.blackoutUntilMinute > absoluteGameMinute();
+  }
+
+  function npcSpeedMultiplier(npcId) {
+    const sobriety = npcState(npcId)?.sobriety ?? NPC_MAX_SOBRIETY;
+    const fraction = clamp01(sobriety / NPC_MAX_SOBRIETY);
+    return FOOTING_SPEED_MUL_MIN + (1 - FOOTING_SPEED_MUL_MIN) * fraction;
+  }
+
+  function serializeNpcAlcoholState() {
+    return Object.fromEntries(Object.entries(npcAlcoholState).map(([id, value]) => {
+      const state = npcState(id);
+      return [id, {
+        sobriety: Math.round(state.sobriety * 1000) / 1000,
+        blackoutUntilMinute: Math.round(state.blackoutUntilMinute * 1000) / 1000,
+        lastDrinkKey: state.lastDrinkKey,
+      }];
+    }).filter(([, value]) => value.sobriety < NPC_MAX_SOBRIETY || value.blackoutUntilMinute > 0));
+  }
+
+  function restoreNpcAlcoholState(saved) {
+    npcAlcoholState = saved && typeof saved === 'object' && !Array.isArray(saved)
+      ? JSON.parse(JSON.stringify(saved))
+      : {};
+    Object.keys(npcAlcoholState).forEach(npcState);
+    return serializeNpcAlcoholState();
+  }
 
   function approach(current, target, maxDelta) {
     const delta = target - current;
@@ -329,16 +484,69 @@
     return null;
   }
 
+  function getHeldAlcohol() {
+    const held = getHeldConsumable();
+    return held?.kind === 'drink' && isAlcoholDef(held.def) ? held : null;
+  }
+
   function getHeldItemAction() {
     const held = getHeldConsumable();
     if (!held) return null;
+    // The action arch uses this fraction to mirror the selected-item badge.
+    const swigs = held.kind === 'drink' && isAlcoholDef(held.def)
+      ? getBottleSwigStatus(held.key, held.def, held.inventory)
+      : null;
     return {
       icon: held.def.icon || (held.kind === 'drink' ? '🥤' : '🍽️'),
       label: `${held.kind === 'drink' ? 'Drink' : 'Eat'} ${held.def.label || held.key}`,
       action: 'consume_held_item',
       style: 'primary',
       allowed: true,
+      swigFraction: swigs ? `${swigs.remaining}/${swigs.total}` : null,
     };
+  }
+
+  function getNpcSwigOfferAction(walker) {
+    const held = getHeldAlcohol();
+    if (!held || !walker?.rec?.id || isNpcBlackedOut(walker.rec.id)) return null;
+    const status = getBottleSwigStatus(held.key, held.def, held.inventory);
+    if (!status) return null;
+    return {
+      icon: held.def.icon || '🍷',
+      label: `Offer ${walker.rec.name || walker.rec.displayName || 'them'} a swig (${status.remaining}/${status.total})`,
+      action: 'npc_offer_alcohol_swig',
+      style: 'secondary',
+      allowed: true,
+      contextualHeldItem: true,
+      swigFraction: `${status.remaining}/${status.total}`,
+    };
+  }
+
+  function offerNpcSwig(walker) {
+    if (performance.now() < consumeLockUntil) return false;
+    const held = getHeldAlcohol();
+    const npcId = walker?.rec?.id;
+    if (!held || !npcId || isNpcBlackedOut(npcId)) return false;
+    const response = window.AmbientDialogue?.resolveAlcoholOffer?.(walker) || { accepted: true };
+    window.AmbientDialogue?.showAlcoholOfferResponse?.(walker, response);
+    if (!response.accepted) {
+      consumeLockUntil = performance.now() + 180;
+      return true;
+    }
+    const profile = window.HobunjiAlcohol?.profileForItem?.(held.key);
+    if (!profile) return false;
+    const serving = consumeBottleSwig(held.key, held.def, held.inventory);
+    if (!serving.ok) return false;
+    const result = addNpcDrunkenness(npcId, profile.footing, held.key);
+    const animationMs = Number(itemDeps?.triggerHeldDrinkAnimation?.(held.key)) || 0;
+    itemDeps?.showToast?.(`${walker.rec.name || 'They'} accepted a swig of ${held.def.label || held.key}.`, true);
+    itemDeps?.refreshItemScroll?.();
+    itemDeps?.buildInventoryGrid?.();
+    itemDeps?.refreshActionBar?.();
+    itemDeps?.saveMemberWorldData?.();
+    consumeLockUntil = performance.now() + Math.max(180, animationMs);
+    window.__farmLog?.(`[alcohol] NPC swig: npc=${npcId} item=${held.key} sobriety=${result.sobriety.toFixed(2)} blackout=${result.blackout ? `${result.blackoutMinutes}m` : 'no'}`, 'items');
+    return true;
   }
 
   function consumeHeldItem() {
@@ -413,6 +621,12 @@
     const dt = Math.min(0.05, Math.max(0.001, (now - lastPostAt) / 1000));
     lastPostAt = now;
     updateDrunkMomentum(dt);
+    for (const [npcId, state] of Object.entries(npcAlcoholState)) {
+      if (state.sobriety < NPC_MAX_SOBRIETY) {
+        state.sobriety = Math.min(NPC_MAX_SOBRIETY, state.sobriety + dt * DRUNK_RECOVERY_PER_SEC);
+      }
+      if (state.blackoutUntilMinute > 0 && !isNpcBlackedOut(npcId)) state.blackoutUntilMinute = 0;
+    }
     requestAnimationFrame(postFrameLoop);
   }
 
@@ -426,7 +640,18 @@
 
   window.HobunjiDrunkGameplayBridge = {
     consumeHeldItem,
+    consumeBottleSwig,
     getHeldItemAction,
+    getBottleSwigStatus,
+    getNpcSwigOfferAction,
+    offerNpcSwig,
+    npcDrunkFraction,
+    npcSpeedMultiplier,
+    isNpcBlackedOut,
+    serializeBottleSwigs,
+    restoreBottleSwigs,
+    serializeNpcAlcoholState,
+    restoreNpcAlcoholState,
     getDebug() {
       const player = window.Combat?.deps?.player;
       const muls = footingSpeedMuls(player);
@@ -444,6 +669,8 @@
         hasItemDeps: !!itemDeps,
         playerAttached: !!composer?.playerAttached,
         bodyChannels: composer?.channels || [],
+        bottleSwigs: serializeBottleSwigs(),
+        npcAlcoholState: serializeNpcAlcoholState(),
       };
     },
   };

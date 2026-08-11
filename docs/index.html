@@ -19,7 +19,7 @@
   <script src="config/scratchbones-config.js?v=20260801b"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
-  <link rel="stylesheet" href="style.css?v=20260809a">
+  <link rel="stylesheet" href="style.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -78,11 +78,11 @@
   <script src="js/local-save-folder.js?v=20260724a"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
-  <script src="onboarding.js?v=20260728c"></script>
+  <script src="onboarding.js?v=20260811a"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260712d"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
-  <script src="js/combat/combat-core.js?v=20260712d"></script>
+  <script src="js/combat/combat-core.js?v=20260811a"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + their
        runtime playback onto the player's existing procedural-leg-animation.js
        rig. Must load after that module (see the "Procedural leg/foot
@@ -1635,7 +1635,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260811d"></script>
+  <script src="js/pixel-probe.js?v=20260811e"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1644,10 +1644,10 @@
        game.js and call into this module. -->
   <script src="js/dialogue-content.js?v=20260806a"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20260809b"></script>
+  <script src="js/world-popup-text.js?v=20260811a"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
-  <script src="js/ambient-dialogue.js?v=20260809a"></script>
+  <script src="js/ambient-dialogue.js?v=20260811a"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -1692,7 +1692,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811f"></script>
+  <script src="game.js?v=20260811g"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

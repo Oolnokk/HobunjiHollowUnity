@@ -15,6 +15,14 @@
     anchorLiftTiles: 0.18,
     friendGroups: [],
     npcGreetings: {},
+    npcAlcoholOffers: {
+      default: {
+        acceptMode: 'always',
+        acceptConditions: {},
+        acceptLines: ['Gladly.', "Don't mind if I do.", 'Just one swig.'],
+        refuseLines: ['No, thank you.', 'Not right now.'],
+      },
+    },
     greetingTemplates: ['{targetName}! Good to see you.', 'Hello, {targetName}!', 'Ah, {targetName} — there you are!'],
     companionTreasureLines: {
       'dabinggi-hound': ['Arf! Arf!', 'Rrruf!', 'Snff-snff… arf!'],
@@ -52,6 +60,11 @@
       companionTreasureLines: { ...DEFAULTS.companionTreasureLines, ...(authored?.companionTreasureLines || {}) },
       crowdLines: { ...DEFAULTS.crowdLines, ...(authored?.crowdLines || {}) },
       npcGreetings: { ...DEFAULTS.npcGreetings, ...(authored?.npcGreetings || {}) },
+      npcAlcoholOffers: {
+        ...DEFAULTS.npcAlcoholOffers,
+        ...(authored?.npcAlcoholOffers || {}),
+        default: { ...DEFAULTS.npcAlcoholOffers.default, ...(authored?.npcAlcoholOffers?.default || {}) },
+      },
     };
   }
 
@@ -379,6 +392,7 @@
   function tryGreeting(walker, target, now, day) {
     const speakerId = walker?.rec?.id;
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
+    if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,
     // so this releases the NPC only after the prior greeting is fully gone.
     if (hasActiveGreetingFor(speakerId)) return false;
@@ -449,6 +463,59 @@
     return show(root, options.text || pick(lines), { ...options, mode: 'overhead', tone: normalizedTone });
   }
 
+  function alcoholConditionWorld(walker) {
+    return {
+      weekdays: state.deps?.getWeekDay?.(state.deps?.getDay?.()),
+      seasons: state.deps?.getSeason?.(),
+      weather: state.deps?.getWeather?.(),
+      timesOfDay: state.deps?.getDayPart?.(),
+      maps: state.deps?.getCurrentArea?.(),
+      stations: walker?.currentScheduleTarget?.activity || walker?.currentScheduleTarget?.label || null,
+      playerSpecies: state.deps?.getPlayerSpecies?.(),
+      relationship: state.deps?.getNpcRelationship?.(walker?.rec?.id),
+    };
+  }
+
+  function resolveAlcoholOffer(walker) {
+    const fallback = state.settings.npcAlcoholOffers?.default || DEFAULTS.npcAlcoholOffers.default;
+    const authored = state.settings.npcAlcoholOffers?.[walker?.rec?.id] || {};
+    const cfg = { ...fallback, ...authored };
+    const mode = cfg.acceptMode === 'never' ? 'never' : cfg.acceptMode === 'conditional' ? 'conditional' : 'always';
+    const accepted = mode === 'always' || (mode === 'conditional'
+      && (window.ConditionRegistry?.entryEligible?.({ conditions: cfg.acceptConditions || {} }, alcoholConditionWorld(walker)) ?? true));
+    const lines = accepted ? cfg.acceptLines : cfg.refuseLines;
+    return {
+      accepted,
+      text: pick(lines, `${walker?.rec?.id || 'npc'}:${state.deps?.getDay?.() || 1}:${accepted ? 'accept' : 'refuse'}`),
+      config: structuredCloneSafe(cfg),
+    };
+  }
+
+  function showAlcoholOfferResponse(walker, response = resolveAlcoholOffer(walker)) {
+    if (!walker?.root || !response?.text) return null;
+    // Explicit interaction speech replaces that speaker's incidental greeting
+    // so the accepted/refused line is never hidden under a second chathead.
+    for (let index = state.active.length - 1; index >= 0; index--) {
+      if (state.active[index].speakerId !== walker.rec?.id) continue;
+      dispose(state.active[index]);
+      state.active.splice(index, 1);
+    }
+    const player = state.deps?.getPlayerPosition?.();
+    if (player) {
+      const angle = -Math.atan2(player.z - walker.root.position.z, player.x - walker.root.position.x) + Math.PI / 2;
+      walker.applyFacingDeadzone?.(angle, 0.34);
+    }
+    return show(walker.root, response.text, {
+      speakerId: walker.rec?.id,
+      profile: walker.profile,
+      mode: 'chathead',
+      durationMs: state.settings.durationMs,
+      tone: response.accepted ? 'accept' : 'refuse',
+      faceWalker: walker,
+      faceTarget: player || null,
+    });
+  }
+
   function update(now = performance.now()) {
     updateActive(now);
     updateGreetings(now);
@@ -465,6 +532,12 @@
     return api;
   }
 
-  const api = { init, update, show, companionTreasure, crowd, cheer: (root, options) => crowd(root, 'cheer', options), jeer: (root, options) => crowd(root, 'jeer', options), clear, loadSettings };
+  const api = {
+    init, update, show, companionTreasure, crowd,
+    cheer: (root, options) => crowd(root, 'cheer', options),
+    jeer: (root, options) => crowd(root, 'jeer', options),
+    resolveAlcoholOffer, showAlcoholOfferResponse,
+    clear, loadSettings,
+  };
   window.AmbientDialogue = api;
 })();

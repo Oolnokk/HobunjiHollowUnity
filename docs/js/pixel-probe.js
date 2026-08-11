@@ -497,6 +497,8 @@
       const iconState = entry => entry ? `${entry.state}/${entry.hasBackground ? 'image' : 'none'}` : 'missing';
       const target = itemIcon.targetColor == null ? '-' : `#${Number(itemIcon.targetColor).toString(16).padStart(6, '0')}`;
       lines.push(`Item sprite icon: key=${itemIcon.key || '-'} sprite=${itemIcon.spriteIcon || '-'} target=${target} strip=${iconState(itemIcon.strip)} button=${iconState(itemIcon.button)} keyboard=${iconState(itemIcon.keyboard)}`);
+      if (itemIcon.swigs) lines.push(`Alcohol swigs: ${itemIcon.swigs.remaining}/${itemIcon.swigs.total} in open bottle; bottles in stack=${itemIcon.swigs.bottleCount}`);
+      if (itemIcon.nearbyNpcAlcohol) lines.push(`Nearby NPC alcohol: id=${itemIcon.nearbyNpcAlcohol.id} sobriety=${Number(itemIcon.nearbyNpcAlcohol.sobriety).toFixed(2)} blackoutUntilMinute=${Number(itemIcon.nearbyNpcAlcohol.blackoutUntilMinute || 0).toFixed(2)}`);
       // Deduplicate failures shared by several HUD copies so mobile reports stay compact.
       const iconErrors = [...new Set([itemIcon.strip?.error, itemIcon.button?.error, itemIcon.keyboard?.error].filter(Boolean))];
       if (iconErrors.length) lines.push(`Item sprite recolor error: ${iconErrors.join(' | ')}`);

@@ -11,17 +11,17 @@
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
-      currency: 'centeredFiveRow', loot: 'centeredFiveRow',
+      currency: 'centeredFiveRow', loot: 'centeredFiveRow', interaction: 'centeredFiveRow',
     },
     floatPlus: { worldHeight: 0.36, xOffsetPercent: 10, yOffsetPercent: 13, lifetimeMs: 1150 },
     centeredFiveRow: { worldHeight: 0.32, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 3200, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
-      masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff',
+      masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff',
     },
   };
   const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
-  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false };
+  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false, interactionSignature: '' };
 
   const clone = value => JSON.parse(JSON.stringify(value));
   const merge = (base, extra) => {
@@ -148,8 +148,14 @@
 
   function listFor(root) {
     return state.active
-      .filter(event => event.root === root && event.mode === 'centeredFiveRow')
+      .filter(event => event.root === root && event.mode === 'centeredFiveRow' && !event.interactionPrompt)
       .sort((a, b) => (PRIORITY[a.kind] ?? 99) - (PRIORITY[b.kind] ?? 99) || a.sequence - b.sequence);
+  }
+
+  function interactionListFor(root) {
+    return state.active
+      .filter(event => event.root === root && event.interactionPrompt)
+      .sort((a, b) => a.sequence - b.sequence);
   }
 
   function claimFloatOffset(root, bounds) {
@@ -220,13 +226,51 @@
     return state.sequence;
   }
 
+  function clearInteractionPrompts() {
+    for (let index = state.active.length - 1; index >= 0; index--) {
+      if (!state.active[index].interactionPrompt) continue;
+      dispose(state.active[index]);
+      state.active.splice(index, 1);
+    }
+    state.interactionSignature = '';
+  }
+
+  function setInteractionPrompts(root, prompts, options = {}) {
+    const entries = (prompts || []).filter(prompt => prompt && prompt.allowed !== false)
+      .slice(0, state.settings.centeredFiveRow.maxRows)
+      .map(prompt => ({ text: String(prompt.text || prompt.label || '').trim(), action: prompt.action || '' }))
+      .filter(prompt => prompt.text);
+    if (!root || !entries.length) {
+      clearInteractionPrompts();
+      return [];
+    }
+    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.text}`).join('|')}`;
+    if (signature === state.interactionSignature) return interactionListFor(root).map(event => event.sequence);
+    clearInteractionPrompts();
+    state.interactionSignature = signature;
+    const cfg = state.settings.centeredFiveRow;
+    const scene = options.scene || state.deps?.getActiveScene?.();
+    if (!scene) return [];
+    return entries.map((entry, listSlot) => {
+      const parts = makePlane(entry.text, 'interaction', cfg);
+      const event = {
+        ...entry, ...parts, root, scene, kind: 'interaction', mode: 'centeredFiveRow',
+        interactionPrompt: true, sequence: state.sequence++, listSlot,
+        startedAt: performance.now(), lifetimeMs: Infinity, offsetX: 0, offsetY: 0,
+      };
+      scene.add(event.plane);
+      state.active.push(event);
+      return event.sequence;
+    });
+  }
+
   function update(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
     const cameraRight = new state.deps.THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
-      const progress = Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
+      const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
       const center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
         dispose(event);
@@ -237,9 +281,11 @@
         center.addScaledVector(cameraRight, event.offsetX + Math.sin(progress * Math.PI) * event.height * 0.12);
         center.y += event.offsetY + 0.075 * (1 - Math.pow(1 - progress, 2));
       } else {
-        const list = listFor(event.root);
+        const list = event.interactionPrompt ? interactionListFor(event.root) : listFor(event.root);
         list.forEach((item, slot) => { item.listSlot = slot; });
-        const centerSlot = (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
+        const centerSlot = event.interactionPrompt
+          ? (Math.max(1, list.length) - 1) * 0.5
+          : (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
         center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing;
         // Plane geometry is centered on its position. Shift by half its width so
         // every variable-width row begins at the configured horizontal anchor.
@@ -247,7 +293,7 @@
       }
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
-      event.material.opacity = progress < 0.72 ? 1 : (1 - progress) / 0.28;
+      event.material.opacity = event.interactionPrompt ? 1 : progress < 0.72 ? 1 : (1 - progress) / 0.28;
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       event.plane.scale.setScalar(state.settings[event.mode].worldHeight * pop);
     }
@@ -262,6 +308,7 @@
   function clear() {
     state.active.splice(0).forEach(dispose);
     state.pending.length = 0;
+    state.interactionSignature = '';
   }
 
   function applySettings(settings) {
@@ -270,6 +317,6 @@
     return clone(state.settings);
   }
 
-  const api = { init, update, showChange, queueReward, avatarCentroidWorld, loadSettings, applySettings, clear, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
+  const api = { init, update, showChange, queueReward, setInteractionPrompts, clearInteractionPrompts, avatarCentroidWorld, loadSettings, applySettings, clear, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
   window.WorldPopupText = api;
 })();

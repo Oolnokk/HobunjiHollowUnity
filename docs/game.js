@@ -135,6 +135,7 @@
       let menuOpen = false;
       function openMenu(targetPanel = 'inventory') {
         menuOpen = true;
+        window.WorldPopupText?.clearInteractionPrompts?.();
         menuBtn.classList.add('open');
         menuBtn.setAttribute('aria-expanded', 'true');
         menuBackdrop.classList.add('open');
@@ -335,6 +336,7 @@
       async function openNpcDialogue(walker) {
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
+        window.WorldPopupText?.clearInteractionPrompts?.();
 
         dialogueOpen    = true;
         _dialogueWalker = walker;
@@ -482,6 +484,7 @@
         _npcDialogueEl.classList.remove('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'true');
         saveMemberWorldData(); // persist visited-node/memory state mutated during the conversation
+        refreshActionBar();
       }
 
       // renderRelationshipHearts now lives in js/dialogue-content.js
@@ -5841,6 +5844,7 @@
       function defaultWorldMemberState() {
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
+          alcoholBottleSwigs: {}, npcAlcoholState: {},
           alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {},
           joinedAt: Date.now(),
         };
@@ -5931,6 +5935,8 @@
           member.packClothing    = [...packClothing];
           member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
           member.questProgress    = { ...questProgress };
+          member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
+          member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
@@ -8397,8 +8403,11 @@
         const root = new THREE.Group();
         root.name = 'npc_walker_' + (rec?.id || rec?.name || '');
         const groundShadow = makeCharacterGroundShadow('npc_ground_shadow');
+        const alcoholPoseGroup = new THREE.Group(); // Used below to lay this NPC prone without changing its world position or facing owner.
+        alcoholPoseGroup.name = `${rec?.id || 'npc'}_alcohol_pose`;
         root.add(groundShadow);
-        root.add(avatarGroup);
+        root.add(alcoholPoseGroup);
+        alcoholPoseGroup.add(avatarGroup);
 
         const spawnTarget = resolveNpcSpawnPosition(rec, initialTarget);
         const spawnArea = normalizeNpcArea(spawnTarget.area);
@@ -8426,10 +8435,12 @@
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
+          drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
+          drunkBodyRoot: avatarGroup,
         }) || null;
 
         const walker = {
-          root, rec, profile, avatarGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
+          root, rec, profile, avatarGroup, alcoholPoseGroup, avatarFrontCanvas: frontCanvas, avatarBackCanvas: backCanvas, area: spawnArea,
           // The head-turn bone built by buildSinglePlaneAvatarModel's neckRig
           // option (null if no neck pivot could be detected for this NPC's
           // portrait) — see faceNpcDialogueParticipants for the one place
@@ -8609,7 +8620,8 @@
             // invisible/frozen NPC.
             if (!Number.isFinite(tx) || !Number.isFinite(tz)) return false;
             const cfg = npcMovementConfig();
-            const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup;
+            const sobrietySpeedMul = window.HobunjiDrunkGameplayBridge?.npcSpeedMultiplier?.(rec?.id) ?? 1;
+            const speed = (cfg.speedTilesPerSecond ?? 1.25) * this.catchup * sobrietySpeedMul;
             const dx = tx - root.position.x, dz = tz - root.position.z;
             const d = Math.hypot(dx, dz);
             if (d <= Math.max(0.001, speed * dt)) {
@@ -8632,6 +8644,24 @@
             // frame of lag; imperceptible at 60fps.
             const moveDistTiles = Math.hypot(root.position.x - this._legsPrevX, root.position.z - this._legsPrevZ);
             this._moveSpeedTiles = dt > 0 ? moveDistTiles / dt : 0;
+            const alcoholBlackout = window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(rec?.id) || false;
+            alcoholPoseGroup.rotation.z = alcoholBlackout ? -Math.PI / 2 : 0;
+            alcoholPoseGroup.position.x = alcoholBlackout ? -avatarHeight * 0.5 : 0;
+            alcoholPoseGroup.position.y = alcoholBlackout ? Math.max(0.035, avatarHeight * 0.06) : 0;
+            if (this.legs?.group) this.legs.group.visible = !alcoholBlackout;
+            if (alcoholBlackout) {
+              this.legs?.update?.(dt, 0, true);
+              this._legsPrevX = root.position.x;
+              this._legsPrevZ = root.position.z;
+              this._moveSpeedTiles = 0;
+              this.state = 'alcohol-blackout';
+              this.currentScheduleTarget = resolveNpcScheduleTarget(this.rec) || null;
+              const blackoutGroundY = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y += (blackoutGroundY - root.position.y) * 0.2;
+              groundShadow.position.y = blackoutGroundY - root.position.y + characterGroundShadowSurfaceOffset();
+              return;
+            }
+            if (this.state === 'alcohol-blackout') this.resetRouteState();
             const target = resolveNpcScheduleTarget(this.rec);
             const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
@@ -10496,6 +10526,7 @@
 
       function normalizeAlcoholItemDef(def) {
         if (!isAlcoholItemDef(def)) return def;
+        def.swigsPerBottle = Math.max(1, Math.round(Number(def.swigsPerBottle) || 4));
         def.spriteIcon = 'bottle_wine.png';
         def.spriteMode = 'keyed';
         def.spriteColor = mixedIngredientColor(def.ingredientKeys, def.spriteColor ?? 0x8A5FB0);
@@ -11270,9 +11301,24 @@
       // the in-game debug log without logging every DOM icon instance.
       const _itemSpriteReadyLogged = new Set();
 
-      function applyItemSpriteIcon(el, def) {
+      function applyAlcoholSwigBadge(el, key, def) {
+        if (!el) return;
+        el.querySelector?.(':scope > .alcohol-swig-badge')?.remove();
+        delete el.dataset.swigFraction;
+        const status = window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(key, def, inventory);
+        if (!status) return;
+        const badge = document.createElement('span');
+        badge.className = 'alcohol-swig-badge';
+        badge.textContent = `${status.remaining}/${status.total}`;
+        badge.setAttribute('aria-hidden', 'true');
+        el.dataset.swigFraction = badge.textContent;
+        el.appendChild(badge);
+      }
+
+      function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
         normalizeAlcoholItemDef(def);
+        applyAlcoholSwigBadge(el, key, def);
         if (!def.spriteIcon) { clearItemSpriteIcon(el); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
         // upgrades it below without leaving alcohol as an emoji while loading.
@@ -11326,6 +11372,11 @@
           key: active?.key || null,
           spriteIcon: def?.spriteIcon || null,
           targetColor: def?.spriteColor ?? null,
+          swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
+          nearbyNpcAlcohol: nearbyNpcWalker?.rec?.id ? {
+            id: nearbyNpcWalker.rec.id,
+            ...(window.HobunjiDrunkGameplayBridge?.getDebug?.()?.npcAlcoholState?.[nearbyNpcWalker.rec.id] || { sobriety: 100, blackoutUntilMinute: 0 }),
+          } : null,
           strip: inspect(itemIcon),
           button: inspect(document.getElementById('itemBtn')),
           keyboard: inspect(keyHudEl?.querySelector('.kh-item-icon')),
@@ -11421,7 +11472,7 @@
             box.appendChild(badge);
           }
           box.addEventListener('click', () => selectInventoryItem(key));
-          applyItemSpriteIcon(box.querySelector('.iib-icon'), def);
+          applyItemSpriteIcon(box.querySelector('.iib-icon'), def, key);
           grid.appendChild(box);
         });
 
@@ -11463,7 +11514,7 @@
         set('iiIcon',  def.icon);
         const iiIconEl = document.getElementById('iiIcon');
         if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
-        applyItemSpriteIcon(iiIconEl, def);
+        applyItemSpriteIcon(iiIconEl, def, key);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${def.sellPrice}g each` : '');
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
@@ -13500,6 +13551,11 @@
         }
         if (activeAction === 'consume_held_item') {
           window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'npc_offer_alcohol_swig') {
+          window.HobunjiDrunkGameplayBridge?.offerNpcSwig?.(nearbyNpcWalker);
           refreshActionBar();
           return;
         }
@@ -16346,6 +16402,8 @@
         getActiveScene,
         getDay: () => calendar.day,
         getWeekDay: day => window.CalendarSystem.weekdayNameForDay?.(day) || 'day',
+        getSeason: () => window.CalendarSystem.currentSeason?.().name || null,
+        getWeather: () => calendar.isRaining ? ((calendar.rainStrength || 0) >= 3 ? 'storm' : 'rain') : 'clear',
         getDayPart: () => {
           const hour = window.CalendarSystem.getHour(); // Used by ambient greeting {dayPart} substitutions.
           if (hour < 8) return 'dawn';
@@ -16361,6 +16419,8 @@
         getPlayerName: () => (_playerData || window.__hobunjiPlayerProfile)?.name
           || (_playerData || window.__hobunjiPlayerProfile)?.displayName
           || 'neighbor',
+        getPlayerSpecies: () => (_playerData || window.__hobunjiPlayerProfile)?.appearance?.speciesId || null,
+        getNpcRelationship: npcId => window.DialogueContent?.npcRelationshipsSnapshot?.()?.[npcId]?.favor ?? 0,
         isDialogueOpen: () => dialogueOpen,
         isPaused: () => paused,
         debugLog,
@@ -20070,7 +20130,10 @@
               newSlots.push({ angle: deg, el, data: s });
             }
             const iconEl = newSlots[newSlots.length - 1].el.querySelector('.arc-icon');
-            if (s.type === 'item') applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key]);
+            if (s.type === 'item') {
+              applyItemSpriteIcon(iconEl, ITEM_DEFS[s.key]);
+              applyAlcoholSwigBadge(iconEl, s.key, ITEM_DEFS[s.key]);
+            }
             else clearItemSpriteIcon(iconEl);
           });
 
@@ -20282,6 +20345,8 @@
           const btns = [npcDialogueButton()];
           if (isGeneralStoreNpcOnDuty(nearbyNpcWalker)) btns.push(generalStoreButton());
           if (isCarpenterNpcOnDuty(nearbyNpcWalker)) btns.push(carpenterButton());
+          const swigOffer = window.HobunjiDrunkGameplayBridge?.getNpcSwigOfferAction?.(nearbyNpcWalker);
+          if (swigOffer) btns.push(swigOffer);
           return btns;
         }
 
@@ -20482,9 +20547,34 @@
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
+        // Contextual held-item interactions always use the world popup list.
+        // Ordinary world targets use it once they expose more than one choice,
+        // establishing the same path for future actions such as Invite to Dance.
+        const isWorldInteraction = button => button?.contextualHeldItem
+          || button?.action === npcDialogueAction()
+          || button?.action === generalStoreAction()
+          || button?.action === carpenterAction()
+          || button?.action === 'use_spot'
+          || button?.action?.startsWith('obj_');
+        const worldInteractions = btns.filter(isWorldInteraction);
+        const showInteractionList = !menuOpen && !dialogueOpen && !paused
+          && (worldInteractions.some(button => button.contextualHeldItem)
+            || worldInteractions.length > 1);
+        const interactionRoot = nearbyNpcWalker?.root
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh || null;
+        if (showInteractionList && interactionRoot) {
+          const promptKeys = ['E', 'Q', 'F3', 'F4', 'F5'];
+          window.WorldPopupText?.setInteractionPrompts?.(interactionRoot, worldInteractions.map(button => {
+            const slot = btns.indexOf(button);
+            const keyHint = isDesktop && slot >= 0 ? `${promptKeys[slot] || `F${slot + 1}`}  ` : '';
+            return { ...button, text: `${keyHint}${button.label}` };
+          }), { scene: getActiveScene() });
+        } else {
+          window.WorldPopupText?.clearInteractionPrompts?.();
+        }
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
-        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}`).join(',');
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -20521,8 +20611,10 @@
           el.dataset.action = b.action;
           const keyBadge = isDesktop && originalIdx >= 0 && originalIdx < DESK_KEYS.length
             ? `<span class="abt-key">[${DESK_KEYS[originalIdx]}]</span>` : '';
+          const swigBadge = b.swigFraction
+            ? `<span class="alcohol-swig-badge">${b.swigFraction}</span>` : '';
           el.innerHTML = keyBadge +
-            `<span class="abt-icon">${b.icon}</span>` +
+            `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
             `<span class="abt-label">${b.label}</span>`;
           if (!el._abtDragInit) {
             el._abtDragInit = true;
@@ -20551,7 +20643,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
+              const isNavAction = act === npcDialogueAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_');
               if (isNavAction || toolSwingT <= 0) useActiveAction();
             }
 
@@ -20744,7 +20836,10 @@
         parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
 
         keyHudEl.innerHTML = parts.join('');
-        if (item) applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key]);
+        if (item) {
+          applyItemSpriteIcon(keyHudEl.querySelector('.kh-item-icon'), ITEM_DEFS[item.key]);
+          applyAlcoholSwigBadge(keyHudEl.querySelector('.kh-item-icon'), item.key, ITEM_DEFS[item.key]);
+        }
       }
 
       function contextualActionLabel(action, tile) {
@@ -20797,7 +20892,9 @@
         itemName.textContent  = curr.label;
         if (iBtnEl) iBtnEl.textContent = curr.icon;
         applyItemSpriteIcon(itemIcon, ITEM_DEFS[curr.key]);
+        applyAlcoholSwigBadge(itemIcon, curr.key, ITEM_DEFS[curr.key]);
         applyItemSpriteIcon(iBtnEl, ITEM_DEFS[curr.key]);
+        applyAlcoholSwigBadge(iBtnEl, curr.key, ITEM_DEFS[curr.key]);
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)
@@ -20805,11 +20902,11 @@
         const nextEl = document.getElementById('isNextIcon');
         if (prevEl) {
           prevEl.textContent = prev.icon;
-          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key]);
+          applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
         }
         if (nextEl) {
           nextEl.textContent = next.icon;
-          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key]);
+          applyItemSpriteIcon(nextEl, ITEM_DEFS[next.key], next.key);
         }
       }
       itemPrev.addEventListener('click', () => {
@@ -23191,6 +23288,8 @@
         showToast,
         saveMemberWorldData,
         buildInventoryGrid,
+        refreshItemScroll,
+        refreshActionBar,
         buildShippingTransferUI: () => window.ShippingPanel.build(),
         tileSurfaceY,
         scene,
@@ -23386,6 +23485,8 @@
         Object.assign(inventory, Object.keys(playerData.nonGearInventory || {}).length
           ? { ...playerData.nonGearInventory }
           : { ...STARTING_INVENTORY });
+        window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
+        window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         packClothing = [...(playerData.packClothing || [])];
 
         // NPC relationships/memory and quest progress are likewise world-scoped
