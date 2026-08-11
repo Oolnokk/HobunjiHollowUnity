@@ -10448,7 +10448,9 @@
       // recolorable sprite of its own. These feed mixedIngredientColor below.
       const ALCOHOL_INGREDIENT_COLORS = {
         needlegrain: 0x2F4A2E,
-        heftroot: 0xF2EFE6,
+        // Match ripe heftroot: vodka uses the animal-color shade-fill so the
+        // bottle keeps its painted highlights, shadows, and transparency.
+        heftroot: 0xF0D15A,
       };
       // Alcohol words accepted by normalizeAlcoholItemDef, shared with the
       // drinking system's classification so every alcoholic output gets the
@@ -10553,7 +10555,7 @@
           return { key: 'needlegrainSake', icon: '🍶', label: 'Needlegrain Sake', cat: 'processed', sellPrice: 24, tags: ['Processed', 'Sake', 'Aged', 'Needlegrain'], desc: 'Barrel-aged needlegrain liquor, colored like dark pine needles.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0x2F4A2E, spriteMode: 'keyed' };
         }
         if (methodId === 'barrelAging' && inputKey === 'heftroot') {
-          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, clear white.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xFFFFFF, spriteMode: 'keyed' };
+          return { key: 'heftrootVodka', icon: '🥃', label: 'Heftroot Vodka', cat: 'processed', sellPrice: 26, tags: ['Processed', 'Vodka', 'Aged', 'Heftroot'], desc: 'Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: 0xF0D15A, spriteMode: 'keyed' };
         }
         if (methodId === 'barrelAging' && inputKey === 'garWolfMilk') {
           return { key: 'garWolfAirag', icon: '🍶', label: 'Gar-wolf Airag', cat: 'processed', sellPrice: 22, tags: ['Processed', 'Airag', 'Aged', 'Gar-wolf'], desc: 'Barrel-fermented gar-wolf milk.', ingredientKeys: [inputKey], spriteIcon: 'bottle_wine.png', spriteColor: input.spriteColor, spriteMode: 'keyed' };

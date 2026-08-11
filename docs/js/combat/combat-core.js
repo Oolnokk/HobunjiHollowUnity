@@ -360,9 +360,9 @@
     itemDefs.heftrootVodka ||= {
       icon: "🥃", label: "Heftroot Vodka", cat: "processed", sellPrice: 26,
       tags: ["Processed", "Vodka", "Aged", "Heftroot"],
-      desc: "Barrel-aged heftroot spirit, clear white.",
+      desc: "Barrel-aged heftroot spirit, golden-yellow like ripe heftroot.",
       ingredientKeys: ["heftroot"],
-      spriteIcon: "bottle_wine.png", spriteColor: 0xFFFFFF, spriteMode: "keyed"
+      spriteIcon: "bottle_wine.png", spriteColor: 0xF0D15A, spriteMode: "keyed"
     };
   }
 

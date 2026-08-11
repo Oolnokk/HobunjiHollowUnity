@@ -1,12 +1,7 @@
-// Sprite recolor utility — recolors an item/object PNG by replacing each
-// matching pixel's HUE and SATURATION with a target color's hue/saturation
-// while leaving that pixel's own VALUE (brightness) and ALPHA untouched.
-// This is the inverse of the luminance-multiply "shade fill" tint used by
-// creature-genetics-render.js/portrait-utils.js (which floods a flat target
-// RGB and only lets the source's luminance modulate its brightness,
-// discarding the source's own hue/saturation *and* not tracking its exact
-// per-pixel value) — here the source's shading/highlights survive exactly
-// because V comes straight from the source pixel, not a derived multiplier.
+// Sprite recolor utility — recolors an item/object PNG with the same
+// luminance-based shade-fill used by creature-genetics-render.js for animal
+// colors. Each matching source pixel's luminance scales the target RGB while
+// its ALPHA remains untouched, preserving painted shadows and transparency.
 // Two modes:
 //   - "keyed": only pixels near a source reference color (or the segment
 //     between two reference colors, for a shaded two-tone placeholder fill)
@@ -31,44 +26,26 @@
   const DEFAULT_KEY_B = [0x69, 0x8F, 0x4E];
   const KEY_TOLERANCE = 40;
 
-  function rgbToHsv(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const d = max - min;
-    let h = 0;
-    if (d !== 0) {
-      if (max === r) h = ((g - b) / d) % 6;
-      else if (max === g) h = (b - r) / d + 2;
-      else h = (r - g) / d + 4;
-      h *= 60;
-      if (h < 0) h += 360;
-    }
-    const s = max === 0 ? 0 : d / max;
-    return [h, s, max];
+  function clampByte(value) {
+    return Math.max(0, Math.min(255, Math.round(value)));
   }
 
-  function hsvToRgb(h, s, v) {
-    const c = v * s;
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    const m = v - c;
-    let r = 0, g = 0, b = 0;
-    if (h < 60)       { r = c; g = x; b = 0; }
-    else if (h < 120) { r = x; g = c; b = 0; }
-    else if (h < 180) { r = 0; g = c; b = x; }
-    else if (h < 240) { r = 0; g = x; b = c; }
-    else if (h < 300) { r = x; g = 0; b = c; }
-    else              { r = c; g = 0; b = x; }
-    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  function relativeLuminance(r, g, b) {
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
   }
 
-  // hex: 0xRRGGBB integer (matches ALCHEMY_REAGENT_DEFS/THREE.Color convention
-  // used elsewhere in the codebase). Only hue+saturation are read from it —
-  // its own value/brightness is discarded, since every recolored pixel's
-  // value always comes from that pixel's own source value instead.
-  function targetHueSat(hex) {
-    const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
-    const [h, s] = rgbToHsv(r, g, b);
-    return [h, s];
+  // Keep these defaults in lockstep with CreatureGeneticsRender's animal
+  // shade-fill so both systems respond to the same portrait tinting config.
+  function shadeFillConfig() {
+    const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
+    return {
+      shadowFloor: Number.isFinite(Number(cfg.shadowFloor)) ? Number(cfg.shadowFloor) : 0.18,
+      highlightBoost: Number.isFinite(Number(cfg.highlightBoost)) ? Number(cfg.highlightBoost) : 1.18,
+      neutralLuminance: Number.isFinite(Number(cfg.neutralLuminance)) ? Number(cfg.neutralLuminance) : 0.55,
+      gamma: Number.isFinite(Number(cfg.gamma)) && Number(cfg.gamma) > 0 ? Number(cfg.gamma) : 1,
+      preserveNearBlackOutlines: cfg.preserveNearBlackOutlines !== false,
+      outlineThreshold: Number.isFinite(Number(cfg.outlineThreshold)) ? Number(cfg.outlineThreshold) : 0.08,
+    };
   }
 
   function segmentDistSq(px, py, pz, ax, ay, az, bx, by, bz) {
@@ -82,21 +59,36 @@
   }
 
   function recolorImageData(data, targetHex, mode, opts) {
-    const [th, ts] = targetHueSat(targetHex);
+    const tr = (targetHex >> 16) & 255, tg = (targetHex >> 8) & 255, tb = targetHex & 255;
     const keyA = opts?.keyColors?.[0] || DEFAULT_KEY_A;
     const keyB = opts?.keyColors?.[1] || DEFAULT_KEY_A;
     const tol2 = (opts?.tolerance ?? KEY_TOLERANCE) ** 2;
+    const predicate = mode === 'keyed'
+      ? (i) => segmentDistSq(data[i], data[i + 1], data[i + 2], keyA[0], keyA[1], keyA[2], keyB[0], keyB[1], keyB[2]) <= tol2
+      : null;
+
+    // The main game loads CreatureGeneticsRender first, so bottles directly
+    // share the animal recolorer. The local fallback keeps this small utility
+    // usable by standalone tools that do not load the creature renderer.
+    if (window.CreatureGeneticsRender?.recolorPixels) {
+      window.CreatureGeneticsRender.recolorPixels(data, [tr, tg, tb], predicate);
+      return;
+    }
+
+    const cfg = shadeFillConfig();
+    const neutral = Math.max(0.0001, cfg.neutralLuminance);
     for (let i = 0; i < data.length; i += 4) {
       const a = data[i + 3];
       if (a === 0) continue;
       const r = data[i], g = data[i + 1], b = data[i + 2];
-      if (mode === 'keyed') {
-        const d2 = segmentDistSq(r, g, b, keyA[0], keyA[1], keyA[2], keyB[0], keyB[1], keyB[2]);
-        if (d2 > tol2) continue;
-      }
-      const v = Math.max(r, g, b) / 255;
-      const [nr, ng, nb] = hsvToRgb(th, ts, v);
-      data[i] = nr; data[i + 1] = ng; data[i + 2] = nb;
+      if (predicate && !predicate(i)) continue;
+      const lum = relativeLuminance(r, g, b);
+      if (cfg.preserveNearBlackOutlines && lum <= cfg.outlineThreshold) continue;
+      const normalized = Math.pow(Math.max(0, lum) / neutral, cfg.gamma);
+      const shade = Math.max(cfg.shadowFloor, Math.min(cfg.highlightBoost, normalized));
+      data[i] = clampByte(tr * shade);
+      data[i + 1] = clampByte(tg * shade);
+      data[i + 2] = clampByte(tb * shade);
     }
   }
 
@@ -123,7 +115,7 @@
   // inventory slots) reuse one canvas instead of re-decoding/re-walking pixels.
   // opts: { tolerance, keyColors: [[r,g,b],[r,g,b]] } — only relevant to 'keyed'.
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
-    const cacheKey = spritePath + '|' + mode + '|' + targetHex;
+    const cacheKey = 'animal-shade-fill-v1|' + spritePath + '|' + mode + '|' + targetHex;
     const cached = _canvasCache.get(cacheKey);
     if (cached) return Promise.resolve(cached);
     return loadImage(spritePath).then(img => {
@@ -135,6 +127,7 @@
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       recolorImageData(imageData.data, targetHex, mode, opts);
       ctx.putImageData(imageData, 0, 0);
+      window.__farmLog?.(`[sprite-recolor] animal shade-fill ${spritePath} -> #${targetHex.toString(16).padStart(6, '0')}`, 'items');
       _canvasCache.set(cacheKey, canvas);
       return canvas;
     });
@@ -142,7 +135,7 @@
 
   window.SpriteRecolor = {
     getRecoloredCanvas,
-    rgbToHsv, hsvToRgb, targetHueSat,
+    recolorImageData, relativeLuminance, shadeFillConfig,
     DEFAULT_KEY_A, DEFAULT_KEY_B, KEY_TOLERANCE,
   };
 })();
