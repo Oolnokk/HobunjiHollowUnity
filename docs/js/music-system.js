@@ -838,6 +838,10 @@
   // gentle owns low intensity, mid the middle, heavy the high end, with
   // neighboring bands overlapping instead of hard-cutting between them.
   function rainLayerWeights(intensity) {
+    // Zero means dry weather, not the lowest audible rain band. Without
+    // this boundary guard the gentle formula evaluates to 1 at intensity
+    // 0, so clear weather continuously requests the gentle-rain loop.
+    if (intensity <= 0) return { gentle: 0, mid: 0, heavy: 0 };
     const gentle = deps.clamp(1 - intensity / 0.66, 0, 1);
     const mid    = deps.clamp(1 - Math.abs(intensity - 0.5) / 0.5, 0, 1);
     const heavy  = deps.clamp((intensity - 0.34) / 0.66, 0, 1);

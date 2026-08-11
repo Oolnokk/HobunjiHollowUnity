@@ -33,6 +33,8 @@ assert.match(music, /isAudioEntryEligible\(cue, currentArea\)/,
   'ineligible weather/map/time cues are excluded before selection');
 assert.match(music, /Math\.exp\(-4\.6 \* elapsedMs \/ fadeMs\)/,
   'looping background layers converge smoothly when weather or area changes');
+assert.match(music, /if \(intensity <= 0\) return \{ gentle: 0, mid: 0, heavy: 0 \};/,
+  'dry weather assigns zero weight to every rain layer');
 assert.match(music, /exterior && night && !rainy/,
   'nightbugs play only during eligible clear exterior nights');
 assert.match(music, /currentArea === 'town' \|\| deps\._isZoneArea\(currentArea\)/,
@@ -46,7 +48,7 @@ assert.match(config, /"nightbugsVolume": 0\.34/,
   'nightbugs use the reviewed post-normalization mix level');
 assert.match(config, /"nightbugs": "assets\/audio\/sfx\/bgs\/bgs_nightbugs1\.mp3"/,
   'runtime config uses the normalized nightbugs recording');
-assert.match(index, /music-system\.js\?v=20260811a/,
+assert.match(index, /music-system\.js\?v=20260811b/,
   'the browser cache key loads the fixed scheduler');
 
 assert.ok(fs.statSync(nightbugsPath).size > 600000,
