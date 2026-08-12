@@ -99,9 +99,9 @@
       // so this is cheap and also covers assets that were populated elsewhere.
       wallBuilder.tintDefaultGlb?.('assets/textures/carved_smooth.png', '#4d4d4d');
       HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
-      const before = deps?.scene ? new Set(deps.scene.children) : null;
+      // rebuildStructureMeshes is itself wrapped below, so this one public
+      // call also performs the elevation resync for the replacement meshes.
       housePieces.rebuildStructureMeshes?.();
-      _syncAfterMutation(before);
       deps.debugLog?.('Player house: upgraded starter meshes to textured brick/shingle assets.');
     }).catch(error => {
       houseAssetUpgradePromise = null;
