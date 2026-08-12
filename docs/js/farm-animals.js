@@ -219,6 +219,7 @@
   }
 
   function _farmAnimalGetButtons(animal, label, icon) {
+    if (animal._vatWorkPose) return []; // Used to prevent interacting with an animal while its rendered body is working at a vat.
     const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
     const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
     if (rec?.resourceReady && resDef) {
@@ -312,6 +313,7 @@
         return _farmAnimalOnAction(this, action, "The uumkao’ii ignores you.");
       },
       tick(dt) {
+        if (this._vatWorkPose) return;
         if (this._harvestFrozen) return;
         if (_farmAnimalBarnTick(this)) return;
         // Drops a persistent dew pile on whichever tile a station-wander
@@ -331,6 +333,7 @@
         });
       },
       update(dt) {
+        if (_applyVatWorkPose(this)) return;
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -443,11 +446,13 @@
         return _farmAnimalOnAction(this, action, `The ${label.toLowerCase()} ignores you.`);
       },
       tick(dt) {
+        if (this._vatWorkPose) return;
         if (this._harvestFrozen) return;
         if (_farmAnimalBarnTick(this)) return;
         _farmAnimalWanderTick(this, dt || 0);
       },
       update(dt) {
+        if (_applyVatWorkPose(this)) return;
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -608,10 +613,13 @@
     const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
     if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
     deps.inventory[resDef.itemKey] = Math.min(99, (deps.inventory[resDef.itemKey] || 0) + 1);
+    const stars = deps.rollItemStars?.('farming') || 3; // Used for Farming's animal-good quality bonus.
+    deps.recordItemQuality?.(resDef.itemKey, stars, 1);
+    deps.awardFarmingXp?.();
     rec.resourceReady = false;
     rec.daysUntilResource = resDef.cooldownDays;
     deps.saveWorldLivestock(list);
-    return { ok: true, message: `Collected 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
+    return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
 
   // Advances every housed animal's resource cooldown by one day — called
@@ -646,12 +654,14 @@
           // the vat was since demolished (also clears the stale
           // assignment so it doesn't keep trying every day).
           if (l.assignedVatId) {
-            if (window.DewVats.autoSqueezeAtVat(l.assignedVatId, l.dewColor || deps.UUMKAOII_DEFAULT_DEW_COLOR)) {
+            const squeezeStatus = window.DewVats.autoSqueezeAtVat(l.assignedVatId, l.dewColor || deps.UUMKAOII_DEFAULT_DEW_COLOR); // Used to distinguish a valid busy vat from a demolished one.
+            if (squeezeStatus === 'started') {
               l.dewReady = false;
               l.dewDaysUntil = deps.UUMKAOII_DEW_COOLDOWN_DAYS;
               changed = true;
               return;
             }
+            if (squeezeStatus === 'busy') return;
             l.assignedVatId = null;
           }
           // The pile ideally appears from inside the live uumkao'ii's own
@@ -913,6 +923,74 @@
     deps.animalObjects.clear();
   }
 
+  function _applyVatWorkPose(animal) {
+    const pose = animal._vatWorkPose;
+    if (!pose) return false;
+    const group = animal.avatarRef.group; // Used to apply the editor-equivalent world matrix without decomposing away warp scale/shear.
+    group.visible = true;
+    group.matrixAutoUpdate = false;
+    group.matrix.copy(pose.matrix);
+    group.matrixWorldNeedsUpdate = true;
+    return true;
+  }
+
+  // Temporarily pins the livestock assigned to a vat to its authored stomp
+  // anchor. The animal keeps its logical farm tile/home untouched; only its
+  // rendered body moves, then normal wandering resumes when the batch ends.
+  // This deliberately mirrors furniture-avatar-author's hierarchy exactly:
+  // stomp target * inverse(scaled shoulderGrip) * Small size scale. Keeping
+  // the result as one matrix also preserves the vat's non-uniform stomp scale
+  // instead of decomposing it into a drifting world-space position.
+  function setVatWorkerPose(vatId, targetMatrix, anchorName = 'shoulderGrip') {
+    if (!targetMatrix) return null;
+    let animal = [...deps.animalObjects].find(item => item._vatWorkPose?.vatId === vatId);
+    let rec = animal?._vatWorkRecord;
+    if (!animal) {
+      rec = deps.loadWorldLivestock().find(item => item.assignedVatId === vatId);
+      animal = rec && [...deps.animalObjects].find(item => item.livestockId === rec.id);
+    }
+    if (!rec || !animal) return null;
+    if (window.DewVats?.vatCanAccept?.(rec.kind, rec.genotype) !== true) {
+      clearVatWorkerPose(vatId);
+      return null;
+    }
+    const grip = deps.creatureAttachmentAnchor(rec.kind, anchorName, rec.genotype);
+    if (!grip) return null;
+    const sizeScale = window.CreatureGenetics.creatureSizeScale(rec.kind, rec.genotype); // Used to mirror the editor's Small sizeRoot scale in the final pose matrix.
+    const gripRotation = grip.rotationDeg || {};
+    const gripQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      (gripRotation.x || 0) * Math.PI / 180,
+      (gripRotation.y || 0) * Math.PI / 180,
+      (gripRotation.z || 0) * Math.PI / 180,
+      'XYZ'));
+    const scaledGrip = new THREE.Vector3((grip.x || 0) * sizeScale.x, (grip.y || 0) * sizeScale.y, grip.z || 0); // Used as the editor-equivalent attachment position after size scaling.
+    const gripMatrix = new THREE.Matrix4().compose(scaledGrip, gripQuaternion, new THREE.Vector3(1, 1, 1)).invert(); // Used to align shoulderGrip exactly onto the animated stomp point.
+    const sizeMatrix = new THREE.Matrix4().makeScale(sizeScale.x, sizeScale.y, 1); // Used after grip alignment just like the editor's child sizeRoot.
+    const poseMatrix = targetMatrix.clone().multiply(gripMatrix).multiply(sizeMatrix); // Used directly by _applyVatWorkPose so no target scale/shear is discarded.
+    if (!animal._vatWorkPose) {
+      animal._vatWorkPreviousVisible = animal.avatarRef.group.visible; // Used to restore barn-hidden animals after a completed job.
+      animal._vatWorkPreviousMatrixAutoUpdate = animal.avatarRef.group.matrixAutoUpdate; // Used to restore the avatar's ordinary TRS-driven update mode after vat work.
+    }
+    animal._vatWorkPose = { vatId, matrix: poseMatrix };
+    animal._vatWorkRecord = rec; // Used to avoid reparsing livestock storage on every animation frame.
+    return rec;
+  }
+
+  function clearVatWorkerPose(vatId) {
+    for (const animal of deps.animalObjects) {
+      if (animal._vatWorkPose?.vatId !== vatId) continue;
+      const group = animal.avatarRef.group; // Used to restore ordinary farm-animal transform updates after a vat batch ends.
+      group.visible = animal._vatWorkPreviousVisible !== false;
+      group.matrixAutoUpdate = animal._vatWorkPreviousMatrixAutoUpdate !== false;
+      if (group.matrixAutoUpdate) group.updateMatrix();
+      group.matrixWorldNeedsUpdate = true;
+      delete animal._vatWorkPose;
+      delete animal._vatWorkPreviousVisible;
+      delete animal._vatWorkPreviousMatrixAutoUpdate;
+      delete animal._vatWorkRecord;
+    }
+  }
+
   function updateAnimalMeshes(dt) {
     // .tick() drives wander/barn-homing steps (throttled internally via
     // each animal's own tickCounter); .update(dt) is the continuous
@@ -946,6 +1024,8 @@
     tickBreeding,
     clearAnimalObjects,
     updateAnimalMeshes,
+    setVatWorkerPose,
+    clearVatWorkerPose,
     GESTATION_DAYS: LIVESTOCK_GESTATION_DAYS,
   };
 })();

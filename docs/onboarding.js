@@ -455,7 +455,7 @@
   }
 
   function makeDefaultSkills() {
-    return { combat: 0, farming: 0, fishing: 0, foraging: 0, alchemy: 0, cooking: 0 };
+    return { foraging: 0, mining: 0, farming: 0, fishing: 0, combat: 0, crafting: 0 };
   }
 
   // Character stats — plain persisted values with no gameplay effect yet.
@@ -477,6 +477,7 @@
       alchemyKnownEffects: {},        // { [reagentKey]: [effectIndex, ...] } — discovered reagent effects
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
+      cookingState: {},               // quality buckets, generated meals, and active food effects
       joinedAt:         Date.now(),
     };
   }
@@ -1178,6 +1179,7 @@
       equipmentSlots:    { ...(char.equipmentSlots || {}) },
       activeTool:        char.activeTool || null,
       skillLevels:       { ...(char.skillLevels    || makeDefaultSkills()) },
+      skillExperience:   { ...(char.skillExperience || {}) },
       stats:             { ...char.stats },
       // Character-scoped personal livestock collection (companions) — travels
       // with the character between worlds, unlike farm livestock which
@@ -1203,6 +1205,7 @@
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
+      cookingState:      { ...(memberState.cookingState || {}) },
       isNewWorld,
     };
     saveProfile(playerData);
@@ -1509,6 +1512,7 @@
           return gear;
         })(),
         skillLevels:      makeDefaultSkills(),
+        skillExperience:  {},
         stats:            makeDefaultStats(),
         stable:           [],   // backfilled with the starter dabinggi-hound lazily in game.js
         activeCompanionId: null,
@@ -1531,6 +1535,7 @@
       playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
       playerData.skillLevels    = newChar.skillLevels;
+      playerData.skillExperience = newChar.skillExperience;
       playerData.stats          = newChar.stats;
       playerData.stable         = newChar.stable;
       playerData.activeCompanionId = newChar.activeCompanionId;
@@ -1545,6 +1550,7 @@
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
+      playerData.cookingState = { ...(memberState.cookingState || {}) };
       playerData.isNewWorld     = true;
     }
 
@@ -1668,6 +1674,7 @@
           appliedDyes:      saved.appliedDyes || {},
           gearInventory:    makeDefaultGear(),
           skillLevels:      makeDefaultSkills(),
+          skillExperience:  {},
           stats:            makeDefaultStats(),
           createdAt:        Date.now(),
           lastPlayed:       Date.now(),

@@ -28,6 +28,8 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     COLS = deps.COLS; ROWS = deps.ROWS; TileType = deps.TileType;
+    _pruneInvalidVatAssignments();
+    _installSqueezingVatStartGuards();
   }
 
   // ── Dew piles ──────────────────────────────────────────────────────
@@ -203,13 +205,72 @@
     return false;
   }
 
-  // ── Livestock-to-vat assignment (small livestock working a squeezer) ──
-  function vatCanAccept(kind) {
-    return kind === 'uumkaoii'; // the only kind with a squeezable resource today
+  // ── Livestock-to-vat assignment (Small livestock working a squeezing vat) ──
+  function vatCanAccept(kind, genotype) {
+    return window.CreatureGenetics?.creatureSizeClass?.(kind, genotype) === 'small';
+  }
+  function _workerCanOperate(rec) {
+    return !!rec?.barnId && vatCanAccept(rec.kind, rec.genotype); // Used to keep stasis/unhoused livestock from satisfying the live squeezing-vat worker requirement.
+  }
+  function _pruneInvalidVatAssignments() {
+    const list = deps.loadWorldLivestock(); // Used to migrate stale non-Small or unhoused vat assignments from older saves.
+    let changed = false; // Used to avoid unnecessary save writes when every assignment is already valid.
+    for (const rec of list) {
+      if (!rec.assignedVatId || _workerCanOperate(rec)) continue;
+      rec.assignedVatId = null;
+      changed = true;
+    }
+    if (changed) {
+      deps.saveWorldLivestock(list);
+      window.__farmLog?.('[squeezing-vat] cleared stale non-Small/unhoused livestock assignments', 'livestock');
+    }
+  }
+  function assignedWorkerForVat(vatId, list = deps.loadWorldLivestock()) {
+    return list.find(rec => rec.assignedVatId === vatId && _workerCanOperate(rec)) || null;
   }
   function findVatById(vatId) {
     for (const obj of deps.processingFurnitureObjects) if (obj.id === vatId) return obj;
     return null;
+  }
+  function _workerRequiredResult() {
+    return { ok: false, workerRequired: true, message: 'Assign housed Small livestock to this squeezing vat before starting it.' };
+  }
+  function _guardSqueezingVatStart(vat) {
+    if (!vat || vat.__smallWorkerStartGuard) return;
+    if (deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return;
+    const originalOnAction = vat.onAction; // Used to block manual inputs before game.js consumes the selected ingredient.
+    if (typeof originalOnAction === 'function') {
+      vat.onAction = function guardedSqueezingAction(action) {
+        if (action === 'obj_process_' + vat.furnitureKey && !vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
+          window.__farmLog?.(`[squeezing-vat] blocked manual start without housed Small livestock worker vat=${vat.id}`, 'livestock');
+          return _workerRequiredResult();
+        }
+        return originalOnAction.call(vat, action);
+      };
+    }
+    const originalStartTimedJob = vat.startTimedJob; // Used to protect livestock/other programmatic starts through the public processor API.
+    if (typeof originalStartTimedJob === 'function') {
+      vat.startTimedJob = function guardedTimedSqueezingStart(options) {
+        if (!vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
+          window.__farmLog?.(`[squeezing-vat] blocked timed start without housed Small livestock worker vat=${vat.id}`, 'livestock');
+          return _workerRequiredResult();
+        }
+        return originalStartTimedJob.call(vat, options);
+      };
+    }
+    vat.__smallWorkerStartGuard = true;
+  }
+  function _installSqueezingVatStartGuards() {
+    const processors = deps.processingFurnitureObjects; // Shared Set used to guard existing and newly placed squeezing vats without coupling the rule back into game.js.
+    if (!processors) return;
+    for (const obj of processors) _guardSqueezingVatStart(obj);
+    if (processors.__smallWorkerAddGuard || typeof processors.add !== 'function') return;
+    const originalAdd = processors.add; // Used to install the same start gate on processors restored/placed after DewVats.init().
+    processors.add = function guardedProcessorAdd(obj) {
+      _guardSqueezingVatStart(obj);
+      return originalAdd.call(this, obj);
+    };
+    processors.__smallWorkerAddGuard = true;
   }
   function assignToVat(livestockId, vatId) {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
@@ -217,12 +278,15 @@
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
-    if (!vatCanAccept(rec.kind)) return { ok: false, message: `${rec.name} has nothing a vat can process.` };
+    if (!vatCanAccept(rec.kind, rec.genotype)) return { ok: false, message: `${rec.name} is not Small; only Small livestock can work a squeezing vat.` };
     const vat = findVatById(vatId);
     if (!vat || deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
-    if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+    if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId && _workerCanOperate(l))) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+    const oldVatId = rec.assignedVatId; // Used to release a live pose when transferring a worker between vats.
     rec.assignedVatId = vatId;
     deps.saveWorldLivestock(list);
+    _guardSqueezingVatStart(vat);
+    if (oldVatId && oldVatId !== vatId) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
   }
   function unassignFromVat(livestockId) {
@@ -230,8 +294,10 @@
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
+    const oldVatId = rec.assignedVatId; // Used to release a live stomp pose if this worker is unassigned mid-process.
     rec.assignedVatId = null;
     deps.saveWorldLivestock(list);
+    if (oldVatId) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return { ok: true, message: `${rec.name} unassigned from its vat.` };
   }
   function retargetAssignments(oldVatId, newVatId = null) {
@@ -243,22 +309,23 @@
       changed++;
     }
     if (changed) deps.saveWorldLivestock(list);
+    if (changed) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return changed;
   }
-  // Runs the squeezing recipe for a raw dew color directly into inventory
-  // (bypassing the dig-up-a-pile step) and plays the vat's own processing
-  // VFX burst. Returns false (no state change) if the vat no longer
-  // exists — game.js's tickLivestockResources clears the stale assignment
-  // in that case and falls back to the ordinary pile-drop.
+  // Starts the vat's real authored squeezing job for raw dew (bypassing the
+  // dig-up-a-pile step). Returns 'started', 'busy', or false when the vat no
+  // longer exists; the farm-animal day tick uses that distinction so a busy
+  // vat never accidentally clears its valid livestock assignment.
   function autoSqueezeAtVat(vatId, colorKey) {
     const vat = findVatById(vatId);
-    if (!vat) return false;
+    if (!vat || !assignedWorkerForVat(vatId)) return false;
+    _guardSqueezingVatStart(vat);
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
-    outputs.forEach(o => { deps.ensureProcessedItemDef(o); deps.inventory[o.key] = Math.min(99, (deps.inventory[o.key] || 0) + 1); });
-    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[deps.PROCESSING_SFX_KEY[vat.furnitureKey]]);
-    vat.triggerVfx && vat.triggerVfx();
-    return true;
+    const stars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
+    const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: 'livestock' });
+    if (result?.busy) return 'busy';
+    return result?.ok ? 'started' : false;
   }
 
   window.DewVats = {
@@ -272,6 +339,7 @@
     drop,
     dropOnRandomOpenTile,
     vatCanAccept,
+    assignedWorkerForVat,
     findVatById,
     assignToVat,
     unassignFromVat,

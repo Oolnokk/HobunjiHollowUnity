@@ -842,7 +842,11 @@
     const isAging = deps.AGING_METHODS.has(def.method);
     const job = obj.getJob ? obj.getJob() : null;
     const list = livestock || (def.method === 'squeezing' ? deps._loadWorldLivestock() : null);
-    const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id) : null;
+    const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id && window.DewVats.vatCanAccept(l.kind, l.genotype)) : null;
+    if (job?.kind === 'timed') {
+      const secondsLeft = Math.max(0, Math.ceil((Number(job.readyAtMs) - Date.now()) / 1000)); // Used to mirror the live authored-process countdown shown at the vat.
+      return { status: 'working', label: `Squeezing — ${secondsLeft}s${worker ? ` · ${worker.name}` : ''}`, worker };
+    }
     if (isAging && job) {
       const daysLeft = Math.max(0, job.readyDay - deps.calendar.day);
       return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };
@@ -1044,20 +1048,19 @@
           readyBadge.textContent = '✅ Ready to collect — visit it on the farm';
           extra.appendChild(readyBadge);
         }
-        // Squeezing-vat assignment — only meaningful for a housed kind with
-        // a squeezable resource (uumkao'ii dew today, see
-        // vatCanAcceptLivestock), and only once it's actually housed (same
-        // gate as the dew/egg cooldowns themselves).
-        if (entry.barnId && window.DewVats.vatCanAccept(entry.kind)) {
+        // Squeezing-vat assignment — only meaningful for a housed Small
+        // Uumkao'ii with a squeezable resource (see DewVats.vatCanAccept),
+        // and only once it's actually housed (same gate as the cooldowns).
+        if (entry.barnId && window.DewVats.vatCanAccept(entry.kind, entry.genotype)) {
           const vats = [...deps.processingFurnitureObjects].filter(o => deps.PROCESSING_FURNITURE_DEFS[o.furnitureKey]?.method === 'squeezing');
           const vatSelect = document.createElement('select');
           vatSelect.className = 'settings-select farm-barn-select';
-          vatSelect.title = 'Assign to a placed squeezing vat — its dew is squeezed into milk/curds automatically each cooldown instead of dropping a pile to dig up.';
+          vatSelect.title = 'Assign this Small Uumkao’ii to a placed squeezing vat — its dew is squeezed into milk/curds automatically each cooldown instead of dropping a pile to dig up.';
           const noneOpt = document.createElement('option');
           noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
           vatSelect.appendChild(noneOpt);
           vats.forEach(v => {
-            const takenBy = livestock.find(l => l.assignedVatId === v.id);
+            const takenBy = livestock.find(l => l.assignedVatId === v.id && window.DewVats.vatCanAccept(l.kind, l.genotype));
             const opt = document.createElement('option');
             opt.value = v.id;
             opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');

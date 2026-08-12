@@ -20,7 +20,13 @@
   // etc.) stays in game.js since it's tied to Three.js zone scene
   // internals — it reads REAGENT_DEFS/reagentsForZone from here instead.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    window.EffectBuffBar?.registerProvider('alchemy', () => {
+      const now = performance.now() / 1000; // Used to expose alchemy timers without giving alchemy ownership of the shared HUD.
+      return activeAlchemyEffects.map(effect => ({ ...effect, sourceLabel: 'Potion', remainingS: effect.expiresAt - now }));
+    });
+  }
 
   const ALCHEMY_EFFECT_DEFS = {
     strength:   { label: 'Strength',   icon: '💪', kind: 'boon', durationS: 90, desc: 'Something in you feels sturdier.' },
@@ -231,30 +237,8 @@
     refreshBuffBar(before !== activeAlchemyEffects.length);
   }
 
-  // Rebuilds the buff bar's DOM only when the active effect *set*
-  // changes; every other call just updates each icon's countdown fill.
-  let _lastBuffBarKey = '';
-  function refreshBuffBar() {
-    const bar = document.getElementById('buffBar');
-    if (!bar) return;
-    const key = activeAlchemyEffects.map(e => e.key).join(',');
-    if (key !== _lastBuffBarKey) {
-      _lastBuffBarKey = key;
-      bar.innerHTML = activeAlchemyEffects.map(e => `
-        <div class="buff-icon ${e.kind}" data-buff="${e.key}" title="${e.label}">
-          <span class="buff-icon-glyph">${e.icon}</span>
-          <div class="buff-icon-track"><div class="buff-icon-fill" data-fill="${e.key}"></div></div>
-        </div>
-      `).join('');
-    }
-    bar.style.display = activeAlchemyEffects.length ? 'flex' : 'none';
-    const now = performance.now() / 1000;
-    activeAlchemyEffects.forEach(e => {
-      const fill = bar.querySelector(`.buff-icon-fill[data-fill="${e.key}"]`);
-      if (!fill) return;
-      const remain = Math.max(0, e.expiresAt - now);
-      fill.style.width = Math.max(0, Math.min(100, (remain / e.durationS) * 100)) + '%';
-    });
+  function refreshBuffBar(force = false) {
+    window.EffectBuffBar?.refresh(force); // Used to coexist with food and future timed-effect providers.
   }
 
   // ── Alchemy panel render (Alchemy Table brewing UI) ─────────────
