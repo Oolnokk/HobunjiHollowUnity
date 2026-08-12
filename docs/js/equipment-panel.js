@@ -220,7 +220,7 @@
     if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
     set('iiName',  def.label + ' (Gear) — Mastery ' + deps.toolMasteryLevel(key) + '/5');
     set('iiPrice', 'Permanent — not sellable');
-    set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
+    set('iiTags',  '');
     set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
     const actEl = document.getElementById('iiActions');
     if (actEl) {
@@ -313,7 +313,7 @@
     setInventoryDetailClothingIcon(item);
     set('iiName',  item.label);
     set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
-    set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + item.slot.charAt(0).toUpperCase() + item.slot.slice(1) + '</span>');
+    set('iiTags',  '');
     set('iiDesc',  'Transfer to gear to wear it (permanent). Can sell while in pack.');
     const actEl = document.getElementById('iiActions');
     if (actEl) {
@@ -357,7 +357,7 @@
     setInventoryDetailClothingIcon(item);
     set('iiName',  item.label);
     set('iiPrice', 'Permanent gear — not sellable');
-    set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
+    set('iiTags',  '');
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
     set('iiDesc',  isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.');
