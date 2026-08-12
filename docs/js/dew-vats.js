@@ -28,6 +28,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     COLS = deps.COLS; ROWS = deps.ROWS; TileType = deps.TileType;
+    _installSqueezingVatStartGuards();
   }
 
   // ── Dew piles ──────────────────────────────────────────────────────
@@ -204,12 +205,56 @@
   }
 
   // ── Livestock-to-vat assignment (small livestock working a squeezing vat) ──
-  function vatCanAccept(kind) {
-    return kind === 'uumkaoii'; // the only kind with a squeezable resource today
+  function vatCanAccept(kind, genotype) {
+    if (kind !== 'uumkaoii') return false;
+    return window.CreatureGenetics?.creatureSizeClass?.(kind, genotype) === 'small';
+  }
+  function assignedWorkerForVat(vatId, list = deps.loadWorldLivestock()) {
+    return list.find(rec => rec.assignedVatId === vatId && vatCanAccept(rec.kind, rec.genotype)) || null;
   }
   function findVatById(vatId) {
     for (const obj of deps.processingFurnitureObjects) if (obj.id === vatId) return obj;
     return null;
+  }
+  function _workerRequiredResult() {
+    return { ok: false, workerRequired: true, message: 'Assign a Small Uumkao’ii to this squeezing vat before starting it.' };
+  }
+  function _guardSqueezingVatStart(vat) {
+    if (!vat || vat.__smallWorkerStartGuard) return;
+    if (deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return;
+    const originalOnAction = vat.onAction; // Used to block manual inputs before game.js consumes the selected ingredient.
+    if (typeof originalOnAction === 'function') {
+      vat.onAction = function guardedSqueezingAction(action) {
+        if (action === 'obj_process_' + vat.furnitureKey && !vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
+          window.__farmLog?.(`[squeezing-vat] blocked manual start without Small Uumkao'ii worker vat=${vat.id}`, 'livestock');
+          return _workerRequiredResult();
+        }
+        return originalOnAction.call(vat, action);
+      };
+    }
+    const originalStartTimedJob = vat.startTimedJob; // Used to protect livestock/other programmatic starts through the public processor API.
+    if (typeof originalStartTimedJob === 'function') {
+      vat.startTimedJob = function guardedTimedSqueezingStart(options) {
+        if (!vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
+          window.__farmLog?.(`[squeezing-vat] blocked timed start without Small Uumkao'ii worker vat=${vat.id}`, 'livestock');
+          return _workerRequiredResult();
+        }
+        return originalStartTimedJob.call(vat, options);
+      };
+    }
+    vat.__smallWorkerStartGuard = true;
+  }
+  function _installSqueezingVatStartGuards() {
+    const processors = deps.processingFurnitureObjects; // Shared Set used to guard existing and newly placed squeezing vats without coupling the rule back into game.js.
+    if (!processors) return;
+    for (const obj of processors) _guardSqueezingVatStart(obj);
+    if (processors.__smallWorkerAddGuard || typeof processors.add !== 'function') return;
+    const originalAdd = processors.add; // Used to install the same start gate on processors restored/placed after DewVats.init().
+    processors.add = function guardedProcessorAdd(obj) {
+      _guardSqueezingVatStart(obj);
+      return originalAdd.call(this, obj);
+    };
+    processors.__smallWorkerAddGuard = true;
   }
   function assignToVat(livestockId, vatId) {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
@@ -217,13 +262,15 @@
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
-    if (!vatCanAccept(rec.kind)) return { ok: false, message: `${rec.name} has nothing a vat can process.` };
+    if (rec.kind !== 'uumkaoii') return { ok: false, message: `${rec.name} has nothing a vat can process.` };
+    if (!vatCanAccept(rec.kind, rec.genotype)) return { ok: false, message: `${rec.name} is not Small; only Small Uumkao’ii can work a squeezing vat.` };
     const vat = findVatById(vatId);
     if (!vat || deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
     if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
     const oldVatId = rec.assignedVatId; // Used to release a live pose when transferring a worker between vats.
     rec.assignedVatId = vatId;
     deps.saveWorldLivestock(list);
+    _guardSqueezingVatStart(vat);
     if (oldVatId && oldVatId !== vatId) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
   }
@@ -256,7 +303,8 @@
   // vat never accidentally clears its valid livestock assignment.
   function autoSqueezeAtVat(vatId, colorKey) {
     const vat = findVatById(vatId);
-    if (!vat) return false;
+    if (!vat || !assignedWorkerForVat(vatId)) return false;
+    _guardSqueezingVatStart(vat);
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
     const stars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
@@ -276,6 +324,7 @@
     drop,
     dropOnRandomOpenTile,
     vatCanAccept,
+    assignedWorkerForVat,
     findVatById,
     assignToVat,
     unassignFromVat,
