@@ -69,6 +69,7 @@ const cookingSource = fs.readFileSync('docs/js/cooking-system.js', 'utf8');
 const processingSource = fs.readFileSync('docs/js/food-processing.js', 'utf8');
 const authoredRuntimeSource = fs.readFileSync('docs/js/authored-furniture-runtime.js', 'utf8');
 const farmAnimalsSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
+const farmPanelSource = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
 const dewVatsSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8');
 const squeezerAuthored = JSON.parse(fs.readFileSync('docs/config/furniture-authored/squeezer.json', 'utf8'));
 const alchemySource = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');
@@ -97,9 +98,16 @@ assert(squeezerAuthored.stompAttachPoints.some(point => point.enabled !== false 
 assert.match(authoredRuntimeSource, /function applyProcessTimeline\(/, 'the game runtime samples authored furniture process timelines');
 assert.match(authoredRuntimeSource, /_liquidSurfaceGeometry/, 'liquid levels rebuild from the linked cup profile instead of a static disc');
 assert.match(authoredRuntimeSource, /function stompAttachWorldMatrix\(/, 'the runtime resolves the furniture-editor stomp anchor after warping');
+assert.match(authoredRuntimeSource, /resetWarp\(group, warp\);\s*group\.updateMatrixWorld\(true\);\s*const center = _warpCentroid/, 'runtime warp playback resets to the authored rest frame before deriving its centroid, matching the editor');
 assert.match(gameSource, /kind: 'timed'[\s\S]{0,500}readyAtMs/, 'squeezing persists a real-time job instead of granting its output immediately');
 assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'manual nut, meat, and fish inputs start the authored squeezing timeline');
 assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
+assert.match(farmAnimalsSource, /targetMatrix\.clone\(\)\.multiply\(gripMatrix\)\.multiply\(sizeMatrix\)/, 'live vat workers use the editor hierarchy: target × inverse scaled grip × size');
+assert.doesNotMatch(farmAnimalsSource, /\(grip\.y \|\| 0\) - animal\.halfHeight/, 'vat attachment no longer invents a half-height offset absent from the furniture editor');
+assert.match(dewVatsSource, /creatureSizeClass\?\.\(kind, genotype\) === 'small'/, 'only Small Uumkao’ii satisfy the squeezing-vat worker predicate');
+assert.match(dewVatsSource, /function _guardSqueezingVatStart\(/, 'squeezing vats install a shared worker-required start guard');
+assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid worker is already assigned');
+assert.match(farmPanelSource, /vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
 assert.match(dewVatsSource, /return result\?\.ok \? 'started' : false/, 'automatic dew squeezing uses the same delayed vat job boundary');
 
 console.log('skill and hearth cooking tests passed');
