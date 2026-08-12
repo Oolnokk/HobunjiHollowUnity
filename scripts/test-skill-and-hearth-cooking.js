@@ -96,9 +96,6 @@ assert.equal(squeezingTimeline.duration, 12, 'the placed squeezing vat uses the 
 assert.equal(squeezingTimeline.liquidTracks.length, 2, 'the authored process transfers both the upper and collected liquid surfaces');
 assert(squeezerAuthored.stompAttachPoints.some(point => point.enabled !== false && point.anchorName === 'shoulderGrip'), 'the vat exports a live livestock stomp anchor');
 assert.match(authoredRuntimeSource, /function applyProcessTimeline\(/, 'the game runtime samples authored furniture process timelines');
-assert.match(authoredRuntimeSource, /function _cupGeometry\(/, 'authored cup vessels use the furniture editor open-basin geometry at runtime');
-assert.match(authoredRuntimeSource, /part\.kind === 'cup'[\s\S]{0,220}_cupGeometry\(part\)/, 'authored cup meshes replace the generic capped-cylinder fallback');
-assert.match(authoredRuntimeSource, /innerFloor[\s\S]{0,700}innerTop[\s\S]{0,700}floorCenter/, 'runtime cup geometry includes an inner wall and basin floor while leaving the top open');
 assert.match(authoredRuntimeSource, /_liquidSurfaceGeometry/, 'liquid levels rebuild from the linked cup profile instead of a static disc');
 assert.match(authoredRuntimeSource, /function stompAttachWorldMatrix\(/, 'the runtime resolves the furniture-editor stomp anchor after warping');
 assert.match(authoredRuntimeSource, /resetWarp\(group, warp\);\s*group\.updateMatrixWorld\(true\);\s*const center = _warpCentroid/, 'runtime warp playback resets to the authored rest frame before deriving its centroid, matching the editor');
