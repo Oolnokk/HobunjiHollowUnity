@@ -22,6 +22,7 @@
     const recomputeWater = typeof deps.recomputeWater === 'function' ? deps.recomputeWater : () => {};
     const debugLog = typeof deps.debugLog === 'function' ? deps.debugLog : () => {};
     const scene = deps.scene || null;
+    const PLAYER_HOUSE_LOGICAL_HEIGHT = 0.6; // Used when building the runtime subtle-elevation override and reporting debug state.
 
     let visualHeights = {}; // Current shared-algorithm center samples, used when deforming farm terrain meshes.
     let footprintFingerprint = ''; // Union-of-module footprint signature; skips terrain work for roof/feature-only rebuilds.
@@ -58,8 +59,8 @@
       const maxC = Math.max(...cells.map(v => v[0]));
       const maxR = Math.max(...cells.map(v => v[1]));
       const override = typeof elevation.normalizeOverride === 'function'
-        ? elevation.normalizeOverride(null)
-        : { enabled: true, value: elevation.DEFAULT_VALUE ?? 0.5, radius: elevation.DEFAULT_RADIUS ?? 1 };
+        ? elevation.normalizeOverride({ value: PLAYER_HOUSE_LOGICAL_HEIGHT })
+        : { enabled: true, value: PLAYER_HOUSE_LOGICAL_HEIGHT, radius: elevation.DEFAULT_RADIUS ?? 1 };
       return {
         id: 'player_house_dynamic_footprint',
         gridX: minC,
@@ -221,7 +222,7 @@
         affectedCenters: affectedKeys.size,
         deformedTileCells: visualMeshKeys.size,
         worldY: worldY(),
-        logicalValue: elevation.DEFAULT_VALUE ?? null,
+        logicalValue: PLAYER_HOUSE_LOGICAL_HEIGHT,
         radius: elevation.DEFAULT_RADIUS ?? null,
       };
       debugLog(`Player house subtle elevation: ${lastDebug.footprintCells} footprint tile(s), ${lastDebug.affectedCenters} stamped center(s), Y +${lastDebug.worldY.toFixed(3)}.`);
