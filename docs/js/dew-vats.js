@@ -28,6 +28,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     COLS = deps.COLS; ROWS = deps.ROWS; TileType = deps.TileType;
+    _pruneInvalidVatAssignments();
     _installSqueezingVatStartGuards();
   }
 
@@ -204,10 +205,22 @@
     return false;
   }
 
-  // ── Livestock-to-vat assignment (small livestock working a squeezing vat) ──
+  // ── Livestock-to-vat assignment (Small livestock working a squeezing vat) ──
   function vatCanAccept(kind, genotype) {
-    if (kind !== 'uumkaoii') return false;
     return window.CreatureGenetics?.creatureSizeClass?.(kind, genotype) === 'small';
+  }
+  function _pruneInvalidVatAssignments() {
+    const list = deps.loadWorldLivestock(); // Used to migrate stale Medium/Large vat assignments from older saves.
+    let changed = false; // Used to avoid unnecessary save writes when every assignment is already valid.
+    for (const rec of list) {
+      if (!rec.assignedVatId || vatCanAccept(rec.kind, rec.genotype)) continue;
+      rec.assignedVatId = null;
+      changed = true;
+    }
+    if (changed) {
+      deps.saveWorldLivestock(list);
+      window.__farmLog?.('[squeezing-vat] cleared stale non-Small livestock assignments', 'livestock');
+    }
   }
   function assignedWorkerForVat(vatId, list = deps.loadWorldLivestock()) {
     return list.find(rec => rec.assignedVatId === vatId && vatCanAccept(rec.kind, rec.genotype)) || null;
@@ -217,7 +230,7 @@
     return null;
   }
   function _workerRequiredResult() {
-    return { ok: false, workerRequired: true, message: 'Assign a Small Uumkao’ii to this squeezing vat before starting it.' };
+    return { ok: false, workerRequired: true, message: 'Assign Small livestock to this squeezing vat before starting it.' };
   }
   function _guardSqueezingVatStart(vat) {
     if (!vat || vat.__smallWorkerStartGuard) return;
@@ -226,7 +239,7 @@
     if (typeof originalOnAction === 'function') {
       vat.onAction = function guardedSqueezingAction(action) {
         if (action === 'obj_process_' + vat.furnitureKey && !vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
-          window.__farmLog?.(`[squeezing-vat] blocked manual start without Small Uumkao'ii worker vat=${vat.id}`, 'livestock');
+          window.__farmLog?.(`[squeezing-vat] blocked manual start without Small livestock worker vat=${vat.id}`, 'livestock');
           return _workerRequiredResult();
         }
         return originalOnAction.call(vat, action);
@@ -236,7 +249,7 @@
     if (typeof originalStartTimedJob === 'function') {
       vat.startTimedJob = function guardedTimedSqueezingStart(options) {
         if (!vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
-          window.__farmLog?.(`[squeezing-vat] blocked timed start without Small Uumkao'ii worker vat=${vat.id}`, 'livestock');
+          window.__farmLog?.(`[squeezing-vat] blocked timed start without Small livestock worker vat=${vat.id}`, 'livestock');
           return _workerRequiredResult();
         }
         return originalStartTimedJob.call(vat, options);
@@ -262,11 +275,10 @@
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     if (!rec.barnId) return { ok: false, message: `${rec.name} must be housed in a barn first.` };
-    if (rec.kind !== 'uumkaoii') return { ok: false, message: `${rec.name} has nothing a vat can process.` };
-    if (!vatCanAccept(rec.kind, rec.genotype)) return { ok: false, message: `${rec.name} is not Small; only Small Uumkao’ii can work a squeezing vat.` };
+    if (!vatCanAccept(rec.kind, rec.genotype)) return { ok: false, message: `${rec.name} is not Small; only Small livestock can work a squeezing vat.` };
     const vat = findVatById(vatId);
     if (!vat || deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
-    if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+    if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId && vatCanAccept(l.kind, l.genotype))) return { ok: false, message: 'That vat already has livestock assigned to it.' };
     const oldVatId = rec.assignedVatId; // Used to release a live pose when transferring a worker between vats.
     rec.assignedVatId = vatId;
     deps.saveWorldLivestock(list);
