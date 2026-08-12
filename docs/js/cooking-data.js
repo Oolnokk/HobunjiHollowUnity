@@ -1765,6 +1765,74 @@
       ]
     },
     {
+      "id": "mayonnaise",
+      "name": "Mayonnaise",
+      "description": "Eggs emulsified with oil at the hearth. The egg species determines the mayonnaise name and effects.",
+      "baseOutputName": "Mayonnaise",
+      "slots": [
+        {
+          "id": "egg",
+          "label": "Egg",
+          "accepts": [
+            "egg"
+          ],
+          "required": true
+        },
+        {
+          "id": "oil",
+          "label": "Oil",
+          "accepts": [
+            "oil"
+          ],
+          "required": true
+        }
+      ],
+      "outputTags": [
+        "Cooking Ingredient",
+        "Mayonnaise",
+        "Sauce"
+      ],
+      "inventoryCategories": [
+        "mayonnaise",
+        "sauce"
+      ]
+    },
+    {
+      "id": "bread",
+      "name": "Bread",
+      "description": "A hearth-baked loaf made from flour. Oil or butter is optional for a richer loaf.",
+      "baseOutputName": "Bread",
+      "slots": [
+        {
+          "id": "flour",
+          "label": "Flour",
+          "accepts": [
+            "flour"
+          ],
+          "required": true
+        },
+        {
+          "id": "fat",
+          "label": "Oil / Butter (Optional)",
+          "accepts": [
+            "oil",
+            "butter"
+          ],
+          "required": false
+        }
+      ],
+      "outputTags": [
+        "Cooking Ingredient",
+        "Bread",
+        "Baked"
+      ],
+      "inventoryCategories": [
+        "bread",
+        "processedCrop",
+        "starchVegetable"
+      ]
+    },
+    {
       "id": "spicyNoodles",
       "name": "Spicy Noodles",
       "description": "Noodles with heat. Quality leans on spice and noodle base.",
@@ -2351,6 +2419,18 @@
         "flour"
       ]
     },
+    "mayonnaise": {
+      "pattern": "{egg} Mayonnaise",
+      "namedSlots": [
+        "egg"
+      ]
+    },
+    "bread": {
+      "pattern": "{flour} Bread",
+      "namedSlots": [
+        "flour"
+      ]
+    },
     "spicyNoodles": {
       "pattern": "{spice} Noodles",
       "namedSlots": [
@@ -2480,6 +2560,10 @@
     "demoPlainNoodles": "Plain Noodles",
     "needlegrainFlour": "Needlegrain",
     "heftrootFlour": "Heftroot",
+    "nelkEggs": "Nelk",
+    "uumkaoiiEgg": "Uumkao’ii",
+    "nazgrakuEggs": "Nazgraku",
+    "drenkirraEgg": "Drenkirra",
     "blackMustardSeed": "Black Mustard",
     "greenMustardSeed": "Green Mustard",
     "travelSpice": "Trader-Sloth",

@@ -72,8 +72,15 @@
   }
 
   function registerCookedDefinition(key, definition) {
-    cookedDefinitions[key] = { ...definition }; // Used to serialize the generated name, effects, and quality.
-    deps.ITEM_DEFS[key] = { ...definition, isCookedFood: true };
+    const recipeId = definition.recipeId || data().recipes.find(recipe => key.startsWith(`food_${recipe.id}_`))?.id; // Used to migrate reusable foods saved before recipe ids were persisted.
+    const recipe = data().recipes.find(candidate => candidate.id === recipeId); // Used to restore recipe-owned ingredient categories.
+    const normalized = {
+      ...definition,
+      ...(recipeId ? { recipeId } : {}),
+      cookingCategories: definition.cookingCategories || recipe?.inventoryCategories || [],
+    }; // Used to make noodles, mayonnaise, bread, and future bases reusable after reload.
+    cookedDefinitions[key] = { ...normalized }; // Used to serialize the generated name, effects, and quality.
+    deps.ITEM_DEFS[key] = { ...normalized, isCookedFood: true };
     if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon: definition.icon || '🍲', label: definition.label.toUpperCase(), max: 99 });
   }
 
@@ -151,6 +158,12 @@
     recipe.slots.forEach(slot => {
       const selected = selectedSlots[slot.id];
       const definition = selected ? deps.ITEM_DEFS[selected.key] : null;
+      if (definition?.foodEffects && Object.keys(definition.foodEffects).length) {
+        Object.entries(definition.foodEffects).forEach(([effect, amount]) => {
+          totals[effect] = (totals[effect] || 0) + Math.max(1, Number(amount) || 1);
+        });
+        return;
+      }
       if (!definition?.cookingPrimaryEffect) return;
       const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 };
       const prototypeQuality = 1 + (selected.stars - 1) / 2; // Used to preserve the prototype's 1–3 quality effect curve atop 1–5 stars.
@@ -195,10 +208,18 @@
     return Math.max(1, Math.min(5, Math.round(average + craftingLift + jitter)));
   }
 
+  function recipeOutputIcon(recipe) {
+    const categories = recipe.inventoryCategories || []; // Used to visually distinguish reusable bases from finished meals.
+    if (categories.includes('noodleBase')) return '🍜';
+    if (categories.includes('mayonnaise')) return '🥣';
+    if (categories.includes('bread')) return '🍞';
+    return '🍲';
+  }
+
   function cook() {
     const recipe = selectedRecipe();
     if (!selectionIsValid(recipe) || cookTimer) return;
-    const selections = recipe.slots.map(slot => ({ slot, selected: selectedSlots[slot.id] })); // Used to revalidate quality stock before animation.
+    const selections = recipe.slots.map(slot => ({ slot, selected: selectedSlots[slot.id] })).filter(entry => entry.selected); // Used to revalidate selected stock while allowing optional recipe slots to remain empty.
     if (!selectionIsValid(recipe)) {
       deps.showToast('One of those ingredients is no longer available.', false);
       render();
@@ -220,9 +241,11 @@
       });
       const effectText = Object.entries(effects).map(([effect, amount]) => `${data().effectLabels[effect] || effect} +${amount}`).join(', ');
       registerCookedDefinition(key, {
-        icon: '🍲', label, cat: 'food', sellPrice: Math.max(4, recipe.slots.length * 4 + stars * 3),
+        icon: recipeOutputIcon(recipe), label, cat: 'food', sellPrice: Math.max(4, recipe.slots.length * 4 + stars * 3),
         tags: ['Cooked Food', ...recipe.outputTags, `${stars} Star`],
         desc: `${recipe.description} Eat it for ${effectText || 'a satisfying meal'}.`,
+        recipeId: recipe.id,
+        cookingCategories: [...(recipe.inventoryCategories || [])],
         foodEffects: effects, foodQuality: stars, cookingDefaultStars: stars,
       });
       deps.inventory[key] = Math.min(99, (deps.inventory[key] || 0) + 1);

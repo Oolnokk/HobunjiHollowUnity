@@ -32,13 +32,16 @@ assert(saved?.experience?.mining >= 20, 'skill XP persists through the injected 
 context.window = {};
 vm.runInNewContext(fs.readFileSync('docs/js/cooking-data.js', 'utf8'), context);
 const cookingData = context.window.HobunjiCookingData;
-assert.equal(cookingData.recipes.length, 17, 'all cooking prototype recipes are ported');
+assert.equal(cookingData.recipes.length, 19, 'the 17 prototype meals plus mayonnaise and bread recipes are available');
 assert.equal(Object.keys(cookingData.items).length, 91, 'all prototype ingredient definitions remain available as data');
 const acceptedCategories = new Set(cookingData.recipes.flatMap(recipe => recipe.slots.flatMap(slot => slot.accepts)));
 for (const recipe of cookingData.recipes) {
   assert(recipe.slots.length > 0 && recipe.slots.every(slot => slot.accepts.length > 0), `${recipe.name} has category-constrained ingredient slots`);
 }
 assert(acceptedCategories.has('fish') && acceptedCategories.has('meat') && acceptedCategories.has('grain'), 'recipe coverage includes core ingredient families');
+assert.deepEqual(Array.from(cookingData.recipes.find(recipe => recipe.id === 'basicNoodles').inventoryCategories), ['noodleBase', 'processedCrop'], 'basic noodles produce a reusable noodle ingredient');
+assert.deepEqual(Array.from(cookingData.recipes.find(recipe => recipe.id === 'mayonnaise').inventoryCategories), ['mayonnaise', 'sauce'], 'mayonnaise produces the category required by sauce recipes');
+assert(cookingData.recipes.find(recipe => recipe.id === 'bread').inventoryCategories.includes('bread'), 'bread produces a reusable bread ingredient');
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
@@ -50,6 +53,8 @@ assert.match(gameSource, /derivedHearth[\s\S]{0,600}makeCookingInteractable/, 'd
 assert.doesNotMatch(indexSource, /<div class="skill-name">(?:Alchemy|Cooking)<\/div>/, 'the old stub skills are removed from the tab');
 for (const name of ['Foraging', 'Mining', 'Farming', 'Fishing', 'Combat', 'Crafting']) assert(indexSource.includes(`>${name}<`), `${name} appears in the static Skills tab`);
 assert.match(cookingSource, /function openAtHearth\(/, 'cooking owns a hearth-only open entry point');
+assert.match(cookingSource, /recipe\?\.inventoryCategories/, 'saved cooked bases recover their reusable recipe categories');
+assert.match(cookingSource, /definition\?\.foodEffects/, 'multi-stage recipes carry their prepared ingredient effects forward');
 assert.doesNotMatch(cookingSource, /(?:import|require).*game\.js/, 'the cooking module does not import game.js');
 assert.match(alchemySource, /registerProvider\('alchemy'/, 'alchemy contributes to the shared effect HUD');
 assert.match(cookingSource, /registerProvider\('food'/, 'food contributes to the shared effect HUD independently');
