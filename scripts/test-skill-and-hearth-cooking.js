@@ -104,7 +104,9 @@ assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'ma
 assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
 assert.match(farmAnimalsSource, /targetMatrix\.clone\(\)\.multiply\(gripMatrix\)\.multiply\(sizeMatrix\)/, 'live vat workers use the editor hierarchy: target × inverse scaled grip × size');
 assert.doesNotMatch(farmAnimalsSource, /\(grip\.y \|\| 0\) - animal\.halfHeight/, 'vat attachment no longer invents a half-height offset absent from the furniture editor');
-assert.match(dewVatsSource, /creatureSizeClass\?\.\(kind, genotype\) === 'small'/, 'only Small Uumkao’ii satisfy the squeezing-vat worker predicate');
+assert.match(dewVatsSource, /creatureSizeClass\?\.\(kind, genotype\) === 'small'/, 'only Small livestock satisfy the squeezing-vat worker predicate');
+assert.doesNotMatch(dewVatsSource, /kind !== 'uumkaoii'/, 'vat worker eligibility is size-based rather than locked to Uumkao’ii');
+assert.match(dewVatsSource, /function _pruneInvalidVatAssignments\(/, 'stale Medium/Large vat assignments are migrated out of older saves');
 assert.match(dewVatsSource, /function _guardSqueezingVatStart\(/, 'squeezing vats install a shared worker-required start guard');
 assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid worker is already assigned');
 assert.match(farmPanelSource, /vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
