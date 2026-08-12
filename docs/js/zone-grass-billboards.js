@@ -12,33 +12,116 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // A single whole-zone InstancedMesh cannot be usefully frustum-culled while
+  // the camera is standing inside the zone. Wilderness maps are much larger
+  // than town and ordinary grass uses 28 crossed-blade instances PER grass
+  // tile, so submitting one giant always-visible mesh made off-screen grass a
+  // large steady-state GPU cost. Keep the exact same instance density and
+  // placement, but split it into spatial chunks whose manually-authored
+  // bounds cover their instance matrices. Three r128 can then frustum-cull
+  // whole off-screen chunks without any per-frame JS visibility loop.
+  const GRASS_CHUNK_TILES = 12;
+  const GRASS_INSTANCE_CAPACITY_PER_TILE = 28;
+  const RICH_BLADES_PER_TILE = 24;
+  const BILLBOARD_VERTICAL_PAD = 1.5;
+
+  function chunkBoundsGeometry(minCol, minRow, maxCol, maxRow, minBaseY, maxBaseY) {
+    const geo = deps.grassBladeGeo.clone();
+    const minX = minCol - 0.25;
+    const maxX = maxCol + 1.25;
+    const minZ = minRow - 0.25;
+    const maxZ = maxRow + 1.25;
+    const minY = minBaseY - 0.25;
+    const maxY = maxBaseY + BILLBOARD_VERTICAL_PAD;
+    geo.boundingBox = new THREE.Box3(
+      new THREE.Vector3(minX, minY, minZ),
+      new THREE.Vector3(maxX, maxY, maxZ)
+    );
+    const center = geo.boundingBox.getCenter(new THREE.Vector3());
+    const size = geo.boundingBox.getSize(new THREE.Vector3());
+    geo.boundingSphere = new THREE.Sphere(center, size.length() * 0.5);
+    return geo;
+  }
+
+  function chunkTileBuckets(tiles) {
+    const buckets = new Map();
+    for (const tile of tiles) {
+      const chunkCol = Math.floor(tile.col / GRASS_CHUNK_TILES);
+      const chunkRow = Math.floor(tile.row / GRASS_CHUNK_TILES);
+      const key = `${chunkCol},${chunkRow}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(tile);
+    }
+    return buckets;
+  }
+
+  function makeChunkMesh(material, tiles, capacityPerTile, fillTile) {
+    if (!tiles.length) return null;
+    let minCol = Infinity, minRow = Infinity, maxCol = -Infinity, maxRow = -Infinity;
+    let minBaseY = Infinity, maxBaseY = -Infinity;
+    for (const tile of tiles) {
+      minCol = Math.min(minCol, tile.col); maxCol = Math.max(maxCol, tile.col);
+      minRow = Math.min(minRow, tile.row); maxRow = Math.max(maxRow, tile.row);
+      minBaseY = Math.min(minBaseY, tile.baseY); maxBaseY = Math.max(maxBaseY, tile.baseY);
+    }
+
+    const geo = chunkBoundsGeometry(minCol, minRow, maxCol, maxRow, minBaseY, maxBaseY);
+    const mesh = new THREE.InstancedMesh(geo, material, tiles.length * capacityPerTile);
+    mesh.frustumCulled = true;
+    mesh.visible = true;
+    mesh.userData.isBillboard = true;
+    mesh.userData.isWildernessGrassChunk = true;
+    mesh.userData.skipOcclusionFade = true;
+    const dummy = new THREE.Object3D();
+    let idx = 0;
+    for (const tile of tiles) idx = fillTile(mesh, dummy, idx, tile);
+    mesh.count = idx;
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+  }
+
   function buildZoneGrassBillboards(zScene, zGrid, zcols, zrows, zoneBaseElev = 0) {
     const grassBillboardMat = deps.getGrassBillboardMat();
     if (!grassBillboardMat) return null;
-    let count = 0;
-    for (let row = 0; row < zrows; row++)
-      for (let col = 0; col < zcols; col++)
-        if (zGrid[row]?.[col]?.type === deps.TileType.GRASS) count++;
-    if (count === 0) return null;
 
-    const mesh = new THREE.InstancedMesh(deps.grassBladeGeo, grassBillboardMat, count * 28);
-    mesh.frustumCulled = false;
-    mesh.visible = deps.getGrassEnabled();
-    mesh.userData.isBillboard = true;
-    const dummy = new THREE.Object3D();
-    let idx = 0;
+    const tiles = [];
     for (let row = 0; row < zrows; row++) {
       for (let col = 0; col < zcols; col++) {
         const tile = zGrid[row]?.[col];
         if (tile?.type !== deps.TileType.GRASS) continue;
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
-        idx = deps.fillBillboardInstances(mesh, dummy, idx, col, row, 1.0, zoneBaseElev + tierY);
+        tiles.push({
+          col,
+          row,
+          yOffset: zoneBaseElev + tierY,
+          baseY: deps.tileSurfaceY(deps.TileType.GRASS) + zoneBaseElev + tierY,
+        });
       }
     }
-    mesh.count = idx;
-    mesh.instanceMatrix.needsUpdate = true;
-    zScene.add(mesh);
-    return mesh;
+    if (!tiles.length) return null;
+
+    const group = new THREE.Group();
+    group.visible = deps.getGrassEnabled();
+    group.userData.isBillboard = true;
+    group.userData.isWildernessGrassChunkGroup = true;
+    let instances = 0;
+    const buckets = chunkTileBuckets(tiles);
+    for (const bucketTiles of buckets.values()) {
+      const mesh = makeChunkMesh(
+        grassBillboardMat,
+        bucketTiles,
+        GRASS_INSTANCE_CAPACITY_PER_TILE,
+        (chunkMesh, dummy, idx, tile) => deps.fillBillboardInstances(
+          chunkMesh, dummy, idx, tile.col, tile.row, 1.0, tile.yOffset
+        )
+      );
+      if (!mesh) continue;
+      instances += mesh.count;
+      group.add(mesh);
+    }
+    zScene.add(group);
+    window.__farmLog?.(`[wilderness] grass: ${tiles.length} tile(s), ${instances} blade-plane instance(s), ${group.children.length} frustum-cullable ${GRASS_CHUNK_TILES}x${GRASS_CHUNK_TILES} chunk(s)`, 'info');
+    return group;
   }
 
   // Rich foliage patches (see workspace.foliagePatches' `rich` flag —
@@ -56,7 +139,7 @@
     const rand = deps.mbRng(((col * 31337 + row * 1009) >>> 0) ^ 0x9e3779b9);
     const baseY = deps.tileSurfaceY(deps.TileType.GRASS) + yOffset;
     let idx = startIdx;
-    const BLADES = 24; // vs. fillBillboardInstances' 14 — reads as packed rather than scattered
+    const BLADES = RICH_BLADES_PER_TILE;
     for (let b = 0; b < BLADES; b++) {
       const ox = (rand() - 0.5) * 0.55; // tighter spread than the normal ±0.45 tile so blades overlap into a clump
       const oz = (rand() - 0.5) * 0.55;
@@ -78,28 +161,46 @@
 
   function buildRichFoliageBillboards(zScene, zoneData, zGrid, zoneBaseElev = 0) {
     const grassBillboardMat = deps.getGrassBillboardMat();
-    if (!grassBillboardMat) return;
+    if (!grassBillboardMat) return null;
     const richPatches = (zoneData?.foliagePatches || []).filter(p => p.rich);
-    if (!richPatches.length) return;
-    let tileCount = 0;
-    for (const patch of richPatches) tileCount += patch.tiles.length;
-    if (!tileCount) return;
-    const BLADES = 24;
-    const mesh = new THREE.InstancedMesh(deps.grassBladeGeo, grassBillboardMat, tileCount * BLADES * 2);
-    mesh.frustumCulled = false;
-    mesh.visible = true;
-    mesh.userData.isBillboard = true;
-    const dummy = new THREE.Object3D();
-    let idx = 0;
+    if (!richPatches.length) return null;
+
+    const tiles = [];
     for (const patch of richPatches) {
       for (const t of patch.tiles) {
         const tierY = (zGrid?.[t.y]?.[t.x]?.elevTier || 0) * deps.PLATEAU_UNIT;
-        idx = fillDenseTallBillboardInstances(mesh, dummy, idx, t.x, t.y, zoneBaseElev + tierY);
+        tiles.push({
+          col: t.x,
+          row: t.y,
+          yOffset: zoneBaseElev + tierY,
+          baseY: deps.tileSurfaceY(deps.TileType.GRASS) + zoneBaseElev + tierY,
+        });
       }
     }
-    mesh.count = idx;
-    mesh.instanceMatrix.needsUpdate = true;
-    zScene.add(mesh);
+    if (!tiles.length) return null;
+
+    const group = new THREE.Group();
+    group.visible = true;
+    group.userData.isRichFoliageBillboard = true;
+    let instances = 0;
+    const buckets = chunkTileBuckets(tiles);
+    for (const bucketTiles of buckets.values()) {
+      const mesh = makeChunkMesh(
+        grassBillboardMat,
+        bucketTiles,
+        RICH_BLADES_PER_TILE * 2,
+        (chunkMesh, dummy, idx, tile) => fillDenseTallBillboardInstances(
+          chunkMesh, dummy, idx, tile.col, tile.row, tile.yOffset
+        )
+      );
+      if (!mesh) continue;
+      mesh.userData.isRichFoliageBillboard = true;
+      instances += mesh.count;
+      group.add(mesh);
+    }
+    zScene.add(group);
+    window.__farmLog?.(`[wilderness] rich foliage: ${tiles.length} tile(s), ${instances} blade-plane instance(s), ${group.children.length} frustum-cullable chunk(s)`, 'info');
+    return group;
   }
 
   window.ZoneGrassBillboards = {
@@ -385,7 +486,6 @@
         if (projectedShift > 1e-6 || Math.abs(lift) > 1e-7 || normal.y < 0.999999) moved++;
       }
     }
-
     for (const inst of touchedMeshes) {
       inst.instanceMatrix.needsUpdate = true;
       inst.computeBoundingBox?.();
