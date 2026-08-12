@@ -14,7 +14,12 @@
   // wholesale elsewhere. HousePieceGen/WallBuilder/BuildingDoor are left as
   // direct globally-loaded references, same treatment THREE gets.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // Start binding the parser-time structure preload to the actual gameplay
+    // WallBuilder as soon as this subsystem receives its dependencies.
+    _ensureStructureAssets().catch(() => {});
+  }
 
   // Rigid buildings stay level, but their whole mesh follows one subtle-height
   // sample at its authored anchor. This is the same sampler used to displace
@@ -65,6 +70,37 @@
     HousePieceGen.tintShingleMaterial('assets/textures/carved_smooth.png', '#7d7355');
   }
 
+  // One shared readiness boundary for final brick + shingle geometry. The
+  // parser-time StructurePreload starts the expensive immutable source work
+  // before game.js; this function binds that work to the actual gameplay
+  // WallBuilder. If that helper is unavailable, preserve the old direct-load
+  // behavior. A false result means callers should keep the old placeholder +
+  // later-upgrade fallback rather than hiding structures forever.
+  function _ensureStructureAssets() {
+    const preload = window.StructurePreload; // Used to reuse the decoupled parser-time structure preload when available.
+    if (preload?.ensureReady) {
+      return preload.ensureReady(deps.houseWallBuilder)
+        .then(status => {
+          if (status?.ready) _applyBuildingGlbTints();
+          return !!status?.ready;
+        })
+        .catch(error => {
+          deps.debugLog('Structure preload readiness error: ' + (error?.message || error), 'warn');
+          return false;
+        });
+    }
+    return Promise.all([
+      deps.houseWallBuilder.loadDefaultGlb(),
+      HousePieceGen.loadShingleGlb('assets/models/'),
+    ]).then(() => {
+      _applyBuildingGlbTints();
+      return true;
+    }).catch(error => {
+      deps.debugLog('Structure asset readiness error: ' + (error?.message || error), 'warn');
+      return false;
+    });
+  }
+
   // ── Town building detection ──────────────────────────────────────
   // Reads explicit building entries from the town layout (placed by map editor).
   function detectTownBuildings() {
@@ -107,9 +143,10 @@
   }
 
   // Spawns Highland house pieces for all placed town buildings.
-  // Fetches each building's piece JSON then calls HousePieceGen.buildGroupFromPiece(),
-  // which reads piece.base.faces directly (same geometry as the house editor preview)
-  // plus WallBuilder bricks on wall/gable faces.
+  // Fetches each building's piece JSON in parallel with final shared structure
+  // readiness. On the normal preload-success path the final GLBs are present
+  // before the first geometry build, so the old placeholder->dispose->rebuild
+  // cycle is skipped entirely. Failed preload keeps the previous fallback.
   let _townBuildingsGlbUpgradePending = false;
   // Each entry: { group, bldg, piece, wbOpts, wbGableOpts }
   function spawnTownBuildings() {
@@ -139,14 +176,15 @@
     const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5, '#4d4d4d');
     const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
 
-    // Async-load all piece files in parallel, then build scene
-    Promise.all(townBuildingDefs.map(bldg => {
+    const pieceLoads = Promise.all(townBuildingDefs.map(bldg => { // Used alongside structure readiness so JSON/network work stays parallel.
       if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
       return fetch(bldg.pieceFile)
         .then(r => r.json())
         .then(piece => ({ bldg, piece }))
         .catch(e => { deps.debugLog('Piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
-    })).then(results => {
+    }));
+
+    Promise.all([_ensureStructureAssets(), pieceLoads]).then(([structureReady, results]) => {
       const townScene2 = deps.getTownScene();
       if (!townScene2) return;
       const townMap = deps.getTownZone();
@@ -163,7 +201,7 @@
         let g = new THREE.Group();
         if (piece) {
           g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-            wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true,
+            wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: !structureReady,
             wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
             rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
@@ -237,10 +275,13 @@
         }
       }
 
-      deps.debugLog('_spawnTownBuildings: built ' + groups.length + ' buildings from piece JSON');
+      deps.debugLog('_spawnTownBuildings: built ' + groups.length + ' buildings from piece JSON'
+        + (structureReady ? ' with final preloaded brick/shingle assets (no upgrade rebuild)' : ' with placeholder fallback'));
 
-      // Upgrade to real bricks + shingle GLB once assets are ready
-      if (!_townBuildingsGlbUpgradePending) {
+      // Only preserve the old upgrade pass if early/final readiness failed.
+      // On the normal path rebuilding here would duplicate all wall/shingle
+      // geometry for no visual benefit because the first build was already final.
+      if (!structureReady && !_townBuildingsGlbUpgradePending) {
         _townBuildingsGlbUpgradePending = true;
         Promise.all([
           deps.houseWallBuilder.loadDefaultGlb(),
@@ -250,7 +291,7 @@
           _applyBuildingGlbTints();
           const townScene3 = deps.getTownScene();
           if (!townScene3) return;
-          deps.debugLog('Town buildings: upgrading to real bricks + shingle GLB');
+          deps.debugLog('Town buildings: upgrading placeholder fallback to real bricks + shingle GLB');
           const prev = deps.getTownBuildingGroups().slice();
           const upgraded = [];
           deps.setTownBuildingGroups(upgraded);
@@ -272,7 +313,10 @@
             townScene3.add(g);
             upgraded.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
           }
-        }).catch(e => deps.debugLog('Town building GLB error: ' + e, 'warn'));
+        }).catch(e => {
+          _townBuildingsGlbUpgradePending = false;
+          deps.debugLog('Town building GLB error: ' + e, 'warn');
+        });
       }
     });
   }
@@ -302,13 +346,15 @@
     const _stoneMat  = loadHousePieceFaceTexture('assets/textures/carved_smooth.png', 0x888888, 1.5, '#4d4d4d');
     const _canvasMat = loadHousePieceFaceTexture('assets/textures/canvas.png', 0xcbb489, 2);
 
-    Promise.all(buildingDefs.map(bldg => {
+    const pieceLoads = Promise.all(buildingDefs.map(bldg => { // Used alongside structure readiness so zone piece fetches remain parallel.
       if (!bldg.pieceFile) return Promise.resolve({ bldg, piece: null });
       return fetch(bldg.pieceFile)
         .then(r => r.json())
         .then(piece => ({ bldg, piece }))
         .catch(e => { deps.debugLog('Zone piece load error (' + bldg.id + '): ' + e, 'warn'); return { bldg, piece: null }; });
-    })).then(results => {
+    }));
+
+    Promise.all([_ensureStructureAssets(), pieceLoads]).then(([structureReady, results]) => {
       const scene = deps.zoneScenes.get(mapId)?.scene;
       if (!scene) return;
 
@@ -320,7 +366,7 @@
         let g = new THREE.Group();
         if (piece) {
           g = HousePieceGen.buildGroupFromPiece(THREE, piece, bldg.gridX, bldg.gridZ, {
-            wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true,
+            wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: !structureReady,
             wbOpts, wbGableOpts, matBoards: _boardsMat, matStone: _stoneMat, matCanvas: _canvasMat,
             rotationDeg: bldg.rotationDeg || 0, elevationY,
           });
@@ -329,9 +375,10 @@
         groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
       }
 
-      deps.debugLog(`_spawnZoneBuildings(${mapId}): built ${groups.length} buildings from piece JSON`);
+      deps.debugLog(`_spawnZoneBuildings(${mapId}): built ${groups.length} buildings from piece JSON`
+        + (structureReady ? ' with final preloaded brick/shingle assets (no upgrade rebuild)' : ' with placeholder fallback'));
 
-      if (!deps.zoneBuildingsGlbUpgradePending.has(mapId)) {
+      if (!structureReady && !deps.zoneBuildingsGlbUpgradePending.has(mapId)) {
         deps.zoneBuildingsGlbUpgradePending.add(mapId);
         Promise.all([
           deps.houseWallBuilder.loadDefaultGlb(),
@@ -341,7 +388,7 @@
           _applyBuildingGlbTints();
           const scene2 = deps.zoneScenes.get(mapId)?.scene;
           if (!scene2) return;
-          deps.debugLog(`Zone buildings (${mapId}): upgrading to real bricks + shingle GLB`);
+          deps.debugLog(`Zone buildings (${mapId}): upgrading placeholder fallback to real bricks + shingle GLB`);
           const prev = groups.slice();
           groups.length = 0;
           for (const { group, bldg, piece, wbOpts, wbGableOpts } of prev) {
@@ -361,7 +408,10 @@
             scene2.add(g);
             groups.push({ group: g, bldg, piece, wbOpts, wbGableOpts });
           }
-        }).catch(e => deps.debugLog('Zone building GLB error: ' + e, 'warn'));
+        }).catch(e => {
+          deps.zoneBuildingsGlbUpgradePending.delete(mapId);
+          deps.debugLog('Zone building GLB error: ' + e, 'warn');
+        });
       }
     });
   }
