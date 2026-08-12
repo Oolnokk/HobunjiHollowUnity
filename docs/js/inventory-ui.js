@@ -7,7 +7,6 @@
 
   const STYLE_ID = 'inventoryUiPolishStyles'; // Prevents duplicate injected styles across repeated init calls.
   const DEBUG_BUTTON_ID = 'inventoryUiDebugButton'; // Stable id for the in-menu layout-debug control.
-  const TOOL_SLOT_NAMES = ['hoe', 'shovel', 'axe', 'pick', 'harpoon', 'weapon'];
 
   function init(injectedDeps = {}) {
     deps = injectedDeps;
@@ -27,7 +26,7 @@
 
       #mpInventory .inv-sub-tabs { gap:2px; padding:2px; border:1px solid #ffffff1c; border-radius:calc(.95 * var(--inv-row)); background:#0003; overflow:visible; }
       #mpInventory .inv-sub-tab { flex:1 1 0; min-width:0; height:calc(1.75 * var(--inv-row)); padding:0 4px; border:1px solid transparent; border-radius:calc(.78 * var(--inv-row)); display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.03; transition:transform 80ms ease,background 100ms ease,border-color 100ms ease,color 100ms ease,box-shadow 100ms ease; }
-      #mpInventory .inv-sub-tab::after { display:block; margin-top:1px; font-size:max(6px,calc(.66 * var(--inv-font-xs))); letter-spacing:.12em; opacity:.62; }
+      #mpInventory .inv-sub-tab::after { display:block; margin-top:1px; font-size:var(--inv-font-xs); letter-spacing:.12em; opacity:.62; }
       #mpInventory #invTabPack::after { content:'WORLD'; }
       #mpInventory #invTabGear::after { content:'CHARACTER'; }
       #mpInventory .inv-sub-tab:hover { background:#ffffff12; }
@@ -54,7 +53,7 @@
       #mpInventory .pack-clothing-tile { padding:0; }
       #mpInventory .pack-clothing-tile .ipc-sprite { width:68%; height:68%; object-fit:contain; image-rendering:pixelated; }
       #mpInventory .pack-clothing-tile .ipc-name { display:none; }
-      #mpInventory .pack-clothing-tile::after { content:'CLOTHING'; position:absolute; left:3px; bottom:3px; max-width:calc(100% - 6px); overflow:hidden; text-overflow:ellipsis; font-size:max(5px,calc(.56 * var(--inv-font-xs))); letter-spacing:.08em; color:#dce9dd94; pointer-events:none; }
+      #mpInventory .pack-clothing-tile::after { content:'CLOTHING'; position:absolute; left:3px; bottom:3px; max-width:calc(100% - 6px); overflow:hidden; text-overflow:ellipsis; font-size:var(--inv-font-xs); letter-spacing:.08em; color:#dce9dd94; pointer-events:none; }
       #mpInventory .iib-count { bottom:3px; right:3px; min-width:16px; min-height:14px; padding:2px 4px 1px; border:1px solid #ffffff29; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; color:#fff; background:#030906d4; font-weight:800; line-height:1; text-shadow:0 1px 2px #000; }
       #mpInventory .iib-count.zero { color:var(--danger); opacity:.72; }
       #mpInventory .iib-equip-badge { top:3px; left:3px; border:1px solid #f9e28a85; border-radius:999px; padding:1px 3px; background:#f9e28af0; font-weight:800; }
@@ -67,7 +66,7 @@
       #mpInventory .ii-name { color:var(--text); font-weight:800; line-height:1.25; }
       #mpInventory .ii-price { color:var(--accent); opacity:.88; }
       #mpInventory .ii-desc { order:4; min-height:calc(4.2 * var(--inv-row)); padding:calc(.45 * var(--inv-row)) calc(.45 * var(--inv-row)); border:1px solid #ffffff14; border-radius:var(--inv-radius); background:#0000001f; line-height:1.48; overflow-y:auto; }
-      #mpInventory .ii-desc::before { content:'DESCRIPTION'; display:block; margin-bottom:4px; color:#f9e28ab8; font-size:max(6px,calc(.68 * var(--inv-font-xs))); font-weight:800; letter-spacing:.11em; }
+      #mpInventory .ii-desc::before { content:'DESCRIPTION'; display:block; margin-bottom:4px; color:#f9e28ab8; font-size:var(--inv-font-xs); font-weight:800; letter-spacing:.11em; }
       #mpInventory .ii-actions { order:5; }
       #mpInventory .ii-btn { min-height:28px; border-color:#ffffff2b; background:#ffffff0b; transition:transform 80ms ease,background 100ms ease,border-color 100ms ease; }
       #mpInventory .ii-btn:hover { background:#ffffff17; border-color:#ffffff4d; }
@@ -78,12 +77,12 @@
       #mpInventory .inv-equip-section { display:block; padding:calc(.6 * var(--inv-gap)) var(--inv-pad); border-radius:var(--inv-radius); background:#00000013; overflow-y:auto; }
       #mpInventory .gear-loadout-grid { display:grid; grid-template-columns:minmax(54px,.62fr) minmax(112px,1.38fr) minmax(54px,.62fr) minmax(112px,1.38fr); gap:calc(1.2 * var(--inv-gap)); min-height:calc(12.2 * var(--inv-row)); padding-bottom:calc(1.4 * var(--inv-gap)); border-bottom:1px solid #ffffff1a; }
       #mpInventory .gear-loadout-column { min-width:0; display:flex; flex-direction:column; gap:var(--inv-gap); }
-      #mpInventory .gear-loadout-heading { min-height:calc(1.45 * var(--inv-row)); display:flex; align-items:center; color:#f9e28ae6; font-size:max(6px,calc(.76 * var(--inv-font-xs))); font-weight:800; letter-spacing:.10em; text-transform:uppercase; }
+      #mpInventory .gear-loadout-heading { min-height:calc(1.45 * var(--inv-row)); display:flex; align-items:center; color:#f9e28ae6; font-size:var(--inv-font-xs); font-weight:800; letter-spacing:.10em; text-transform:uppercase; }
       #mpInventory .gear-slot-column .inv-equip-label { display:none; }
       #mpInventory .gear-slot-column .inv-equip-row { flex:0 0 auto; min-height:0; display:flex; flex-direction:column; gap:var(--inv-gap); }
       #mpInventory .gear-slot-column .inv-equip-slot { flex:0 0 calc(1.62 * var(--inv-row)); min-height:calc(1.62 * var(--inv-row)); width:100%; flex-direction:row; justify-content:flex-start; gap:3px; padding:2px 3px; overflow:hidden; }
       #mpInventory .gear-slot-column .ies-sprite,#mpInventory .gear-slot-column .ies-cloth-sprite { width:calc(1.15 * var(--inv-row)); height:calc(1.15 * var(--inv-row)); flex:0 0 auto; }
-      #mpInventory .gear-slot-column .ies-label { flex:1; min-width:0; font-size:max(5px,calc(.67 * var(--inv-font-xs))); text-align:left; overflow:hidden; text-overflow:ellipsis; }
+      #mpInventory .gear-slot-column .ies-label { flex:1; min-width:0; font-size:var(--inv-font-xs); text-align:left; overflow:hidden; text-overflow:ellipsis; }
       #mpInventory .gear-slot-column .ies-cloth-name { display:none; }
       #mpInventory .gear-slot-column .ies-unequip { width:15px; height:15px; top:1px; right:1px; }
 
@@ -91,10 +90,10 @@
       #mpInventory .gear-stat-list { display:flex; flex-direction:column; gap:calc(.72 * var(--inv-gap)); overflow-y:auto; min-height:0; }
       #mpInventory .gear-stat-item { padding:4px 5px; border:1px solid #ffffff13; border-radius:calc(.75 * var(--inv-radius)); background:#ffffff07; }
       #mpInventory .gear-stat-item-head { display:flex; align-items:baseline; gap:4px; min-width:0; }
-      #mpInventory .gear-stat-slot { flex:0 0 auto; color:#f9e28aa8; font-size:max(5px,calc(.62 * var(--inv-font-xs))); font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+      #mpInventory .gear-stat-slot { flex:0 0 auto; color:#f9e28aa8; font-size:var(--inv-font-xs); font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
       #mpInventory .gear-stat-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); font-size:var(--inv-font-xs); font-weight:700; }
       #mpInventory .gear-stat-chips { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; }
-      #mpInventory .gear-stat-chip { padding:1px 4px; border:1px solid #ffffff18; border-radius:999px; background:#0003; color:#c9dccb; font-size:max(5px,calc(.61 * var(--inv-font-xs))); line-height:1.25; white-space:nowrap; }
+      #mpInventory .gear-stat-chip { padding:1px 4px; border:1px solid #ffffff18; border-radius:999px; background:#0003; color:#c9dccb; font-size:var(--inv-font-xs); line-height:1.25; white-space:nowrap; }
       #mpInventory .gear-stat-chip.emphasis { border-color:#f9e28a4f; color:#f7e9a7; }
       #mpInventory .gear-stats-empty { color:var(--muted); font-size:var(--inv-font-xs); line-height:1.45; opacity:.75; }
       #mpInventory .outfit-stats-placeholder { display:flex; flex:1; min-height:0; align-items:center; justify-content:center; padding:8px; border:1px dashed #ffffff20; border-radius:var(--inv-radius); color:#a9bbaa; background:#ffffff05; text-align:center; font-size:var(--inv-font-xs); line-height:1.5; }
@@ -114,14 +113,14 @@
       #mpInventory .inv-equip-slot.gear-empty-slot { background:#ffffff06; border-style:dashed; }
       #mpInventory .ies-label { color:#dae8dab8; font-weight:700; }
       #mpInventory .ies-cloth-name,#mpInventory .gear-item-name,#mpInventory .gear-owned-clothing-name { color:var(--text); font-weight:700; }
-      #mpInventory .ies-mastery { font-size:max(6px,calc(.72 * var(--inv-font-xs))); color:#f9e28ad4; line-height:1; pointer-events:none; }
-      #mpInventory .inventory-slot-state { position:absolute; top:3px; left:3px; max-width:calc(100% - 20px); padding:1px 4px; border:1px solid #ffffff21; border-radius:999px; background:#030906b8; color:#f0ffe6d1; font-size:max(6px,calc(.63 * var(--inv-font-xs))); font-weight:800; line-height:1.2; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }
+      #mpInventory .ies-mastery { font-size:var(--inv-font-xs); color:#f9e28ad4; line-height:1; pointer-events:none; }
+      #mpInventory .inventory-slot-state { position:absolute; top:3px; left:3px; max-width:calc(100% - 20px); padding:1px 4px; border:1px solid #ffffff21; border-radius:999px; background:#030906b8; color:#f0ffe6d1; font-size:var(--inv-font-xs); font-weight:800; line-height:1.2; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }
       #mpInventory .gear-slot-column .inventory-slot-state { display:none; }
       #mpInventory .inventory-slot-state.worn { border-color:#f9e28a7a; background:#f9e28ae6; color:#182019; }
       #mpInventory .ies-unequip { top:3px; right:3px; width:18px; height:18px; border:1px solid #ffffff1f; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#030906ad; opacity:.75; }
 
       #mpInventory button:focus-visible,#mpInventory [role='button']:focus-visible { outline:2px solid #f9e28af2; outline-offset:2px; }
-      #${DEBUG_BUTTON_ID} { position:absolute; right:4px; bottom:4px; z-index:5; padding:3px 6px; border:1px solid #6ec6f057; border-radius:999px; background:#061114c2; color:#aae1f5e6; font-size:max(7px,calc(.68 * var(--inv-font-xs))); line-height:1.2; opacity:.74; }
+      #${DEBUG_BUTTON_ID} { position:absolute; right:4px; bottom:4px; z-index:5; padding:3px 6px; border:1px solid #6ec6f057; border-radius:999px; background:#061114c2; color:#aae1f5e6; font-size:var(--inv-font-xs); line-height:1.2; opacity:.74; }
       #${DEBUG_BUTTON_ID}:hover { opacity:1; background:#0a1f25eb; }
 
       @media (pointer:coarse) {
@@ -378,9 +377,7 @@
         : def?.dmgType;
       if (parsed.slot === 'weapon' && damageType) addStatChip(chips, titleCase(String(damageType)));
 
-      if (!chips.children.length) {
-        addStatChip(chips, 'Current tool data');
-      }
+      if (!chips.children.length) addStatChip(chips, 'Current tool data');
       item.appendChild(chips);
       list.appendChild(item);
     }
