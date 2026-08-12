@@ -843,6 +843,10 @@
     const job = obj.getJob ? obj.getJob() : null;
     const list = livestock || (def.method === 'squeezing' ? deps._loadWorldLivestock() : null);
     const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id) : null;
+    if (job?.kind === 'timed') {
+      const secondsLeft = Math.max(0, Math.ceil((Number(job.readyAtMs) - Date.now()) / 1000)); // Used to mirror the live authored-process countdown shown at the vat.
+      return { status: 'working', label: `Squeezing — ${secondsLeft}s${worker ? ` · ${worker.name}` : ''}`, worker };
+    }
     if (isAging && job) {
       const daysLeft = Math.max(0, job.readyDay - deps.calendar.day);
       return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };

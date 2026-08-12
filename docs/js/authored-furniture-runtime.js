@@ -47,15 +47,86 @@
     const group = new THREE.Group();
     if (!data || !Array.isArray(data.parts)) return group;
     const meshById = new Map();
+    const partById = new Map(); // Used by timeline liquid geometry, linked-container warps, and stomp anchors.
+    for (const part of data.parts) partById.set(part.id, part);
     for (const part of data.parts) {
       const mesh = window.ProceduralFurniture.buildPartMesh(part, baseColor);
+      if (part.kind === 'liquidSurface') {
+        const liquidGeometry = _liquidSurfaceGeometry(part, partById, Number(part.liquidLevel) || 0);
+        if (liquidGeometry) { mesh.geometry?.dispose?.(); mesh.geometry = liquidGeometry; }
+        _setLiquidMaterial(mesh, part, {
+          color: part.color,
+          opacity: part.surfaceOpacity,
+          substanceColor: part.substanceColor,
+          fillOpacity: part.substanceFillOpacity,
+        });
+      }
       mesh.userData.authoredPartId = part.id;
+      mesh.userData.authoredPart = part;
       mesh.userData.authoredMatrix = new THREE.Matrix4().compose(mesh.position, mesh.quaternion, mesh.scale);
       group.add(mesh);
       meshById.set(part.id, mesh);
     }
     group.userData.meshById = meshById;
+    group.userData.partById = partById;
+    group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     return group;
+  }
+
+  const _clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+
+  function _vesselPointMapper(part) {
+    const t = part.transform || {};
+    const sx = Math.max(.001, Number(t.sx) || .001), sy = Math.max(.001, Number(t.sy) || .001), sz = Math.max(.001, Number(t.sz) || .001);
+    const axis = part.taperAxis || 'y';
+    return (x, y, z) => axis === 'x' ? new THREE.Vector3(y * sx, x * sy, z * sz) : axis === 'z' ? new THREE.Vector3(x * sx, z * sy, y * sz) : new THREE.Vector3(x * sx, y * sy, z * sz);
+  }
+
+  function _cupProfileAtLevel(cup, level) {
+    const basin = Math.max(.03, Math.min(.8, Number(cup?.basinDepth ?? .18)));
+    const fill = _clamp01(level), fullT = basin + (1 - basin) * fill;
+    const outerX = THREE.MathUtils.lerp(Math.max(.01, cup.bottomScaleX ?? 1), Math.max(.01, cup.topScaleX ?? 1), fullT);
+    const outerZ = THREE.MathUtils.lerp(Math.max(.01, cup.bottomScaleZ ?? 1), Math.max(.01, cup.topScaleZ ?? 1), fullT);
+    const inner = Math.max(.05, Math.min(.95, Number(cup.innerScale) || .78));
+    return { fill, fullT, y: -.5 + fullT, centerX: (cup.topSkewX || 0) * fullT, centerZ: (cup.topSkewZ || 0) * fullT, radiusX: .5 * outerX * inner, radiusZ: .5 * outerZ * inner };
+  }
+
+  // Runtime port of the furniture editor's linked liquid disc. Keeping the
+  // vertices in the cup's local frame lets the surface inherit the exact same
+  // stomp matrix as its container instead of approximating level with Y scale.
+  function _liquidSurfaceGeometry(part, partById, level) {
+    const cup = partById?.get(part.liquidContainerId);
+    if (!cup || cup.kind !== 'cup') return null;
+    const segments = Math.max(3, Math.min(64, Math.round(cup.segments || 20)));
+    const profile = _cupProfileAtLevel(cup, level), at = _vesselPointMapper(cup);
+    const center = at(profile.centerX, profile.y, profile.centerZ), positions = [], uvs = [];
+    for (let i = 0; i < segments; i++) {
+      const a = i / segments * Math.PI * 2, b = (i + 1) / segments * Math.PI * 2;
+      const p1 = at(profile.centerX + Math.cos(a) * profile.radiusX, profile.y, profile.centerZ + Math.sin(a) * profile.radiusZ);
+      const p2 = at(profile.centerX + Math.cos(b) * profile.radiusX, profile.y, profile.centerZ + Math.sin(b) * profile.radiusZ);
+      positions.push(center.x, center.y, center.z, p2.x, p2.y, p2.z, p1.x, p1.y, p1.z);
+      uvs.push(.5, .5, .5 + Math.cos(b) * .5, .5 + Math.sin(b) * .5, .5 + Math.cos(a) * .5, .5 + Math.sin(a) * .5);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function _setLiquidMaterial(mesh, part, state) {
+    const opacity = state.opacity == null ? Number(part.surfaceOpacity ?? .78) : _clamp01(state.opacity);
+    const substanceColor = state.substanceColor || part.substanceColor || part.color || '#4aa9dd';
+    const fillOpacity = state.fillOpacity == null ? Number(part.substanceFillOpacity) || 0 : _clamp01(state.fillOpacity);
+    for (const material of (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean)) {
+      if (material.map) material.color.copy(new THREE.Color('#ffffff').lerp(new THREE.Color(substanceColor), fillOpacity));
+      else material.color.set(state.color || part.color || '#4aa9dd');
+      material.opacity = opacity;
+      material.transparent = opacity < .999 || !!material.map;
+      material.depthWrite = opacity >= .999;
+      material.side = THREE.DoubleSide;
+      material.needsUpdate = true;
+    }
   }
 
   // ── Processing warp playback (particleEmitters/processingWarps) ────────
@@ -93,7 +164,7 @@
   // Volume-weighted centroid of the warped parts' current (pre-warp) world
   // bounds — matches calculatedPartGroupCentroid so the pivot the scale/
   // rotate happens around lines up with what the tool previews.
-  function _warpCentroid(meshes) {
+  function _warpCentroid(meshes, group) {
     let total = 0;
     const sum = new THREE.Vector3();
     const box = new THREE.Box3(), size = new THREE.Vector3(), center = new THREE.Vector3();
@@ -101,6 +172,7 @@
       box.setFromObject(mesh);
       box.getSize(size);
       box.getCenter(center);
+      if (group) group.worldToLocal(center);
       const weight = Math.max(1e-6, size.x * size.y * size.z);
       sum.addScaledVector(center, weight);
       total += weight;
@@ -119,9 +191,18 @@
     if (!warp || warp.enabled === false || !Array.isArray(warp.partIds) || !warp.partIds.length) return;
     const meshById = group.userData.meshById;
     if (!meshById) return;
-    const meshes = warp.partIds.map((id) => meshById.get(id)).filter(Boolean);
-    if (!meshes.length) return;
-    const center = _warpCentroid(meshes);
+    const targetMeshes = warp.partIds.map((id) => meshById.get(id)).filter(Boolean);
+    if (!targetMeshes.length) return;
+    const linkedLiquids = [];
+    for (const [id, part] of group.userData.partById || []) {
+      if (part.kind === 'liquidSurface' && warp.partIds.includes(part.liquidContainerId)) {
+        const liquidMesh = meshById.get(id);
+        if (liquidMesh) linkedLiquids.push(liquidMesh);
+      }
+    }
+    const meshes = [...targetMeshes, ...linkedLiquids];
+    group.updateMatrixWorld(true);
+    const center = _warpCentroid(targetMeshes, group);
     const phase = (warp.phaseDeg || 0) * _DEG;
     const t = nowSeconds * (warp.speed || 0) + phase;
     const pulse = Math.sin(t), secondary = Math.sin(t * 1.73 + 0.8);
@@ -164,7 +245,9 @@
     if (!warp || !Array.isArray(warp.partIds)) return;
     const meshById = group.userData.meshById;
     if (!meshById) return;
-    for (const id of warp.partIds) {
+    const ids = [...warp.partIds];
+    for (const [id, part] of group.userData.partById || []) if (part.kind === 'liquidSurface' && warp.partIds.includes(part.liquidContainerId)) ids.push(id);
+    for (const id of ids) {
       const mesh = meshById.get(id);
       if (!mesh || !mesh.userData.authoredMatrix) continue;
       mesh.userData.authoredMatrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
@@ -203,16 +286,19 @@
     const particles = [];
     let spawnAccum = 0;
 
-    function update(dt, active) {
-      const rate = active && emitter.enabled !== false ? (emitter.rate || 0) : 0;
+    function update(dt, active, override) {
+      const live = Object.assign({}, emitter, override || {});
+      const rate = active && live.enabled !== false ? (live.rate || 0) : 0;
+      mat.size = Math.max(.01, live.size || .05);
+      colorA.set(live.colorA || '#ffffff'); colorB.set(live.colorB || '#ffffff');
       if (rate > 0 && particles.length < cap) {
         spawnAccum += dt * rate;
         while (spawnAccum >= 1 && particles.length < cap) {
           spawnAccum -= 1;
-          const spread = emitter.spread || 0.05, radius = emitter.radius || 0, speed = emitter.speed || 0.5;
+          const spread = live.spread || 0.05, radius = live.radius || 0, speed = live.speed || 0.5;
           const jr = Math.random() * radius, ja = Math.random() * Math.PI * 2;
           particles.push({
-            age: 0, life: Math.max(0.05, emitter.lifetime || 0.6),
+            age: 0, life: Math.max(0.05, live.lifetime || 0.6),
             x: Math.cos(ja) * jr, y: 0, z: Math.sin(ja) * jr,
             vx: baseDir.x * speed + (Math.random() - 0.5) * spread,
             vy: baseDir.y * speed + (Math.random() - 0.5) * spread,
@@ -226,7 +312,7 @@
         const p = particles[i];
         p.age += dt;
         if (p.age >= p.life) { particles.splice(i, 1); continue; }
-        p.vy -= (emitter.gravity || 0) * dt;
+        p.vy -= (live.gravity || 0) * dt;
         p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       }
       const posAttr = geo.attributes.position, colorAttr = geo.attributes.color;
@@ -250,6 +336,95 @@
       mat.dispose();
     }
     return { points, update, dispose };
+  }
+
+  function _colorLerp(a, b, t) {
+    return '#' + new THREE.Color(a || '#ffffff').lerp(new THREE.Color(b || a || '#ffffff'), _clamp01(t)).getHexString();
+  }
+
+  function _interpolateTimelineValue(a, b, t) {
+    const out = {};
+    for (const key of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) {
+      const av = a?.[key], bv = b?.[key];
+      if (typeof av === 'number' && typeof bv === 'number') out[key] = av + (bv - av) * t;
+      else if (typeof av === 'string' && typeof bv === 'string' && /^#[0-9a-f]{6}$/i.test(av) && /^#[0-9a-f]{6}$/i.test(bv)) out[key] = _colorLerp(av, bv, t);
+      else out[key] = t < .5 ? (av ?? bv) : (bv ?? av);
+    }
+    return out;
+  }
+
+  function sampleTimelineTrack(track, progress) {
+    const frames = (track?.keyframes || []).slice().sort((a, b) => a.time - b.time);
+    if (!frames.length) return {};
+    if (progress <= frames[0].time) return Object.assign({}, frames[0].value);
+    if (progress >= frames[frames.length - 1].time) return Object.assign({}, frames[frames.length - 1].value);
+    for (let i = 0; i < frames.length - 1; i++) {
+      const a = frames[i], b = frames[i + 1];
+      if (progress < a.time || progress > b.time) continue;
+      return _interpolateTimelineValue(a.value, b.value, (progress - a.time) / Math.max(.000001, b.time - a.time));
+    }
+    return Object.assign({}, frames[frames.length - 1].value);
+  }
+
+  function primaryProcessTimeline(data) {
+    return (data?.processTimelines || []).find(timeline => timeline.enabled !== false) || null;
+  }
+
+  // Applies the editor-authored emitter/warp/liquid keyframes at one normalized
+  // process position. The returned maps feed the existing lightweight runtime
+  // emitters and warps without making game.js understand timeline internals.
+  function applyProcessTimeline(group, data, timeline, progress) {
+    const p = _clamp01(progress), substance = timeline?.substanceColor || '#7b1f3d';
+    const emitterOverrides = new Map(), warpOverrides = new Map(), liquidStates = group.userData.timelineLiquidStates || new Map();
+    for (const track of timeline?.emitterTracks || []) {
+      const value = sampleTimelineTrack(track, p);
+      if (track.useSubstanceColor) { value.colorA = substance; value.colorB = _colorLerp('#000000', substance, .62); }
+      emitterOverrides.set(track.emitterId, value);
+    }
+    for (const track of timeline?.warpTracks || []) warpOverrides.set(track.warpId, sampleTimelineTrack(track, p));
+    for (const track of timeline?.liquidTracks || []) {
+      const part = group.userData.partById?.get(track.partId), mesh = group.userData.meshById?.get(track.partId);
+      if (!part || !mesh) continue;
+      const value = sampleTimelineTrack(track, p);
+      if (track.useSubstanceColor) value.substanceColor = substance;
+      if (track.colorFromSubstance) value.color = substance;
+      liquidStates.set(track.partId, value);
+      const levelSignature = _clamp01(value.level).toFixed(3);
+      if (mesh.userData.timelineLiquidLevel !== levelSignature) {
+        const geometry = _liquidSurfaceGeometry(part, group.userData.partById, value.level);
+        if (geometry) { mesh.geometry?.dispose?.(); mesh.geometry = geometry; }
+        mesh.userData.timelineLiquidLevel = levelSignature;
+      }
+      _setLiquidMaterial(mesh, part, value);
+    }
+    group.userData.timelineLiquidStates = liquidStates;
+    return { emitterOverrides, warpOverrides };
+  }
+
+  // Resolves the authored livestock point after liquid-level and stomp-warp
+  // changes, in world space, so the assigned animal can align its shoulderGrip
+  // exactly as the furniture editor preview does.
+  function stompAttachWorldMatrix(group, data, record, nowSeconds) {
+    if (!record || record.enabled === false) return null;
+    const parent = group.userData.meshById?.get(record.parentPartId), part = group.userData.partById?.get(record.parentPartId);
+    if (!parent || !part) return null;
+    group.updateMatrixWorld(true);
+    const position = new THREE.Vector3(record.position?.x || 0, record.position?.y || 0, record.position?.z || 0);
+    if (part.kind === 'liquidSurface') {
+      const cup = group.userData.partById?.get(part.liquidContainerId);
+      if (cup) {
+        const state = group.userData.timelineLiquidStates?.get(part.id) || { level: part.liquidLevel };
+        const profile = _cupProfileAtLevel(cup, state.level);
+        position.add(_vesselPointMapper(cup)(profile.centerX, profile.y, profile.centerZ));
+      }
+    }
+    const rotation = record.rotation || {};
+    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler((rotation.x || 0) * _DEG, (rotation.y || 0) * _DEG, (rotation.z || 0) * _DEG, 'XYZ'));
+    const local = new THREE.Matrix4().compose(position, quaternion, new THREE.Vector3(1, 1, 1));
+    const world = parent.matrixWorld.clone().multiply(local);
+    const warp = (data?.processingWarps || []).find(item => item.id === record.warpId);
+    const lift = (record.bounceHeight || 0) * (1 - stompWarpMotion(warp, nowSeconds).impact);
+    return world.multiply(new THREE.Matrix4().makeTranslation(0, lift, 0));
   }
 
   // index defaults to 0 (single-seat pieces like chairs/stools); bench-like
@@ -278,5 +453,9 @@
     resetWarp,
     stompWarpMotion,
     createEmitterVisual,
+    sampleTimelineTrack,
+    primaryProcessTimeline,
+    applyProcessTimeline,
+    stompAttachWorldMatrix,
   };
 })();

@@ -2294,11 +2294,10 @@
         scene.add(mesh);
 
         const isAging = AGING_METHODS.has(def.method);
-        // { outputs: [descriptor,...], readyDay, inputStars } while a barrelAging/vaseAging
-        // batch is aging; null when idle. Restored from a saved farm layout
-        // (see saveFarmLayout/applyFarmLayoutObjects) via savedJob so an aging
-        // batch survives a save/reload instead of silently vanishing.
-        let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay, inputStars: Number(savedJob.inputStars) || 3 } : null;
+        // Aging jobs use readyDay; authored real-time process jobs use readyAtMs.
+        // Both are saved by the farm layout so a batch never turns back into an
+        // instantaneous action (or silently vanishes) across a reload.
+        let job = savedJob ? { ...savedJob, kind: savedJob.kind || (savedJob.readyDay != null ? 'aging' : null), inputStars: Number(savedJob.inputStars) || 3 } : null;
 
         // ── Processing VFX (docs/js/authored-furniture-runtime.js) ──────
         // Reuses whatever processingWarps/particleEmitters this piece's
@@ -2308,31 +2307,76 @@
         // actually ticks it (farm scene only), so playback never jumps on
         // a scene revisit.
         const authoredVfx = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
-        const emitterVisuals = (authoredVfx?.particleEmitters || []).map(e => window.AuthoredFurniture.createEmitterVisual(mesh, e));
+        const processTimeline = def.method === 'squeezing' ? window.AuthoredFurniture?.primaryProcessTimeline(authoredVfx) : null; // Used to make squeezing obey its authored 12-second transfer rather than the generic burst.
+        const emitterVisuals = (authoredVfx?.particleEmitters || []).map(record => ({ record, visual: window.AuthoredFurniture.createEmitterVisual(mesh, record) }));
         let vfxT = 0;
         let burstRemaining = 0;
-        function vfxActive() { return (isAging && !!job) || burstRemaining > 0; }
+        function vfxActive() { return (isAging && !!job) || job?.kind === 'timed' || burstRemaining > 0; }
         function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
+        function timedJobRemainingS() { return job?.kind === 'timed' ? Math.max(0, (Number(job.readyAtMs) - Date.now()) / 1000) : 0; }
+        function timelineSubstanceColor(outputs) {
+          const color = outputs?.[0]?.spriteColor;
+          return Number.isFinite(color) ? '#' + Number(color).toString(16).padStart(6, '0') : processTimeline?.substanceColor;
+        }
+        function startTimedJob(outputs, inputStars, inputLabel, source = 'manual') {
+          if (!processTimeline) return { ok: false, message: `${def.name} has no authored process timeline.` };
+          if (job) return { ok: false, busy: true, message: `${def.name} is already squeezing a batch.` };
+          const durationS = Math.max(.1, Number(processTimeline.duration) || 12);
+          job = { kind: 'timed', outputs, inputStars, inputLabel, source, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
+          saveFarmLayout();
+          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
+          return { ok: true, started: true, durationS };
+        }
+        function finishTimedJob() {
+          if (job?.kind !== 'timed') return;
+          const finished = job;
+          job = null;
+          addProcessedOutputs(finished.outputs, finished.inputStars);
+          window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
+          saveFarmLayout();
+          saveMemberWorldData();
+          refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+        }
         function updateVfx(dt) {
           if (!authoredVfx) return;
           vfxT += dt;
           if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
           const active = vfxActive();
+          const timed = job?.kind === 'timed';
+          const progress = timed ? Math.max(0, Math.min(1, 1 - timedJobRemainingS() / Math.max(.1, Number(job.durationS) || Number(processTimeline?.duration) || 12))) : 0;
+          const liveTimeline = processTimeline ? { ...processTimeline, substanceColor: timed ? job.substanceColor : processTimeline.substanceColor } : null;
+          const timelineState = liveTimeline ? window.AuthoredFurniture.applyProcessTimeline(mesh, authoredVfx, liveTimeline, progress) : null;
           for (const warp of authoredVfx.processingWarps || []) {
-            if (active) window.AuthoredFurniture.applyWarp(mesh, warp, vfxT);
+            const liveWarp = Object.assign({}, warp, timelineState?.warpOverrides?.get(warp.id));
+            if (active) window.AuthoredFurniture.applyWarp(mesh, liveWarp, vfxT);
             else window.AuthoredFurniture.resetWarp(mesh, warp);
           }
-          for (const ev of emitterVisuals) ev?.update(dt, active);
+          for (const entry of emitterVisuals) entry.visual?.update(dt, active, timelineState?.emitterOverrides?.get(entry.record.id));
+          if (timed) {
+            const stompPoint = authoredVfx.stompAttachPoints?.find(point => point.enabled !== false);
+            const anchorMatrix = stompPoint && window.AuthoredFurniture.stompAttachWorldMatrix(mesh, authoredVfx, stompPoint, vfxT);
+            if (anchorMatrix) window.FarmAnimals?.setVatWorkerPose?.(obj.id, anchorMatrix, stompPoint.anchorName || 'shoulderGrip');
+            if (timedJobRemainingS() <= 0) finishTimedJob();
+          } else {
+            window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
+          }
         }
 
-        return {
+        const obj = {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh, rotYDeg,
           label: def.icon + ' ' + def.name,
           update: updateVfx,
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
+          startTimedJob({ outputs, inputStars, inputLabel, source } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
+            if (job?.kind === 'timed') {
+              const seconds = Math.max(1, Math.ceil(timedJobRemainingS()));
+              return [{ icon: '🫗', label: `Squeezing… ${seconds}s`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
+            }
             if (isAging && job) {
               const daysLeft = Math.max(0, job.readyDay - calendar.day);
               if (daysLeft > 0) {
@@ -2354,6 +2398,7 @@
           },
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
+            if (job?.kind === 'timed') return { ok: false, message: `${def.name} is still squeezing — ${Math.max(1, Math.ceil(timedJobRemainingS()))}s left.` };
             if (isAging && job) {
               if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
               const outputs = job.outputs;
@@ -2371,10 +2416,17 @@
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
             const inputStars = consumeProcessingInput(active.key); // Used to preserve the selected stack's best available quality.
             if (isAging) {
-              job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS, inputStars };
+              job = { kind: 'aging', outputs, readyDay: calendar.day + AGING_DURATION_DAYS, inputStars };
               saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
+            }
+            if (processTimeline) {
+              const inputLabel = ITEM_DEFS[active.key]?.label || active.label;
+              const started = startTimedJob(outputs, inputStars, inputLabel);
+              return started.ok
+                ? { ok: true, message: `${def.icon} Started squeezing 1 ${inputLabel}; the batch will finish in ${Math.round(started.durationS)} seconds.` }
+                : started;
             }
             addProcessedOutputs(outputs, inputStars);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
@@ -2382,14 +2434,16 @@
             return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
           },
           reset() {
+            window.FarmAnimals?.clearVatWorkerPose?.(this.id);
             scene.remove(mesh);
-            emitterVisuals.forEach(ev => ev?.dispose());
+            emitterVisuals.forEach(entry => entry.visual?.dispose());
             mesh.traverse(child => {
               if (child.geometry) child.geometry.dispose();
               if (child.material) child.material.dispose();
             });
           },
         };
+        return obj;
       }
 
       function placeProcessingFurniture(col, row, furnitureKey) {
@@ -23351,6 +23405,7 @@
         cameraRelativePerps,
         clampInventoryStack,
         companionAiTypeForKind,
+        creatureAttachmentAnchor,
         creaturePlaneGroundOffset,
         findOpenTileNearBarn: window.FarmBuildings.findOpenTileNear,
         getWorldObjectAt,

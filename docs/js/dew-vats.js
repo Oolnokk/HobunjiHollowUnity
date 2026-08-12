@@ -221,8 +221,10 @@
     const vat = findVatById(vatId);
     if (!vat || deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
     if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId)) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+    const oldVatId = rec.assignedVatId; // Used to release a live pose when transferring a worker between vats.
     rec.assignedVatId = vatId;
     deps.saveWorldLivestock(list);
+    if (oldVatId && oldVatId !== vatId) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return { ok: true, message: `${rec.name} assigned to ${vat.label}.` };
   }
   function unassignFromVat(livestockId) {
@@ -230,8 +232,10 @@
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
+    const oldVatId = rec.assignedVatId; // Used to release a live stomp pose if this worker is unassigned mid-process.
     rec.assignedVatId = null;
     deps.saveWorldLivestock(list);
+    if (oldVatId) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return { ok: true, message: `${rec.name} unassigned from its vat.` };
   }
   function retargetAssignments(oldVatId, newVatId = null) {
@@ -243,28 +247,22 @@
       changed++;
     }
     if (changed) deps.saveWorldLivestock(list);
+    if (changed) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
     return changed;
   }
-  // Runs the squeezing recipe for a raw dew color directly into inventory
-  // (bypassing the dig-up-a-pile step) and plays the vat's own processing
-  // VFX burst. Returns false (no state change) if the vat no longer
-  // exists — game.js's tickLivestockResources clears the stale assignment
-  // in that case and falls back to the ordinary pile-drop.
+  // Starts the vat's real authored squeezing job for raw dew (bypassing the
+  // dig-up-a-pile step). Returns 'started', 'busy', or false when the vat no
+  // longer exists; the farm-animal day tick uses that distinction so a busy
+  // vat never accidentally clears its valid livestock assignment.
   function autoSqueezeAtVat(vatId, colorKey) {
     const vat = findVatById(vatId);
     if (!vat) return false;
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
     const stars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
-    outputs.forEach(output => {
-      deps.ensureProcessedItemDef(output);
-      const previousCount = deps.inventory[output.key] || 0; // Used to avoid tracking quality for output rejected by the stack cap.
-      deps.inventory[output.key] = Math.min(99, previousCount + 1);
-      deps.recordItemQuality(output.key, stars, deps.inventory[output.key] - previousCount);
-    });
-    window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[deps.PROCESSING_SFX_KEY[vat.furnitureKey]]);
-    vat.triggerVfx && vat.triggerVfx();
-    return true;
+    const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: 'livestock' });
+    if (result?.busy) return 'busy';
+    return result?.ok ? 'started' : false;
   }
 
   window.DewVats = {

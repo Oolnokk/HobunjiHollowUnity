@@ -67,6 +67,10 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 const cookingSource = fs.readFileSync('docs/js/cooking-system.js', 'utf8');
 const processingSource = fs.readFileSync('docs/js/food-processing.js', 'utf8');
+const authoredRuntimeSource = fs.readFileSync('docs/js/authored-furniture-runtime.js', 'utf8');
+const farmAnimalsSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
+const dewVatsSource = fs.readFileSync('docs/js/dew-vats.js', 'utf8');
+const squeezerAuthored = JSON.parse(fs.readFileSync('docs/config/furniture-authored/squeezer.json', 'utf8'));
 const alchemySource = fs.readFileSync('docs/js/alchemy-system.js', 'utf8');
 assert.match(gameSource, /hearthFurniture:\s*\(\) => makeCookingInteractable\(\)/, 'authored building hearths open cooking');
 assert.match(gameSource, /o\.key === 'hearth'.*makeCookingInteractable/, 'placed farmhouse hearths open cooking');
@@ -86,5 +90,16 @@ assert.match(gameSource, /HobunjiFoodProcessing\?\.getProcessingOutputs/, 'game.
 assert.match(gameSource, /HobunjiFoodProcessing\?\.rollTreeNutDrop/, 'game.js delegates tree-nut yield rules through a narrow adapter');
 assert.doesNotMatch(processingSource, /(?:import|require).*game\.js/, 'food processing does not import game.js');
 assert.match(cookingSource, /consumeBestQuality/, 'processors can consume tracked quality without desynchronizing cooking stacks');
+const squeezingTimeline = squeezerAuthored.processTimelines.find(timeline => timeline.enabled !== false);
+assert.equal(squeezingTimeline.duration, 12, 'the placed squeezing vat uses the editor-authored 12-second process');
+assert.equal(squeezingTimeline.liquidTracks.length, 2, 'the authored process transfers both the upper and collected liquid surfaces');
+assert(squeezerAuthored.stompAttachPoints.some(point => point.enabled !== false && point.anchorName === 'shoulderGrip'), 'the vat exports a live livestock stomp anchor');
+assert.match(authoredRuntimeSource, /function applyProcessTimeline\(/, 'the game runtime samples authored furniture process timelines');
+assert.match(authoredRuntimeSource, /_liquidSurfaceGeometry/, 'liquid levels rebuild from the linked cup profile instead of a static disc');
+assert.match(authoredRuntimeSource, /function stompAttachWorldMatrix\(/, 'the runtime resolves the furniture-editor stomp anchor after warping');
+assert.match(gameSource, /kind: 'timed'[\s\S]{0,500}readyAtMs/, 'squeezing persists a real-time job instead of granting its output immediately');
+assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'manual nut, meat, and fish inputs start the authored squeezing timeline');
+assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
+assert.match(dewVatsSource, /return result\?\.ok \? 'started' : false/, 'automatic dew squeezing uses the same delayed vat job boundary');
 
 console.log('skill and hearth cooking tests passed');
