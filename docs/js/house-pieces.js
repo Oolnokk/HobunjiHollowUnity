@@ -10,7 +10,7 @@
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
     ['HousePieces', 'house-pieces-core.js?v=20260811a'],
-    [null, 'house-pieces-elevation-bootstrap.js?v=20260811b'],
+    [null, 'house-pieces-elevation-bootstrap.js?v=20260811c'],
   ];
 
   function scriptUrl(file) { return new URL(file, baseUrl).href; }
