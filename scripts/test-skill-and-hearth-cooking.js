@@ -99,6 +99,9 @@ assert.match(authoredRuntimeSource, /function applyProcessTimeline\(/, 'the game
 assert.match(authoredRuntimeSource, /_liquidSurfaceGeometry/, 'liquid levels rebuild from the linked cup profile instead of a static disc');
 assert.match(authoredRuntimeSource, /function stompAttachWorldMatrix\(/, 'the runtime resolves the furniture-editor stomp anchor after warping');
 assert.match(authoredRuntimeSource, /resetWarp\(group, warp\);\s*group\.updateMatrixWorld\(true\);\s*const center = _warpCentroid/, 'runtime warp playback resets to the authored rest frame before deriving its centroid, matching the editor');
+assert.doesNotMatch(authoredRuntimeSource, /box\.setFromObject\(mesh\)/, 'warp centroid excludes descendant VFX instead of recursively measuring particle children');
+assert.match(authoredRuntimeSource, /box\.copy\(geometry\.boundingBox\)\.applyMatrix4\(mesh\.matrixWorld\)/, 'warp centroid measures each furniture part geometry in world space');
+assert.match(authoredRuntimeSource, /authored_furniture_emitter_/, 'runtime emitter meshes are named for Pixel Probe diagnostics');
 assert.match(gameSource, /kind: 'timed'[\s\S]{0,500}readyAtMs/, 'squeezing persists a real-time job instead of granting its output immediately');
 assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'manual nut, meat, and fish inputs start the authored squeezing timeline');
 assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
