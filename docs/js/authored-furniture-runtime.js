@@ -161,9 +161,11 @@
     return { impact, rock };
   }
 
-  // Volume-weighted centroid of the warped parts' current (pre-warp) world
-  // bounds — matches calculatedPartGroupCentroid so the pivot the scale/
-  // rotate happens around lines up with what the tool previews.
+  // Volume-weighted centroid of the warped parts' authored/rest-pose world
+  // bounds — matches the editor, which resets every affected mesh before
+  // calculatedPartGroupCentroid() runs each frame. Calculating this from the
+  // previous warped frame makes the pivot chase its own animation and is the
+  // source of the live-vat transform drift that the authoring preview lacks.
   function _warpCentroid(meshes, group) {
     let total = 0;
     const sum = new THREE.Vector3();
@@ -201,6 +203,11 @@
       }
     }
     const meshes = [...targetMeshes, ...linkedLiquids];
+    // The editor performs this reset for every affected part before deriving
+    // the centroid and warp matrix. Do the same here so live playback uses
+    // the authored frame as its input instead of feeding the previous warped
+    // frame back into the next one.
+    resetWarp(group, warp);
     group.updateMatrixWorld(true);
     const center = _warpCentroid(targetMeshes, group);
     const phase = (warp.phaseDeg || 0) * _DEG;
