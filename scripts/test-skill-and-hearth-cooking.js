@@ -96,6 +96,9 @@ assert.equal(squeezingTimeline.duration, 12, 'the placed squeezing vat uses the 
 assert.equal(squeezingTimeline.liquidTracks.length, 2, 'the authored process transfers both the upper and collected liquid surfaces');
 assert(squeezerAuthored.stompAttachPoints.some(point => point.enabled !== false && point.anchorName === 'shoulderGrip'), 'the vat exports a live livestock stomp anchor');
 assert.match(authoredRuntimeSource, /function applyProcessTimeline\(/, 'the game runtime samples authored furniture process timelines');
+assert.match(authoredRuntimeSource, /function _cupGeometry\(/, 'authored cup vessels use the furniture editor open-basin geometry at runtime');
+assert.match(authoredRuntimeSource, /part\.kind === 'cup'[\s\S]{0,220}_cupGeometry\(part\)/, 'authored cup meshes replace the generic capped-cylinder fallback');
+assert.match(authoredRuntimeSource, /innerFloor[\s\S]{0,700}innerTop[\s\S]{0,700}floorCenter/, 'runtime cup geometry includes an inner wall and basin floor while leaving the top open');
 assert.match(authoredRuntimeSource, /_liquidSurfaceGeometry/, 'liquid levels rebuild from the linked cup profile instead of a static disc');
 assert.match(authoredRuntimeSource, /function stompAttachWorldMatrix\(/, 'the runtime resolves the furniture-editor stomp anchor after warping');
 assert.match(authoredRuntimeSource, /resetWarp\(group, warp\);\s*group\.updateMatrixWorld\(true\);\s*const center = _warpCentroid/, 'runtime warp playback resets to the authored rest frame before deriving its centroid, matching the editor');
@@ -107,11 +110,13 @@ assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'ma
 assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
 assert.match(farmAnimalsSource, /targetMatrix\.clone\(\)\.multiply\(gripMatrix\)\.multiply\(sizeMatrix\)/, 'live vat workers use the editor hierarchy: target × inverse scaled grip × size');
 assert.doesNotMatch(farmAnimalsSource, /\(grip\.y \|\| 0\) - animal\.halfHeight/, 'vat attachment no longer invents a half-height offset absent from the furniture editor');
-assert.match(dewVatsSource, /creatureSizeClass\?\.\(kind, genotype\) === 'small'/, 'only Small livestock satisfy the squeezing-vat worker predicate');
+assert.match(dewVatsSource, /creatureSizeClass\?\.\(kind, genotype\) === 'small'/, 'only Small livestock satisfy the squeezing-vat size predicate');
+assert.match(dewVatsSource, /return !!rec\?\.barnId && vatCanAccept\(rec\.kind, rec\.genotype\)/, 'a vat worker must be housed as well as Small, so stasis animals cannot satisfy the worker gate');
 assert.doesNotMatch(dewVatsSource, /kind !== 'uumkaoii'/, 'vat worker eligibility is size-based rather than locked to Uumkao’ii');
-assert.match(dewVatsSource, /function _pruneInvalidVatAssignments\(/, 'stale Medium/Large vat assignments are migrated out of older saves');
+assert.match(dewVatsSource, /function _pruneInvalidVatAssignments\(/, 'stale invalid vat assignments are migrated out of older saves');
+assert.match(dewVatsSource, /stale non-Small\/unhoused livestock assignments/, 'old stasis-worker assignments are explicitly cleared');
 assert.match(dewVatsSource, /function _guardSqueezingVatStart\(/, 'squeezing vats install a shared worker-required start guard');
-assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid worker is already assigned');
+assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid housed worker is already assigned');
 assert.match(farmPanelSource, /vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
 assert.match(dewVatsSource, /return result\?\.ok \? 'started' : false/, 'automatic dew squeezing uses the same delayed vat job boundary');
 
