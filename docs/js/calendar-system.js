@@ -40,7 +40,8 @@
   const MAX_NATURAL_TIME_WRITE = 0.02; // Used by the time01 setter to distinguish normal frame ticks from explicit jumps.
   const PLAYER_ACTION_LOCK_ID = 'player'; // Used while the sleep/wait modal or iris transition owns input.
   const MAX_PASSAGE_HOURS = 16; // Used by the shared duration selector; matches the game's represented 6:00→22:00 clock span.
-  const TIME_PASSAGE_TICK_MS = 190; // Used while fully black so each selected game hour visibly ticks past instead of jumping instantly.
+  const TIME_PASSAGE_FIRST_TICK_MS = 1000; // Used so the first fully-black countdown hour remains visible for one complete real second.
+  const TIME_PASSAGE_TICK_DECAY = 0.8; // Used to shorten each subsequent countdown interval by exactly 20 percent.
 
   // Regional seasons: Northwestern Tanka. These are deliberately anchored to
   // raw world-day weeks, not civil day-of-year, preserving the opening
@@ -360,11 +361,12 @@
         .time-passage-backdrop.transitioning{pointer-events:none;background:transparent}
         .time-passage-panel{width:min(620px,94vw);max-height:88vh;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none;padding:0;transform:scale(.75);transform-origin:center center}
         .time-passage-title{font-size:clamp(24px,5vw,38px);line-height:1;margin:0 0 14px;text-align:center;font-weight:400}
-        .time-passage-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:10px}
+        .time-passage-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:10px;min-height:72px}
         .time-passage-date-card{padding:12px;border:0;border-radius:0;background:transparent;min-width:0}
         .time-passage-date-label{display:block;opacity:.68;font-size:13px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.07em}
         .time-passage-date-value{font-family:inherit;font-size:clamp(12px,2.7vw,15px);line-height:1.45;overflow-wrap:anywhere}
         .time-passage-arrow{align-self:center;font-size:26px;opacity:.72}
+        .time-passage-live{display:none;min-height:72px;width:100%;align-items:center;justify-content:center;text-align:center;padding:8px 12px;font-family:inherit;font-size:clamp(18px,4.6vw,29px);line-height:1.3;overflow-wrap:anywhere}
         .time-passage-duration{margin:18px 0 8px;text-align:center}
         .time-passage-hours{font-size:clamp(25px,6vw,42px);line-height:1;margin-bottom:12px}
         .time-passage-slider-row{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;gap:10px}
@@ -374,6 +376,8 @@
         .time-passage-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:10px;margin-top:16px}
         .time-passage-btn.primary{background:rgba(112,85,46,.82);border-color:#d9b873}
         .time-passage-debug{display:block;margin:12px auto 0;border:0;background:transparent;color:rgba(255,255,255,.7);font:400 12px "KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;text-decoration:underline;cursor:pointer;text-shadow:0 2px 3px rgba(0,0,0,.9)}
+        .time-passage-backdrop.transitioning .time-passage-dates{display:none}
+        .time-passage-backdrop.transitioning .time-passage-live{display:flex}
         .time-passage-backdrop.transitioning .time-passage-slider-row,.time-passage-backdrop.transitioning .time-passage-actions,.time-passage-backdrop.transitioning .time-passage-debug{opacity:.5}
         .time-iris-overlay{position:fixed;inset:0;z-index:2147483645;display:none;pointer-events:auto}
         .time-iris-overlay svg{display:block;width:100%;height:100%}
@@ -394,6 +398,7 @@
           <div class="time-passage-arrow">➜</div>
           <div class="time-passage-date-card"><span class="time-passage-date-label">After</span><div class="time-passage-date-value" id="timePassagePreview"></div></div>
         </div>
+        <div class="time-passage-live" id="timePassageLive" aria-live="polite"></div>
         <div class="time-passage-duration">
           <div class="time-passage-hours" id="timePassageHours">1 hour</div>
           <div class="time-passage-slider-row">
@@ -425,6 +430,7 @@
       title: backdrop.querySelector('#timePassageTitle'),
       current: backdrop.querySelector('#timePassageCurrent'),
       preview: backdrop.querySelector('#timePassagePreview'),
+      live: backdrop.querySelector('#timePassageLive'),
       hours: backdrop.querySelector('#timePassageHours'),
       slider: backdrop.querySelector('#timePassageSlider'),
       minus: backdrop.querySelector('#timePassageMinus'),
@@ -514,27 +520,25 @@
     _timePassageUi.preview.textContent = formatCalendarDateTimeFull(target.day, target.time01);
   }
 
-  function renderTimePassageTick(elapsedHours, totalHours, finalTarget) {
+  function renderTimePassageTick(remainingHours) {
     if (!_timePassageUi) return;
     const verb = _timePassageKind === 'sleep' ? 'Sleeping' : 'Waiting'; // Used as the Skyrim-style progress title while the world is fully black.
     _timePassageUi.title.textContent = `${verb}…`;
-    _timePassageUi.current.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
-    _timePassageUi.preview.textContent = formatCalendarDateTimeFull(finalTarget.day, finalTarget.time01);
-    _timePassageUi.hours.textContent = `${elapsedHours} / ${totalHours} ${totalHours === 1 ? 'hour' : 'hours'}`;
+    _timePassageUi.live.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
+    _timePassageUi.hours.textContent = `${remainingHours} ${remainingHours === 1 ? 'hour' : 'hours'}`;
   }
 
   async function confirmTimePassage() {
     if (!_timePassageKind || !_timePassageUi) return;
     const kind = _timePassageKind; // Captured because the shared modal state is cleared after transition completion.
     const hours = _selectedPassageHours; // Captured so the selected duration cannot change during the iris transition.
-    const finalTarget = previewAfterHours(hours); // Used to keep the final date/time visible while individual hours tick past.
     _timePassageUi.confirm.disabled = true;
     _timePassageUi.backdrop.classList.add('transitioning');
     clearInterval(_passagePreviewTimer);
     _passagePreviewTimer = 0;
     try {
       await runIrisTransition(async () => {
-        await advanceBySelectedHours(hours, (elapsed, total) => renderTimePassageTick(elapsed, total, finalTarget));
+        await advanceBySelectedHours(hours, remaining => renderTimePassageTick(remaining));
         if (kind === 'sleep') restorePlayerAfterSleep();
         persistCalendarSnapshot();
         window.WeatherFX?.updateRainState?.();
@@ -556,12 +560,14 @@
 
   async function advanceBySelectedHours(hours, onHourTick) {
     const totalHours = Math.max(1, Math.min(MAX_PASSAGE_HOURS, Math.round(Number(hours) || 1))); // Used to keep the fully-black progress loop bounded to the selector's legal duration.
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; // Used to preserve the hour-by-hour state changes while shortening their visual hold for reduced motion.
-    await delayMs(reduced ? 20 : 110);
+    let tickDurationMs = TIME_PASSAGE_FIRST_TICK_MS; // Current visual hold duration; multiplied by 0.8 after every displayed hour.
+    onHourTick?.(totalHours); // Shows the starting time and complete remaining count for the full first one-second tick.
     for (let elapsed = 1; elapsed <= totalHours; elapsed++) {
+      await delayMs(tickDurationMs);
       await advanceOnePassageHour();
-      onHourTick?.(elapsed, totalHours);
-      await delayMs(reduced ? 28 : TIME_PASSAGE_TICK_MS);
+      const remainingHours = totalHours - elapsed; // Used as the direct countdown value instead of an elapsed/total fraction.
+      onHourTick?.(remainingHours);
+      tickDurationMs *= TIME_PASSAGE_TICK_DECAY;
     }
   }
 
@@ -640,7 +646,7 @@
     ui.irisHole.setAttribute('r', String(maxRadius));
     ui.iris.style.display = 'block';
 
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; // Used to shorten rather than remove the transition for reduced-motion users.
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; // Used to shorten rather than remove the iris animation for reduced-motion users.
     const closeMs = reduced ? 120 : 480; // Used for the black iris-in duration.
     const openMs = reduced ? 140 : 560; // Used for the black iris-out duration after all hourly ticks finish.
     return animateIrisRadius(maxRadius, minRadius, closeMs)
