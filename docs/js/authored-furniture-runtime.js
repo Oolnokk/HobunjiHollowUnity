@@ -46,6 +46,8 @@
   function buildGroup(data, baseColor) {
     const group = new THREE.Group();
     if (!data || !Array.isArray(data.parts)) return group;
+    group.name = `authored_furniture_${data.key || 'unknown'}`;
+    group.userData.authoredFurnitureKey = data.key || null; // Used by Pixel Probe/runtime diagnostics to identify authored furniture instances.
     const meshById = new Map();
     const partById = new Map(); // Used by timeline liquid geometry, linked-container warps, and stomp anchors.
     for (const part of data.parts) partById.set(part.id, part);
@@ -61,6 +63,7 @@
           fillOpacity: part.substanceFillOpacity,
         });
       }
+      mesh.name = `authored_${data.key || 'furniture'}_${part.name || part.id}`;
       mesh.userData.authoredPartId = part.id;
       mesh.userData.authoredPart = part;
       mesh.userData.authoredMatrix = new THREE.Matrix4().compose(mesh.position, mesh.quaternion, mesh.scale);
@@ -161,17 +164,24 @@
     return { impact, rock };
   }
 
-  // Volume-weighted centroid of the warped parts' authored/rest-pose world
-  // bounds — matches the editor, which resets every affected mesh before
-  // calculatedPartGroupCentroid() runs each frame. Calculating this from the
-  // previous warped frame makes the pivot chase its own animation and is the
-  // source of the live-vat transform drift that the authoring preview lacks.
+  // Volume-weighted centroid of the warped furniture pieces themselves.
+  // IMPORTANT: do not use Box3.setFromObject(mesh) here. Runtime emitter
+  // Points are parented to furniture meshes so they follow warps, and unused
+  // particle vertices are parked at y=-9999. setFromObject recursively
+  // includes those descendants, which can push the warp pivot thousands of
+  // units away and make the entire vat sweep across the screen. The editor's
+  // centroid is based on the authored pieces, so transform each target mesh's
+  // own geometry bounding box into world space and deliberately ignore VFX.
   function _warpCentroid(meshes, group) {
     let total = 0;
     const sum = new THREE.Vector3();
     const box = new THREE.Box3(), size = new THREE.Vector3(), center = new THREE.Vector3();
     for (const mesh of meshes) {
-      box.setFromObject(mesh);
+      const geometry = mesh.geometry;
+      if (!geometry) continue;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      if (!geometry.boundingBox) continue;
+      box.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
       box.getSize(size);
       box.getCenter(center);
       if (group) group.worldToLocal(center);
@@ -278,6 +288,8 @@
     geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cap * 3), 3));
     const mat = new THREE.PointsMaterial({ size: Math.max(0.01, emitter.size || 0.05), vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, sizeAttenuation: true });
     const points = new THREE.Points(geo, mat);
+    points.name = `authored_furniture_emitter_${emitter.name || emitter.id || 'unnamed'}`;
+    points.userData.authoredEmitterId = emitter.id || null; // Used by Pixel Probe/runtime diagnostics to distinguish VFX from furniture geometry.
     points.position.set((emitter.position && emitter.position.x) || 0, (emitter.position && emitter.position.y) || 0, (emitter.position && emitter.position.z) || 0);
     points.frustumCulled = false;
     points.visible = false;
