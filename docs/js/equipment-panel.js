@@ -10,7 +10,32 @@
   // (buildInventoryGrid/selectInventoryItem) stays in game.js — this module
   // only owns what's equipped and what's collected in gear.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  // This guard prevents duplicate dynamic loads when EquipmentPanel.init() is called more than once.
+  let inventoryUiLoadStarted = false;
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    loadInventoryUi();
+  }
+
+  function loadInventoryUi() {
+    if (window.InventoryUI?.init) {
+      window.InventoryUI.init({ isDevMode: deps.isDevMode, showToast: deps.showToast });
+      return;
+    }
+    if (inventoryUiLoadStarted || typeof document === 'undefined') return;
+    inventoryUiLoadStarted = true;
+    // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
+    const script = document.createElement('script');
+    script.src = 'js/inventory-ui.js?v=20260812a';
+    script.async = false;
+    script.onload = () => window.InventoryUI?.init?.({ isDevMode: deps.isDevMode, showToast: deps.showToast });
+    script.onerror = () => {
+      inventoryUiLoadStarted = false;
+      if (deps.isDevMode?.()) deps.showToast?.('Inventory UI polish module failed to load.', false);
+    };
+    document.head.appendChild(script);
+  }
 
   function setEquipmentSlot(slot, itemKeyOrNull) {
     deps.equipmentSlots[slot] = itemKeyOrNull;
