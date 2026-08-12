@@ -1,45 +1,49 @@
-// Local Save Folder — an optional, best-effort mirror of hobunjiSaveMeta
-// (the single localStorage blob every world/character save already lives
-// in — see onboarding.js's SAVE_META_KEY, { version, characters: [...],
-// worlds: [...] }) out to a real folder on disk via the File System Access
-// API (Chromium-only; see isSupported()). localStorage stays the actual
-// source of truth the game reads/writes during play — this only mirrors it
-// out to disk periodically and on demand, as a portable/browsable backup,
-// and can import it back.
+// Local Save Folder — portable save backend for Hobunji Hollow.
 //
-// Each character and world is written as its OWN file (characters/<slug>-
-// <id>.json, worlds/<slug>-<id>.json — see writeEntities), not one combined
-// blob, so they're individually browsable/copyable/diffable outside the
-// game. A small top-level manifest.json records the save-meta version plus
-// counts for humans browsing the folder; loadFromFolder re-derives
-// characters/worlds by re-scanning the two subfolders directly rather than
-// trusting the manifest for content.
-//
-// What's cached, and where: ONLY the chosen folder's own
-// FileSystemDirectoryHandle, in a tiny dedicated IndexedDB database
-// (see DB_NAME/STORE below) — not the world/character save data itself,
-// which already lives in localStorage and stays there. A handle is a
-// structured-cloneable object IndexedDB can persist across sessions
-// (localStorage can't hold one); the browser still requires re-confirming
-// permission each session (see ensurePermission), which is why status can
-// be 'needs-permission' even with a remembered folder. Re-picking a folder
-// — whether none was chosen before, or the player wants to point somewhere
-// else entirely ("correct the directory") — is the same chooseFolder call
-// either way; see changeFolder.
+// Runtime saves remain in localStorage. A connected folder mirrors character,
+// world, and per-world farm-layout data so the same save can move between
+// devices. Direction is intentionally explicit after permission is restored:
+// Reconnect only reconnects access; Save Now pushes this browser to disk; Load
+// from Folder pulls disk into this browser. This avoids a reconnect choosing the
+// wrong side during migrations or device transfers.
 (() => {
   "use strict";
+
   const DB_NAME = 'hobunji-local-save-folder';
   const STORE = 'handles';
   const HANDLE_KEY = 'dir';
   const CHARACTERS_DIR = 'characters';
   const WORLDS_DIR = 'worlds';
+  const FARM_LAYOUTS_DIR = 'farm-layouts';
   const MANIFEST_FILE_NAME = 'manifest.json';
-  const LEGACY_SAVE_FILE_NAME = 'hobunji-save.json'; // pre-per-file format; cleaned up if found
+  const LEGACY_SAVE_FILE_NAME = 'hobunji-save.json';
   const SAVE_META_KEY = 'hobunjiSaveMeta';
+  const FARM_LAYOUT_KEY_PREFIX = 'hobunji_farm_layout_v3:';
+  const PORTABLE_SAVE_VERSION = 2;
   const AUTO_SYNC_MS = 30000;
+  const CHANGE_POLL_MS = 1000;
 
-  function slugify(s) {
-    return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'unnamed';
+  function slugify(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'unnamed';
+  }
+
+  function safeFilenamePart(value) {
+    return String(value || 'world')
+      .replace(/[<>:\"/\\|?*\u0000-\u001f]/g, '_')
+      .replace(/[. ]+$/g, '')
+      .slice(0, 120) || 'world';
+  }
+
+  function farmLayoutKey(worldId) {
+    return FARM_LAYOUT_KEY_PREFIX + worldId;
+  }
+
+  function farmLayoutFilename(worldId) {
+    return safeFilenamePart(worldId) + '.json';
   }
 
   function isSupported() {
@@ -49,7 +53,9 @@
   function openDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => { req.result.createObjectStore(STORE); };
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+      };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
@@ -84,12 +90,18 @@
     });
   }
 
-  // state: 'unsupported' | 'not-configured' | 'needs-permission' | 'ready' | 'error'
   let _handle = null;
   let _state = 'unsupported';
   let _lastError = '';
   let _lastSyncedAt = 0;
+  let _lastAction = 'none'; // Used by Settings/debug UI to explain the last folder operation.
+  let _farmLayoutCount = 0;
+  let _folderSupportsFarmLayouts = false; // Used to decide whether autosync may write farm layout files.
+  let _autoSyncArmed = false; // Used to prevent writes until the player explicitly chooses push or pull after reconnect.
   let _autoTimer = null;
+  let _changePollTimer = null;
+  let _lastObservedFingerprint = null; // Used by the change poll to skip filesystem writes when nothing changed.
+  let _syncPromise = null; // Used to serialize filesystem writes so two save operations cannot overlap.
   const _listeners = new Set();
 
   function getStatus() {
@@ -99,11 +111,25 @@
       folderName: _handle?.name || null,
       lastSyncedAt: _lastSyncedAt || null,
       lastError: _lastError || null,
+      lastAction: _lastAction,
+      farmLayoutCount: _farmLayoutCount,
+      portableFarmLayouts: _folderSupportsFarmLayouts,
+      needsFarmLayoutUpgrade: _state === 'ready' && !_folderSupportsFarmLayouts,
+      autoSyncArmed: _autoSyncArmed,
     };
   }
 
-  function notify() { for (const fn of _listeners) { try { fn(getStatus()); } catch {} } }
-  function onChange(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
+  function notify() {
+    const status = getStatus();
+    for (const listener of _listeners) {
+      try { listener(status); } catch {}
+    }
+  }
+
+  function onChange(listener) {
+    _listeners.add(listener);
+    return () => _listeners.delete(listener);
+  }
 
   async function ensurePermission(handle, requestIfNeeded) {
     const opts = { mode: 'readwrite' };
@@ -112,72 +138,26 @@
     return (await handle.requestPermission(opts)) === 'granted';
   }
 
-  function startAutoSync() {
-    stopAutoSync();
-    _autoTimer = setInterval(() => { syncNow(); }, AUTO_SYNC_MS);
-  }
   function stopAutoSync() {
+    _autoSyncArmed = false;
     if (_autoTimer) { clearInterval(_autoTimer); _autoTimer = null; }
+    if (_changePollTimer) { clearInterval(_changePollTimer); _changePollTimer = null; }
   }
 
-  async function init() {
-    if (!isSupported()) { _state = 'unsupported'; notify(); return; }
-    try {
-      const saved = await idbGet(HANDLE_KEY);
-      if (!saved) { _state = 'not-configured'; notify(); return; }
-      _handle = saved;
-      _state = (await ensurePermission(_handle, false)) ? 'ready' : 'needs-permission';
-    } catch (e) {
-      _state = 'error'; _lastError = String(e?.message || e);
-    }
-    notify();
-    if (_state === 'ready') startAutoSync();
-  }
-
-  // Must run from a real user gesture (a button click) — the File System
-  // Access API refuses to prompt otherwise.
-  async function chooseFolder() {
-    if (!isSupported()) return getStatus();
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      _handle = handle;
-      await idbSet(HANDLE_KEY, handle);
-      _state = 'ready'; _lastError = '';
-      notify();
-      await syncNow();
-      startAutoSync();
-    } catch (e) {
-      if (e?.name !== 'AbortError') { _state = 'error'; _lastError = String(e?.message || e); notify(); }
-    }
-    return getStatus();
-  }
-
-  // Same call as chooseFolder, kept as a distinctly-named action so the
-  // settings UI can offer "Change Folder" once one's already configured,
-  // without implying anything different happens under the hood.
-  const changeFolder = chooseFolder;
-
-  // Re-requests permission on the already-remembered handle without
-  // re-opening the picker — the normal path back to 'ready' after a fresh
-  // page load (browsers don't remember a granted permission across
-  // sessions, only the handle itself).
-  async function reconnect() {
-    if (!_handle) return chooseFolder();
-    try {
-      const granted = await ensurePermission(_handle, true);
-      _state = granted ? 'ready' : 'needs-permission';
-      notify();
-      if (granted) { await syncNow(); startAutoSync(); }
-    } catch (e) { _state = 'error'; _lastError = String(e?.message || e); notify(); }
-    return getStatus();
-  }
-
-  async function forget() {
-    stopAutoSync();
-    _handle = null; _state = 'not-configured'; _lastError = ''; _lastSyncedAt = 0;
-    try { await idbDelete(HANDLE_KEY); } catch {}
-    notify();
-    return getStatus();
+  function startAutoSync() {
+    if (_state !== 'ready' || !_handle) return;
+    if (_autoTimer) clearInterval(_autoTimer);
+    if (_changePollTimer) clearInterval(_changePollTimer);
+    _autoSyncArmed = true;
+    _lastObservedFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
+    _autoTimer = setInterval(() => { syncNow({ automatic: true }); }, AUTO_SYNC_MS);
+    _changePollTimer = setInterval(() => {
+      if (_state !== 'ready' || !_autoSyncArmed) return;
+      const nextFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
+      if (nextFingerprint === _lastObservedFingerprint) return;
+      _lastObservedFingerprint = nextFingerprint;
+      syncNow({ automatic: true });
+    }, CHANGE_POLL_MS);
   }
 
   async function writeJsonFile(dirHandle, filename, data) {
@@ -187,15 +167,11 @@
     await writable.close();
   }
 
-  // Writes one file per entity (keyed by slugified name + id, so a rename
-  // doesn't orphan the old file — see the stale-file sweep below) into
-  // dirName, then removes any file in dirName that no longer corresponds to
-  // a current entity (a deleted character/world, or one renamed since the
-  // last sync).
   async function writeEntities(dirName, entities, nameField) {
     const dirHandle = await _handle.getDirectoryHandle(dirName, { create: true });
     const keep = new Set();
     for (const entity of entities) {
+      if (!entity?.id) continue;
       const filename = `${slugify(entity[nameField])}-${entity.id}.json`;
       keep.add(filename);
       await writeJsonFile(dirHandle, filename, entity);
@@ -213,71 +189,427 @@
     try { dirHandle = await _handle.getDirectoryHandle(dirName); } catch { return entities; }
     for await (const [, entry] of dirHandle.entries()) {
       if (entry.kind !== 'file') continue;
-      try { entities.push(JSON.parse(await (await entry.getFile()).text())); } catch { /* skip unreadable/corrupt entry */ }
+      try {
+        const value = JSON.parse(await (await entry.getFile()).text());
+        if (value && typeof value === 'object') entities.push(value);
+      } catch { /* unreadable entries are skipped */ }
     }
     return entities;
   }
 
-  async function syncNow() {
-    if (_state !== 'ready' || !_handle) return getStatus();
-    try {
-      const raw = localStorage.getItem(SAVE_META_KEY);
-      if (raw != null) {
-        const meta = JSON.parse(raw);
-        await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
-        await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
-        await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
-          version: meta.version ?? 1, savedAt: Date.now(),
-          characterCount: (meta.characters || []).length, worldCount: (meta.worlds || []).length,
-        });
-        try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch { /* fine if it never existed */ }
-        _lastSyncedAt = Date.now();
+  function normalizeMetaForCompare(meta) {
+    const byId = (items) => [...(items || [])].sort((a, b) => String(a?.id || '').localeCompare(String(b?.id || '')));
+    return {
+      version: meta?.version ?? 1,
+      characters: byId(meta?.characters),
+      worlds: byId(meta?.worlds),
+    };
+  }
+
+  function saveMetaMatches(a, b) {
+    return JSON.stringify(normalizeMetaForCompare(a)) === JSON.stringify(normalizeMetaForCompare(b));
+  }
+
+  function readBrowserMeta() {
+    const raw = localStorage.getItem(SAVE_META_KEY);
+    if (raw == null) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  function readBrowserFarmLayouts(meta, strict = false) {
+    const layouts = {};
+    for (const world of (meta?.worlds || [])) {
+      if (!world?.id) continue;
+      const raw = localStorage.getItem(farmLayoutKey(world.id));
+      if (raw == null) continue;
+      try {
+        layouts[world.id] = JSON.parse(raw);
+      } catch (error) {
+        if (strict) {
+          throw new Error(`Farm layout for world "${world.label || world.id}" is unreadable: ${String(error?.message || error)}`);
+        }
       }
+    }
+    return layouts;
+  }
+
+  function browserFingerprint(includeFarmLayouts) {
+    const metaRaw = localStorage.getItem(SAVE_META_KEY) || '';
+    if (!includeFarmLayouts) return metaRaw;
+    let meta;
+    try { meta = metaRaw ? JSON.parse(metaRaw) : null; } catch { return metaRaw; }
+    const parts = [metaRaw];
+    for (const world of (meta?.worlds || [])) {
+      if (!world?.id) continue;
+      parts.push(world.id, localStorage.getItem(farmLayoutKey(world.id)) || '');
+    }
+    return parts.join('\u001f');
+  }
+
+  async function readFolderFarmLayouts() {
+    const layouts = {};
+    const corruptFiles = [];
+    let dirHandle;
+    try { dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR); }
+    catch { return { layouts, corruptFiles }; }
+
+    for await (const [name, entry] of dirHandle.entries()) {
+      if (entry.kind !== 'file') continue;
+      try {
+        const payload = JSON.parse(await (await entry.getFile()).text());
+        if (!payload || typeof payload.worldId !== 'string' || !payload.worldId || !payload.layout || typeof payload.layout !== 'object') {
+          corruptFiles.push(name);
+          continue;
+        }
+        layouts[payload.worldId] = payload.layout;
+      } catch {
+        corruptFiles.push(name);
+      }
+    }
+    return { layouts, corruptFiles };
+  }
+
+  async function writeFarmLayouts(meta, layouts) {
+    const dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR, { create: true });
+    const worldIds = new Set((meta?.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
+    const keep = new Set();
+    let written = 0;
+
+    for (const worldId of worldIds) {
+      if (!Object.prototype.hasOwnProperty.call(layouts, worldId)) continue;
+      const filename = farmLayoutFilename(worldId);
+      keep.add(filename);
+      await writeJsonFile(dirHandle, filename, { worldId, layout: layouts[worldId] });
+      written++;
+    }
+
+    for await (const [name, entry] of dirHandle.entries()) {
+      if (entry.kind !== 'file' || keep.has(name)) continue;
+      try {
+        const payload = JSON.parse(await (await entry.getFile()).text());
+        if (payload?.worldId && !worldIds.has(String(payload.worldId))) await dirHandle.removeEntry(name);
+      } catch { /* preserve unreadable files for recovery */ }
+    }
+    return written;
+  }
+
+  async function readFolderSnapshot() {
+    const characters = await readEntities(CHARACTERS_DIR);
+    const worlds = await readEntities(WORLDS_DIR);
+    const farm = await readFolderFarmLayouts();
+    let manifest = null;
+    let manifestExists = false;
+
+    try {
+      const manifestFile = await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile();
+      manifest = JSON.parse(await manifestFile.text());
+      manifestExists = true;
+    } catch (error) {
+      if (error?.name !== 'NotFoundError') {
+        throw new Error('Could not read manifest.json: ' + String(error?.message || error));
+      }
+    }
+
+    const portableVersion = Number(manifest?.portableSaveVersion) || 1;
+    const hasPortableFarmLayouts = portableVersion >= PORTABLE_SAVE_VERSION || Object.keys(farm.layouts).length > 0;
+    return {
+      exists: manifestExists || characters.length > 0 || worlds.length > 0,
+      savedAt: Number(manifest?.savedAt) || 0,
+      hasPortableFarmLayouts,
+      corruptFarmLayoutFiles: farm.corruptFiles,
+      meta: {
+        version: manifest?.version ?? 1,
+        characters,
+        worlds,
+      },
+      farmLayouts: farm.layouts,
+    };
+  }
+
+  async function inspectConnectedFolder() {
+    if (_state !== 'ready' || !_handle) return null;
+    const folder = await readFolderSnapshot();
+    const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
+    _folderSupportsFarmLayouts = folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
+    _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
+    _lastSyncedAt = folder.savedAt || 0;
+    _lastError = folder.corruptFarmLayoutFiles.length
+      ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}.`
+      : '';
+    return folder;
+  }
+
+  function folderFarmLayoutsDiffer(folderMeta, browserLayouts, folderLayouts) {
+    const validWorldIds = new Set((folderMeta?.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
+    for (const [worldId, folderLayout] of Object.entries(folderLayouts || {})) {
+      if (!validWorldIds.has(worldId)) continue;
+      if (!Object.prototype.hasOwnProperty.call(browserLayouts, worldId)) return true;
+      if (JSON.stringify(browserLayouts[worldId]) !== JSON.stringify(folderLayout)) return true;
+    }
+    return false;
+  }
+
+  async function _syncNowImpl({ automatic = false } = {}) {
+    if (_state !== 'ready' || !_handle) return getStatus();
+    if (automatic && !_autoSyncArmed) return getStatus();
+
+    try {
+      const meta = readBrowserMeta();
+      if (!meta) throw new Error('No browser save is available to write.');
+      const farmLayouts = readBrowserFarmLayouts(meta, true);
+
+      await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
+      await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
+      _farmLayoutCount = await writeFarmLayouts(meta, farmLayouts);
+      _folderSupportsFarmLayouts = true;
+
+      const savedAt = Date.now();
+      await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
+        version: meta.version ?? 1,
+        portableSaveVersion: PORTABLE_SAVE_VERSION,
+        farmLayoutsIncluded: true,
+        savedAt,
+        characterCount: (meta.characters || []).length,
+        worldCount: (meta.worlds || []).length,
+        farmLayoutCount: _farmLayoutCount,
+      });
+      try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
+
+      _lastSyncedAt = savedAt;
+      _lastAction = automatic ? 'autosaved-browser-to-folder' : 'saved-browser-to-folder';
       _lastError = '';
-    } catch (e) {
-      _lastError = String(e?.message || e);
+      _lastObservedFingerprint = browserFingerprint(true);
+      if (!automatic) startAutoSync();
+    } catch (error) {
+      _lastError = String(error?.message || error);
+      _lastAction = 'save-error';
     }
     notify();
     return getStatus();
   }
 
-  // Overwrites localStorage's hobunjiSaveMeta with whatever's in the
-  // folder's characters/ and worlds/ subfolders (not the manifest, which is
-  // informational only) — destructive to whatever's currently active, so
-  // the caller (the settings UI) is expected to confirm with the player
-  // before calling this.
-  async function loadFromFolder() {
-    if (_state !== 'ready' || !_handle) return { ok: false, message: 'No local save folder connected.' };
+  async function syncNow(options = {}) {
+    if (_syncPromise) return _syncPromise;
+    _syncPromise = _syncNowImpl(options).finally(() => { _syncPromise = null; });
+    return _syncPromise;
+  }
+
+  function reloadAfterFolderRestore() {
+    setTimeout(() => location.reload(), 0);
+  }
+
+  async function reconcileConnectedFolder({ reloadIfChanged = true } = {}) {
+    if (_state !== 'ready' || !_handle) {
+      return { ok: false, action: 'not-ready', changed: false, message: 'No local save folder connected.' };
+    }
+
     try {
-      const characters = await readEntities(CHARACTERS_DIR);
-      const worlds = await readEntities(WORLDS_DIR);
-      if (!characters.length && !worlds.length) {
-        return { ok: false, message: 'No characters or worlds found in this folder.' };
+      const folder = await readFolderSnapshot();
+      if (!folder.exists) {
+        _lastAction = 'initialized-empty-folder';
+        const status = await syncNow({ automatic: false });
+        return {
+          ok: !status.lastError,
+          action: _lastAction,
+          changed: false,
+          message: status.lastError ? status.lastError : 'Initialized the empty folder from this browser save.',
+        };
       }
-      let version = 1;
-      try {
-        const manifestFile = await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile();
-        version = JSON.parse(await manifestFile.text())?.version ?? 1;
-      } catch { /* manifest is informational only; fall back to version 1 */ }
-      localStorage.setItem(SAVE_META_KEY, JSON.stringify({ version, characters, worlds }));
-      _lastSyncedAt = Date.now(); _lastError = '';
+
+      const browserMeta = readBrowserMeta();
+      const browserLayouts = readBrowserFarmLayouts(browserMeta, false);
+      const metaChanged = !browserMeta || !saveMetaMatches(browserMeta, folder.meta);
+      const layoutsChanged = folderFarmLayoutsDiffer(folder.meta, browserLayouts, folder.farmLayouts);
+      const changed = metaChanged || layoutsChanged;
+
+      localStorage.setItem(SAVE_META_KEY, JSON.stringify(folder.meta));
+      const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
+      for (const [worldId, layout] of Object.entries(folder.farmLayouts || {})) {
+        if (!validWorldIds.has(worldId)) continue;
+        localStorage.setItem(farmLayoutKey(worldId), JSON.stringify(layout));
+      }
+
+      _folderSupportsFarmLayouts = folder.hasPortableFarmLayouts && folder.corruptFarmLayoutFiles.length === 0;
+      _farmLayoutCount = Object.keys(folder.farmLayouts || {}).filter(worldId => validWorldIds.has(worldId)).length;
+      _lastSyncedAt = folder.savedAt || Date.now();
+      _lastError = folder.corruptFarmLayoutFiles.length
+        ? `Skipped corrupt farm layout file(s): ${folder.corruptFarmLayoutFiles.join(', ')}. Save Now only if this browser has the correct farm.`
+        : '';
+      _lastAction = changed
+        ? 'loaded-folder-to-browser'
+        : (_folderSupportsFarmLayouts ? 'folder-already-current' : 'legacy-folder-missing-farm-layouts');
+      _lastObservedFingerprint = browserFingerprint(_folderSupportsFarmLayouts);
+      startAutoSync();
       notify();
-      return { ok: true, message: `Loaded ${characters.length} character(s) and ${worlds.length} world(s) from the local folder. Reload the page to apply it.` };
-    } catch (e) {
-      _lastError = String(e?.message || e); notify();
-      return { ok: false, message: 'Could not load from the local folder: ' + _lastError };
+
+      if (changed && reloadIfChanged) reloadAfterFolderRestore();
+      return {
+        ok: true,
+        action: _lastAction,
+        changed,
+        reloadScheduled: changed && reloadIfChanged,
+        needsFarmLayoutUpgrade: !_folderSupportsFarmLayouts,
+        message: changed
+          ? `Loaded ${folder.meta.characters.length} character(s), ${folder.meta.worlds.length} world(s), and ${_farmLayoutCount} farm layout(s) from the local folder.`
+          : (_folderSupportsFarmLayouts
+            ? 'The browser save already matches the local folder.'
+            : 'Characters/worlds match, but this older folder has no portable farm layouts yet. Use Save Now on the device with the correct farm.'),
+      };
+    } catch (error) {
+      _lastError = String(error?.message || error);
+      _lastAction = 'reconcile-error';
+      notify();
+      return {
+        ok: false,
+        action: _lastAction,
+        changed: false,
+        message: 'Could not reconcile the local save folder: ' + _lastError,
+      };
     }
   }
 
-  // Best-effort only — an async file write isn't guaranteed to finish
-  // during unload. The periodic timer and the explicit "Save Now" button
-  // are the real mechanism; this just doesn't hurt to try.
-  window.addEventListener('beforeunload', () => { if (_state === 'ready') syncNow(); });
+  async function init() {
+    if (!isSupported()) {
+      _state = 'unsupported';
+      _lastAction = 'unsupported';
+      notify();
+      return;
+    }
+
+    try {
+      const saved = await idbGet(HANDLE_KEY);
+      if (!saved) {
+        _state = 'not-configured';
+        _lastAction = 'not-configured';
+        notify();
+        return;
+      }
+
+      _handle = saved;
+      _state = (await ensurePermission(_handle, false)) ? 'ready' : 'needs-permission';
+      if (_state === 'ready') {
+        await inspectConnectedFolder();
+        _lastAction = 'remembered-folder-ready-awaiting-choice';
+        stopAutoSync();
+      } else {
+        _lastAction = 'permission-needed';
+      }
+    } catch (error) {
+      _state = 'error';
+      _lastError = String(error?.message || error);
+      _lastAction = 'init-error';
+    }
+    notify();
+  }
+
+  // Picking/changing a folder only establishes access. If the folder is empty,
+  // Save Now is still the explicit operation that initializes it.
+  async function chooseFolder() {
+    if (!isSupported()) return getStatus();
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      _handle = handle;
+      await idbSet(HANDLE_KEY, handle);
+      _state = 'ready';
+      _lastError = '';
+      stopAutoSync();
+      await inspectConnectedFolder();
+      _lastAction = 'folder-chosen-awaiting-choice';
+      notify();
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        _state = 'error';
+        _lastError = String(error?.message || error);
+        _lastAction = 'choose-error';
+        notify();
+      }
+    }
+    return getStatus();
+  }
+
+  const changeFolder = chooseFolder;
+
+  // Reconnect is deliberately NON-DESTRUCTIVE. It only restores permission and
+  // inspects the folder. It does not import, export, start autosync, or reload.
+  // This keeps the current in-browser farm intact until the player chooses
+  // Save Now (browser -> folder) or Load from Folder (folder -> browser).
+  async function reconnect() {
+    if (!_handle) return chooseFolder();
+    try {
+      const granted = await ensurePermission(_handle, true);
+      _state = granted ? 'ready' : 'needs-permission';
+      stopAutoSync();
+      if (granted) {
+        await inspectConnectedFolder();
+        _lastAction = 'permission-restored-awaiting-choice';
+        _lastError = '';
+      } else {
+        _lastAction = 'permission-needed';
+      }
+    } catch (error) {
+      _state = 'error';
+      _lastError = String(error?.message || error);
+      _lastAction = 'reconnect-error';
+    }
+    notify();
+    return getStatus();
+  }
+
+  async function forget() {
+    stopAutoSync();
+    _handle = null;
+    _state = 'not-configured';
+    _lastError = '';
+    _lastSyncedAt = 0;
+    _lastAction = 'forgot-folder';
+    _farmLayoutCount = 0;
+    _folderSupportsFarmLayouts = false;
+    _lastObservedFingerprint = null;
+    try { await idbDelete(HANDLE_KEY); } catch {}
+    notify();
+    return getStatus();
+  }
+
+  async function loadFromFolder() {
+    const result = await reconcileConnectedFolder({ reloadIfChanged: false });
+    if (!result.ok) return result;
+    if (result.action === 'initialized-empty-folder') {
+      return { ok: false, message: 'This folder was empty, so there was nothing to load.' };
+    }
+    return {
+      ok: true,
+      message: result.changed ? result.message + ' Reload the page to apply it.' : result.message,
+    };
+  }
+
+  window.addEventListener('beforeunload', () => {
+    if (_state === 'ready' && _autoSyncArmed) syncNow({ automatic: true });
+  });
 
   window.LocalSaveFolder = {
-    isSupported, getStatus, onChange,
-    chooseFolder, changeFolder, reconnect, forget,
-    syncNow, loadFromFolder,
+    isSupported,
+    getStatus,
+    onChange,
+    chooseFolder,
+    changeFolder,
+    reconnect,
+    forget,
+    syncNow,
+    loadFromFolder,
+    reconcileConnectedFolder,
+  };
+
+  // Mobile-accessible debug surface: inspect current persistence state without DevTools.
+  window.__hobunjiLocalSaveDebug = {
+    status: () => getStatus(),
+    inspect: async () => {
+      try {
+        const folder = await inspectConnectedFolder();
+        return { status: getStatus(), folder };
+      } catch (error) {
+        return { status: getStatus(), error: String(error?.message || error) };
+      }
+    },
   };
 
   init();
