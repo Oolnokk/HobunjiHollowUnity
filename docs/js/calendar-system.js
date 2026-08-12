@@ -40,6 +40,7 @@
   const MAX_NATURAL_TIME_WRITE = 0.02; // Used by the time01 setter to distinguish normal frame ticks from explicit jumps.
   const PLAYER_ACTION_LOCK_ID = 'player'; // Used while the sleep/wait modal or iris transition owns input.
   const MAX_PASSAGE_HOURS = 16; // Used by the shared duration selector; matches the game's represented 6:00→22:00 clock span.
+  const TIME_PASSAGE_TICK_MS = 190; // Used while fully black so each selected game hour visibly ticks past instead of jumping instantly.
 
   // Regional seasons: Northwestern Tanka. These are deliberately anchored to
   // raw world-day weeks, not civil day-of-year, preserving the opening
@@ -354,27 +355,29 @@
       const style = document.createElement('style'); // Injected once so the time-passage UI stays owned by its existing calendar module.
       style.id = 'hobunji-time-passage-style';
       style.textContent = `
-        .time-passage-backdrop{position:fixed;inset:0;z-index:52000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(7,8,10,.72);backdrop-filter:blur(2px);font-family:"Pixelify Sans",system-ui,sans-serif;color:#f4efe4}
+        .time-passage-backdrop{position:fixed;inset:0;z-index:2147483646;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(7,8,10,.42);font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;color:#f4efe4;text-shadow:0 2px 4px rgba(0,0,0,.9)}
         .time-passage-backdrop.open{display:flex}
-        .time-passage-panel{width:min(620px,94vw);max-height:88vh;overflow:auto;border:2px solid rgba(235,210,158,.72);border-radius:14px;background:linear-gradient(180deg,rgba(43,37,31,.98),rgba(24,23,23,.99));box-shadow:0 20px 70px rgba(0,0,0,.55);padding:18px}
-        .time-passage-title{font-size:clamp(24px,5vw,38px);line-height:1;margin:0 0 14px;text-align:center}
+        .time-passage-backdrop.transitioning{pointer-events:none;background:transparent}
+        .time-passage-panel{width:min(620px,94vw);max-height:88vh;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none;padding:0;transform:scale(.75);transform-origin:center center}
+        .time-passage-title{font-size:clamp(24px,5vw,38px);line-height:1;margin:0 0 14px;text-align:center;font-weight:400}
         .time-passage-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:10px}
-        .time-passage-date-card{padding:12px;border:1px solid rgba(255,255,255,.17);border-radius:10px;background:rgba(255,255,255,.055);min-width:0}
-        .time-passage-date-label{display:block;opacity:.64;font-size:13px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.07em}
-        .time-passage-date-value{font-family:"DM Mono",monospace;font-size:clamp(12px,2.7vw,15px);line-height:1.45;overflow-wrap:anywhere}
+        .time-passage-date-card{padding:12px;border:0;border-radius:0;background:transparent;min-width:0}
+        .time-passage-date-label{display:block;opacity:.68;font-size:13px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.07em}
+        .time-passage-date-value{font-family:inherit;font-size:clamp(12px,2.7vw,15px);line-height:1.45;overflow-wrap:anywhere}
         .time-passage-arrow{align-self:center;font-size:26px;opacity:.72}
         .time-passage-duration{margin:18px 0 8px;text-align:center}
         .time-passage-hours{font-size:clamp(25px,6vw,42px);line-height:1;margin-bottom:12px}
         .time-passage-slider-row{display:grid;grid-template-columns:48px 1fr 48px;align-items:center;gap:10px}
         .time-passage-slider{width:100%;accent-color:#d8b36e}
-        .time-passage-step,.time-passage-btn{border:1px solid rgba(235,210,158,.45);border-radius:9px;background:rgba(255,255,255,.08);color:#fff;font:700 18px "Pixelify Sans",system-ui,sans-serif;min-height:44px;cursor:pointer}
+        .time-passage-step,.time-passage-btn{border:1px solid rgba(235,210,158,.52);border-radius:9px;background:rgba(18,16,14,.62);color:#fff;font:400 18px "KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;min-height:44px;cursor:pointer;text-shadow:0 2px 3px rgba(0,0,0,.9)}
         .time-passage-step:active,.time-passage-btn:active{transform:translateY(1px)}
         .time-passage-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:10px;margin-top:16px}
-        .time-passage-btn.primary{background:#70552e;border-color:#d9b873}
-        .time-passage-debug{display:block;margin:12px auto 0;border:0;background:transparent;color:rgba(255,255,255,.58);font:500 12px "DM Mono",monospace;text-decoration:underline;cursor:pointer}
-        .time-iris-overlay{position:fixed;inset:0;z-index:2147483646;display:none;pointer-events:auto}
+        .time-passage-btn.primary{background:rgba(112,85,46,.82);border-color:#d9b873}
+        .time-passage-debug{display:block;margin:12px auto 0;border:0;background:transparent;color:rgba(255,255,255,.7);font:400 12px "KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;text-decoration:underline;cursor:pointer;text-shadow:0 2px 3px rgba(0,0,0,.9)}
+        .time-passage-backdrop.transitioning .time-passage-slider-row,.time-passage-backdrop.transitioning .time-passage-actions,.time-passage-backdrop.transitioning .time-passage-debug{opacity:.5}
+        .time-iris-overlay{position:fixed;inset:0;z-index:2147483645;display:none;pointer-events:auto}
         .time-iris-overlay svg{display:block;width:100%;height:100%}
-        @media(max-width:520px){.time-passage-dates{grid-template-columns:1fr}.time-passage-arrow{transform:rotate(90deg);justify-self:center}.time-passage-panel{padding:14px}.time-passage-actions{grid-template-columns:1fr}}
+        @media(max-width:520px){.time-passage-dates{grid-template-columns:1fr}.time-passage-arrow{transform:rotate(90deg);justify-self:center}.time-passage-actions{grid-template-columns:1fr}}
       `;
       document.head.appendChild(style);
     }
@@ -407,7 +410,7 @@
       </div>`;
     document.body.appendChild(backdrop);
 
-    const iris = document.createElement('div'); // Full-viewport SVG mask used by the close-to-a-point/reopen movie transition.
+    const iris = document.createElement('div'); // Full-viewport SVG mask used by the close-to-black/reopen movie transition.
     iris.className = 'time-iris-overlay';
     iris.setAttribute('aria-hidden', 'true');
     iris.innerHTML = `
@@ -443,11 +446,11 @@
     _timePassageUi.confirm.addEventListener('click', confirmTimePassage);
     _timePassageUi.debug.addEventListener('click', copyTimeDebug);
     _timePassageUi.backdrop.addEventListener('pointerdown', event => {
-      if (event.target === _timePassageUi.backdrop) closeTimePassageMenu();
+      if (event.target === _timePassageUi.backdrop && !_timePassageUi.backdrop.classList.contains('transitioning')) closeTimePassageMenu();
     });
     _timePassageUi.backdrop.addEventListener('keydown', event => {
       event.stopPropagation();
-      if (event.key === 'Escape') { event.preventDefault(); closeTimePassageMenu(); }
+      if (event.key === 'Escape' && !_timePassageUi.backdrop.classList.contains('transitioning')) { event.preventDefault(); closeTimePassageMenu(); }
     });
   }
 
@@ -471,6 +474,7 @@
     if (!_timePassageUi?.backdrop) return false;
     _timePassageKind = kind === 'sleep' ? 'sleep' : 'wait';
     _selectedPassageHours = _timePassageKind === 'sleep' ? 8 : 1;
+    _timePassageUi.backdrop.classList.remove('transitioning');
     setSelectedPassageHours(_selectedPassageHours);
     _timePassageUi.title.textContent = _timePassageKind === 'sleep' ? 'Sleep' : 'Wait';
     _timePassageUi.backdrop.classList.add('open');
@@ -485,7 +489,7 @@
 
   function closeTimePassageMenu(options = {}) {
     if (!_timePassageUi) return;
-    _timePassageUi.backdrop.classList.remove('open');
+    _timePassageUi.backdrop.classList.remove('open', 'transitioning');
     clearInterval(_passagePreviewTimer);
     _passagePreviewTimer = 0;
     if (!options.keepLock) releaseTimePassageLock();
@@ -504,21 +508,33 @@
   }
 
   function refreshTimePassagePreview() {
-    if (!_timePassageUi || !_timePassageUi.backdrop.classList.contains('open')) return;
+    if (!_timePassageUi || !_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.backdrop.classList.contains('transitioning')) return;
     const target = previewAfterHours(_selectedPassageHours); // Used to render the live target date/time card.
     _timePassageUi.current.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
     _timePassageUi.preview.textContent = formatCalendarDateTimeFull(target.day, target.time01);
+  }
+
+  function renderTimePassageTick(elapsedHours, totalHours, finalTarget) {
+    if (!_timePassageUi) return;
+    const verb = _timePassageKind === 'sleep' ? 'Sleeping' : 'Waiting'; // Used as the Skyrim-style progress title while the world is fully black.
+    _timePassageUi.title.textContent = `${verb}…`;
+    _timePassageUi.current.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
+    _timePassageUi.preview.textContent = formatCalendarDateTimeFull(finalTarget.day, finalTarget.time01);
+    _timePassageUi.hours.textContent = `${elapsedHours} / ${totalHours} ${totalHours === 1 ? 'hour' : 'hours'}`;
   }
 
   async function confirmTimePassage() {
     if (!_timePassageKind || !_timePassageUi) return;
     const kind = _timePassageKind; // Captured because the shared modal state is cleared after transition completion.
     const hours = _selectedPassageHours; // Captured so the selected duration cannot change during the iris transition.
+    const finalTarget = previewAfterHours(hours); // Used to keep the final date/time visible while individual hours tick past.
     _timePassageUi.confirm.disabled = true;
-    closeTimePassageMenu({ keepLock: true, keepKind: true });
+    _timePassageUi.backdrop.classList.add('transitioning');
+    clearInterval(_passagePreviewTimer);
+    _passagePreviewTimer = 0;
     try {
       await runIrisTransition(async () => {
-        await advanceBySelectedHours(hours);
+        await advanceBySelectedHours(hours, (elapsed, total) => renderTimePassageTick(elapsed, total, finalTarget));
         if (kind === 'sleep') restorePlayerAfterSleep();
         persistCalendarSnapshot();
         window.WeatherFX?.updateRainState?.();
@@ -531,28 +547,37 @@
       debugLog(`${kind} failed: ${error?.message || error}`, 'error');
     } finally {
       _timePassageUi.confirm.disabled = false;
+      closeTimePassageMenu({ keepLock: true, keepKind: true });
       _timePassageKind = null;
       releaseTimePassageLock();
       syncSeatedWaitButton();
     }
   }
 
-  async function advanceBySelectedHours(hours) {
-    const target = previewAfterHours(hours); // Used as the exact end state after any private game.js day-rollover work finishes.
-    const currentDay = deps.calendar.day; // Used to determine whether the selected duration crosses the represented-day boundary.
-    const dayDelta = Math.max(0, target.day - currentDay); // Used to choose the fast same-day path below.
-    if (dayDelta === 0) {
+  async function advanceBySelectedHours(hours, onHourTick) {
+    const totalHours = Math.max(1, Math.min(MAX_PASSAGE_HOURS, Math.round(Number(hours) || 1))); // Used to keep the fully-black progress loop bounded to the selector's legal duration.
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; // Used to preserve the hour-by-hour state changes while shortening their visual hold for reduced motion.
+    await delayMs(reduced ? 20 : 110);
+    for (let elapsed = 1; elapsed <= totalHours; elapsed++) {
+      await advanceOnePassageHour();
+      onHourTick?.(elapsed, totalHours);
+      await delayMs(reduced ? 28 : TIME_PASSAGE_TICK_MS);
+    }
+  }
+
+  async function advanceOnePassageHour() {
+    const target = previewAfterHours(1); // Exact next-hour state used after any private game.js day rollover completes.
+    if (target.day === deps.calendar.day) {
       setTime01Raw(target.time01);
       return;
     }
 
-    // Let game.js perform its own private advanceDay() work rather than
-    // duplicating crop/weather/Tothal/respawn logic here. A temporary time01
-    // > 1 causes the normal game loop to execute one rollover while the iris
-    // is fully closed. MAX_PASSAGE_HOURS is one represented day, so at most
-    // one rollover is required per confirmation.
-    setTime01Raw(deps.calendar.time01 + Number(hours) / activeClockHours());
-    const timeoutAt = performance.now() + 1800; // Used to fail visibly instead of hanging the black iris forever if the private rollover loop stops.
+    // Let game.js perform its private advanceDay() work at the exact hour that
+    // crosses the represented 22:00→next-day-06:00 boundary. This keeps crop,
+    // weather, Tothal, livestock, respawn, and procedural daily systems in
+    // step with the visible Skyrim-style hourly count.
+    setTime01Raw(deps.calendar.time01 + 1 / activeClockHours());
+    const timeoutAt = performance.now() + 1800; // Used to fail visibly instead of holding complete black forever if the private rollover loop stops.
     while ((deps.calendar.day < target.day || deps.calendar.time01 >= 1) && performance.now() < timeoutAt) {
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
@@ -560,6 +585,10 @@
       throw new Error(`day rollover stalled at raw day ${deps.calendar.day}; expected ${target.day}`);
     }
     setTime01Raw(target.time01); // Removes tiny frame dt accumulated while the masked rollover completed.
+  }
+
+  function delayMs(ms) {
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
   }
 
   function restorePlayerAfterSleep() {
@@ -600,7 +629,7 @@
     const width = Math.max(1, window.innerWidth); // Used to size the SVG mask to the current viewport.
     const height = Math.max(1, window.innerHeight); // Used to size the SVG mask to the current viewport.
     const maxRadius = Math.hypot(width, height) * 0.55 + 4; // Used as a hole large enough to reveal every viewport corner before/after the iris.
-    const minRadius = 2; // Used to leave the requested tiny final point before the scene/time changes.
+    const minRadius = 0; // Used for a completely black midpoint while the visible hour count advances.
     ui.irisSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     for (const rect of [ui.irisBase, ui.irisBlack]) {
       rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
@@ -613,10 +642,11 @@
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; // Used to shorten rather than remove the transition for reduced-motion users.
     const closeMs = reduced ? 120 : 480; // Used for the black iris-in duration.
-    const openMs = reduced ? 140 : 560; // Used for the black iris-out duration after the scene has changed.
+    const openMs = reduced ? 140 : 560; // Used for the black iris-out duration after all hourly ticks finish.
     return animateIrisRadius(maxRadius, minRadius, closeMs)
+      .then(() => delayMs(reduced ? 20 : 90))
       .then(() => Promise.resolve().then(onClosed))
-      .then(() => new Promise(resolve => setTimeout(resolve, reduced ? 20 : 90)))
+      .then(() => delayMs(reduced ? 20 : 120))
       .then(() => animateIrisRadius(minRadius, maxRadius, openMs))
       .finally(() => { ui.iris.style.display = 'none'; });
   }
