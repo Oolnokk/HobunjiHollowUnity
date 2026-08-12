@@ -3,79 +3,80 @@
 
   // Khymeryyan civil calendar (day/week/month/year derivations + regional
   // seasons), Calendar tab UI, and player-facing time passage. game.js owns
-  // the private world/day rollover hooks; this module owns the civil epoch,
-  // date/time formatting, sleep/wait menu, and the natural clock-rate shim.
+  // private world/day rollover hooks; this module owns the civil epoch,
+  // date/time formatting, sleep/wait menu, and natural clock-rate shim.
   //
-  // IMPORTANT EPOCH DETAIL: calendar.day remains the world's monotonic
-  // gameplay day counter, and game day 1 intentionally stays Waxingheat 1 at
-  // the existing time01. The civil year itself now starts on Firstrise 1, so
-  // the first 84 civil days of 1154 AoT simply predate the game's opening.
-  // Regional weather seasons keep their old absolute-world-day phase instead
-  // of rotating with the civil year; moving New Year must not move Stormtide.
+  // calendar.day remains the world's monotonic gameplay day counter. Game
+  // day 1 intentionally stays Waxingheat 1 at the existing time01, but the
+  // civil year now starts on Firstrise 1. The first 84 civil days of 1154
+  // AoT therefore predate the playable opening. Regional weather seasons
+  // retain their old absolute-world-day phase so moving New Year does not
+  // silently rotate Stormtide/Deadgrass/Longpour/Coldmuck.
   let deps = null;
 
-  const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // calendar.day 1 falls on Anan
-  const DAYS_PER_WEEK = WEEKDAY_NAMES.length; // 7
-  const WEEKS_PER_YEAR = 48;
-  const YEAR_LENGTH_DAYS = DAYS_PER_WEEK * WEEKS_PER_YEAR; // 336
-  const DAYS_PER_MONTH = 28; // exactly 4 weeks
-  const FIRST_AOT_YEAR = 1154;
+  const WEEKDAY_NAMES = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used by every weekday/date formatter; raw game day 1 remains Anan.
+  const DAYS_PER_WEEK = WEEKDAY_NAMES.length; // Used by civil and regional week derivations.
+  const WEEKS_PER_YEAR = 48; // Used by the 336-day civil year and wrapped regional-season week math.
+  const YEAR_LENGTH_DAYS = DAYS_PER_WEEK * WEEKS_PER_YEAR; // Used by civil-year and Tothal-cycle rollover math.
+  const DAYS_PER_MONTH = 28; // Used by all 12 equal-length civil months and the Calendar tab grid.
+  const FIRST_AOT_YEAR = 1154; // Used only for the player-facing AoT era number; Tothal's deterministic seed cycle stays 1-based internally.
   const MONTH_NAMES = [
-    'Firstrise', 'Secondrise', 'Thirdrise',         // Spring — civil year begins here
-    'Waxingheat', 'Highheat', 'Waningheat',         // Summer
-    'Firstfall', 'Secondfall', 'Thirdfall',         // Fall
-    'Shallowfrost', 'Deepfrost', 'Pouringfrost',   // Winter
-  ]; // Universal civil months — decoupled from Tanka's regional tropical seasons.
+    'Firstrise', 'Secondrise', 'Thirdrise',         // Spring — civil year begins here.
+    'Waxingheat', 'Highheat', 'Waningheat',         // Summer.
+    'Firstfall', 'Secondfall', 'Thirdfall',         // Fall.
+    'Shallowfrost', 'Deepfrost', 'Pouringfrost',   // Winter.
+  ]; // Used by named-date formatting and the Calendar tab.
   const GAME_START_MONTH_INDEX = 3; // Used by civilDayOffset() so raw game day 1 remains Waxingheat 1.
-  const GAME_START_CIVIL_DAY_OFFSET = GAME_START_MONTH_INDEX * DAYS_PER_MONTH; // Used by all civil year/month derivations.
+  const GAME_START_CIVIL_DAY_OFFSET = GAME_START_MONTH_INDEX * DAYS_PER_MONTH; // Used by every civil year/month derivation.
 
-  // game.js currently advances one complete 6:00→22:00 game day in 288 real
-  // seconds. Stardew-like pacing for this game's 16 visible clock-hours is
-  // about 672 seconds, so natural time writes are scaled to 3/7 of their old
-  // rate. Explicit loads, sleeps, waits, and rollover writes bypass the shim.
-  // This keeps the change isolated here instead of adding another clock owner.
-  const BASE_DAY_LENGTH_SECONDS = 288;
-  const TARGET_DAY_LENGTH_SECONDS = 672;
-  const NATURAL_TIME_WRITE_SCALE = BASE_DAY_LENGTH_SECONDS / TARGET_DAY_LENGTH_SECONDS;
+  // game.js currently advances one represented 6:00→22:00 day in 288 real
+  // seconds. A Stardew-like pace for those 16 represented clock-hours is
+  // about 672 seconds, so natural time writes are scaled to 3/7 of the old
+  // rate. Explicit loads, sleep/wait skips, and rollover subtraction bypass
+  // this shim.
+  const BASE_DAY_LENGTH_SECONDS = 288; // Used only to derive the compatibility scale from game.js's existing private clock constant.
+  const TARGET_DAY_LENGTH_SECONDS = 672; // Used by natural-time scaling and the mobile-visible time debug report.
+  const NATURAL_TIME_WRITE_SCALE = BASE_DAY_LENGTH_SECONDS / TARGET_DAY_LENGTH_SECONDS; // Applied only to tiny positive frame-to-frame time01 writes.
   const MAX_NATURAL_TIME_WRITE = 0.02; // Used by the time01 setter to distinguish normal frame ticks from explicit jumps.
   const PLAYER_ACTION_LOCK_ID = 'player'; // Used while the sleep/wait modal or iris transition owns input.
-  const MAX_PASSAGE_HOURS = 16; // Used by the shared sleep/wait duration selector; matches the represented 6:00→22:00 clock span.
+  const MAX_PASSAGE_HOURS = 16; // Used by the shared duration selector; matches the game's represented 6:00→22:00 clock span.
 
-  // Regional seasons: Northwestern Tanka. These stay anchored to the original
-  // absolute world-day cycle even though the civil year now starts at
-  // Firstrise. That preserves the existing opening Stormtide phase/weather.
+  // Regional seasons: Northwestern Tanka. These are deliberately anchored to
+  // raw world-day weeks, not civil day-of-year, preserving the opening
+  // Stormtide phase even though Firstrise is now New Year.
   const seasons = [
-    { name: 'Stormtide', emoji: '⛈️',  rainChance: 0.35, stormChance: 0.30, startWeek: 47, endWeek: 14, grassColor: new THREE.Color().setHSL(108/360, 0.58, 0.28), grassDensity: 1.00 },
-    { name: 'Deadgrass', emoji: '☀️',  rainChance: 0.06, stormChance: 0.01, startWeek: 15, endWeek: 22, grassColor: new THREE.Color().setHSL(45/360,  0.40, 0.34), grassDensity: 0.40 },
-    { name: 'Longpour',  emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 23, endWeek: 38, grassColor: new THREE.Color().setHSL(122/360, 0.55, 0.22), grassDensity: 1.00 },
-    { name: 'Coldmuck',  emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165/360, 0.15, 0.46), grassDensity: 0.45 },
-  ];
+    { name: 'Stormtide', emoji: '⛈️', rainChance: 0.35, stormChance: 0.30, startWeek: 47, endWeek: 14, grassColor: new THREE.Color().setHSL(108 / 360, 0.58, 0.28), grassDensity: 1.00 },
+    { name: 'Deadgrass', emoji: '☀️', rainChance: 0.06, stormChance: 0.01, startWeek: 15, endWeek: 22, grassColor: new THREE.Color().setHSL(45 / 360, 0.40, 0.34), grassDensity: 0.40 },
+    { name: 'Longpour', emoji: '🌧️', rainChance: 0.70, stormChance: 0.05, startWeek: 23, endWeek: 38, grassColor: new THREE.Color().setHSL(122 / 360, 0.55, 0.22), grassDensity: 1.00 },
+    { name: 'Coldmuck', emoji: '🌬️', rainChance: 0.12, stormChance: 0.10, startWeek: 39, endWeek: 46, grassColor: new THREE.Color().setHSL(165 / 360, 0.15, 0.46), grassDensity: 0.45 },
+  ]; // Used by weather/season display and existing regional simulation callers.
 
   let _rawTimeWrite = false; // Used by setTime01Raw() so explicit time jumps are not slowed by the natural-time accessor.
   let _timeScaleInstalled = false; // Used by installNaturalTimeScale() to avoid redefining calendar.time01 on repeated init calls.
   let _timePassageUi = null; // Populated by buildTimePassageUi(); reused by both Sleep and seated Wait.
-  let _timePassageKind = null; // 'sleep'|'wait'; used by the shared modal's copy/confirm text and resource restoration.
-  let _selectedPassageHours = 1; // Used by the duration controls and live preview while the modal is open.
-  let _timePassageLock = null; // CharacterActionLocks handle held for the open modal/transition.
-  let _passagePreviewTimer = 0; // Interval id used to keep the modal's current-time line live while it is open.
+  let _timePassageKind = null; // 'sleep'|'wait'; used by shared modal copy/confirm text and sleep-only resource restoration.
+  let _selectedPassageHours = 1; // Used by duration controls and the live target-date preview.
+  let _timePassageLock = null; // CharacterActionLocks handle held while the open modal/transition owns player input.
+  let _passagePreviewTimer = 0; // Interval id used to keep the modal's current-time line live while open.
   let _syncingSeatedWait = false; // MutationObserver recursion guard while injecting Action 2's seated Wait button.
-  const _interceptedDesktopHolds = { // Used to preserve E/Q tap-vs-hold selection behavior when Sleep/Wait intercept those keys.
+  const _interceptedDesktopHolds = { // Used to preserve E/Q tap-vs-hold selection behavior while Sleep/Wait intercept those keys.
     e: { down: false, held: false, timer: 0, kind: 'sleep', arc: 'tool' },
     q: { down: false, held: false, timer: 0, kind: 'wait', arc: 'item' },
   };
 
   function debugLog(message, level = 'info') {
-    const log = window.__farmLog || ((text) => console.log(text));
-    try { log(`[time] ${message}`, level); } catch { console.log(`[time] ${message}`); }
+    const log = window.__farmLog || ((text) => console.log(text)); // Used to route time diagnostics into the existing mobile-visible debug log.
+    try { log(`[time] ${message}`, level); }
+    catch { console.log(`[time] ${message}`); }
   }
 
   function init(injectedDeps) {
     deps = injectedDeps;
     installNaturalTimeScale();
-    migrateLegacyTothalYearNumbers();
     bindMonthNav();
     installTimePassageRuntime();
     debugLog(`calendar epoch ready: game day 1 = Waxingheat 1, ${FIRST_AOT_YEAR} AoT; Firstrise 1 begins each civil year`);
+    debugLog(`Tothal cycle ${yearNumber()} = ${aotYearNumber()} AoT; deterministic y${yearNumber()} seed preserved`);
     debugLog(`natural clock target: ${TARGET_DAY_LENGTH_SECONDS}s per represented day (${NATURAL_TIME_WRITE_SCALE.toFixed(3)}x previous clock rate)`);
   }
 
@@ -91,15 +92,26 @@
     return deps.MORNING_HOUR + time01 * (deps.NIGHT_HOUR - deps.MORNING_HOUR);
   }
 
-  // ── Calendar derivations ──
-  // Civil year/month helpers use the Firstrise epoch above. Regional season
-  // helpers deliberately use seasonCycleWeek(), preserving the old phase.
+  // ── Calendar derivations ───────────────────────────────────────────
   function dayOfYear(day = deps.calendar.day) {
     return positiveModulo(civilDayOffset(day), YEAR_LENGTH_DAYS) + 1;
   }
 
+  // IMPORTANT compatibility boundary: game.js's currentTothalYear() already
+  // calls CalendarSystem.yearNumber(), and performTothalShift() includes that
+  // result in `${worldId}_tothal_y${year}_${zoneId}`. Keep yearNumber() as a
+  // 1-based Tothal generation cycle so an existing cycle-1 world still
+  // rebuilds from seed y1 after this update. Because it uses the *new civil
+  // offset*, it now increments on Firstrise 1 exactly as requested.
   function yearNumber(day = deps.calendar.day) {
-    return FIRST_AOT_YEAR + Math.floor(civilDayOffset(day) / YEAR_LENGTH_DAYS);
+    return Math.floor(civilDayOffset(day) / YEAR_LENGTH_DAYS) + 1;
+  }
+
+  // Player-facing era number. This is intentionally separate from the stable
+  // internal Tothal seed cycle above: cycle 1 displays as 1154 AoT, cycle 2
+  // as 1155 AoT, and so on.
+  function aotYearNumber(day = deps.calendar.day) {
+    return FIRST_AOT_YEAR + yearNumber(day) - 1;
   }
 
   function weekOfYear(day = deps.calendar.day) {
@@ -127,7 +139,7 @@
   }
 
   function seasonForDay(day = deps.calendar.day) {
-    const wk = seasonCycleWeek(day);
+    const wk = seasonCycleWeek(day); // Used to keep regional seasons on their pre-epoch-change phase.
     return seasons.find(season => season.startWeek <= season.endWeek
       ? (wk >= season.startWeek && wk <= season.endWeek)
       : (wk >= season.startWeek || wk <= season.endWeek)
@@ -139,8 +151,8 @@
   }
 
   function weekOfSeason(day = deps.calendar.day) {
-    const wk = seasonCycleWeek(day);
-    const season = seasonForDay(day);
+    const wk = seasonCycleWeek(day); // Used with the selected regional season's wrapped week band below.
+    const season = seasonForDay(day); // Used to translate absolute regional week into week-within-season.
     if (season.startWeek <= season.endWeek) return wk - season.startWeek + 1;
     return wk >= season.startWeek ? wk - season.startWeek + 1 : wk + (WEEKS_PER_YEAR - season.startWeek + 1);
   }
@@ -162,7 +174,7 @@
   }
 
   function ordinalSuffix(n) {
-    const v = n % 100;
+    const v = n % 100; // Used to protect 11th/12th/13th from the single-digit suffix rule.
     if (v >= 11 && v <= 13) return 'th';
     switch (n % 10) {
       case 1: return 'st';
@@ -174,23 +186,23 @@
 
   // HUD-friendly short date. Numeric dates are month/day by design.
   function formatCalendarDate(day = deps.calendar.day) {
-    const dom = dayOfMonth(day);
-    const wk = weekOfSeason(day);
-    return `${weekdayNameForDay(day)}, ${monthNumber(day)}/${dom}, ${yearNumber(day)} AoT, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
+    const dom = dayOfMonth(day); // Used in the month/day numeric date below.
+    const wk = weekOfSeason(day); // Used in the regional-season week suffix below.
+    return `${weekdayNameForDay(day)}, ${monthNumber(day)}/${dom}, ${aotYearNumber(day)} AoT, ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
   }
 
   function formatCalendarDateFull(day = deps.calendar.day) {
-    const dom = dayOfMonth(day);
-    const wk = weekOfSeason(day);
-    return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${yearNumber(day)} AoT — ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
+    const dom = dayOfMonth(day); // Used in the named civil date below.
+    const wk = weekOfSeason(day); // Used in the regional-season week suffix below.
+    return `${weekdayNameForDay(day)}, ${monthName(day)} ${dom}${ordinalSuffix(dom)}, ${aotYearNumber(day)} AoT — ${wk}${ordinalSuffix(wk)} week of ${seasonForDay(day).name}`;
   }
 
   function formatClockTime(hour = getHour()) {
-    const totalMinutes = Math.round(hour * 60);
-    const hours24 = positiveModulo(Math.floor(totalMinutes / 60), 24);
-    const minutes = positiveModulo(totalMinutes, 60);
-    const suffix = hours24 >= 12 ? 'PM' : 'AM';
-    const hours12 = ((hours24 + 11) % 12) + 1;
+    const totalMinutes = Math.round(hour * 60); // Used to avoid floating-point minute artifacts in the displayed clock.
+    const hours24 = positiveModulo(Math.floor(totalMinutes / 60), 24); // Used for AM/PM and 12-hour conversion below.
+    const minutes = positiveModulo(totalMinutes, 60); // Used for the zero-padded minute field below.
+    const suffix = hours24 >= 12 ? 'PM' : 'AM'; // Used in the human-readable time string below.
+    const hours12 = ((hours24 + 11) % 12) + 1; // Used to render midnight/noon in 12-hour form.
     return `${hours12}:${String(minutes).padStart(2, '0')} ${suffix}`;
   }
 
@@ -198,11 +210,10 @@
     return `${formatCalendarDateFull(day)} · ${formatClockTime(getHour(time01))}`;
   }
 
-  // Inverse of dayOfYear/yearNumber: returns the raw gameplay day for a
-  // civil month start. Firstrise 1, 1154 is raw day -83; Waxingheat 1, 1154
-  // is raw day 1; Firstrise 1, 1155 is raw day 253.
-  function absDayForMonthStart(year, monthIdx0) {
-    return (year - FIRST_AOT_YEAR) * YEAR_LENGTH_DAYS
+  // Inverse of dayOfYear/aotYearNumber. Firstrise 1, 1154 is raw day -83;
+  // Waxingheat 1, 1154 is raw day 1; Firstrise 1, 1155 is raw day 253.
+  function absDayForMonthStart(aotYear, monthIdx0) {
+    return (aotYear - FIRST_AOT_YEAR) * YEAR_LENGTH_DAYS
       + monthIdx0 * DAYS_PER_MONTH
       + 1
       - GAME_START_CIVIL_DAY_OFFSET;
@@ -213,33 +224,34 @@
   }
 
   function nextCivilYearStartDay(day = deps.calendar.day) {
-    const currentYearStart = absDayForMonthStart(yearNumber(day), 0);
-    return currentYearStart > day ? currentYearStart : absDayForMonthStart(yearNumber(day) + 1, 0);
+    const displayYear = aotYearNumber(day); // Used to resolve this civil year's Firstrise boundary in raw game-day space.
+    const currentYearStart = absDayForMonthStart(displayYear, 0); // Used to decide whether this year's boundary is still ahead or already passed.
+    return currentYearStart > day ? currentYearStart : absDayForMonthStart(displayYear + 1, 0);
   }
 
-  // ── Natural clock rate ──
+  // ── Natural clock rate ─────────────────────────────────────────────
   // game.js owns `calendar.time01 += dt / DAY_LENGTH_SECONDS`; because that
   // state object is injected here, a narrow accessor can scale only those
   // tiny frame-to-frame positive writes. Loads happen before
   // __hobunjiGameStarted, while explicit skips use setTime01Raw().
   function installNaturalTimeScale() {
     if (_timeScaleInstalled || !deps?.calendar) return;
-    const calendar = deps.calendar;
-    let value = Number(calendar.time01) || 0; // Backing value read by the accessor and written by natural/explicit clock updates.
+    const calendar = deps.calendar; // Used as the accessor target shared with game.js.
+    let value = Number(calendar.time01) || 0; // Backing value read/written by the accessor below.
     Object.defineProperty(calendar, 'time01', {
       configurable: true,
       enumerable: true,
       get() { return value; },
       set(nextValue) {
-        const numeric = Number(nextValue);
+        const numeric = Number(nextValue); // Used as the normalized candidate time written by game.js or a loader.
         if (!Number.isFinite(numeric)) return;
-        const delta = numeric - value;
+        const delta = numeric - value; // Used to distinguish natural frame increments from explicit jumps/wrap subtraction.
         const isNaturalFrameWrite = !_rawTimeWrite
           && window.__hobunjiGameStarted === true
           && delta > 0
           && delta <= MAX_NATURAL_TIME_WRITE;
         const passageOwnsClock = !!_timePassageKind && !!_timePassageUi
-          && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Used to pause natural drift while choosing/transitioning without blocking explicit rollover writes.
+          && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Used to freeze drift while choosing/transitioning without blocking explicit rollover writes.
         value = isNaturalFrameWrite
           ? (passageOwnsClock ? value : value + delta * NATURAL_TIME_WRITE_SCALE)
           : numeric;
@@ -255,42 +267,14 @@
     finally { _rawTimeWrite = false; }
   }
 
-  function migrateLegacyTothalYearNumbers() {
-    // Previous builds saved Tothal-year IDs as 1, 2, 3... because
-    // CalendarSystem.yearNumber() used the raw gameplay epoch. Convert those
-    // IDs in place before game.js performs its boot-time checkTothalShift(),
-    // preventing this display-era migration from masquerading as a real
-    // mid-year Tothal Shift for an existing world.
-    try {
-      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-      if (!Array.isArray(meta?.worlds)) return 0;
-      let migrated = 0; // Count used only for the mobile-visible time debug log below.
-      for (const world of meta.worlds) {
-        const oldYear = Number(world?.lastTothalYear);
-        if (!Number.isFinite(oldYear) || oldYear < 1 || oldYear >= FIRST_AOT_YEAR) continue;
-        const savedDay = Number(world?.calendar?.day);
-        world.lastTothalYear = yearNumber(Number.isFinite(savedDay) ? savedDay : 1);
-        migrated++;
-      }
-      if (migrated) {
-        localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        debugLog(`migrated ${migrated} saved Tothal year ${migrated === 1 ? 'id' : 'ids'} to AoT numbering without shifting terrain`);
-      }
-      return migrated;
-    } catch (error) {
-      debugLog(`Tothal year migration skipped: ${error?.message || error}`, 'warn');
-      return 0;
-    }
-  }
-
   function activeClockHours() {
     return deps.NIGHT_HOUR - deps.MORNING_HOUR;
   }
 
   function previewAfterHours(hours, day = deps.calendar.day, time01 = deps.calendar.time01) {
-    const safeHours = Math.max(0, Number(hours) || 0);
-    const total = time01 + safeHours / activeClockHours();
-    const dayOffset = Math.floor(total);
+    const safeHours = Math.max(0, Number(hours) || 0); // Used to reject negative/invalid passage durations.
+    const total = time01 + safeHours / activeClockHours(); // Used to split the requested passage into day rollover(s) plus within-day remainder.
+    const dayOffset = Math.floor(total); // Used to advance the raw world day when the represented clock crosses its end.
     return {
       day: day + dayOffset,
       time01: positiveModulo(total, 1),
@@ -298,13 +282,13 @@
     };
   }
 
-  // ── Calendar tab ──
-  let calViewYear = FIRST_AOT_YEAR; // Current Calendar-tab civil year; reset to today whenever the tab opens.
+  // ── Calendar tab ───────────────────────────────────────────────────
+  let calViewYear = FIRST_AOT_YEAR; // Current Calendar-tab AoT year; reset to today whenever the tab opens.
   let calViewMonthIndex = 0; // Current Calendar-tab month index; reset to today whenever the tab opens.
 
   function renderCalendarPanel() {
     if (!deps.calToday) return;
-    calViewYear = yearNumber(deps.calendar.day);
+    calViewYear = aotYearNumber(deps.calendar.day);
     calViewMonthIndex = monthIndex(deps.calendar.day);
     deps.calToday.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
     renderCalendarMonthView();
@@ -312,25 +296,25 @@
 
   function renderCalendarMonthView() {
     if (!deps.calWeeks || !deps.calMonthTitle) return;
-    const monthStartDay = absDayForMonthStart(calViewYear, calViewMonthIndex);
+    const monthStartDay = absDayForMonthStart(calViewYear, calViewMonthIndex); // Used as the raw day anchor for all 28 cells below.
     deps.calMonthTitle.textContent = `${MONTH_NAMES[calViewMonthIndex]} — ${calViewYear} AoT`;
     if (deps.calPrevMonth) deps.calPrevMonth.disabled = (calViewYear === FIRST_AOT_YEAR && calViewMonthIndex === 0);
 
     deps.calWeeks.innerHTML = '';
     for (let w = 0; w < DAYS_PER_MONTH / DAYS_PER_WEEK; w++) {
-      const weekStartDay = monthStartDay + w * DAYS_PER_WEEK;
-      const season = seasonForDay(weekStartDay);
-      const row = document.createElement('div');
+      const weekStartDay = monthStartDay + w * DAYS_PER_WEEK; // Used as the row's first raw day and regional-season lookup anchor.
+      const season = seasonForDay(weekStartDay); // Used in the row's season/week label.
+      const row = document.createElement('div'); // Calendar week row container appended below.
       row.className = 'cal-week-row';
-      const label = document.createElement('div');
+      const label = document.createElement('div'); // Season/week label paired with this seven-day row.
       label.className = 'cal-week-label';
       label.innerHTML = `${season.emoji} ${season.name}<br>Week ${weekOfSeason(weekStartDay)}`;
       row.appendChild(label);
-      const daysWrap = document.createElement('div');
+      const daysWrap = document.createElement('div'); // Seven-day button container for this row.
       daysWrap.className = 'cal-week-days';
       for (let i = 0; i < DAYS_PER_WEEK; i++) {
-        const d = weekStartDay + i;
-        const cell = document.createElement('button');
+        const d = weekStartDay + i; // Raw day represented by this individual calendar cell.
+        const cell = document.createElement('button'); // Non-mutating calendar day display button.
         cell.type = 'button';
         cell.className = 'cal-day-btn' + (d === deps.calendar.day ? ' today' : '');
         cell.innerHTML = `<span>${WEEKDAY_NAMES[i]}</span><span class="cal-day-num">${dayOfMonth(d)}</span>`;
@@ -357,7 +341,7 @@
     });
   }
 
-  // ── Shared Sleep / seated Wait menu ──
+  // ── Shared Sleep / seated Wait menu ───────────────────────────────
   function installTimePassageRuntime() {
     buildTimePassageUi();
     installActionInterceptors();
@@ -367,7 +351,7 @@
   function buildTimePassageUi() {
     if (_timePassageUi || !document.body) return;
     if (!document.getElementById('hobunji-time-passage-style')) {
-      const style = document.createElement('style'); // Injected once; keeps the time passage UI self-contained with its owning system.
+      const style = document.createElement('style'); // Injected once so the time-passage UI stays owned by its existing calendar module.
       style.id = 'hobunji-time-passage-style';
       style.textContent = `
         .time-passage-backdrop{position:fixed;inset:0;z-index:52000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(7,8,10,.72);backdrop-filter:blur(2px);font-family:"Pixelify Sans",system-ui,sans-serif;color:#f4efe4}
@@ -423,7 +407,7 @@
       </div>`;
     document.body.appendChild(backdrop);
 
-    const iris = document.createElement('div'); // Full-viewport SVG mask used by the close-to-a-point / reopen movie transition.
+    const iris = document.createElement('div'); // Full-viewport SVG mask used by the close-to-a-point/reopen movie transition.
     iris.className = 'time-iris-overlay';
     iris.setAttribute('aria-hidden', 'true');
     iris.innerHTML = `
@@ -450,7 +434,7 @@
       irisBase: iris.querySelector('#timeIrisMaskBase'),
       irisHole: iris.querySelector('#timeIrisHole'),
       irisBlack: iris.querySelector('#timeIrisBlack'),
-    };
+    }; // Reused by all subsequent open/close/preview/transition operations.
 
     _timePassageUi.slider.addEventListener('input', event => setSelectedPassageHours(event.target.value));
     _timePassageUi.minus.addEventListener('click', () => setSelectedPassageHours(_selectedPassageHours - 1));
@@ -484,7 +468,7 @@
 
   function openTimePassage(kind = 'wait') {
     buildTimePassageUi();
-    if (!_timePassageUi || !_timePassageUi.backdrop) return false;
+    if (!_timePassageUi?.backdrop) return false;
     _timePassageKind = kind === 'sleep' ? 'sleep' : 'wait';
     _selectedPassageHours = _timePassageKind === 'sleep' ? 8 : 1;
     setSelectedPassageHours(_selectedPassageHours);
@@ -513,7 +497,7 @@
     if (_timePassageUi) {
       _timePassageUi.slider.value = String(_selectedPassageHours);
       _timePassageUi.hours.textContent = `${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
-      const verb = _timePassageKind === 'sleep' ? 'Sleep' : 'Wait';
+      const verb = _timePassageKind === 'sleep' ? 'Sleep' : 'Wait'; // Used in the confirm button's contextual label.
       _timePassageUi.confirm.textContent = `${verb} ${_selectedPassageHours} ${_selectedPassageHours === 1 ? 'hour' : 'hours'}`;
     }
     refreshTimePassagePreview();
@@ -521,15 +505,15 @@
 
   function refreshTimePassagePreview() {
     if (!_timePassageUi || !_timePassageUi.backdrop.classList.contains('open')) return;
-    const target = previewAfterHours(_selectedPassageHours);
+    const target = previewAfterHours(_selectedPassageHours); // Used to render the live target date/time card.
     _timePassageUi.current.textContent = formatCalendarDateTimeFull(deps.calendar.day, deps.calendar.time01);
     _timePassageUi.preview.textContent = formatCalendarDateTimeFull(target.day, target.time01);
   }
 
   async function confirmTimePassage() {
     if (!_timePassageKind || !_timePassageUi) return;
-    const kind = _timePassageKind;
-    const hours = _selectedPassageHours;
+    const kind = _timePassageKind; // Captured because the shared modal state is cleared after transition completion.
+    const hours = _selectedPassageHours; // Captured so the selected duration cannot change during the iris transition.
     _timePassageUi.confirm.disabled = true;
     closeTimePassageMenu({ keepLock: true, keepKind: true });
     try {
@@ -554,30 +538,32 @@
   }
 
   async function advanceBySelectedHours(hours) {
-    const target = previewAfterHours(hours);
-    const currentDay = deps.calendar.day;
-    const dayDelta = Math.max(0, target.day - currentDay);
+    const target = previewAfterHours(hours); // Used as the exact end state after any private game.js day-rollover work finishes.
+    const currentDay = deps.calendar.day; // Used to determine whether the selected duration crosses the represented-day boundary.
+    const dayDelta = Math.max(0, target.day - currentDay); // Used to choose the fast same-day path below.
     if (dayDelta === 0) {
       setTime01Raw(target.time01);
       return;
     }
 
-    // Let game.js perform its own private advanceDay() work instead of
+    // Let game.js perform its own private advanceDay() work rather than
     // duplicating crop/weather/Tothal/respawn logic here. A temporary time01
-    // value >1 causes one normal rollover per frame while the iris is closed.
+    // > 1 causes the normal game loop to execute one rollover while the iris
+    // is fully closed. MAX_PASSAGE_HOURS is one represented day, so at most
+    // one rollover is required per confirmation.
     setTime01Raw(deps.calendar.time01 + Number(hours) / activeClockHours());
-    const timeoutAt = performance.now() + 1800;
+    const timeoutAt = performance.now() + 1800; // Used to fail visibly instead of hanging the black iris forever if the private rollover loop stops.
     while ((deps.calendar.day < target.day || deps.calendar.time01 >= 1) && performance.now() < timeoutAt) {
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
     if (deps.calendar.day < target.day) {
       throw new Error(`day rollover stalled at raw day ${deps.calendar.day}; expected ${target.day}`);
     }
-    setTime01Raw(target.time01); // Remove the tiny frame dt accumulated during the masked rollover.
+    setTime01Raw(target.time01); // Removes tiny frame dt accumulated while the masked rollover completed.
   }
 
   function restorePlayerAfterSleep() {
-    const player = window.PlayerSocialPoses?.getPlayerEntity?.();
+    const player = window.PlayerSocialPoses?.getPlayerEntity?.(); // Uses the existing player-runtime boundary rather than duplicating private game.js player state.
     if (!player) {
       debugLog('sleep completed but player runtime was unavailable for health/stamina restoration', 'warn');
       return;
@@ -587,11 +573,11 @@
   }
 
   function persistCalendarSnapshot() {
-    const worldId = window.__hobunjiPlayerProfile?.worldId;
+    const worldId = window.__hobunjiPlayerProfile?.worldId; // Used to update only the active world's calendar record after a same-day skip.
     if (!worldId) return;
     try {
-      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-      const world = (meta?.worlds || []).find(entry => entry.id === worldId);
+      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Used to preserve every non-calendar save field while updating this world.
+      const world = (meta?.worlds || []).find(entry => entry.id === worldId); // Active world record receiving the time snapshot below.
       if (!world) return;
       world.calendar = {
         day: deps.calendar.day,
@@ -610,11 +596,11 @@
 
   function runIrisTransition(onClosed) {
     if (!_timePassageUi?.iris) return Promise.resolve().then(onClosed);
-    const ui = _timePassageUi;
-    const width = Math.max(1, window.innerWidth);
-    const height = Math.max(1, window.innerHeight);
-    const maxRadius = Math.hypot(width, height) * 0.55 + 4;
-    const minRadius = 2;
+    const ui = _timePassageUi; // Used throughout this transition to avoid repeatedly dereferencing shared mutable UI state.
+    const width = Math.max(1, window.innerWidth); // Used to size the SVG mask to the current viewport.
+    const height = Math.max(1, window.innerHeight); // Used to size the SVG mask to the current viewport.
+    const maxRadius = Math.hypot(width, height) * 0.55 + 4; // Used as a hole large enough to reveal every viewport corner before/after the iris.
+    const minRadius = 2; // Used to leave the requested tiny final point before the scene/time changes.
     ui.irisSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     for (const rect of [ui.irisBase, ui.irisBlack]) {
       rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
@@ -625,9 +611,9 @@
     ui.irisHole.setAttribute('r', String(maxRadius));
     ui.iris.style.display = 'block';
 
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-    const closeMs = reduced ? 120 : 480;
-    const openMs = reduced ? 140 : 560;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; // Used to shorten rather than remove the transition for reduced-motion users.
+    const closeMs = reduced ? 120 : 480; // Used for the black iris-in duration.
+    const openMs = reduced ? 140 : 560; // Used for the black iris-out duration after the scene has changed.
     return animateIrisRadius(maxRadius, minRadius, closeMs)
       .then(() => Promise.resolve().then(onClosed))
       .then(() => new Promise(resolve => setTimeout(resolve, reduced ? 20 : 90)))
@@ -637,10 +623,10 @@
 
   function animateIrisRadius(from, to, durationMs) {
     return new Promise(resolve => {
-      const start = performance.now();
+      const start = performance.now(); // Used to normalize each animation frame to 0..1 progress.
       const step = now => {
-        const t = Math.max(0, Math.min(1, (now - start) / Math.max(1, durationMs)));
-        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const t = Math.max(0, Math.min(1, (now - start) / Math.max(1, durationMs))); // Linear progress used to derive the eased radius below.
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // Smooth in/out curve for the classic movie-iris feel.
         _timePassageUi.irisHole.setAttribute('r', String(from + (to - from) * eased));
         if (t < 1) requestAnimationFrame(step);
         else resolve();
@@ -650,7 +636,7 @@
   }
 
   function actionButtonFromTarget(target) {
-    const button = target?.closest?.('button');
+    const button = target?.closest?.('button'); // Used to normalize taps on nested icon/label spans back to their action button.
     return button && /^btn(?:Item)?Action\d+$/.test(button.id) ? button : null;
   }
 
@@ -668,7 +654,7 @@
   }
 
   function isSeatedReady() {
-    const stand = document.getElementById('btnAction1');
+    const stand = document.getElementById('btnAction1'); // Used as the authoritative DOM signal that game.js's private sitInteraction is active.
     return !!stand
       && !stand.classList.contains('abt-hidden')
       && stand.dataset.action === 'obj_stand'
@@ -686,7 +672,7 @@
   }
 
   function startInterceptedDesktopHold(key, kind) {
-    const state = _interceptedDesktopHolds[key];
+    const state = _interceptedDesktopHolds[key]; // Used to mirror game.js's existing tap-vs-hold state for this contextual interception.
     if (!state || state.down) return;
     state.down = true;
     state.held = false;
@@ -700,11 +686,11 @@
   }
 
   function finishInterceptedDesktopHold(key) {
-    const state = _interceptedDesktopHolds[key];
+    const state = _interceptedDesktopHolds[key]; // Used to decide whether release means contextual tap or close held selector.
     if (!state?.down) return false;
     state.down = false;
     if (state.timer) { clearTimeout(state.timer); state.timer = 0; }
-    const wasHeld = state.held;
+    const wasHeld = state.held; // Used to preserve selection-arc close behavior instead of opening Sleep/Wait after a hold.
     state.held = false;
     if (wasHeld) window._desktopSelectionArc?.close?.();
     else openTimePassage(state.kind);
@@ -726,9 +712,9 @@
     document.documentElement.dataset.timePassageInterceptors = '1';
 
     const interceptActionPointer = event => {
-      const button = actionButtonFromTarget(event.target);
-      const wantsWait = button?.dataset.action === 'calendar_wait';
-      const wantsSleep = buttonShowsSleep(button);
+      const button = actionButtonFromTarget(event.target); // Action-arch button receiving this captured pointer event.
+      const wantsWait = button?.dataset.action === 'calendar_wait'; // Used to route the injected seated Action 2 to Wait.
+      const wantsSleep = buttonShowsSleep(button); // Used to route the existing bed interaction to the new duration menu.
       if (!wantsWait && !wantsSleep) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -738,15 +724,15 @@
     document.addEventListener('pointerup', interceptActionPointer, true);
     document.addEventListener('click', interceptActionPointer, true);
 
-    // Desktop E/Q normally distinguish a tap action from a 350ms hold that
-    // opens the tool/item selection arc. When the contextual action is Sleep
-    // or seated Wait, own that same tap-vs-hold sequence here: a tap opens the
-    // time menu, while a hold still opens the exact existing selection arc.
+    // Desktop E/Q normally distinguish a tap action from a hold that opens
+    // the tool/item selection arc. Own the same tap-vs-hold sequence only in
+    // bed/seated contexts so a tap opens the time menu while a hold preserves
+    // the existing selector behavior.
     window.addEventListener('keydown', event => {
       if (_timePassageUi?.backdrop.classList.contains('open') || event.repeat) return;
-      const key = event.code === 'KeyE' ? 'e' : event.code === 'KeyQ' ? 'q' : null;
+      const key = event.code === 'KeyE' ? 'e' : event.code === 'KeyQ' ? 'q' : null; // Contextual key eligible for interception below.
       if (!key) return;
-      const kind = interceptedDesktopContext(key);
+      const kind = interceptedDesktopContext(key); // Sleep/Wait context resolved from the live action arch.
       if (!kind) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -754,7 +740,7 @@
     }, true);
 
     window.addEventListener('keyup', event => {
-      const key = event.code === 'KeyE' ? 'e' : event.code === 'KeyQ' ? 'q' : null;
+      const key = event.code === 'KeyE' ? 'e' : event.code === 'KeyQ' ? 'q' : null; // Key whose captured hold state may need completion.
       if (!key || !_interceptedDesktopHolds[key].down) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -763,11 +749,11 @@
 
     // The normal wheel handler checks game.js's private hold state, which is
     // intentionally bypassed above. Mirror its wheel-to-selection behavior so
-    // holding E/Q over a bed/seat remains a complete, regression-free selector.
+    // holding E/Q over a bed/seat remains a complete selector.
     window.addEventListener('wheel', event => {
-      const key = _interceptedDesktopHolds.q.down ? 'q' : _interceptedDesktopHolds.e.down ? 'e' : null;
+      const key = _interceptedDesktopHolds.q.down ? 'q' : _interceptedDesktopHolds.e.down ? 'e' : null; // Currently captured held selector, if any.
       if (!key) return;
-      const state = _interceptedDesktopHolds[key];
+      const state = _interceptedDesktopHolds[key]; // Hold/arc state mutated below to enter selector mode on first wheel tick.
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!state.held) {
@@ -776,7 +762,7 @@
         if (state.arc === 'item') window._desktopSelectionArc?.openItem?.();
         else window._desktopSelectionArc?.openTool?.();
       }
-      const direction = event.deltaY > 0 ? 1 : -1; // Used below with the same sign convention as game.js's held-wheel handler.
+      const direction = event.deltaY > 0 ? 1 : -1; // Same sign convention as game.js's existing held-wheel selector.
       if (state.arc === 'item') window._desktopSelectionArc?.scrollItem?.(-direction);
       else window._desktopSelectionArc?.scrollTool?.(-direction);
     }, { capture: true, passive: false });
@@ -794,10 +780,10 @@
   }
 
   function installSeatedWaitAction() {
-    const stack = document.getElementById('actionStack') || document.body;
+    const stack = document.getElementById('actionStack') || document.body; // Mutation root used to notice game.js refreshing the seated action arch.
     if (!stack || stack.dataset.calendarWaitObserved === '1') return;
     stack.dataset.calendarWaitObserved = '1';
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(() => { // Keeps Action 2 present after game.js re-renders its private sitInteraction-only Stand layout.
       if (_syncingSeatedWait) return;
       queueMicrotask(syncSeatedWaitButton);
     });
@@ -807,16 +793,16 @@
 
   function syncSeatedWaitButton() {
     if (_syncingSeatedWait) return;
-    const stand = document.getElementById('btnAction1');
-    const wait = document.getElementById('btnAction2');
+    const stand = document.getElementById('btnAction1'); // Existing seated Stand slot used as the private sitInteraction proxy.
+    const wait = document.getElementById('btnAction2'); // Existing Action 2 slot repurposed only while the Stand proxy is present.
     if (!stand || !wait) return;
     _syncingSeatedWait = true;
     try {
-      const seated = !stand.classList.contains('abt-hidden') && stand.dataset.action === 'obj_stand';
+      const seated = !stand.classList.contains('abt-hidden') && stand.dataset.action === 'obj_stand'; // Used to decide whether Wait should occupy Action 2.
       if (seated) {
-        const blocked = stand.classList.contains('blocked'); // Used below to keep Wait disabled during the seat-in transition exactly when Stand is disabled.
-        const keyBadge = window.matchMedia?.('(pointer: fine)')?.matches ? '<span class="abt-key">[Q]</span>' : '';
-        const waitHtml = `${keyBadge}<span class="abt-icon">⏳</span><span class="abt-label">Wait</span>`; // Used to avoid rewriting the DOM when game.js has not changed the injected slot.
+        const blocked = stand.classList.contains('blocked'); // Keeps Wait disabled during the seat-in transition exactly when Stand is disabled.
+        const keyBadge = window.matchMedia?.('(pointer: fine)')?.matches ? '<span class="abt-key">[Q]</span>' : ''; // Desktop-only badge matching the existing arch format.
+        const waitHtml = `${keyBadge}<span class="abt-icon">⏳</span><span class="abt-label">Wait</span>`; // Avoids unnecessary DOM rewrites when game.js has not replaced the injected slot.
         if (wait.dataset.timePassageInjected !== '1') wait.dataset.timePassageInjected = '1';
         if (wait.dataset.action !== 'calendar_wait') wait.dataset.action = 'calendar_wait';
         if (wait.classList.contains('abt-hidden')) wait.classList.remove('abt-hidden');
@@ -838,14 +824,15 @@
   }
 
   function timeDebugSnapshot() {
-    const nextShiftDay = nextCivilYearStartDay();
-    const target = previewAfterHours(_selectedPassageHours);
+    const nextShiftDay = nextCivilYearStartDay(); // Raw day used by the next-Tothal-Shift debug fields below.
+    const target = previewAfterHours(_selectedPassageHours); // Current modal selection used by the preview debug field below.
     return {
       rawDay: deps?.calendar?.day ?? null,
       time01: deps?.calendar?.time01 ?? null,
       shortDate: deps ? formatCalendarDate() : null,
       fullDateTime: deps ? formatCalendarDateTimeFull() : null,
-      civilYear: deps ? yearNumber() : null,
+      aotYear: deps ? aotYearNumber() : null,
+      tothalCycle: deps ? yearNumber() : null,
       civilDayOfYear: deps ? dayOfYear() : null,
       monthNumber: deps ? monthNumber() : null,
       monthName: deps ? monthName() : null,
@@ -855,6 +842,7 @@
       isFirstriseNewYear: deps ? isCivilYearStart() : null,
       nextTothalShiftRawDay: deps ? nextShiftDay : null,
       nextTothalShiftDate: deps ? formatCalendarDateFull(nextShiftDay) : null,
+      nextTothalSeedCycle: deps ? yearNumber(nextShiftDay) : null,
       naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS,
       naturalClockScale: NATURAL_TIME_WRITE_SCALE,
       modalKind: _timePassageKind,
@@ -868,11 +856,11 @@
   }
 
   async function copyTimeDebug() {
-    const text = `Time Debug\n${JSON.stringify(timeDebugSnapshot(), null, 2)}`;
+    const text = `Time Debug\n${JSON.stringify(timeDebugSnapshot(), null, 2)}`; // Mobile-friendly plain-text report copied/prompted below.
     try {
       await navigator.clipboard.writeText(text);
       if (_timePassageUi?.debug) {
-        const oldText = _timePassageUi.debug.textContent;
+        const oldText = _timePassageUi.debug.textContent; // Used to restore the button label after transient copy feedback.
         _timePassageUi.debug.textContent = 'Copied';
         setTimeout(() => { if (_timePassageUi?.debug) _timePassageUi.debug.textContent = oldText; }, 1200);
       }
@@ -886,7 +874,8 @@
     init,
     getHour,
     dayOfYear,
-    yearNumber,
+    yearNumber, // Existing game.js Tothal integration: stable 1-based deterministic generation cycle, now rolling on Firstrise 1.
+    aotYearNumber,
     weekOfYear,
     seasonCycleWeek,
     monthIndex,
