@@ -35,12 +35,48 @@
   // placement. Built in init() (not at module-load time) since it needs
   // deps.TileType.
   let deps = null, blockedTileTypes;
+  let _sharedFarmStructureAssetPromise = null; // Used to make the real brick/shingle upgrade one shared readiness boundary for barns and the player house.
+
+  function _applySharedFarmStructureTints() {
+    if (!deps?.houseWallBuilder || typeof HousePieceGen === 'undefined') return;
+    deps.houseWallBuilder.tintDefaultGlb?.('assets/textures/carved_smooth.png', '#4d4d4d');
+    HousePieceGen.tintShingleMaterial?.('assets/textures/carved_smooth.png', '#7d7355');
+  }
+
+  // WallBuilder intentionally lets structures render immediately with a brown
+  // placeholder when Roughbrick1.glb is still loading. The old farm path only
+  // rebuilt the player house when the *shingle* GLB became ready, so if shingles
+  // won that race the rebuilt house permanently retained placeholder bricks.
+  // Treat both shared structure assets as one boundary, queue the texture tint
+  // before loading, then rebuild every already-built farm structure once both
+  // real templates are available. Town/zone buildings already do the same thing.
+  function _ensureSharedFarmStructureAssets() {
+    if (_sharedFarmStructureAssetPromise || !deps?.houseWallBuilder || typeof HousePieceGen === 'undefined') return _sharedFarmStructureAssetPromise;
+    _applySharedFarmStructureTints();
+    _sharedFarmStructureAssetPromise = Promise.all([
+      deps.houseWallBuilder.loadDefaultGlb(),
+      HousePieceGen.loadShingleGlb('assets/models/'),
+    ]).then(() => {
+      _applySharedFarmStructureTints();
+      for (const entry of deps.getFarmBuildings()) {
+        if (entry.stage === 'built') _buildStructureMesh(entry);
+      }
+      window.HousePieces?.rebuildStructureMeshes?.();
+      deps.debugLog?.('Farm structures: upgraded to textured brick + shingle assets.');
+    }).catch(error => {
+      _sharedFarmStructureAssetPromise = null;
+      deps.debugLog?.(`Farm structure asset upgrade failed: ${error?.message || error}`, 'warn');
+    });
+    return _sharedFarmStructureAssetPromise;
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     blockedTileTypes = new Set([
       deps.TileType.TRENCH, deps.TileType.TILLED, deps.TileType.RAISED, deps.TileType.PADDY,
       deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.WATERFALL, deps.TileType.RAMP,
     ]);
+    _ensureSharedFarmStructureAssets();
   }
 
   function rectsOverlap(aCol, aRow, aW, aH, bCol, bRow, bW, bH) {
