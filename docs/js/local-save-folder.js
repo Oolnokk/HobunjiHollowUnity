@@ -1,31 +1,22 @@
-// Local Save Folder — an optional, best-effort mirror of hobunjiSaveMeta
-// (the single localStorage blob every world/character save already lives
-// in — see onboarding.js's SAVE_META_KEY, { version, characters: [...],
-// worlds: [...] }) out to a real folder on disk via the File System Access
-// API (Chromium-only; see isSupported()). localStorage stays the actual
-// source of truth the game reads/writes during play — this only mirrors it
-// out to disk periodically and on demand, as a portable/browsable backup,
-// and can import it back.
+// Local Save Folder — an optional real-folder save backend for hobunjiSaveMeta.
+//
+// Runtime saves still use localStorage because the rest of the game reads and
+// writes hobunjiSaveMeta synchronously. Once a folder is connected, however,
+// that folder is authoritative at connection/startup: existing folder data is
+// loaded into localStorage BEFORE periodic browser -> folder mirroring begins.
+// A genuinely new/empty folder is initialized from the browser save instead.
+// This prevents Connect/Reconnect from overwriting a portable save before the
+// game has had a chance to restore it.
 //
 // Each character and world is written as its OWN file (characters/<slug>-
 // <id>.json, worlds/<slug>-<id>.json — see writeEntities), not one combined
-// blob, so they're individually browsable/copyable/diffable outside the
-// game. A small top-level manifest.json records the save-meta version plus
-// counts for humans browsing the folder; loadFromFolder re-derives
-// characters/worlds by re-scanning the two subfolders directly rather than
-// trusting the manifest for content.
+// blob, so they're individually browsable/copyable/diffable outside the game.
+// A small top-level manifest.json records the save-meta version plus counts.
+// Folder loads re-scan the two subfolders directly rather than trusting the
+// manifest for content.
 //
-// What's cached, and where: ONLY the chosen folder's own
-// FileSystemDirectoryHandle, in a tiny dedicated IndexedDB database
-// (see DB_NAME/STORE below) — not the world/character save data itself,
-// which already lives in localStorage and stays there. A handle is a
-// structured-cloneable object IndexedDB can persist across sessions
-// (localStorage can't hold one); the browser still requires re-confirming
-// permission each session (see ensurePermission), which is why status can
-// be 'needs-permission' even with a remembered folder. Re-picking a folder
-// — whether none was chosen before, or the player wants to point somewhere
-// else entirely ("correct the directory") — is the same chooseFolder call
-// either way; see changeFolder.
+// Only the chosen FileSystemDirectoryHandle is cached in IndexedDB. Save data
+// itself lives in localStorage during runtime and in the selected real folder.
 (() => {
   "use strict";
   const DB_NAME = 'hobunji-local-save-folder';
@@ -89,6 +80,7 @@
   let _state = 'unsupported';
   let _lastError = '';
   let _lastSyncedAt = 0;
+  let _lastAction = 'none'; // Shown through getStatus() so the save UI/debug tools can report the last folder decision.
   let _autoTimer = null;
   const _listeners = new Set();
 
@@ -99,6 +91,7 @@
       folderName: _handle?.name || null,
       lastSyncedAt: _lastSyncedAt || null,
       lastError: _lastError || null,
+      lastAction: _lastAction,
     };
   }
 
@@ -118,66 +111,6 @@
   }
   function stopAutoSync() {
     if (_autoTimer) { clearInterval(_autoTimer); _autoTimer = null; }
-  }
-
-  async function init() {
-    if (!isSupported()) { _state = 'unsupported'; notify(); return; }
-    try {
-      const saved = await idbGet(HANDLE_KEY);
-      if (!saved) { _state = 'not-configured'; notify(); return; }
-      _handle = saved;
-      _state = (await ensurePermission(_handle, false)) ? 'ready' : 'needs-permission';
-    } catch (e) {
-      _state = 'error'; _lastError = String(e?.message || e);
-    }
-    notify();
-    if (_state === 'ready') startAutoSync();
-  }
-
-  // Must run from a real user gesture (a button click) — the File System
-  // Access API refuses to prompt otherwise.
-  async function chooseFolder() {
-    if (!isSupported()) return getStatus();
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      _handle = handle;
-      await idbSet(HANDLE_KEY, handle);
-      _state = 'ready'; _lastError = '';
-      notify();
-      await syncNow();
-      startAutoSync();
-    } catch (e) {
-      if (e?.name !== 'AbortError') { _state = 'error'; _lastError = String(e?.message || e); notify(); }
-    }
-    return getStatus();
-  }
-
-  // Same call as chooseFolder, kept as a distinctly-named action so the
-  // settings UI can offer "Change Folder" once one's already configured,
-  // without implying anything different happens under the hood.
-  const changeFolder = chooseFolder;
-
-  // Re-requests permission on the already-remembered handle without
-  // re-opening the picker — the normal path back to 'ready' after a fresh
-  // page load (browsers don't remember a granted permission across
-  // sessions, only the handle itself).
-  async function reconnect() {
-    if (!_handle) return chooseFolder();
-    try {
-      const granted = await ensurePermission(_handle, true);
-      _state = granted ? 'ready' : 'needs-permission';
-      notify();
-      if (granted) { await syncNow(); startAutoSync(); }
-    } catch (e) { _state = 'error'; _lastError = String(e?.message || e); notify(); }
-    return getStatus();
-  }
-
-  async function forget() {
-    stopAutoSync();
-    _handle = null; _state = 'not-configured'; _lastError = ''; _lastSyncedAt = 0;
-    try { await idbDelete(HANDLE_KEY); } catch {}
-    notify();
-    return getStatus();
   }
 
   async function writeJsonFile(dirHandle, filename, data) {
@@ -218,6 +151,52 @@
     return entities;
   }
 
+  function normalizeMetaForCompare(meta) {
+    // Sorted copies keep folder directory iteration order from causing false conflicts/reload loops.
+    const byId = (items) => [...(items || [])].sort((a, b) => String(a?.id || '').localeCompare(String(b?.id || '')));
+    return {
+      version: meta?.version ?? 1,
+      characters: byId(meta?.characters),
+      worlds: byId(meta?.worlds),
+    };
+  }
+
+  function saveMetaMatches(a, b) {
+    return JSON.stringify(normalizeMetaForCompare(a)) === JSON.stringify(normalizeMetaForCompare(b));
+  }
+
+  function readBrowserMeta() {
+    const raw = localStorage.getItem(SAVE_META_KEY);
+    if (raw == null) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  async function readFolderSnapshot() {
+    // Entity files are the actual folder save payload; manifest only supplies version/time metadata.
+    const characters = await readEntities(CHARACTERS_DIR);
+    const worlds = await readEntities(WORLDS_DIR);
+    let manifest = null;
+    let manifestExists = false; // Distinguishes a deliberately initialized empty save from a brand-new folder.
+    try {
+      const manifestFile = await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile();
+      manifestExists = true;
+      manifest = JSON.parse(await manifestFile.text());
+    } catch (e) {
+      if (e?.name !== 'NotFoundError') {
+        throw new Error('Could not read manifest.json: ' + String(e?.message || e));
+      }
+    }
+    return {
+      exists: manifestExists || characters.length > 0 || worlds.length > 0,
+      savedAt: Number(manifest?.savedAt) || 0,
+      meta: {
+        version: manifest?.version ?? 1,
+        characters,
+        worlds,
+      },
+    };
+  }
+
   async function syncNow() {
     if (_state !== 'ready' || !_handle) return getStatus();
     try {
@@ -226,58 +205,166 @@
         const meta = JSON.parse(raw);
         await writeEntities(CHARACTERS_DIR, meta.characters || [], 'nickname');
         await writeEntities(WORLDS_DIR, meta.worlds || [], 'label');
+        const savedAt = Date.now(); // Reused for the manifest and UI's last-synced timestamp.
         await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
-          version: meta.version ?? 1, savedAt: Date.now(),
+          version: meta.version ?? 1, savedAt,
           characterCount: (meta.characters || []).length, worldCount: (meta.worlds || []).length,
         });
         try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch { /* fine if it never existed */ }
-        _lastSyncedAt = Date.now();
+        _lastSyncedAt = savedAt;
+        _lastAction = 'saved-browser-to-folder';
       }
       _lastError = '';
     } catch (e) {
       _lastError = String(e?.message || e);
+      _lastAction = 'save-error';
     }
     notify();
     return getStatus();
   }
 
-  // Overwrites localStorage's hobunjiSaveMeta with whatever's in the
-  // folder's characters/ and worlds/ subfolders (not the manifest, which is
-  // informational only) — destructive to whatever's currently active, so
-  // the caller (the settings UI) is expected to confirm with the player
-  // before calling this.
-  async function loadFromFolder() {
-    if (_state !== 'ready' || !_handle) return { ok: false, message: 'No local save folder connected.' };
+  function reloadAfterFolderRestore() {
+    // Delay lets the click/init promise settle and prevents folder->browser restore from racing a subsequent write.
+    setTimeout(() => location.reload(), 0);
+  }
+
+  async function reconcileConnectedFolder({ reloadIfChanged = true } = {}) {
+    if (_state !== 'ready' || !_handle) {
+      return { ok: false, action: 'not-ready', changed: false, message: 'No local save folder connected.' };
+    }
     try {
-      const characters = await readEntities(CHARACTERS_DIR);
-      const worlds = await readEntities(WORLDS_DIR);
-      if (!characters.length && !worlds.length) {
-        return { ok: false, message: 'No characters or worlds found in this folder.' };
+      const folder = await readFolderSnapshot();
+      if (!folder.exists) {
+        // A truly new folder has no manifest/entity files, so seed it from the current browser save instead of loading emptiness.
+        _lastAction = 'initialized-empty-folder';
+        await syncNow();
+        return { ok: true, action: 'initialized-empty-folder', changed: false, message: 'Initialized the empty folder from this browser save.' };
       }
-      let version = 1;
-      try {
-        const manifestFile = await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile();
-        version = JSON.parse(await manifestFile.text())?.version ?? 1;
-      } catch { /* manifest is informational only; fall back to version 1 */ }
-      localStorage.setItem(SAVE_META_KEY, JSON.stringify({ version, characters, worlds }));
-      _lastSyncedAt = Date.now(); _lastError = '';
+
+      const browserMeta = readBrowserMeta(); // Used only to decide whether the restored folder requires a one-time reload.
+      const changed = !browserMeta || !saveMetaMatches(browserMeta, folder.meta);
+      localStorage.setItem(SAVE_META_KEY, JSON.stringify(folder.meta));
+      _lastSyncedAt = folder.savedAt || Date.now();
+      _lastError = '';
+      _lastAction = changed ? 'loaded-folder-to-browser' : 'folder-already-current';
       notify();
-      return { ok: true, message: `Loaded ${characters.length} character(s) and ${worlds.length} world(s) from the local folder. Reload the page to apply it.` };
+
+      if (changed && reloadIfChanged) reloadAfterFolderRestore();
+      return {
+        ok: true,
+        action: _lastAction,
+        changed,
+        reloadScheduled: changed && reloadIfChanged,
+        message: changed
+          ? `Loaded ${folder.meta.characters.length} character(s) and ${folder.meta.worlds.length} world(s) from the local folder.`
+          : 'The browser save already matches the local folder.',
+      };
     } catch (e) {
-      _lastError = String(e?.message || e); notify();
-      return { ok: false, message: 'Could not load from the local folder: ' + _lastError };
+      _lastError = String(e?.message || e);
+      _lastAction = 'reconcile-error';
+      notify();
+      return { ok: false, action: _lastAction, changed: false, message: 'Could not reconcile the local save folder: ' + _lastError };
     }
   }
 
-  // Best-effort only — an async file write isn't guaranteed to finish
-  // during unload. The periodic timer and the explicit "Save Now" button
-  // are the real mechanism; this just doesn't hurt to try.
+  async function init() {
+    if (!isSupported()) { _state = 'unsupported'; _lastAction = 'unsupported'; notify(); return; }
+    try {
+      const saved = await idbGet(HANDLE_KEY);
+      if (!saved) { _state = 'not-configured'; _lastAction = 'not-configured'; notify(); return; }
+      _handle = saved;
+      _state = (await ensurePermission(_handle, false)) ? 'ready' : 'needs-permission';
+      _lastAction = _state === 'ready' ? 'remembered-folder-ready' : 'permission-needed';
+      notify();
+      if (_state === 'ready') {
+        const result = await reconcileConnectedFolder({ reloadIfChanged: true });
+        if (result.ok) startAutoSync();
+      }
+    } catch (e) {
+      _state = 'error'; _lastError = String(e?.message || e); _lastAction = 'init-error';
+      notify();
+    }
+  }
+
+  // Must run from a real user gesture (a button click) — the File System
+  // Access API refuses to prompt otherwise. Existing folder saves are loaded
+  // before any browser -> folder write; empty folders are initialized instead.
+  async function chooseFolder() {
+    if (!isSupported()) return getStatus();
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      _handle = handle;
+      await idbSet(HANDLE_KEY, handle);
+      _state = 'ready'; _lastError = ''; _lastAction = 'folder-chosen';
+      notify();
+      const result = await reconcileConnectedFolder({ reloadIfChanged: true });
+      if (result.ok) startAutoSync();
+    } catch (e) {
+      if (e?.name !== 'AbortError') {
+        _state = 'error'; _lastError = String(e?.message || e); _lastAction = 'choose-error'; notify();
+      }
+    }
+    return getStatus();
+  }
+
+  // Same call as chooseFolder, kept as a distinctly-named action so the
+  // settings UI can offer "Change Folder" once one's already configured.
+  const changeFolder = chooseFolder;
+
+  // Re-requests permission on the already-remembered handle. Once granted,
+  // reconcileConnectedFolder loads disk first, so reconnect can no longer
+  // overwrite an existing folder with stale browser storage.
+  async function reconnect() {
+    if (!_handle) return chooseFolder();
+    try {
+      const granted = await ensurePermission(_handle, true);
+      _state = granted ? 'ready' : 'needs-permission';
+      _lastAction = granted ? 'permission-restored' : 'permission-needed';
+      notify();
+      if (granted) {
+        const result = await reconcileConnectedFolder({ reloadIfChanged: true });
+        if (result.ok) startAutoSync();
+      }
+    } catch (e) {
+      _state = 'error'; _lastError = String(e?.message || e); _lastAction = 'reconnect-error'; notify();
+    }
+    return getStatus();
+  }
+
+  async function forget() {
+    stopAutoSync();
+    _handle = null; _state = 'not-configured'; _lastError = ''; _lastSyncedAt = 0; _lastAction = 'forgot-folder';
+    try { await idbDelete(HANDLE_KEY); } catch {}
+    notify();
+    return getStatus();
+  }
+
+  // Explicit manual restore retained for the existing UI. Normal
+  // Choose/Reconnect now perform this automatically, but this remains useful
+  // as a deliberate "restore from disk again" action while already connected.
+  async function loadFromFolder() {
+    const result = await reconcileConnectedFolder({ reloadIfChanged: false });
+    if (!result.ok) return result;
+    if (result.action === 'initialized-empty-folder') {
+      return { ok: false, message: 'This folder did not contain a save, so it was initialized from the browser instead.' };
+    }
+    return {
+      ok: true,
+      message: result.changed
+        ? result.message + ' Reload the page to apply it.'
+        : result.message,
+    };
+  }
+
+  // Best-effort only — an async file write isn't guaranteed to finish during
+  // unload. The periodic timer and explicit Save Now path remain the reliable
+  // write mechanisms after the connection handshake has reconciled disk first.
   window.addEventListener('beforeunload', () => { if (_state === 'ready') syncNow(); });
 
   window.LocalSaveFolder = {
     isSupported, getStatus, onChange,
     chooseFolder, changeFolder, reconnect, forget,
-    syncNow, loadFromFolder,
+    syncNow, loadFromFolder, reconcileConnectedFolder,
   };
 
   init();
