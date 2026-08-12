@@ -8,9 +8,9 @@
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
   const scripts = [
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
-    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811a'],
+    ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
     ['HousePieces', 'house-pieces-core.js?v=20260811a'],
-    [null, 'house-pieces-elevation-bootstrap.js?v=20260811a'],
+    [null, 'house-pieces-elevation-bootstrap.js?v=20260811b'],
   ];
 
   function scriptUrl(file) { return new URL(file, baseUrl).href; }
