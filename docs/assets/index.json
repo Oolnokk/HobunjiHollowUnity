@@ -36,7 +36,7 @@
     { "name": "Station: Hand Mill", "path": "assets/models/furniture/station_hand_mill.glb", "category": "furniture" },
     { "name": "Station: Pestle", "path": "assets/models/furniture/station_pestle.glb", "category": "furniture" },
     { "name": "Station: Smoking Hut", "path": "assets/models/furniture/station_smoking_hut.glb", "category": "furniture" },
-    { "name": "Station: Vat", "path": "assets/models/furniture/station_vat.glb", "category": "furniture" },
+    { "name": "Station: Squeezing Vat", "path": "assets/models/furniture/station_vat.glb", "category": "furniture" },
     { "name": "Stool: Round", "path": "assets/models/furniture/stool_round.glb", "category": "furniture" },
     { "name": "Table: Long", "path": "assets/models/furniture/table_long.glb", "category": "furniture" },
     { "name": "Table: Round", "path": "assets/models/furniture/table_round.glb", "category": "furniture" },

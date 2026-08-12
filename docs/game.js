@@ -1979,8 +1979,8 @@
           desc: 'Placeable processor for mashing: berries into jam, mustard seed into paste, and starchy crops into mash.'
         },
         squeezer: {
-          itemKey: 'squeezerFurniture', icon: '🧃', name: 'Hand Squeezer', method: 'squeezing', color: 0x4f9eb8,
-          desc: 'Placeable processor for squeezing: berries into juice now; dews, milk-like liquids, and nut oils later.'
+          itemKey: 'squeezerFurniture', icon: '🧃', name: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.name || 'Squeezing Vat', method: 'squeezing', color: 0x4f9eb8,
+          desc: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.desc || 'Placeable vat for squeezing and pressing cooking ingredients.'
         },
         handMill: {
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
@@ -2266,6 +2266,23 @@
       // vfxActive()).
       const PROCESS_BURST_S = 1.2;
 
+      function consumeProcessingInput(inputKey) {
+        const trackedStars = window.CookingSystem?.consumeBestQuality?.(inputKey, 1); // Used to consume the same quality bucket as the inventory unit.
+        if (trackedStars) return trackedStars;
+        inventory[inputKey]--;
+        clampInventoryStack(inputKey);
+        return Math.max(1, Math.min(5, Number(ITEM_DEFS[inputKey]?.cookingDefaultStars) || 3));
+      }
+
+      function addProcessedOutputs(outputs, inputStars) {
+        outputs.forEach(output => {
+          ensureProcessedItemDef(output);
+          const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
+          inventory[output.key] = Math.min(99, previousCount + 1);
+          window.CookingSystem?.recordItemQuality?.(output.key, inputStars, inventory[output.key] - previousCount); // Used to carry the source stars through pressing, grinding, drying, and aging.
+        });
+      }
+
       function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
@@ -2277,11 +2294,11 @@
         scene.add(mesh);
 
         const isAging = AGING_METHODS.has(def.method);
-        // { outputs: [descriptor,...], readyDay } while a barrelAging/vaseAging
+        // { outputs: [descriptor,...], readyDay, inputStars } while a barrelAging/vaseAging
         // batch is aging; null when idle. Restored from a saved farm layout
         // (see saveFarmLayout/applyFarmLayoutObjects) via savedJob so an aging
         // batch survives a save/reload instead of silently vanishing.
-        let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay } : null;
+        let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay, inputStars: Number(savedJob.inputStars) || 3 } : null;
 
         // ── Processing VFX (docs/js/authored-furniture-runtime.js) ──────
         // Reuses whatever processingWarps/particleEmitters this piece's
@@ -2340,29 +2357,29 @@
             if (isAging && job) {
               if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
               const outputs = job.outputs;
+              const inputStars = job.inputStars;
               job = null;
-              outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+              addProcessedOutputs(outputs, inputStars);
               saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
+              return { ok: true, message: `${def.icon} Collected ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
             const outputs = getProcessingOutputs(def.method, active.key);
             if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
-            inventory[active.key]--;
-            clampInventoryStack(active.key);
+            const inputStars = consumeProcessingInput(active.key); // Used to preserve the selected stack's best available quality.
             if (isAging) {
-              job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
+              job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS, inputStars };
               saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
             }
-            outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+            addProcessedOutputs(outputs, inputStars);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
           },
           reset() {
             scene.remove(mesh);
@@ -10653,13 +10670,32 @@
             { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
           ];
         }
+        const modularOutputs = window.HobunjiFoodProcessing?.getProcessingOutputs?.(methodId, inputKey, input); // Used for decoupled nut-oil, lard, and fish-oil vat recipes.
+        if (modularOutputs?.length) return modularOutputs;
         const single = getProcessingOutput(methodId, inputKey);
         return single ? [single] : null;
       }
 
       function ensureProcessedItemDef(output) {
+        const presentationMetadata = {
+          ...(output.icon ? { icon: output.icon } : {}),
+          ...(output.label ? { label: output.label } : {}),
+          ...(output.cat ? { cat: output.cat } : {}),
+          ...(output.sellPrice ? { sellPrice: output.sellPrice } : {}),
+          ...(output.tags ? { tags: [...output.tags] } : {}),
+          ...(output.desc ? { desc: output.desc } : {}),
+          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
+        }; // Used to replace future-source placeholders once an item gains a real processor recipe.
+        const cookingMetadata = {
+          ...(output.cookingCategories ? { cookingCategories: [...output.cookingCategories] } : {}),
+          ...(output.cookingPrimaryEffect ? { cookingPrimaryEffect: output.cookingPrimaryEffect } : {}),
+          ...(output.cookingBaseBoost ? { cookingBaseBoost: output.cookingBaseBoost } : {}),
+          ...(output.cookingProcessingTier ? { cookingProcessingTier: output.cookingProcessingTier } : {}),
+          ...(output.cookingDefaultStars ? { cookingDefaultStars: output.cookingDefaultStars } : {}),
+        }; // Used to make dynamically generated fats valid hearth ingredients immediately.
         if (ITEM_DEFS[output.key]) {
           if (output.ingredientKeys?.length) ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
+          Object.assign(ITEM_DEFS[output.key], presentationMetadata, cookingMetadata);
           normalizeAlcoholItemDef(ITEM_DEFS[output.key]);
           return;
         }
@@ -10671,6 +10707,7 @@
           tags: output.tags || ['Processed'],
           desc: output.desc || 'Processed food item.',
           ingredientKeys: output.ingredientKeys || [],
+          ...cookingMetadata,
           ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
         });
       }
@@ -13489,6 +13526,7 @@
           const logDef = ITEM_DEFS[logKey];
           const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-log chance.
           const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 logs, plus a possible skill bonus
+          const nutDrop = window.HobunjiFoodProcessing?.rollTreeNutDrop?.(currentArea, rnd, window.SkillSystem); // Used to resolve species, Foraging-scaled quantity, and Foraging-scaled quality outside game.js.
           tile.type = TileType.GRASS;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           // tile.floraKind is deliberately left alone — tickFelledTreeRegrowth
@@ -13499,6 +13537,13 @@
           _zoneFelledTreePersist.set(currentArea, _felledEntries);
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
           inventory.mulch = Math.min(99, inventory.mulch + 1);
+          let addedNutAmount = 0; // Used to report the actual amount accepted when the nut stack is nearly full.
+          if (nutDrop) {
+            const previousNutCount = inventory[nutDrop.itemKey] || 0; // Used to avoid tracking quality for units discarded by the stack cap.
+            inventory[nutDrop.itemKey] = Math.min(99, previousNutCount + nutDrop.amount);
+            addedNutAmount = inventory[nutDrop.itemKey] - previousNutCount;
+            window.CookingSystem?.recordItemQuality?.(nutDrop.itemKey, nutDrop.stars, addedNutAmount);
+          }
           // Remove this tree's indexed Group immediately. The merged floor
           // beneath it is already grass, so rebuilding all ground and every
           // procedural tree in the zone would only create a long main-thread
@@ -13506,7 +13551,8 @@
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
           window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
-          return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch${bonus ? ' (Foraging bonus)' : ''}.` };
+          const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
+          return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
         }
 
         if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {

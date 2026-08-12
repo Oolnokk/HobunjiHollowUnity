@@ -133,12 +133,14 @@
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20260811a"></script>
-  <!-- Shared timed-effect HUD, skill progression, and hearth cooking. These
-       modules own their state/UI and expose narrow adapters to game.js. -->
+  <!-- Shared timed-effect HUD, skill progression, food processing rules, and
+       hearth cooking. These modules own their state/UI and expose narrow
+       adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20260811a"></script>
   <script src="js/skill-system.js?v=20260811a"></script>
   <script src="js/cooking-data.js?v=20260811a"></script>
-  <script src="js/cooking-system.js?v=20260811a"></script>
+  <script src="js/food-processing.js?v=20260811a"></script>
+  <script src="js/cooking-system.js?v=20260811b"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -559,7 +561,7 @@
         <div class="fed-label">Processing Furniture (free in editor)</div>
         <div class="fed-grid">
           <button class="fed-btn" data-btype="furniture" data-bval="pestle"      onclick="window._farmEditor?.setBrush('furniture','pestle')">🥣 Pestle</button>
-          <button class="fed-btn" data-btype="furniture" data-bval="squeezer"    onclick="window._farmEditor?.setBrush('furniture','squeezer')">🧃 Squeezer</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="squeezer"    onclick="window._farmEditor?.setBrush('furniture','squeezer')">🧃 Squeezing Vat</button>
           <button class="fed-btn" data-btype="furniture" data-bval="handMill"    onclick="window._farmEditor?.setBrush('furniture','handMill')">⚙️ Hand Mill</button>
           <button class="fed-btn" data-btype="furniture" data-bval="dryingRack"  onclick="window._farmEditor?.setBrush('furniture','dryingRack')">☀️ Drying Rack</button>
           <button class="fed-btn" data-btype="furniture" data-bval="smoker"      onclick="window._farmEditor?.setBrush('furniture','smoker')">💨 Smoker</button>

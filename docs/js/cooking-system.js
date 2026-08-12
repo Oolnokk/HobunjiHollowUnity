@@ -126,6 +126,18 @@
     return true;
   }
 
+  function consumeBestQuality(key, amount = 1) {
+    const requested = Math.max(1, Math.floor(Number(amount) || 1)); // Used to keep processor consumption on whole inventory units.
+    if ((deps.inventory[key] || 0) < requested) return null;
+    const consumedStars = []; // Used to report the quality that a processor should transfer to its outputs.
+    for (let index = 0; index < requested; index++) {
+      const best = availableQualityEntries(key)[0]; // Used to match cooking's existing best-quality-first selection rule.
+      if (!best || !consumeQuality(key, best.stars, 1)) return null;
+      consumedStars.push(best.stars);
+    }
+    return Math.max(1, Math.min(5, Math.round(consumedStars.reduce((sum, stars) => sum + stars, 0) / consumedStars.length)));
+  }
+
   function ingredientCandidates(slot) {
     return Object.entries(deps.ITEM_DEFS).filter(([key, definition]) =>
       (deps.inventory[key] || 0) > 0 && definition.cookingCategories?.some(category => slot.accepts.includes(category))
@@ -389,7 +401,8 @@
     const output = document.querySelector('[data-cooking-debug]');
     if (!output) return;
     const tracked = Object.values(qualityBuckets).reduce((sum, bucket) => sum + Object.values(bucket).reduce((inner, count) => inner + (Number(count) || 0), 0), 0); // Used for mobile-visible state verification.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}`;
+    const processingDiagnostics = window.HobunjiFoodProcessing?.diagnosticsText?.() || 'Processing module: unavailable'; // Used to expose vat/source wiring on mobile without developer tools.
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nRecipes: ${data().recipes.length}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}`;
   }
 
   function render() {
@@ -430,7 +443,7 @@
   }
 
   window.CookingSystem = {
-    init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality,
+    init, restore, serialize, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
   };
 })();

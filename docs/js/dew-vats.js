@@ -203,7 +203,7 @@
     return false;
   }
 
-  // ── Livestock-to-vat assignment (small livestock working a squeezer) ──
+  // ── Livestock-to-vat assignment (small livestock working a squeezing vat) ──
   function vatCanAccept(kind) {
     return kind === 'uumkaoii'; // the only kind with a squeezable resource today
   }
@@ -255,7 +255,13 @@
     if (!vat) return false;
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
-    outputs.forEach(o => { deps.ensureProcessedItemDef(o); deps.inventory[o.key] = Math.min(99, (deps.inventory[o.key] || 0) + 1); });
+    const stars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
+    outputs.forEach(output => {
+      deps.ensureProcessedItemDef(output);
+      const previousCount = deps.inventory[output.key] || 0; // Used to avoid tracking quality for output rejected by the stack cap.
+      deps.inventory[output.key] = Math.min(99, previousCount + 1);
+      deps.recordItemQuality(output.key, stars, deps.inventory[output.key] - previousCount);
+    });
     window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[deps.PROCESSING_SFX_KEY[vat.furnitureKey]]);
     vat.triggerVfx && vat.triggerVfx();
     return true;

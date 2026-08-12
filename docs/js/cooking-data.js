@@ -1513,6 +1513,40 @@
         "Implied"
       ]
     },
+    "crownedPineNuts": {
+      "id": "crownedPineNuts",
+      "name": "Crowned Pine Nuts",
+      "categories": [
+        "nut",
+        "seeds"
+      ],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "foraging",
+      "tags": [
+        "Nut",
+        "Crowned Pine",
+        "Northern Cliffs"
+      ]
+    },
+    "shadewoodNuts": {
+      "id": "shadewoodNuts",
+      "name": "Shadewood Nuts",
+      "categories": [
+        "nut",
+        "seeds"
+      ],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "foraging",
+      "tags": [
+        "Nut",
+        "Shadewood",
+        "Southern Cloud Forest"
+      ]
+    },
     "nutOil": {
       "id": "nutOil",
       "name": "Nut Oil",
@@ -1527,6 +1561,42 @@
       "tags": [
         "Nut",
         "Oil",
+        "Processed"
+      ]
+    },
+    "crownedPineNutOil": {
+      "id": "crownedPineNutOil",
+      "name": "Crowned Pine Nut Oil",
+      "categories": [
+        "oil",
+        "butter"
+      ],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "quick",
+      "primaryEffect": "crafting",
+      "tags": [
+        "Nut",
+        "Oil",
+        "Crowned Pine",
+        "Processed"
+      ]
+    },
+    "shadewoodNutOil": {
+      "id": "shadewoodNutOil",
+      "name": "Shadewood Nut Oil",
+      "categories": [
+        "oil",
+        "butter"
+      ],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "quick",
+      "primaryEffect": "crafting",
+      "tags": [
+        "Nut",
+        "Oil",
+        "Shadewood",
         "Processed"
       ]
     },
