@@ -53,10 +53,6 @@
     for (const part of data.parts) partById.set(part.id, part);
     for (const part of data.parts) {
       const mesh = window.ProceduralFurniture.buildPartMesh(part, baseColor);
-      if (part.kind === 'cup') {
-        const cupGeometry = _cupGeometry(part); // Used to preserve the editor's open vessel cavity instead of the generic capped-cylinder runtime fallback.
-        if (cupGeometry) { mesh.geometry?.dispose?.(); mesh.geometry = cupGeometry; }
-      }
       if (part.kind === 'liquidSurface') {
         const liquidGeometry = _liquidSurfaceGeometry(part, partById, Number(part.liquidLevel) || 0);
         if (liquidGeometry) { mesh.geometry?.dispose?.(); mesh.geometry = liquidGeometry; }
@@ -87,75 +83,6 @@
     const sx = Math.max(.001, Number(t.sx) || .001), sy = Math.max(.001, Number(t.sy) || .001), sz = Math.max(.001, Number(t.sz) || .001);
     const axis = part.taperAxis || 'y';
     return (x, y, z) => axis === 'x' ? new THREE.Vector3(y * sx, x * sy, z * sz) : axis === 'z' ? new THREE.Vector3(x * sx, z * sy, y * sz) : new THREE.Vector3(x * sx, y * sy, z * sz);
-  }
-
-  function _faceNormalOf(a, b, c) {
-    const u = new THREE.Vector3().subVectors(b, a), v = new THREE.Vector3().subVectors(c, a); // Used to preserve the editor's outward/inward winding decisions for vessel surfaces.
-    return new THREE.Vector3().crossVectors(u, v);
-  }
-
-  function _edgeLen(a, b, tileSize) {
-    return a.distanceTo(b) / Math.max(.001, tileSize);
-  }
-
-  function _pushOutwardQuad(positions, uvs, p0, p1, p2, p3, center, tileSize) {
-    const centroid = p0.clone().add(p1).add(p2).add(p3).multiplyScalar(.25);
-    const normal = _faceNormalOf(p0, p1, p2);
-    const q = normal.dot(centroid.clone().sub(center)) < 0 ? [p0, p3, p2, p1] : [p0, p1, p2, p3];
-    const u = _edgeLen(q[0], q[1], tileSize), v = _edgeLen(q[0], q[3], tileSize);
-    positions.push(q[0].x, q[0].y, q[0].z, q[1].x, q[1].y, q[1].z, q[2].x, q[2].y, q[2].z,
-      q[0].x, q[0].y, q[0].z, q[2].x, q[2].y, q[2].z, q[3].x, q[3].y, q[3].z);
-    uvs.push(0, 0, u, 0, u, v, 0, 0, u, v, 0, v);
-  }
-
-  function _pushOutwardTri(positions, uvs, p0, p1, p2, center, tileSize) {
-    const centroid = p0.clone().add(p1).add(p2).multiplyScalar(1 / 3);
-    const q = _faceNormalOf(p0, p1, p2).dot(centroid.clone().sub(center)) < 0 ? [p0, p2, p1] : [p0, p1, p2];
-    const u = _edgeLen(q[0], q[1], tileSize), v = _edgeLen(q[0], q[2], tileSize);
-    positions.push(q[0].x, q[0].y, q[0].z, q[1].x, q[1].y, q[1].z, q[2].x, q[2].y, q[2].z);
-    uvs.push(0, 0, u, 0, 0, v);
-  }
-
-  // Exact runtime port of furniture-avatar-author's open cup/basin primitive.
-  // Unlike the generic tapered-cylinder builder, this has an outer wall,
-  // inward-facing inner wall, rim bridge, basin floor, and sealed underside —
-  // but intentionally NO top cap, so authored liquid surfaces remain visible.
-  function _cupGeometry(part) {
-    const segments = Math.max(3, Math.min(64, Math.round(part.segments || 20)));
-    const at = _vesselPointMapper(part);
-    const inner = Math.max(.05, Math.min(.95, Number(part.innerScale) || .78));
-    const basin = Math.max(.03, Math.min(.8, Number(part.basinDepth ?? .18)));
-    const topX = Math.max(.01, part.topScaleX ?? 1.08), topZ = Math.max(.01, part.topScaleZ ?? 1.08);
-    const botX = Math.max(.01, part.bottomScaleX ?? .78), botZ = Math.max(.01, part.bottomScaleZ ?? .78);
-    const skewX = part.topSkewX || 0, skewZ = part.topSkewZ || 0;
-    const floorX = THREE.MathUtils.lerp(botX, topX, basin), floorZ = THREE.MathUtils.lerp(botZ, topZ, basin);
-    const floorSkewX = skewX * basin, floorSkewZ = skewZ * basin;
-    const outerBottom = [], outerTop = [], innerFloor = [], innerTop = [];
-    for (let i = 0; i < segments; i++) {
-      const angle = i / segments * Math.PI * 2, c = Math.cos(angle) * .5, s = Math.sin(angle) * .5;
-      outerBottom.push(at(c * botX, -.5, s * botZ));
-      outerTop.push(at(c * topX + skewX, .5, s * topZ + skewZ));
-      innerFloor.push(at(c * floorX * inner + floorSkewX, -.5 + basin, s * floorZ * inner + floorSkewZ));
-      innerTop.push(at(c * topX * inner + skewX, .5, s * topZ * inner + skewZ));
-    }
-    const positions = [], uvs = [], center = new THREE.Vector3(), tile = part.textureTileSize || 1;
-    const floorCenter = at(floorSkewX, -.5 + basin, floorSkewZ), bottomCenter = at(0, -.5, 0);
-    const referenceBelow = at(0, -2, 0), referenceAbove = at(0, 2, 0);
-    for (let i = 0; i < segments; i++) {
-      const next = (i + 1) % segments;
-      _pushOutwardQuad(positions, uvs, outerBottom[i], outerBottom[next], outerTop[next], outerTop[i], center, tile);
-      const innerCentroid = innerFloor[i].clone().add(innerFloor[next]).add(innerTop[next]).add(innerTop[i]).multiplyScalar(.25);
-      const innerReference = innerCentroid.clone().multiplyScalar(2);
-      _pushOutwardQuad(positions, uvs, innerFloor[next], innerFloor[i], innerTop[i], innerTop[next], innerReference, tile);
-      _pushOutwardQuad(positions, uvs, outerTop[i], outerTop[next], innerTop[next], innerTop[i], referenceBelow, tile);
-      _pushOutwardTri(positions, uvs, floorCenter, innerFloor[i], innerFloor[next], referenceBelow, tile);
-      _pushOutwardTri(positions, uvs, bottomCenter, outerBottom[next], outerBottom[i], referenceAbove, tile);
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.computeVertexNormals();
-    return geometry;
   }
 
   function _cupProfileAtLevel(cup, level) {
