@@ -19,7 +19,8 @@
   <script src="config/scratchbones-config.js?v=20260811b"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
-  <link rel="stylesheet" href="style.css?v=20260811b">
+  <link rel="stylesheet" href="style.css?v=20260811c">
+  <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
     /* scratchbones-config uses repo-root paths; fix them for docs/ serving */
@@ -86,7 +87,7 @@
   <script src="js/local-save-folder.js?v=20260724a"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20260728b">
-  <script src="onboarding.js?v=20260811a"></script>
+  <script src="onboarding.js?v=20260811b"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20260712d"></script>
   <script src="js/combat/resource-rings.js?v=20260809a"></script>
@@ -132,12 +133,20 @@
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/combat/combat-config-loader.js?v=20260811a"></script>
-  <!-- Alchemy (reagent/effect defs, potion brewing, active buff bar) —
+  <!-- Shared timed-effect HUD, skill progression, food processing rules, and
+       hearth cooking. These modules own their state/UI and expose narrow
+       adapters to game.js. -->
+  <script src="js/effect-buff-bar.js?v=20260811a"></script>
+  <script src="js/skill-system.js?v=20260811a"></script>
+  <script src="js/cooking-data.js?v=20260811a"></script>
+  <script src="js/food-processing.js?v=20260811a"></script>
+  <script src="js/cooking-system.js?v=20260811b"></script>
+  <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20260807a"></script>
+  <script src="js/alchemy-system.js?v=20260811a"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -169,7 +178,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-animals.js?v=20260809b"></script>
+  <script src="js/farm-animals.js?v=20260811a"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -208,7 +217,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20260807a"></script>
+  <script src="js/reagent-plants.js?v=20260811a"></script>
   <!-- Jubmir the traveling trader: daily one-off egg stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -552,7 +561,7 @@
         <div class="fed-label">Processing Furniture (free in editor)</div>
         <div class="fed-grid">
           <button class="fed-btn" data-btype="furniture" data-bval="pestle"      onclick="window._farmEditor?.setBrush('furniture','pestle')">🥣 Pestle</button>
-          <button class="fed-btn" data-btype="furniture" data-bval="squeezer"    onclick="window._farmEditor?.setBrush('furniture','squeezer')">🧃 Squeezer</button>
+          <button class="fed-btn" data-btype="furniture" data-bval="squeezer"    onclick="window._farmEditor?.setBrush('furniture','squeezer')">🧃 Squeezing Vat</button>
           <button class="fed-btn" data-btype="furniture" data-bval="handMill"    onclick="window._farmEditor?.setBrush('furniture','handMill')">⚙️ Hand Mill</button>
           <button class="fed-btn" data-btype="furniture" data-bval="dryingRack"  onclick="window._farmEditor?.setBrush('furniture','dryingRack')">☀️ Drying Rack</button>
           <button class="fed-btn" data-btype="furniture" data-bval="smoker"      onclick="window._farmEditor?.setBrush('furniture','smoker')">💨 Smoker</button>
@@ -1079,48 +1088,12 @@
             <span class="progress-save-badge">Character-saved</span>
           </div>
           <div class="progress-skills">
-            <div class="skill-row">
-              <span class="skill-icon">⚔️</span>
-              <div class="skill-name">Combat</div>
-              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
-              <div class="skill-level">—</div>
-              <span class="skill-stub-tag">Coming soon</span>
-            </div>
-            <div class="skill-row">
-              <span class="skill-icon">🌾</span>
-              <div class="skill-name">Farming</div>
-              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
-              <div class="skill-level">—</div>
-              <span class="skill-stub-tag">Coming soon</span>
-            </div>
-            <div class="skill-row">
-              <span class="skill-icon">🎣</span>
-              <div class="skill-name">Fishing</div>
-              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
-              <div class="skill-level">—</div>
-              <span class="skill-stub-tag">Coming soon</span>
-            </div>
-            <div class="skill-row">
-              <span class="skill-icon">🌿</span>
-              <div class="skill-name">Foraging</div>
-              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
-              <div class="skill-level">—</div>
-              <span class="skill-stub-tag">Coming soon</span>
-            </div>
-            <div class="skill-row">
-              <span class="skill-icon">⚗️</span>
-              <div class="skill-name">Alchemy</div>
-              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
-              <div class="skill-level">—</div>
-              <span class="skill-stub-tag">Coming soon</span>
-            </div>
-            <div class="skill-row">
-              <span class="skill-icon">🍳</span>
-              <div class="skill-name">Cooking</div>
-              <div class="skill-bar-wrap"><div class="skill-bar-fill" style="width:0%"></div></div>
-              <div class="skill-level">—</div>
-              <span class="skill-stub-tag">Coming soon</span>
-            </div>
+            <div class="skill-row"><span class="skill-icon">🌿</span><div class="skill-name">Foraging</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">⛏️</span><div class="skill-name">Mining</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🌾</span><div class="skill-name">Farming</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🎣</span><div class="skill-name">Fishing</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">⚔️</span><div class="skill-name">Combat</div><div class="skill-level">Lv 0</div></div>
+            <div class="skill-row"><span class="skill-icon">🛠️</span><div class="skill-name">Crafting</div><div class="skill-level">Lv 0</div></div>
           </div>
         </div>
       </div><!-- /mpProgress -->
@@ -1662,7 +1635,7 @@
        load before game.js, which calls window.Fishing.init(...) during its
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
-  <script src="js/fishing-minigame.js?v=20260806a"></script>
+  <script src="js/fishing-minigame.js?v=20260811a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -1700,7 +1673,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811j"></script>
+  <script src="game.js?v=20260811k"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

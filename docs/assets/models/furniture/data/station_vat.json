@@ -2,7 +2,7 @@
   "schema": "furniture_piece_mapper.v1",
   "exportedAt": "2026-06-10T03:17:23.370455+00:00",
   "pieceId": "station_vat",
-  "notes": "Vat for squeezing/pressing liquids; replaces incorrect Hand Squeezer naming.",
+  "notes": "General squeezing vat for pressing liquids and cooking fats.",
   "coordinateSystem": {
     "grid": "2D cells use x,y with origin at top-left of editor grid.",
     "world": "Three.js style: X right, Y up, Z forward/down-grid. Ground plane is Y=0.",

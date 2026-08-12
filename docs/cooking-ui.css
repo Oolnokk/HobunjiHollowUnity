@@ -1,0 +1,95 @@
+.hobunji-cooking-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  color: #f7ead0;
+  background: rgba(13, 9, 8, .78);
+  backdrop-filter: blur(5px);
+}
+
+.hobunji-cooking-layer.open { display: flex; }
+
+.hobunji-cooking-panel {
+  width: min(1040px, 96vw);
+  max-height: min(820px, 92vh);
+  overflow: hidden;
+  border: 2px solid #a97937;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #2c1f18, #17100d 70%);
+  box-shadow: 0 24px 70px #000c, inset 0 0 50px #ad692512;
+}
+
+.hobunji-cooking-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid #7c572f;
+  background: linear-gradient(90deg, #6f351c66, transparent);
+}
+
+.hobunji-cooking-panel h2,
+.hobunji-cooking-panel h3,
+.hobunji-cooking-panel p { margin: 0; }
+.hobunji-cooking-panel h2 { font: 700 26px Georgia, serif; }
+.cooking-kicker { color: #dfa44f; font-size: 11px; letter-spacing: .2em; }
+.hobunji-cooking-panel > header button { width: 42px; height: 42px; color: #f7ead0; font-size: 28px; border: 1px solid #8a6134; border-radius: 50%; background: #251813; }
+
+.cooking-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); height: min(665px, calc(92vh - 138px)); }
+.cooking-layout > aside { display: flex; flex-direction: column; min-height: 0; padding: 14px; border-right: 1px solid #6e4b2d; background: #130e0b88; }
+.cooking-layout > main { min-height: 0; overflow-y: auto; padding: 20px; }
+.cooking-layout input { box-sizing: border-box; width: 100%; margin-bottom: 12px; padding: 11px 12px; color: #fff4de; border: 1px solid #74512d; border-radius: 9px; outline: none; background: #0e0b09; }
+.cooking-layout input:focus { border-color: #e0a14d; box-shadow: 0 0 0 2px #e0a14d33; }
+.cooking-recipe-list { min-height: 0; overflow-y: auto; }
+.cooking-recipe-card { display: grid; grid-template-columns: 32px 1fr; gap: 8px; width: 100%; margin-bottom: 7px; padding: 11px; color: #dccdb6; text-align: left; border: 1px solid #4f3826; border-radius: 10px; background: #211711; }
+.cooking-recipe-card.selected { color: white; border-color: #dfa44f; background: #5a321d; }
+.cooking-recipe-card strong, .cooking-recipe-card small { display: block; }
+.cooking-recipe-card small { margin-top: 4px; color: #ae9c85; font-size: 10px; }
+.cooking-recipe-head { padding-bottom: 15px; border-bottom: 1px solid #493324; }
+.cooking-recipe-head h3 { color: #ffd58a; font: 700 23px Georgia, serif; }
+.cooking-recipe-head p { margin-top: 6px; color: #bdac96; font-size: 13px; line-height: 1.45; }
+.cooking-slot { margin-top: 15px; padding: 13px; border: 1px solid #513a27; border-radius: 12px; background: #1a120e; }
+.cooking-slot-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.cooking-slot-heading strong, .cooking-slot-heading small { display: block; }
+.cooking-slot-heading small { margin-top: 3px; color: #9e8c78; font-size: 10px; }
+.cooking-slot-heading button, .cooking-footer button { padding: 8px 12px; color: #f7ead0; border: 1px solid #73502d; border-radius: 8px; background: #2b1c14; }
+.cooking-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cooking-picker button, .cooking-picked { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 3px 8px; align-items: center; min-width: 0; padding: 9px; color: #efe1ca; text-align: left; border: 1px solid #513a27; border-radius: 8px; background: #261a13; }
+.cooking-picker button:hover { border-color: #d3994c; }
+.cooking-picker button span, .cooking-picked > span { grid-row: 1 / 3; font-size: 22px; }
+.cooking-picker button strong, .cooking-picked strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cooking-picker button em, .cooking-picked em { color: #e9b655; font-size: 10px; font-style: normal; }
+.cooking-preview { margin-top: 15px; padding: 13px; border: 1px solid #66472b; border-radius: 10px; background: #42251966; }
+.cooking-preview > div { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.cooking-preview span { padding: 5px 8px; color: #f8ddb1; border: 1px solid #875d2d; border-radius: 999px; background: #1b120e; font-size: 12px; }
+.cooking-footer { position: sticky; bottom: -20px; display: flex; justify-content: flex-end; gap: 10px; margin: 18px -20px -20px; padding: 14px 20px; border-top: 1px solid #6c482a; background: #17100df2; }
+.cooking-footer .cooking-primary { min-width: 150px; color: #261307; font-weight: 800; border-color: #f0bd72; background: linear-gradient(#efbd71, #c77d31); }
+.cooking-footer button:disabled { opacity: .4; }
+.cooking-empty { color: #9f8d78; font-size: 12px; }
+.cooking-diagnostics { padding: 7px 18px; border-top: 1px solid #533a26; background: #100b09; font-size: 11px; }
+.cooking-diagnostics pre { max-height: 110px; overflow: auto; color: #c7b89f; white-space: pre-wrap; }
+
+@media (max-width: 720px) {
+  .hobunji-cooking-layer { align-items: stretch; padding: 0; }
+  .hobunji-cooking-panel { width: 100vw; max-height: 100dvh; border-width: 0; border-radius: 0; }
+  .hobunji-cooking-panel > header { padding: 11px 14px; }
+  .hobunji-cooking-panel h2 { font-size: 21px; }
+  .cooking-layout { grid-template-columns: 38% minmax(0, 1fr); height: calc(100dvh - 117px); }
+  .cooking-layout > aside { padding: 9px; }
+  .cooking-layout > main { padding: 12px; }
+  .cooking-picker { grid-template-columns: 1fr; }
+  .cooking-recipe-card { grid-template-columns: 24px 1fr; padding: 8px; font-size: 11px; }
+  .cooking-recipe-card small { display: none; }
+  .cooking-footer { bottom: -12px; margin: 14px -12px -12px; padding: 10px 12px; }
+}
+
+@media (max-width: 520px) and (orientation: portrait) {
+  .cooking-layout { grid-template-columns: 1fr; grid-template-rows: 176px minmax(0, 1fr); }
+  .cooking-layout > aside { border-right: 0; border-bottom: 1px solid #6e4b2d; }
+  .cooking-recipe-list { display: flex; gap: 7px; overflow-x: auto; }
+  .cooking-recipe-card { flex: 0 0 160px; margin-bottom: 0; }
+}

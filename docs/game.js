@@ -1897,6 +1897,19 @@
         } catch {}
       }
 
+      function saveSkillProgress(snapshot) {
+        try {
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
+          if (!meta || !window.__hobunjiPlayerProfile?.characterId) return;
+          const character = (meta.characters || []).find(entry => entry.id === window.__hobunjiPlayerProfile.characterId); // Used to keep skill progression character-scoped across worlds.
+          if (!character) return;
+          character.skillLevels = { ...snapshot.levels };
+          character.skillExperience = { ...snapshot.experience };
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+          Object.assign(window.__hobunjiPlayerProfile, { skillLevels: character.skillLevels, skillExperience: character.skillExperience });
+        } catch {}
+      }
+
       // Persists the personal stable (companions) — mirrors saveGearInventory()'s
       // pattern exactly, since both are character-scoped and touch hobunjiSaveMeta
       // directly rather than round-tripping through onboarding.js.
@@ -1966,8 +1979,8 @@
           desc: 'Placeable processor for mashing: berries into jam, mustard seed into paste, and starchy crops into mash.'
         },
         squeezer: {
-          itemKey: 'squeezerFurniture', icon: '🧃', name: 'Hand Squeezer', method: 'squeezing', color: 0x4f9eb8,
-          desc: 'Placeable processor for squeezing: berries into juice now; dews, milk-like liquids, and nut oils later.'
+          itemKey: 'squeezerFurniture', icon: '🧃', name: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.name || 'Squeezing Vat', method: 'squeezing', color: 0x4f9eb8,
+          desc: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.desc || 'Placeable vat for squeezing and pressing cooking ingredients.'
         },
         handMill: {
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
@@ -2253,6 +2266,23 @@
       // vfxActive()).
       const PROCESS_BURST_S = 1.2;
 
+      function consumeProcessingInput(inputKey) {
+        const trackedStars = window.CookingSystem?.consumeBestQuality?.(inputKey, 1); // Used to consume the same quality bucket as the inventory unit.
+        if (trackedStars) return trackedStars;
+        inventory[inputKey]--;
+        clampInventoryStack(inputKey);
+        return Math.max(1, Math.min(5, Number(ITEM_DEFS[inputKey]?.cookingDefaultStars) || 3));
+      }
+
+      function addProcessedOutputs(outputs, inputStars) {
+        outputs.forEach(output => {
+          ensureProcessedItemDef(output);
+          const previousCount = inventory[output.key] || 0; // Used to keep quality buckets aligned when an output stack is full.
+          inventory[output.key] = Math.min(99, previousCount + 1);
+          window.CookingSystem?.recordItemQuality?.(output.key, inputStars, inventory[output.key] - previousCount); // Used to carry the source stars through pressing, grinding, drying, and aging.
+        });
+      }
+
       function makeProcessingFurniture(col, row, furnitureKey, savedJob, rotYDeg = 0) {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
@@ -2264,11 +2294,10 @@
         scene.add(mesh);
 
         const isAging = AGING_METHODS.has(def.method);
-        // { outputs: [descriptor,...], readyDay } while a barrelAging/vaseAging
-        // batch is aging; null when idle. Restored from a saved farm layout
-        // (see saveFarmLayout/applyFarmLayoutObjects) via savedJob so an aging
-        // batch survives a save/reload instead of silently vanishing.
-        let job = savedJob ? { outputs: savedJob.outputs, readyDay: savedJob.readyDay } : null;
+        // Aging jobs use readyDay; authored real-time process jobs use readyAtMs.
+        // Both are saved by the farm layout so a batch never turns back into an
+        // instantaneous action (or silently vanishes) across a reload.
+        let job = savedJob ? { ...savedJob, kind: savedJob.kind || (savedJob.readyDay != null ? 'aging' : null), inputStars: Number(savedJob.inputStars) || 3 } : null;
 
         // ── Processing VFX (docs/js/authored-furniture-runtime.js) ──────
         // Reuses whatever processingWarps/particleEmitters this piece's
@@ -2278,31 +2307,76 @@
         // actually ticks it (farm scene only), so playback never jumps on
         // a scene revisit.
         const authoredVfx = AUTHORED_FURNITURE_KEYS.has(furnitureKey) ? window.AuthoredFurniture?.peek(furnitureKey) : null;
-        const emitterVisuals = (authoredVfx?.particleEmitters || []).map(e => window.AuthoredFurniture.createEmitterVisual(mesh, e));
+        const processTimeline = def.method === 'squeezing' ? window.AuthoredFurniture?.primaryProcessTimeline(authoredVfx) : null; // Used to make squeezing obey its authored 12-second transfer rather than the generic burst.
+        const emitterVisuals = (authoredVfx?.particleEmitters || []).map(record => ({ record, visual: window.AuthoredFurniture.createEmitterVisual(mesh, record) }));
         let vfxT = 0;
         let burstRemaining = 0;
-        function vfxActive() { return (isAging && !!job) || burstRemaining > 0; }
+        function vfxActive() { return (isAging && !!job) || job?.kind === 'timed' || burstRemaining > 0; }
         function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
+        function timedJobRemainingS() { return job?.kind === 'timed' ? Math.max(0, (Number(job.readyAtMs) - Date.now()) / 1000) : 0; }
+        function timelineSubstanceColor(outputs) {
+          const color = outputs?.[0]?.spriteColor;
+          return Number.isFinite(color) ? '#' + Number(color).toString(16).padStart(6, '0') : processTimeline?.substanceColor;
+        }
+        function startTimedJob(outputs, inputStars, inputLabel, source = 'manual') {
+          if (!processTimeline) return { ok: false, message: `${def.name} has no authored process timeline.` };
+          if (job) return { ok: false, busy: true, message: `${def.name} is already squeezing a batch.` };
+          const durationS = Math.max(.1, Number(processTimeline.duration) || 12);
+          job = { kind: 'timed', outputs, inputStars, inputLabel, source, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
+          saveFarmLayout();
+          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
+          return { ok: true, started: true, durationS };
+        }
+        function finishTimedJob() {
+          if (job?.kind !== 'timed') return;
+          const finished = job;
+          job = null;
+          addProcessedOutputs(finished.outputs, finished.inputStars);
+          window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
+          saveFarmLayout();
+          saveMemberWorldData();
+          refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
+          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
+          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${starRatingText(finished.inputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+        }
         function updateVfx(dt) {
           if (!authoredVfx) return;
           vfxT += dt;
           if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
           const active = vfxActive();
+          const timed = job?.kind === 'timed';
+          const progress = timed ? Math.max(0, Math.min(1, 1 - timedJobRemainingS() / Math.max(.1, Number(job.durationS) || Number(processTimeline?.duration) || 12))) : 0;
+          const liveTimeline = processTimeline ? { ...processTimeline, substanceColor: timed ? job.substanceColor : processTimeline.substanceColor } : null;
+          const timelineState = liveTimeline ? window.AuthoredFurniture.applyProcessTimeline(mesh, authoredVfx, liveTimeline, progress) : null;
           for (const warp of authoredVfx.processingWarps || []) {
-            if (active) window.AuthoredFurniture.applyWarp(mesh, warp, vfxT);
+            const liveWarp = Object.assign({}, warp, timelineState?.warpOverrides?.get(warp.id));
+            if (active) window.AuthoredFurniture.applyWarp(mesh, liveWarp, vfxT);
             else window.AuthoredFurniture.resetWarp(mesh, warp);
           }
-          for (const ev of emitterVisuals) ev?.update(dt, active);
+          for (const entry of emitterVisuals) entry.visual?.update(dt, active, timelineState?.emitterOverrides?.get(entry.record.id));
+          if (timed) {
+            const stompPoint = authoredVfx.stompAttachPoints?.find(point => point.enabled !== false);
+            const anchorMatrix = stompPoint && window.AuthoredFurniture.stompAttachWorldMatrix(mesh, authoredVfx, stompPoint, vfxT);
+            if (anchorMatrix) window.FarmAnimals?.setVatWorkerPose?.(obj.id, anchorMatrix, stompPoint.anchorName || 'shoulderGrip');
+            if (timedJobRemainingS() <= 0) finishTimedJob();
+          } else {
+            window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
+          }
         }
 
-        return {
+        const obj = {
           id: 'processor_' + furnitureKey + '_' + col + '_' + row,
           type: 'processing_furniture', furnitureKey, method: def.method, col, row, mesh, rotYDeg,
           label: def.icon + ' ' + def.name,
           update: updateVfx,
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
+          startTimedJob({ outputs, inputStars, inputLabel, source } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           getButtons() {
+            if (job?.kind === 'timed') {
+              const seconds = Math.max(1, Math.ceil(timedJobRemainingS()));
+              return [{ icon: '🫗', label: `Squeezing… ${seconds}s`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
+            }
             if (isAging && job) {
               const daysLeft = Math.max(0, job.readyDay - calendar.day);
               if (daysLeft > 0) {
@@ -2324,42 +2398,52 @@
           },
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
+            if (job?.kind === 'timed') return { ok: false, message: `${def.name} is still squeezing — ${Math.max(1, Math.ceil(timedJobRemainingS()))}s left.` };
             if (isAging && job) {
               if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
               const outputs = job.outputs;
+              const inputStars = job.inputStars;
               job = null;
-              outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+              addProcessedOutputs(outputs, inputStars);
               saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-              return { ok: true, message: def.icon + ' Collected ' + outputs.map(o => o.label).join(', ') + '.' };
+              return { ok: true, message: `${def.icon} Collected ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
             const active = getActiveInventoryItem();
             if (!active) return { ok: false, message: def.name + ' needs an ingredient selected.' };
             const outputs = getProcessingOutputs(def.method, active.key);
             if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
-            inventory[active.key]--;
-            clampInventoryStack(active.key);
+            const inputStars = consumeProcessingInput(active.key); // Used to preserve the selected stack's best available quality.
             if (isAging) {
-              job = { outputs, readyDay: calendar.day + AGING_DURATION_DAYS };
+              job = { kind: 'aging', outputs, readyDay: calendar.day + AGING_DURATION_DAYS, inputStars };
               saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
               return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
             }
-            outputs.forEach(o => { ensureProcessedItemDef(o); inventory[o.key] = Math.min(99, (inventory[o.key] || 0) + 1); });
+            if (processTimeline) {
+              const inputLabel = ITEM_DEFS[active.key]?.label || active.label;
+              const started = startTimedJob(outputs, inputStars, inputLabel);
+              return started.ok
+                ? { ok: true, message: `${def.icon} Started squeezing 1 ${inputLabel}; the batch will finish in ${Math.round(started.durationS)} seconds.` }
+                : started;
+            }
+            addProcessedOutputs(outputs, inputStars);
             window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
             triggerBurst();
-            return { ok: true, message: def.icon + ' Processed 1 ' + (ITEM_DEFS[active.key]?.label || active.label) + ' into ' + outputs.map(o => o.label).join(', ') + '.' };
+            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${starRatingText(inputStars)} ${outputs.map(o => o.label).join(', ')}.` };
           },
           reset() {
+            window.FarmAnimals?.clearVatWorkerPose?.(this.id);
             scene.remove(mesh);
-            emitterVisuals.forEach(ev => ev?.dispose());
+            emitterVisuals.forEach(entry => entry.visual?.dispose());
             mesh.traverse(child => {
               if (child.geometry) child.geometry.dispose();
               if (child.material) child.material.dispose();
             });
           },
         };
+        return obj;
       }
 
       function placeProcessingFurniture(col, row, furnitureKey) {
@@ -2515,8 +2599,20 @@
       // creation path (placing one fresh, loading a saved layout, restoring
       // on reset) with no extra bookkeeping at any of those call sites.
       function getInteriorInteractableAt(col, row) {
-        const o = interiorFurnitureObjects.find(f => f.area === 'interior' && f.col === col && f.row === row);
+        const derivedHearth = _derivedHearthMeshes.find(hearth => {
+          const dx = col + 0.5 - hearth.cx, dz = row + 0.5 - hearth.cz;
+          const localX = dx * Math.cos(-hearth.yaw) - dz * Math.sin(-hearth.yaw); // Used to test the authored two-by-one hearth footprint in its local rotation.
+          const localZ = dx * Math.sin(-hearth.yaw) + dz * Math.cos(-hearth.yaw);
+          return Math.abs(localX) < 1 && Math.abs(localZ) < 0.5;
+        });
+        if (derivedHearth) return makeCookingInteractable();
+        const o = interiorFurnitureObjects.find(f => {
+          if (f.area !== 'interior') return false;
+          const size = decorativeFurnitureSize(f.key, f.rotYDeg || 0); // Used to make every tile of a multi-cell hearth targetable.
+          return col >= f.col && col < f.col + size.fw && row >= f.row && row < f.row + size.fd;
+        });
         if (!o) return null;
+        if (o.key === 'hearth') return makeCookingInteractable();
         if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll') {
           return {
             interactIcon: '😴',
@@ -3363,6 +3459,20 @@
         };
       }
 
+      function makeCookingInteractable() {
+        return {
+          interactIcon: '🔥',
+          interactLabel: 'Cook',
+          getButtons() {
+            return [{ icon: '🔥', label: 'Cook', action: 'obj_cook', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_cook' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            return window.CookingSystem.openAtHearth();
+          },
+        };
+      }
+
 
       // ── Companion & hostile creatures (Whistle system + Combat system) ───────
       // Continuous pixel-space movement (unlike the tile-hopping uumkao'ii
@@ -3741,18 +3851,11 @@
       // meat all use this. Weighted toward the middle (3 stars most common)
       // rather than a flat 20% each, so it doesn't feel like a coin flip;
       // otherwise deliberately simple/random for now, no per-item tuning.
-      function rollItemStars() {
-        const weights = [1, 3, 5, 3, 1]; // stars 1..5
-        const total = weights.reduce((a, b) => a + b, 0);
-        let r = rnd() * total;
-        for (let i = 0; i < weights.length; i++) {
-          r -= weights[i];
-          if (r <= 0) return i + 1;
-        }
-        return 3;
+      function rollItemStars(skillKey) {
+        return window.SkillSystem?.rollQuality(skillKey) || 3;
       }
       function starRatingText(stars) {
-        return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+        return window.SkillSystem?.starRatingText(stars) || '★'.repeat(stars) + '☆'.repeat(5 - stars);
       }
 
       // Settled corpses expose the same getButtons()/onAction() shape as
@@ -3779,8 +3882,9 @@
               inventory[key] = Math.min(99, (inventory[key] || 0) + qty);
               // Meat gets a quality roll same as fish/crops; hides and other
               // butchering byproducts don't.
-              const stars = /meat/i.test(key) ? starRatingText(rollItemStars()) + ' ' : '';
-              parts.push(stars + itemIconForKey(key) + '×' + qty);
+              const meatStars = /meat/i.test(key) ? rollItemStars('combat') : null;
+              if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
+              parts.push((meatStars ? starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
             });
             corpseObjects.delete(c);
             despawnCreature(c);
@@ -3832,7 +3936,9 @@
         // combat-combo.js/combat-quickattacks.js/combat-charged-breaker.js/
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
+        amount *= window.SkillSystem?.attackMultiplier?.() || 1;
         amount = banditTryGuard(c, amount, player);
+        window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
         else c.health = Math.max(0, c.health - resourceDamage.health);
@@ -3844,7 +3950,10 @@
           // A killed wild creature is the starting source of Motes of
           // Prowess — spent on ability-upgrade choices (see combat-
           // progression.js). Not awarded for a downed companion.
-          if (!c.isCompanion) awardMotesOfProwess(MOTES_PER_KILL);
+          if (!c.isCompanion) {
+            awardMotesOfProwess(MOTES_PER_KILL);
+            window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
+          }
           window.CreatureDeath.begin(c, fromX, fromY);
           return;
         }
@@ -3865,6 +3974,7 @@
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         if (performance.now() < player.invulnUntil) return;
+        amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         const resourceDamage = hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
@@ -5852,7 +5962,7 @@
         return {
           nonGearInventory: {}, packClothing: [], npcRelationships: {}, questProgress: {},
           alcoholBottleSwigs: {}, npcAlcoholState: {},
-          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {},
+          alchemyKnownEffects: {}, alchemyActiveEffects: [], alchemyReagentState: {}, wildBerryState: {}, cookingState: {},
           joinedAt: Date.now(),
         };
       }
@@ -5947,6 +6057,7 @@
           member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
           member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
           member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
+          member.cookingState = window.CookingSystem.serialize();
           member.wildBerryState = window.WildBerries.serializeState();
           member.zoneTreasureState = window.WildTreasure.serializeState();
           member.felledTreeState = serializeZoneFelledTreeState();
@@ -6416,7 +6527,7 @@
         // per-second constants keeps un-afflicted regen feeling the same
         // as before this system existed; quiet rest now doubles it.
         const tickResult = window.ResourceSystem?.tick(player, dt, {
-          staminaRegenPerSec: PLAYER_STAMINA_REGEN,
+          staminaRegenPerSec: PLAYER_STAMINA_REGEN * window.CookingSystem.getStaminaRegenMultiplier(),
           healthRegenPerSec: PLAYER_HEALTH_REGEN,
         });
         if (tickResult?.puked) showToast('You feel queasy...', false);
@@ -6738,6 +6849,7 @@
       // itemKey -> () => { getButtons(), onAction() } factory, for furniture
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
+        hearthFurniture: () => makeCookingInteractable(),
         alchemyTableFurniture: () => ({
           getButtons() {
             return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
@@ -9582,7 +9694,12 @@
             // just works, unlike the old hardcoded-per-mapId spawn it replaced.
             const interactableFactory = BUILDING_FIXTURE_INTERACTABLES[f.itemKey];
             if (interactableFactory) {
-              _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, interactableFactory());
+              const footprint = decorativeFurnitureSize(furnitureKey, f.rotY || 0); // Used so every occupied tile of a multi-cell fixture shares its interaction.
+              for (let rowOffset = 0; rowOffset < footprint.fd; rowOffset++) {
+                for (let colOffset = 0; colOffset < footprint.fw; colOffset++) {
+                  _buildingInteractables.set(mapId + ',' + (f.col + colOffset) + ',' + (f.row + rowOffset), interactableFactory());
+                }
+              }
             } else if (def?.sit) {
               // Sittable town/building furniture (see computeActionButtons'/
               // useActiveAction's town+_buildingInteractables lookups) — the
@@ -10614,13 +10731,32 @@
             { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: Math.max(6, (input.sellPrice || 6) + 4), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
           ];
         }
+        const modularOutputs = window.HobunjiFoodProcessing?.getProcessingOutputs?.(methodId, inputKey, input); // Used for decoupled nut-oil, lard, and fish-oil vat recipes.
+        if (modularOutputs?.length) return modularOutputs;
         const single = getProcessingOutput(methodId, inputKey);
         return single ? [single] : null;
       }
 
       function ensureProcessedItemDef(output) {
+        const presentationMetadata = {
+          ...(output.icon ? { icon: output.icon } : {}),
+          ...(output.label ? { label: output.label } : {}),
+          ...(output.cat ? { cat: output.cat } : {}),
+          ...(output.sellPrice ? { sellPrice: output.sellPrice } : {}),
+          ...(output.tags ? { tags: [...output.tags] } : {}),
+          ...(output.desc ? { desc: output.desc } : {}),
+          ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
+        }; // Used to replace future-source placeholders once an item gains a real processor recipe.
+        const cookingMetadata = {
+          ...(output.cookingCategories ? { cookingCategories: [...output.cookingCategories] } : {}),
+          ...(output.cookingPrimaryEffect ? { cookingPrimaryEffect: output.cookingPrimaryEffect } : {}),
+          ...(output.cookingBaseBoost ? { cookingBaseBoost: output.cookingBaseBoost } : {}),
+          ...(output.cookingProcessingTier ? { cookingProcessingTier: output.cookingProcessingTier } : {}),
+          ...(output.cookingDefaultStars ? { cookingDefaultStars: output.cookingDefaultStars } : {}),
+        }; // Used to make dynamically generated fats valid hearth ingredients immediately.
         if (ITEM_DEFS[output.key]) {
           if (output.ingredientKeys?.length) ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
+          Object.assign(ITEM_DEFS[output.key], presentationMetadata, cookingMetadata);
           normalizeAlcoholItemDef(ITEM_DEFS[output.key]);
           return;
         }
@@ -10632,6 +10768,7 @@
           tags: output.tags || ['Processed'],
           desc: output.desc || 'Processed food item.',
           ingredientKeys: output.ingredientKeys || [],
+          ...cookingMetadata,
           ...(output.spriteIcon ? { spriteIcon: output.spriteIcon, spriteColor: output.spriteColor, spriteMode: output.spriteMode } : {}),
         });
       }
@@ -11534,6 +11671,13 @@
               if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); saveMemberWorldData(); }
             });
           }
+          if (def.isCookedFood && count > 0) {
+            mkBtn('🍲 Eat', 'equip', () => {
+              const result = window.CookingSystem.eat(key);
+              showToast(result.message, result.ok !== false);
+              if (result.ok !== false) { buildInventoryGrid(); refreshItemScroll(); refreshActionBar(); saveMemberWorldData(); }
+            });
+          }
           if (def.sellPrice > 0 && count > 0) {
             mkBtn(`Sell All  (${count} × ${def.sellPrice}g = ${count * def.sellPrice}g)`, 'sell', () => {
               const earned = (inventory[key] || 0) * def.sellPrice;
@@ -12363,7 +12507,7 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * devGlobalSpeedMul;
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * devGlobalSpeedMul;
         if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
@@ -12677,7 +12821,9 @@
         if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
         const data = cropData[tile.crop];
         inventory[data.cropKey] = Math.min(99, (inventory[data.cropKey] || 0) + 1);
-        const stars = rollItemStars();
+        const stars = rollItemStars('farming');
+        window.CookingSystem.recordItemQuality(data.cropKey, stars, 1);
+        window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 6, `harvested ${data.label}`);
         const msg = `Harvested ${starRatingText(stars)} ${data.emoji} ${data.label}!`;
         tile.crop = CropType.NONE;
         tile.cropAge = 0;
@@ -13405,12 +13551,14 @@
             const dewKey = dewItemKey(colorKey);
             inventory[dewKey] = Math.min(99, (inventory[dewKey] || 0) + 1);
             awardToolUseMasteryXp('shovel');
+            window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, 'dug dew');
             saveFarmLayout();
             return { ok: true, message: `Dug up 1 ${ITEM_DEFS[dewKey]?.label || dewKey}.` };
           }
           if (action === 'dig' && tile.type === TileType.TRENCH) {
             tile.depth = 1;
             awardToolUseMasteryXp('shovel');
+            window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, 'redigged trench');
             return { ok: true, message: 'Redug the trench back to full depth.' };
           }
           const dugVegetation = action === 'dig' && isDigRemovableVegetation(tile, col, row);
@@ -13420,6 +13568,7 @@
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           const digMsg = dugVegetation ? 'Dug a trench and cleared the vegetation above it.' : `${tileStyles[tile.type].label} — ${contextualActionLabel(action, tile)}.`;
           awardToolUseMasteryXp('shovel');
+          window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.dig || 1, action);
           return { ok: true, message: digMsg };
         }
 
@@ -13436,7 +13585,9 @@
           // below. Drops logs matching the zone's species instead of mulch.
           const logKey = treeLogItemKey();
           const logDef = ITEM_DEFS[logKey];
-          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 logs
+          const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-log chance.
+          const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 logs, plus a possible skill bonus
+          const nutDrop = window.HobunjiFoodProcessing?.rollTreeNutDrop?.(currentArea, rnd, window.SkillSystem); // Used to resolve species, Foraging-scaled quantity, and Foraging-scaled quality outside game.js.
           tile.type = TileType.GRASS;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           // tile.floraKind is deliberately left alone — tickFelledTreeRegrowth
@@ -13447,20 +13598,30 @@
           _zoneFelledTreePersist.set(currentArea, _felledEntries);
           inventory[logKey] = Math.min(99, (inventory[logKey] || 0) + amount);
           inventory.mulch = Math.min(99, inventory.mulch + 1);
+          let addedNutAmount = 0; // Used to report the actual amount accepted when the nut stack is nearly full.
+          if (nutDrop) {
+            const previousNutCount = inventory[nutDrop.itemKey] || 0; // Used to avoid tracking quality for units discarded by the stack cap.
+            inventory[nutDrop.itemKey] = Math.min(99, previousNutCount + nutDrop.amount);
+            addedNutAmount = inventory[nutDrop.itemKey] - previousNutCount;
+            window.CookingSystem?.recordItemQuality?.(nutDrop.itemKey, nutDrop.stars, addedNutAmount);
+          }
           // Remove this tree's indexed Group immediately. The merged floor
           // beneath it is already grass, so rebuilding all ground and every
           // procedural tree in the zone would only create a long main-thread
           // freeze (especially in the Southern Cloud Forest).
           const zoneVisualsUpdated = removeZoneVegetationVisual(currentArea, col, row); // Lets completion skip the full-zone fallback.
           awardToolUseMasteryXp('axe');
-          return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'} and 1 Mulch.` };
+          window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.tree || 8, 'felled tree');
+          const nutMessage = nutDrop ? `, ${addedNutAmount} ${starRatingText(nutDrop.stars)} ${nutDrop.label}${nutDrop.bonusAmount ? ' (Foraging bonus)' : ''}` : ''; // Used to make the skill-driven nut result visible at the point of harvest.
+          return { ok: true, zoneVisualsUpdated, message: `Felled the tree — got ${amount} ${logDef?.label || logKey}${amount === 1 ? '' : 's'}${nutMessage}, and 1 Mulch${bonus ? ' (Foraging log bonus)' : ''}.` };
         }
 
         if (tool === 'pick' && action === 'mine' && isMineableRockTile(col, row)) {
           // Breaking a rock — reachable via a completed hold (see
           // MINE_ROCK_STAGES/wouldStartCharge), mirrors the axe/tree branch
           // above. Drops stone (plus a rare pebble) instead of logs/mulch.
-          const amount = 2 + Math.floor(Math.random() * 2); // 2-3 stone
+          const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('mining') || 0) ? 1 : 0; // Used for Mining's extra-stone and future-ore chance.
+          const amount = 2 + Math.floor(rnd() * 2) + bonus; // 2-3 stone, plus a possible skill bonus
           tile.type = TileType.GRASS;
           tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           // tile.rockKind is deliberately left alone — tickMinedRockRegrowth
@@ -13485,7 +13646,8 @@
             ? false
             : removeZoneMineableRockVisual(currentArea, col, row); // Lets charge completion retain a safe fallback.
           awardToolUseMasteryXp('pick');
-          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}.` };
+          window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined rock');
+          return { ok: true, zoneVisualsUpdated, message: `Broke the rock — got ${amount} Stone${gotPebble ? ' and 1 Pebble' : ''}${bonus ? ' (Mining bonus)' : ''}.` };
         }
 
         if (tool === 'machete' || tool === 'axe') {
@@ -13544,6 +13706,13 @@
         }
         if (activeAction === 'consume_held_item') {
           window.HobunjiDrunkGameplayBridge?.consumeHeldItem?.();
+          refreshActionBar();
+          return;
+        }
+        if (activeAction === 'consume_food_item') {
+          const held = getActiveInventoryItem();
+          const result = window.CookingSystem.eat(held?.key);
+          showToast(result.message, result.ok !== false);
           refreshActionBar();
           return;
         }
@@ -16509,16 +16678,15 @@
       // beginChargeStage's pose branch below instead of a plain tool-swing
       // arc, so the chop actually looks like a proper weapon swing landing
       // on the trunk rather than the generic single-axis sweep fallback.
-      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, fixedPace: true, dirSign, dur: 0.55 }));
+      const CHOP_TREE_STAGES = [1, -1, 1].map(dirSign => ({ pose: true, dirSign, dur: 0.55 }));
 
       // Breaking a rock (see isMineableRockTile) — three plain thrust jabs,
       // not CHOP_TREE_STAGES' alternating sweep pose: the pick-shovel is
       // flipped spike-forward in this slot (see makeToolPlaneMesh's flip
       // option) specifically so mining reads as stabbing that spike in, not
       // swinging an axe-style pose that was authored for a bladed edge.
-      // fixedPace (like chop) keeps this flurry at a constant pace regardless
-      // of digSpeed, which only scales the shovel's own dig/fill swings.
-      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', fixedPace: true, dur: 0.55 }));
+      // Mining progression shortens this flurry in beginChargeStage.
+      const MINE_ROCK_STAGES = [0, 0, 0].map(() => ({ anim: 'thrust', dur: 0.55 }));
 
       // Forces a specific swing animation during a charge stage (e.g. the
       // reverse-hoe toss), overriding the tool's normal activeAnimStyle().
@@ -16586,7 +16754,7 @@
       let combatSwingCone = null;
 
       function getDigSpeedMultiplier() {
-        return Math.max(0.01, player.digSpeed || 1);
+        return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
       }
 
       // Collapses the shovel's separate Dig/Fill action slots into one
@@ -16639,12 +16807,9 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        // digSpeed only scales shovel dig-and-fill stages — the axe chop and
-        // pick mine flurries (see CHOP_TREE_STAGES/MINE_ROCK_STAGES) swing at
-        // a fixed pace regardless, marked via fixedPace rather than reusing
-        // `pose` now that mine's flurry plays a plain thrust anim instead of
-        // a pose-driven sweep.
-        const dur = stageDef.fixedPace ? stageDef.dur : stageDef.dur / getDigSpeedMultiplier();
+        const skillKey = chargeAction.tool === 'axe' ? 'foraging' : chargeAction.tool === 'pick' ? 'mining' : null; // Used to map held axe/pick actions onto their progression speed bonus.
+        const speedMultiplier = skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier(); // Used to scale every supported held tool action independently.
+        const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
         strikeFired  = false;
@@ -19250,6 +19415,7 @@
           window.WildernessMap.updateFogAroundPlayer();
           updatePlayerVitals(dt);
           window.AlchemySystem.update();
+          window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
 
           // Active companions and shoulder pets follow the player through
@@ -20515,8 +20681,10 @@
 
         // A selected consumable is Item Action 1. Its configured binding owns
         // consumption; raw Space/Enter/Interact keys have no special behavior.
+        const heldItem = getActiveInventoryItem();
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (consumeAction) btns.unshift(consumeAction);
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -20636,7 +20804,7 @@
         if (!needsRebuild) return;
 
         // Split tool actions from item-owned consume/plant/place/harvest actions.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action.startsWith('plant_')
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
         const toolBtns = btns.filter(b => !isItemButton(b));
         const itemBtns = btns.filter(isItemButton);
@@ -21570,7 +21738,7 @@
         // Interact is reserved for world targets such as doors, NPCs, and
         // furniture. Tool swings and every held-item action use action slots.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const isItemAction = action => action === 'consume_held_item'
+        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item'
           || action === 'harvest'
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
@@ -22478,6 +22646,9 @@
         equipmentSlots,
         rollItemStars,
         starRatingText,
+        rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFishingXp: () => window.SkillSystem?.award?.('fishing', window.SkillSystem?.XP_GAINS?.fish || 10, 'caught fish'),
         awardToolUseMasteryXp,
         getInventoryStackKeys,
         getCurrentArea: () => currentArea,
@@ -22545,6 +22716,32 @@
       });
 
       window.CreatureGenetics?.init({ clamp, CREATURE_DB });
+
+      window.CookingSystem?.init({
+        ITEM_DEFS,
+        inventoryItems,
+        inventory,
+        clampInventoryStack,
+        refreshItemScroll,
+        buildInventoryGrid,
+        refreshActionBar,
+        showToast,
+        saveMemberWorldData,
+        random: rnd,
+        setInteractionBlocked(blocked) {
+          menuOpen = blocked; // Used to reuse the game's existing movement/action input gate while the self-owned cooking modal is open.
+          if (blocked) { player.vx = 0; player.vy = 0; input.x = 0; input.y = 0; }
+        },
+      });
+
+      window.SkillSystem?.init({
+        random: rnd,
+        getFoodEffectStacks: effect => window.CookingSystem?.getFoodEffectStacks(effect) || 0,
+        saveSkillProgress,
+        showToast,
+        debugLog,
+        isDevMode: () => Boolean(window.__HOBUNJI_DEV_MODE),
+      });
 
       window.AlchemySystem?.init({
         ITEM_DEFS,
@@ -22906,6 +23103,9 @@
         rnd,
         _isZoneArea,
         getCurrentArea: () => currentArea,
+        random: rnd,
+        bonusYieldChance: skill => window.SkillSystem?.bonusYieldChance?.(skill) || 0,
+        awardForagingXp: () => window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked herb'),
         hostileObjects,
         EXTERIOR_ZONES,
         damageCreature,
@@ -23105,6 +23305,10 @@
         PROCESSING_FURNITURE_DEFS,
         PROCESSING_SFX_KEY,
         getGrid: () => grid,
+        rollItemStars,
+        starRatingText,
+        recordItemQuality: (...args) => window.CookingSystem?.recordItemQuality?.(...args),
+        awardFarmingXp: () => window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.animalGood || 5, 'collected animal good'),
         getScene: getActiveScene,
         getWorldObjectAt,
         isHouseFootprint,
@@ -23212,6 +23416,7 @@
         cameraRelativePerps,
         clampInventoryStack,
         companionAiTypeForKind,
+        creatureAttachmentAnchor,
         creaturePlaneGroundOffset,
         findOpenTileNearBarn: window.FarmBuildings.findOpenTileNear,
         getWorldObjectAt,
@@ -23535,6 +23740,8 @@
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         packClothing = [...(playerData.packClothing || [])];
+        window.CookingSystem.restore(playerData.cookingState);
+        window.SkillSystem.restore(playerData);
 
         // NPC relationships/memory and quest progress are likewise world-scoped
         // per character.

@@ -79,7 +79,7 @@ longer starts to feel sluggish.
 | Fish gets away | `sfx/farming/sfx_fish_miss.mp3` | A low, disappointed splash — the spear missed or the fish escaped. Plays alongside the generic error blip. | real water-step recordings, low-pitched |
 | Starting to process an aging batch | `sfx/processing/sfx_process_start.mp3` | A mechanical engage/click — the moment an Aging Barrel or Aging Vase is loaded and starts its multi-day timer. | generated tone |
 | Pestle Station finishes | `sfx/processing/sfx_process_pestle.mp3` | Mashing/pounding — mortar-and-pestle thuds. | real gravel-step recordings, pitched down |
-| Hand Squeezer finishes | `sfx/processing/sfx_process_squeezer.mp3` | A press/squeeze — juice being squeezed out. | real water-step recordings, pitched down |
+| Squeezing Vat finishes | `sfx/processing/sfx_process_squeezer.mp3` | A press/squeeze — juice being squeezed out. | real water-step recordings, pitched down |
 | Hand Mill finishes | `sfx/processing/sfx_process_handmill.mp3` | Grinding — a hand-crank mill crunching grain. | real gravel-step recordings, pitched up |
 | Drying Rack finishes | `sfx/processing/sfx_process_dryingrack.mp3` | Something soft and dry — a light rustle, not percussive. | generated noise swell |
 | Smoking Hut finishes | `sfx/processing/sfx_process_smoker.mp3` | A soft hiss/waft — smoke, not fire. | generated noise hiss |

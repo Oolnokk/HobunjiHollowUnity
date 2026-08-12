@@ -34,7 +34,7 @@ vm.runInNewContext(fs.readFileSync('docs/js/furniture-placer.js', 'utf8'), conte
 
 const processingDefs = {
   pestle: { itemKey: 'pestleFurniture', icon: 'P', name: 'Pestle Station' },
-  squeezer: { itemKey: 'squeezerFurniture', icon: 'S', name: 'Hand Squeezer' },
+  squeezer: { itemKey: 'squeezerFurniture', icon: 'S', name: 'Squeezing Vat' },
   handMill: { itemKey: 'handMillFurniture', icon: 'M', name: 'Hand Mill' },
   dryingRack: { itemKey: 'dryingRackFurniture', icon: 'D', name: 'Drying Rack' },
   smoker: { itemKey: 'smokerFurniture', icon: 'H', name: 'Smoking Hut' },
