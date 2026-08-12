@@ -2968,7 +2968,7 @@
               const t = grid[r][c];
               const def = createDayOneTile(c, r);
               if (t.type !== def.type || (t.crop && t.crop !== CropType.NONE) || t.dewPile) {
-                layout.tiles.push({ c, r, type: t.type, crop: t.crop || '', dewPile: t.dewPile || '' });
+                layout.tiles.push({ c, r, type: t.type, depth: t.type === TileType.TRENCH && Number.isFinite(t.depth) ? clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '' });
               }
             }
           }
@@ -3021,16 +3021,23 @@
         } catch { return null; }
       }
 
-      function applyFarmLayoutToGrid(layout) {
+      function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
         if (!layout || layout.version !== 3) return;
-        (layout.tiles || []).forEach(({ c, r, type, crop, dewPile }) => {
+        (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile }) => {
           if (grid[r]?.[c]) {
+            const previousType = grid[r][c].type; // Used below to skip visual refreshes for non-terrain save data.
+            const previousDepth = grid[r][c].depth; // Used below to detect restored trench-depth changes.
             grid[r][c].type = type;
-            // Saved layouts don't persist trench depth — restore at full depth.
-            if (type === TileType.TRENCH) grid[r][c].depth = 1;
+            // Older layouts omit depth; treat those trenches as fully dug.
+            grid[r][c].depth = type === TileType.TRENCH
+              ? (Number.isFinite(depth) ? clamp(depth, 0, 1) : 1)
+              : 0;
             grid[r][c].crop = crop || CropType.NONE;
             if (crop) { grid[r][c].cropAge = 50; grid[r][c].cropReady = false; }
             grid[r][c].dewPile = dewPile || null;
+            if (refreshVisuals && (previousType !== grid[r][c].type || previousDepth !== grid[r][c].depth)) {
+              markTileDirty(c, r);
+            }
           }
         });
       }
@@ -22232,7 +22239,11 @@
       // own day rollovers, but this catches whatever time01 progress
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
-      window.addEventListener('beforeunload', () => { try { saveMemberWorldData(); _saveWorldCalendar(); } catch {} });
+      function flushSessionPersistence() {
+        try { saveFarmLayout(); saveMemberWorldData(); _saveWorldCalendar(); } catch {}
+      }
+      window.addEventListener('beforeunload', flushSessionPersistence);
+      window.addEventListener('pagehide', flushSessionPersistence);
 
       window.DialogueContent?.init({
         calendar,
@@ -23484,7 +23495,7 @@
           supplyBoxObject = nb; worldObjects.set(nb.col + ',' + nb.row, nb);
         }
         const _worldLayout = loadFarmLayout();
-        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout);
+        if (_worldLayout) applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
         applyFarmLayoutObjects(_worldLayout); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
