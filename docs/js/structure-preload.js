@@ -29,6 +29,7 @@
     texturesTotal: textureUrls.length,
     wallBuilderPreloadUses: 0,
     wallBuilderFallbacks: 0,
+    preexistingDefaultEntriesReplaced: 0,
     ensureCalls: 0,
     readyAtMs: null,
     errors: [],
@@ -129,7 +130,15 @@
       const wallBuilder = this; // Used throughout this one shared load promise without changing WallBuilder's public API.
       const preloadBackedLoad = wallBytesPromise
         .then(buffer => {
-          if (wallBuilder.glbLibrary?.has(WALL_GLB_NAME)) return WALL_GLB_NAME;
+          // WallBuilder's temporary brown-box placeholder intentionally uses
+          // the SAME Roughbrick1.glb library key as the eventual real model.
+          // Merely seeing that key therefore does not mean the real GLB is
+          // ready. Always parse/register the prefetched source here so a
+          // placeholder that raced ahead is replaced before readiness resolves.
+          if (wallBuilder.glbLibrary?.has(WALL_GLB_NAME)) {
+            state.preexistingDefaultEntriesReplaced++;
+            debugLog('replacing a pre-existing default wall entry with the real preloaded Roughbrick1.glb source');
+          }
           state.wallBuilderPreloadUses++;
           return wallBuilder.loadGlbFromBuffer(buffer.slice(0), WALL_GLB_NAME);
         })
@@ -168,7 +177,7 @@
     if (ready && state.readyAtMs == null) state.readyAtMs = elapsedMs();
     if (ready && !readyLogSent) {
       readyLogSent = true;
-      debugLog(`final brick+shingle sources ready in ${Math.round(state.readyAtMs)}ms; common textures ${state.texturesReady}/${state.texturesTotal}; WallBuilder early-byte uses=${state.wallBuilderPreloadUses}`);
+      debugLog(`final brick+shingle sources ready in ${Math.round(state.readyAtMs)}ms; common textures ${state.texturesReady}/${state.texturesTotal}; WallBuilder early-byte uses=${state.wallBuilderPreloadUses}; replaced pre-existing default entries=${state.preexistingDefaultEntriesReplaced}`);
     }
     return {
       ready,
