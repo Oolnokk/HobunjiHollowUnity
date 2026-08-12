@@ -47,12 +47,28 @@
     return state.active;
   }
 
+  function getPlayerEntity() {
+    // CalendarSystem's sleep restoration and future player-scoped runtimes
+    // use this narrow accessor instead of reaching into game.js's private
+    // `player` binding or duplicating player state on window.
+    return state.deps?.player || null;
+  }
+
   function init(deps) {
     state.deps = deps;
     loadManifest();
     return api;
   }
 
-  const api = { init, start, stop, update, loadManifest, get active() { return state.active; }, validPoses: [...VALID_POSES] };
+  const api = {
+    init,
+    start,
+    stop,
+    update,
+    loadManifest,
+    getPlayerEntity,
+    get active() { return state.active; },
+    validPoses: [...VALID_POSES],
+  };
   window.PlayerSocialPoses = api;
 })();
