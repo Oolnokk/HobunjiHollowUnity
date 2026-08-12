@@ -608,10 +608,13 @@
     const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
     if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
     deps.inventory[resDef.itemKey] = Math.min(99, (deps.inventory[resDef.itemKey] || 0) + 1);
+    const stars = deps.rollItemStars?.('farming') || 3; // Used for Farming's animal-good quality bonus.
+    deps.recordItemQuality?.(resDef.itemKey, stars, 1);
+    deps.awardFarmingXp?.();
     rec.resourceReady = false;
     rec.daysUntilResource = resDef.cooldownDays;
     deps.saveWorldLivestock(list);
-    return { ok: true, message: `Collected 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
+    return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
 
   // Advances every housed animal's resource cooldown by one day — called

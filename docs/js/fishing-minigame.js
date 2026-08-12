@@ -270,7 +270,7 @@
       (f.timesOfDay === 'any' || f.timesOfDay.includes(tod)));
     if (!pool.length) pool = list;
     const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
-    const weights = pool.map(f => rarityWeight[f.rarity] || 1);
+    const weights = pool.map(f => (rarityWeight[f.rarity] || 1) * (deps.rareFishWeightMultiplier?.(f.rarity) || 1));
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
     for (let i = 0; i < pool.length; i++) {
       r -= weights[i];
@@ -793,7 +793,9 @@
     if (caught) {
       fm.resolved = true;
       deps.inventory[fm.fishDef.key] = Math.min(99, (deps.inventory[fm.fishDef.key] || 0) + 1);
-      const stars = deps.rollItemStars();
+      const stars = deps.rollItemStars('fishing');
+      deps.recordItemQuality?.(fm.fishDef.key, stars, 1);
+      deps.awardFishingXp?.();
       fm.message = `Caught a ${deps.starRatingText(stars)} ${fm.fishDef.label}! ${fm.fishDef.icon}`;
       fm.messageType = 'good';
       deps.setLastActionMessage(fm.message);

@@ -71,7 +71,10 @@
       },
       onAction(action) {
         if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
-        deps.inventory[reagentKey] = Math.min(99, (deps.inventory[reagentKey] || 0) + 1);
+        const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-herb chance.
+        const amount = 1 + bonus;
+        deps.inventory[reagentKey] = Math.min(99, (deps.inventory[reagentKey] || 0) + amount);
+        deps.awardForagingXp?.();
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);
         const objs = deps._zoneReagentObjects.get(mapId);
         objs?.delete(col + ',' + row);
@@ -83,7 +86,7 @@
         if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
         deps.refreshItemScroll();
         window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-        return { ok: true, message: 'Picked ' + def.icon + ' ' + def.label + '.' };
+        return { ok: true, message: `Picked ${amount} ${def.icon} ${def.label}${bonus ? ' (Foraging bonus)' : ''}.` };
       },
     };
   }

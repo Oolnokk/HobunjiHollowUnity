@@ -480,6 +480,7 @@
     const def = active;
     const inventory = itemDeps?.inventory;
     if (!key || !def || !inventory || (inventory[key] || 0) < 1) return false;
+    if (def.isCookedFood) return null; // CookingSystem owns generated meals and their stacked effects.
     if (isPotionOrDrink(key, def)) return { key, def, inventory, kind: 'drink' };
     if (isFood(def)) return { key, def, inventory, kind: 'food' };
     return null;
