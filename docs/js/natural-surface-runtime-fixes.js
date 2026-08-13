@@ -7,6 +7,8 @@
   const ROCK_HEX = 0x79807c;
   const WEEDS_HEX = 0x247c3c;
   const BOX_TRIANGLES = 12;
+  const naturalConfig = window.NaturalSurfaceMaterialConfig || {};
+  const wildernessConfig = window.WildernessTerrainCleanupConfig || {};
 
   const stats = {
     sceneAddsInspected: 0,
@@ -48,15 +50,18 @@
   }
 
   function isVerticalLegacyWeedPlaceholder(mesh) {
+    if (wildernessConfig.hideVerticalWeedPlaceholders === false) return false;
     if (!plainLambert(mesh, WEEDS_HEX)) return false;
     const ext = geometryExtents(mesh);
     if (!ext) return false;
     const maxHorizontal = Math.max(ext.x, ext.z);
     const boxLike = mesh.geometry?.type === 'BoxGeometry' || triangleCount(mesh.geometry) === BOX_TRIANGLES;
+    const minSpan = Number(wildernessConfig.legacyWeedPlaceholderMinVerticalSpan ?? 0.12);
+    const minRatio = Number(wildernessConfig.legacyWeedPlaceholderMinVerticalRatio ?? 0.12);
     // A real WEEDS floor bucket is essentially flat. The old mint placeholder
     // boxes have meaningful vertical extent; requiring box-like topology keeps
     // this from hiding the legitimate merged terrain material.
-    return boxLike && ext.y > 0.12 && ext.y >= maxHorizontal * 0.12;
+    return boxLike && ext.y > minSpan && ext.y >= maxHorizontal * minRatio;
   }
 
   function normalizeMaterialHueOnly(mat) {
@@ -81,11 +86,16 @@
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of mats) {
       const surface = mat?.userData?.naturalSurface || mesh.userData?.naturalSurface;
-      if (surface === 'trunks' || surface === 'vines') normalizeMaterialHueOnly(mat);
+      if (surface !== 'trunks' && surface !== 'vines') continue;
+      const cfg = naturalConfig.surfaces?.[surface] || {};
+      if ((cfg.sourceTintMode || 'hue-only') !== 'hue-only') continue;
+      if (cfg.tint && cfg.tint !== 'source') continue;
+      normalizeMaterialHueOnly(mat);
     }
   }
 
   function naturalizeLegacyRock(mesh) {
+    if (wildernessConfig.naturalizeLegacyRockTiles === false) return false;
     if (!plainLambert(mesh, ROCK_HEX)) return false;
     const api = window.NaturalSurfaceMaterials;
     if (!api?.naturalizeMesh) return false;
