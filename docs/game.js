@@ -188,7 +188,7 @@
         if (id === 'inventory') { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); }
         if (id === 'crafting') window.CraftingPanel.render();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
-        if (id === 'map') window.WildernessMap.renderMapPanel();
+        if (id === 'map') { window.WildernessMap.renderMapPanel(); renderNpcGatheringPanel(); }
         if (id === 'farm') window.FarmPanel.render();
         if (id === 'stable') window.FarmPanel.renderStablePanel();
         if (id === 'shipping') window.ShippingPanel.build();
@@ -430,6 +430,23 @@
             choices: [
               { label: cfg.buyChoiceLabel || 'Buy', actions: [{ type: 'openShop', pool: 'carpenterBarnPlans' }] },
               { label: cfg.chatChoiceLabel || 'Chat', actions: [{ type: 'startChat' }] },
+            ],
+          });
+          return;
+        }
+
+        // Same fast-path shortcut as the shop counters above, for catching
+        // Foroji mid-song at station_foroji_music — also backed by a real
+        // "Play music together" choice in his own dialogueTrees for when
+        // he's not (see the same NOT-the-reliable-path note above).
+        if (isForojiPlayingMusic(walker)) {
+          window.DialogueContent?.beginSyntheticChoice(rec);
+          window.DialogueContent?.renderDlgNode({
+            type: 'choice',
+            text: 'Care to play along?',
+            choices: [
+              { label: 'Play music with him.', actions: [{ type: 'startMusicMinigame' }] },
+              { label: 'Just listen.', actions: [{ type: 'startChat' }] },
             ],
           });
           return;
@@ -1465,6 +1482,12 @@
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
         fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
+        // Decorative only (no `slots`, so it's never equippable/craftable —
+        // see the TOOL_ITEM_DEFS.forEach ITEM_DEFS-registration loop below,
+        // which only fires for entries with a metalKey). Held by Foroji at
+        // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
+        // he visibly has his instrument out while playing.
+        kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: [], animStyle: 'strum' },
       };
 
       // ── Metal registry (dug-up bars, the verdigris hierarchy) ──────────
@@ -3297,6 +3320,116 @@
       // checks for the "Stand" override.
       let sitInteraction = null;
       const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
+
+      // ── NPC gathering points: walk-to navigation, not teleport ─────────
+      // { path:[{col,row},...], npcId, label } while an auto-walk is in
+      // progress toward a nearby NPC's current schedule spot, else null.
+      // Player-driven the whole way — see advancePlayerAutoWalk's use in
+      // updateMovement, which feeds computed direction through the exact
+      // same ix/iy → speed/collision pipeline manual input uses, and any
+      // real manual input cancels it outright rather than fighting it.
+      let playerAutoWalk = null;
+      const PLAYER_AUTOWALK_ARRIVE_PX = TILE * 0.35;
+      const PLAYER_AUTOWALK_PATH_PADDING_TILES = 10;
+      const NPC_GATHERING_NEARBY_TILES = 16; // "nearby" scope for the walk-to list — a screen's-width-ish radius, not the whole map.
+
+      function nearbyNpcGatheringPoints() {
+        const px = player.x / TILE, py = player.y / TILE;
+        return npcWalkers
+          .filter(w => w.area === currentArea && w.rec?.id && w.currentScheduleTarget)
+          .map(w => {
+            const target = w.currentScheduleTarget;
+            const dist = Math.hypot(w.root.position.x - px, w.root.position.z - py);
+            return { id: w.rec.id, name: w.rec.name || w.rec.id, activity: target.activity || '', dist };
+          })
+          .filter(entry => entry.dist <= NPC_GATHERING_NEARBY_TILES)
+          .sort((a, b) => a.dist - b.dist);
+      }
+
+      // Sets a walk-to destination toward `npcId`'s current schedule spot —
+      // a navigation target the player still walks to themselves (through
+      // normal collision/speed/footsteps), not an instant teleport. Silently
+      // cancels any walk already in progress if the NPC can't be reached.
+      function startWalkToNpc(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId && w.area === currentArea);
+        const target = walker?.currentScheduleTarget;
+        if (!walker || !target || !Number.isFinite(target.c) || !Number.isFinite(target.r)) {
+          showToast("Can't find them right now.", false);
+          playerAutoWalk = null;
+          return;
+        }
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const path = window.TilePathfinding?.findPath(startCol, startRow, target.c, target.r,
+          (c, r) => isNpcTileWalkable(currentArea, c, r),
+          { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, PLAYER_AUTOWALK_PATH_PADDING_TILES) });
+        if (!path || !path.length) {
+          showToast('No clear path there.', false);
+          playerAutoWalk = null;
+          return;
+        }
+        playerAutoWalk = { path, npcId, label: walker.rec?.name || 'them' };
+      }
+
+      // Advances the current auto-walk one frame and returns the unit
+      // direction manual input would otherwise supply, or null once the
+      // path is exhausted (also clearing playerAutoWalk itself).
+      function advancePlayerAutoWalk() {
+        if (!playerAutoWalk) return null;
+        const wp = playerAutoWalk.path[0];
+        if (!wp) { playerAutoWalk = null; return null; }
+        const wx = (wp.col + 0.5) * TILE, wy = (wp.row + 0.5) * TILE;
+        const dx = wx - player.x, dy = wy - player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= PLAYER_AUTOWALK_ARRIVE_PX) {
+          playerAutoWalk.path.shift();
+          if (!playerAutoWalk.path.length) {
+            showToast(`Arrived at ${playerAutoWalk.label}.`, true);
+            playerAutoWalk = null;
+            return null;
+          }
+          return advancePlayerAutoWalk();
+        }
+        return { x: dx / dist, y: dy / dist };
+      }
+
+      // Populates the Map tab's "Nearby" list — see nearbyNpcGatheringPoints/
+      // startWalkToNpc above. Called on entering the Map tab; the list is a
+      // one-shot snapshot rather than live-updating while the panel sits
+      // open, same as the rest of the menu's tab-switch-triggered renders.
+      function renderNpcGatheringPanel() {
+        const listEl = document.getElementById('wmapGatheringList');
+        if (!listEl) return;
+        const entries = nearbyNpcGatheringPoints();
+        if (!entries.length) {
+          listEl.innerHTML = '<div class="wmap-gathering-empty">No one nearby right now.</div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        for (const entry of entries) {
+          const row = document.createElement('div');
+          row.className = 'wmap-gathering-row';
+          const info = document.createElement('div');
+          info.className = 'wmap-gathering-info';
+          const name = document.createElement('div');
+          name.className = 'wmap-gathering-name';
+          name.textContent = entry.name;
+          info.appendChild(name);
+          if (entry.activity) {
+            const activity = document.createElement('div');
+            activity.className = 'wmap-gathering-activity';
+            activity.textContent = entry.activity;
+            info.appendChild(activity);
+          }
+          row.appendChild(info);
+          const goBtn = document.createElement('button');
+          goBtn.type = 'button';
+          goBtn.className = 'wmap-gathering-go';
+          goBtn.textContent = 'Go';
+          goBtn.addEventListener('click', () => { startWalkToNpc(entry.id); closeMenu(); });
+          row.appendChild(goBtn);
+          listEl.appendChild(row);
+        }
+      }
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
       const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
       const SEATED_HEAD_MAX_YAW_DEG = 70; // realistic head-turn-without-body-turning range; look straight ahead past this instead of holding at the clamp (see updateSitInteraction)
@@ -7882,6 +8015,21 @@
         };
       }
 
+      // Foroji Funji's "playing music" schedule rule (see scheduleHooks in
+      // hobunji-starter-npc-database.json) parks him at station_foroji_music
+      // most afternoons — mirrors isGeneralStoreNpcOnDuty/isCarpenterNpcOnDuty's
+      // idle/station/label gate above, one NPC and one station instead of a
+      // config-driven list since there's only ever the one bard.
+      function isForojiPlayingMusic(walker) {
+        const npcId = walker?.rec?.id || '';
+        if (npcId !== 'foroji_funji') return false;
+        const target = walker?.currentScheduleTarget || null;
+        const stationLabel = normalizeStationLabel(target?.label);
+        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
+          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
+        return isAtStation && stationLabel === normalizeStationLabel('Playing Music in the Square');
+      }
+
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
         return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
@@ -8882,7 +9030,13 @@
                   const anim = target.toolAnimStyle || TOOL_ITEM_DEFS[target.toolKey]?.animStyle || 'chop';
                   const WF = 0.16, SF = 0.28;
                   let swingAngle = 0, fwdOff = 0;
-                  if (anim === 'thrust') {
+                  if (anim === 'strum') {
+                    // A slow, gentle rock rather than a swing/thrust — Foroji
+                    // holding the Kurraya at station_foroji_music shouldn't
+                    // look like he's chopping wood with it.
+                    swingAngle = 0.62 + Math.sin(progress * Math.PI * 2) * 0.12;
+                    fwdOff = Math.sin(progress * Math.PI * 2) * 0.03;
+                  } else if (anim === 'thrust') {
                     swingAngle = 0.18;
                     if (progress <= WF) fwdOff = -0.22 * (progress / WF);
                     else if (progress <= SF) fwdOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
@@ -12318,6 +12472,17 @@
       }
 
       function updateMovement(dt) {
+        // Every mode below that takes over movement/input outright (dialogue,
+        // fishing, the music minigame, sitting, mounted, prone...) should
+        // drop a walk-to-NPC in progress rather than silently resuming it
+        // once that mode ends somewhere the player never chose to walk to.
+        if (playerAutoWalk && (
+          window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement') ||
+          window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || dialogueOpen ||
+          window.FarmAnimals.isHarvesting() || sitInteraction ||
+          window.Fishing?.state?.active || window.MusicMinigame?.state?.active ||
+          window.Mounts?.rideState === 'mounted' || player.prone
+        )) playerAutoWalk = null;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) {
           input.x = 0; input.y = 0;
           player.vx = 0; player.vy = 0;
@@ -12351,6 +12516,7 @@
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
+        if (window.MusicMinigame?.state?.active) return;
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
@@ -12463,6 +12629,16 @@
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
         let iy = usingKeyboard ? keyboardVector.y : input.y;
+
+        if (playerAutoWalk) {
+          if (usingKeyboard || Math.hypot(ix, iy) > 0.15) {
+            playerAutoWalk = null; // Any real movement input takes back manual control.
+          } else {
+            const auto = advancePlayerAutoWalk();
+            if (auto) { ix = auto.x; iy = auto.y; }
+          }
+        }
+
         let inputLen = Math.hypot(ix, iy);
 
         // Keyboard is digital, joystick is analog. Normalize keyboard to full speed,
@@ -20553,6 +20729,10 @@
             { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
           ];
         }
+        // Music minigame overlay has its own full-screen controls (see
+        // js/music-minigame.js) and the close button lives in the overlay
+        // itself — no action-bar buttons underneath it.
+        if (window.MusicMinigame?.state?.active) return [];
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -20793,7 +20973,7 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${actionButtonKey}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -22666,6 +22846,14 @@
         setToolSwingT: (v) => { toolSwingT = v; },
         setStrikeFired: (v) => { strikeFired = v; },
         setFishThrowActive: (v) => { fishThrowActive = v; },
+      });
+
+      window.MusicMinigame?.init({
+        refreshActionBar,
+        getCameraMode: () => activeCameraMode,
+        setCameraMode: (v) => { activeCameraMode = v; },
+        getCameraTarget: () => activeCameraTarget,
+        setCameraTarget: (v) => { activeCameraTarget = v; },
       });
 
       window.BanditCombat?.init({

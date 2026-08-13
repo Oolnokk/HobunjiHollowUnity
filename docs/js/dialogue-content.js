@@ -358,6 +358,11 @@
           } else if (act.type === 'turnInTask') {
             const res = deps.turnInTask(act.taskId);
             if (!res.ok) deps.showToast(res.message, false);
+          } else if (act.type === 'startMusicMinigame') {
+            const npcId = _dlgNpcRec?.id || null;
+            deps.closeNpcDialogue();
+            window.MusicMinigame?.begin({ npcId });
+            skipNav = true;
           }
         });
         if (!skipNav) _navigateDlgTo(c.next);
