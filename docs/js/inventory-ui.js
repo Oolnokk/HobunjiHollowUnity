@@ -28,15 +28,16 @@
     const style = document.createElement('style'); // Owns presentation only; inventory state/actions stay in existing systems.
     style.id = STYLE_ID;
     style.textContent = `
-      /* Inventory uses the menu's otherwise-unused outer screen margins instead of stealing room from its own tiles/cards. */
+      /* Inventory expands sideways into real viewport room, up to 36 virtual columns, while keeping a small screen-edge gutter. */
       #menuPanel:has(#mpInventory.active) {
-        left:calc(var(--ox) + 1 * var(--col));
+        --inventory-menu-width:min(calc(36 * var(--col)),calc(100vw - 24px));
+        left:calc(50vw - var(--inventory-menu-width) * .5);
         top:calc(var(--oy) + 1 * var(--row));
-        width:calc(30 * var(--col));
+        width:var(--inventory-menu-width);
         height:calc(16 * var(--row));
       }
       #menuPanel:has(#mpInventory.active) #mpInventory {
-        --inv-col:calc(30 * var(--col) / 54);
+        --inv-col:calc(var(--inventory-menu-width) / 54);
         --inv-row:calc((16 * var(--row) - 1.18 * var(--row)) / 28);
         --inv-font-xs:11px;
         --inv-font-sm:clamp(11px,calc(.23 * var(--row)),14px);
@@ -196,7 +197,7 @@
       if (relevant) scheduleMenuReadability();
     });
     roots.forEach((root) => {
-      menuReadabilityObserver.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['class','hidden','disabled'] });
+      menuReadabilityObserver.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['class','hidden','disabled','aria-selected','aria-pressed'] });
       root.addEventListener('click', scheduleMenuReadability, true);
       root.addEventListener('input', scheduleMenuReadability, true);
     });
@@ -217,25 +218,29 @@
       elements.forEach((element) => {
         if (!isMenuTextCarrier(element)) return;
 
-        // Re-evaluate against the underlying class/state each pass so a later active/accent state can still become larger or colored.
-        if (element.dataset.menuFontFloor === '1') {
-          element.style.removeProperty('font-size');
-          delete element.dataset.menuFontFloor;
-        }
-        if (element.dataset.menuGrayText === '1') {
-          element.style.removeProperty('color');
-          delete element.dataset.menuGrayText;
+        // Only clear our overrides when the element's actual UI state changes. Re-clearing them every pass caused active/inactive text flicker.
+        const readabilityState = `${element.className}|${element.getAttribute('aria-selected') || ''}|${element.getAttribute('aria-pressed') || ''}|${element.hasAttribute('disabled') ? 'disabled' : ''}`;
+        if (element.dataset.menuReadabilityState !== readabilityState) {
+          if (element.dataset.menuFontFloor === '1') {
+            element.style.removeProperty('font-size');
+            delete element.dataset.menuFontFloor;
+          }
+          if (element.dataset.menuGrayText === '1') {
+            element.style.removeProperty('color');
+            delete element.dataset.menuGrayText;
+          }
+          element.dataset.menuReadabilityState = readabilityState;
         }
 
         const computed = getComputedStyle(element);
         const fontPx = Number.parseFloat(computed.fontSize);
-        if (Number.isFinite(fontPx) && fontPx < MENU_MIN_FONT_PX - 0.01) {
+        if (Number.isFinite(fontPx) && fontPx < MENU_MIN_FONT_PX - 0.01 && element.dataset.menuFontFloor !== '1') {
           element.style.setProperty('font-size', `${MENU_MIN_FONT_PX}px`, 'important');
           element.dataset.menuFontFloor = '1';
         }
 
         const color = parseCssColor(computed.color);
-        if (color && isGrayMenuText(color)) {
+        if (color && isGrayMenuText(color) && element.dataset.menuGrayText !== '1') {
           const alpha = Math.max(0, Math.min(1, color.a));
           const mutedGreen = alpha < 0.995 ? `rgba(138,173,143,${alpha})` : 'rgb(138,173,143)';
           element.style.setProperty('color', mutedGreen, 'important');
@@ -262,11 +267,11 @@
     if (!Number.isFinite(color.r) || !Number.isFinite(color.g) || !Number.isFinite(color.b) || !Number.isFinite(color.a) || color.a <= 0.02) return false;
     const max = Math.max(color.r, color.g, color.b);
     const min = Math.min(color.r, color.g, color.b);
-    if (max - min > 10) return false; // Colored text, including the existing green muted/accent families, is preserved.
+    if (max - min > 4) return false; // Even subtle intentional tint counts as colored; notably preserves dark-green selected-control text.
     const average = (color.r + color.g + color.b) / 3;
     if (average >= 248 && color.a >= 0.95) return false; // Solid white is text, not gray; keep it white.
     if (average <= 22 && color.a >= 0.95) return false; // Solid black on light selected controls remains intentional contrast.
-    return true; // Neutral gray, near-gray, or faded white that visually renders gray gets the green muted tone.
+    return true; // Truly neutral gray or faded white gets the green muted tone.
   }
 
   function scheduleDecorate() {
@@ -642,18 +647,17 @@
   function renderSelectedToolMastery() {
     const panel = ensureToolMasteryPanel();
     if (!panel) return;
-    const combatDeps = window.Combat?.deps || null; // Existing read-only tool-mastery functions are injected into Combat by game.js.
+    const combatDeps = window.Combat?.deps || null; // The tool registry/gear state already lives in the Combat dependency bundle.
     const itemKey = selectedDetailToolKey(combatDeps);
-    if (!itemKey || typeof combatDeps?.toolMasteryXp !== 'function') {
+    const xp = readToolMasteryXp(combatDeps, itemKey);
+    if (!itemKey || xp == null) {
       panel.hidden = true;
       delete panel.dataset.toolKey;
       return;
     }
 
     const thresholds = runtimeToolMasteryThresholds(combatDeps);
-    const rawXp = Number(combatDeps.toolMasteryXp(itemKey));
-    const xp = Number.isFinite(rawXp) ? Math.max(0, rawXp) : 0;
-    const runtimeLevel = typeof combatDeps.toolMasteryLevel === 'function' ? Number(combatDeps.toolMasteryLevel(itemKey)) : NaN;
+    const runtimeLevel = typeof combatDeps?.toolMasteryLevel === 'function' ? Number(combatDeps.toolMasteryLevel(itemKey)) : NaN;
     const level = Number.isFinite(runtimeLevel)
       ? Math.max(0, Math.min(thresholds.length, Math.floor(runtimeLevel)))
       : masteryLevelFromXp(xp, thresholds);
@@ -675,12 +679,24 @@
     if (nextLabel) nextLabel.textContent = atMax ? `${formatXp(xp)} XP total` : `${formatXp(Math.max(0, nextThreshold - xp))} XP to next`;
     if (fill) fill.style.width = `${Math.round(progress * 1000) / 10}%`;
     if (track) {
-      track.setAttribute('aria-label', `${combatDeps.TOOL_ITEM_DEFS?.[itemKey]?.label || 'Tool'} mastery progress`);
+      track.setAttribute('aria-label', `${combatDeps?.TOOL_ITEM_DEFS?.[itemKey]?.label || 'Tool'} mastery progress`);
       track.setAttribute('aria-valuemin', String(atMax ? 0 : currentFloor));
       track.setAttribute('aria-valuemax', String(nextThreshold));
       track.setAttribute('aria-valuenow', String(atMax ? nextThreshold : Math.min(xp, nextThreshold)));
       track.setAttribute('aria-valuetext', atMax ? `Mastery ${level} of ${thresholds.length}, maximum mastery` : `Mastery ${level} of ${thresholds.length}, ${formatXp(xp)} of ${formatXp(nextThreshold)} XP`);
     }
+  }
+
+  function readToolMasteryXp(combatDeps, itemKey) {
+    if (!combatDeps || !itemKey) return null;
+    if (typeof combatDeps.toolMasteryXp === 'function') {
+      const directXp = Number(combatDeps.toolMasteryXp(itemKey));
+      if (Number.isFinite(directXp)) return Math.max(0, directXp);
+    }
+    // Some Combat dependency builds expose the live character Gear object but not the convenience XP getter. Read the same canonical saved field directly.
+    const gearInventory = typeof combatDeps.gearInventory === 'function' ? combatDeps.gearInventory() : combatDeps.gearInventory;
+    const storedXp = Number(gearInventory?.toolMastery?.[itemKey]?.xp);
+    return Number.isFinite(storedXp) ? Math.max(0, storedXp) : null;
   }
 
   function selectedDetailToolKey(combatDeps) {
@@ -690,8 +706,9 @@
     const name = document.getElementById('iiName')?.textContent?.trim() || '';
     if (!name) return null;
     const cleanedName = name
-      .replace(/\s*\(Gear\)\s*$/i, '')
+      .replace(/\s*\(Gear\)\s*/ig, ' ')
       .replace(/\s+—\s+Mastery\s+\d+\s*\/\s*\d+.*$/i, '')
+      .replace(/\s+/g, ' ')
       .trim();
     if (panelKey && defs[panelKey]?.label === cleanedName) return panelKey;
     return Object.keys(defs).find((key) => defs[key]?.label === cleanedName) || null;
@@ -766,6 +783,7 @@
     const pane = document.getElementById('mpInventory');
     const mode = pane?.classList.contains('inv-mode-gear') ? 'gear' : 'pack';
     const masteryPanel = document.getElementById('iiToolMastery');
+    const combatDeps = window.Combat?.deps || null;
     return {
       mode,
       packItems: document.querySelectorAll('#invGrid .inv-item-box:not(.empty)').length,
@@ -775,6 +793,11 @@
       ownedGearTiles: document.querySelectorAll('#invEquipSection .gear-owned-section .inv-equip-slot').length,
       infoHasDescription: !!document.getElementById('iiDesc')?.textContent?.trim(),
       selectedToolMasteryBar: masteryPanel && !masteryPanel.hidden ? masteryPanel.dataset.toolKey || true : false,
+      masteryDataAccess: {
+        toolDefs: !!combatDeps?.TOOL_ITEM_DEFS,
+        xpGetter: typeof combatDeps?.toolMasteryXp === 'function',
+        gearInventory: typeof combatDeps?.gearInventory === 'function' || !!combatDeps?.gearInventory,
+      },
       boundsVisible: !!document.getElementById('menuPanel')?.classList.contains('inv-debug'),
       menuMinFontPx: MENU_MIN_FONT_PX,
     };
