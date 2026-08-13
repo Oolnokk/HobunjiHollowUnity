@@ -28,6 +28,14 @@
   function init(injectedDeps) { deps = injectedDeps; }
 
   const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html';
+  // The ONE songbook entry the ported app currently knows (see
+  // lyre-performance.html's SONGBOOK) — surfaced here as a simple two-way
+  // toggle rather than porting the original mockup's own multi-song
+  // authoring-oriented Songs modal, since the mockup was built for
+  // browsing/curating a whole catalog and we only need "improvise or play
+  // the one known song" today. Update this (and swap the toggle for a real
+  // picker) once a second song exists in the songbook.
+  const KNOWN_SONG_TITLE = 'When the Kininjis Bloom';
   const AMBIENT_RECHECK_S = 1; // How often tick() re-evaluates who should be ambiently performing — this doesn't need per-frame precision.
 
   const overlayEl = document.getElementById('musicMinigameOverlay');
@@ -172,8 +180,13 @@
     const bridge = bridgeOf(frame);
     if (!leftMount || !rightMount || !bridge) return false;
 
+    // Only meaningful in lead/solo mode — joining an NPC as backup already
+    // fixes the song to whatever they're leading (see beginPlayerSession),
+    // so there's nothing to pick.
+    const showSongToggle = playerSession?.mode === 'lead';
     leftMount.innerHTML = `
       <aside class="edgeMusicPanel" aria-label="Left controller panel">
+        ${showSongToggle ? `<button class="edgeControllerBtn system edgeSongModeBtn" data-song-mode-toggle><span class="glyph">🎵</span><span class="action-label" data-song-mode-label>Play ${KNOWN_SONG_TITLE}</span></button>` : ''}
         <div class="edgeShoulderGrid" aria-label="Shoulder controls">
           <div class="edgeShoulderStack">
             <button class="edgeControllerBtn edgeBumperBtn" data-bridge-bank="lb"><span class="glyph" data-label-key="lb">▲</span><span class="action-label">Notes +12</span></button>
@@ -268,6 +281,24 @@
       event.preventDefault();
       bridge.resetHarmony();
     });
+
+    // Toggles between free improvisation (the default on opening — see
+    // onPlayerFrameLoaded) and actually playing the one known songbook
+    // song. The label always names what tapping does NEXT, so it reads
+    // correctly in both states without a separate "current mode" readout.
+    const songModeBtn = leftMount.querySelector('[data-song-mode-toggle]');
+    const songModeLabel = songModeBtn?.querySelector('[data-song-mode-label]');
+    if (songModeBtn && songModeLabel) {
+      let playingSong = false;
+      songModeBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        await bridge.wakeAudio?.().catch(() => {});
+        playingSong = !playingSong;
+        if (playingSong) await bridge.startGameplaySong?.();
+        else bridge.enterJamMode?.();
+        songModeLabel.textContent = playingSong ? 'Improvise' : `Play ${KNOWN_SONG_TITLE}`;
+      });
+    }
 
     const bindStick = (pad, hand, maxTranslate) => {
       const nub = pad?.querySelector('.edgeStickNub');

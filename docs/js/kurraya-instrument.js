@@ -69,7 +69,17 @@
     const topMat = new THREE.MeshBasicMaterial({ map: kurrayaTopTexture(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
     const top = new THREE.Mesh(topGeo, topMat);
     top.renderOrder = deps.heldObjectRenderOrder;
-    top.position.set(KURRAYA_TOP_PART.position.x * frontW, KURRAYA_TOP_PART.position.y * frontW, KURRAYA_TOP_PART.position.z * frontW);
+    // The reference mockup builds front/top as siblings with their OWN
+    // individual 0.46 mesh scale, while position lives in their shared
+    // parent's un-scaled local space — so top.position is already an
+    // absolute offset calibrated against that same 0.46 front scale, not a
+    // fraction of frontW to be multiplied in. Converting by (frontW/0.46)
+    // instead of frontW alone reproduces that reference scale exactly
+    // (this fit's frontW happens to equal 0.46 already) while staying
+    // correct if frontW is ever tuned differently.
+    const REFERENCE_FRONT_SCALE = 0.46;
+    const topPosScale = frontW / REFERENCE_FRONT_SCALE;
+    top.position.set(KURRAYA_TOP_PART.position.x * topPosScale, KURRAYA_TOP_PART.position.y * topPosScale, KURRAYA_TOP_PART.position.z * topPosScale);
     top.rotation.set(
       THREE.MathUtils.degToRad(KURRAYA_TOP_PART.rotationDeg.x),
       THREE.MathUtils.degToRad(KURRAYA_TOP_PART.rotationDeg.y),
