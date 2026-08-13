@@ -11,6 +11,7 @@
     ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20260812a'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
+    ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260812a'],
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
     ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
