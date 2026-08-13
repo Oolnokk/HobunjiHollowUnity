@@ -218,7 +218,7 @@
     set('iiIcon',  def.icon);
     const iiIconEl2 = document.getElementById('iiIcon');
     if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
-    set('iiName',  def.label + ' (Gear) — Mastery ' + deps.toolMasteryLevel(key) + '/5');
+    set('iiName',  def.label + ' — Mastery ' + deps.toolMasteryLevel(key) + '/5 (Gear)');
     set('iiPrice', 'Permanent — not sellable');
     set('iiTags',  '');
     set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
