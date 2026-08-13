@@ -12,7 +12,7 @@
 
   const FOOTING_DAMAGE_MULTIPLIER = 2;
   const FOOTING_RECOVERY_DELAY_S = 1.5;
-  const FOOTING_FULL_RECOVERY_S = 5; // Used to derive the normal recovery rate from each entity's maximum Footing.
+  const FOOTING_FULL_RECOVERY_S = 5; // Used to derive the baseline recovery rate from each entity's maximum Footing.
   const nowMs = () => performance.now();
 
   function recoveryDelayRemaining(entity) {
@@ -23,7 +23,7 @@
   }
 
   function defaultFootingRegenPerSec(entity) {
-    const maxFooting = Math.max(0, Number(entity?.maxFooting) || 0); // Used here so the normal empty-to-full recovery duration stays five seconds at any maximum.
+    const maxFooting = Math.max(0, Number(entity?.maxFooting) || 0); // Used here so baseline empty-to-full recovery stays five seconds at any maximum.
     return maxFooting / FOOTING_FULL_RECOVERY_S;
   }
 
@@ -38,10 +38,10 @@
   const previousTick = RS.tick.bind(RS);
   RS.tick = function delayedFootingRecoveryTick(entity, dt, options = {}) {
     const delayActive = recoveryDelayRemaining(entity) > 0; // Used below to preserve the no-regen grace period after the latest Footing loss.
-    const explicitRate = Number(options.footingRegenPerSec); // Used below so an explicitly supplied encounter-specific rate can still override the normal five-second rate.
+    const explicitRate = Number(options.footingRegenPerSec); // Used below so an explicitly supplied encounter-specific rate can still override the baseline five-second rate.
     const footingRegenPerSec = delayActive
       ? 0
-      : (Number.isFinite(explicitRate) ? Math.max(0, explicitRate) : defaultFootingRegenPerSec(entity)); // Passed through ResourceSystem.tick's existing rate override.
+      : (Number.isFinite(explicitRate) ? Math.max(0, explicitRate) : defaultFootingRegenPerSec(entity)); // Passed through ResourceSystem.tick's existing rate override; its pre-existing rested multiplier remains unchanged.
     return previousTick(entity, dt, {
       ...options,
       footingRegenPerSec,
