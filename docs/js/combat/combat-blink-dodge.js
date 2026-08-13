@@ -15,7 +15,91 @@
   const ZIP_COOLDOWN_S = 0.18;
   const WALK_SPEED_MUL = 0.66; // mirrors the demo's 118/178 ratio while active
 
+  // Base dodge polish. game.js already charges 18 stamina and grants a real
+  // 380 ms invulnerability window; this module only adds the requested
+  // somersault presentation and raises the effective cost to 30 without
+  // duplicating or replacing the existing i-frame path.
+  const BASE_DODGE_EXTRA_STAMINA_COST = 12; // Used on each ordinary dodge start; 18 + 12 = 30 total stamina.
+  const BASE_DODGE_SOMERSAULT_DUR_S = 0.22; // Used by the prone-recovery roll playback so it ends with dodge movement.
+  let baseDodgeWasActive = false; // Used by updateBaseDodgeEnhancements to detect only the rising edge of player.dodging.
+  let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
+  let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
+
   function now() { return performance.now() / 1000; }
+
+  function showIframeMissPopup() {
+    iframeMissCount += 1;
+    lastIframeMissAtMs = performance.now();
+    // WorldPopupText's damage kind is the exact Float+ animation used for
+    // ordinary damage numbers. A non-zero placeholder amount is required by
+    // showChange's API, while `text` replaces the rendered number entirely.
+    window.WorldPopupText?.showChange('damage', 1, { text: 'miss' });
+  }
+
+  function installIframeMissFeedback() {
+    // Enemy combat modules all receive game.js's closure-private damagePlayer
+    // through Combat.init(deps). Decorate that one injected seam before Combat
+    // stores it, so a hit that intersects during invulnUntil gets the same
+    // damage Float+ presentation without duplicating checks in every attack.
+    const originalInit = window.Combat.init;
+    if (originalInit?.__hobunjiIframeMissFeedback) return;
+    const enhancedInit = function iframeMissAwareCombatInit(injectedDeps) {
+      const originalDamagePlayer = injectedDeps?.damagePlayer;
+      if (typeof originalDamagePlayer === 'function' && !originalDamagePlayer.__hobunjiIframeMissFeedback) {
+        const iframeAwareDamagePlayer = function iframeAwareDamagePlayer(...args) {
+          const player = injectedDeps.player;
+          if (player && performance.now() < (Number(player.invulnUntil) || 0)) {
+            showIframeMissPopup();
+            return;
+          }
+          return originalDamagePlayer.apply(this, args);
+        };
+        iframeAwareDamagePlayer.__hobunjiIframeMissFeedback = true;
+        injectedDeps.damagePlayer = iframeAwareDamagePlayer;
+      }
+      return originalInit(injectedDeps);
+    };
+    enhancedInit.__hobunjiIframeMissFeedback = true;
+    window.Combat.init = enhancedInit;
+  }
+
+  function updateBaseDodgeEnhancements() {
+    const deps = window.Combat.deps;
+    const player = deps?.player;
+    if (!player) return;
+
+    const dodging = !!player.dodging;
+    if (dodging && !baseDodgeWasActive) {
+      // Reuse the same non-blocking spend path as game.js's base dodge so the
+      // larger cost can still overdraw into Exhausted instead of refusing the
+      // action at low stamina.
+      if (window.ResourceSystem) {
+        window.ResourceSystem.spendStamina(player, BASE_DODGE_EXTRA_STAMINA_COST, 'dodge somersault');
+      } else {
+        player.stamina = Math.max(0, player.stamina - BASE_DODGE_EXTRA_STAMINA_COST);
+      }
+
+      // This is the exact procedural 360° recovery arc used when the player
+      // exits prone, just time-compressed to the ordinary dodge duration so
+      // the visual roll does not lengthen the dodge or increase its travel.
+      window.ImpactRagdollPlayback?.beginRecoveryArc(BASE_DODGE_SOMERSAULT_DUR_S);
+    }
+    baseDodgeWasActive = dodging;
+  }
+
+  function installBaseDodgeEnhancements() {
+    // Combat.update is already the per-frame combat seam game.js calls. Wrap
+    // it once here instead of adding a second requestAnimationFrame loop or
+    // reaching into game.js's closure-private performDodge implementation.
+    const originalUpdate = window.Combat.update;
+    if (originalUpdate?.__hobunjiBaseDodgeEnhancements) return;
+    const enhancedUpdate = function enhancedCombatUpdate(dt) {
+      originalUpdate(dt);
+      updateBaseDodgeEnhancements();
+    };
+    enhancedUpdate.__hobunjiBaseDodgeEnhancements = true;
+    window.Combat.update = enhancedUpdate;
+  }
 
   function register() {
     let active = false;
@@ -90,5 +174,22 @@
     window.Combat.abilities.register('blinkDodge', { label: 'Blink Dodge', slotFamily: 'hold', category: 'defensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
+  window.HobunjiDodgeFeedback = Object.freeze({
+    getDebug() {
+      const player = window.Combat?.deps?.player;
+      const remainingIframeMs = player
+        ? Math.max(0, (Number(player.invulnUntil) || 0) - performance.now())
+        : 0;
+      return {
+        iframeMissCount,
+        lastIframeMissAtMs,
+        remainingIframeMs,
+        dodging: !!player?.dodging,
+      };
+    },
+  });
+
+  installIframeMissFeedback();
+  installBaseDodgeEnhancements();
   register();
 })();

@@ -12,6 +12,7 @@
 
   const FOOTING_DAMAGE_MULTIPLIER = 2;
   const FOOTING_RECOVERY_DELAY_S = 1.5;
+  const FOOTING_FULL_RECOVERY_S = 3; // Used to derive the baseline recovery rate from each entity's maximum Footing.
   const nowMs = () => performance.now();
 
   function recoveryDelayRemaining(entity) {
@@ -21,8 +22,17 @@
     return Math.max(0, FOOTING_RECOVERY_DELAY_S - elapsedS);
   }
 
+  function defaultFootingRegenPerSec(entity) {
+    const maxFooting = Math.max(0, Number(entity?.maxFooting) || 0); // Used here so baseline empty-to-full recovery stays three seconds at any maximum.
+    return maxFooting / FOOTING_FULL_RECOVERY_S;
+  }
+
   const previousSpendFooting = RS.spendFooting.bind(RS);
   RS.spendFooting = function doubledFootingDamage(entity, amount, reason = 'hit') {
+    // Prone already makes an entity immune to Footing loss. Keep that rule
+    // explicit at the delay-owning choke point too so hits received while
+    // prone can never create or refresh lastFootingDamageAt.
+    if (entity?.prone) return 0;
     const requested = Math.max(0, Number(amount) || 0) * FOOTING_DAMAGE_MULTIPLIER;
     const spent = previousSpendFooting(entity, requested, reason);
     if (spent > 0) entity.lastFootingDamageAt = nowMs();
@@ -31,21 +41,29 @@
 
   const previousTick = RS.tick.bind(RS);
   RS.tick = function delayedFootingRecoveryTick(entity, dt, options = {}) {
-    if (!(recoveryDelayRemaining(entity) > 0)) return previousTick(entity, dt, options);
+    const delayActive = recoveryDelayRemaining(entity) > 0; // Used below to preserve the no-regen grace period after the latest standing Footing loss.
+    const explicitRate = Number(options.footingRegenPerSec); // Used below so an explicitly supplied encounter-specific rate can still override the baseline three-second rate.
+    const footingRegenPerSec = delayActive
+      ? 0
+      : (Number.isFinite(explicitRate) ? Math.max(0, explicitRate) : defaultFootingRegenPerSec(entity)); // Passed through ResourceSystem.tick's existing rate override; its pre-existing rested multiplier remains unchanged.
     return previousTick(entity, dt, {
       ...options,
-      footingRegenPerSec: 0,
+      footingRegenPerSec,
     });
   };
 
   window.HobunjiFootingDamageRecovery = Object.freeze({
     damageMultiplier: FOOTING_DAMAGE_MULTIPLIER,
     recoveryDelaySeconds: FOOTING_RECOVERY_DELAY_S,
+    fullRecoverySeconds: FOOTING_FULL_RECOVERY_S,
     recoveryDelayRemaining,
+    defaultFootingRegenPerSec,
     getDebug(entity = window.Combat?.deps?.player) {
       return {
         damageMultiplier: FOOTING_DAMAGE_MULTIPLIER,
         recoveryDelaySeconds: FOOTING_RECOVERY_DELAY_S,
+        fullRecoverySeconds: FOOTING_FULL_RECOVERY_S,
+        defaultFootingRegenPerSec: defaultFootingRegenPerSec(entity),
         recoveryDelayRemaining: recoveryDelayRemaining(entity),
         lastFootingDamageAt: Number.isFinite(Number(entity?.lastFootingDamageAt))
           ? Number(entity.lastFootingDamageAt)
