@@ -1600,9 +1600,18 @@
        iframe rather than built inline like the fishing ring (see
        js/music-minigame.js): it's a large pre-built instrument/rhythm
        system with its own CSS namespace, so an iframe avoids ID/style
-       collisions with the rest of the page. -->
+       collisions with the rest of the page. The iframe itself renders
+       transparent with its own native controls hidden (its "hosted-
+       minigame" body class) so the real 3D scene — the player, and
+       whichever NPC they may be playing alongside — stays fully visible
+       underneath; js/music-minigame.js's buildEdgeControls() populates
+       leftMusicControls/rightMusicControls with the actual touch/mouse
+       controls, driving the iframe's engine directly through its exposed
+       HobunjiMusicControlBridge. -->
   <div id="musicMinigameOverlay">
-    <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay"></iframe>
+    <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
+    <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
+    <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
     <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
   </div>
 

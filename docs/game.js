@@ -8007,7 +8007,12 @@
       // (whoever started playing first in a given area leads, everyone
       // else who joins falls in as backup — see listInstrumentPerformers).
       const INSTRUMENT_NPC_DEFS = [
+        // Foroji busks in the square on his day off (Naru) and plays the
+        // inn at night after his shop shift the rest of the week — two
+        // stations, same NPC, same song; only one can ever be on duty at
+        // once so listInstrumentPerformers below never double-counts him.
         { npcId: 'foroji_funji', stationLabel: 'Playing Music in the Square', songId: 'when-the-kininjis-bloom' },
+        { npcId: 'foroji_funji', stationLabel: 'Playing Music at the Inn', songId: 'when-the-kininjis-bloom' },
       ];
 
       // Mirrors isGeneralStoreNpcOnDuty/isCarpenterNpcOnDuty's idle/station/
@@ -22865,11 +22870,38 @@
         setFishThrowActive: (v) => { fishThrowActive = v; },
       });
 
+      let _musicPrevCameraMode = null;
+      let _musicPrevCameraTarget = null;
       window.MusicMinigame?.init({
         refreshActionBar,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         showToast,
+        // Frames the performance in third-person (see the "music" camera
+        // mode in scratchbones-config.js) instead of leaving the default
+        // camera in place — matches how fishing/dialogue each get their
+        // own framing. In backup mode the target sits at the midpoint
+        // between the player and whichever NPC they joined, so both stay
+        // in shot; in lead/solo mode it just follows the player as usual.
+        beginMusicCamera: (npcId) => {
+          _musicPrevCameraMode = activeCameraMode;
+          _musicPrevCameraTarget = activeCameraTarget;
+          activeCameraMode = 'music';
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.root) {
+            const midX = (player.x / TILE + walker.root.position.x) / 2;
+            const midZ = (player.y / TILE + walker.root.position.z) / 2;
+            activeCameraTarget = { position: new THREE.Vector3(midX, 0, midZ) };
+          } else {
+            activeCameraTarget = null;
+          }
+        },
+        endMusicCamera: () => {
+          activeCameraMode = _musicPrevCameraMode ?? 'default';
+          activeCameraTarget = _musicPrevCameraTarget ?? null;
+          _musicPrevCameraMode = null;
+          _musicPrevCameraTarget = null;
+        },
       });
 
       window.BanditCombat?.init({

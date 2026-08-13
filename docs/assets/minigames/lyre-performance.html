@@ -3693,7 +3693,7 @@
   // Touch/mouse taps count as "gamepad style" since those buttons *are*
   // the touch input — there's nothing truer to swap them to.
   const GAMEPAD_GLYPHS = {y:'Y',x:'X',b:'B',a:'A',lb:'LB',lt:'LT',rb:'RB',rt:'RT',start:'START'};
-  const KEYBOARD_GLYPHS = {y:'F',x:'A',b:'D',a:'S',lb:'W',lt:'Q',rb:'R',rt:'E',start:'ESC'};
+  const KEYBOARD_GLYPHS = {y:'F',x:'A',b:'D',a:'S',lb:'▲',lt:'◀',rb:'▼',rt:'▶',start:'ESC'};
   let activeInputMethod = 'gamepad';
   function refreshControlGlyphs() {
     const glyphs = activeInputMethod === 'keyboard' ? KEYBOARD_GLYPHS : GAMEPAD_GLYPHS;
@@ -3702,6 +3702,11 @@
       if (glyph) el.textContent = glyph;
     });
     $$('.stick-key-hint').forEach(el => { el.classList.toggle('visible', activeInputMethod === 'keyboard'); });
+    // In hosted-minigame mode these native buttons are hidden — the real
+    // touch surface is the host page's own edge controls (see
+    // buildEdgeControls in js/music-minigame.js), which mirror this same
+    // swap on their own [data-label-key] glyphs via this message.
+    try { parent.postMessage({source:'hobunji-music-minigame', type:'inputMethod', method:activeInputMethod}, '*'); } catch {}
   }
   function setActiveInputMethod(method) {
     if (activeInputMethod === method) return;
@@ -3714,13 +3719,13 @@
 
   const keyboardSources = new Map();
   function bindKeyboard() {
-    // Left hand: shoulder/trigger banks over their matching face notes
-    // (Q/W/E/R mirror LT/LB/RT/RB, A/S/D/F mirror X/A/B/Y directly below
-    // them). Right hand: U/O rotate the hidden chord left/right and I/K
-    // strum up/down, in the same diamond arrangement WASD-style games use
-    // for directional input — both hands stay on home row.
+    // Left hand: A/S/D/F play the four face notes (X/A/B/Y). Right hand:
+    // the arrow cluster covers the shoulder/trigger banks (◀/▶ = LT/RT,
+    // ▲/▼ = LB/RB) — a single reachable block instead of a QWER row split
+    // across the keyboard from the note keys. U/O still rotate the hidden
+    // chord left/right and I/K still strum up/down.
     const noteKeyMap = new Map([['KeyA',0],['KeyS',1],['KeyD',2],['KeyF',3]]); // X/A/B/Y.
-    const bankKeyMap = new Map([['KeyQ','lt'],['KeyW','lb'],['KeyE','rt'],['KeyR','rb']]); // LT/LB/RT/RB where the active preset permits them.
+    const bankKeyMap = new Map([['ArrowLeft','lt'],['ArrowUp','lb'],['ArrowRight','rt'],['ArrowDown','rb']]); // LT/LB/RT/RB where the active preset permits them.
     window.addEventListener('keydown', event => {
       if (event.repeat || event.target?.matches?.('input,select,textarea')) return;
       setActiveInputMethod('keyboard');
@@ -3741,8 +3746,8 @@
       if (event.code === 'KeyO') { event.preventDefault(); if (isLatchedAutoBankLayout()) setLeftStickSector(1,'keyboard upper-right sector'); else { state.arpeggioIndex = (state.arpeggioIndex + 1) % 8; updateArpeggioUI(); if (isDualArpLayout()) void triggerDualArpeggioNote('left',state.arpeggioIndex,'keyboard left wheel',1); else if (!isFrettedPluckLayout()) void triggerArpeggioStrum('rotation', 'keyboard rotate right', 1, state.arpeggioIndex); } }
       if (event.code === 'KeyI') { event.preventDefault(); if (isDualArpLayout()) { state.rightArpeggioIndex = (state.rightArpeggioIndex + 7) % 8; updateArpeggioUI(); void triggerDualArpeggioNote('right',state.rightArpeggioIndex,'keyboard right wheel',1); } else if (isLatchedAutoBankLayout()) setLeftStickSector(0,'keyboard top single-note sector'); else if (isFrettedPluckLayout()) startFrettedPluckMode('tremolo-8','keyboard'); else triggerArpeggioStrum('up', 'keyboard', 1); }
       if (event.code === 'KeyK') { event.preventDefault(); if (isDualArpLayout()) { state.rightArpeggioIndex = (state.rightArpeggioIndex + 1) % 8; updateArpeggioUI(); void triggerDualArpeggioNote('right',state.rightArpeggioIndex,'keyboard right wheel',1); } else if (isLatchedAutoBankLayout()) setLeftStickSector(3,'keyboard bottom sector'); else if (isFrettedPluckLayout()) startFrettedPluckMode('tremolo-16','keyboard'); else triggerArpeggioStrum('down', 'keyboard', 1); }
-      if (event.code === 'ArrowLeft') { event.preventDefault(); cycleScale(-1); }
-      if (event.code === 'ArrowRight') { event.preventDefault(); cycleScale(1); }
+      if (event.code === 'Comma') { event.preventDefault(); cycleScale(-1); }
+      if (event.code === 'Period') { event.preventDefault(); cycleScale(1); }
       if (event.code === 'Escape') { event.preventDefault(); togglePause(); }
     });
     window.addEventListener('keyup', event => {
@@ -6157,6 +6162,7 @@
       return ensureAudio();
     },
     announceInput(control) {
+      setActiveInputMethod('gamepad'); // Every host-edge-control interaction (note/bank/tap/stick) routes through here — the same "touch counts as gamepad-style" convention bindKeyboard's own pointerdown listener uses.
       try {
         parent.postMessage({ source:'hobunji-music-minigame', type:'input', control:String(control || 'music-control') }, '*');
       } catch (_) {}
