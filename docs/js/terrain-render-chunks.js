@@ -1,16 +1,11 @@
 (() => {
   'use strict';
 
-  // Whole-zone terrain meshes are excellent for draw-call count but terrible
-  // for frustum culling: one visible tile keeps every triangle in that material
-  // bucket alive in both the normal scene and layer-3 material-ID pass.
-  //
-  // Re-index those triangles ONCE by real X/Z position into 12x12-tile cells.
-  // Each cell keeps the original vertex attributes/materials and only gets its
-  // own draw range + conservative bounds. Indexed source geometry reuses its
-  // existing index BufferAttribute (the array is reordered in place after a
-  // temporary typed-array build), so steady-state GPU memory does not gain a
-  // second full terrain vertex buffer.
+  // Whole-zone terrain meshes are cheap in draw calls but keep every triangle
+  // alive when any part of the mesh is visible. Zone BufferGeometry is authored
+  // in TILE units (x/z ~= 0..zoneCols), so bucket directly in that coordinate
+  // space. Gameplay movement uses TILE=55 pixels elsewhere; applying that scale
+  // here collapses a normal ~100-tile zone into one bucket and defeats culling.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   if (!THREE?.BufferGeometry || !THREE?.Mesh || !rendererProto || typeof rendererProto.render !== 'function') return;
@@ -25,9 +20,8 @@
   }
 
   const MATERIAL_ID_LAYER = 3;
-  const TILE_WORLD = 55;
   const CHUNK_TILES = 12;
-  const CHUNK_WORLD = TILE_WORLD * CHUNK_TILES;
+  const CHUNK_WORLD = CHUNK_TILES; // THREE zone geometry is already in tile-space.
   const MIN_SOURCE_TRIANGLES = 60000;
   const SCAN_INTERVAL_MS = 500;
   const MAX_SPATIAL_BUCKETS = 400;
@@ -36,6 +30,8 @@
   let sourceMeshesChunked = 0;
   let chunksCreated = 0;
   let sourceTrianglesChunked = 0;
+  let rejectedTooFewBuckets = 0;
+  let rejectedTooManyBuckets = 0;
 
   function triangleCount(geometry) {
     if (!geometry) return 0;
@@ -54,20 +50,11 @@
     if (!mesh.parent?.isScene) return false;
     if (!mesh.receiveShadow) return false;
     if (!hasLayer(mesh, MATERIAL_ID_LAYER)) return false;
-    if (!mesh.geometry?.attributes?.position) return false;
-    if (mesh.geometry.attributes.position.isInterleavedBufferAttribute) return false;
+    const position = mesh.geometry?.attributes?.position;
+    if (!position || position.isInterleavedBufferAttribute || !position.array) return false;
     if (Array.isArray(mesh.material)) return false;
     if (mesh.geometry.groups?.length > 1) return false;
     return triangleCount(mesh.geometry) >= MIN_SOURCE_TRIANGLES;
-  }
-
-  function makePositionReader(position) {
-    const array = position.array;
-    const stride = position.itemSize;
-    return function read(index) {
-      const offset = index * stride;
-      return [array[offset], array[offset + 1], array[offset + 2]];
-    };
   }
 
   function sourceIndexAt(indexAttribute, element) {
@@ -75,7 +62,7 @@
   }
 
   function bucketKey(gx, gz) {
-    return gx * 65536 + gz;
+    return `${gx},${gz}`;
   }
 
   function getOrCreateBucket(buckets, gx, gz) {
@@ -100,28 +87,47 @@
     if (z > bucket.maxZ) bucket.maxZ = z;
   }
 
+  // Hot one-time path: use raw typed-array reads rather than allocating
+  // [x,y,z] arrays six times per triangle across the two planning passes.
   function spatialPlan(geometry) {
     const position = geometry.attributes.position;
+    const p = position.array;
+    const stride = position.itemSize;
     const sourceIndex = geometry.index || null;
-    const read = makePositionReader(position);
     const elementCount = Math.floor((sourceIndex?.count ?? position.count) / 3) * 3;
     const buckets = new Map();
+
+    const vertex = (vertexIndex, component) => p[vertexIndex * stride + component];
 
     for (let i = 0; i < elementCount; i += 3) {
       const ia = sourceIndexAt(sourceIndex, i);
       const ib = sourceIndexAt(sourceIndex, i + 1);
       const ic = sourceIndexAt(sourceIndex, i + 2);
-      const a = read(ia), b = read(ib), c = read(ic);
-      const cx = (a[0] + b[0] + c[0]) / 3;
-      const cz = (a[2] + b[2] + c[2]) / 3;
-      const bucket = getOrCreateBucket(buckets, Math.floor(cx / CHUNK_WORLD), Math.floor(cz / CHUNK_WORLD));
+      const ax = vertex(ia, 0), ay = vertex(ia, 1), az = vertex(ia, 2);
+      const bx = vertex(ib, 0), by = vertex(ib, 1), bz = vertex(ib, 2);
+      const cxv = vertex(ic, 0), cy = vertex(ic, 1), czv = vertex(ic, 2);
+      const centroidX = (ax + bx + cxv) / 3;
+      const centroidZ = (az + bz + czv) / 3;
+      const bucket = getOrCreateBucket(
+        buckets,
+        Math.floor(centroidX / CHUNK_WORLD),
+        Math.floor(centroidZ / CHUNK_WORLD),
+      );
       bucket.count += 3;
-      expandBounds(bucket, a[0], a[1], a[2]);
-      expandBounds(bucket, b[0], b[1], b[2]);
-      expandBounds(bucket, c[0], c[1], c[2]);
+      expandBounds(bucket, ax, ay, az);
+      expandBounds(bucket, bx, by, bz);
+      expandBounds(bucket, cxv, cy, czv);
     }
 
-    if (buckets.size < 2 || buckets.size > MAX_SPATIAL_BUCKETS) return null;
+    if (buckets.size < 2) {
+      rejectedTooFewBuckets++;
+      return null;
+    }
+    if (buckets.size > MAX_SPATIAL_BUCKETS) {
+      rejectedTooManyBuckets++;
+      return null;
+    }
+
     const orderedBuckets = [...buckets.values()].sort((a, b) => (a.gz - b.gz) || (a.gx - b.gx));
     let cursor = 0;
     for (const bucket of orderedBuckets) {
@@ -138,10 +144,12 @@
       const ia = sourceIndexAt(sourceIndex, i);
       const ib = sourceIndexAt(sourceIndex, i + 1);
       const ic = sourceIndexAt(sourceIndex, i + 2);
-      const a = read(ia), b = read(ib), c = read(ic);
-      const cx = (a[0] + b[0] + c[0]) / 3;
-      const cz = (a[2] + b[2] + c[2]) / 3;
-      const bucket = buckets.get(bucketKey(Math.floor(cx / CHUNK_WORLD), Math.floor(cz / CHUNK_WORLD)));
+      const centroidX = (vertex(ia, 0) + vertex(ib, 0) + vertex(ic, 0)) / 3;
+      const centroidZ = (vertex(ia, 2) + vertex(ib, 2) + vertex(ic, 2)) / 3;
+      const bucket = buckets.get(bucketKey(
+        Math.floor(centroidX / CHUNK_WORLD),
+        Math.floor(centroidZ / CHUNK_WORLD),
+      ));
       let w = bucket.write;
       reordered[w++] = ia;
       reordered[w++] = ib;
@@ -157,12 +165,14 @@
       new THREE.Vector3(bucket.minX, bucket.minY, bucket.minZ),
       new THREE.Vector3(bucket.maxX, bucket.maxY, bucket.maxZ),
     );
-    const center = new THREE.Vector3();
-    box.getCenter(center);
+    const center = box.getCenter(new THREE.Vector3());
     const dx = bucket.maxX - bucket.minX;
     const dy = bucket.maxY - bucket.minY;
     const dz = bucket.maxZ - bucket.minZ;
-    return { box, sphere: new THREE.Sphere(center, 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz)) };
+    return {
+      box,
+      sphere: new THREE.Sphere(center, 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz)),
+    };
   }
 
   function wrapperGeometry(source, sharedIndex, bucket, reuseSource) {
@@ -224,12 +234,16 @@
       chunks.push(makeChunkMesh(mesh, geometry, bucket, i));
     }
 
+    // Keep the original mesh as the cleanup/ownership container. Existing
+    // zone teardown traverses it, so all child wrapper geometries are disposed
+    // together when the ground is rebuilt.
     mesh.geometry = new THREE.BufferGeometry();
     mesh.userData = Object.assign({}, mesh.userData, {
       terrainRenderChunkSource: true,
       terrainRenderChunkCount: chunks.length,
       terrainRenderChunkTriangles: totalTriangles,
       terrainRenderChunkWorldSize: CHUNK_WORLD,
+      terrainRenderChunkCoordinateUnits: 'tiles',
     });
     for (const chunk of chunks) mesh.add(chunk);
 
@@ -267,7 +281,7 @@
     }
 
     if (made) {
-      const message = `[terrain-perf] spatial split ${sources} whole-zone seam mesh(es), ${compactNumber(tris)} tri into ${made} real ${CHUNK_TILES}x${CHUNK_TILES}-tile cell(s)`;
+      const message = `[terrain-perf] spatial split ${sources} whole-zone seam mesh(es), ${compactNumber(tris)} tri into ${made} real ${CHUNK_TILES}x${CHUNK_TILES}-tile cell(s) (tile-space)`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -289,6 +303,9 @@
         sourceTrianglesChunked,
         chunkTiles: CHUNK_TILES,
         chunkWorldSize: CHUNK_WORLD,
+        chunkCoordinateUnits: 'tiles',
+        rejectedTooFewBuckets,
+        rejectedTooManyBuckets,
       };
     },
   };
