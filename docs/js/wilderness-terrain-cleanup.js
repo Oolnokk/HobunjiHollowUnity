@@ -5,7 +5,10 @@
   if (!THREE || window.WildernessTerrainCleanup?.installed) return;
 
   const DEFAULTS = {
-    hideLegacyWeedSlabs: true,
+    // WEEDS are a real merged floor-material bucket, not a disposable overlay.
+    // Hiding it removes the visible ground under those tiles, so the audit
+    // deliberately keeps it rendered until the zone-floor source is changed.
+    hideLegacyWeedSlabs: false,
     naturalizeLegacyRockTiles: true,
     naturalizeDenMounds: true,
     frustumRockFormation: {
@@ -18,7 +21,7 @@
   config.frustumRockFormation = Object.assign(
     {},
     DEFAULTS.frustumRockFormation,
-    window.WildernessTerrainCleanupConfig?.frustumRockFormation || {}
+    window.WildernessTerrainCleanupConfig?.frustumRockFormation || {},
   );
 
   const stats = {
@@ -81,19 +84,23 @@
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
       let avgX = 0, avgZ = 0;
       for (let i = 0; i < 9; i++) {
-        const x = pos.getX(base + i), z = pos.getZ(base + i);
-        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-        minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-        avgX += x; avgZ += z;
+        const x = pos.getX(base + i);
+        const z = pos.getZ(base + i);
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+        avgX += x;
+        avgZ += z;
       }
-      avgX /= 9; avgZ /= 9;
+      avgX /= 9;
+      avgZ /= 9;
       const axis = (maxX - minX) < (maxZ - minZ) ? 'x' : 'z';
       const dir = axis === 'x'
         ? lowerSideForSpan('x', avgX, avgZ, zGrid)
         : lowerSideForSpan('z', avgZ, avgX, zGrid);
       if (!dir) continue;
 
-      // Vertex order is j-major: 0..2 top, 3..5 middle, 6..8 bottom.
       for (let j = 1; j <= 2; j++) {
         const fraction = j === 1 ? middle : 1;
         const offset = dir * width * fraction;
@@ -125,6 +132,10 @@
     if (!scene?.children) return;
     for (const mesh of scene.children) {
       if (!mesh?.isMesh) continue;
+
+      // Kept as an emergency/offline compatibility switch only. Main gameplay
+      // leaves this false because this color identifies a real WEEDS floor
+      // bucket in _buildZoneFloorMeshes, not a safe-to-hide decoration.
       if (config.hideLegacyWeedSlabs && plainLambert(mesh, 0x247c3c)) {
         mesh.visible = false;
         mesh.userData = Object.assign({}, mesh.userData, {
@@ -134,6 +145,7 @@
         stats.weedMeshesHidden++;
         continue;
       }
+
       if (config.naturalizeLegacyRockTiles && plainLambert(mesh, 0x79807c)) {
         window.NaturalSurfaceMaterials?.naturalizeMesh?.(mesh, 'rocks', 'planar-stretch');
         mesh.userData = Object.assign({}, mesh.userData, {
@@ -194,7 +206,7 @@
     wrapDenTotemFeatures(den);
     stats.installs++;
     window.WildernessTerrainCleanup.runtimeInstalled = true;
-    console.log('[wilderness-terrain] legacy overlays cleaned; sheer rock formations now use frustum slopes');
+    console.log('[wilderness-terrain] rock surfaces cleaned; solved sheer rock formations use frustum slopes');
     return true;
   }
 
