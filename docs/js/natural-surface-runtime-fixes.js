@@ -12,11 +12,17 @@
 
   const stats = {
     sceneAddsInspected: 0,
+    deferredInspectionBatches: 0,
+    deferredRootsInspected: 0,
     legacyRockMeshesNaturalized: 0,
     naturalMaterialsGrassTinted: 0,
     barkMaterialsHueNormalized: 0,
+    cliffUvsReprojected: 0,
     weedPlaceholderMeshesHidden: 0,
   };
+
+  const deferredRoots = new Set();
+  let deferredInspectionQueued = false;
 
   function materialHex(mat) {
     return mat?.color?.isColor ? mat.color.getHex() : null;
@@ -87,6 +93,45 @@
       || null;
   }
 
+  // Single-material cliffs own their UV channel, so project the horizontal
+  // span along U and actual height along V. The old world X/Z projection
+  // effectively collapsed vertical cliff faces into stripes/smears. Do not
+  // touch multi-material plateau geometry: its grass top shares the same UV
+  // attribute and would be corrupted by a cliff-only remap.
+  function fixSingleMaterialCliffUv(mesh) {
+    if (!mesh?.isMesh || Array.isArray(mesh.material)) return false;
+    const surface = naturalSurfaceFor(mesh, mesh.material);
+    if (surface !== 'cliffs') return false;
+    const geometry = mesh.geometry;
+    const pos = geometry?.getAttribute?.('position');
+    if (!pos) return false;
+    if (geometry.userData?.naturalSurfaceUvMapping === 'cliff-face-stretch') return false;
+
+    geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box) return false;
+    const dx = box.max.x - box.min.x;
+    const dz = box.max.z - box.min.z;
+    const dy = box.max.y - box.min.y;
+    if (!(dy > 1e-5)) return false;
+
+    const useX = dx >= dz;
+    const du = Math.max(1e-5, useX ? dx : dz);
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      const horizontal = useX ? pos.getX(i) - box.min.x : pos.getZ(i) - box.min.z;
+      uv[i * 2] = horizontal / du;
+      uv[i * 2 + 1] = (pos.getY(i) - box.min.y) / dy;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.attributes.uv.needsUpdate = true;
+    geometry.userData = Object.assign({}, geometry.userData, {
+      naturalSurfaceUvMapping: 'cliff-face-stretch',
+    });
+    stats.cliffUvsReprojected++;
+    return true;
+  }
+
   function applyNaturalSurfaceTint(mesh) {
     if (!mesh?.isMesh) return;
     const helper = window.SurfaceTint;
@@ -141,13 +186,28 @@
   function inspectObject(root) {
     root?.traverse?.((obj) => {
       if (!obj?.isMesh) return;
-      if (naturalizeLegacyRock(obj)) {
-        applyNaturalSurfaceTint(obj);
-        return;
-      }
+      naturalizeLegacyRock(obj);
+      fixSingleMaterialCliffUv(obj);
       applyNaturalSurfaceTint(obj);
       hideLegacyWeedPlaceholder(obj);
     });
+  }
+
+  function queueDeferredInspection(objects) {
+    for (const object of objects) if (object) deferredRoots.add(object);
+    if (deferredInspectionQueued) return;
+    deferredInspectionQueued = true;
+    const run = () => {
+      deferredInspectionQueued = false;
+      if (!deferredRoots.size) return;
+      const roots = Array.from(deferredRoots);
+      deferredRoots.clear();
+      stats.deferredInspectionBatches++;
+      stats.deferredRootsInspected += roots.length;
+      for (const root of roots) inspectObject(root);
+    };
+    if (typeof queueMicrotask === 'function') queueMicrotask(run);
+    else Promise.resolve().then(run);
   }
 
   const sceneProto = THREE.Scene?.prototype;
@@ -159,6 +219,11 @@
       const result = originalAdd.apply(this, objects);
       stats.sceneAddsInspected += objects.length;
       for (const object of objects) inspectObject(object);
+      // Several legacy generators add their mesh first and replace its
+      // material immediately after returning from scene.add(). One batched
+      // microtask catches those synchronous post-add replacements after the
+      // generator finishes, without any recurring per-frame scene scan.
+      queueDeferredInspection(objects);
       return result;
     }
     wrappedSceneAdd.__hobunjiNaturalSurfaceRuntimeFixWrapped = true;
@@ -172,6 +237,7 @@
     snapshot() {
       return Object.assign({}, stats, {
         surfaceTint: window.SurfaceTint?.snapshot?.() || null,
+        textureReady: window.NaturalSurfaceTextureReady?.snapshot?.() || null,
       });
     },
   };
