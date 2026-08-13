@@ -18,7 +18,6 @@
   const config = window.NaturalSurfaceMaterialConfig || DEFAULTS;
   const materialCache = new Map();
   const textureCache = new Map();
-  const pendingTextureClones = new Map();
   const appliedCounts = { trunks: 0, vines: 0, rocks: 0, cliffs: 0 };
   const loggedSurfaces = new Set();
   let borderDeps = null;
@@ -33,17 +32,19 @@
     return surfaceCfg.texture || config.texture || DEFAULTS.texture;
   }
 
+  function markTextureSrgb(tex) {
+    // Three r128 predates Texture.colorSpace/SRGBColorSpace. Use the old
+    // encoding API there, while remaining compatible with newer Three builds.
+    if (!tex) return tex;
+    if ('colorSpace' in tex && THREE.SRGBColorSpace != null) tex.colorSpace = THREE.SRGBColorSpace;
+    else if ('encoding' in tex && THREE.sRGBEncoding != null) tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
   function loadBaseTexture(path) {
     let tex = textureCache.get(path);
     if (tex) return tex;
-    tex = new THREE.TextureLoader().load(path, (loaded) => {
-      const pending = pendingTextureClones.get(path);
-      if (pending?.size) {
-        for (const clone of pending) { clone.image = loaded.image; clone.needsUpdate = true; }
-        pending.clear();
-      }
-    });
-    tex.colorSpace = THREE.SRGBColorSpace;
+    tex = markTextureSrgb(new THREE.TextureLoader().load(path));
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.minFilter = THREE.LinearFilter;
@@ -65,12 +66,24 @@
   }
 
   function basicMaterial(surface, sourceMaterial, texture, tint) {
-    const key = [surface, texture.uuid, tint, sourceMaterial?.side ?? THREE.FrontSide,
-      sourceMaterial?.transparent ? 1 : 0, sourceMaterial?.alphaTest || 0].join('|');
+    const key = [
+      surface,
+      texture?.uuid || 'no-texture',
+      tint,
+      sourceMaterial?.side ?? THREE.FrontSide,
+      sourceMaterial?.transparent ? 1 : 0,
+      sourceMaterial?.alphaTest || 0,
+      sourceMaterial?.depthTest !== false ? 1 : 0,
+      sourceMaterial?.depthWrite !== false ? 1 : 0,
+      sourceMaterial?.polygonOffset ? 1 : 0,
+      sourceMaterial?.polygonOffsetFactor || 0,
+      sourceMaterial?.polygonOffsetUnits || 0,
+    ].join('|');
     let mat = materialCache.get(key);
     if (mat) return mat;
+
     mat = new THREE.MeshBasicMaterial({
-      map: texture,
+      map: texture || null,
       color: new THREE.Color(tint),
       side: sourceMaterial?.side ?? THREE.FrontSide,
       transparent: !!sourceMaterial?.transparent,
@@ -91,37 +104,22 @@
     return mat;
   }
 
-  function cloneStretchTexture(surface, geometry, sourceMaterial, mode) {
-    const surfaceCfg = cfgFor(surface);
-    const path = texturePath(surfaceCfg);
-    const base = loadBaseTexture(path);
-    if (mode !== 'world-stretch') return base;
+  function geometryHasUvMapping(geometry, mapping) {
+    return !!(
+      geometry?.userData?.naturalSurfaceUvMapping === mapping
+      && geometry.getAttribute?.('uv')
+    );
+  }
 
-    const tex = base.clone();
-    if (base.image) tex.image = base.image;
-    else {
-      let pending = pendingTextureClones.get(path);
-      if (!pending) { pending = new Set(); pendingTextureClones.set(path, pending); }
-      pending.add(tex);
-    }
-    tex.needsUpdate = true;
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.generateMipmaps = false;
-
-    geometry?.computeBoundingBox?.();
-    const box = geometry?.boundingBox;
-    if (box && geometry.getAttribute?.('uv')) {
-      const dx = Math.max(1e-5, box.max.x - box.min.x);
-      const dz = Math.max(1e-5, box.max.z - box.min.z);
-      tex.repeat.set(1 / dx, 1 / dz);
-      tex.offset.set(-box.min.x / dx, -box.min.z / dz);
-      tex.updateMatrix?.();
-    }
-    return tex;
+  function markUvMapping(geometry, mapping) {
+    geometry.userData = Object.assign({}, geometry.userData, {
+      naturalSurfaceUvMapping: mapping,
+    });
   }
 
   function assignCylindricalStretchUv(geometry) {
+    const mapping = 'cylindrical-stretch';
+    if (geometryHasUvMapping(geometry, mapping)) return true;
     const pos = geometry?.getAttribute?.('position');
     if (!pos) return false;
     geometry.computeBoundingBox();
@@ -139,10 +137,13 @@
     }
     geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geometry.attributes.uv.needsUpdate = true;
+    markUvMapping(geometry, mapping);
     return true;
   }
 
   function assignPlanarStretchUv(geometry) {
+    const mapping = 'planar-stretch';
+    if (geometryHasUvMapping(geometry, mapping)) return true;
     const pos = geometry?.getAttribute?.('position');
     if (!pos) return false;
     geometry.computeBoundingBox();
@@ -160,7 +161,49 @@
     }
     geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geometry.attributes.uv.needsUpdate = true;
+    markUvMapping(geometry, mapping);
     return true;
+  }
+
+  function assignWorldStretchUv(geometry) {
+    const mapping = 'world-stretch';
+    if (geometryHasUvMapping(geometry, mapping)) return true;
+    const pos = geometry?.getAttribute?.('position');
+    if (!pos) return false;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const dx = Math.max(1e-5, box.max.x - box.min.x);
+    const dz = Math.max(1e-5, box.max.z - box.min.z);
+    const existing = geometry.getAttribute?.('uv');
+    const uv = existing?.count === pos.count
+      ? existing
+      : new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2);
+
+    // Normalize each cliff/mesa geometry into 0..1 UVs instead of cloning a
+    // Texture and Material for every mesh. This preserves the requested
+    // "stretch once across the whole surface" look while sharing resources.
+    for (let i = 0; i < pos.count; i++) {
+      uv.setXY(
+        i,
+        (pos.getX(i) - box.min.x) / dx,
+        (pos.getZ(i) - box.min.z) / dz,
+      );
+    }
+    if (uv !== existing) geometry.setAttribute('uv', uv);
+    uv.needsUpdate = true;
+    markUvMapping(geometry, mapping);
+    return true;
+  }
+
+  function prepareUv(geometry, mapping) {
+    if (mapping === 'cylindrical-stretch') return assignCylindricalStretchUv(geometry);
+    if (mapping === 'planar-stretch') return assignPlanarStretchUv(geometry);
+    if (mapping === 'world-stretch') return assignWorldStretchUv(geometry);
+    return true;
+  }
+
+  function textureForSurface(surface) {
+    return loadBaseTexture(texturePath(cfgFor(surface)));
   }
 
   function noteApplied(surface) {
@@ -180,10 +223,8 @@
     const sourceMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     const mapping = mappingOverride || surfaceCfg.mapping;
 
-    if (mapping === 'cylindrical-stretch') assignCylindricalStretchUv(mesh.geometry);
-    else if (mapping === 'planar-stretch') assignPlanarStretchUv(mesh.geometry);
-
-    const tex = cloneStretchTexture(surface, mesh.geometry, sourceMaterial, mapping);
+    prepareUv(mesh.geometry, mapping);
+    const tex = textureForSurface(surface);
     const tint = resolveTint(surfaceCfg, sourceMaterial);
     mesh.material = basicMaterial(surface, sourceMaterial, tex, tint);
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurface: surface });
@@ -196,7 +237,9 @@
     const surfaceCfg = cfgFor(surface);
     if (surfaceCfg.enabled === false) return;
     const sourceMaterial = mesh.material[slot];
-    const tex = cloneStretchTexture(surface, mesh.geometry, sourceMaterial, surfaceCfg.mapping);
+
+    prepareUv(mesh.geometry, surfaceCfg.mapping);
+    const tex = textureForSurface(surface);
     const tint = resolveTint(surfaceCfg, sourceMaterial);
     const materials = mesh.material.slice();
     materials[slot] = basicMaterial(surface, sourceMaterial, tex, tint);
@@ -247,7 +290,12 @@
   function wrapTerrainFeatures(api) {
     if (!api || api.__naturalSurfaceWrapped) return api;
     const originalInit = api.init;
-    if (typeof originalInit === 'function') api.init = function (deps) { terrainDeps = deps; return originalInit.call(this, deps); };
+    if (typeof originalInit === 'function') {
+      api.init = function (deps) {
+        terrainDeps = deps;
+        return originalInit.call(this, deps);
+      };
+    }
     const originalRock = api.buildRockFormationMeshes;
     if (typeof originalRock === 'function') {
       api.buildRockFormationMeshes = function (scene, ...args) {
@@ -268,8 +316,11 @@
       api.buildPlateauMesa = function (...args) {
         const mesh = original.apply(this, args);
         if (mesh?.isMesh) {
-          if (Array.isArray(mesh.material) && mesh.material.length > 1) naturalizeMaterialSlot(mesh, 1, 'cliffs');
-          else if (mesh.material?.isMeshLambertMaterial) naturalizeMesh(mesh, 'cliffs', 'world-stretch');
+          if (Array.isArray(mesh.material) && mesh.material.length > 1) {
+            naturalizeMaterialSlot(mesh, 1, 'cliffs');
+          } else if (mesh.material?.isMeshLambertMaterial) {
+            naturalizeMesh(mesh, 'cliffs', 'world-stretch');
+          }
         }
         return mesh;
       };
@@ -286,7 +337,10 @@
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (let i = 0; i < mats.length; i++) {
         const mat = mats[i];
-        const src = mat?.map?.image?.currentSrc || mat?.map?.image?.src || mat?.map?.source?.data?.src || '';
+        const src = mat?.map?.image?.currentSrc
+          || mat?.map?.image?.src
+          || mat?.map?.source?.data?.src
+          || '';
         const colorHex = mat?.color?.isColor ? mat.color.getHexString().toLowerCase() : '';
         if (!String(src).includes(basename) && (!tintHex || colorHex !== tintHex)) continue;
         if (Array.isArray(mesh.material)) naturalizeMaterialSlot(mesh, i, 'cliffs');
@@ -298,33 +352,44 @@
   function wrapBorderTerrain(api) {
     if (!api || api.__naturalSurfaceWrapped) return api;
     const originalInit = api.init;
-    if (typeof originalInit === 'function') api.init = function (deps) { borderDeps = deps; return originalInit.call(this, deps); };
+    if (typeof originalInit === 'function') {
+      api.init = function (deps) {
+        borderDeps = deps;
+        return originalInit.call(this, deps);
+      };
+    }
 
     const zone = api.buildZoneBorderTerrain;
-    if (typeof zone === 'function') api.buildZoneBorderTerrain = function (scene, ...args) {
-      const before = scene?.children?.length || 0;
-      const result = zone.call(this, scene, ...args);
-      naturalizeCliffCandidates(scene, before);
-      return result;
-    };
+    if (typeof zone === 'function') {
+      api.buildZoneBorderTerrain = function (scene, ...args) {
+        const before = scene?.children?.length || 0;
+        const result = zone.call(this, scene, ...args);
+        naturalizeCliffCandidates(scene, before);
+        return result;
+      };
+    }
 
     const farm = api.buildBorderTerrain;
-    if (typeof farm === 'function') api.buildBorderTerrain = function (...args) {
-      const scene = borderDeps?.scene;
-      const before = scene?.children?.length || 0;
-      const result = farm.apply(this, args);
-      naturalizeCliffCandidates(scene, before);
-      return result;
-    };
+    if (typeof farm === 'function') {
+      api.buildBorderTerrain = function (...args) {
+        const scene = borderDeps?.scene;
+        const before = scene?.children?.length || 0;
+        const result = farm.apply(this, args);
+        naturalizeCliffCandidates(scene, before);
+        return result;
+      };
+    }
 
     const town = api.buildTownBorderTerrain;
-    if (typeof town === 'function') api.buildTownBorderTerrain = function (...args) {
-      const scene = borderDeps?.townScene || borderDeps?.getTownScene?.();
-      const before = scene?.children?.length || 0;
-      const result = town.apply(this, args);
-      naturalizeCliffCandidates(scene, before);
-      return result;
-    };
+    if (typeof town === 'function') {
+      api.buildTownBorderTerrain = function (...args) {
+        const scene = borderDeps?.townScene || borderDeps?.getTownScene?.();
+        const before = scene?.children?.length || 0;
+        const result = town.apply(this, args);
+        naturalizeCliffCandidates(scene, before);
+        return result;
+      };
+    }
 
     api.__naturalSurfaceWrapped = true;
     return api;
