@@ -2715,22 +2715,30 @@
     }
     #fishingOverlay.open { display: block; }
     /* Music (Lyre) minigame overlay — unlike fishing's hand-built SVG ring,
-       this is a full-screen iframe (see js/music-minigame.js for why). No
-       backdrop: the iframe itself renders transparent (its own "hosted-
-       minigame" body styling — see lyre-performance.html — hides its
-       native topbar/side-panel chrome and clears every background down to
-       just the falling-note stage/HUD), so the live 3D scene — the player
-       and whichever NPC they're playing with — stays fully visible behind
-       it, the same composition the original mockup this was ported from
-       used its own separate 3D preview for. */
+       this is an iframe (see js/music-minigame.js for why). No backdrop:
+       the iframe itself renders transparent (its own "hosted-minigame"
+       body styling — see lyre-performance.html — hides its native
+       topbar/side-panel chrome), so the live 3D scene — the player and
+       whichever NPC they're playing with — stays fully visible behind it.
+       The iframe is deliberately NOT full-screen: it's a floating HUD
+       panel over the scene (same idea as the action bar/item wheel), not
+       a takeover — sized down, it shrinks the whole app inside it
+       (iframes carry their own 100vw/100dvh), so this one CSS change is
+       enough to compact the falling-note stage/HUD along with it. */
     #musicMinigameOverlay {
       display: none; position: fixed; inset: 0;
       z-index: 240; touch-action: none; pointer-events: none;
     }
     #musicMinigameOverlay.open { display: block; }
     #musicMinigameFrame {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-      border: 0; pointer-events: auto; background: transparent;
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: min(74vw, 640px); height: min(64vh, 480px);
+      border: 1px solid rgba(220, 238, 255, .22); border-radius: 20px;
+      box-shadow: 0 20px 44px rgba(0, 0, 0, .48);
+      pointer-events: auto; background: transparent;
+    }
+    @media (max-width: 760px), (max-height: 560px) {
+      #musicMinigameFrame { width: min(92vw, 640px); height: min(56vh, 480px); }
     }
     /* Left/right edge control clusters — the iframe's own native controls
        are hidden in hosted-minigame mode (by design, to keep the 3D scene

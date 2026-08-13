@@ -17391,6 +17391,12 @@
         plane.geometry?.dispose?.();
         plane.material?.dispose?.();
         ownedTexture?.dispose?.();
+        // makeToolPlaneMesh (used for the Kurraya — see updateHeldItemHolder)
+        // returns a Group whose own geometry/material own live on its child
+        // plane instead; that child's texture is the shared, cached
+        // toolTextures entry and must NOT be disposed here.
+        plane.userData.toolPlane?.geometry?.dispose?.();
+        plane.userData.toolPlane?.material?.dispose?.();
       }
 
       function usesThrustHeldPose(item) {
@@ -17415,6 +17421,7 @@
       let _heldItemPlane = null, _heldItemKey = null;
       // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
       let _heldDrinkAnimT = 0;
+      let _kurrayaHoldT = 0; // Free-running clock for the Kurraya's own idle hold sway — see updateHeldItemHolder.
       // Full duration used to normalize the drink countdown into animation progress.
       let _heldDrinkAnimDuration = 0;
 
@@ -17519,14 +17526,35 @@
           return;
         }
         if (!item) { heldItemHolder.visible = false; return; }
+        const isKurraya = item.key === 'kurraya';
         if (item.key !== _heldItemKey) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
-          _heldItemPlane = makeHeldItemPlaneMesh(item);
+          // The Kurraya's real art lives at assets/toolsprites (the same
+          // sprite/texture Foroji's NPC station prop uses — see
+          // TOOL_ITEM_DEFS.kurraya) rather than assets/objectsprites, and
+          // it's a finished painted asset, not a dye-tintable template —
+          // makeHeldItemPlaneMesh's spriteIcon path assumes the latter
+          // (recolors through window.SpriteRecolor), so this reuses
+          // makeToolPlaneMesh directly instead of adding a case there.
+          _heldItemPlane = isKurraya ? makeToolPlaneMesh('kurraya') : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
+          _kurrayaHoldT = 0;
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
-          window.__farmLog?.(`[held-item] ${item.key}: pose=${usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${ITEM_DEFS[item.key]?.spriteIcon || 'emoji'}`);
+          window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
-        if (usesThrustHeldPose(item)) {
+        if (isKurraya) {
+          // Cradled diagonally across the chest, gently rocking — the same
+          // "strum" motion Foroji's station prop uses (see the anim==='strum'
+          // branch in the NPC station-tool code above), just applied to the
+          // player's own held-item pivot instead of an NPC's root-local one.
+          _kurrayaHoldT = (_kurrayaHoldT + dt) % 2.4;
+          const rock = Math.sin((_kurrayaHoldT / 2.4) * Math.PI * 2) * 0.1;
+          heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
+          // makeToolPlaneMesh already lays its plane flat internally (same
+          // as every equipped tool) — only the outer holder needs posing here.
+          heldItemHolder.rotation.set(0, 0, 0.58 + rock);
+          heldItemHolder.scale.setScalar(0.85);
+        } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
           // Potion/alcohol sprites stay on the same hand pivot, but render
