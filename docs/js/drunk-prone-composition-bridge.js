@@ -4,12 +4,12 @@
 // It deliberately owns only the seams between those already-decoupled systems:
 //   1) prone temporarily ignores the Drunken Footing effective-max cap so
 //      Footing can refill to the literal max required by get-up logic;
-//   2) the player's procedural/drunken gait is suppressed while prone;
-//   3) bandits feed ordinary Footing loss into the existing drunken locomotion
-//      layer, so low Footing produces the same unsteady legs/body sway;
-//   4) immediately before each render, the current player drunken pitch/roll is
-//      re-published as an additive composer channel after gameplay has resolved
-//      facing/auto-target yaw for the frame.
+//   2) the player's procedural/unsteady gait is suppressed while prone;
+//   3) bandits feed ordinary Footing loss into the existing locomotion layer,
+//      so low Footing produces the same unsteady legs/body sway as the player;
+//   4) immediately before each render, the current player low-Footing pitch/
+//      roll is re-published as an additive composer channel after gameplay has
+//      resolved facing/auto-target yaw for the frame.
 (() => {
   'use strict';
 
@@ -109,8 +109,8 @@
     if (!player) return;
 
     // Prone/knockdown playback owns the pose completely. Removing only the
-    // drunk channel leaves the ragdoll/recovery channel and every other body
-    // contribution untouched. Stored drunkenness remains on the entity.
+    // unsteady-walk channel leaves the ragdoll/recovery channel and every other
+    // body contribution untouched. Stored drunkenness remains on the entity.
     if (player.prone) {
       composer.clearChannel(DRUNK_CHANNEL);
       return;
@@ -125,8 +125,8 @@
     // Reassert at the render boundary, after game.js has resolved this frame's
     // normal facing/auto-target yaw. The composer then post-composes this local
     // pitch/roll onto that base orientation, so target tracking cannot replace
-    // the drunken lean; it can only rotate the already-leaning body to face the
-    // target. Attack/ragdoll channels continue to compose by their priorities.
+    // the low-Footing lean; it can only rotate the already-leaning body to face
+    // the target. Attack/ragdoll channels continue to compose by priority.
     composer.setChannel(DRUNK_CHANNEL, {
       priority: DRUNK_PRIORITY,
       mode: 'additive',
