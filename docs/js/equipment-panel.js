@@ -10,7 +10,79 @@
   // (buildInventoryGrid/selectInventoryItem) stays in game.js — this module
   // only owns what's equipped and what's collected in gear.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  // This guard prevents duplicate dynamic loads when EquipmentPanel.init() is called more than once.
+  let inventoryUiLoadStarted = false;
+  // This guard keeps the capture-phase selection reset from being registered twice.
+  let inventorySelectionBridgeInstalled = false;
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    installInventorySelectionBridge();
+    loadInventoryUi();
+  }
+
+  function installInventorySelectionBridge() {
+    if (inventorySelectionBridgeInstalled || typeof document === 'undefined') return;
+    inventorySelectionBridgeInstalled = true;
+    // The mastery panel stores its last rendered key for debug output only. Clear it before every inventory
+    // click so the post-click presentation pass resolves the current detail item instead of reusing an old tool.
+    document.addEventListener('click', (event) => {
+      if (!event.target?.closest?.('#mpInventory')) return;
+      const masteryPanel = document.getElementById('iiToolMastery');
+      if (masteryPanel) delete masteryPanel.dataset.toolKey;
+    }, true);
+  }
+
+  function inventoryUiDeps() {
+    // Read-only mastery bridge: InventoryUI needs the same canonical per-tool data this panel already renders,
+    // but should not own or mutate Gear/mastery state itself.
+    const toolMasteryXp = (itemKey) => {
+      const xp = Number(deps.getGearInventory?.()?.toolMastery?.[itemKey]?.xp);
+      return Number.isFinite(xp) ? Math.max(0, xp) : 0;
+    };
+    return {
+      isDevMode: deps.isDevMode,
+      showToast: deps.showToast,
+      getGearInventory: deps.getGearInventory,
+      toolMasteryLevel: deps.toolMasteryLevel,
+      toolMasteryXp,
+      TOOL_ITEM_DEFS: deps.TOOL_ITEM_DEFS,
+      equipmentSlots: deps.equipmentSlots,
+    };
+  }
+
+  function exposeInventoryMasteryBridge(uiDeps) {
+    // InventoryUI's tool-effects code already reads window.Combat.deps. Extend that existing read-only seam
+    // with the EquipmentPanel-owned mastery data rather than widening game.js or duplicating progression state.
+    const combatDeps = window.Combat?.deps;
+    if (!combatDeps) return;
+    combatDeps.TOOL_ITEM_DEFS ||= uiDeps.TOOL_ITEM_DEFS;
+    combatDeps.equipmentSlots ||= uiDeps.equipmentSlots;
+    combatDeps.gearInventory ||= uiDeps.getGearInventory;
+    combatDeps.toolMasteryLevel ||= uiDeps.toolMasteryLevel;
+    combatDeps.toolMasteryXp ||= uiDeps.toolMasteryXp;
+  }
+
+  function loadInventoryUi() {
+    const uiDeps = inventoryUiDeps();
+    exposeInventoryMasteryBridge(uiDeps);
+    if (window.InventoryUI?.init) {
+      window.InventoryUI.init(uiDeps);
+      return;
+    }
+    if (inventoryUiLoadStarted || typeof document === 'undefined') return;
+    inventoryUiLoadStarted = true;
+    // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
+    const script = document.createElement('script');
+    script.src = 'js/inventory-ui.js?v=20260812c';
+    script.async = false;
+    script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
+    script.onerror = () => {
+      inventoryUiLoadStarted = false;
+      if (deps.isDevMode?.()) deps.showToast?.('Inventory UI polish module failed to load.', false);
+    };
+    document.head.appendChild(script);
+  }
 
   function setEquipmentSlot(slot, itemKeyOrNull) {
     deps.equipmentSlots[slot] = itemKeyOrNull;
@@ -193,9 +265,9 @@
     set('iiIcon',  def.icon);
     const iiIconEl2 = document.getElementById('iiIcon');
     if (iiIconEl2) { iiIconEl2.style.backgroundImage = ''; iiIconEl2.classList.remove('sprited-icon'); }
-    set('iiName',  def.label + ' (Gear) — Mastery ' + deps.toolMasteryLevel(key) + '/5');
+    set('iiName',  def.label + ' — Mastery ' + deps.toolMasteryLevel(key) + '/5 (Gear)');
     set('iiPrice', 'Permanent — not sellable');
-    set('iiTags',  def.slots.map(t => '<span class="ii-tag">' + t + '</span>').join(''));
+    set('iiTags',  '');
     set('iiDesc',  'This tool is in your gear inventory. Assign it to an equipment slot to use it.');
     const actEl = document.getElementById('iiActions');
     if (actEl) {
@@ -288,7 +360,7 @@
     setInventoryDetailClothingIcon(item);
     set('iiName',  item.label);
     set('iiPrice', item.sellPrice ? item.sellPrice + 'g' : '');
-    set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + item.slot.charAt(0).toUpperCase() + item.slot.slice(1) + '</span>');
+    set('iiTags',  '');
     set('iiDesc',  'Transfer to gear to wear it (permanent). Can sell while in pack.');
     const actEl = document.getElementById('iiActions');
     if (actEl) {
@@ -332,7 +404,7 @@
     setInventoryDetailClothingIcon(item);
     set('iiName',  item.label);
     set('iiPrice', 'Permanent gear — not sellable');
-    set('iiTags',  '<span class="ii-tag">Clothing</span><span class="ii-tag">' + slot.charAt(0).toUpperCase() + slot.slice(1) + '</span>');
+    set('iiTags',  '');
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
     set('iiDesc',  isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.');
@@ -644,7 +716,22 @@
         const cell = document.createElement('div');
         cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
         cell.setAttribute('title', item.label + (worn ? ' — currently worn' : ' — click to equip'));
-        renderClothingIcon(cell, item);
+        const ownedIcon = renderClothingIcon(cell, item);
+        // Owned clothing art should dominate the tile; the normal clothing sprite is too conservative here.
+        ownedIcon.style.width = 'calc(2.3 * var(--inv-row))';
+        ownedIcon.style.height = 'calc(2.3 * var(--inv-row))';
+        ownedIcon.style.maxWidth = '82%';
+        ownedIcon.style.maxHeight = '82%';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'gear-owned-clothing-name';
+        nameEl.textContent = item.label;
+        nameEl.style.fontSize = 'var(--inv-font-xs, 11px)';
+        nameEl.style.lineHeight = '1.08';
+        nameEl.style.maxWidth = 'calc(100% - 4px)';
+        nameEl.style.overflow = 'hidden';
+        nameEl.style.textOverflow = 'ellipsis';
+        nameEl.style.whiteSpace = 'nowrap';
+        cell.appendChild(nameEl);
         const lbl = document.createElement('span');
         lbl.className = 'ies-label';
         lbl.textContent = item.slot.charAt(0).toUpperCase() + item.slot.slice(1);
