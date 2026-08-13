@@ -22,8 +22,46 @@
   const BASE_DODGE_EXTRA_STAMINA_COST = 12; // Used on each ordinary dodge start; 18 + 12 = 30 total stamina.
   const BASE_DODGE_SOMERSAULT_DUR_S = 0.22; // Used by the prone-recovery roll playback so it ends with dodge movement.
   let baseDodgeWasActive = false; // Used by updateBaseDodgeEnhancements to detect only the rising edge of player.dodging.
+  let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
+  let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
 
   function now() { return performance.now() / 1000; }
+
+  function showIframeMissPopup() {
+    iframeMissCount += 1;
+    lastIframeMissAtMs = performance.now();
+    // WorldPopupText's damage kind is the exact Float+ animation used for
+    // ordinary damage numbers. A non-zero placeholder amount is required by
+    // showChange's API, while `text` replaces the rendered number entirely.
+    window.WorldPopupText?.showChange('damage', 1, { text: 'miss' });
+  }
+
+  function installIframeMissFeedback() {
+    // Enemy combat modules all receive game.js's closure-private damagePlayer
+    // through Combat.init(deps). Decorate that one injected seam before Combat
+    // stores it, so a hit that intersects during invulnUntil gets the same
+    // damage Float+ presentation without duplicating checks in every attack.
+    const originalInit = window.Combat.init;
+    if (originalInit?.__hobunjiIframeMissFeedback) return;
+    const enhancedInit = function iframeMissAwareCombatInit(injectedDeps) {
+      const originalDamagePlayer = injectedDeps?.damagePlayer;
+      if (typeof originalDamagePlayer === 'function' && !originalDamagePlayer.__hobunjiIframeMissFeedback) {
+        const iframeAwareDamagePlayer = function iframeAwareDamagePlayer(...args) {
+          const player = injectedDeps.player;
+          if (player && performance.now() < (Number(player.invulnUntil) || 0)) {
+            showIframeMissPopup();
+            return;
+          }
+          return originalDamagePlayer.apply(this, args);
+        };
+        iframeAwareDamagePlayer.__hobunjiIframeMissFeedback = true;
+        injectedDeps.damagePlayer = iframeAwareDamagePlayer;
+      }
+      return originalInit(injectedDeps);
+    };
+    enhancedInit.__hobunjiIframeMissFeedback = true;
+    window.Combat.init = enhancedInit;
+  }
 
   function updateBaseDodgeEnhancements() {
     const deps = window.Combat.deps;
@@ -136,6 +174,22 @@
     window.Combat.abilities.register('blinkDodge', { label: 'Blink Dodge', slotFamily: 'hold', category: 'defensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
+  window.HobunjiDodgeFeedback = Object.freeze({
+    getDebug() {
+      const player = window.Combat?.deps?.player;
+      const remainingIframeMs = player
+        ? Math.max(0, (Number(player.invulnUntil) || 0) - performance.now())
+        : 0;
+      return {
+        iframeMissCount,
+        lastIframeMissAtMs,
+        remainingIframeMs,
+        dodging: !!player?.dodging,
+      };
+    },
+  });
+
+  installIframeMissFeedback();
   installBaseDodgeEnhancements();
   register();
 })();
