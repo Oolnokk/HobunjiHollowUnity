@@ -7,7 +7,7 @@
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
   const scripts = [
-    ['SurfaceTint', 'surface-tint.js?v=20260813b'],
+    ['SurfaceTint', 'surface-tint.js?v=20260813c'],
     ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813a'],
     ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260813a'],
     ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20260812a'],
