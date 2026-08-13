@@ -5,7 +5,9 @@
 //   1) prone temporarily ignores the Drunken Footing effective-max cap so
 //      Footing can refill to the literal max required by get-up logic;
 //   2) the player's procedural/drunken gait is suppressed while prone;
-//   3) immediately before each render, the current drunken pitch/roll is
+//   3) bandits feed ordinary Footing loss into the existing drunken locomotion
+//      layer, so low Footing produces the same unsteady legs/body sway;
+//   4) immediately before each render, the current player drunken pitch/roll is
 //      re-published as an additive composer channel after gameplay has resolved
 //      facing/auto-target yaw for the frame.
 (() => {
@@ -21,6 +23,18 @@
   const DRUNK_CHANNEL = 'drunk';
   const DRUNK_PRIORITY = 200;
   const DEG = Math.PI / 180;
+  const banditStateByLegHandle = new WeakMap(); // Binds a pre-entity bandit leg attachment to its entity once makeEntity finishes.
+
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function banditFootingLoss(entity) {
+    const maxFooting = Number(entity?.maxFooting) || 0;
+    if (!entity || entity.prone || !(maxFooting > 0)) return 0;
+    const footing = Math.max(0, Number(entity.footing) || 0);
+    return clamp01(1 - footing / maxFooting);
+  }
 
   // Drunken Footing normally lowers the effective Footing ceiling. Prone
   // recovery is the exception: player and hostile get-up logic both wait for
@@ -39,17 +53,30 @@
     RS.__proneIgnoresDrunkenFootingCapInstalled = true;
   }
 
-  // Force the player leg/gait update into its existing suppressed path while
-  // prone. Because drunk-locomotion decorates this same update() call, that
-  // also drives its raw drunken-loss contribution to zero without deleting or
-  // modifying the stored Drunken Footing amount. This wrapper is installed
-  // after drunk-locomotion, so it sits outside that decorator intentionally.
+  // Wrap the common procedural-leg attach seam after drunk-locomotion has
+  // already decorated it. Player attachments keep the prone suppression from
+  // this bridge. Bandit legs are identifiable by their dedicated floor pivot;
+  // inject a Footing-loss provider BEFORE calling the drunk-locomotion wrapper
+  // so that existing layer performs the gait/body sway instead of duplicating
+  // any animation math here. Bandit portraits are built before their combatant
+  // entity exists, hence the tiny mutable state object bound after makeEntity.
   if (!legApi.__proneSuppressesDrunkGaitInstalled) {
     const previousAttach = legApi.attach.bind(legApi);
     legApi.attach = function proneAwareLegAttach(THREEArg, parent, options = {}) {
-      const handle = previousAttach(THREEArg, parent, options);
-      if (!handle || String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
+      const isBanditLegs = parent?.name === 'bandit_legs_pivot';
+      const banditState = isBanditLegs ? { entity: null } : null;
+      const attachOptions = isBanditLegs
+        ? {
+            ...options,
+            drunkLossProvider: () => banditFootingLoss(banditState.entity),
+            drunkBodyRoot: options.drunkBodyRoot || parent?.parent || null,
+          }
+        : options;
+      const handle = previousAttach(THREEArg, parent, attachOptions);
+      if (!handle) return handle;
+      if (banditState) banditStateByLegHandle.set(handle, banditState);
 
+      if (String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
       const previousUpdate = handle.update.bind(handle);
       handle.update = function proneAwarePlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose) {
         const player = window.Combat?.deps?.player;
@@ -58,6 +85,23 @@
       return handle;
     };
     legApi.__proneSuppressesDrunkGaitInstalled = true;
+  }
+
+  // combat-bandit.js loads before this bridge, and a bandit's portrait/legs are
+  // constructed before ResourceSystem.initEntity creates its Footing fields.
+  // Bind the finished entity back to the provider captured above. No bandit AI,
+  // facing, attack, or resource code is replaced; this only supplies the data
+  // source the existing drunken locomotion decorator was missing.
+  const banditApi = window.BanditCombat;
+  if (banditApi?.makeEntity && !banditApi.__lowFootingSwayInstalled) {
+    const previousMakeBanditEntity = banditApi.makeEntity.bind(banditApi);
+    banditApi.makeEntity = async function lowFootingSwayBanditEntity(...args) {
+      const entity = await previousMakeBanditEntity(...args);
+      const state = banditStateByLegHandle.get(entity?.avatarRef?.legs);
+      if (state) state.entity = entity;
+      return entity;
+    };
+    banditApi.__lowFootingSwayInstalled = true;
   }
 
   function syncDrunkComposerChannel() {
@@ -107,6 +151,7 @@
   }
 
   window.HobunjiDrunkProneCompositionBridge = Object.freeze({
+    banditFootingLoss,
     getDebug() {
       const player = window.Combat?.deps?.player;
       return {
