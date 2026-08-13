@@ -79,6 +79,7 @@
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260811b', () => !!window.HobunjiDrunkWalk],
     ['js/alcohol-gameplay-bridge.js?v=20260811g', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/drunk-prone-composition-bridge.js?v=20260812a', () => !!window.HobunjiDrunkProneCompositionBridge],
   ];
 
   function loadModule(src, alreadyLoaded) {
