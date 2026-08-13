@@ -70,28 +70,24 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
 (() => {
   'use strict';
 
-  // Bounty board — hunt a named bandit captain, destroy his camp. A bounty
+  // Bounty board — hunt a named bandit captain, destroy their camp. A bounty
   // rides the same questProgress/setQuestStatus scaffold as a board/favor
   // task (kind: 'bounty' instead of 'board'/'favor'), so it needs no new
-  // save fields either — questProgress is already part of
-  // saveMemberWorldData()'s persisted blob, which is what makes a bounty
-  // survive a reload despite bandit camps themselves being deliberately
-  // session-only (see js/bandit-camps.js's own comment above
-  // _banditCampInstances). Shape: { kind:'bounty', captainName, zoneId,
-  // tier, rewardGold, postedDay }. Status: 'posted' (on the board) ->
-  // 'available' (accepted, tracked on the map) -> 'completed' (that
-  // captain's camp confirmed destroyed — paid out automatically, no
-  // turn-in NPC needed, unlike board/favor tasks).
-  //
-  // Extracted out of game.js following the same window.<Namespace> +
-  // init(deps) pattern already used by js/mount-system.js and
-  // js/bandit-camps.js — reads window.BanditCamps/window.BanditCombat
-  // directly (both already global) rather than through deps, matching how
-  // js/bandit-camps.js itself reads window.BanditCombat.
+  // save container. The bounty progress record now also persists the captain's
+  // preselected species/gender/name seed so a session-only camp rebuilt after
+  // reload cannot silently create a different-looking person behind the same
+  // wanted poster.
   let deps = null;
+  let _banditGangConfigPromise = null; // Preloads the weighted species config used when a bounty must invent a future captain.
+
+  function _loadBanditGangConfig() {
+    if (!_banditGangConfigPromise) _banditGangConfigPromise = window.BanditCombat.loadGangConfig();
+    return _banditGangConfigPromise;
+  }
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    void _loadBanditGangConfig();
     const forge = window.BanditNameForge;
     if (!forge) {
       deps.debugLog?.('Bandit captain name forge unavailable at BountyBoard.init().', 'warn');
@@ -105,17 +101,99 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   const BOUNTY_RANK_LABELS = ['Petty', 'Notorious', 'Ruthless', 'Infamous'];
   const BOUNTY_REWARD_GOLD_BY_TIER = [80, 160, 280, 450];
 
-  // Installs the captain-only naming adapter around the existing combat module; ordinary bandit roster/combat generation stays untouched.
+  // Uses the same bandit-gang-config speciesWeights as the actual roster.
+  // This helper lives here only because bounty creation happens before any
+  // entity exists; no species probabilities are duplicated in code.
+  function _weightedSpeciesPick(weights) {
+    const entries = Object.entries(weights || {}).filter(([key, value]) => !key.startsWith('_') && Number(value) > 0);
+    if (!entries.length) return null;
+    const total = entries.reduce((sum, [, value]) => sum + Number(value), 0);
+    let roll = Math.random() * total;
+    for (const [speciesId, value] of entries) {
+      roll -= Number(value);
+      if (roll <= 0) return speciesId;
+    }
+    return entries[entries.length - 1][0];
+  }
+
+  function _campRecordForSpawn(opts) {
+    const instanceId = opts?.extra?.banditCampInstanceId; // Used to annotate the exact camp record after its captain is generated.
+    if (!instanceId || !opts?.zoneId) return null;
+    return (window.BanditCamps?.campInstances?.get(opts.zoneId) || []).find(rec => rec.instance?.id === instanceId) || null;
+  }
+
+  function _annotateCampCaptain(opts, identity) {
+    const rec = _campRecordForSpawn(opts); // Persists live-captain identity so later bounty adoption survives a reload correctly.
+    if (!rec || !identity) return;
+    rec.captainSpeciesId = identity.speciesId;
+    rec.captainGender = identity.gender;
+    rec.captainNameSeed = identity.seed || null;
+  }
+
+  function _discardRejectedCaptain(candidate) {
+    // A rejected gender sample has not entered hostileObjects/camp gangIds yet;
+    // only makeEntity's scene-side avatar/tool/shadow need detaching.
+    candidate?.avatarRef?.group?.removeFromParent?.();
+    candidate?.avatarRef?.dispose?.();
+    candidate?._banditToolHolder?.removeFromParent?.();
+    candidate?.groundShadow?.removeFromParent?.();
+  }
+
+  // Installs the captain-only naming/appearance adapter around the existing
+  // combat module. Ordinary bandit roster/combat generation stays untouched.
   function _installCaptainNameForgeAdapter() {
     const combat = window.BanditCombat;
     const forge = window.BanditNameForge;
     if (!combat?.makeEntity || !forge || combat.__captainNameForgeAdapterInstalled) return;
-    const originalMakeEntity = combat.makeEntity;
-    const originalRandomName = combat.randomName;
+    const originalMakeEntity = combat.makeEntity; // Called for every real entity after any bounty appearance pin is prepared.
+    const originalRandomName = combat.randomName; // Preserved for non-captain callers.
 
     combat.makeEntity = async function(cfg, rank, tier, x, y, opts = {}) {
-      const captain = await originalMakeEntity.call(combat, cfg, rank, tier, x, y, opts);
-      if (!captain || rank !== 'captain' || opts.nameOverride) return captain;
+      const bountyPin = rank === 'captain' && opts.nameOverride && opts.zoneId
+        ? window.BountyBoard?.activeBountyForZone?.(opts.zoneId)
+        : null; // Used below to force the already-posted captain's appearance as well as their name.
+      const desiredSpecies = bountyPin?.captainSpeciesId;
+      const desiredGender = bountyPin?.captainGender;
+      let captain = null; // Holds the accepted generated captain returned to bandit-camps.
+
+      if (desiredSpecies && (desiredGender === 'male' || desiredGender === 'female')) {
+        const forcedCfg = { ...cfg, speciesWeights: { [desiredSpecies]: 1 } }; // Forces species through the roster's existing weighted picker.
+        const MAX_GENDER_ATTEMPTS = 24;
+        for (let attempt = 1; attempt <= MAX_GENDER_ATTEMPTS; attempt++) {
+          const candidate = await originalMakeEntity.call(combat, forcedCfg, rank, tier, x, y, opts); // Reuses the normal roster/avatar pipeline; only mismatched gender samples are rejected.
+          if (!candidate) return null;
+          if (candidate.rosterRecord?.appearance?.gender === desiredGender) {
+            captain = candidate;
+            if (attempt > 1) deps?.debugLog?.(`[bandits] bounty captain gender pin matched after ${attempt} roster rolls (${desiredSpecies}/${desiredGender}).`, 'info');
+            break;
+          }
+          if (attempt === MAX_GENDER_ATTEMPTS) {
+            captain = candidate;
+            deps?.debugLog?.(`[bandits] bounty captain gender pin exhausted ${MAX_GENDER_ATTEMPTS} rolls; using generated ${candidate.rosterRecord?.appearance?.gender || 'unknown'} appearance.`, 'warn');
+            break;
+          }
+          _discardRejectedCaptain(candidate);
+        }
+      } else {
+        captain = await originalMakeEntity.call(combat, cfg, rank, tier, x, y, opts);
+      }
+
+      if (!captain || rank !== 'captain') return captain;
+
+      if (opts.nameOverride) {
+        const pinnedIdentity = {
+          speciesId: desiredSpecies || captain.rosterRecord?.appearance?.speciesId,
+          gender: desiredGender || captain.rosterRecord?.appearance?.gender,
+          seed: bountyPin?.captainNameSeed || null,
+          display: opts.nameOverride,
+          name: opts.nameOverride,
+        }; // Stored on the live entity/camp for debugging and later bounty adoption.
+        captain.banditCaptainIdentity = pinnedIdentity;
+        if (captain.rosterRecord) captain.rosterRecord.nameForge = pinnedIdentity;
+        _annotateCampCaptain(opts, pinnedIdentity);
+        return captain;
+      }
+
       try {
         const speciesId = captain.rosterRecord?.appearance?.speciesId;
         const gender = captain.rosterRecord?.appearance?.gender;
@@ -130,6 +208,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
           captain.rosterRecord.name = identity.display;
           captain.rosterRecord.nameForge = identity;
         }
+        _annotateCampCaptain(opts, identity);
         deps?.debugLog?.(`[bandits] forged captain name ${identity.display} (${speciesId}/${gender})`, 'info');
       } catch (error) {
         deps?.debugLog?.(`[bandits] captain name forge failed; keeping fallback "${captain.name}": ${error.message}`, 'warn');
@@ -137,7 +216,8 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
       return captain;
     };
 
-    // Standalone captain-name callers do not know a species/gender yet, so return the forge's culture-independent nickname-only form.
+    // Kept for compatibility with any standalone caller; bounty posting itself
+    // no longer needs this path because it now preselects a full identity.
     combat.randomName = function(rank) {
       if (rank !== 'captain') return originalRandomName?.call(combat, rank);
       return forge.generateNicknameOnly().display;
@@ -146,7 +226,6 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     combat.__captainNameForgeAdapterInstalled = true;
   }
   _installCaptainNameForgeAdapter();
-
 
   function _zoneHasAnyBounty(zoneId) {
     return Object.values(deps.getQuestProgress()).some(st =>
@@ -178,29 +257,32 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     return entries[0] ? { id: entries[0][0], ...entries[0][1].progress } : null;
   }
 
-  // Rolls a new wanted poster only when there's genuinely none up right
-  // now (posted-but-unclaimed or accepted-but-unresolved both count) —
-  // unlike the daily board notice, a bounty isn't superseded just
-  // because a day passed; a captain stays wanted until someone claims
-  // the poster or brings the camp down.
-  function maybeRefreshBountyPosting() {
+  async function maybeRefreshBountyPosting() {
     if (hasActiveBounty()) return;
-    generateBountyTask();
+    const cfg = await _loadBanditGangConfig(); // Required before inventing a future captain so the poster uses the real configured species weights.
+    if (hasActiveBounty()) return; // Another path may have posted one while the config request was in flight.
+    generateBountyTask(cfg);
   }
 
-  // Prefers naming a captain who already has a real, live camp
-  // somewhere the player's already generated (adopting a real identity
-  // outright, no future generation needs steering at all). Only when
-  // NO zone currently has a live captain-led camp does it fall back to
-  // a nickname-only forge identity. The standalone forge explicitly
-  // defines nickname-only captains as culture-independent; that matters
-  // here because species/gender do not exist until the future camp does.
-  function generateBountyTask() {
+  // Prefers a real live captain when one exists. Otherwise the bounty now
+  // preselects species + gender first and asks the forge for a FULL cultural
+  // name (nickname-only chance forced to zero), then persists that appearance
+  // so the future camp can create exactly the person named on the poster.
+  function generateBountyTask(cfg) {
     const liveCandidates = [];
     for (const [zoneId, recs] of window.BanditCamps.campInstances) {
       if (_zoneHasAnyBounty(zoneId)) continue;
       for (const rec of recs) {
-        if (rec.captainName && !window.BanditCamps.isCampCleared(rec)) liveCandidates.push({ zoneId, tier: rec.tier, captainName: rec.captainName });
+        if (rec.captainName && !window.BanditCamps.isCampCleared(rec)) {
+          liveCandidates.push({
+            zoneId,
+            tier: rec.tier,
+            captainName: rec.captainName,
+            captainSpeciesId: rec.captainSpeciesId || null,
+            captainGender: rec.captainGender || null,
+            captainNameSeed: rec.captainNameSeed || null,
+          });
+        }
       }
     }
 
@@ -209,21 +291,37 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
       target = liveCandidates[Math.floor(Math.random() * liveCandidates.length)];
     } else {
       const forge = window.BanditNameForge;
-      if (!forge) {
-        deps.debugLog?.('Cannot post a bounty because the captain name forge is unavailable.', 'warn');
+      if (!forge || !cfg) {
+        deps.debugLog?.('Cannot post a bounty because the captain name forge or gang config is unavailable.', 'warn');
         return null;
       }
-      const zoneIds = Object.keys(deps.WMAP_ZONE_LABELS).filter(z => !_zoneHasAnyBounty(z));
+      const zoneIds = Object.keys(deps.WMAP_ZONE_LABELS).filter(zoneId => !_zoneHasAnyBounty(zoneId));
       if (!zoneIds.length) return null;
+      const speciesId = _weightedSpeciesPick(cfg.speciesWeights) || 'mao-ao'; // Used immediately to choose the correct culture-specific name rules.
+      const seedRecord = forge.generateNicknameOnly(); // Supplies a fresh forge seed; its nickname output itself is intentionally discarded.
+      const identity = forge.generateCaptainIdentity({ speciesId, seed: seedRecord.seed, nicknameOnlyChance: 0 }); // Chooses gender deterministically from the seed and always includes the full cultural name.
       const zoneId = zoneIds[Math.floor(Math.random() * zoneIds.length)];
-      const alias = forge.generateNicknameOnly();
-      target = { zoneId, tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length), captainName: alias.display };
+      target = {
+        zoneId,
+        tier: Math.floor(Math.random() * BOUNTY_RANK_LABELS.length),
+        captainName: identity.display,
+        captainSpeciesId: identity.speciesId,
+        captainGender: identity.gender,
+        captainNameSeed: identity.seed,
+      };
     }
 
     const id = deps.makeTaskId();
     const task = {
-      kind: 'bounty', captainName: target.captainName, zoneId: target.zoneId, tier: target.tier,
-      rewardGold: BOUNTY_REWARD_GOLD_BY_TIER[target.tier], postedDay: deps.calendar.day,
+      kind: 'bounty',
+      captainName: target.captainName,
+      captainSpeciesId: target.captainSpeciesId || null,
+      captainGender: target.captainGender || null,
+      captainNameSeed: target.captainNameSeed || null,
+      zoneId: target.zoneId,
+      tier: target.tier,
+      rewardGold: BOUNTY_REWARD_GOLD_BY_TIER[target.tier],
+      postedDay: deps.calendar.day,
     };
     deps.setQuestStatus(id, 'posted', task);
     return { id, ...task };
@@ -234,19 +332,11 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     if (!st || st.status !== 'posted' || st.progress?.kind !== 'bounty') return { ok: false, message: 'That bounty is no longer available.' };
     deps.setQuestStatus(taskId, 'available', {});
     deps.showToast(`🎯 Bounty accepted — hunt down ${st.progress.captainName} and destroy their camp.`, true);
-    updateBountyTracking(); // populate the map marker right away if that camp's already known
+    updateBountyTracking();
     return { ok: true, message: 'Bounty added to your log.' };
   }
 
-  // key: bounty taskId -> { zoneId, col, row, label } for the map/
-  // minimap marker (see _drawWildernessMapOnCanvas's matching loop).
-  const _bountyMarkers = new Map();
-  // Zone-independent on purpose (unlike updateBanditCampBanners, which
-  // only runs in the player's CURRENT zone) — the bountied camp can be
-  // anywhere, and isBanditCampCleared/rec lookups are already safely
-  // zone-scoped internally (a zone with no cached view just reads as
-  // "not cleared yet," never a false completion), so this can run
-  // regardless of where the player currently is.
+  const _bountyMarkers = new Map(); // key: bounty taskId -> { zoneId, col, row, label }, consumed by map/minimap rendering.
   const BOUNTY_TRACKING_CHECK_INTERVAL_S = 1;
   let _bountyTrackingAccum = 0;
 
@@ -261,7 +351,7 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
       if (st.status !== 'available') { _bountyMarkers.delete(id); continue; }
       const bounty = st.progress;
       const rec = (window.BanditCamps.campInstances.get(bounty.zoneId) || []).find(r => r.captainName === bounty.captainName);
-      if (!rec) continue; // camp not generated/found yet -- no marker until then
+      if (!rec) continue;
       if (window.BanditCamps.isCampCleared(rec)) {
         deps.setQuestStatus(id, 'completed', {});
         deps.inventory.gold = (deps.inventory.gold || 0) + bounty.rewardGold;
