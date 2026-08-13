@@ -14,8 +14,8 @@
   const DEFAULT_SAT_TOL = 0.22;
   const DEFAULT_ALPHA_MIN = 4;
   const DEFAULT_OXIDATION_SEED = 28480;
-  const DEFAULT_BLOTCH_COUNT = 16;
-  const DEFAULT_OUTLINE_WIDTH = 3;
+  const DEFAULT_BLOTCH_COUNT = 14;
+  const DEFAULT_OUTLINE_WIDTH = 2;
 
   function hexToRgb(hex) {
     const clean = String(hex).replace('#', '').trim();
@@ -74,6 +74,29 @@
     if (mode === 'offset') return clamp01(targetS + (originalS - sourceS));
     return clamp01(targetS);
   }
+
+  function debugEnabled(opts = {}) {
+    try {
+      return opts.debug === true
+        || window.ToolMetalRecolorDebug === true
+        || window.localStorage?.getItem('toolMetalRecolorDebug') === '1';
+    } catch {
+      return opts.debug === true || window.ToolMetalRecolorDebug === true;
+    }
+  }
+
+  function debugEmit(level, opts, label, data) {
+    if (!debugEnabled(opts)) return;
+    const payload = data === undefined ? '' : ` ${JSON.stringify(data)}`;
+    const message = `[ToolMetalRecolor] ${label}${payload}`;
+    const consoleFn = console[level] || console.log;
+    consoleFn.call(console, message);
+    try { window.__farmLog?.(message); } catch {}
+  }
+
+  function debugLog(opts, label, data) { debugEmit('log', opts, label, data); }
+  function debugWarn(opts, label, data) { debugEmit('warn', opts, label, data); }
+  function debugError(opts, label, data) { debugEmit('error', opts, label, data); }
 
   function mulberry32(seed) {
     let a = seed >>> 0;
@@ -134,7 +157,20 @@
 
     const targetCount = Math.round(metalPixels.length * clamp01(amount));
     const mask = new Uint8Array(metalMask.length);
-    if (!targetCount || !metalPixels.length) return mask;
+    debugLog(opts, 'oxidation mask request', {
+      matchedMetalPixels: metalPixels.length,
+      targetCount,
+      oxidationAmount: clamp01(amount),
+      width,
+      height,
+      seed: opts.seed,
+      blotchCount: opts.blotchCount,
+    });
+    if (!metalPixels.length) {
+      debugWarn(opts, 'oxidation mask has no matched metal pixels');
+      return mask;
+    }
+    if (!targetCount) return mask;
     if (targetCount >= metalPixels.length) {
       for (const p of metalPixels) mask[p] = 1;
       return mask;
@@ -248,10 +284,11 @@
     const alphaMin = opts.alphaMin ?? DEFAULT_ALPHA_MIN;
     const saturationMode = opts.saturationMode || 'target';
     const metalMask = new Uint8Array(width * height);
+    let matchedMetalPixels = 0;
 
     for (let i = 0; i < src.length; i += 4) {
       const alpha = src[i + 3];
-      if (alpha <= alphaMin) continue;
+      if (alpha < alphaMin) continue;
       const hsv = rgbToHsv(src[i], src[i + 1], src[i + 2]);
       const hueOk = hueDistance(hsv.h, sourceHsv.h) <= hueTol;
       const satOk = Math.abs(hsv.s - sourceHsv.s) <= satTol;
@@ -259,6 +296,7 @@
 
       const pixelIndex = i >> 2;
       metalMask[pixelIndex] = 1;
+      matchedMetalPixels++;
       const newSat = resolveOutputSaturation(hsv.s, sourceHsv.s, targetHsv.s, saturationMode);
       const [r, g, b] = hsvToRgb(targetHsv.h, newSat, hsv.v);
       data[i] = r;
@@ -267,8 +305,32 @@
       data[i + 3] = alpha;
     }
 
+    debugLog(opts, 'source match', {
+      sourceHex: opts.sourceHex || SOURCE_HEX,
+      targetHex: opts.targetHex,
+      verdigrisHex: opts.verdigrisHex || null,
+      matchedMetalPixels,
+      totalPixels: width * height,
+      hueToleranceDeg: hueTol,
+      saturationTolerance: satTol,
+      alphaMin,
+    });
+    if (!matchedMetalPixels) {
+      debugWarn(opts, 'no source-metal pixels matched', {
+        sourceHex: opts.sourceHex || SOURCE_HEX,
+        hueToleranceDeg: hueTol,
+        saturationTolerance: satTol,
+      });
+    }
+
     const amount = clamp01(opts.oxidationAmount);
-    if (!amount || !verdigrisHsv || !opts.verdigrisHex) return imageData;
+    if (!amount || !verdigrisHsv || !opts.verdigrisHex) {
+      debugLog(opts, 'oxidation skipped', {
+        oxidationAmount: amount,
+        hasVerdigrisColor: !!opts.verdigrisHex,
+      });
+      return imageData;
+    }
 
     const oxidationMask = buildOxidationMask(metalMask, width, height, amount, opts);
     const outlineMask = buildOxidationOutlineMask(
@@ -279,8 +341,10 @@
       Math.max(0, opts.outlineWidth | 0),
     );
 
+    let oxidizedPixels = 0;
     for (let p = 0; p < oxidationMask.length; p++) {
       if (!oxidationMask[p]) continue;
+      oxidizedPixels++;
       const i = p * 4;
       const original = rgbToHsv(src[i], src[i + 1], src[i + 2]);
       const [r, g, b] = hsvToRgb(verdigrisHsv.h, verdigrisHsv.s, original.v);
@@ -290,31 +354,57 @@
       data[i + 3] = src[i + 3];
     }
 
+    let outlinePixels = 0;
     for (let p = 0; p < outlineMask.length; p++) {
       if (!outlineMask[p]) continue;
       const i = p * 4;
       const alpha = src[i + 3];
-      if (alpha <= alphaMin) continue;
+      if (alpha < alphaMin) continue;
+      outlinePixels++;
       data[i] = 0;
       data[i + 1] = 0;
       data[i + 2] = 0;
       data[i + 3] = alpha;
     }
 
+    debugLog(opts, 'recolor complete', {
+      matchedMetalPixels,
+      oxidizedPixels,
+      outlinePixels,
+      width,
+      height,
+    });
     return imageData;
   }
 
   const _imgCache = new Map();
   const _canvasCache = new Map();
 
-  function loadImage(spritePath) {
+  function loadImage(spritePath, opts = {}) {
     let promise = _imgCache.get(spritePath);
-    if (promise) return promise;
+    if (promise) {
+      debugLog(opts, 'image cache hit', { spritePath });
+      return promise;
+    }
+
+    debugLog(opts, 'image load start', { spritePath });
     promise = new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = reject;
+      img.onload = () => {
+        debugLog(opts, 'image load complete', {
+          spritePath,
+          width: img.naturalWidth || img.width || 0,
+          height: img.naturalHeight || img.height || 0,
+        });
+        resolve(img);
+      };
+      img.onerror = () => {
+        _imgCache.delete(spritePath);
+        const error = new Error(`Failed to load tool sprite: ${spritePath}`);
+        debugError(opts, 'image load failed', { spritePath, message: error.message });
+        reject(error);
+      };
       img.src = spritePath;
     });
     _imgCache.set(spritePath, promise);
@@ -323,7 +413,7 @@
 
   // Returns a cached canvas for all pixel-affecting options. Mastery only
   // supplies oxidationAmount; it does not alter the reference algorithm.
-  function getRecoloredCanvas(spritePath, opts) {
+  function getRecoloredCanvas(spritePath, opts = {}) {
     const seed = opts.seed ?? DEFAULT_OXIDATION_SEED;
     const blotchCount = opts.blotchCount ?? DEFAULT_BLOTCH_COUNT;
     const outlineWidth = opts.outlineWidth ?? DEFAULT_OUTLINE_WIDTH;
@@ -332,12 +422,27 @@
     const alphaMin = opts.alphaMin ?? DEFAULT_ALPHA_MIN;
     const saturationMode = opts.saturationMode || 'target';
     const sourceHex = opts.sourceHex || SOURCE_HEX;
+    const oxidationAmount = clamp01(opts.oxidationAmount);
+    const requestInfo = {
+      spritePath,
+      sourceHex,
+      targetHex: opts.targetHex || null,
+      verdigrisHex: opts.verdigrisHex || null,
+      oxidationAmount,
+      seed,
+      blotchCount,
+      outlineWidth,
+      hueToleranceDeg,
+      saturationTolerance,
+      alphaMin,
+      saturationMode,
+    };
     const cacheKey = [
       spritePath,
       sourceHex,
       opts.targetHex,
       opts.verdigrisHex || '',
-      clamp01(opts.oxidationAmount).toFixed(3),
+      oxidationAmount.toFixed(3),
       seed,
       blotchCount,
       outlineWidth,
@@ -347,14 +452,22 @@
       saturationMode,
     ].join('|');
 
+    debugLog(opts, 'recolor request', requestInfo);
     const cached = _canvasCache.get(cacheKey);
-    if (cached) return Promise.resolve(cached);
+    if (cached) {
+      debugLog(opts, 'canvas cache hit', { spritePath, oxidationAmount });
+      return Promise.resolve(cached);
+    }
 
-    return loadImage(spritePath).then(img => {
+    debugLog(opts, 'canvas cache miss', { spritePath, oxidationAmount });
+    if (debugEnabled(opts)) console.trace('[ToolMetalRecolor] request caller');
+
+    return loadImage(spritePath, opts).then(img => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth || img.width || 1;
+      canvas.height = img.naturalHeight || img.height || 1;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('Unable to get 2D canvas context for tool recolor.');
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -371,14 +484,40 @@
       });
       ctx.putImageData(imageData, 0, 0);
       _canvasCache.set(cacheKey, canvas);
+      debugLog(opts, 'canvas ready', {
+        spritePath,
+        oxidationAmount,
+        width: canvas.width,
+        height: canvas.height,
+      });
       return canvas;
+    }).catch(error => {
+      debugError(opts, 'recolor request failed', {
+        spritePath,
+        oxidationAmount,
+        message: error?.message || String(error),
+      });
+      throw error;
     });
+  }
+
+  function clearCache() {
+    _imgCache.clear();
+    _canvasCache.clear();
+    debugLog({}, 'cache cleared');
   }
 
   window.ToolMetalRecolor = {
     getRecoloredCanvas,
+    clearCache,
     rgbToHsv,
     hsvToRgb,
     SOURCE_HEX,
   };
+
+  debugLog({}, 'module loaded', {
+    seed: DEFAULT_OXIDATION_SEED,
+    blotchCount: DEFAULT_BLOTCH_COUNT,
+    outlineWidth: DEFAULT_OUTLINE_WIDTH,
+  });
 })();
