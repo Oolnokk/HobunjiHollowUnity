@@ -12,10 +12,11 @@
   //
   // tint: 'source' preserves the generator's existing color family. For
   // textured bark/vines, sourceTintMode:'hue-only' normalizes away the old
-  // Lambert brightness before multiplication so carved_smooth.png supplies
-  // the light/dark shading instead of being multiplied by a second dark bake.
-  // Use a '#rrggbb' tint to override the source color. Set enabled:false to
-  // fall back to the original renderer/material without changing the generator.
+  // Lambert brightness so carved_smooth.png supplies the light/dark shading.
+  // tintTreatment:'grass-luminance' applies the same luminance-preserving
+  // recolor used by grass billboards: texture value/shading survives while
+  // the configured/source tint supplies the color. Use '#rrggbb' to override
+  // source hue. Set enabled:false to fall back to the original renderer/material.
   window.NaturalSurfaceMaterialConfig = {
     schema: 'hobunji_natural_surface_materials.v1',
     texture: 'assets/textures/carved_smooth.png',
@@ -24,22 +25,26 @@
         enabled: true,
         tint: 'source',
         sourceTintMode: 'hue-only',
+        tintTreatment: 'grass-luminance',
         mapping: 'cylindrical-stretch'
       },
       vines: {
         enabled: true,
         tint: 'source',
         sourceTintMode: 'hue-only',
+        tintTreatment: 'grass-luminance',
         mapping: 'cylindrical-stretch'
       },
       rocks: {
         enabled: true,
         tint: '#5f5a56',
+        tintTreatment: 'grass-luminance',
         mapping: 'planar-stretch'
       },
       cliffs: {
         enabled: true,
         tint: '#6a6460',
+        tintTreatment: 'grass-luminance',
         mapping: 'world-stretch'
       }
     }

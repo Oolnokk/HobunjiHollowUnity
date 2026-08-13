@@ -13,6 +13,7 @@
   const stats = {
     sceneAddsInspected: 0,
     legacyRockMeshesNaturalized: 0,
+    naturalMaterialsGrassTinted: 0,
     barkMaterialsHueNormalized: 0,
     weedPlaceholderMeshesHidden: 0,
   };
@@ -66,14 +67,13 @@
 
   function normalizeMaterialHueOnly(mat) {
     if (!mat?.color?.isColor || mat.userData?.naturalSurfaceHueOnlyTint) return false;
-    const maxChannel = Math.max(mat.color.r, mat.color.g, mat.color.b);
-    if (!(maxChannel > 1e-5)) return false;
-
-    // carved_smooth.png already carries authored light/dark information.
-    // Preserve the source bark/vine channel ratios (hue) but normalize away
-    // their old Lambert brightness so the two dark sources are not multiplied
-    // together into near-black pixels.
-    if (maxChannel < 0.999) mat.color.multiplyScalar(1 / maxChannel);
+    const helper = window.SurfaceTint;
+    if (helper?.normalizeHueOnly) mat.color.copy(helper.normalizeHueOnly(mat.color));
+    else {
+      const maxChannel = Math.max(mat.color.r, mat.color.g, mat.color.b);
+      if (!(maxChannel > 1e-5)) return false;
+      if (maxChannel < 0.999) mat.color.multiplyScalar(1 / maxChannel);
+    }
     mat.userData = Object.assign({}, mat.userData, {
       naturalSurfaceHueOnlyTint: true,
     });
@@ -81,16 +81,35 @@
     return true;
   }
 
-  function fixNaturalBark(mesh) {
+  function naturalSurfaceFor(mesh, mat) {
+    return mat?.userData?.naturalSurface
+      || mesh?.userData?.naturalSurface
+      || null;
+  }
+
+  function applyNaturalSurfaceTint(mesh) {
     if (!mesh?.isMesh) return;
+    const helper = window.SurfaceTint;
+    if (!helper?.applyGrassLuminance) return;
+
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of mats) {
-      const surface = mat?.userData?.naturalSurface || mesh.userData?.naturalSurface;
-      if (surface !== 'trunks' && surface !== 'vines') continue;
+      const surface = naturalSurfaceFor(mesh, mat);
+      if (!surface) continue;
       const cfg = naturalConfig.surfaces?.[surface] || {};
-      if ((cfg.sourceTintMode || 'hue-only') !== 'hue-only') continue;
-      if (cfg.tint && cfg.tint !== 'source') continue;
-      normalizeMaterialHueOnly(mat);
+      if (cfg.enabled === false) continue;
+      if ((cfg.tintTreatment || 'grass-luminance') !== 'grass-luminance') continue;
+
+      if ((surface === 'trunks' || surface === 'vines')
+          && (cfg.sourceTintMode || 'hue-only') === 'hue-only'
+          && (!cfg.tint || cfg.tint === 'source')) {
+        normalizeMaterialHueOnly(mat);
+      }
+
+      const already = mat.userData?.surfaceTintTreatment === helper.treatment;
+      if (helper.applyGrassLuminance(mat, mat.color) && !already) {
+        stats.naturalMaterialsGrassTinted++;
+      }
     }
   }
 
@@ -122,8 +141,11 @@
   function inspectObject(root) {
     root?.traverse?.((obj) => {
       if (!obj?.isMesh) return;
-      fixNaturalBark(obj);
-      if (naturalizeLegacyRock(obj)) return;
+      if (naturalizeLegacyRock(obj)) {
+        applyNaturalSurfaceTint(obj);
+        return;
+      }
+      applyNaturalSurfaceTint(obj);
       hideLegacyWeedPlaceholder(obj);
     });
   }
@@ -148,7 +170,9 @@
     installed: true,
     inspectObject,
     snapshot() {
-      return Object.assign({}, stats);
+      return Object.assign({}, stats, {
+        surfaceTint: window.SurfaceTint?.snapshot?.() || null,
+      });
     },
   };
 })();
