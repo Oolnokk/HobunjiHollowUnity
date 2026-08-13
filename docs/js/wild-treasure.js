@@ -130,6 +130,9 @@
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure:' + weekIndex()));
     const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || [])];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
+    if (spots.length < targetCount) {
+      deps.debugLog(`[wild-treasure] ${mapId}: found ${spots.length}/${targetCount} valid buried-chest tile(s)`, 'warn');
+    }
     return spots.map(({ col, row }) => ({ col, row, found: false, loot: _rollTreasureLootBundle() }));
   }
 
@@ -297,17 +300,29 @@
     deps.debugLog(`ensureZoneTreasure(${mapId}): built ${groups.length} buried chest(s) for week ${weekIndex()}`);
   }
 
+  // Buried placements deliberately do NOT live in _zoneTreasureObjects:
+  // that map is reserved for already-dug, interactable chests so a hidden
+  // chest can never pre-empt the normal dig action on its tile. Companion
+  // scenting and sparkle hints therefore scan persistence directly.
+  function _stillBuriedPlacements(mapId) {
+    const persisted = deps._zoneTreasurePersist.get(mapId); // Used by hint systems to find hidden placements without registering world objects.
+    const zi = deps._zoneScenes.get(mapId); // Used here to exclude exposed/invalid chest tiles from buried-hint scans.
+    if (!persisted || !zi) return [];
+    return persisted.placements.filter(placement => {
+      if (!placement || placement.found) return false;
+      const tile = zi.grid[placement.row]?.[placement.col]; // Used to distinguish untouched ground from an already-dug chest tile.
+      return !!tile && tile.type !== deps.TileType.TRENCH;
+    });
+  }
+
   // Nearest still-buried chest in a zone (its tile isn't a dug trench
   // yet), in the same pixel-space coordinates as creature x/y — used by
   // game.js's updateCompanions treasure-hint branch and updateSparkles.
   function nearestBuriedPixelPos(mapId, fromX, fromY) {
-    const objs = deps._zoneTreasureObjects.get(mapId);
-    if (!objs) return null;
+    const placements = _stillBuriedPlacements(mapId); // Used to choose the companion's nearest valid treasure target.
     let best = null, bestDist = Infinity;
-    for (const obj of objs.values()) {
-      const tile = deps._zoneScenes.get(mapId)?.grid[obj.row]?.[obj.col];
-      if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no longer "buried"
-      const x = (obj.col + 0.5) * deps.TILE, y = (obj.row + 0.5) * deps.TILE;
+    for (const placement of placements) {
+      const x = (placement.col + 0.5) * deps.TILE, y = (placement.row + 0.5) * deps.TILE;
       const d = Math.hypot(x - fromX, y - fromY);
       if (d < bestDist) { bestDist = d; best = { x, y, dist: d }; }
     }
@@ -356,13 +371,13 @@
     _treasureSparkleTimer -= dt;
     if (_treasureSparkleTimer > 0) return;
     _treasureSparkleTimer = 0.3 + Math.random() * 0.3;
-    const objs = deps._zoneTreasureObjects.get(currentArea);
-    if (!objs) return;
+    const placements = _stillBuriedPlacements(currentArea); // Used to emit hints for hidden chests that are intentionally absent from the interactable-object map.
+    if (!placements.length) return;
     const rangePx = deps.TILE * TREASURE_SPARKLE_RANGE_PX_MUL;
-    for (const obj of objs.values()) {
-      const tile = deps._zoneScenes.get(currentArea)?.grid[obj.row]?.[obj.col];
-      if (tile?.type === deps.TileType.TRENCH) continue; // already dug — no hint needed
-      const cx = obj.col + 0.5, cz = obj.row + 0.5;
+    for (const placement of placements) {
+      const tile = deps._zoneScenes.get(currentArea)?.grid[placement.row]?.[placement.col];
+      if (!tile) continue;
+      const cx = placement.col + 0.5, cz = placement.row + 0.5;
       const dPx = Math.hypot(cx * deps.TILE - deps.player.x, cz * deps.TILE - deps.player.y);
       if (dPx > rangePx) continue;
       const tierY = (tile?.elevTier || 0) * deps.PLATEAU_UNIT;
