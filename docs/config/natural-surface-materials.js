@@ -10,13 +10,11 @@
   //   world-stretch       — preserve terrain world UVs but fit the PNG once
   //                         across each generated cliff/mesa mesh
   //
-  // tint: 'source' preserves the generator's existing color family. For
-  // textured bark/vines, sourceTintMode:'hue-only' normalizes away the old
-  // Lambert brightness so carved_smooth.png supplies the light/dark shading.
-  // tintTreatment:'grass-luminance' applies the same luminance-preserving
-  // recolor used by grass billboards: texture value/shading survives while
-  // the configured/source tint supplies the color. Use '#rrggbb' to override
-  // source hue. Set enabled:false to fall back to the original renderer/material.
+  // tint: 'source' preserves the generator's authored color family; '#rrggbb'
+  // supplies a fixed family. ground-shade-fill is the same PNG recolor path as
+  // textured terrain grass: getShadeFillCanvas() bakes the target color into a
+  // CanvasTexture while preserving the PNG's grain/shading, then the unlit
+  // material renders white so there is no second color multiplication.
   window.NaturalSurfaceMaterialConfig = {
     schema: 'hobunji_natural_surface_materials.v1',
     texture: 'assets/textures/carved_smooth.png',
@@ -24,15 +22,13 @@
       trunks: {
         enabled: true,
         tint: 'source',
-        sourceTintMode: 'hue-only',
-        tintTreatment: 'grass-luminance',
+        tintTreatment: 'ground-shade-fill',
         mapping: 'cylindrical-stretch'
       },
       vines: {
         enabled: true,
         tint: 'source',
-        sourceTintMode: 'hue-only',
-        tintTreatment: 'grass-luminance',
+        tintTreatment: 'ground-shade-fill',
         mapping: 'cylindrical-stretch'
       },
       rocks: {
