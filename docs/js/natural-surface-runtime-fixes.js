@@ -16,12 +16,16 @@
     deferredRootsInspected: 0,
     legacyRockMeshesNaturalized: 0,
     naturalMaterialsGrassTinted: 0,
+    naturalGroundShadeFillMaterials: 0,
+    naturalGroundShadeFillTextures: 0,
     naturalSourceTintsCaptured: 0,
     cliffUvsReprojected: 0,
     weedPlaceholderMeshesHidden: 0,
   };
 
   const deferredRoots = new Set();
+  const shadeFillTextureCache = new Map();
+  const imagePromiseCache = new Map();
   let deferredInspectionQueued = false;
 
   function materialHex(mat) {
@@ -65,9 +69,6 @@
     const boxLike = mesh.geometry?.type === 'BoxGeometry' || triangleCount(mesh.geometry) === BOX_TRIANGLES;
     const minSpan = Number(wildernessConfig.legacyWeedPlaceholderMinVerticalSpan ?? 0.12);
     const minRatio = Number(wildernessConfig.legacyWeedPlaceholderMinVerticalRatio ?? 0.12);
-    // A real WEEDS floor bucket is essentially flat. The old mint placeholder
-    // boxes have meaningful vertical extent; requiring box-like topology keeps
-    // this from hiding the legitimate merged terrain material.
     return boxLike && ext.y > minSpan && ext.y >= maxHorizontal * minRatio;
   }
 
@@ -77,27 +78,163 @@
       || null;
   }
 
+  function surfaceConfig(surface) {
+    return naturalConfig.surfaces?.[surface] || {};
+  }
+
+  function surfaceTexturePath(surface) {
+    const cfg = surfaceConfig(surface);
+    return cfg.texture || naturalConfig.texture || 'assets/textures/carved_smooth.png';
+  }
+
   function sourceTintFor(mat) {
     if (!mat?.color?.isColor) return null;
     mat.userData = Object.assign({}, mat.userData);
     const stored = mat.userData.naturalSurfaceSourceTint;
     if (stored?.isColor) return stored;
 
-    // Keep the generator/authored tint as immutable shader input. Do not
-    // normalize or otherwise mutate material.color: tree visibility/fade code
-    // is allowed to preserve/restore material state, and mutating the shared
-    // material made first-render bark peach until a cull cycle restored it.
     const tint = mat.color.clone();
     mat.userData.naturalSurfaceSourceTint = tint;
     stats.naturalSourceTintsCaptured++;
     return tint;
   }
 
+  function tintRgb255(color) {
+    const hex = color.getHex();
+    return [
+      (hex >> 16) & 255,
+      (hex >> 8) & 255,
+      hex & 255,
+    ];
+  }
+
+  function solidTintCanvas(color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = `#${color.getHexString()}`;
+      ctx.fillRect(0, 0, 1, 1);
+    }
+    return canvas;
+  }
+
+  function imagePromiseFor(path) {
+    let promise = imagePromiseCache.get(path);
+    if (promise) return promise;
+
+    const eager = window.NaturalSurfaceTextureReady;
+    const eagerImage = eager?.configuredPath === path ? eager.eagerImage : null;
+    if (eagerImage && eagerImage.complete && eagerImage.naturalWidth > 0) {
+      promise = Promise.resolve(eagerImage);
+    } else if (eagerImage && !eagerImage.complete) {
+      promise = new Promise((resolve, reject) => {
+        eagerImage.addEventListener('load', () => resolve(eagerImage), { once: true });
+        eagerImage.addEventListener('error', reject, { once: true });
+      });
+    } else {
+      promise = new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = path;
+      });
+    }
+
+    imagePromiseCache.set(path, promise);
+    return promise;
+  }
+
+  function copyTextureSampling(target, source) {
+    if (!target || !source) return;
+    target.wrapS = source.wrapS;
+    target.wrapT = source.wrapT;
+    target.minFilter = source.minFilter;
+    target.magFilter = source.magFilter;
+    target.generateMipmaps = source.generateMipmaps;
+    target.flipY = source.flipY;
+    if (source.repeat && target.repeat) target.repeat.copy(source.repeat);
+    if (source.offset && target.offset) target.offset.copy(source.offset);
+    if (source.center && target.center) target.center.copy(source.center);
+    target.rotation = source.rotation || 0;
+  }
+
+  function groundShadeFillTexture(surface, mat, tint) {
+    const path = surfaceTexturePath(surface);
+    const sourceMap = mat?.map || null;
+    const tintHex = tint.getHexString();
+    const key = [
+      path,
+      tintHex,
+      sourceMap?.wrapS ?? 'ws',
+      sourceMap?.wrapT ?? 'wt',
+      sourceMap?.minFilter ?? 'min',
+      sourceMap?.magFilter ?? 'mag',
+      sourceMap?.generateMipmaps === false ? 0 : 1,
+    ].join('|');
+
+    let texture = shadeFillTextureCache.get(key);
+    if (texture) return texture;
+
+    texture = new THREE.CanvasTexture(solidTintCanvas(tint));
+    copyTextureSampling(texture, sourceMap);
+    texture.userData = Object.assign({}, texture.userData, {
+      naturalSurfaceGroundShadeFill: true,
+      naturalSurface: surface,
+      naturalSurfaceTintHex: tintHex,
+      naturalSurfaceSourcePath: path,
+    });
+    shadeFillTextureCache.set(key, texture);
+    stats.naturalGroundShadeFillTextures++;
+
+    imagePromiseFor(path).then((img) => {
+      let finalImage = img;
+      const shadeFill = window.getShadeFillCanvas;
+      if (typeof shadeFill === 'function') {
+        finalImage = shadeFill(img, `${path}|#${tintHex}`, {
+          mode: 'shadeFill',
+          rgb: tintRgb255(tint),
+          options: typeof window.getPortraitTintingConfig === 'function'
+            ? window.getPortraitTintingConfig()
+            : undefined,
+        });
+      }
+      texture.image = finalImage;
+      texture.needsUpdate = true;
+    }).catch((error) => {
+      console.warn('[natural-surface] shade-fill texture failed', path, error);
+    });
+
+    return texture;
+  }
+
+  function applyGroundShadeFill(mat, surface) {
+    if (!mat?.map || !mat?.color?.isColor) return false;
+    const cfg = surfaceConfig(surface);
+    if ((cfg.tintTreatment || '') !== 'ground-shade-fill') return false;
+
+    const tint = sourceTintFor(mat);
+    if (!tint) return false;
+    const tintHex = tint.getHexString();
+
+    if (mat.userData?.naturalSurfaceGroundShadeFill === tintHex) return true;
+
+    mat.map = groundShadeFillTexture(surface, mat, tint);
+    mat.color.set(0xffffff);
+    mat.userData = Object.assign({}, mat.userData, {
+      naturalSurfaceGroundShadeFill: tintHex,
+      naturalSurfaceTintTreatment: 'ground-shade-fill',
+    });
+    mat.needsUpdate = true;
+    stats.naturalGroundShadeFillMaterials++;
+    return true;
+  }
+
   // Single-material cliffs own their UV channel, so project the horizontal
-  // span along U and actual height along V. The old world X/Z projection
-  // effectively collapsed vertical cliff faces into stripes/smears. Do not
-  // touch multi-material plateau geometry: its grass top shares the same UV
-  // attribute and would be corrupted by a cliff-only remap.
+  // span along U and actual height along V. Multi-material plateaus share UVs
+  // with their grass tops, so they are deliberately left alone here.
   function fixSingleMaterialCliffUv(mesh) {
     if (!mesh?.isMesh || Array.isArray(mesh.material)) return false;
     const surface = naturalSurfaceFor(mesh, mesh.material);
@@ -135,15 +272,17 @@
   function applyNaturalSurfaceTint(mesh) {
     if (!mesh?.isMesh) return;
     const helper = window.SurfaceTint;
-    if (!helper?.applyGrassLuminance) return;
 
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of mats) {
       const surface = naturalSurfaceFor(mesh, mat);
       if (!surface) continue;
-      const cfg = naturalConfig.surfaces?.[surface] || {};
+      const cfg = surfaceConfig(surface);
       if (cfg.enabled === false) continue;
+
+      if (applyGroundShadeFill(mat, surface)) continue;
       if ((cfg.tintTreatment || 'grass-luminance') !== 'grass-luminance') continue;
+      if (!helper?.applyGrassLuminance) continue;
 
       const sourceTint = sourceTintFor(mat);
       if (!sourceTint) continue;
@@ -215,10 +354,6 @@
       const result = originalAdd.apply(this, objects);
       stats.sceneAddsInspected += objects.length;
       for (const object of objects) inspectObject(object);
-      // Several legacy generators add their mesh first and replace its
-      // material immediately after returning from scene.add(). One batched
-      // microtask catches those synchronous post-add replacements after the
-      // generator finishes, without any recurring per-frame scene scan.
       queueDeferredInspection(objects);
       return result;
     }
@@ -232,6 +367,7 @@
     inspectObject,
     snapshot() {
       return Object.assign({}, stats, {
+        cachedGroundShadeFillTextures: shadeFillTextureCache.size,
         surfaceTint: window.SurfaceTint?.snapshot?.() || null,
         textureReady: window.NaturalSurfaceTextureReady?.snapshot?.() || null,
       });
