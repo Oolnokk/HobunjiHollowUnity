@@ -78,10 +78,15 @@
       const btn = document.getElementById('debugVerdigrisBtn');
       if (btn) _renderToolMetalDebugButton(btn);
 
-      // Starting a diagnostic run from a clean module cache makes the next
-      // actual tool recolor report source matching, mask growth, outline, and
-      // final canvas generation instead of only returning a cached canvas.
-      if (on) window.ToolMetalRecolor?.clearCache?.();
+      // Start each diagnostic pass from a clean recolor cache, then explicitly
+      // ask the smithing bridge to refresh every currently-owned crafted metal
+      // tool. That makes the toggle itself exercise the real world-texture
+      // adapter; no tool cycling or console command is required to provoke it.
+      if (on) {
+        window.ToolMetalRecolor?.clearCache?.();
+        const requested = window.MetalCraftShop?.refreshAllMetalToolWorldTextures?.('debug-toggle') || 0;
+        window.__farmLog(`[MetalToolBridge] debug toggle requested ${requested} owned metal tool texture refresh(es).`, 'info');
+      }
       window.__farmLog(`Tool verdigris diagnostics ${on ? 'enabled' : 'disabled'}.`, 'info');
     }
 

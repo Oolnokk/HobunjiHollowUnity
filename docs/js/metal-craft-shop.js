@@ -21,6 +21,43 @@
   const PLATE_BAR_COST    = 1;  // bars of the plating metal (cosmetic or resistant)
   const PLATE_LABOR_GOLD  = 8;
 
+  function verdigrisDebugEnabled() {
+    if (window.ToolMetalRecolorDebug === true) return true;
+    try { return window.localStorage?.getItem('toolMetalRecolorDebug') === '1'; }
+    catch { return false; }
+  }
+
+  function bridgeDebug(label, data) {
+    if (!verdigrisDebugEnabled()) return;
+    const suffix = data === undefined ? '' : ` ${JSON.stringify(data)}`;
+    window.__farmLog?.(`[MetalToolBridge] ${label}${suffix}`, 'info');
+  }
+
+  // game.js owns the actual world THREE.Texture objects, but injects its
+  // refreshMetalToolWorldTexture adapter into this extracted module. Keeping
+  // this fan-out here gives the Debug UI a narrow public hook that can force
+  // every currently-owned crafted metal tool back through the real runtime
+  // recolor path without reaching into game.js's private maps/sets.
+  function refreshAllMetalToolWorldTextures(reason = 'manual') {
+    if (!deps?.refreshMetalToolWorldTexture || !deps?.TOOL_ITEM_DEFS || !deps?.getGearInventory) {
+      bridgeDebug('refresh pass unavailable', { reason, initialized: !!deps });
+      return 0;
+    }
+    const gearInventory = deps.getGearInventory();
+    const itemKeys = Object.keys(gearInventory?.tools || {})
+      .filter(itemKey => gearInventory.tools[itemKey] && deps.TOOL_ITEM_DEFS[itemKey]?.metalKey);
+    bridgeDebug('refresh pass', { reason, itemCount: itemKeys.length, itemKeys });
+    itemKeys.forEach(itemKey => {
+      bridgeDebug('world texture refresh requested', {
+        reason,
+        itemKey,
+        label: deps.TOOL_ITEM_DEFS[itemKey]?.label || itemKey,
+      });
+      deps.refreshMetalToolWorldTexture(itemKey);
+    });
+    return itemKeys.length;
+  }
+
   function craftMetalTool(shapeKey, metalKey) {
     const barKey = deps.metalBarItemKey(metalKey);
     if ((deps.inventory[barKey] || 0) < CRAFT_BAR_COST) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
@@ -33,6 +70,11 @@
     if (!gearInventory.tools) gearInventory.tools = {};
     gearInventory.tools[itemKey] = true;
     deps.saveGearInventory();
+    // A newly-created crafted tool must immediately replace its base sprite
+    // world texture with the metal/mastery-generated canvas. Previously only
+    // plating changes called this adapter, so a fresh tool could remain on
+    // the untouched source PNG indefinitely.
+    deps.refreshMetalToolWorldTexture(itemKey);
     deps.showToast(`Smithed a ${deps.TOOL_ITEM_DEFS[itemKey].label}!`, true);
     renderMetalCraftShopPage();
     deps.buildInventoryGrid();
@@ -204,5 +246,6 @@
   window.MetalCraftShop = {
     init,
     render: renderMetalCraftShopPage,
+    refreshAllMetalToolWorldTextures,
   };
 })();
