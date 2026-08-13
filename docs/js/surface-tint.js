@@ -4,11 +4,12 @@
   const THREE = window.THREE;
   if (!THREE || window.SurfaceTint?.installed) return;
 
-  const TREATMENT = 'grass-luminance-v2';
+  const TREATMENT = 'grass-luminance-v3';
   const stats = {
     materialsPatched: 0,
     shaderCompiles: 0,
     shaderPatchMisses: 0,
+    uniformDeclarationMisses: 0,
   };
 
   function colorFrom(value, fallback = 0xffffff) {
@@ -45,6 +46,22 @@
 `;
   }
 
+  function injectUniformDeclaration(fragmentShader, uniformName) {
+    const declaration = `uniform vec3 ${uniformName};`;
+    if (fragmentShader.includes(declaration)) return fragmentShader;
+
+    // Insert after Three's precision/header declarations and immediately before
+    // main(). Adding a JS-side shader.uniforms entry does NOT declare the GLSL
+    // uniform; without this declaration the base material fails compilation,
+    // while override-material outline passes can still render the silhouette.
+    const mainPattern = /void\s+main\s*\(\s*\)\s*\{/;
+    if (!mainPattern.test(fragmentShader)) {
+      stats.uniformDeclarationMisses++;
+      return null;
+    }
+    return fragmentShader.replace(mainPattern, `${declaration}\nvoid main() {`);
+  }
+
   function applyGrassLuminance(material, tint = null) {
     if (!material || typeof material.onBeforeCompile !== 'function') return false;
     if (!material.map) return false;
@@ -71,16 +88,23 @@
       };
 
       const include = '#include <map_fragment>';
-      if (shader.fragmentShader.includes(include)) {
-        shader.fragmentShader = shader.fragmentShader.replace(
-          include,
-          grassLuminanceMapFragment('hobunjiSurfaceTint')
-        );
-        stats.shaderCompiles++;
-      } else {
+      if (!shader.fragmentShader.includes(include)) {
         stats.shaderPatchMisses++;
         console.warn('[surface-tint] map_fragment not found; leaving source material shader intact');
+        return;
       }
+
+      const declared = injectUniformDeclaration(shader.fragmentShader, 'hobunjiSurfaceTint');
+      if (!declared) {
+        console.warn('[surface-tint] fragment main() not found; leaving source material shader intact');
+        return;
+      }
+
+      shader.fragmentShader = declared.replace(
+        include,
+        grassLuminanceMapFragment('hobunjiSurfaceTint')
+      );
+      stats.shaderCompiles++;
     };
 
     material.customProgramCacheKey = function () {
