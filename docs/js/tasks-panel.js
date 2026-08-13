@@ -5,7 +5,10 @@
   // Extracted out of game.js following the same window.<Namespace> +
   // init(deps) pattern as its sibling systems.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    _installBanditCampDangerSubtitle();
+  }
 
   // Used by bounty rows below so newly persisted captain gender is reflected
   // in copy; old saves without that field deliberately fall back to neutral
@@ -14,6 +17,69 @@
     if (task?.captainGender === 'male') return { object: 'him', possessive: 'his' };
     if (task?.captainGender === 'female') return { object: 'her', possessive: 'her' };
     return { object: 'them', possessive: 'their' };
+  }
+
+  // Bandit difficulty tiers are stored zero-based (0..3 today), while the
+  // player-facing danger marks are one-based: X, XX, XXX, XXXX. Keeping this
+  // in one helper ensures wanted posters, accepted bounties and camp-entry
+  // title cards all speak the exact same visual language.
+  function banditDifficulty(tier) {
+    const numericTier = Math.max(0, Math.floor(Number(tier) || 0));
+    const label = window.BountyBoard?.RANK_LABELS?.[numericTier] || `Tier ${numericTier + 1}`;
+    return { label, marks: 'X'.repeat(numericTier + 1) };
+  }
+
+  function dangerRatingMarkup(tier) {
+    const danger = banditDifficulty(tier);
+    return `<span>${deps.esc(danger.label)}</span> <span aria-label="${danger.marks.length} danger marks" style="font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',monospace;font-size:1.18em;letter-spacing:0.08em;font-weight:700;">${danger.marks}</span>`;
+  }
+
+  // The shared zone-banner API intentionally remains a simple one-line title.
+  // Rather than broadening game.js just for bandit camps, wrap the public camp
+  // banner update and append a second line only when that update has revealed a
+  // live camp title. Calling showZoneBanner again replaces textContent, which
+  // naturally removes an old subtitle before this wrapper adds the new one.
+  function _installBanditCampDangerSubtitle() {
+    const camps = window.BanditCamps;
+    if (!camps?.updateCampBanners || camps.__dangerSubtitleInstalled) return;
+    const originalUpdate = camps.updateCampBanners;
+
+    camps.updateCampBanners = function(dt) {
+      const result = originalUpdate.call(camps, dt);
+      const banner = document.getElementById('zoneBanner');
+      if (!banner?.classList.contains('show') || banner.querySelector('[data-bandit-danger-subtitle]')) return result;
+
+      const shownTitle = banner.textContent.trim();
+      let matchedCamp = null;
+      for (const recs of camps.campInstances?.values?.() || []) {
+        for (const rec of recs) {
+          if (camps.isCampCleared?.(rec)) continue;
+          const campTitle = rec.captainName ? `${rec.captainName}'s Bandit Camp` : 'Bandit Camp';
+          if (campTitle === shownTitle) {
+            matchedCamp = rec;
+            break;
+          }
+        }
+        if (matchedCamp) break;
+      }
+      if (!matchedCamp) return result;
+
+      const danger = banditDifficulty(matchedCamp.tier);
+      const subtitle = document.createElement('div');
+      subtitle.dataset.banditDangerSubtitle = '1';
+      subtitle.style.cssText = 'display:block;margin-top:3px;text-align:center;font-size:13px;line-height:1.15;letter-spacing:0.05em;font-weight:500;color:rgba(245,230,200,0.86);';
+      subtitle.append(document.createTextNode(danger.label + '  '));
+
+      const marks = document.createElement('span');
+      marks.textContent = danger.marks;
+      marks.setAttribute('aria-label', `${danger.marks.length} danger marks`);
+      marks.style.cssText = "font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',monospace;font-size:1.2em;letter-spacing:0.08em;font-weight:700;";
+      subtitle.appendChild(marks);
+      banner.appendChild(subtitle);
+      return result;
+    };
+
+    camps.__dangerSubtitleInstalled = true;
   }
 
   async function renderTasksPanel() {
@@ -63,7 +129,6 @@
       bountyEl.innerHTML = '';
       const posting = window.BountyBoard.getCurrentPosting();
       if (posting) {
-        const rank = window.BountyBoard.RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
         const zoneLabel = deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
         const pronouns = bountyPronouns(posting); // Used in the wanted-poster description immediately below.
         const row = document.createElement('div');
@@ -71,7 +136,8 @@
         row.innerHTML = `
           <div class="sh-icon">🎯</div>
           <div class="sh-info">
-            <div class="sh-name">Wanted: ${deps.esc(posting.captainName)} — ${deps.esc(rank)}</div>
+            <div class="sh-name">Wanted: ${deps.esc(posting.captainName)}</div>
+            <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(posting.tier)}</div>
             <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy ${pronouns.possessive} camp for ${posting.rewardGold}g.</div>
           </div>
           <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
@@ -105,14 +171,14 @@
       const row = document.createElement('div');
       row.className = 'shop-row';
       if (task.kind === 'bounty') {
-        const rank = window.BountyBoard.RANK_LABELS[task.tier] || `Tier ${task.tier}`;
         const zoneLabel = deps.WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
         const marked = window.BountyBoard.markers.has(task.id);
         const pronouns = bountyPronouns(task); // Used in the active-bounty tracking copy immediately below.
         row.innerHTML = `
           <div class="sh-icon">🎯</div>
           <div class="sh-info">
-            <div class="sh-name">Bounty: ${deps.esc(task.captainName)} — ${deps.esc(rank)}</div>
+            <div class="sh-name">Bounty: ${deps.esc(task.captainName)}</div>
+            <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(task.tier)}</div>
             <div class="sh-desc">${deps.esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : `Still tracking ${pronouns.object} down...`} Reward: ${task.rewardGold}g on ${pronouns.possessive} camp's destruction.</div>
           </div>
         `;
