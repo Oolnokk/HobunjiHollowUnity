@@ -700,7 +700,8 @@
   function runtimeToolMasteryThresholds(combatDeps) {
     const exposed = combatDeps?.MASTERY_XP_THRESHOLDS;
     if (Array.isArray(exposed) && exposed.length && exposed.every((value) => Number.isFinite(Number(value)))) {
-      return exposed.map(Number);
+      const numeric = exposed.map(Number);
+      if (numeric.every((value, index) => value > 0 && (index === 0 || value > numeric[index - 1]))) return numeric;
     }
     return TOOL_MASTERY_XP_THRESHOLDS;
   }
