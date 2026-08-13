@@ -60,6 +60,68 @@
     // filter tab is showing, instead of always exporting everything.
     window.__debugLogMatchesFilter = _matchesDebugFilter;
 
+    // Tool-metal diagnostics are intentionally owned by the debug bootstrap
+    // instead of game.js. The recolor module reads this same localStorage key
+    // on every request, so the switch takes effect immediately and persists
+    // across reloads without adding verdigris-specific state to gameplay code.
+    const TOOL_METAL_DEBUG_KEY = 'toolMetalRecolorDebug';
+    function _toolMetalDebugEnabled() {
+      if (window.ToolMetalRecolorDebug === true) return true;
+      try { return window.localStorage?.getItem(TOOL_METAL_DEBUG_KEY) === '1'; }
+      catch { return false; }
+    }
+
+    function _setToolMetalDebugEnabled(enabled) {
+      const on = !!enabled;
+      window.ToolMetalRecolorDebug = on;
+      try { window.localStorage?.setItem(TOOL_METAL_DEBUG_KEY, on ? '1' : '0'); } catch {}
+      const btn = document.getElementById('debugVerdigrisBtn');
+      if (btn) _renderToolMetalDebugButton(btn);
+
+      // Starting a diagnostic run from a clean module cache makes the next
+      // actual tool recolor report source matching, mask growth, outline, and
+      // final canvas generation instead of only returning a cached canvas.
+      if (on) window.ToolMetalRecolor?.clearCache?.();
+      window.__farmLog(`Tool verdigris diagnostics ${on ? 'enabled' : 'disabled'}.`, 'info');
+    }
+
+    function _renderToolMetalDebugButton(btn) {
+      const on = _toolMetalDebugEnabled();
+      btn.textContent = `Verdigris logs: ${on ? 'On' : 'Off'}`;
+      btn.setAttribute('aria-pressed', String(on));
+      btn.style.fontSize = '11px';
+      btn.style.padding = '3px 10px';
+      btn.style.borderRadius = '6px';
+      btn.style.cursor = 'pointer';
+      btn.style.background = on ? 'rgba(52,211,153,.18)' : 'rgba(255,255,255,.08)';
+      btn.style.border = on ? '1px solid rgba(52,211,153,.45)' : '1px solid rgba(255,255,255,.2)';
+      btn.style.color = on ? '#34d399' : '#d1d5db';
+    }
+
+    function _installToolMetalDebugToggle() {
+      if (document.getElementById('debugVerdigrisBtn')) return;
+      const anchor = document.getElementById('debugProbeArmBtn');
+      const controls = anchor?.parentElement;
+      if (!controls) return;
+
+      const btn = document.createElement('button');
+      btn.id = 'debugVerdigrisBtn';
+      btn.type = 'button';
+      btn.title = 'Toggle detailed tool recolor / mastery verdigris diagnostics. This setting persists across reloads.';
+      _renderToolMetalDebugButton(btn);
+      btn.addEventListener('click', () => _setToolMetalDebugEnabled(!_toolMetalDebugEnabled()));
+      controls.insertBefore(btn, anchor);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _installToolMetalDebugToggle, { once: true });
+    } else {
+      _installToolMetalDebugToggle();
+    }
+
+    // Exposed for any future debug UI that wants to mirror the same state.
+    window.setToolMetalRecolorDebug = _setToolMetalDebugEnabled;
+
     window.addEventListener('error', function (event) {
       window.__farmLog(`${event.message} @ ${event.filename || 'inline'}:${event.lineno || '?'}:${event.colno || '?'}`, 'error');
     });
