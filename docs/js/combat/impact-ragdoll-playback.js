@@ -119,12 +119,8 @@
     return clip.durationSeconds * durationMultiplier;
   }
 
-  // opts.suppressLocomotion is for recovery-style rolls that start from normal
-  // movement rather than a held ragdoll pose (the ordinary dodge). game.js
-  // skips playerLegs.update() whenever this playback is active, which otherwise
-  // freezes the exact mid-stride gait pose present on the dodge-start frame.
-  // Running the leg system in its existing suppressed mode instead blends both
-  // legs back toward its neutral straight-down pose for the duration of the roll.
+  // Recovery rolls started from ordinary movement suppress the procedural
+  // gait; prone recovery keeps its existing held ragdoll leg pose.
   function beginRecoveryArc(durationS, onComplete, opts = {}) {
     playback.active = true;
     playback.holding = false;
@@ -133,15 +129,11 @@
     playback.elapsedS = 0;
     playback.recoveryDurationS = Math.max(0.05, Number(durationS) || 0.5);
     playback.recoveryOnComplete = typeof onComplete === 'function' ? onComplete : null;
-    playback.suppressLocomotion = opts.suppressLocomotion === true;
+    playback.suppressLocomotion = opts.suppressLocomotion === true || !window.Combat?.deps?.player?.prone;
   }
 
   function updateRecoveryArc(dt) {
     if (playback.suppressLocomotion && playerLegsRef?.update) {
-      // Reuse the procedural locomotion system's own suppression path instead
-      // of inventing a dodge-specific foot pose. Zero speed prevents a fresh
-      // stride from advancing while `suppressed` blends any in-progress gait
-      // (and drunken gait decoration) toward neutral under the somersault.
       playerLegsRef.update(dt, 0, true, false);
     }
 
