@@ -4,16 +4,22 @@
   let deps = null; // Injected UI-only adapters; used by the mobile-friendly debug toggle.
   let inventoryObserver = null; // Watches inventory rebuilds so presentation survives existing render functions.
   let decorateQueued = false; // Coalesces mutation bursts into one presentation pass.
+  let menuReadabilityObserver = null; // Re-applies menu readability rules after dynamic menu content/state changes.
+  let menuReadabilityQueued = false; // Coalesces menu mutation/click refreshes into one computed-style pass.
 
   const STYLE_ID = 'inventoryUiPolishStyles'; // Prevents duplicate injected styles across repeated init calls.
   const DEBUG_BUTTON_ID = 'inventoryUiDebugButton'; // Stable id for the in-menu layout-debug control.
+  const MENU_MIN_FONT_PX = 11; // Matches Farm > Buildings > Edit Layout (.settings-small-btn); no menu text may render smaller.
+  const MENU_READABILITY_ROOTS = '#menuPanel, #houseLayoutModal'; // Main menu plus its full-screen House Layout editor.
 
   function init(injectedDeps = {}) {
     deps = injectedDeps;
     installStyles();
     installObserver();
+    installMenuReadability();
     decorate();
     ensureDebugButton();
+    scheduleMenuReadability();
   }
 
   function installStyles() {
@@ -31,13 +37,13 @@
       #menuPanel:has(#mpInventory.active) #mpInventory {
         --inv-col:calc(30 * var(--col) / 54);
         --inv-row:calc((16 * var(--row) - 1.18 * var(--row)) / 28);
-        --inv-font-xs:clamp(8px,calc(.195 * var(--row)),11px);
-        --inv-font-sm:clamp(9px,calc(.23 * var(--row)),14px);
+        --inv-font-xs:11px;
+        --inv-font-sm:clamp(11px,calc(.23 * var(--row)),14px);
       }
       #menuPanel:has(#mpInventory.active) #mpInventory .iib-icon { font-size:clamp(18px,calc(.64 * var(--row)),30px); }
       #menuPanel:has(#mpInventory.active) #mpInventory .ii-icon { font-size:clamp(28px,calc(.98 * var(--row)),46px); }
 
-      #mpInventory { --inv-ui-accent:rgba(249,226,138,.92); }
+      #mpInventory { --inv-ui-accent:rgba(249,226,138,.92); --inv-font-xs:11px; --inv-font-sm:clamp(11px,calc(.23 * var(--row)),14px); }
       #mpInventory .inv-wallet { border:1px solid rgba(240,208,64,.26); border-radius:999px; background:rgba(240,208,64,.07); font-weight:700; text-shadow:0 1px 2px #0008; }
 
       #mpInventory .inv-sub-tabs { gap:2px; padding:2px; border:1px solid #ffffff1c; border-radius:calc(.95 * var(--inv-row)); background:#0003; overflow:visible; }
@@ -169,6 +175,91 @@
     pane.addEventListener('click', scheduleDecorate, true);
   }
 
+  function installMenuReadability() {
+    if (menuReadabilityObserver) return;
+    const roots = document.querySelectorAll(MENU_READABILITY_ROOTS);
+    if (!roots.length) return;
+    menuReadabilityObserver = new MutationObserver((records) => {
+      const relevant = records.some((record) => {
+        const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+        return !!target?.closest?.(MENU_READABILITY_ROOTS);
+      });
+      if (relevant) scheduleMenuReadability();
+    });
+    roots.forEach((root) => {
+      menuReadabilityObserver.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:['class','hidden','disabled'] });
+      root.addEventListener('click', scheduleMenuReadability, true);
+      root.addEventListener('input', scheduleMenuReadability, true);
+    });
+  }
+
+  function scheduleMenuReadability() {
+    if (menuReadabilityQueued) return;
+    menuReadabilityQueued = true;
+    requestAnimationFrame(() => {
+      menuReadabilityQueued = false;
+      enforceMenuReadability();
+    });
+  }
+
+  function enforceMenuReadability() {
+    document.querySelectorAll(MENU_READABILITY_ROOTS).forEach((root) => {
+      const elements = [root, ...root.querySelectorAll('*')];
+      elements.forEach((element) => {
+        if (!isMenuTextCarrier(element)) return;
+
+        // Re-evaluate against the underlying class/state each pass so a later active/accent state can still become larger or colored.
+        if (element.dataset.menuFontFloor === '1') {
+          element.style.removeProperty('font-size');
+          delete element.dataset.menuFontFloor;
+        }
+        if (element.dataset.menuGrayText === '1') {
+          element.style.removeProperty('color');
+          delete element.dataset.menuGrayText;
+        }
+
+        const computed = getComputedStyle(element);
+        const fontPx = Number.parseFloat(computed.fontSize);
+        if (Number.isFinite(fontPx) && fontPx < MENU_MIN_FONT_PX - 0.01) {
+          element.style.setProperty('font-size', `${MENU_MIN_FONT_PX}px`, 'important');
+          element.dataset.menuFontFloor = '1';
+        }
+
+        const color = parseCssColor(computed.color);
+        if (color && isGrayMenuText(color)) {
+          const alpha = Math.max(0, Math.min(1, color.a));
+          const mutedGreen = alpha < 0.995 ? `rgba(138,173,143,${alpha})` : 'rgb(138,173,143)';
+          element.style.setProperty('color', mutedGreen, 'important');
+          element.dataset.menuGrayText = '1';
+        }
+      });
+    });
+  }
+
+  function isMenuTextCarrier(element) {
+    if (!(element instanceof HTMLElement)) return false;
+    if (['SCRIPT','STYLE','TEMPLATE','CANVAS','IMG','SVG','PATH'].includes(element.tagName)) return false;
+    if (['INPUT','SELECT','TEXTAREA','OPTION','BUTTON'].includes(element.tagName)) return true;
+    return [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+  }
+
+  function parseCssColor(value) {
+    const match = String(value || '').match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i);
+    if (!match) return null;
+    return { r:Number(match[1]), g:Number(match[2]), b:Number(match[3]), a:match[4] == null ? 1 : Number(match[4]) };
+  }
+
+  function isGrayMenuText(color) {
+    if (!Number.isFinite(color.r) || !Number.isFinite(color.g) || !Number.isFinite(color.b) || !Number.isFinite(color.a) || color.a <= 0.02) return false;
+    const max = Math.max(color.r, color.g, color.b);
+    const min = Math.min(color.r, color.g, color.b);
+    if (max - min > 10) return false; // Colored text, including the existing green muted/accent families, is preserved.
+    const average = (color.r + color.g + color.b) / 3;
+    if (average >= 248 && color.a >= 0.95) return false; // Solid white is text, not gray; keep it white.
+    if (average <= 22 && color.a >= 0.95) return false; // Solid black on light selected controls remains intentional contrast.
+    return true; // Neutral gray, near-gray, or faded white that visually renders gray gets the green muted tone.
+  }
+
   function scheduleDecorate() {
     if (decorateQueued) return;
     decorateQueued = true;
@@ -183,6 +274,7 @@
     decorateGearSlots();
     decorateInfoPanel();
     updateDebugButton();
+    scheduleMenuReadability();
   }
 
   function decorateModeTabs() {
@@ -579,8 +671,9 @@
       ownedGearTiles: document.querySelectorAll('#invEquipSection .gear-owned-section .inv-equip-slot').length,
       infoHasDescription: !!document.getElementById('iiDesc')?.textContent?.trim(),
       boundsVisible: !!document.getElementById('menuPanel')?.classList.contains('inv-debug'),
+      menuMinFontPx: MENU_MIN_FONT_PX,
     };
   }
 
-  window.InventoryUI = { init, decorate, debugSnapshot };
+  window.InventoryUI = { init, decorate, debugSnapshot, enforceMenuReadability };
 })();
