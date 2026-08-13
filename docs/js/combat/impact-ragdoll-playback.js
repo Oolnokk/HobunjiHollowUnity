@@ -12,6 +12,7 @@
   let playerLegsRef = null;
   let baseBodyY = 0;
 
+  const recoveryAxis = new THREE.Vector3(1, 0, 0); // Used by recovery rolls; dodge direction blends X/Z while prone recovery keeps +X.
   const playback = {
     active: false,
     holding: false,
@@ -20,6 +21,8 @@
     clip: null,
     elapsedS: 0,
     playbackRate: 1,
+    suppressLocomotion: false,
+    recoveryBlend: null,
   };
 
   // Keep the historical two-argument signature because game.js already calls
@@ -110,6 +113,9 @@
     playback.clip = clip;
     playback.elapsedS = 0;
     playback.playbackRate = 1 / durationMultiplier;
+    playback.suppressLocomotion = false;
+    playback.recoveryBlend = null;
+    recoveryAxis.set(1, 0, 0);
     baseBodyY = Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0;
 
     const [frameA, frameB, t] = findBracket(clip.frames, 0);
@@ -117,7 +123,49 @@
     return clip.durationSeconds * durationMultiplier;
   }
 
-  function beginRecoveryArc(durationS, onComplete) {
+  // Treat the four cardinal dodge directions as blend poles. Forward/back use
+  // opposite X-axis somersaults; right/left use opposite Z-axis side rolls.
+  // A diagonal dodge weights its two adjacent poles, producing one normalized
+  // intermediate roll axis instead of snapping between four discrete clips.
+  function setRecoveryDirectionBlend(player, suppressLocomotion) {
+    if (!suppressLocomotion) {
+      playback.recoveryBlend = { forward: 1, backward: 0, left: 0, right: 0 };
+      recoveryAxis.set(1, 0, 0);
+      return;
+    }
+
+    let dx = Number(player?.dodgeDirX) || 0;
+    let dy = Number(player?.dodgeDirY) || 0;
+    const magnitude = Math.hypot(dx, dy);
+    if (magnitude > 1e-6) {
+      dx /= magnitude;
+      dy /= magnitude;
+    } else {
+      // performDodge normally supplies a direction even from rest. Preserve the
+      // old forward somersault as the safe fallback if a future caller does not.
+      dx = 0;
+      dy = -1;
+    }
+
+    const forward = Math.max(0, -dy); // Negative map-Y is the forward/up dodge pole.
+    const backward = Math.max(0, dy); // Positive map-Y is the backward/down dodge pole.
+    const left = Math.max(0, -dx); // Negative map-X supplies the left side-roll pole.
+    const right = Math.max(0, dx); // Positive map-X supplies the right side-roll pole.
+    playback.recoveryBlend = { forward, backward, left, right };
+
+    recoveryAxis.set(
+      forward - backward,
+      0,
+      right - left
+    );
+    if (recoveryAxis.lengthSq() < 1e-8) recoveryAxis.set(1, 0, 0);
+    else recoveryAxis.normalize();
+  }
+
+  // Recovery rolls started from ordinary movement suppress the procedural
+  // gait; prone recovery keeps its existing held ragdoll leg pose and +X roll.
+  function beginRecoveryArc(durationS, onComplete, opts = {}) {
+    const player = window.Combat?.deps?.player;
     playback.active = true;
     playback.holding = false;
     playback.bank = 'recovery';
@@ -125,14 +173,21 @@
     playback.elapsedS = 0;
     playback.recoveryDurationS = Math.max(0.05, Number(durationS) || 0.5);
     playback.recoveryOnComplete = typeof onComplete === 'function' ? onComplete : null;
+    playback.suppressLocomotion = opts.suppressLocomotion === true || !player?.prone;
+    setRecoveryDirectionBlend(player, playback.suppressLocomotion);
   }
 
   function updateRecoveryArc(dt) {
+    if (playback.suppressLocomotion && playerLegsRef?.update) {
+      playerLegsRef.update(dt, 0, true, false);
+    }
+
     playback.elapsedS += dt;
     const t = Math.min(1, playback.elapsedS / playback.recoveryDurationS);
     const eased = t * t * (3 - 2 * t);
-    const recoveryQuat = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(Math.PI * 2 * (1 - eased), 0, 0, 'YXZ')
+    const recoveryQuat = new THREE.Quaternion().setFromAxisAngle(
+      recoveryAxis,
+      Math.PI * 2 * (1 - eased)
     );
     publishBodyPose(recoveryQuat, Math.sin(Math.PI * t) * 0.12);
 
@@ -174,6 +229,9 @@
     playback.active = false;
     playback.holding = false;
     playback.clip = null;
+    playback.suppressLocomotion = false;
+    playback.recoveryBlend = null;
+    recoveryAxis.set(1, 0, 0);
     window.PlayerBodyTransformComposer?.clearChannel(BODY_CHANNEL);
   }
 
@@ -189,6 +247,17 @@
     return playback.direction;
   }
 
+  function getDebug() {
+    return {
+      active: playback.active,
+      bank: playback.bank,
+      direction: playback.direction,
+      suppressLocomotion: playback.suppressLocomotion,
+      recoveryBlend: playback.recoveryBlend ? { ...playback.recoveryBlend } : null,
+      recoveryAxis: { x: recoveryAxis.x, y: recoveryAxis.y, z: recoveryAxis.z },
+    };
+  }
+
   window.ImpactRagdollPlayback = {
     attach,
     trigger,
@@ -198,5 +267,6 @@
     isActive,
     isHolding,
     currentDirection,
+    getDebug,
   };
 })();
