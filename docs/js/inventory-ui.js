@@ -21,6 +21,22 @@
     const style = document.createElement('style'); // Owns presentation only; inventory state/actions stay in existing systems.
     style.id = STYLE_ID;
     style.textContent = `
+      /* Inventory uses the menu's otherwise-unused outer screen margins instead of stealing room from its own tiles/cards. */
+      #menuPanel:has(#mpInventory.active) {
+        left:calc(var(--ox) + 1 * var(--col));
+        top:calc(var(--oy) + 1 * var(--row));
+        width:calc(30 * var(--col));
+        height:calc(16 * var(--row));
+      }
+      #menuPanel:has(#mpInventory.active) #mpInventory {
+        --inv-col:calc(30 * var(--col) / 54);
+        --inv-row:calc((16 * var(--row) - 1.18 * var(--row)) / 28);
+        --inv-font-xs:clamp(8px,calc(.195 * var(--row)),11px);
+        --inv-font-sm:clamp(9px,calc(.23 * var(--row)),14px);
+      }
+      #menuPanel:has(#mpInventory.active) #mpInventory .iib-icon { font-size:clamp(18px,calc(.64 * var(--row)),30px); }
+      #menuPanel:has(#mpInventory.active) #mpInventory .ii-icon { font-size:clamp(28px,calc(.98 * var(--row)),46px); }
+
       #mpInventory { --inv-ui-accent:rgba(249,226,138,.92); }
       #mpInventory .inv-wallet { border:1px solid rgba(240,208,64,.26); border-radius:999px; background:rgba(240,208,64,.07); font-weight:700; text-shadow:0 1px 2px #0008; }
 
