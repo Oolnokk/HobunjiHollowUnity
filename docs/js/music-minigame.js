@@ -197,12 +197,11 @@
             <button class="edgeControllerBtn edgeTriggerBtn" data-bridge-bank="rt"><span class="glyph" data-label-key="rt">▶</span><span class="action-label">Notes +8</span></button>
           </div>
         </div>
-        <div class="edgeLeftStickRow" aria-label="Left stick controls">
-          <div class="edgeStickPad arp" data-bridge-stick="left" aria-label="Rotate through hidden chord notes"><div class="edgeStickNub">ARP</div></div>
-          <div class="edgeStickSide">
-            <button class="edgeControllerBtn system" data-bridge-action="pause"><span class="glyph" data-label-key="start">START</span><span class="action-label">Pause</span></button>
-            <button class="edgeControllerBtn" data-bridge-reset-harmony><span class="glyph">↻</span><span class="action-label">Restart Harmony</span></button>
-          </div>
+        <div class="edgeClusterTitle">Pick a pattern, then hold a note</div>
+        <div class="edgePatternGrid" aria-label="Auto-arpeggio pattern — pick one, then hold a note to repeat it" data-pattern-grid></div>
+        <div class="edgeLeftStickRow" aria-label="Transport controls">
+          <button class="edgeControllerBtn system" data-bridge-action="pause"><span class="glyph" data-label-key="start">START</span><span class="action-label">Pause</span></button>
+          <button class="edgeControllerBtn" data-bridge-reset-harmony><span class="glyph">↻</span><span class="action-label">Restart Harmony</span></button>
         </div>
       </aside>`;
     rightMount.innerHTML = `
@@ -348,8 +347,30 @@
       });
       pad.addEventListener('contextmenu', (event) => event.preventDefault());
     };
-    bindStick(leftMount.querySelector('[data-bridge-stick="left"]'), 'left', 26);
+    // The right stick (strum) still uses the drag gesture — it's a single
+    // up/down flick, not a 6-way pick, so it stays discoverable without a
+    // button grid. The left stick's old job (drag into one of 6 wedges to
+    // pick an auto-arpeggio pattern) is handled by the pattern grid below
+    // instead — direct tap targets so it works without a gamepad and
+    // without needing a note held at the same time to "feel" the gesture.
     bindStick(rightMount.querySelector('[data-bridge-stick="right"]'), 'right', 22);
+
+    const patternGrid = leftMount.querySelector('[data-pattern-grid]');
+    if (patternGrid) {
+      const menuState = bridge.getState?.() || {};
+      const ids = menuState.leftStickModeIds || ['direct'];
+      const labels = menuState.leftStickModeLabels || ['SINGLE'];
+      const selectedSector = menuState.leftStickSector ?? 0;
+      patternGrid.innerHTML = ids.map((id, index) => `<button type="button" class="edgePatternBtn${index === selectedSector ? ' selected' : ''}" data-pattern-index="${index}">${labels[index] || id}</button>`).join('');
+      patternGrid.querySelectorAll('[data-pattern-index]').forEach((button) => {
+        button.addEventListener('click', async (event) => {
+          event.preventDefault();
+          await bridge.wakeAudio?.().catch(() => {});
+          bridge.setPatternSector?.(Number(button.dataset.patternIndex));
+          patternGrid.querySelectorAll('.edgePatternBtn').forEach((other) => other.classList.toggle('selected', other === button));
+        });
+      });
+    }
 
     hostInputMethod = 'gamepad';
     refreshHostGlyphs();

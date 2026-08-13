@@ -6218,6 +6218,17 @@
       setArpeggioFromStick(clamp(Number(x) || 0, -1, 1), clamp(Number(y) || 0, -1, 1), String(sourceId));
       return true;
     },
+    // Direct equivalent of the keyboard's Digit1-6 sector shortcut — lets a
+    // host build plain labeled buttons for the five-bank auto-pick patterns
+    // instead of requiring the drag-a-stick-into-a-wedge gesture (which,
+    // needing a note held down at the same time, is awkward on touch/mouse
+    // and undiscoverable without a real gamepad).
+    setPatternSector(index) {
+      if (!isLatchedAutoBankLayout()) return this.gameplayMenuState();
+      void ensureAudio().catch(() => {});
+      setLeftStickSector(clamp(Math.round(Number(index) || 0), 0, 5), 'host-pattern-select');
+      return this.gameplayMenuState();
+    },
     rightStick(x, y, sourceId = 'host-right-stick') {
       void ensureAudio().catch(() => {});
       processRightStick(clamp(Number(x) || 0, -1, 1), clamp(Number(y) || 0, -1, 1), String(sourceId));

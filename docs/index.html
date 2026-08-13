@@ -1610,8 +1610,14 @@
        HobunjiMusicControlBridge. -->
   <div id="musicMinigameOverlay">
     <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
-    <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
-    <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
+    <!-- Both control clusters sit together in one bottom-left dock (matching
+         the reference mockup's own compact corner cluster) rather than
+         spanning the full screen height on opposite edges — see
+         #musicControlsDock in style.css. -->
+    <div id="musicControlsDock">
+      <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
+      <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
+    </div>
     <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
   </div>
 

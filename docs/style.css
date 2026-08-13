@@ -2719,51 +2719,45 @@
        the iframe itself renders transparent (its own "hosted-minigame"
        body styling — see lyre-performance.html — hides its native
        topbar/side-panel chrome), so the live 3D scene stays visible
-       around it. Docked to the left as a narrow strip rather than
-       centered — the "music" camera mode frames the player and whichever
-       NPC they're playing with roughly mid-screen, so a centered board
-       would sit right on top of them; docking left instead leaves that
-       framing clear on the right so their reactions stay watchable while
-       playing (matches the reference mockup's own side-by-side
-       stage/avatar composition — see #musicMinigameLayer in the uploaded
-       HAMusicMinigameV2.html). Sized down rather than full-screen: it
-       shrinks the whole app inside it (iframes carry their own
-       100vw/100dvh), so this one CSS change is enough to compact the
-       falling-note stage/HUD along with it. */
+       around it. Docked to the upper-left as a compact strip, with the
+       control clusters gathered into one corner dock below it — matching
+       the reference mockup's own bottom-left controller cluster (see the
+       uploaded HAMusicMinigameV2.html's #gameplayMusicPanel) — rather than
+       spanning the full screen height on opposite edges, which used to
+       cut the view in half. This leaves the right ~2/3 of the screen (and
+       everything below the frame on the left) fully clear, so the "music"
+       camera mode's framing of the player and whichever NPC they're
+       playing with stays watchable while playing. */
     #musicMinigameOverlay {
       display: none; position: fixed; inset: 0;
       z-index: 240; touch-action: none; pointer-events: none;
     }
     #musicMinigameOverlay.open { display: block; }
     #musicMinigameFrame {
-      position: absolute; left: 2vw; top: 50%; transform: translateY(-50%);
-      width: min(34vw, 420px); height: min(82vh, 700px);
+      position: absolute; left: 2vw; top: 3vh;
+      width: min(34vw, 420px); height: min(46vh, 420px);
       border: 1px solid rgba(220, 238, 255, .22); border-radius: 20px;
       box-shadow: 0 20px 44px rgba(0, 0, 0, .48);
       pointer-events: auto; background: transparent;
     }
     @media (max-width: 760px), (max-height: 560px) {
-      #musicMinigameFrame { left: 50%; top: 6vh; transform: translateX(-50%); width: min(92vw, 480px); height: min(46vh, 420px); }
+      #musicMinigameFrame { left: 50%; top: 6vh; transform: translateX(-50%); width: min(92vw, 480px); height: min(38vh, 340px); }
     }
-    /* Left/right edge control clusters — the iframe's own native controls
-       are hidden in hosted-minigame mode (by design, to keep the 3D scene
+    /* One dock holding both control clusters together in the bottom-left
+       corner, below the frame — the iframe's own native controls are
+       hidden in hosted-minigame mode (by design, to keep the 3D scene
        clear), so these are the actual touch/mouse play surface, driving
        the iframe's engine directly through its exposed
        HobunjiMusicControlBridge (see buildEdgeControls in
        js/music-minigame.js). Keyboard play works independently, straight
-       into the focused iframe. Both clusters flank the docked-left frame
-       (left panel hugs the screen edge, right panel hugs the frame's own
-       right edge) rather than spanning the full screen width, so together
-       with the frame they stay inside the same left-side strip and leave
-       the rest of the screen completely clear. */
-    #leftMusicControls, #rightMusicControls {
-      position: absolute; z-index: 6; top: 10px; bottom: 10px;
-      display: flex; align-items: center; pointer-events: none;
+       into the focused iframe. */
+    #musicControlsDock {
+      position: absolute; z-index: 6; left: 2vw; bottom: 2vh;
+      display: flex; align-items: flex-end; gap: 10px; pointer-events: none;
     }
-    #leftMusicControls { left: 10px; justify-content: flex-start; }
-    #rightMusicControls { left: calc(2vw + min(34vw, 420px) + 10px); right: auto; justify-content: flex-start; }
+    #leftMusicControls, #rightMusicControls { pointer-events: none; }
     @media (max-width: 760px), (max-height: 560px) {
-      #rightMusicControls { left: auto; right: 6px; justify-content: flex-end; }
+      #musicControlsDock { left: 50%; bottom: 1vh; transform: translateX(-50%); }
     }
     .edgeMusicPanel {
       pointer-events: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px;
@@ -2796,7 +2790,23 @@
     .edgeControllerBtn.unused { opacity: .28; pointer-events: none; box-shadow: none; }
     .edgeBumperBtn { border-radius: 12px 12px 8px 8px; background: linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.045)); }
     .edgeTriggerBtn { border-radius: 9px 9px 15px 15px; background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.025)); }
-    .edgeLeftStickRow { display: grid; grid-template-columns: minmax(76px, 1fr) minmax(52px, 68px); gap: 7px; align-items: center; }
+    .edgeLeftStickRow { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; align-items: center; }
+    /* Six equal-sized tap targets (Single Note + five auto-arpeggio
+       patterns) replacing the old drag-a-stick-into-a-wedge gesture on the
+       left — see buildEdgeControls in js/music-minigame.js. A plain grid of
+       labeled buttons works without a gamepad and doesn't need a note held
+       down at the same time just to browse patterns. */
+    .edgePatternGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; margin-bottom: 4px; }
+    .edgePatternBtn {
+      min-height: 34px; padding: 3px 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18);
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      color: #edf5ff; font-size: 9px; font-weight: 900; letter-spacing: .03em; text-transform: uppercase;
+      cursor: pointer; touch-action: manipulation;
+    }
+    .edgePatternBtn.selected {
+      border-color: #67f4a4; color: #67f4a4; background: linear-gradient(180deg, rgba(103,244,164,.22), rgba(103,244,164,.05));
+      box-shadow: 0 0 12px rgba(103,244,164,.35);
+    }
     .edgeStickPad {
       position: relative; border-radius: 50%; aspect-ratio: 1; width: 100%; max-width: 118px; justify-self: center; align-self: center;
       background: radial-gradient(circle, rgba(255,255,255,.08) 0 31%, rgba(0,0,0,.35) 33% 55%, rgba(255,255,255,.05) 57% 70%, rgba(0,0,0,.2) 72%);
@@ -2843,15 +2853,10 @@
     .edgeFacePad .a { grid-column: 2; grid-row: 3; }
     .edgeRightBottom { display: flex; justify-content: center; align-items: center; padding-top: 2px; }
     @media (max-width: 900px) and (orientation: landscape) {
-      /* Left docked at 6px instead of 10px on cramped landscape phones;
-         right stays wherever the active dock rule (above) put it — not
-         re-pinned to the screen edge here, or it'd separate from a
-         left-docked frame at widths between this query and the 760px one. */
-      #leftMusicControls, #rightMusicControls { top: 6px; bottom: 6px; }
-      #leftMusicControls { left: 6px; }
+      #musicControlsDock { left: 1vw; bottom: 1vh; gap: 6px; }
       .edgeMusicPanel { gap: 6px; padding: 6px; }
       .edgeControllerBtn { min-height: 34px; }
-      .edgeLeftStickRow { grid-template-columns: minmax(66px,1fr) 56px; }
+      .edgePatternBtn { min-height: 28px; font-size: 8px; }
     }
     /* Ambient NPC performance instances (see js/music-minigame.js) — audio
        only, never shown, so kept off-screen at a nonzero size rather than
