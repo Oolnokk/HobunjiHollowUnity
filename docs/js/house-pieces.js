@@ -9,6 +9,7 @@
   const scripts = [
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
     ['HousePieces', 'house-pieces-core.js?v=20260811a'],
