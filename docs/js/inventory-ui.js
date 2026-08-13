@@ -28,12 +28,16 @@
     const style = document.createElement('style'); // Owns presentation only; inventory state/actions stay in existing systems.
     style.id = STYLE_ID;
     style.textContent = `
-      /* Inventory expands sideways into real viewport room, up to 36 virtual columns, while keeping a small screen-edge gutter. */
+      /* Main menu uses spare real-screen width when available, capped so very-wide displays do not turn it into an unreadable ribbon. */
+      #menuPanel {
+        --menu-fluid-width:min(calc(36 * var(--col)),calc(100vw - 24px));
+        left:calc(50vw - var(--menu-fluid-width) * .5);
+        width:var(--menu-fluid-width);
+      }
+      /* Inventory also gets two extra virtual rows vertically; its own sizing unit follows the real fluid panel width. */
       #menuPanel:has(#mpInventory.active) {
-        --inventory-menu-width:min(calc(36 * var(--col)),calc(100vw - 24px));
-        left:calc(50vw - var(--inventory-menu-width) * .5);
+        --inventory-menu-width:var(--menu-fluid-width);
         top:calc(var(--oy) + 1 * var(--row));
-        width:var(--inventory-menu-width);
         height:calc(16 * var(--row));
       }
       #menuPanel:has(#mpInventory.active) #mpInventory {
@@ -218,8 +222,12 @@
       elements.forEach((element) => {
         if (!isMenuTextCarrier(element)) return;
 
-        // Only clear our overrides when the element's actual UI state changes. Re-clearing them every pass caused active/inactive text flicker.
-        const readabilityState = `${element.className}|${element.getAttribute('aria-selected') || ''}|${element.getAttribute('aria-pressed') || ''}|${element.hasAttribute('disabled') ? 'disabled' : ''}`;
+        // Include the nearest interactive owner's state so child text is recalculated when its parent becomes selected/active.
+        const stateOwner = element.closest('button,[role="button"],.mp-tab,.inv-item-box,.inv-equip-slot');
+        const ownerState = stateOwner && stateOwner !== element
+          ? `${stateOwner.className}|${stateOwner.getAttribute('aria-selected') || ''}|${stateOwner.getAttribute('aria-pressed') || ''}`
+          : '';
+        const readabilityState = `${element.className}|${element.getAttribute('aria-selected') || ''}|${element.getAttribute('aria-pressed') || ''}|${element.hasAttribute('disabled') ? 'disabled' : ''}|${ownerState}`;
         if (element.dataset.menuReadabilityState !== readabilityState) {
           if (element.dataset.menuFontFloor === '1') {
             element.style.removeProperty('font-size');
@@ -647,7 +655,7 @@
   function renderSelectedToolMastery() {
     const panel = ensureToolMasteryPanel();
     if (!panel) return;
-    const combatDeps = window.Combat?.deps || null; // The tool registry/gear state already lives in the Combat dependency bundle.
+    const combatDeps = window.Combat?.deps || null; // The XP/equipment/gear state already lives in the Combat dependency bundle.
     const itemKey = selectedDetailToolKey(combatDeps);
     const xp = readToolMasteryXp(combatDeps, itemKey);
     if (!itemKey || xp == null) {
@@ -687,6 +695,11 @@
     }
   }
 
+  function liveGearInventory(combatDeps) {
+    if (!combatDeps) return null;
+    return typeof combatDeps.gearInventory === 'function' ? combatDeps.gearInventory() : combatDeps.gearInventory || null;
+  }
+
   function readToolMasteryXp(combatDeps, itemKey) {
     if (!combatDeps || !itemKey) return null;
     if (typeof combatDeps.toolMasteryXp === 'function') {
@@ -694,14 +707,14 @@
       if (Number.isFinite(directXp)) return Math.max(0, directXp);
     }
     // Some Combat dependency builds expose the live character Gear object but not the convenience XP getter. Read the same canonical saved field directly.
-    const gearInventory = typeof combatDeps.gearInventory === 'function' ? combatDeps.gearInventory() : combatDeps.gearInventory;
-    const storedXp = Number(gearInventory?.toolMastery?.[itemKey]?.xp);
+    const storedXp = Number(liveGearInventory(combatDeps)?.toolMastery?.[itemKey]?.xp);
     return Number.isFinite(storedXp) ? Math.max(0, storedXp) : null;
   }
 
   function selectedDetailToolKey(combatDeps) {
-    const defs = combatDeps?.TOOL_ITEM_DEFS;
-    if (!defs) return null;
+    if (!combatDeps) return null;
+    const defs = combatDeps.TOOL_ITEM_DEFS || null;
+    const gearInventory = liveGearInventory(combatDeps);
     const panelKey = document.getElementById('iiToolMastery')?.dataset.toolKey;
     const name = document.getElementById('iiName')?.textContent?.trim() || '';
     if (!name) return null;
@@ -710,8 +723,32 @@
       .replace(/\s+—\s+Mastery\s+\d+\s*\/\s*\d+.*$/i, '')
       .replace(/\s+/g, ' ')
       .trim();
-    if (panelKey && defs[panelKey]?.label === cleanedName) return panelKey;
-    return Object.keys(defs).find((key) => defs[key]?.label === cleanedName) || null;
+
+    if (panelKey && (defs?.[panelKey] || gearInventory?.tools?.[panelKey])) return panelKey;
+    if (defs) {
+      const registryKey = Object.keys(defs).find((key) => defs[key]?.label === cleanedName);
+      if (registryKey) return registryKey;
+    }
+
+    // Equipped cells already pair a visible tool label with a canonical equipmentSlots key, so no metadata registry is needed.
+    for (const cell of document.querySelectorAll('#mpInventory .gear-tool-slots .inv-equip-slot.occupied')) {
+      const parsed = parseAssignedToolTitle(cell.title);
+      if (parsed?.label !== cleanedName) continue;
+      const equippedKey = combatDeps.equipmentSlots?.[parsed.slot];
+      if (equippedKey) return equippedKey;
+    }
+
+    // For an owned but currently unequipped tool, EquipmentPanel renders cells in the same Object.keys(gearInventory.tools) order. Match the visible cell, then recover its canonical key from that live collection.
+    const ownedCells = [...document.querySelectorAll('#mpInventory .gear-owned-tools .inv-equip-slot[title]')];
+    const ownedIndex = ownedCells.findIndex((cell) => {
+      const match = cell.title.match(/^(.*?) \(Mastery \d+\/5\)/);
+      return match?.[1]?.trim() === cleanedName;
+    });
+    if (ownedIndex >= 0) {
+      const ownedKeys = Object.keys(gearInventory?.tools || {}).filter((key) => gearInventory.tools[key] && (!defs || defs[key]));
+      if (ownedKeys[ownedIndex]) return ownedKeys[ownedIndex];
+    }
+    return null;
   }
 
   function runtimeToolMasteryThresholds(combatDeps) {
@@ -796,7 +833,7 @@
       masteryDataAccess: {
         toolDefs: !!combatDeps?.TOOL_ITEM_DEFS,
         xpGetter: typeof combatDeps?.toolMasteryXp === 'function',
-        gearInventory: typeof combatDeps?.gearInventory === 'function' || !!combatDeps?.gearInventory,
+        gearInventory: !!liveGearInventory(combatDeps),
       },
       boundsVisible: !!document.getElementById('menuPanel')?.classList.contains('inv-debug'),
       menuMinFontPx: MENU_MIN_FONT_PX,
