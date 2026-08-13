@@ -435,23 +435,6 @@
           return;
         }
 
-        // Same fast-path shortcut as the shop counters above, for catching
-        // Foroji mid-song at station_foroji_music — also backed by a real
-        // "Play music together" choice in his own dialogueTrees for when
-        // he's not (see the same NOT-the-reliable-path note above).
-        if (isForojiPlayingMusic(walker)) {
-          window.DialogueContent?.beginSyntheticChoice(rec);
-          window.DialogueContent?.renderDlgNode({
-            type: 'choice',
-            text: 'Care to play along?',
-            choices: [
-              { label: 'Play music with him.', actions: [{ type: 'startMusicMinigame' }] },
-              { label: 'Just listen.', actions: [{ type: 'startChat' }] },
-            ],
-          });
-          return;
-        }
-
         // Jubmir the traveling trader — unlike the General Store/Carpenter,
         // he isn't tied to a shop counter (he wanders per his schedule), so
         // this choice is offered any time you talk to him at all rather
@@ -8015,19 +7998,42 @@
         };
       }
 
-      // Foroji Funji's "playing music" schedule rule (see scheduleHooks in
-      // hobunji-starter-npc-database.json) parks him at station_foroji_music
-      // most afternoons — mirrors isGeneralStoreNpcOnDuty/isCarpenterNpcOnDuty's
-      // idle/station/label gate above, one NPC and one station instead of a
-      // config-driven list since there's only ever the one bard.
-      function isForojiPlayingMusic(walker) {
-        const npcId = walker?.rec?.id || '';
-        if (npcId !== 'foroji_funji') return false;
+      // Registry of NPCs who perform an instrument at a specific station —
+      // each NPC's own station/time window still lives in their
+      // scheduleHooks (see hobunji-starter-npc-database.json); this just
+      // says which of their stations counts as "performing" and which song
+      // they lead there. Add future instrument NPCs here — js/music-
+      // minigame.js's leader/backup logic treats every entry identically
+      // (whoever started playing first in a given area leads, everyone
+      // else who joins falls in as backup — see listInstrumentPerformers).
+      const INSTRUMENT_NPC_DEFS = [
+        { npcId: 'foroji_funji', stationLabel: 'Playing Music in the Square', songId: 'when-the-kininjis-bloom' },
+      ];
+
+      // Mirrors isGeneralStoreNpcOnDuty/isCarpenterNpcOnDuty's idle/station/
+      // label gate above, generalized for any station label instead of one
+      // hardcoded shop.
+      function isNpcOnDutyAtStation(walker, stationLabel) {
         const target = walker?.currentScheduleTarget || null;
-        const stationLabel = normalizeStationLabel(target?.label);
+        const label = normalizeStationLabel(target?.label);
         const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
           && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
-        return isAtStation && stationLabel === normalizeStationLabel('Playing Music in the Square');
+        return isAtStation && label === normalizeStationLabel(stationLabel);
+      }
+
+      // Every INSTRUMENT_NPC_DEFS entry currently on duty — read by
+      // js/music-minigame.js's ambient-performance ticker (who should be
+      // playing ambiently right now) and by the player's own "Play"
+      // action (is there someone nearby already leading to join instead).
+      function listInstrumentPerformers() {
+        const out = [];
+        for (const def of INSTRUMENT_NPC_DEFS) {
+          const walker = npcWalkers.find(w => w.rec?.id === def.npcId);
+          if (walker && isNpcOnDutyAtStation(walker, def.stationLabel)) {
+            out.push({ npcId: def.npcId, name: walker.rec?.name || def.npcId, area: walker.area, songId: def.songId });
+          }
+        }
+        return out;
       }
 
       function npcDialogueStagingOffsets() {
@@ -11260,6 +11266,11 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        // isInstrument gates the held-item "Play" action button (see
+        // computeActionButtons' item-context section) — held it opens the
+        // music minigame instead of any tool-slot behavior, so this is
+        // deliberately not also a TOOL_ITEM_DEFS entry.
+        kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Hold it and play — solo, or fall in behind whoever's already playing nearby." },
         pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
         shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         stone:  { icon: '🪨', label: 'Stone',  cat: 'material', sellPrice: 5, tags: ['Material', 'Stone'], desc: 'Rough building stone broken from an ore rock with a pick. A carpenter can build with it.' },
@@ -13890,6 +13901,10 @@
           const result = window.CookingSystem.eat(held?.key);
           showToast(result.message, result.ok !== false);
           refreshActionBar();
+          return;
+        }
+        if (activeAction === 'play_instrument') {
+          window.MusicMinigame?.beginPlayerSession();
           return;
         }
         if (activeAction === 'npc_offer_alcohol_swig') {
@@ -19576,6 +19591,7 @@
         }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
+        window.MusicMinigame?.tick(dt);
 
         window.Music?.updateRainAudio();
         window.Music?.updateExteriorBgs();
@@ -20865,6 +20881,7 @@
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -20984,7 +21001,7 @@
         if (!needsRebuild) return;
 
         // Split tool actions from item-owned consume/plant/place/harvest actions.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action.startsWith('plant_')
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
         const toolBtns = btns.filter(b => !isItemButton(b));
         const itemBtns = btns.filter(isItemButton);
@@ -21918,7 +21935,7 @@
         // Interact is reserved for world targets such as doors, NPCs, and
         // furniture. Tool swings and every held-item action use action slots.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item'
+        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
@@ -22850,10 +22867,9 @@
 
       window.MusicMinigame?.init({
         refreshActionBar,
-        getCameraMode: () => activeCameraMode,
-        setCameraMode: (v) => { activeCameraMode = v; },
-        getCameraTarget: () => activeCameraTarget,
-        setCameraTarget: (v) => { activeCameraTarget = v; },
+        getCurrentArea: () => currentArea,
+        listInstrumentPerformers,
+        showToast,
       });
 
       window.BanditCombat?.init({

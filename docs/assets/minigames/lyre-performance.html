@@ -1153,6 +1153,16 @@
     '1–4–5–4':[0,3,4,3]
   };
   const HARMONY_PATTERN_NAMES = Object.keys(HARMONY_PATTERNS);
+  // Improvise mode picks a chord progression by feel rather than by roman
+  // numerals — a farmhand noodling on a borrowed lyre thinks "something
+  // hopeful", not "I-V-vi-IV".
+  const HARMONY_PATTERN_ADJECTIVES = {
+    '1–5–6–4':'Hopeful',
+    '1–6–4–5':'Nostalgic',
+    '2–5–1–6':'Wistful',
+    '1–4–5–4':'Steady'
+  };
+  function harmonyPatternLabel(name) { return HARMONY_PATTERN_ADJECTIVES[name] || name; }
   const NOTE_GLYPHS = ['X','A','B','Y'];
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
   const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
@@ -1390,7 +1400,7 @@
     populateNoteSelect(refs.sampleRoot, 24, 96);
     populateNoteSelect(refs.tonicSelect, 24, 60);
     refs.scaleSelect.innerHTML = SCALE_NAMES.map(name => `<option value="${name}">${name}</option>`).join('');
-    refs.harmonyProgression.innerHTML = HARMONY_PATTERN_NAMES.map(name => `<option value="${name}">${name}</option>`).join('');
+    refs.harmonyProgression.innerHTML = HARMONY_PATTERN_NAMES.map(name => `<option value="${name}">${harmonyPatternLabel(name)}</option>`).join('');
     refs.sampleRoot.value = String(state.sampleRootMidi);
     refs.tonicSelect.value = String(state.tonicMidi);
     refs.scaleSelect.value = state.scaleName;
@@ -5649,7 +5659,7 @@
     state.hitWindow = Number($('#difficultySelect').value) || 170;
     const song = generateSong(type, state.bpm);
     clearNoteElements();
-    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment};
+    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo};
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     document.body.classList.add('game-active-hide-setup'); // Closes the technical-settings drawer for the duration of the performance — see hobunjiHostedMusicBridge.
     state.visibilityPauseStarted = 0;
@@ -5964,6 +5974,7 @@
       if (time > state.game.endAt) {
         const accuracy = state.game.total ? Math.round(state.game.hits / state.game.total * 100) : 0;
         const wasDemo = state.game.demoActive;
+        const loop = state.game.loopDemo, loopType = state.selectedSong, loopMode = state.game.demoMode;
         const final = `${wasDemo ? 'Preview complete' : 'Finished'} · ${state.game.score.toLocaleString()} · ${accuracy}%`;
         refs.transportStatus.innerHTML = `<strong>${final}</strong>${wasDemo ? ` · ${automaticPluckLabel(state.game.demoMode)} · automatic continuation notes were audio-only` : ''}`;
         feedback(wasDemo ? 'Perfect Run' : accuracy >= 90 ? 'Mastered' : accuracy >= 70 ? 'Complete' : 'Keep Practicing', wasDemo || accuracy >= 70 ? '#67f4a4' : '#ffc45f');
@@ -5971,6 +5982,10 @@
         clearSuccessfulPreviewTimers(wasDemo ? 'preview complete' : 'song complete');
         state.game.active = false;
         log(wasDemo ? 'Successful preview finished' : 'Song finished', final);
+        // Ambient NPC performance (see startAmbientLead in the host bridge):
+        // a solo demo run that just seamlessly starts itself over again
+        // instead of stopping, for as long as the host keeps it selected.
+        if (loop) startSong(loopType, {demoMode: loopMode, loopDemo: true});
       }
     }
     updateDebugState();
@@ -6236,7 +6251,8 @@
         .map(song => ({id:customSongKey(song.id),title:song.title || 'Imported song',group:'Imported',bpm:Number(song.bpm) || 104}));
       return {
         harmonyPattern:state.harmonyPattern,
-        harmonyPatterns:HARMONY_PATTERN_NAMES.slice(),
+        harmonyPatternLabel:harmonyPatternLabel(state.harmonyPattern),
+        harmonyPatterns:HARMONY_PATTERN_NAMES.map(name => ({id:name,label:harmonyPatternLabel(name)})),
         selectedSong:state.selectedSong,
         selectedSongTitle:songTitle(state.selectedSong),
         songs:[...songbookSongs,...importedSongs,...practiceSongs],
@@ -6291,8 +6307,11 @@
         beatMs:Number(state.game.beatMs) || (60000 / Math.max(1,Number(state.bpm) || 104)),
       };
     },
-    async startBackupPreviewSong() {
+    // songId lets a host join the player into whatever a nearby NPC is
+    // already leading rather than always falling back to state.selectedSong.
+    async startBackupPreviewSong(songId) {
       await ensureAudio();
+      if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.backupPlayerEquipped = state.backupPlayerEquipped !== false;
       const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
       startSong(state.selectedSong,{demoMode:mode,backupAccompaniment:true});
@@ -6306,6 +6325,18 @@
         countInMs:Number(state.game.countInMs) || 0,
         beatMs:Number(state.game.beatMs) || (60000 / Math.max(1,Number(state.bpm) || 104)),
       };
+    },
+    // Ambient NPC performance (no human input at all): a solo demo
+    // playthrough that keeps restarting itself — see loopDemo in
+    // startSong/the endAt handler above — for as long as an NPC is parked
+    // at their station. Host tears the whole iframe down to actually stop
+    // it (see js/music-minigame.js), same as every other close path.
+    async startAmbientLead(songId) {
+      await ensureAudio();
+      if (songId && getSongDefinition(songId)) state.selectedSong = songId;
+      const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
+      startSong(state.selectedSong,{demoMode:mode,loopDemo:true});
+      return { started:!!state.game.active, title:songTitle(state.selectedSong) };
     },
     setBackupPlayerEquipped(equipped) {
       state.backupPlayerEquipped = !!equipped;
