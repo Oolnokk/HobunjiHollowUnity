@@ -4,7 +4,7 @@
   const THREE = window.THREE;
   if (!THREE || window.SurfaceTint?.installed) return;
 
-  const TREATMENT = 'grass-luminance-v1';
+  const TREATMENT = 'grass-luminance-v2';
   const stats = {
     materialsPatched: 0,
     shaderCompiles: 0,
@@ -27,17 +27,15 @@
     return color;
   }
 
-  // Canonical fragment used by natural surfaces to match the grass billboard
-  // tint treatment: source texture luminance supplies value/shading while the
-  // selected tint supplies hue/color, and near-black source pixels stay black.
-  // Keep these constants aligned with game.js's existing _grassBillFrag until
-  // that huge monolith can be safely patch-edited rather than whole-file
-  // replaced through the connector.
+  // Exact color treatment used by the grass billboard fragment:
+  // sample the texture in its stored RGB space, derive luminance from those
+  // raw channels, let luminance carry the authored value/shading, and let the
+  // tint carry hue/color. Do NOT run mapTexelToLinear here: the grass
+  // ShaderMaterial does not do that conversion before this luminance step.
   function grassLuminanceMapFragment(uniformName = 'hobunjiSurfaceTint') {
     return `
 #ifdef USE_MAP
   vec4 texelColor = texture2D( map, vUv );
-  texelColor = mapTexelToLinear( texelColor );
   float hobunjiLum = dot(texelColor.rgb, vec3(0.299, 0.587, 0.114));
   vec3 hobunjiTinted = ${uniformName} * (0.7 + hobunjiLum * 0.8);
   vec3 hobunjiCol = mix(vec3(0.0), hobunjiTinted, smoothstep(0.0, 0.15, hobunjiLum));
