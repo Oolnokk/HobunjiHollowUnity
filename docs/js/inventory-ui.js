@@ -646,7 +646,7 @@
     const itemKey = selectedDetailToolKey(combatDeps);
     if (!itemKey || typeof combatDeps?.toolMasteryXp !== 'function') {
       panel.hidden = true;
-      panel.removeAttribute('data-tool-key');
+      delete panel.dataset.toolKey;
       return;
     }
 
