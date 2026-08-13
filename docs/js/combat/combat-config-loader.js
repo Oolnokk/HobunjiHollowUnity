@@ -77,8 +77,11 @@
     ['js/player-body-transform-composer.js?v=20260810b', () => !!window.PlayerBodyTransformComposer],
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
-    ['js/drunk-locomotion.js?v=20260811b', () => !!window.HobunjiDrunkWalk],
+    ['js/drunk-locomotion.js?v=20260812a', () => !!window.HobunjiDrunkWalk],
     ['js/alcohol-gameplay-bridge.js?v=20260811g', () => !!window.HobunjiDrunkGameplayBridge],
+    ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
+    ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
+    ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
   ];
 
   function loadModule(src, alreadyLoaded) {

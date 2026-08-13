@@ -1,6 +1,6 @@
-// Regular -> Drunken locomotion layer shared by the local player and NPCs.
+// Low-Footing -> drunken locomotion layer shared by the local player and NPCs.
 //
-// This module owns ONLY the drunken gait contribution: procedural leg offsets,
+// This module owns ONLY the unsteady gait contribution: procedural leg offsets,
 // non-accumulating additive foot twist, and a named body-tilt channel
 // published to PlayerBodyTransformComposer. It never owns playerMesh rotation
 // or facing yaw: game.js's dead-zone/facing resolver remains the sole yaw owner.
@@ -11,7 +11,6 @@
   if (!api?.attach || api.__footingDrunkWalkInstalled) return;
 
   const DEG = Math.PI / 180;
-  const DRUNK_FOOTING_ID = 'drunkenFooting';
   const DRUNK_MAX_PITCH_DEG = 26;
   const DRUNK_MAX_ROLL_DEG = 60;
   const DRUNK_LEG_SWAY_SCALE = 0.5; // Applied to drunken leg offsets/twist without reducing the normal procedural gait.
@@ -44,11 +43,12 @@
     const player = window.Combat?.deps?.player;
     const maxFooting = Number(player?.maxFooting) || 0;
     if (!player || !(maxFooting > 0)) return 0;
-    const drunkenFooting = Math.max(0,
-      Number(window.ResourceSystem?.getAffliction?.(player, 'footing', DRUNK_FOOTING_ID))
-      || Number(player.afflictions?.[DRUNK_FOOTING_ID])
-      || 0);
-    return clamp01(drunkenFooting / maxFooting);
+    const footing = Math.max(0, Number(player.footing) || 0);
+    // Player sway reflects balance actually missing right now, regardless of
+    // why. Combat therefore causes a temporary stagger that fades with Footing
+    // regen; Drunken Footing sustains it indirectly by keeping that resource
+    // capped below its literal maximum until the alcohol effect wears off.
+    return clamp01(1 - footing / maxFooting);
   }
 
   function legPart(root, name) {
@@ -246,6 +246,9 @@
     const isPlayer = String(options.name || '').toLowerCase() === 'player';
     const handle = originalAttach(THREE, parent, options);
     const npcLossProvider = typeof options.drunkLossProvider === 'function' ? options.drunkLossProvider : null;
+    // Combat-capable player sway comes from current Footing. Non-combat NPCs
+    // retain their independent sobriety/alcohol provider instead of borrowing
+    // the combat resource model.
     return isPlayer || npcLossProvider
       ? decorateDrunkHandle(THREE, options, handle, isPlayer ? footingLoss : npcLossProvider, isPlayer)
       : handle;
