@@ -7,6 +7,17 @@
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
   const scripts = [
+    ['SurfaceTint', 'surface-tint.js?v=20260813c'],
+    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
+    ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260813a'],
+    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20260812a'],
+    ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
+    ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
+    ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
+    ['StructurePreload', 'structure-preload.js?v=20260812a'],
+    ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20260812a'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260812a'],
+    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20260812a'],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260811b'],
     ['HousePieces', 'house-pieces-core.js?v=20260811a'],
