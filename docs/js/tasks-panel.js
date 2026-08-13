@@ -5,6 +5,167 @@
   // Extracted out of game.js following the same window.<Namespace> +
   // init(deps) pattern as its sibling systems.
   let deps = null;
+
+  // The bounty board owns captain/camp semantics, but this module loads after it
+  // and before game.js initializes either system. Capture the same injected
+  // bounty deps and extend the public board API with two persistent offer slots
+  // without changing the captain-name forge or the camp-pinning contract.
+  const BOUNTY_REWARD_GOLD_BY_TIER = [80, 160, 280, 450];
+  const EASY_BOUNTY_TIERS = Object.freeze([0, 1]);
+  const HARD_BOUNTY_TIERS = Object.freeze([2, 3]);
+  let bountyDeps = null;
+  let bountyGangConfigPromise = null;
+  let bountyOfferRefreshPromise = null;
+
+  function _bountySlotForTier(tier) {
+    const n = Math.max(0, Math.floor(Number(tier) || 0));
+    return n <= 1 ? 'easy' : 'hard';
+  }
+
+  function _postedBounties() {
+    if (!bountyDeps) return [];
+    return Object.entries(bountyDeps.getQuestProgress())
+      .filter(([, st]) => st.progress?.kind === 'bounty' && st.status === 'posted')
+      .map(([id, st]) => ({ id, ...st.progress }));
+  }
+
+  function _zoneHasAnyBounty(zoneId) {
+    if (!bountyDeps) return false;
+    return Object.values(bountyDeps.getQuestProgress()).some(st =>
+      st.progress?.kind === 'bounty'
+      && st.progress.zoneId === zoneId
+      && (st.status === 'posted' || st.status === 'available'));
+  }
+
+  function _weightedSpeciesPick(weights) {
+    const entries = Object.entries(weights || {})
+      .filter(([key, value]) => !key.startsWith('_') && Number(value) > 0);
+    if (!entries.length) return null;
+    const total = entries.reduce((sum, [, value]) => sum + Number(value), 0);
+    let roll = Math.random() * total;
+    for (const [speciesId, value] of entries) {
+      roll -= Number(value);
+      if (roll <= 0) return speciesId;
+    }
+    return entries[entries.length - 1][0];
+  }
+
+  function _loadBountyGangConfig() {
+    if (!bountyGangConfigPromise) bountyGangConfigPromise = window.BanditCombat.loadGangConfig();
+    return bountyGangConfigPromise;
+  }
+
+  function _randomFrom(values) {
+    return values[Math.floor(Math.random() * values.length)];
+  }
+
+  function _makeBountyForSlot(slot, tiers, cfg) {
+    if (!bountyDeps) return null;
+    const alreadyPosted = _postedBounties().some(posting => _bountySlotForTier(posting.tier) === slot);
+    if (alreadyPosted) return null;
+
+    // Prefer a real, currently spawned captain whose actual camp tier belongs
+    // to this offer slot. A hard live camp can never accidentally fill Easy,
+    // or vice versa.
+    const liveCandidates = [];
+    for (const [zoneId, recs] of window.BanditCamps?.campInstances || []) {
+      if (_zoneHasAnyBounty(zoneId)) continue;
+      for (const rec of recs || []) {
+        const tier = Math.max(0, Math.floor(Number(rec.tier) || 0));
+        if (!tiers.includes(tier) || !rec.captainName || window.BanditCamps.isCampCleared(rec)) continue;
+        liveCandidates.push({
+          zoneId,
+          tier,
+          captainName: rec.captainName,
+          captainSpeciesId: rec.captainSpeciesId || null,
+          captainGender: rec.captainGender || null,
+          captainNameSeed: rec.captainNameSeed || null,
+        });
+      }
+    }
+
+    let target = liveCandidates.length ? _randomFrom(liveCandidates) : null;
+    if (!target) {
+      const forge = window.BanditNameForge;
+      if (!forge || !cfg) {
+        bountyDeps.debugLog?.(`[bounties] Cannot fill ${slot} offer: captain name forge or gang config unavailable.`, 'warn');
+        return null;
+      }
+      const zoneIds = Object.keys(bountyDeps.WMAP_ZONE_LABELS || {}).filter(zoneId => !_zoneHasAnyBounty(zoneId));
+      if (!zoneIds.length) {
+        bountyDeps.debugLog?.(`[bounties] Cannot fill ${slot} offer: every wilderness zone already has a posted/accepted bounty.`, 'warn');
+        return null;
+      }
+      const speciesId = _weightedSpeciesPick(cfg.speciesWeights) || 'mao-ao';
+      const seedRecord = forge.generateNicknameOnly();
+      const identity = forge.generateCaptainIdentity({
+        speciesId,
+        seed: seedRecord.seed,
+        nicknameOnlyChance: 0,
+      });
+      target = {
+        zoneId: _randomFrom(zoneIds),
+        tier: _randomFrom(tiers),
+        captainName: identity.display,
+        captainSpeciesId: identity.speciesId,
+        captainGender: identity.gender,
+        captainNameSeed: identity.seed,
+      };
+    }
+
+    const id = bountyDeps.makeTaskId();
+    const task = {
+      kind: 'bounty',
+      offerSlot: slot,
+      captainName: target.captainName,
+      captainSpeciesId: target.captainSpeciesId || null,
+      captainGender: target.captainGender || null,
+      captainNameSeed: target.captainNameSeed || null,
+      zoneId: target.zoneId,
+      tier: target.tier,
+      rewardGold: BOUNTY_REWARD_GOLD_BY_TIER[target.tier],
+      postedDay: bountyDeps.calendar.day,
+    };
+    bountyDeps.setQuestStatus(id, 'posted', task);
+    bountyDeps.debugLog?.(`[bounties] Posted ${slot} offer: ${task.captainName}, tier ${task.tier + 1}, ${task.zoneId}.`, 'info');
+    return { id, ...task };
+  }
+
+  async function _ensureBountyOfferSlots() {
+    if (!bountyDeps) return;
+    if (bountyOfferRefreshPromise) return bountyOfferRefreshPromise;
+    bountyOfferRefreshPromise = (async () => {
+      const cfg = await _loadBountyGangConfig();
+      _makeBountyForSlot('easy', EASY_BOUNTY_TIERS, cfg);
+      _makeBountyForSlot('hard', HARD_BOUNTY_TIERS, cfg);
+    })().finally(() => { bountyOfferRefreshPromise = null; });
+    return bountyOfferRefreshPromise;
+  }
+
+  function _installMultiBountyOffers() {
+    const board = window.BountyBoard;
+    if (!board?.init || board.__twoTierOfferSlotsInstalled) return;
+    const originalInit = board.init;
+    board.init = function(injectedDeps) {
+      bountyDeps = injectedDeps;
+      const result = originalInit.call(board, injectedDeps);
+      void _ensureBountyOfferSlots();
+      return result;
+    };
+    board.getCurrentPostings = function() {
+      return _postedBounties().sort((a, b) => {
+        const slotDiff = (_bountySlotForTier(a.tier) === 'easy' ? 0 : 1) - (_bountySlotForTier(b.tier) === 'easy' ? 0 : 1);
+        if (slotDiff) return slotDiff;
+        return (a.tier - b.tier) || ((b.postedDay || 0) - (a.postedDay || 0));
+      });
+    };
+    // Preserve the old accessor for any code that only understands one posting.
+    board.getCurrentPosting = function() { return board.getCurrentPostings()[0] || null; };
+    board.maybeRefreshPosting = _ensureBountyOfferSlots;
+    board.__twoTierOfferSlotsInstalled = true;
+  }
+  _installMultiBountyOffers();
+
   function init(injectedDeps) {
     deps = injectedDeps;
     _installBanditCampDangerSubtitle();
@@ -84,14 +245,9 @@
 
   async function renderTasksPanel() {
     window.ProceduralTasks.maybeRefreshBoardTask();
-    // Bounty generation can now await the bandit gang config before rolling
-    // the captain's weighted species/gender. Waiting here prevents a one-frame
-    // "No bounties" placeholder from flashing while that config loads.
     await window.BountyBoard.maybeRefreshPosting();
 
-    // Today's board notice — not yet in the player's log. Taking it is
-    // the only action this panel offers; turning a task in (board or
-    // favor) always happens by talking to the NPC who posted/asked it.
+    // Today's board notice — not yet in the player's log.
     const postingEl = document.getElementById('tasksBoardPosting');
     if (postingEl) {
       postingEl.innerHTML = '';
@@ -118,44 +274,41 @@
       }
     }
 
-    // Wanted poster for a bandit captain — separate from the board
-    // notice above (its own slot, its own refresh rule: see
-    // maybeRefreshBountyPosting). Accepting marks that captain's camp
-    // on the map the moment it's known (see updateBountyTracking) and
-    // pays out automatically once the camp is destroyed — no NPC
-    // turn-in, unlike board/favor tasks.
+    // Two standing wanted posters: one easy-range and one hard-range. Taking a
+    // poster removes only that task; the next render refills that slot.
     const bountyEl = document.getElementById('tasksBountyPosting');
     if (bountyEl) {
       bountyEl.innerHTML = '';
-      const posting = window.BountyBoard.getCurrentPosting();
-      if (posting) {
-        const zoneLabel = deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
-        const pronouns = bountyPronouns(posting); // Used in the wanted-poster description immediately below.
-        const row = document.createElement('div');
-        row.className = 'shop-row';
-        row.innerHTML = `
-          <div class="sh-icon">🎯</div>
-          <div class="sh-info">
-            <div class="sh-name">Wanted: ${deps.esc(posting.captainName)}</div>
-            <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(posting.tier)}</div>
-            <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy ${pronouns.possessive} camp for ${posting.rewardGold}g.</div>
-          </div>
-          <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
-        `;
-        row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
-          window.BountyBoard.take(posting.id);
-          renderTasksPanel();
+      const postings = window.BountyBoard.getCurrentPostings?.()
+        || [window.BountyBoard.getCurrentPosting?.()].filter(Boolean);
+      if (postings.length) {
+        postings.forEach(posting => {
+          const zoneLabel = deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
+          const pronouns = bountyPronouns(posting);
+          const row = document.createElement('div');
+          row.className = 'shop-row';
+          row.innerHTML = `
+            <div class="sh-icon">🎯</div>
+            <div class="sh-info">
+              <div class="sh-name">Wanted: ${deps.esc(posting.captainName)}</div>
+              <div class="sh-desc" style="margin-top:1px;color:var(--accent);">${dangerRatingMarkup(posting.tier)}</div>
+              <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy ${pronouns.possessive} camp for ${posting.rewardGold}g.</div>
+            </div>
+            <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
+          `;
+          row.querySelector('[data-take-bounty]')?.addEventListener('click', () => {
+            window.BountyBoard.take(posting.id);
+            renderTasksPanel();
+          });
+          bountyEl.appendChild(row);
         });
-        bountyEl.appendChild(row);
       } else {
         bountyEl.innerHTML = '<div class="delivery-row"><span class="dr-icon">🎯</span><span class="dr-name">No bounties posted right now.</span><span class="dr-eta">—</span></div>';
       }
     }
 
     // The player's actual quest log — everything accepted, board,
-    // favor, or an active bounty, with no completion deadline. Read-
-    // only: no turn-in button here on purpose (see above) -- a bounty
-    // resolves itself via updateBountyTracking, not this panel.
+    // favor, or bounty, with no completion deadline.
     const list = document.getElementById('tasksList');
     if (!list) return;
     list.innerHTML = '';
@@ -173,7 +326,7 @@
       if (task.kind === 'bounty') {
         const zoneLabel = deps.WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
         const marked = window.BountyBoard.markers.has(task.id);
-        const pronouns = bountyPronouns(task); // Used in the active-bounty tracking copy immediately below.
+        const pronouns = bountyPronouns(task);
         row.innerHTML = `
           <div class="sh-icon">🎯</div>
           <div class="sh-info">
