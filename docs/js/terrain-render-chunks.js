@@ -1,15 +1,16 @@
 (() => {
   'use strict';
 
-  // Large wilderness floor/material-seam meshes are currently merged across
-  // an entire zone. A single visible piece therefore keeps the whole mesh in
-  // both the normal scene and layer-3 material-ID pass. This adapter preserves
-  // the source geometry/materials exactly, but exposes contiguous draw ranges
-  // as independently frustum-cullable children.
+  // Whole-zone terrain meshes are excellent for draw-call count but terrible
+  // for frustum culling: one visible tile keeps every triangle in that material
+  // bucket alive in both the normal scene and layer-3 material-ID pass.
   //
-  // Child geometries SHARE the source BufferAttributes/index; only drawRange
-  // and conservative bounds differ. No duplicate vertex buffers, topology,
-  // UV, normal, terrain-height, or material-ID changes are introduced.
+  // Re-index those triangles ONCE by real X/Z position into 12x12-tile cells.
+  // Each cell keeps the original vertex attributes/materials and only gets its
+  // own draw range + conservative bounds. Indexed source geometry reuses its
+  // existing index BufferAttribute (the array is reordered in place after a
+  // temporary typed-array build), so steady-state GPU memory does not gain a
+  // second full terrain vertex buffer.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   if (!THREE?.BufferGeometry || !THREE?.Mesh || !rendererProto || typeof rendererProto.render !== 'function') return;
@@ -24,11 +25,12 @@
   }
 
   const MATERIAL_ID_LAYER = 3;
+  const TILE_WORLD = 55;
+  const CHUNK_TILES = 12;
+  const CHUNK_WORLD = TILE_WORLD * CHUNK_TILES;
   const MIN_SOURCE_TRIANGLES = 60000;
-  const TARGET_TRIANGLES_PER_CHUNK = 48000;
-  const MIN_CHUNKS = 2;
-  const MAX_CHUNKS_PER_MESH = 96;
   const SCAN_INTERVAL_MS = 500;
+  const MAX_SPATIAL_BUCKETS = 400;
 
   const lastScanAt = new WeakMap();
   let sourceMeshesChunked = 0;
@@ -53,77 +55,134 @@
     if (!mesh.receiveShadow) return false;
     if (!hasLayer(mesh, MATERIAL_ID_LAYER)) return false;
     if (!mesh.geometry?.attributes?.position) return false;
+    if (mesh.geometry.attributes.position.isInterleavedBufferAttribute) return false;
     if (Array.isArray(mesh.material)) return false;
     if (mesh.geometry.groups?.length > 1) return false;
     return triangleCount(mesh.geometry) >= MIN_SOURCE_TRIANGLES;
   }
 
-  function fullElementCount(geometry) {
-    return geometry.index?.count ?? geometry.attributes.position.count;
+  function makePositionReader(position) {
+    const array = position.array;
+    const stride = position.itemSize;
+    return function read(index) {
+      const offset = index * stride;
+      return [array[offset], array[offset + 1], array[offset + 2]];
+    };
   }
 
-  function alignedRanges(elementCount) {
-    const totalTriangles = Math.floor(elementCount / 3);
-    let chunkCount = Math.ceil(totalTriangles / TARGET_TRIANGLES_PER_CHUNK);
-    chunkCount = Math.max(MIN_CHUNKS, Math.min(MAX_CHUNKS_PER_MESH, chunkCount));
-    const trianglesPerChunk = Math.ceil(totalTriangles / chunkCount);
-    const elementsPerChunk = Math.max(3, trianglesPerChunk * 3);
-    const ranges = [];
-    for (let start = 0; start < totalTriangles * 3; start += elementsPerChunk) {
-      ranges.push({ start, count: Math.min(elementsPerChunk, totalTriangles * 3 - start) });
-    }
-    return ranges;
+  function sourceIndexAt(indexAttribute, element) {
+    return indexAttribute ? indexAttribute.array[element] : element;
   }
 
-  function boundsForRange(geometry, start, count) {
+  function bucketKey(gx, gz) {
+    return gx * 65536 + gz;
+  }
+
+  function getOrCreateBucket(buckets, gx, gz) {
+    const key = bucketKey(gx, gz);
+    let bucket = buckets.get(key);
+    if (bucket) return bucket;
+    bucket = {
+      key, gx, gz, count: 0, start: 0, write: 0,
+      minX: Infinity, minY: Infinity, minZ: Infinity,
+      maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity,
+    };
+    buckets.set(key, bucket);
+    return bucket;
+  }
+
+  function expandBounds(bucket, x, y, z) {
+    if (x < bucket.minX) bucket.minX = x;
+    if (x > bucket.maxX) bucket.maxX = x;
+    if (y < bucket.minY) bucket.minY = y;
+    if (y > bucket.maxY) bucket.maxY = y;
+    if (z < bucket.minZ) bucket.minZ = z;
+    if (z > bucket.maxZ) bucket.maxZ = z;
+  }
+
+  function spatialPlan(geometry) {
     const position = geometry.attributes.position;
-    const index = geometry.index;
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    const end = Math.min(start + count, fullElementCount(geometry));
+    const sourceIndex = geometry.index || null;
+    const read = makePositionReader(position);
+    const elementCount = Math.floor((sourceIndex?.count ?? position.count) / 3) * 3;
+    const buckets = new Map();
 
-    for (let i = start; i < end; i++) {
-      const vertexIndex = index ? index.getX(i) : i;
-      const x = position.getX(vertexIndex);
-      const y = position.getY(vertexIndex);
-      const z = position.getZ(vertexIndex);
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (y < minY) minY = y; if (y > maxY) maxY = y;
-      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    for (let i = 0; i < elementCount; i += 3) {
+      const ia = sourceIndexAt(sourceIndex, i);
+      const ib = sourceIndexAt(sourceIndex, i + 1);
+      const ic = sourceIndexAt(sourceIndex, i + 2);
+      const a = read(ia), b = read(ib), c = read(ic);
+      const cx = (a[0] + b[0] + c[0]) / 3;
+      const cz = (a[2] + b[2] + c[2]) / 3;
+      const bucket = getOrCreateBucket(buckets, Math.floor(cx / CHUNK_WORLD), Math.floor(cz / CHUNK_WORLD));
+      bucket.count += 3;
+      expandBounds(bucket, a[0], a[1], a[2]);
+      expandBounds(bucket, b[0], b[1], b[2]);
+      expandBounds(bucket, c[0], c[1], c[2]);
     }
 
-    if (!Number.isFinite(minX)) return null;
+    if (buckets.size < 2 || buckets.size > MAX_SPATIAL_BUCKETS) return null;
+    const orderedBuckets = [...buckets.values()].sort((a, b) => (a.gz - b.gz) || (a.gx - b.gx));
+    let cursor = 0;
+    for (const bucket of orderedBuckets) {
+      bucket.start = cursor;
+      bucket.write = cursor;
+      cursor += bucket.count;
+    }
+
+    const SourceArray = sourceIndex?.array?.constructor
+      || (position.count > 65535 ? Uint32Array : Uint16Array);
+    const reordered = new SourceArray(elementCount);
+
+    for (let i = 0; i < elementCount; i += 3) {
+      const ia = sourceIndexAt(sourceIndex, i);
+      const ib = sourceIndexAt(sourceIndex, i + 1);
+      const ic = sourceIndexAt(sourceIndex, i + 2);
+      const a = read(ia), b = read(ib), c = read(ic);
+      const cx = (a[0] + b[0] + c[0]) / 3;
+      const cz = (a[2] + b[2] + c[2]) / 3;
+      const bucket = buckets.get(bucketKey(Math.floor(cx / CHUNK_WORLD), Math.floor(cz / CHUNK_WORLD)));
+      let w = bucket.write;
+      reordered[w++] = ia;
+      reordered[w++] = ib;
+      reordered[w++] = ic;
+      bucket.write = w;
+    }
+
+    return { buckets: orderedBuckets, reordered, sourceIndex };
+  }
+
+  function boundsForBucket(bucket) {
     const box = new THREE.Box3(
-      new THREE.Vector3(minX, minY, minZ),
-      new THREE.Vector3(maxX, maxY, maxZ),
+      new THREE.Vector3(bucket.minX, bucket.minY, bucket.minZ),
+      new THREE.Vector3(bucket.maxX, bucket.maxY, bucket.maxZ),
     );
     const center = new THREE.Vector3();
     box.getCenter(center);
-    const dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
-    const sphere = new THREE.Sphere(center, 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz));
-    return { box, sphere };
+    const dx = bucket.maxX - bucket.minX;
+    const dy = bucket.maxY - bucket.minY;
+    const dz = bucket.maxZ - bucket.minZ;
+    return { box, sphere: new THREE.Sphere(center, 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz)) };
   }
 
-  function wrapperGeometry(source, range, bounds) {
-    const geometry = new THREE.BufferGeometry();
-    for (const [name, attribute] of Object.entries(source.attributes || {})) {
-      geometry.setAttribute(name, attribute);
+  function wrapperGeometry(source, sharedIndex, bucket, reuseSource) {
+    const geometry = reuseSource ? source : new THREE.BufferGeometry();
+    if (!reuseSource) {
+      for (const [name, attribute] of Object.entries(source.attributes || {})) geometry.setAttribute(name, attribute);
+      for (const [name, attribute] of Object.entries(source.morphAttributes || {})) geometry.morphAttributes[name] = attribute;
+      geometry.morphTargetsRelative = !!source.morphTargetsRelative;
     }
-    if (source.index) geometry.setIndex(source.index);
-    for (const [name, attribute] of Object.entries(source.morphAttributes || {})) {
-      geometry.morphAttributes[name] = attribute;
-    }
-    geometry.morphTargetsRelative = !!source.morphTargetsRelative;
-    geometry.drawRange.start = range.start;
-    geometry.drawRange.count = range.count;
+    geometry.setIndex(sharedIndex);
+    geometry.setDrawRange(bucket.start, bucket.count);
+    const bounds = boundsForBucket(bucket);
     geometry.boundingBox = bounds.box;
     geometry.boundingSphere = bounds.sphere;
     return geometry;
   }
 
-  function makeChunkMesh(sourceMesh, geometry, index) {
+  function makeChunkMesh(sourceMesh, geometry, bucket, index) {
     const chunk = new THREE.Mesh(geometry, sourceMesh.material);
-    chunk.name = `${sourceMesh.name || 'zone_floor'}__render_chunk_${index}`;
+    chunk.name = `${sourceMesh.name || 'zone_floor'}__spatial_chunk_${bucket.gx}_${bucket.gz}`;
     chunk.layers.mask = sourceMesh.layers.mask;
     chunk.castShadow = sourceMesh.castShadow;
     chunk.receiveShadow = sourceMesh.receiveShadow;
@@ -137,6 +196,8 @@
     chunk.userData = Object.assign({}, sourceMesh.userData, {
       terrainRenderChunk: true,
       terrainRenderChunkIndex: index,
+      terrainRenderChunkCellX: bucket.gx,
+      terrainRenderChunkCellZ: bucket.gz,
     });
     return chunk;
   }
@@ -144,27 +205,31 @@
   function chunkMesh(mesh) {
     const sourceGeometry = mesh.geometry;
     const totalTriangles = triangleCount(sourceGeometry);
-    const ranges = alignedRanges(fullElementCount(sourceGeometry));
-    if (ranges.length < MIN_CHUNKS) return 0;
+    const plan = spatialPlan(sourceGeometry);
+    if (!plan) return 0;
+
+    let sharedIndex;
+    if (plan.sourceIndex) {
+      plan.sourceIndex.array.set(plan.reordered);
+      plan.sourceIndex.needsUpdate = true;
+      sharedIndex = plan.sourceIndex;
+    } else {
+      sharedIndex = new THREE.BufferAttribute(plan.reordered, 1);
+    }
 
     const chunks = [];
-    for (let i = 0; i < ranges.length; i++) {
-      const range = ranges[i];
-      const bounds = boundsForRange(sourceGeometry, range.start, range.count);
-      if (!bounds) continue;
-      chunks.push(makeChunkMesh(mesh, wrapperGeometry(sourceGeometry, range, bounds), i));
+    for (let i = 0; i < plan.buckets.length; i++) {
+      const bucket = plan.buckets[i];
+      const geometry = wrapperGeometry(sourceGeometry, sharedIndex, bucket, i === 0);
+      chunks.push(makeChunkMesh(mesh, geometry, bucket, i));
     }
-    if (chunks.length < MIN_CHUNKS) return 0;
 
-    // Keep the original Mesh as the ownership/container object because the
-    // existing zone-floor cleanup retains that exact reference. Emptying only
-    // its drawable geometry means its normal removal/disposal traversal owns
-    // the children too.
     mesh.geometry = new THREE.BufferGeometry();
     mesh.userData = Object.assign({}, mesh.userData, {
       terrainRenderChunkSource: true,
       terrainRenderChunkCount: chunks.length,
       terrainRenderChunkTriangles: totalTriangles,
+      terrainRenderChunkWorldSize: CHUNK_WORLD,
     });
     for (const chunk of chunks) mesh.add(chunk);
 
@@ -186,10 +251,6 @@
     if (now - last < SCAN_INTERVAL_MS) return 0;
     lastScanAt.set(scene, now);
 
-    // Snapshot direct children because chunkMesh() adds descendants while we
-    // work. Terrain material buckets are direct children of their zone scene;
-    // this intentionally excludes furniture and procedural feet even though
-    // they share the layer-3 material-seam convention.
     const candidates = scene.children.filter(isEligibleTerrainMesh);
     if (!candidates.length) return 0;
 
@@ -206,7 +267,7 @@
     }
 
     if (made) {
-      const message = `[terrain-perf] split ${sources} whole-zone seam mesh(es), ${compactNumber(tris)} tri into ${made} frustum-cullable draw-range chunk(s) (shared vertex buffers)`;
+      const message = `[terrain-perf] spatial split ${sources} whole-zone seam mesh(es), ${compactNumber(tris)} tri into ${made} real ${CHUNK_TILES}x${CHUNK_TILES}-tile cell(s)`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -214,8 +275,6 @@
   }
 
   function wrappedRender(scene, camera) {
-    // Scan before the underlying renderer's world-matrix update so newly added
-    // chunk children have current matrixWorld state on this same frame.
     scanScene(scene);
     return originalRender.call(this, scene, camera);
   }
@@ -224,7 +283,13 @@
     installed: true,
     scanScene,
     snapshot() {
-      return { sourceMeshesChunked, chunksCreated, sourceTrianglesChunked };
+      return {
+        sourceMeshesChunked,
+        chunksCreated,
+        sourceTrianglesChunked,
+        chunkTiles: CHUNK_TILES,
+        chunkWorldSize: CHUNK_WORLD,
+      };
     },
   };
 
