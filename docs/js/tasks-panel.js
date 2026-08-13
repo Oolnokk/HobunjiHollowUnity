@@ -7,9 +7,21 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  function renderTasksPanel() {
+  // Used by bounty rows below so newly persisted captain gender is reflected
+  // in copy; old saves without that field deliberately fall back to neutral
+  // pronouns rather than guessing.
+  function bountyPronouns(task) {
+    if (task?.captainGender === 'male') return { object: 'him', possessive: 'his' };
+    if (task?.captainGender === 'female') return { object: 'her', possessive: 'her' };
+    return { object: 'them', possessive: 'their' };
+  }
+
+  async function renderTasksPanel() {
     window.ProceduralTasks.maybeRefreshBoardTask();
-    window.BountyBoard.maybeRefreshPosting();
+    // Bounty generation can now await the bandit gang config before rolling
+    // the captain's weighted species/gender. Waiting here prevents a one-frame
+    // "No bounties" placeholder from flashing while that config loads.
+    await window.BountyBoard.maybeRefreshPosting();
 
     // Today's board notice — not yet in the player's log. Taking it is
     // the only action this panel offers; turning a task in (board or
@@ -53,13 +65,14 @@
       if (posting) {
         const rank = window.BountyBoard.RANK_LABELS[posting.tier] || `Tier ${posting.tier}`;
         const zoneLabel = deps.WMAP_ZONE_LABELS[posting.zoneId] || posting.zoneId;
+        const pronouns = bountyPronouns(posting); // Used in the wanted-poster description immediately below.
         const row = document.createElement('div');
         row.className = 'shop-row';
         row.innerHTML = `
           <div class="sh-icon">🎯</div>
           <div class="sh-info">
             <div class="sh-name">Wanted: ${deps.esc(posting.captainName)} — ${deps.esc(rank)}</div>
-            <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy his camp for ${posting.rewardGold}g.</div>
+            <div class="sh-desc">Last seen in the ${deps.esc(zoneLabel)}. Destroy ${pronouns.possessive} camp for ${posting.rewardGold}g.</div>
           </div>
           <button class="shop-buy-btn" data-take-bounty="${posting.id}">Take Bounty</button>
         `;
@@ -95,11 +108,12 @@
         const rank = window.BountyBoard.RANK_LABELS[task.tier] || `Tier ${task.tier}`;
         const zoneLabel = deps.WMAP_ZONE_LABELS[task.zoneId] || task.zoneId;
         const marked = window.BountyBoard.markers.has(task.id);
+        const pronouns = bountyPronouns(task); // Used in the active-bounty tracking copy immediately below.
         row.innerHTML = `
           <div class="sh-icon">🎯</div>
           <div class="sh-info">
             <div class="sh-name">Bounty: ${deps.esc(task.captainName)} — ${deps.esc(rank)}</div>
-            <div class="sh-desc">${deps.esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : 'Still tracking him down...'} Reward: ${task.rewardGold}g on his camp\'s destruction.</div>
+            <div class="sh-desc">${deps.esc(zoneLabel)}. ${marked ? 'Camp located — marked on the map.' : `Still tracking ${pronouns.object} down...`} Reward: ${task.rewardGold}g on ${pronouns.possessive} camp's destruction.</div>
           </div>
         `;
       } else {
