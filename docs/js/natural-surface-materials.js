@@ -34,23 +34,26 @@
 
   function markTextureSrgb(tex) {
     // Three r128 predates Texture.colorSpace/SRGBColorSpace. Use the old
-    // encoding API there, while remaining compatible with newer Three builds.
+    // encoding API there, while remaining compatible if this code is ever run
+    // against a newer Three build.
     if (!tex) return tex;
     if ('colorSpace' in tex && THREE.SRGBColorSpace != null) tex.colorSpace = THREE.SRGBColorSpace;
     else if ('encoding' in tex && THREE.sRGBEncoding != null) tex.encoding = THREE.sRGBEncoding;
     return tex;
   }
 
-  function loadBaseTexture(path) {
-    let tex = textureCache.get(path);
+  function loadBaseTexture(path, wrapMode = 'clamp') {
+    const cacheKey = `${path}|${wrapMode}`;
+    let tex = textureCache.get(cacheKey);
     if (tex) return tex;
     tex = markTextureSrgb(new THREE.TextureLoader().load(path));
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
+    const wrapping = wrapMode === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    tex.wrapS = wrapping;
+    tex.wrapT = wrapping;
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.generateMipmaps = false;
-    textureCache.set(path, tex);
+    textureCache.set(cacheKey, tex);
     return tex;
   }
 
@@ -179,9 +182,10 @@
       ? existing
       : new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2);
 
-    // Normalize each cliff/mesa geometry into 0..1 UVs instead of cloning a
-    // Texture and Material for every mesh. This preserves the requested
-    // "stretch once across the whole surface" look while sharing resources.
+    // Normalize each unique cliff/mesa geometry into 0..1 UVs instead of
+    // cloning a Texture and Material for every mesh. This preserves the
+    // requested "stretch the PNG once across the whole surface" look while
+    // keeping one shared texture/material per tint.
     for (let i = 0; i < pos.count; i++) {
       uv.setXY(
         i,
@@ -202,8 +206,8 @@
     return true;
   }
 
-  function textureForSurface(surface) {
-    return loadBaseTexture(texturePath(cfgFor(surface)));
+  function textureForSurface(surface, wrapMode = 'clamp') {
+    return loadBaseTexture(texturePath(cfgFor(surface)), wrapMode);
   }
 
   function noteApplied(surface) {
@@ -237,9 +241,23 @@
     const surfaceCfg = cfgFor(surface);
     if (surfaceCfg.enabled === false) return;
     const sourceMaterial = mesh.material[slot];
+    const mapping = surfaceCfg.mapping;
 
-    prepareUv(mesh.geometry, surfaceCfg.mapping);
-    const tex = textureForSurface(surface);
+    // A multi-material plateau shares ONE uv attribute between its grass top
+    // and stone cliff group. Normalizing that geometry for the cliff slot
+    // would also remap the grass material. Preserve the authored world UVs
+    // here and reuse the source texture when it already exists; otherwise use
+    // one shared repeating fallback texture. Single-material cliff meshes still
+    // use assignWorldStretchUv() through naturalizeMesh(), where changing the
+    // sole UV channel is safe.
+    let tex;
+    if (mapping === 'world-stretch') {
+      tex = sourceMaterial.map || textureForSurface(surface, 'repeat');
+    } else {
+      prepareUv(mesh.geometry, mapping);
+      tex = textureForSurface(surface);
+    }
+
     const tint = resolveTint(surfaceCfg, sourceMaterial);
     const materials = mesh.material.slice();
     materials[slot] = basicMaterial(surface, sourceMaterial, tex, tint);
