@@ -16,7 +16,7 @@
     deferredRootsInspected: 0,
     legacyRockMeshesNaturalized: 0,
     naturalMaterialsGrassTinted: 0,
-    barkMaterialsHueNormalized: 0,
+    naturalSourceTintsCaptured: 0,
     cliffUvsReprojected: 0,
     weedPlaceholderMeshesHidden: 0,
   };
@@ -71,26 +71,26 @@
     return boxLike && ext.y > minSpan && ext.y >= maxHorizontal * minRatio;
   }
 
-  function normalizeMaterialHueOnly(mat) {
-    if (!mat?.color?.isColor || mat.userData?.naturalSurfaceHueOnlyTint) return false;
-    const helper = window.SurfaceTint;
-    if (helper?.normalizeHueOnly) mat.color.copy(helper.normalizeHueOnly(mat.color));
-    else {
-      const maxChannel = Math.max(mat.color.r, mat.color.g, mat.color.b);
-      if (!(maxChannel > 1e-5)) return false;
-      if (maxChannel < 0.999) mat.color.multiplyScalar(1 / maxChannel);
-    }
-    mat.userData = Object.assign({}, mat.userData, {
-      naturalSurfaceHueOnlyTint: true,
-    });
-    stats.barkMaterialsHueNormalized++;
-    return true;
-  }
-
   function naturalSurfaceFor(mesh, mat) {
     return mat?.userData?.naturalSurface
       || mesh?.userData?.naturalSurface
       || null;
+  }
+
+  function sourceTintFor(mat) {
+    if (!mat?.color?.isColor) return null;
+    mat.userData = Object.assign({}, mat.userData);
+    const stored = mat.userData.naturalSurfaceSourceTint;
+    if (stored?.isColor) return stored;
+
+    // Keep the generator/authored tint as immutable shader input. Do not
+    // normalize or otherwise mutate material.color: tree visibility/fade code
+    // is allowed to preserve/restore material state, and mutating the shared
+    // material made first-render bark peach until a cull cycle restored it.
+    const tint = mat.color.clone();
+    mat.userData.naturalSurfaceSourceTint = tint;
+    stats.naturalSourceTintsCaptured++;
+    return tint;
   }
 
   // Single-material cliffs own their UV channel, so project the horizontal
@@ -145,14 +145,10 @@
       if (cfg.enabled === false) continue;
       if ((cfg.tintTreatment || 'grass-luminance') !== 'grass-luminance') continue;
 
-      if ((surface === 'trunks' || surface === 'vines')
-          && (cfg.sourceTintMode || 'hue-only') === 'hue-only'
-          && (!cfg.tint || cfg.tint === 'source')) {
-        normalizeMaterialHueOnly(mat);
-      }
-
+      const sourceTint = sourceTintFor(mat);
+      if (!sourceTint) continue;
       const already = mat.userData?.surfaceTintTreatment === helper.treatment;
-      if (helper.applyGrassLuminance(mat, mat.color) && !already) {
+      if (helper.applyGrassLuminance(mat, sourceTint) && !already) {
         stats.naturalMaterialsGrassTinted++;
       }
     }
