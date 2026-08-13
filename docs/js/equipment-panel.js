@@ -12,10 +12,25 @@
   let deps = null;
   // This guard prevents duplicate dynamic loads when EquipmentPanel.init() is called more than once.
   let inventoryUiLoadStarted = false;
+  // This guard keeps the capture-phase selection reset from being registered twice.
+  let inventorySelectionBridgeInstalled = false;
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    installInventorySelectionBridge();
     loadInventoryUi();
+  }
+
+  function installInventorySelectionBridge() {
+    if (inventorySelectionBridgeInstalled || typeof document === 'undefined') return;
+    inventorySelectionBridgeInstalled = true;
+    // The mastery panel stores its last rendered key for debug output only. Clear it before every inventory
+    // click so the post-click presentation pass resolves the current detail item instead of reusing an old tool.
+    document.addEventListener('click', (event) => {
+      if (!event.target?.closest?.('#mpInventory')) return;
+      const masteryPanel = document.getElementById('iiToolMastery');
+      if (masteryPanel) delete masteryPanel.dataset.toolKey;
+    }, true);
   }
 
   function inventoryUiDeps() {
@@ -701,7 +716,22 @@
         const cell = document.createElement('div');
         cell.className = 'inv-equip-slot clothing-owned-slot occupied' + (worn ? ' active-slot' : '');
         cell.setAttribute('title', item.label + (worn ? ' — currently worn' : ' — click to equip'));
-        renderClothingIcon(cell, item);
+        const ownedIcon = renderClothingIcon(cell, item);
+        // Owned clothing art should dominate the tile; the normal clothing sprite is too conservative here.
+        ownedIcon.style.width = 'calc(2.3 * var(--inv-row))';
+        ownedIcon.style.height = 'calc(2.3 * var(--inv-row))';
+        ownedIcon.style.maxWidth = '82%';
+        ownedIcon.style.maxHeight = '82%';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'gear-owned-clothing-name';
+        nameEl.textContent = item.label;
+        nameEl.style.fontSize = 'var(--inv-font-xs, 11px)';
+        nameEl.style.lineHeight = '1.08';
+        nameEl.style.maxWidth = 'calc(100% - 4px)';
+        nameEl.style.overflow = 'hidden';
+        nameEl.style.textOverflow = 'ellipsis';
+        nameEl.style.whiteSpace = 'nowrap';
+        cell.appendChild(nameEl);
         const lbl = document.createElement('span');
         lbl.className = 'ies-label';
         lbl.textContent = item.slot.charAt(0).toUpperCase() + item.slot.slice(1);
