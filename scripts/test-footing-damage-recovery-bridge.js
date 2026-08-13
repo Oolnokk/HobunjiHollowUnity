@@ -62,7 +62,7 @@ assert.strictEqual(player.footing, 70);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 0);
 
 // Once the uninterrupted grace period expires, 100 max Footing regenerates
-// at 20 per second: empty-to-full in five seconds by default.
+// at a baseline 20 per second: five seconds of active regen from empty to full.
 now = 3600;
 ResourceSystem.tick(player, 1);
 assert.strictEqual(player.footing, 90);
