@@ -18,18 +18,50 @@
     loadInventoryUi();
   }
 
+  function inventoryUiDeps() {
+    // Read-only mastery bridge: InventoryUI needs the same canonical per-tool data this panel already renders,
+    // but should not own or mutate Gear/mastery state itself.
+    const toolMasteryXp = (itemKey) => {
+      const xp = Number(deps.getGearInventory?.()?.toolMastery?.[itemKey]?.xp);
+      return Number.isFinite(xp) ? Math.max(0, xp) : 0;
+    };
+    return {
+      isDevMode: deps.isDevMode,
+      showToast: deps.showToast,
+      getGearInventory: deps.getGearInventory,
+      toolMasteryLevel: deps.toolMasteryLevel,
+      toolMasteryXp,
+      TOOL_ITEM_DEFS: deps.TOOL_ITEM_DEFS,
+      equipmentSlots: deps.equipmentSlots,
+    };
+  }
+
+  function exposeInventoryMasteryBridge(uiDeps) {
+    // InventoryUI's tool-effects code already reads window.Combat.deps. Extend that existing read-only seam
+    // with the EquipmentPanel-owned mastery data rather than widening game.js or duplicating progression state.
+    const combatDeps = window.Combat?.deps;
+    if (!combatDeps) return;
+    combatDeps.TOOL_ITEM_DEFS ||= uiDeps.TOOL_ITEM_DEFS;
+    combatDeps.equipmentSlots ||= uiDeps.equipmentSlots;
+    combatDeps.gearInventory ||= uiDeps.getGearInventory;
+    combatDeps.toolMasteryLevel ||= uiDeps.toolMasteryLevel;
+    combatDeps.toolMasteryXp ||= uiDeps.toolMasteryXp;
+  }
+
   function loadInventoryUi() {
+    const uiDeps = inventoryUiDeps();
+    exposeInventoryMasteryBridge(uiDeps);
     if (window.InventoryUI?.init) {
-      window.InventoryUI.init({ isDevMode: deps.isDevMode, showToast: deps.showToast });
+      window.InventoryUI.init(uiDeps);
       return;
     }
     if (inventoryUiLoadStarted || typeof document === 'undefined') return;
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20260812b';
+    script.src = 'js/inventory-ui.js?v=20260812c';
     script.async = false;
-    script.onload = () => window.InventoryUI?.init?.({ isDevMode: deps.isDevMode, showToast: deps.showToast });
+    script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
       inventoryUiLoadStarted = false;
       if (deps.isDevMode?.()) deps.showToast?.('Inventory UI polish module failed to load.', false);
