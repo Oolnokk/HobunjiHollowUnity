@@ -13,13 +13,105 @@
   // and comes in through deps. gearInventory is threaded as a getter
   // since character load/logout reassigns it wholesale.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  let hourlyRefreshTimer = 0;
+  let lastObservedClockKey = null;
+
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // Character/world reloads can reinitialize this module without replacing
+    // the page. Reset the observed key so the new runtime gets one immediate
+    // texture refresh even if it happens to load at the same clock hour.
+    lastObservedClockKey = null;
+    installHourlyMetalRefresh();
+  }
 
   let metalCraftActiveShape = null; // set from deps.UNLOCKED_TOOL_SHAPES[0] on first render
   const CRAFT_BAR_COST    = 3;  // bars of the chosen metal, for a new tool or a reinforcement
   const CRAFT_LABOR_GOLD  = 15; // gold labor fee, same for crafting new or reinforcing
   const PLATE_BAR_COST    = 1;  // bars of the plating metal (cosmetic or resistant)
   const PLATE_LABOR_GOLD  = 8;
+  const HOURLY_REFRESH_POLL_MS = 250; // Cheap clock-edge watcher; actual texture work happens only when the represented hour changes.
+
+  function verdigrisDebugEnabled() {
+    if (window.ToolMetalRecolorDebug === true) return true;
+    try { return window.localStorage?.getItem('toolMetalRecolorDebug') === '1'; }
+    catch { return false; }
+  }
+
+  function bridgeDebug(label, data) {
+    if (!verdigrisDebugEnabled()) return;
+    const suffix = data === undefined ? '' : ` ${JSON.stringify(data)}`;
+    window.__farmLog?.(`[MetalToolBridge] ${label}${suffix}`, 'info');
+  }
+
+  // game.js owns the actual world THREE.Texture objects, but injects its
+  // refreshMetalToolWorldTexture adapter into this extracted module. Keeping
+  // this fan-out here gives the Debug UI a narrow public hook that can force
+  // every currently-owned crafted metal tool back through the real runtime
+  // recolor path without reaching into game.js's private maps/sets.
+  function refreshAllMetalToolWorldTextures(reason = 'manual') {
+    if (!deps?.refreshMetalToolWorldTexture || !deps?.TOOL_ITEM_DEFS || !deps?.getGearInventory) {
+      bridgeDebug('refresh pass unavailable', { reason, initialized: !!deps });
+      return 0;
+    }
+    const gearInventory = deps.getGearInventory();
+    const itemKeys = Object.keys(gearInventory?.tools || {})
+      .filter(itemKey => gearInventory.tools[itemKey] && deps.TOOL_ITEM_DEFS[itemKey]?.metalKey);
+    bridgeDebug('refresh pass', { reason, itemCount: itemKeys.length, itemKeys });
+    itemKeys.forEach(itemKey => {
+      bridgeDebug('world texture refresh requested', {
+        reason,
+        itemKey,
+        label: deps.TOOL_ITEM_DEFS[itemKey]?.label || itemKey,
+      });
+      deps.refreshMetalToolWorldTexture(itemKey);
+    });
+    return itemKeys.length;
+  }
+
+  function currentGameHourKey() {
+    // The global started flag prevents onboarding/title-screen polling from
+    // manufacturing a fake refresh. CalendarSystem is the authoritative clock
+    // formatter already used by the HUD/debug report.
+    if (window.__hobunjiGameStarted !== true || !window.CalendarSystem?.getHour) return null;
+    try {
+      const hour = Math.floor(Number(window.CalendarSystem.getHour()));
+      if (!Number.isFinite(hour)) return null;
+      const rawDay = Number(window.CalendarSystem.timeDebugSnapshot?.().rawDay);
+      return Number.isFinite(rawDay) ? `${rawDay}:${hour}` : `hour:${hour}`;
+    } catch {
+      return null;
+    }
+  }
+
+  function pollHourlyMetalRefresh() {
+    const clockKey = currentGameHourKey();
+    if (!clockKey) return;
+
+    if (lastObservedClockKey === null) {
+      lastObservedClockKey = clockKey;
+      // This is also the ordinary-load fix: once gameplay is actually live,
+      // owned crafted tools are guaranteed one generated texture refresh even
+      // if no equip/cycling action happens afterward.
+      const refreshed = refreshAllMetalToolWorldTextures('runtime-start');
+      bridgeDebug('runtime-start refresh', { clockKey, refreshed });
+      return;
+    }
+
+    if (clockKey === lastObservedClockKey) return;
+    const previousClockKey = lastObservedClockKey;
+    lastObservedClockKey = clockKey;
+    const refreshed = refreshAllMetalToolWorldTextures('game-hour');
+    bridgeDebug('hourly refresh', { from: previousClockKey, to: clockKey, refreshed });
+  }
+
+  function installHourlyMetalRefresh() {
+    if (hourlyRefreshTimer) return;
+    hourlyRefreshTimer = window.setInterval(pollHourlyMetalRefresh, HOURLY_REFRESH_POLL_MS);
+    // Usually game.js has not set __hobunjiGameStarted yet when init() runs,
+    // but this makes reinitialization of an already-running world immediate.
+    pollHourlyMetalRefresh();
+  }
 
   function craftMetalTool(shapeKey, metalKey) {
     const barKey = deps.metalBarItemKey(metalKey);
@@ -33,6 +125,11 @@
     if (!gearInventory.tools) gearInventory.tools = {};
     gearInventory.tools[itemKey] = true;
     deps.saveGearInventory();
+    // A newly-created crafted tool must immediately replace its base sprite
+    // world texture with the metal/mastery-generated canvas. Previously only
+    // plating changes called this adapter, so a fresh tool could remain on
+    // the untouched source PNG indefinitely.
+    deps.refreshMetalToolWorldTexture(itemKey);
     deps.showToast(`Smithed a ${deps.TOOL_ITEM_DEFS[itemKey].label}!`, true);
     renderMetalCraftShopPage();
     deps.buildInventoryGrid();
@@ -204,5 +301,6 @@
   window.MetalCraftShop = {
     init,
     render: renderMetalCraftShopPage,
+    refreshAllMetalToolWorldTextures,
   };
 })();
