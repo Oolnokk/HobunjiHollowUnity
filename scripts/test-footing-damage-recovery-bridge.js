@@ -61,15 +61,18 @@ ResourceSystem.tick(player, 1);
 assert.strictEqual(player.footing, 70);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 0);
 
-// Once the uninterrupted grace period expires, the existing regen rate resumes.
+// Once the uninterrupted grace period expires, 100 max Footing regenerates
+// at 20 per second: empty-to-full in five seconds by default.
 now = 3600;
 ResourceSystem.tick(player, 1);
-assert.strictEqual(player.footing, 76);
-assert.strictEqual(lastTickOptions.footingRegenPerSec, undefined);
+assert.strictEqual(player.footing, 90);
+assert.strictEqual(lastTickOptions.footingRegenPerSec, 20);
+assert.strictEqual(context.window.HobunjiFootingDamageRecovery.fullRecoverySeconds, 5);
+assert.strictEqual(context.window.HobunjiFootingDamageRecovery.defaultFootingRegenPerSec(player), 20);
 
 // Caller-specific Footing regen tuning is preserved after the delay.
 ResourceSystem.tick(player, 1, { footingRegenPerSec: 3, staminaRegenPerSec: 9 });
-assert.strictEqual(player.footing, 79);
+assert.strictEqual(player.footing, 93);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 3);
 assert.strictEqual(lastTickOptions.staminaRegenPerSec, 9);
 
@@ -83,5 +86,7 @@ assert.strictEqual(player.lastFootingDamageAt, previousDamageAt);
 const debug = context.window.HobunjiFootingDamageRecovery.getDebug(player);
 assert.strictEqual(debug.damageMultiplier, 2);
 assert.strictEqual(debug.recoveryDelaySeconds, 1.5);
+assert.strictEqual(debug.fullRecoverySeconds, 5);
+assert.strictEqual(debug.defaultFootingRegenPerSec, 20);
 
-console.log('Footing damage multiplier and recovery-delay checks passed.');
+console.log('Footing damage multiplier, recovery delay, and five-second recovery checks passed.');
