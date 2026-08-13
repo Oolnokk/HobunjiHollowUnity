@@ -10,9 +10,12 @@
   //   world-stretch       — preserve terrain world UVs but fit the PNG once
   //                         across each generated cliff/mesa mesh
   //
-  // tint: 'source' preserves the generator's existing material color; use a
-  // '#rrggbb' value to override it. Set enabled:false for a surface to fall
-  // back to its original renderer/material without changing the generator.
+  // tint: 'source' preserves the generator's existing color family. For
+  // textured bark/vines, sourceTintMode:'hue-only' normalizes away the old
+  // Lambert brightness before multiplication so carved_smooth.png supplies
+  // the light/dark shading instead of being multiplied by a second dark bake.
+  // Use a '#rrggbb' tint to override the source color. Set enabled:false to
+  // fall back to the original renderer/material without changing the generator.
   window.NaturalSurfaceMaterialConfig = {
     schema: 'hobunji_natural_surface_materials.v1',
     texture: 'assets/textures/carved_smooth.png',
@@ -20,11 +23,13 @@
       trunks: {
         enabled: true,
         tint: 'source',
+        sourceTintMode: 'hue-only',
         mapping: 'cylindrical-stretch'
       },
       vines: {
         enabled: true,
         tint: 'source',
+        sourceTintMode: 'hue-only',
         mapping: 'cylindrical-stretch'
       },
       rocks: {
