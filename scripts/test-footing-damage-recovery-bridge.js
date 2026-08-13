@@ -39,16 +39,19 @@ context.globalThis = context.window;
 vm.createContext(context);
 vm.runInContext(source, context, { filename: modulePath });
 
+// Standing hits still double Footing damage and start the recovery delay.
 assert.strictEqual(ResourceSystem.spendFooting(player, 10, 'ordinary hit'), 20);
 assert.strictEqual(player.footing, 80);
 assert.strictEqual(player.lastFootingDamageAt, 1000);
 assert.strictEqual(context.window.HobunjiFootingDamageRecovery.damageMultiplier, 2);
 
+// No Footing regen occurs until 1.5 seconds have passed without another standing hit.
 now = 2000;
 ResourceSystem.tick(player, 1);
 assert.strictEqual(player.footing, 80);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 0);
 
+// A second standing Footing hit restarts the same grace period.
 assert.strictEqual(ResourceSystem.spendFooting(player, 5, 'follow-up hit'), 10);
 assert.strictEqual(player.footing, 70);
 assert.strictEqual(player.lastFootingDamageAt, 2000);
@@ -58,6 +61,7 @@ ResourceSystem.tick(player, 1);
 assert.strictEqual(player.footing, 70);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 0);
 
+// Once the delay expires, the baseline rate is maxFooting / 3 per second.
 now = 3600;
 ResourceSystem.tick(player, 1);
 assert.strictEqual(player.footing, 100);
@@ -65,12 +69,14 @@ assert.strictEqual(lastTickOptions.footingRegenPerSec, 100 / 3);
 assert.strictEqual(context.window.HobunjiFootingDamageRecovery.fullRecoverySeconds, 3);
 assert.strictEqual(context.window.HobunjiFootingDamageRecovery.defaultFootingRegenPerSec(player), 100 / 3);
 
+// Explicit encounter-specific rates still override the baseline rate.
 player.footing = 70;
 ResourceSystem.tick(player, 1, { footingRegenPerSec: 3, staminaRegenPerSec: 9 });
 assert.strictEqual(player.footing, 73);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 3);
 assert.strictEqual(lastTickOptions.staminaRegenPerSec, 9);
 
+// A hit while prone cannot refresh an already-expired recovery timer.
 player.prone = true;
 now = 5000;
 const previousDamageAt = player.lastFootingDamageAt;
@@ -78,6 +84,7 @@ assert.strictEqual(ResourceSystem.spendFooting(player, 12, 'prone hit'), 0);
 assert.strictEqual(player.lastFootingDamageAt, previousDamageAt);
 assert.strictEqual(context.window.HobunjiFootingDamageRecovery.recoveryDelayRemaining(player), 0);
 
+// A prone hit cannot create a new recovery timer either.
 delete player.lastFootingDamageAt;
 now = 6000;
 assert.strictEqual(ResourceSystem.spendFooting(player, 12, 'prone hit without timer'), 0);
