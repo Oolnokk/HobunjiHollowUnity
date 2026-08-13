@@ -9023,13 +9023,23 @@
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
+                const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
-                  this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) root.add(this.stationToolMesh);
                 }
-                if (this.stationToolMesh) {
+                if (this.stationToolMesh && isKurraya) {
+                  // Same held-still-until-a-note-sounds treatment as the
+                  // player's own Kurraya (see updateHeldItemHolder) — driven
+                  // externally by triggerNpcKurrayaTwitch on each real
+                  // 'sounded-note' from this NPC's ambient performance iframe,
+                  // not a canned swing loop.
+                  this.stationToolMesh.position.set(-0.28, 0.18, 0);
+                  updateKurrayaTwitch(this.stationKurrayaTwitch, this.stationToolMesh);
+                } else if (this.stationToolMesh) {
                   // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
                   // entirely in root-local space: the mesh is a child of `root`, so root's
                   // own rotation.y already carries this NPC's facing — using the fixed
@@ -9041,13 +9051,7 @@
                   const anim = target.toolAnimStyle || TOOL_ITEM_DEFS[target.toolKey]?.animStyle || 'chop';
                   const WF = 0.16, SF = 0.28;
                   let swingAngle = 0, fwdOff = 0;
-                  if (anim === 'strum') {
-                    // A slow, gentle rock rather than a swing/thrust — Foroji
-                    // holding the Kurraya at station_foroji_music shouldn't
-                    // look like he's chopping wood with it.
-                    swingAngle = 0.62 + Math.sin(progress * Math.PI * 2) * 0.12;
-                    fwdOff = Math.sin(progress * Math.PI * 2) * 0.03;
-                  } else if (anim === 'thrust') {
+                  if (anim === 'thrust') {
                     swingAngle = 0.18;
                     if (progress <= WF) fwdOff = -0.22 * (progress / WF);
                     else if (progress <= SF) fwdOff = -0.22 + 0.54 * ((progress - WF) / (SF - WF));
@@ -9061,12 +9065,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
+                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
+            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
@@ -17281,6 +17285,26 @@
         return g;
       }
 
+      // ── Kurraya hold assembly + reactive twitch ─────────────────────
+      // Lives in js/kurraya-instrument.js (window.KurrayaInstrument) —
+      // ported directly from the reference mockup's authored two-plane
+      // "avatarEquipmentAuthoring.kurraya" fit rather than approximated
+      // here. Thin local aliases below so call sites (updateHeldItemHolder,
+      // the NPC station prop, and the 'sounded-note' relay in
+      // js/music-minigame.js) read the same as before the split.
+      window.KurrayaInstrument?.init({
+        THREE,
+        toolTextures,
+        TOOL_MODEL_WIDTH,
+        toolTexLoader: _toolTexLoader,
+        heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
+        getKurrayaDef: () => TOOL_ITEM_DEFS.kurraya,
+      });
+      const buildKurrayaAssembly = (...a) => window.KurrayaInstrument?.buildAssembly(...a) ?? null;
+      const newKurrayaTwitchState = (...a) => window.KurrayaInstrument?.newTwitchState(...a);
+      const triggerKurrayaTwitch = (...a) => window.KurrayaInstrument?.triggerTwitch(...a);
+      const updateKurrayaTwitch = (...a) => window.KurrayaInstrument?.updateTwitch(...a);
+
       // Build/rebuild the toolMeshMap from currently equipped items
       const toolMeshMap = {};
       function rebuildToolMeshes() {
@@ -17421,7 +17445,7 @@
       let _heldItemPlane = null, _heldItemKey = null;
       // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
       let _heldDrinkAnimT = 0;
-      let _kurrayaHoldT = 0; // Free-running clock for the Kurraya's own idle hold sway — see updateHeldItemHolder.
+      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
       // Full duration used to normalize the drink countdown into animation progress.
       let _heldDrinkAnimDuration = 0;
 
@@ -17534,26 +17558,25 @@
           // TOOL_ITEM_DEFS.kurraya) rather than assets/objectsprites, and
           // it's a finished painted asset, not a dye-tintable template —
           // makeHeldItemPlaneMesh's spriteIcon path assumes the latter
-          // (recolors through window.SpriteRecolor), so this reuses
-          // makeToolPlaneMesh directly instead of adding a case there.
-          _heldItemPlane = isKurraya ? makeToolPlaneMesh('kurraya') : makeHeldItemPlaneMesh(item);
+          // (recolors through window.SpriteRecolor). Uses the authored
+          // crossed front+top plane assembly (see buildKurrayaAssembly)
+          // instead of a single flat billboard.
+          _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
-          _kurrayaHoldT = 0;
+          _playerKurrayaTwitch = newKurrayaTwitchState();
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
           window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
         if (isKurraya) {
-          // Cradled diagonally across the chest, gently rocking — the same
-          // "strum" motion Foroji's station prop uses (see the anim==='strum'
-          // branch in the NPC station-tool code above), just applied to the
-          // player's own held-item pivot instead of an NPC's root-local one.
-          _kurrayaHoldT = (_kurrayaHoldT + dt) % 2.4;
-          const rock = Math.sin((_kurrayaHoldT / 2.4) * Math.PI * 2) * 0.1;
+          // Cradled across the chest at its authored rest tilt (see
+          // buildKurrayaAssembly) — the assembly itself carries that tilt
+          // and any note-reactive twitch (see triggerPlayerKurrayaTwitch,
+          // called from js/music-minigame.js on each 'sounded-note'
+          // relay); only position/scale belong to the outer holder.
           heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
-          // makeToolPlaneMesh already lays its plane flat internally (same
-          // as every equipped tool) — only the outer holder needs posing here.
-          heldItemHolder.rotation.set(0, 0, 0.58 + rock);
+          heldItemHolder.rotation.set(0, 0, 0);
           heldItemHolder.scale.setScalar(0.85);
+          updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
         } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
@@ -22929,6 +22952,17 @@
           activeCameraTarget = _musicPrevCameraTarget ?? null;
           _musicPrevCameraMode = null;
           _musicPrevCameraTarget = null;
+        },
+        // Driven by js/music-minigame.js's 'sounded-note' relay from either
+        // the player's overlay iframe or an NPC's ambient performance iframe
+        // — see updateHeldItemHolder (player) and the station-tool block
+        // above (NPC) for what actually owns each twitch state.
+        triggerPlayerKurrayaTwitch: () => {
+          if (_heldItemPlane?.userData.kurrayaAssembly) triggerKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        },
+        triggerNpcKurrayaTwitch: (npcId) => {
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.stationToolMesh?.userData.kurrayaAssembly) triggerKurrayaTwitch(walker.stationKurrayaTwitch, walker.stationToolMesh);
         },
       });
 

@@ -121,12 +121,43 @@
   }
   window.addEventListener('message', (event) => {
     const data = event.data;
-    if (!data || data.source !== 'hobunji-music-minigame' || data.type !== 'inputMethod') return;
-    if (event.source !== frameEl?.contentWindow) return;
-    if (hostInputMethod === data.method) return;
-    hostInputMethod = data.method;
-    refreshHostGlyphs();
+    if (!data || data.source !== 'hobunji-music-minigame') return;
+    if (data.type === 'inputMethod') {
+      if (event.source !== frameEl?.contentWindow) return;
+      if (hostInputMethod === data.method) return;
+      hostInputMethod = data.method;
+      refreshHostGlyphs();
+    } else if (data.type === 'sounded-note') {
+      onSoundedNote(data, event.source);
+    }
   });
+
+  // Drives each performer's Kurraya twitch (see js/kurraya-instrument.js via
+  // game.js's triggerPlayerKurrayaTwitch/triggerNpcKurrayaTwitch) off the
+  // actual notes sounding, not a canned animation loop. Every iframe here
+  // reports 'lead' or 'backup' purely as roles WITHIN that one performance
+  // (see registerVoice in lyre-performance.html) — which real-world
+  // performer that maps to depends on whose iframe it came from and, for
+  // the player's overlay in backup mode, which role the note itself was.
+  function onSoundedNote(data, source) {
+    if (source === frameEl?.contentWindow) {
+      if (playerSession?.mode === 'backup') {
+        // backupAccompaniment is on for this session, so 'lead' notes here
+        // are the joined NPC's own autoplaying line (their ambient frame
+        // was torn down for the duration — see beginPlayerSession — so this
+        // is the only place those notes are still observable) and 'backup'
+        // notes are the player's own input.
+        if (data.performer === 'backup') deps?.triggerPlayerKurrayaTwitch?.();
+        else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
+      } else {
+        deps?.triggerPlayerKurrayaTwitch?.();
+      }
+      return;
+    }
+    for (const [npcId, frame] of ambientFrames) {
+      if (source === frame.contentWindow) { deps?.triggerNpcKurrayaTwitch?.(npcId); return; }
+    }
+  }
 
   function teardownEdgeControls() {
     const leftMount = document.getElementById('leftMusicControls');
