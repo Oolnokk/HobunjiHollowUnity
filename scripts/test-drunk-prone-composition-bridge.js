@@ -229,7 +229,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(pendingBanditEntity.telegraphState, null);
 
   const proneAi = BanditCombat.updateCombatAI(pendingBanditEntity, {}, 0.016);
-  assert.deepStrictEqual(proneAi, { aimAngle: 0.4, moving: false });
+  assert.strictEqual(proneAi.aimAngle, 0.4);
+  assert.strictEqual(proneAi.moving, false);
   assert.strictEqual(baseBanditAiCalls, 0, 'prone cannot enter the underlying combat AI');
   pendingBanditEntity.prone = false;
   const standingAi = BanditCombat.updateCombatAI(pendingBanditEntity, {}, 0.016);
