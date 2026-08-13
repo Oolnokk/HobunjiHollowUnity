@@ -1,12 +1,11 @@
 (() => {
   'use strict';
 
-  // Keeps Hobunji Hollow's existing inverted-shell look intact while making
-  // the extra outline passes cheaper. The normal scene render has already
-  // updated every world matrix (and shadow state) immediately before the
-  // PNG-occluder, shell, and material-ID passes. Three r128 otherwise repeats
-  // that scene-wide bookkeeping on every renderer.render() call, which is
-  // particularly expensive in foliage-heavy wilderness scenes.
+  // Keeps the existing inverted-shell look while avoiding repeated scene-wide
+  // matrix/shadow bookkeeping on the immediately-adjacent outline passes.
+  // Reuse is sequence-bound: a secondary pass may reuse only the same scene's
+  // most recent base render on the same renderer, with no unrelated render in
+  // between. This is intentionally stricter than the old one-second time window.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   if (!rendererProto || typeof rendererProto.render !== 'function') return;
@@ -24,10 +23,10 @@
   const MASK_SHELL = (1 << 1) >>> 0;
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
-  const BASE_REUSE_MAX_AGE_MS = 1000;
+  const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;
 
-  const lastBaseRenderAt = new WeakMap();
+  const reuseSequenceByRenderer = new WeakMap();
   const lifetime = Object.create(null);
   let windowStats = Object.create(null);
   let lastLogAt = performance.now();
@@ -35,6 +34,7 @@
   let skippedShadowAutoUpdates = 0;
   let windowReusedSceneMatrixPasses = 0;
   let windowSkippedShadowAutoUpdates = 0;
+  let sequenceInvalidations = 0;
 
   function makeBucket() {
     return { renders: 0, calls: 0, triangles: 0, points: 0, lines: 0, cpuMs: 0 };
@@ -48,17 +48,24 @@
     const mask = Number(camera?.layers?.mask ?? 0) >>> 0;
     const override = scene?.overrideMaterial || null;
 
-    if (mask === MASK_SHELL && override?.isShaderMaterial && override.side === THREE.BackSide && override.uniforms?.uThickness) {
-      return 'shell';
-    }
-    if (mask === MASK_MATERIAL_ID && override?.isShaderMaterial && override.uniforms?.uIdColor) {
-      return 'materialId';
-    }
+    if (
+      mask === MASK_SHELL
+      && override?.isShaderMaterial
+      && override.side === THREE.BackSide
+      && override.uniforms?.uThickness
+    ) return 'shell';
+
+    if (
+      mask === MASK_MATERIAL_ID
+      && override?.isShaderMaterial
+      && override.uniforms?.uIdColor
+    ) return 'materialId';
+
     if (mask === MASK_PNG_OCCLUDER && !override) return 'pngDepth';
 
-    // The outlined main scene renders into _mainRT; the fullscreen composite
-    // renders to the default framebuffer. These labels are diagnostics only.
-    if (mask === MASK_ALL && !override) return renderer.getRenderTarget?.() ? 'base' : 'postOrDirect';
+    if (mask === MASK_ALL && !override) {
+      return renderer.getRenderTarget?.() ? 'base' : 'postOrDirect';
+    }
     return 'other';
   }
 
@@ -96,8 +103,6 @@
     if (now - lastLogAt < LOG_INTERVAL_MS) return;
     lastLogAt = now;
 
-    // No shell render means outlines were off (or this renderer was not the
-    // gameplay renderer), so don't fill the mobile debug log with noise.
     if (windowStats.shell?.renders) {
       const order = ['base', 'pngDepth', 'shell', 'materialId', 'postOrDirect'];
       const parts = order.map(passSummary).filter(Boolean);
@@ -113,15 +118,37 @@
     windowSkippedShadowAutoUpdates = 0;
   }
 
+  function canReuseSequence(renderer, scene, pass, now) {
+    if (!isSecondaryOutlinePass(pass)) return false;
+    const seq = reuseSequenceByRenderer.get(renderer);
+    return !!(
+      seq
+      && seq.scene === scene
+      && now >= seq.baseAt
+      && now - seq.baseAt <= BASE_REUSE_MAX_AGE_MS
+    );
+  }
+
+  function updateSequence(renderer, scene, pass, endedAt, reused) {
+    if (pass === 'base') {
+      reuseSequenceByRenderer.set(renderer, { scene, baseAt: endedAt });
+      return;
+    }
+    if (isSecondaryOutlinePass(pass) && reused) {
+      // Keep the sequence open across PNG-depth -> shell -> material-ID.
+      return;
+    }
+    if (reuseSequenceByRenderer.has(renderer)) {
+      reuseSequenceByRenderer.delete(renderer);
+      sequenceInvalidations++;
+    }
+  }
+
   function wrappedRender(scene, camera) {
     const renderer = this;
     const pass = classifyPass(renderer, scene, camera);
     const now = performance.now();
-    const lastBaseAt = lastBaseRenderAt.get(scene);
-    const canReuseBaseState = isSecondaryOutlinePass(pass)
-      && Number.isFinite(lastBaseAt)
-      && now - lastBaseAt >= 0
-      && now - lastBaseAt <= BASE_REUSE_MAX_AGE_MS;
+    const canReuseBaseState = canReuseSequence(renderer, scene, pass, now);
 
     const hadSceneAutoUpdate = !!scene?.autoUpdate;
     const shadowMap = renderer.shadowMap;
@@ -148,7 +175,7 @@
     }
     const endedAt = performance.now();
 
-    if (pass === 'base') lastBaseRenderAt.set(scene, endedAt);
+    updateSequence(renderer, scene, pass, endedAt, canReuseBaseState);
     record(pass, renderer, endedAt - startedAt);
     maybeLog(endedAt);
     return result;
@@ -162,6 +189,8 @@
         currentWindow: JSON.parse(JSON.stringify(windowStats)),
         reusedSceneMatrixPasses,
         skippedShadowAutoUpdates,
+        sequenceInvalidations,
+        maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
       };
     },
     classifyPass,
