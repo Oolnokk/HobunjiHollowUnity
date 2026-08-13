@@ -15,7 +15,53 @@
   const ZIP_COOLDOWN_S = 0.18;
   const WALK_SPEED_MUL = 0.66; // mirrors the demo's 118/178 ratio while active
 
+  // Base dodge polish. game.js already charges 18 stamina and grants a real
+  // 380 ms invulnerability window; this module only adds the requested
+  // somersault presentation and raises the effective cost to 30 without
+  // duplicating or replacing the existing i-frame path.
+  const BASE_DODGE_EXTRA_STAMINA_COST = 12; // Used on each ordinary dodge start; 18 + 12 = 30 total stamina.
+  const BASE_DODGE_SOMERSAULT_DUR_S = 0.22; // Used by the prone-recovery roll playback so it ends with dodge movement.
+  let baseDodgeWasActive = false; // Used by updateBaseDodgeEnhancements to detect only the rising edge of player.dodging.
+
   function now() { return performance.now() / 1000; }
+
+  function updateBaseDodgeEnhancements() {
+    const deps = window.Combat.deps;
+    const player = deps?.player;
+    if (!player) return;
+
+    const dodging = !!player.dodging;
+    if (dodging && !baseDodgeWasActive) {
+      // Reuse the same non-blocking spend path as game.js's base dodge so the
+      // larger cost can still overdraw into Exhausted instead of refusing the
+      // action at low stamina.
+      if (window.ResourceSystem) {
+        window.ResourceSystem.spendStamina(player, BASE_DODGE_EXTRA_STAMINA_COST, 'dodge somersault');
+      } else {
+        player.stamina = Math.max(0, player.stamina - BASE_DODGE_EXTRA_STAMINA_COST);
+      }
+
+      // This is the exact procedural 360° recovery arc used when the player
+      // exits prone, just time-compressed to the ordinary dodge duration so
+      // the visual roll does not lengthen the dodge or increase its travel.
+      window.ImpactRagdollPlayback?.beginRecoveryArc(BASE_DODGE_SOMERSAULT_DUR_S);
+    }
+    baseDodgeWasActive = dodging;
+  }
+
+  function installBaseDodgeEnhancements() {
+    // Combat.update is already the per-frame combat seam game.js calls. Wrap
+    // it once here instead of adding a second requestAnimationFrame loop or
+    // reaching into game.js's closure-private performDodge implementation.
+    const originalUpdate = window.Combat.update;
+    if (originalUpdate?.__hobunjiBaseDodgeEnhancements) return;
+    const enhancedUpdate = function enhancedCombatUpdate(dt) {
+      originalUpdate(dt);
+      updateBaseDodgeEnhancements();
+    };
+    enhancedUpdate.__hobunjiBaseDodgeEnhancements = true;
+    window.Combat.update = enhancedUpdate;
+  }
 
   function register() {
     let active = false;
@@ -90,5 +136,6 @@
     window.Combat.abilities.register('blinkDodge', { label: 'Blink Dodge', slotFamily: 'hold', category: 'defensiveHold', onHoldStart, onHoldUpdate, onHoldEnd });
   }
 
+  installBaseDodgeEnhancements();
   register();
 })();
