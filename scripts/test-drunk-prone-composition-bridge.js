@@ -106,7 +106,7 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(lastLegUpdate.suppressed, true);
 
   // Bandit feet use their dedicated floor pivot, so the bridge injects the
-  // existing drunken-locomotion provider/body root before the wrapped attach.
+  // existing locomotion provider/body root before the wrapped attach.
   const banditBodyRoot = { name: 'bandit_avatar_group' };
   const banditLegPivot = { name: 'bandit_legs_pivot', parent: banditBodyRoot };
   const banditLegs = ProceduralLegAnimation.attach({}, banditLegPivot, { name: 'Nakku' });
@@ -134,8 +134,8 @@ vm.runInContext(source, context, { filename: modulePath });
   pendingBanditEntity.prone = false;
   assert.ok(Math.abs(banditLossProvider() - 0.75) < 1e-12);
 
-  // The render-boundary wrapper republishes player drunk pitch/roll as additive
-  // after gameplay-facing writers have resolved their base yaw for the frame.
+  // The render-boundary wrapper republishes player low-Footing pitch/roll as
+  // additive after gameplay-facing writers resolve their base yaw for the frame.
   const renderer = new WebGLRenderer();
   composerSet = null;
   composerCleared = null;
@@ -147,8 +147,8 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.ok(Math.abs(composerSet.contribution.rotation.pitch - 12 * Math.PI / 180) < 1e-12);
   assert.ok(Math.abs(composerSet.contribution.rotation.roll - (-18 * Math.PI / 180)) < 1e-12);
 
-  // While prone, the stored drunkenness remains but its visual body channel is
-  // removed so ragdoll/recovery owns the pose exclusively.
+  // While prone, the stored drunkenness remains but the unsteady body channel
+  // is removed so ragdoll/recovery owns the pose exclusively.
   player.prone = true;
   composerSet = null;
   composerCleared = null;
