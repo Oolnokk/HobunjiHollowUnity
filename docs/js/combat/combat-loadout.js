@@ -187,3 +187,71 @@
     load,
   };
 })();
+
+// Weapon/tool idle stance bootstrap. EquipmentPanel is the existing narrow
+// owner of tool definitions, slot assignments, and held-tool meshes; capture
+// its normal init(deps) call rather than widening game.js with another system.
+(() => {
+  'use strict';
+
+  let stanceInitDeps = null; // Last EquipmentPanel init payload, used if the stance script finishes loading afterward.
+  let equipmentPanelValue = window.EquipmentPanel || null; // Temporary value behind the pre-definition window accessor below.
+
+  function initializeStancesIfReady() {
+    if (!stanceInitDeps || !window.WeaponToolStances?.init) return;
+    window.WeaponToolStances.init(stanceInitDeps);
+  }
+
+  function wrapEquipmentPanel(panel) {
+    if (!panel || panel.__weaponToolStanceInitWrapped) return panel;
+    const originalInit = panel.init; // Existing EquipmentPanel initializer remains authoritative and runs first.
+    if (typeof originalInit !== 'function') return panel;
+
+    panel.init = function weaponToolStanceAwareEquipmentInit(injectedDeps) {
+      const result = originalInit.call(this, injectedDeps); // Preserve all existing equipment/inventory initialization behavior.
+      stanceInitDeps = injectedDeps;
+      initializeStancesIfReady();
+      return result;
+    };
+    Object.defineProperty(panel, '__weaponToolStanceInitWrapped', { value: true, configurable: true });
+    return panel;
+  }
+
+  if (equipmentPanelValue) {
+    equipmentPanelValue = wrapEquipmentPanel(equipmentPanelValue);
+    window.EquipmentPanel = equipmentPanelValue;
+  } else {
+    // equipment-panel.js is parser-loaded later than combat-loadout.js. Intercept
+    // its one assignment, wrap init, then immediately restore a normal writable
+    // global property so no later code has to know this bootstrap existed.
+    Object.defineProperty(window, 'EquipmentPanel', {
+      configurable: true,
+      enumerable: true,
+      get() { return equipmentPanelValue; },
+      set(value) {
+        equipmentPanelValue = wrapEquipmentPanel(value);
+        Object.defineProperty(window, 'EquipmentPanel', {
+          value: equipmentPanelValue,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
+      },
+    });
+  }
+
+  if (!window.WeaponToolStances && typeof document !== 'undefined') {
+    const existingScript = document.querySelector('script[data-weapon-tool-stances]'); // Prevents duplicate loads if this script is re-evaluated in dev mode.
+    if (!existingScript) {
+      const script = document.createElement('script'); // Dynamically loads the isolated stance runtime without adding another game.js dependency.
+      script.src = 'js/weapon-tool-stances.js?v=20260814a';
+      script.async = false;
+      script.dataset.weaponToolStances = 'true';
+      script.onload = initializeStancesIfReady;
+      script.onerror = () => window.__farmLog?.('[weapon-stance] failed to load js/weapon-tool-stances.js', 'warn');
+      (document.head || document.documentElement).appendChild(script);
+    }
+  } else {
+    initializeStancesIfReady();
+  }
+})();
