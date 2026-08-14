@@ -7,7 +7,7 @@
   let deps = null; // Live EquipmentPanel dependencies: slots, defs, active slot, holder, meshes.
   let holderHookInstalled = false; // Guards the toolHolder.updateMatrixWorld render-pose hook.
   let combatHooksInstalled = false; // Guards combat visual wrappers used to protect active attacks.
-  let lastHolderQuaternion = null; // Previous unmodified holder orientation for tool-motion detection.
+  let lastRelativeHolderQuaternion = null; // Previous holder orientation relative to the player body.
   let holderMotionBusyUntil = 0; // Grace period keeping idle poses out of active tool swings.
   let combatBusyUntil = 0; // End of current non-held combat visual window.
   let combatHoldActive = false; // True while a charged/held attack is frozen at windup.
@@ -77,16 +77,51 @@
     return qYaw.multiply(qPitch).multiply(qRoll);
   }
 
-  function holderIsMoving(now) {
+  // Compute world orientation from the quaternion hierarchy instead of matrix
+  // decomposition. The player rig contains mirrored sprite scales, so the
+  // quaternion chain is the safer basis for comparing attachment rotations.
+  function hierarchyWorldQuaternion(node) {
+    if (!node?.quaternion) return null;
+    const chain = [];
+    for (let current = node; current; current = current.parent) chain.push(current);
+    const worldQ = new THREE.Quaternion();
+    worldQ.identity();
+    for (let i = chain.length - 1; i >= 0; i -= 1) {
+      if (chain[i]?.quaternion) worldQ.multiply(chain[i].quaternion);
+    }
+    return worldQ.normalize();
+  }
+
+  // toolHolder is registered with PlayerBodyTransformComposer as an external
+  // root, so facing/composer rotations affect it together with playerMesh.
+  // Comparing holder orientation relative to the body cancels those shared
+  // rotations while preserving genuine tool-holder animation.
+  function relativeHolderQuaternion() {
     const holder = deps?.toolHolder;
-    if (!holder?.quaternion) return false;
-    if (!lastHolderQuaternion) {
-      lastHolderQuaternion = holder.quaternion.clone();
+    const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    if (!holder?.quaternion || !playerMesh?.quaternion) return null;
+
+    const holderWorldQ = hierarchyWorldQuaternion(holder);
+    const bodyWorldQ = hierarchyWorldQuaternion(playerMesh);
+    if (!holderWorldQ || !bodyWorldQ) return null;
+    return bodyWorldQ.invert().multiply(holderWorldQ).normalize();
+  }
+
+  function holderIsMoving(now) {
+    const relativeQ = relativeHolderQuaternion();
+    if (!relativeQ) {
+      // Do not fall back to raw toolHolder rotation: character facing would
+      // then be mistaken for a tool swing, which is the bug this basis avoids.
+      lastRelativeHolderQuaternion = null;
       return false;
     }
-    const dot = Math.min(1, Math.abs(lastHolderQuaternion.dot(holder.quaternion)));
+    if (!lastRelativeHolderQuaternion) {
+      lastRelativeHolderQuaternion = relativeQ.clone();
+      return false;
+    }
+    const dot = Math.min(1, Math.abs(lastRelativeHolderQuaternion.dot(relativeQ)));
     const angularStep = 2 * Math.acos(dot);
-    lastHolderQuaternion.copy(holder.quaternion);
+    lastRelativeHolderQuaternion.copy(relativeQ);
     if (angularStep > 0.004) holderMotionBusyUntil = Math.max(holderMotionBusyUntil, now + 650);
     return now < holderMotionBusyUntil;
   }
@@ -205,7 +240,7 @@
         }
       }
 
-      const stateLabel = stanceApplied ? 'idle-holder' : combatBusy ? 'combat' : holderMoving ? 'moving' : 'default';
+      const stateLabel = stanceApplied ? 'idle-holder' : combatBusy ? 'combat' : holderMoving ? 'tool-motion' : 'default';
       logState(activeSlot, itemKey, def, stateLabel);
 
       let result;
@@ -232,6 +267,7 @@
 
   function debugSnapshot() {
     const state = activeState();
+    const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
     return {
       activeSlot: state.activeSlot,
       itemKey: state.itemKey,
@@ -240,6 +276,7 @@
       sourceAnimStyle: state.def?.animStyle || null,
       stanceApplied,
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
+      holderMotionBasis: playerMesh ? 'player-body-relative' : 'composer-body-missing',
       holderMotionBusyMs: Math.max(0, Math.round(holderMotionBusyUntil - performance.now())),
       combatBusyMs: Math.max(0, Math.round(combatBusyUntil - performance.now())),
       combatHoldActive,
@@ -257,7 +294,7 @@
     // Do not force inventory/action UI here: sibling systems receive their
     // own init(deps) payloads later in game.js's normal boot sequence.
     window.__farmLog?.(
-      `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
+      `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} motion=player-body-relative hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
       'combat'
     );
   }
