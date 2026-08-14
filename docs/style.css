@@ -2793,99 +2793,219 @@
        flow layout can't silently overlap the way two independently-sized
        absolutely-positioned pieces already has, twice, earlier in this
        file's history. */
+    /* Ported directly from the reference's own buildHostedMusicEdgeControls
+       (docs/references/(HA)MusicMinigameV3.html) rather than an original
+       design — compactUtilityPanel (4-way Auto Pick tap cross) bottom-left,
+       fiveGroupBoardPanel (5 bank columns x 4 notes each — deliberately no
+       X/A/B/Y face-button diamond, matching the reference's own default
+       layout in every one of its three manual input modes) bottom-right,
+       #musicLayoutHud (manual mobile/keyboard/controller cycle button)
+       top-center, #musicModeShiftHud (active-bank reminder, keyboard/
+       controller only) top-left, and #compactSongPicker collapsed above the
+       left panel. See buildEdgeControls in js/music-minigame.js for the
+       matching DOM/behavior. Values below are the reference's own final
+       (V78) cascade, collapsed to their end state rather than replayed as
+       incremental !important layers. */
     #leftMusicControls, #rightMusicControls {
-      position: absolute; top: 50%; transform: translateY(-50%);
-      display: flex; flex-direction: column; align-items: center; gap: 10px;
-      width: clamp(160px, 15vw, 210px);
-      pointer-events: none;
+      position: absolute; z-index: 6; top: auto;
+      bottom: max(6px, calc(env(safe-area-inset-bottom) + 4px));
+      height: auto; display: flex; align-items: flex-end; pointer-events: none;
     }
-    #leftMusicControls { left: 1.5vw; }
-    #rightMusicControls { right: 1.5vw; }
+    #leftMusicControls { left: max(6px, env(safe-area-inset-left)); justify-content: flex-start; max-width: 38vw; }
+    #rightMusicControls { right: max(6px, env(safe-area-inset-right)); justify-content: flex-end; max-width: 46vw; }
     #leftMusicControls > *, #rightMusicControls > * { pointer-events: auto; }
-    .lyreJoystickPad {
-      position: relative; border-radius: 50%; aspect-ratio: 1;
-      width: clamp(90px, 9vw, 120px);
-      background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.13);
-      touch-action: none; flex-shrink: 0;
-    }
-    .lyreJoystickPad.strum { width: clamp(72px, 7vw, 96px); }
-    .lyreJoystickBase { position: absolute; inset: 0; border-radius: 50%; }
-    .lyreJoystickKnob.edgeStickNub {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-      width: 46%; height: 46%; border-radius: 50%;
-      background: rgba(255,255,255,0.14); border: 2px solid rgba(255,255,255,0.28);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 9px; font-weight: 900; letter-spacing: .04em; color: #cfe0ff; pointer-events: none;
-      transition: transform .03s linear;
-    }
-    .lyreJoystickPad.held .lyreJoystickKnob { background: rgba(255,255,255,0.22); }
-    /* wrap, not nowrap: 4 circles + gaps (200px) can exceed the cluster's
-       own narrow-viewport minimum width (160px) — wrapping to 2x2 avoids
-       silently overflowing the container instead of trying to squeeze
-       fixed-size circles into less room than they need. */
-    .lyreBankRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; }
-    .lyreCircBtn {
-      position: relative; border-radius: 50%; aspect-ratio: 1; width: 44px;
-      background: var(--glass, rgba(20,28,44,.55)); border: 1.5px solid rgba(255,255,255,.28);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      display: flex; align-items: center; justify-content: center; flex-direction: column;
-      font-weight: 900; color: #edf5ff; cursor: pointer; touch-action: none; user-select: none;
-      box-shadow: 0 3px 10px rgba(0,0,0,.28); flex-shrink: 0;
-    }
-    .lyreCircBtn .glyph { font-size: 13px; line-height: 1; pointer-events: none; }
-    .lyreCircBtn-label { display: block; font-size: 6px; letter-spacing: .05em; text-transform: uppercase; color: #9eb2cb; pointer-events: none; }
-    .lyreCircBtn.held, .lyreCircBtn:active { transform: scale(.92); filter: brightness(1.22); box-shadow: 0 0 16px currentColor; }
-    .lyreCircBtn.small { width: 36px; }
-    .lyreCircBtn.cyan { color: #5fe4ff; }
-    .lyreCircBtn.amber { color: #ffc45f; }
-    .lyreCircBtn.violet { color: #d66cff; }
-    .lyreCircBtn.system { color: #6ba9ff; border-color: rgba(107,169,255,.42); }
-    .lyreCircBtn.exit { width: 40px; }
-    .lyreClusterTitle { font-size: 7px; color: #9eb2cb; letter-spacing: .12em; text-transform: uppercase; }
-    /* Six equal-sized tap targets (Single Note + five auto-arpeggio
-       patterns) replacing the old drag-a-stick-into-a-wedge gesture — see
-       buildEdgeControls in js/music-minigame.js. A plain grid of labeled
-       buttons works without a gamepad and doesn't need a note held down at
-       the same time just to browse patterns. Inherently textual, so this
-       one cluster keeps a small card background instead of floating bare. */
-    .lyrePatternCard {
-      width: 100%; padding: 6px; border-radius: 14px;
-      border: 1px solid rgba(220,238,255,.18); background: rgba(7,16,26,.4);
+    .edgeMusicPanel {
+      pointer-events: auto; display: flex; flex-direction: column; gap: 4px; padding: 4px;
+      border: 1px solid rgba(220,238,255,.18); border-radius: 18px; background: rgba(7,16,26,.04);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
       backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      box-sizing: border-box; max-height: none; overflow: visible; transform: none;
     }
-    .lyrePatternHint { font-size: 7px; color: #9eb2cb; text-align: center; margin-bottom: 4px; }
-    .edgePatternGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
-    .edgePatternBtn {
-      min-height: 30px; padding: 3px 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18);
-      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
-      color: #edf5ff; font-size: 8px; font-weight: 900; letter-spacing: .03em; text-transform: uppercase;
-      cursor: pointer; touch-action: manipulation;
+    #leftMusicControls .edgeMusicPanel.compactUtilityPanel { width: clamp(116px, 12vw, 148px); }
+    #rightMusicControls .edgeMusicPanel.fiveGroupBoardPanel { width: clamp(168px, 19vw, 216px); }
+    .concertinaGroupHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #9eb2cb; font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
+    .concertinaGroupHead strong { color: #eff8ff; font-size: 10px; letter-spacing: .06em; }
+    .concertinaGroupHead small { color: #9eb2cb; font-size: 7px; letter-spacing: .05em; }
+
+    .edgeControllerBtn {
+      position: relative; min-height: 36px; padding: 3px 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,.18);
+      background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.025));
+      box-shadow: inset 0 1px rgba(255,255,255,.08), 0 5px 12px rgba(0,0,0,.2);
+      display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1px;
+      font-weight: 900; cursor: pointer; color: #edf5ff; touch-action: none; user-select: none;
     }
-    .edgePatternBtn.selected {
-      border-color: #67f4a4; color: #67f4a4; background: linear-gradient(180deg, rgba(103,244,164,.22), rgba(103,244,164,.05));
-      box-shadow: 0 0 12px rgba(103,244,164,.35);
+    .edgeControllerBtn .glyph { font-size: 12px; line-height: 1; }
+    .edgeControllerBtn .action-label { font-size: 7px; color: #9eb2cb; letter-spacing: .05em; text-transform: uppercase; text-align: center; }
+    .edgeControllerBtn.held, .edgeControllerBtn:active {
+      transform: translateY(2px) scale(.985); filter: brightness(1.22);
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.16), 0 0 22px currentColor;
     }
-    .lyreUtilRow { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; flex-shrink: 0; }
-    .lyrePillBtn {
-      display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px;
-      background: var(--glass, rgba(20,28,44,.55)); border: 1.5px solid rgba(107,169,255,.42);
-      color: #6ba9ff; font-size: 9px; font-weight: 900; cursor: pointer; touch-action: manipulation;
+    .edgeControllerBtn.system { color: #6ba9ff; }
+
+    .edgeStickPad {
+      position: relative; border-radius: 50%; aspect-ratio: 1; width: 100%; max-width: 70px;
+      justify-self: center; align-self: center;
+      background: radial-gradient(circle, rgba(255,255,255,.08) 0 31%, rgba(0,0,0,.35) 33% 55%, rgba(255,255,255,.05) 57% 70%, rgba(0,0,0,.2) 72%);
+      border: 1px solid rgba(255,255,255,.16); touch-action: none; overflow: visible;
     }
-    .lyrePillBtn .glyph { font-size: 12px; }
-    /* Diamond note layout — matches the reference's own X-left/A-bottom/
-       B-right/Y-top face-button arrangement, same idea as the arch's
-       circular buttons just diamond- rather than arc-shaped since four
-       buttons read more clearly as a gamepad face cluster that way. */
-    .lyreFaceDiamond { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 6px; width: clamp(140px, 13vw, 170px); aspect-ratio: 1; flex-shrink: 0; }
-    .lyreFaceDiamond .lyreCircBtn { width: 100%; }
-    .lyreFaceDiamond .y { grid-column: 2; grid-row: 1; }
-    .lyreFaceDiamond .x { grid-column: 1; grid-row: 2; }
-    .lyreFaceDiamond .b { grid-column: 3; grid-row: 2; }
-    .lyreFaceDiamond .a { grid-column: 2; grid-row: 3; }
+    .fiveGroupBoardPanel .edgeStickPad.strum { max-width: 40px; }
+    .edgeStickPad::before, .edgeStickPad::after { position: absolute; left: 50%; transform: translateX(-50%); font-size: 14px; color: rgba(255,255,255,.42); pointer-events: none; }
+    .edgeStickPad.strum::before { content: '▲'; top: 5px; }
+    .edgeStickPad.strum::after { content: '▼'; bottom: 5px; }
+    .edgeStickNub {
+      position: absolute; width: 42%; height: 42%; left: 29%; top: 29%; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #71809d, #20283a 64%, #0c1019);
+      border: 1px solid rgba(255,255,255,.22); box-shadow: 0 6px 12px rgba(0,0,0,.45); pointer-events: none;
+      display: grid; place-items: center; font-size: 8px; color: #9eb2cb; transition: transform .03s linear;
+    }
+    .concertinaStrumWrap { display: grid; justify-items: center; gap: 4px; }
+    .concertinaStrumWrap small { display: none; }
+    .edgeStickSide { display: flex; flex-direction: column; gap: 3px; justify-content: center; }
+    .edgeStickSide .edgeControllerBtn { min-width: 40px; width: 40px; min-height: 25px; padding: 1px 2px; }
+    .edgeStickSide .edgeControllerBtn .glyph { font-size: 8px; }
+    .edgeStickSide .edgeControllerBtn .action-label { font-size: 5.5px; }
+
+    /* Four-way Auto Pick tap cross — plain tap targets instead of the
+       drag-a-stick-into-a-wedge gesture, and instead of this file's own
+       prior six-pattern button grid. */
+    .compactUtilityPanel .edgeLeftStickRow.fourWayAutoPickRow {
+      display: grid; grid-template-columns: 82px 42px; align-items: end; gap: 3px;
+    }
+    .autoPickCrossWrap { display: grid; justify-items: center; gap: 3px; min-width: 0; }
+    .autoPickCross { width: 82px; height: 82px; display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr); gap: 2px; }
+    .autoPickCrossBtn {
+      min-width: 0; min-height: 0; width: 100%; height: 100%; padding: 2px; border-radius: 7px;
+      display: grid; place-items: center; text-align: center; line-height: 1;
+    }
+    .autoPickCrossBtn[data-auto-pick-sector="0"] { grid-column: 2; grid-row: 1; }
+    .autoPickCrossBtn[data-auto-pick-sector="1"] { grid-column: 3; grid-row: 2; }
+    .autoPickCrossBtn[data-auto-pick-sector="2"] { grid-column: 2; grid-row: 3; }
+    .autoPickCrossBtn[data-auto-pick-sector="3"] { grid-column: 1; grid-row: 2; }
+    .autoPickCrossCenter {
+      grid-column: 2; grid-row: 2; border-radius: 7px; border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.025); display: grid; place-items: center; color: #9eb2cb;
+      font-size: 6px; font-weight: 900; letter-spacing: .08em;
+    }
+    .autoPickCrossBtn .directionGlyph { font-size: 9px; font-weight: 1000; }
+    .autoPickCrossBtn .modeText { display: block; max-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 5.5px; color: #9eb2cb; }
+    .autoPickCrossBtn.selected { border-color: #ffc45f; color: #ffc45f; box-shadow: 0 0 11px rgba(255,196,95,.48), inset 0 0 0 1px rgba(255,255,255,.05); }
+    .autoPickCrossBtn.selected .modeText { color: #ffe6ae; }
+    .autoPickCrossHint { min-height: 8px; font-size: 6px; line-height: 1; color: #9eb2cb; text-transform: uppercase; letter-spacing: .09em; }
+
+    /* Five bank columns x four notes — direct-address buttons
+       (data-direct-bank + data-direct-note), no face-button diamond. */
+    .fiveGroupBoard { display: grid; grid-template-columns: repeat(5, minmax(25px,1fr)); gap: 3px; align-items: start; }
+    .fiveGroupColumn {
+      --group-color: #67e3d3; display: grid; gap: 3px; min-width: 0; padding: 3px 2px;
+      border-radius: 10px; border: 1px solid color-mix(in srgb, var(--group-color) 50%, rgba(255,255,255,.08));
+      background: linear-gradient(180deg, color-mix(in srgb, var(--group-color) 14%, rgba(6,10,18,.96)), rgba(5,8,15,.96));
+      box-shadow: inset 0 1px rgba(255,255,255,.04), 0 6px 12px rgba(0,0,0,.18); overflow: visible;
+    }
+    .fiveGroupColumn.active { box-shadow: 0 0 18px color-mix(in srgb, var(--group-color) 58%, transparent), inset 0 0 0 1px rgba(255,255,255,.06); transform: translateY(-1px); }
+    .fiveGroupColumn[data-bank-slot="open"] { --group-color: #67e3d3; }
+    .fiveGroupColumn[data-bank-slot="lt"] { --group-color: #ffb86c; }
+    .fiveGroupColumn[data-bank-slot="rt"] { --group-color: #ff92a9; }
+    .fiveGroupColumn[data-bank-slot="lb"] { --group-color: #b39cff; }
+    .fiveGroupColumn[data-bank-slot="rb"] { --group-color: #92efbb; }
+    .fiveGroupColorCap { width: 70%; height: 3px; justify-self: center; border-radius: 999px; background: var(--group-color); box-shadow: 0 0 8px color-mix(in srgb, var(--group-color) 62%, transparent); }
+    .fiveGroupButtons { display: grid; justify-items: center; gap: 3px; }
+    .fiveGroupNoteBtn {
+      position: relative; width: 22px; min-width: 22px; max-width: 22px; height: 22px; min-height: 22px; max-height: 22px;
+      aspect-ratio: 1/1; padding: 0; border-radius: 6px; display: grid; place-items: center; overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--group-color) 55%, rgba(255,255,255,.10));
+      color: var(--group-color);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--group-color) 9%, rgba(255,255,255,.04)), rgba(255,255,255,.015));
+      box-shadow: inset 0 1px rgba(255,255,255,.05), 0 3px 7px rgba(0,0,0,.16);
+    }
+    .fiveGroupNoteBtn .noteOrdinal { font-size: 8px; line-height: 1; font-weight: 1000; text-transform: uppercase; }
+    .fiveGroupNoteBtn .action-label { display: none; }
+    .fiveGroupNoteBtn.dim .noteOrdinal { opacity: 0; }
+    .fiveGroupColumn.active .fiveGroupNoteBtn.mapped, .fiveGroupNoteBtn.played {
+      box-shadow: 0 0 12px color-mix(in srgb, var(--group-color) 60%, transparent), inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .fiveGroupBottomBar { display: grid; grid-template-columns: minmax(0,1fr) 42px; gap: 3px; align-items: center; }
+    .fiveGroupScaleRow { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 2px; }
+    .fiveGroupScaleRow .edgeControllerBtn { min-width: 0; min-height: 21px; height: 21px; padding: 1px 2px; }
+    .fiveGroupScaleRow .edgeControllerBtn .glyph { font-size: 8px; }
+    .fiveGroupScaleRow .edgeControllerBtn .action-label { display: none; }
+
+    /* Manual mobile/keyboard/controller layout cycle — top center. */
+    #musicLayoutHud {
+      position: fixed; z-index: 61; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+      pointer-events: auto;
+    }
+    #musicLayoutHud .layoutCycleBtn {
+      pointer-events: auto; min-width: 104px; height: 30px; display: grid; grid-template-columns: auto auto auto;
+      align-items: center; justify-content: center; gap: 6px; padding: 3px 8px; border-radius: 999px;
+      border: 1px solid rgba(175,226,255,.34); background: rgba(5,10,18,.96); color: #eef8ff;
+      box-shadow: 0 8px 22px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.07);
+      font: inherit; cursor: pointer; touch-action: manipulation;
+    }
+    #musicLayoutHud .layoutCycleBtn span { font-size: 7px; color: rgba(220,239,255,.68); letter-spacing: .09em; text-transform: uppercase; }
+    #musicLayoutHud .layoutCycleBtn strong { font-size: 9px; letter-spacing: .03em; }
+    #musicLayoutHud .layoutCycleBtn b { font-size: 12px; line-height: 1; color: #8fe4ff; }
+    #musicLayoutHud .layoutCycleBtn:active { transform: translateY(1px); }
+
+    /* Mode-shift reminder (which bank the current key/gamepad shift maps
+       to) — top left, keyboard/controller layouts only. */
+    #musicModeShiftHud {
+      position: fixed; z-index: 60; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
+      width: min(156px, 42vw); padding: 4px; display: grid; gap: 4px; pointer-events: auto;
+      border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: rgba(5,10,18,.9);
+      box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05);
+      backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    }
+    #musicModeShiftHud.hidden { display: none; }
+    .modeHudTitle { font-size: 7px; color: #9eb2cb; letter-spacing: .12em; text-transform: uppercase; }
+    .modeHudRow { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 2px; }
+    .modeHudChip {
+      display: grid; place-items: center; gap: 2px; min-height: 25px; padding: 2px 1px; border-radius: 7px;
+      border: 1px solid color-mix(in srgb, var(--group-color) 55%, rgba(255,255,255,.10)); color: var(--group-color);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--group-color) 14%, rgba(8,12,20,.94)), rgba(6,10,18,.95));
+      box-shadow: inset 0 1px rgba(255,255,255,.04); overflow: hidden;
+    }
+    .modeHudChip strong { font-size: 8px; line-height: 1; white-space: nowrap; }
+    .modeHudChip small { display: none; }
+    .modeHudChip.active { box-shadow: 0 0 18px color-mix(in srgb, var(--group-color) 58%, transparent), inset 0 0 0 1px rgba(255,255,255,.08); transform: translateY(-1px); }
+
+    /* Collapsible song picker above the bottom-left panel — position
+       measured in JS (positionCompactSongPicker in music-minigame.js) to
+       clear the real panel height. */
+    #compactSongPicker {
+      position: absolute; z-index: 32; left: max(6px, env(safe-area-inset-left)); bottom: 112px;
+      width: clamp(148px, 18vw, 224px); display: grid; gap: 4px; pointer-events: auto; box-sizing: border-box;
+    }
+    #compactSongPickerToggle {
+      width: 100%; min-height: 30px; padding: 4px 7px; display: grid; grid-template-columns: minmax(0,1fr) auto;
+      gap: 6px; align-items: center; border: 1px solid rgba(220,238,255,.18); border-radius: 10px;
+      background: rgba(5,10,18,.9); color: #eef8ff; box-shadow: 0 6px 14px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.04);
+      text-align: left; cursor: pointer;
+    }
+    #compactSongPickerToggle .songPickerTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 900; }
+    #compactSongPickerToggle .songPickerChevron { font-size: 9px; color: #9fdcff; transition: transform .12s ease; }
+    #compactSongPicker.open #compactSongPickerToggle .songPickerChevron { transform: rotate(180deg); }
+    #compactSongPickerList {
+      display: none; max-height: min(42dvh, 230px); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+      scrollbar-width: thin; padding: 4px; border: 1px solid rgba(220,238,255,.16); border-radius: 10px;
+      background: rgba(5,10,18,.94); box-shadow: 0 10px 22px rgba(0,0,0,.3);
+    }
+    #compactSongPicker.open #compactSongPickerList { display: grid; gap: 3px; }
+    .compactSongPickerGroup { padding: 4px 4px 2px; color: #7fa2ba; font-size: 6px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+    .compactSongPickerItem {
+      width: 100%; min-height: 29px; padding: 4px 6px; display: grid; grid-template-columns: minmax(0,1fr) auto;
+      gap: 6px; align-items: center; border: 1px solid rgba(255,255,255,.09); border-radius: 8px;
+      background: rgba(255,255,255,.035); color: #e9f5ff; text-align: left; cursor: pointer;
+    }
+    .compactSongPickerItem span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; font-weight: 800; }
+    .compactSongPickerItem small { font-size: 6px; color: #8faabd; white-space: nowrap; }
+    .compactSongPickerItem.selected { border-color: #67e3d3; color: #dffffa; box-shadow: inset 0 0 0 1px rgba(103,227,211,.12), 0 0 9px rgba(103,227,211,.2); }
+
     @media (max-width: 900px) and (orientation: landscape) {
-      #leftMusicControls, #rightMusicControls { gap: 6px; }
-      .lyreCircBtn { width: 36px; }
-      .edgePatternBtn { min-height: 26px; font-size: 7px; }
+      .autoPickCross { width: 72px; height: 72px; }
+      .compactUtilityPanel .edgeLeftStickRow.fourWayAutoPickRow { grid-template-columns: 72px 38px; }
+      .fiveGroupNoteBtn { width: 19px; min-width: 19px; max-width: 19px; height: 19px; min-height: 19px; max-height: 19px; }
+      #musicModeShiftHud { width: min(148px, 44vw); }
+      #compactSongPicker { width: min(154px, 42vw); }
     }
     /* Ambient NPC performance instances (see js/music-minigame.js) — audio
        only, never shown, so kept off-screen at a nonzero size rather than

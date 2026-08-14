@@ -29,12 +29,9 @@
 
   const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html';
   // The ONE songbook entry the ported app currently knows (see
-  // lyre-performance.html's SONGBOOK) — surfaced here as a simple two-way
-  // toggle rather than porting the original mockup's own multi-song
-  // authoring-oriented Songs modal, since the mockup was built for
-  // browsing/curating a whole catalog and we only need "improvise or play
-  // the one known song" today. Update this (and swap the toggle for a real
-  // picker) once a second song exists in the songbook.
+  // lyre-performance.html's SONGBOOK) — surfaced to the compact song
+  // picker below alongside Free Play and the built-in practice patterns.
+  // Update this once a second song exists in the songbook.
   const KNOWN_SONG_TITLE = 'When the Kininjis Bloom';
   const KNOWN_SONG_ID = 'when-the-kininjis-bloom'; // Matches SONGBOOK's key in lyre-performance.html.
   const AMBIENT_RECHECK_S = 1; // How often tick() re-evaluates who should be ambiently performing — this doesn't need per-frame precision.
@@ -89,62 +86,12 @@
   }
 
   // ── Player session (the visible overlay) ────────────────────────────
-  // The ported app gates its ENTIRE keyboard handler and its entire native
-  // gamepad-polling loop behind window.__hobunjiHostedInputLayout — without
-  // setting it, neither keyboard nor a real gamepad does anything at all
-  // inside the iframe (only the host's own edge-control taps would work).
-  //
-  // This can't just read game.js's own lastInputDevice: onPlayerFrameLoaded
-  // below calls frameEl.contentWindow.focus() so the iframe's own keydown
-  // listener actually receives keystrokes, and that focus hand-off fires a
-  // `blur` on the parent window — which game.js's own gamepad poller treats
-  // as "not focused" and stops updating lastInputDevice from. So this
-  // tracks the active device independently for the life of the overlay:
-  // keydown observed directly on the (same-origin) iframe's own window,
-  // gamepad activity polled unconditionally below, and touch inferred from
-  // pointerType on the host's own edge-control buttons.
-  let _localInputDevice = 'desktop';
-  function hostedLayoutFor(device) {
-    if (device === 'controller') return 'controller';
-    if (device === 'touch') return 'mobile';
-    return 'keyboard';
-  }
-  function anyGamepadActive() {
-    const pads = navigator.getGamepads?.() || [];
-    for (const pad of pads) {
-      if (!pad) continue;
-      if (pad.buttons.some(b => (b?.value || 0) > 0.5)) return true;
-      if (pad.axes.some(a => Math.abs(a || 0) > 0.35)) return true;
-    }
-    return false;
-  }
-  let _syncedLayout = null;
-  function syncInputLayout() {
-    if (!playerSession || !deps) return;
-    if (anyGamepadActive()) _localInputDevice = 'controller';
-    const layout = hostedLayoutFor(_localInputDevice);
-    if (layout === _syncedLayout) return;
-    _syncedLayout = layout;
-    try { frameEl.contentWindow.__hobunjiHostedInputLayout = layout; } catch {}
-    if (hostInputMethod !== device2GlyphSet(layout)) {
-      hostInputMethod = device2GlyphSet(layout);
-      refreshHostGlyphs();
-    }
-  }
-  function device2GlyphSet(layout) { return layout === 'keyboard' ? 'keyboard' : 'gamepad'; }
-
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
     const bridge = bridgeOf(frameEl);
     if (!bridge) { window.__farmLog?.('music minigame: control bridge missing after load', 'warn'); return; }
-    _syncedLayout = null;
-    _localInputDevice = deps?.getLastInputDevice?.() || 'desktop'; // Best guess before the player has touched anything inside the overlay yet.
-    try {
-      frameEl.contentWindow.addEventListener('keydown', () => { _localInputDevice = 'desktop'; }, { capture: true });
-    } catch {}
-    syncInputLayout();
     if (playerSession.mode === 'backup') bridge.startBackupPreviewSong?.(playerSession.songId);
-    else bridge.enterJamMode?.(); // Regular/improvise mode — the ported app's own Songbook/Chords UI handles picking a song or a chord progression + tempo from here.
+    else bridge.enterJamMode?.(); // Regular/improvise mode — the compact song picker (see buildEdgeControls) handles picking a real song from here.
     buildEdgeControls(frameEl);
     // The iframe's own keydown listeners (ASDF notes, arrow-key banks, ...)
     // only fire while it actually has focus — without this, whichever
@@ -182,9 +129,6 @@
     overlayEl?.classList.remove('open');
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
     teardownEdgeControls();
-    _syncedLayout = null;
-    _localInputDevice = 'desktop';
-    resetHostGamepadState();
     if (mode === 'lead') {
       const leader = leaderByArea.get(area);
       if (leader?.type === 'player') leaderByArea.delete(area); // Frees the area up — an on-duty instrument NPC picks leadership back up on tick()'s next pass.
@@ -210,34 +154,6 @@
     if (data?.source === 'hobunji-music-minigame' && data.type === 'exit-requested') close();
   });
 
-  // ── Edge controls (the actual touch/mouse play surface) ─────────────
-  // Ported from the original mockup's buildHostedMusicEdgeControls: the
-  // iframe's own native buttons are hidden by its "hosted-minigame" body
-  // styling (see lyre-performance.html) so the 3D scene stays clear, so
-  // this drives the exact same HobunjiMusicControlBridge methods that ARE
-  // still there. Rebuilt fresh each time the overlay opens (the iframe is
-  // a brand-new document every time, per close()'s src='about:blank').
-  const HOST_GAMEPAD_GLYPHS = {y:'Y',x:'X',b:'B',a:'A',lb:'▲',lt:'◀',rb:'▼',rt:'▶',start:'START'};
-  const HOST_KEYBOARD_GLYPHS = {y:'F',x:'A',b:'D',a:'S',lb:'▲',lt:'◀',rb:'▼',rt:'▶',start:'ESC'};
-  let hostInputMethod = 'gamepad';
-
-  function refreshHostGlyphs() {
-    const glyphs = hostInputMethod === 'keyboard' ? HOST_KEYBOARD_GLYPHS : HOST_GAMEPAD_GLYPHS;
-    document.querySelectorAll('#musicMinigameOverlay [data-label-key]').forEach(el => {
-      const glyph = glyphs[el.dataset.labelKey];
-      if (glyph) el.textContent = glyph;
-    });
-  }
-  window.addEventListener('message', (event) => {
-    const data = event.data;
-    if (!data || data.source !== 'hobunji-music-minigame') return;
-    // Input-method glyphs are host-driven now (see syncInputLayout) rather
-    // than iframe-detected — the ported app itself no longer knows which
-    // physical device the player is using; it only knows the layout the
-    // host told it to run.
-    if (data.type === 'sounded-note') onSoundedNote(data, event.source);
-  });
-
   // Drives each performer's Kurraya twitch (see js/kurraya-instrument.js via
   // game.js's triggerPlayerKurrayaTwitch/triggerNpcKurrayaTwitch) off the
   // actual notes sounding, not a canned animation loop. Every iframe here
@@ -245,6 +161,11 @@
   // (see registerVoice in lyre-performance.html) — which real-world
   // performer that maps to depends on whose iframe it came from and, for
   // the player's overlay in backup mode, which role the note itself was.
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || data.source !== 'hobunji-music-minigame' || data.type !== 'sounded-note') return;
+    onSoundedNote(data, event.source);
+  });
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
       if (playerSession?.mode === 'backup') {
@@ -270,75 +191,292 @@
     const rightMount = document.getElementById('rightMusicControls');
     if (leftMount) leftMount.innerHTML = '';
     if (rightMount) rightMount.innerHTML = '';
+    document.getElementById('compactSongPicker')?.remove();
+    document.getElementById('musicLayoutHud')?.remove();
+    document.getElementById('musicModeShiftHud')?.remove();
   }
 
+  // ── Edge controls (the actual touch/mouse/keyboard/gamepad play surface) ──
+  // Ported directly from the reference mockup's own buildHostedMusicEdgeControls
+  // (docs/references/(HA)MusicMinigameV3.html) rather than an original design:
+  // a 4-way Auto Pick tap cross + Pause/Restart Harmony on the left
+  // (compactUtilityPanel), five bank columns of four direct-address note
+  // buttons on the right (fiveGroupBoardPanel — deliberately no X/A/B/Y
+  // face-button diamond, matching the reference's own default layout), a
+  // manual mobile/keyboard/controller cycle button (#musicLayoutHud), an
+  // active-bank reminder shown only for keyboard/controller
+  // (#musicModeShiftHud), and a collapsible song picker above the left
+  // panel (#compactSongPicker). The iframe's own native buttons stay
+  // hidden by its "hosted-minigame" body styling (see
+  // lyre-performance.html) so the 3D scene stays clear; this drives the
+  // same HobunjiMusicControlBridge methods that ARE still exposed.
+  // Rebuilt fresh each time the overlay opens (the iframe is a brand-new
+  // document every time, per close()'s src='about:blank'), and each call
+  // owns its own closures for layout/bank/keyboard/gamepad state — no
+  // module-level state to reset between sessions.
   function buildEdgeControls(frame) {
     const leftMount = document.getElementById('leftMusicControls');
     const rightMount = document.getElementById('rightMusicControls');
     const bridge = bridgeOf(frame);
     if (!leftMount || !rightMount || !bridge) return false;
 
-    // Only meaningful in lead/solo mode — joining an NPC as backup already
-    // fixes the song to whatever they're leading (see beginPlayerSession),
-    // so there's nothing to pick.
-    const showSongToggle = playerSession?.mode === 'lead';
-    // Floating circular buttons around a joystick, matching the game's own
-    // regular mobile arch + joystick placement (see #joystickZone and
-    // #arcContainer in style.css) — individually floating glass circles
-    // anchored near a screen edge, not a bordered card wrapping everything.
-    // The pattern grid is the one exception: it's inherently textual (6
-    // named patterns), so it keeps its own small card for legibility.
-    leftMount.innerHTML = `
-      <div class="lyreJoystickPad" data-bridge-stick="left" aria-label="Rotate through hidden chord notes; each new sector plays immediately">
-        <div class="lyreJoystickBase"></div>
-        <div class="lyreJoystickKnob edgeStickNub">ARP</div>
-      </div>
-      <div class="lyreBankRow" aria-label="Melody bank shift">
-        <button class="lyreCircBtn bumper" data-bridge-bank="lb"><span class="glyph" data-label-key="lb">▲</span></button>
-        <button class="lyreCircBtn trigger" data-bridge-bank="lt"><span class="glyph" data-label-key="lt">◀</span></button>
-        <button class="lyreCircBtn trigger" data-bridge-bank="rt"><span class="glyph" data-label-key="rt">▶</span></button>
-        <button class="lyreCircBtn bumper" data-bridge-bank="rb"><span class="glyph" data-label-key="rb">▼</span></button>
-      </div>
-      <div class="lyrePatternCard" aria-label="Auto-arpeggio pattern — pick one, then hold a note to repeat it">
-        <div class="lyrePatternHint">Pick a pattern, then hold a note</div>
-        <div class="edgePatternGrid" data-pattern-grid></div>
-      </div>
-      <div class="lyreUtilRow">
-        ${showSongToggle ? `<button class="lyrePillBtn" data-song-mode-toggle><span class="glyph">🎵</span><span data-song-mode-label>Play ${KNOWN_SONG_TITLE}</span></button>` : ''}
-        <button class="lyreCircBtn system small" data-bridge-reset-harmony title="Restart Harmony"><span class="glyph">↻</span></button>
-      </div>`;
-    rightMount.innerHTML = `
-      <div class="lyreFaceDiamond" aria-label="Note buttons">
-        <button class="lyreCircBtn face violet y" data-bridge-note="3"><span class="glyph" data-label-key="y">Y</span></button>
-        <button class="lyreCircBtn face cyan x" data-bridge-note="0"><span class="glyph" data-label-key="x">X</span></button>
-        <button class="lyreCircBtn face violet b" data-bridge-note="2"><span class="glyph" data-label-key="b">B</span></button>
-        <button class="lyreCircBtn face amber a" data-bridge-note="1"><span class="glyph" data-label-key="a">A</span></button>
-      </div>
-      <div class="lyreJoystickPad strum" data-bridge-stick="right" aria-label="Flick vertically to strum">
-        <div class="lyreJoystickBase"></div>
-        <div class="lyreJoystickKnob edgeStickNub">STRUM</div>
-      </div>
-      <div class="lyreBankRow">
-        <button class="lyreCircBtn system small" data-bridge-action="scale-prev"><span class="glyph">◀</span></button>
-        <span class="lyreClusterTitle">Scale</span>
-        <button class="lyreCircBtn system small" data-bridge-action="scale-next"><span class="glyph">▶</span></button>
-      </div>
-      <button class="lyreCircBtn system exit" data-bridge-action="pause"><span class="glyph" data-label-key="start">START</span><span class="lyreCircBtn-label">Exit</span></button>`;
+    const groupDefinitions = [
+      { slot:'open', control:null, color:'#67e3d3', keyboardHint:'Open', controllerHint:'Open' },
+      { slot:'lt', control:'lt', color:'#ffb86c', keyboardHint:'◀', controllerHint:'LT' },
+      { slot:'rt', control:'rt', color:'#ff92a9', keyboardHint:'▶', controllerHint:'RT' },
+      { slot:'lb', control:'lb', color:'#b39cff', keyboardHint:'▲', controllerHint:'LB' },
+      { slot:'rb', control:'rb', color:'#92efbb', keyboardHint:'▼', controllerHint:'RB' },
+    ];
+    const noteDefinitions = [{ noteIndex:0 }, { noteIndex:1 }, { noteIndex:2 }, { noteIndex:3 }];
+    const noteGlyphsByLayout = { mobile:['1','2','3','4'], keyboard:['A','S','D','F'], controller:['X','A','B','Y'] };
+    const bankSlotByControl = Object.fromEntries(groupDefinitions.filter(g => g.control).map(g => [g.control, g.slot]));
+    const controlForBankSlot = Object.fromEntries(groupDefinitions.filter(g => g.control).map(g => [g.slot, g.control]));
+    const hostedBankOffsetBySlot = { open:0, lt:4, rt:8, lb:12, rb:16 }; // Used only by the Lyre highlight, so hosted keyboard/controller visuals have one authoritative active string.
+    const keyboardBankByCode = { ArrowLeft:'lt', ArrowUp:'rt', ArrowRight:'lb', ArrowDown:'rb' }; // Keyboard shift order follows the visible bank sequence: Left, Up, Right, Down.
+    const noteIndexByKeyCode = { KeyA:0, KeyS:1, KeyD:2, KeyF:3 };
+    const autoPickSectorByArrow = { ArrowUp:0, ArrowRight:1, ArrowDown:2, ArrowLeft:3 }; // Shift+Arrow selects one of the four slottable Auto Pick modes.
+    let activeInputLayout = ['mobile','keyboard','controller'].includes(window.__hobunjiHostedControlLayout) ? window.__hobunjiHostedControlLayout : 'mobile'; // Persists the player's last manual choice across overlay opens.
+    let activeBankSlot = 'open'; // Which color group glows in keyboard/controller layouts.
+    let activeBankResetTimer = 0; // Transient-tap fallback only; real held keyboard/controller banks suppress this.
+    const hostedKeyboardSources = new Map(); // Lets keyup release the exact held bridge inputs a keydown created.
+    const heldBankControls = new Set(); // Real keyboard/controller bank holds own the Lyre highlight until physical release.
+    const hostedControllerSources = new Map(); // Records held gamepad notes/banks so Controller layout routes every down/up pair through the bridge.
 
-    const sourceFor = (kind, value, pointerId) => `host-${kind}-${value}:${pointerId}`;
+    // Only meaningful in lead/solo mode — joining an NPC as backup already
+    // fixes the song to whatever they're leading (see beginPlayerSession).
+    const showSongPicker = playerSession?.mode === 'lead';
+
+    leftMount.innerHTML = `
+      <aside class="edgeMusicPanel compactUtilityPanel" aria-label="Left-side utility controls">
+        <div class="concertinaGroupHead"><strong>Auto Pick</strong><small>4 slottable modes</small></div>
+        <div class="edgeLeftStickRow fourWayAutoPickRow" aria-label="Four-way Auto Pick controls">
+          <div class="autoPickCrossWrap">
+            <div class="autoPickCross" aria-label="Four-way Auto Pick mode cross">
+              <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="0" aria-label="Select Up Auto Pick mode"><span class="directionGlyph">▲</span><span class="modeText">UP</span></button>
+              <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="1" aria-label="Select Right Auto Pick mode"><span class="directionGlyph">▶</span><span class="modeText">RIGHT</span></button>
+              <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="2" aria-label="Select Down Auto Pick mode"><span class="directionGlyph">▼</span><span class="modeText">DOWN</span></button>
+              <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="3" aria-label="Select Left Auto Pick mode"><span class="directionGlyph">◀</span><span class="modeText">LEFT</span></button>
+              <div class="autoPickCrossCenter">MODE</div>
+            </div>
+            <div class="autoPickCrossHint" data-auto-pick-hint>Tap direction</div>
+          </div>
+          <div class="edgeStickSide">
+            <button class="edgeControllerBtn system" type="button" data-bridge-action="pause"><span class="glyph">START</span><span class="action-label">Exit</span></button>
+            <button class="edgeControllerBtn system" type="button" data-bridge-reset-harmony><span class="glyph">↻</span><span class="action-label">Restart Harmony</span></button>
+          </div>
+        </div>
+      </aside>`;
+
+    rightMount.innerHTML = `
+      <aside class="edgeMusicPanel fiveGroupBoardPanel" aria-label="Five-group note board">
+        <div class="concertinaGroupHead"><strong>Five groups</strong><small>hold notes to continue Auto Pick</small></div>
+        <div class="fiveGroupBoard">${groupDefinitions.map(group => `
+          <section class="fiveGroupColumn" data-bank-slot="${group.slot}" style="--group-color:${group.color}" aria-label="${group.slot}">
+            <div class="fiveGroupColorCap" aria-hidden="true"></div>
+            <div class="fiveGroupButtons">${noteDefinitions.map(note => `<button class="edgeControllerBtn fiveGroupNoteBtn" type="button" data-direct-bank="${group.slot}" data-direct-note="${note.noteIndex}" style="--group-color:${group.color}"><span class="noteOrdinal"></span></button>`).join('')}</div>
+          </section>`).join('')}</div>
+        <div class="fiveGroupBottomBar">
+          <div class="fiveGroupScaleRow" aria-label="Scale controls">
+            <button class="edgeControllerBtn system" type="button" data-bridge-action="scale-prev"><span class="glyph">◀</span><span class="action-label">Prev scale</span></button>
+            <button class="edgeControllerBtn system" type="button" data-bridge-action="scale-next"><span class="glyph">▶</span><span class="action-label">Next scale</span></button>
+          </div>
+          <div class="concertinaStrumWrap" aria-label="Right stick strum input">
+            <div class="edgeStickPad strum" data-bridge-stick="right"><div class="edgeStickNub">STRUM</div></div>
+            <small>Strum</small>
+          </div>
+        </div>
+      </aside>`;
+
+    // ── Compact song picker (lead mode only) ───────────────────────────
+    let compactSongPicker = null;
+    if (showSongPicker) {
+      compactSongPicker = document.createElement('section');
+      compactSongPicker.id = 'compactSongPicker';
+      compactSongPicker.setAttribute('aria-label', 'Song selector');
+      compactSongPicker.innerHTML = `<button id="compactSongPickerToggle" type="button" aria-expanded="false"><span class="songPickerTitle">Song</span><span class="songPickerChevron">▼</span></button><div id="compactSongPickerList" role="listbox" aria-label="Songs"></div>`;
+      leftMount.parentElement?.appendChild(compactSongPicker);
+
+      const positionCompactSongPicker = () => {
+        const panel = leftMount.querySelector('.compactUtilityPanel');
+        if (!panel) return;
+        const bottomInset = Math.max(6, parseFloat(getComputedStyle(leftMount).bottom) || 6);
+        const panelHeight = panel.getBoundingClientRect().height;
+        compactSongPicker.style.bottom = `${Math.ceil(bottomInset + panelHeight + 7)}px`;
+      };
+
+      const renderCompactSongPicker = (menuState = null) => {
+        let menu = menuState;
+        try { menu ||= bridge.gameplayMenuState?.(); } catch (_) { menu = null; }
+        if (!menu) return;
+        const title = compactSongPicker.querySelector('.songPickerTitle');
+        const list = compactSongPicker.querySelector('#compactSongPickerList');
+        if (title) title.textContent = menu.selectedSongTitle || 'Choose song';
+        if (!list) return;
+        list.replaceChildren();
+        let lastGroup = '';
+        for (const song of menu.songs || []) {
+          const group = String(song.group || 'Songs');
+          if (group !== lastGroup) {
+            const heading = document.createElement('div');
+            heading.className = 'compactSongPickerGroup';
+            heading.textContent = group;
+            list.appendChild(heading);
+            lastGroup = group;
+          }
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'compactSongPickerItem';
+          button.classList.toggle('selected', song.id === menu.selectedSong);
+          button.dataset.compactSong = song.id;
+          button.setAttribute('role', 'option');
+          button.setAttribute('aria-selected', song.id === menu.selectedSong ? 'true' : 'false');
+          const label = document.createElement('span');
+          label.textContent = song.title;
+          const meta = document.createElement('small');
+          meta.textContent = song.id === menu.selectedSong ? 'Selected' : (song.bpm ? `${song.bpm} BPM` : 'Choose');
+          button.append(label, meta);
+          list.appendChild(button);
+        }
+      };
+      compactSongPicker.querySelector('#compactSongPickerToggle')?.addEventListener('click', event => {
+        event.preventDefault();
+        const open = !compactSongPicker.classList.contains('open');
+        compactSongPicker.classList.toggle('open', open);
+        event.currentTarget.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) renderCompactSongPicker();
+      });
+      compactSongPicker.querySelector('#compactSongPickerList')?.addEventListener('click', async event => {
+        const button = event.target.closest('[data-compact-song]');
+        if (!button) return;
+        event.preventDefault();
+        const songId = button.dataset.compactSong;
+        let menu = bridge.selectGameplaySong?.(songId);
+        compactSongPicker.classList.remove('open');
+        compactSongPicker.querySelector('#compactSongPickerToggle')?.setAttribute('aria-expanded', 'false');
+        if (songId !== 'freeplay') {
+          try { menu = await bridge.startGameplaySong?.() || menu; }
+          catch (error) { window.__farmLog?.(`music minigame: song start failed — ${error.message}`, 'warn'); }
+        }
+        renderCompactSongPicker(menu);
+      });
+      requestAnimationFrame(positionCompactSongPicker);
+      setTimeout(positionCompactSongPicker, 120);
+      window.addEventListener('resize', positionCompactSongPicker, { passive: true });
+      renderCompactSongPicker();
+    }
+
+    // ── Manual mobile/keyboard/controller layout cycle ──────────────────
+    let layoutHud = document.getElementById('musicLayoutHud');
+    if (!layoutHud) {
+      layoutHud = document.createElement('section');
+      layoutHud.id = 'musicLayoutHud';
+      document.body.appendChild(layoutHud);
+    }
+    let modeHud = document.getElementById('musicModeShiftHud');
+    if (!modeHud) {
+      modeHud = document.createElement('section');
+      modeHud.id = 'musicModeShiftHud';
+      document.body.appendChild(modeHud);
+    }
+
+    const applyHostedLayoutToFrame = () => {
+      try { if (frame.contentWindow) frame.contentWindow.__hobunjiHostedInputLayout = activeInputLayout; } catch {}
+    };
+    const glyphsForLayout = layout => noteGlyphsByLayout[layout] || noteGlyphsByLayout.mobile;
+    const pulseNoteButton = (bankSlot, noteIndex) => {
+      const button = rightMount.querySelector(`.fiveGroupNoteBtn[data-direct-bank="${bankSlot}"][data-direct-note="${noteIndex}"]`);
+      if (!button) return;
+      button.classList.add('played');
+      clearTimeout(button.__fiveGroupPlayedTimer);
+      button.__fiveGroupPlayedTimer = setTimeout(() => button.classList.remove('played'), 170);
+    };
+
+    const renderLayoutHud = () => {
+      const layoutOrder = ['mobile', 'keyboard', 'controller'];
+      const prettyLayout = activeInputLayout[0].toUpperCase() + activeInputLayout.slice(1);
+      layoutHud.innerHTML = `<button class="layoutCycleBtn" type="button" aria-label="Change music control layout. Current layout: ${prettyLayout}"><span>Layout</span><strong>${prettyLayout}</strong><b aria-hidden="true">↻</b></button>`;
+      layoutHud.querySelector('.layoutCycleBtn')?.addEventListener('click', () => {
+        const currentIndex = Math.max(0, layoutOrder.indexOf(activeInputLayout));
+        setInputLayout(layoutOrder[(currentIndex + 1) % layoutOrder.length]);
+      });
+    };
+
+    const modeHudGlyphFor = group => activeInputLayout === 'controller' ? group.controllerHint : group.keyboardHint;
+    const renderModeHud = () => {
+      modeHud.classList.toggle('hidden', activeInputLayout === 'mobile');
+      modeHud.innerHTML = `<div class="modeHudTitle">Mode shifts</div><div class="modeHudRow">${groupDefinitions.map(group => `<div class="modeHudChip${group.slot === activeBankSlot ? ' active' : ''}" style="--group-color:${group.color}"><strong>${modeHudGlyphFor(group)}</strong></div>`).join('')}</div>`;
+    };
+
+    const updateBoardLabels = () => {
+      const activeGlyphs = glyphsForLayout(activeInputLayout);
+      rightMount.querySelectorAll('.fiveGroupColumn').forEach(column => {
+        const bankSlot = column.dataset.bankSlot || 'open';
+        const showColumnGlyphs = activeInputLayout === 'mobile' || bankSlot === activeBankSlot;
+        column.classList.toggle('active', activeInputLayout === 'mobile' ? true : bankSlot === activeBankSlot);
+        column.querySelectorAll('.fiveGroupNoteBtn').forEach(button => {
+          const noteIndex = Number(button.dataset.directNote) || 0;
+          const glyph = activeGlyphs[noteIndex];
+          const ordinal = button.querySelector('.noteOrdinal');
+          if (ordinal) ordinal.textContent = showColumnGlyphs ? glyph : '';
+          button.classList.toggle('dim', !showColumnGlyphs);
+          button.setAttribute('aria-label', `${bankSlot} note ${glyph}`);
+        });
+      });
+    };
+
+    const applyActiveBankVisuals = () => {
+      if (activeInputLayout === 'mobile') activeBankSlot = 'open';
+      renderModeHud();
+      updateBoardLabels();
+    };
+
+    const setActiveBankSlot = slot => {
+      activeBankSlot = groupDefinitions.some(g => g.slot === slot) ? slot : 'open';
+      applyActiveBankVisuals();
+    };
+
+    const scheduleReturnToOpenBank = (delayMs = 340) => {
+      clearTimeout(activeBankResetTimer);
+      if (heldBankControls.size) return; // A real bank hold owns the highlight; transient input pulses cannot steal it.
+      activeBankResetTimer = setTimeout(() => {
+        if (!heldBankControls.size) setActiveBankSlot('open');
+      }, delayMs);
+    };
+
+    const releaseHostedKeyboardInputs = () => {
+      for (const [code, binding] of hostedKeyboardSources.entries()) {
+        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'bank') {
+          bridge.bankUp(binding.value, binding.sourceId);
+          heldBankControls.delete(binding.value);
+        }
+        hostedKeyboardSources.delete(code);
+      }
+      if (activeInputLayout === 'keyboard' && !heldBankControls.size) setActiveBankSlot('open');
+    };
+
+    const setInputLayout = layout => {
+      activeInputLayout = ['mobile', 'keyboard', 'controller'].includes(layout) ? layout : 'mobile';
+      window.__hobunjiHostedControlLayout = activeInputLayout;
+      applyHostedLayoutToFrame();
+      releaseHostedKeyboardInputs();
+      if (activeInputLayout !== 'controller') releaseHostedControllerInputs();
+      renderLayoutHud();
+      applyActiveBankVisuals();
+      setTimeout(() => readMode(), 0);
+    };
+
     const bindHeldButton = (button, down, up) => {
       let activePointer = null;
-      button.addEventListener('pointerdown', (event) => {
+      button.addEventListener('pointerdown', event => {
         if (activePointer != null) return;
         event.preventDefault();
-        if (event.pointerType === 'touch') _localInputDevice = 'touch';
-        else if (event.pointerType === 'mouse' || event.pointerType === 'pen') _localInputDevice = 'desktop';
         activePointer = event.pointerId;
         button.classList.add('held');
         try { button.setPointerCapture?.(event.pointerId); } catch {}
         down(event);
       });
-      const release = (event) => {
+      const release = event => {
         if (activePointer !== event.pointerId) return;
         event.preventDefault();
         up(event);
@@ -347,61 +485,295 @@
       };
       button.addEventListener('pointerup', release);
       button.addEventListener('pointercancel', release);
-      button.addEventListener('lostpointercapture', (event) => {
+      button.addEventListener('lostpointercapture', event => {
         if (activePointer == null) return;
         up({ pointerId: activePointer, preventDefault(){} });
         activePointer = null;
         button.classList.remove('held');
       });
-      button.addEventListener('contextmenu', (event) => event.preventDefault());
+      button.addEventListener('contextmenu', event => event.preventDefault());
     };
 
-    leftMount.querySelectorAll('[data-bridge-bank]').forEach((button) => {
-      const bank = button.dataset.bridgeBank;
+    const beginVisibleNoteHold = (button, pointerId) => {
+      const bankSlot = button.dataset.directBank || 'open'; // Held touch notes keep their color-group bank active for the full press.
+      const noteIndex = Math.max(0, Math.min(3, Number(button.dataset.directNote) || 0));
+      const bankControl = controlForBankSlot[bankSlot] || null; // Shifted color groups synthesize their bank modifier for as long as the note is held.
+      const holdId = `${bankSlot}-${noteIndex}-${pointerId}-${Math.round(performance.now())}`; // Unique bridge sources allow simultaneous held touches without cross-releasing.
+      const hold = { bankSlot, noteIndex, bankControl, bankSource:`hold-bank-${holdId}`, noteSource:`hold-note-${holdId}` };
+      button.__activeMusicNoteHold = hold;
+      setActiveBankSlot(activeInputLayout === 'mobile' ? 'open' : bankSlot);
+      bridge.wakeAudio().catch(() => {});
+      if (bankControl) bridge.bankDown(bankControl, hold.bankSource);
+      bridge.noteDown(noteIndex, hold.noteSource);
+      pulseNoteButton(bankSlot, noteIndex);
+    };
+
+    const endVisibleNoteHold = button => {
+      const hold = button.__activeMusicNoteHold;
+      if (!hold) return;
+      button.__activeMusicNoteHold = null;
+      bridge.noteUp(hold.noteIndex, hold.noteSource);
+      if (hold.bankControl) bridge.bankUp(hold.bankControl, hold.bankSource);
+      if (activeInputLayout !== 'mobile') scheduleReturnToOpenBank(120);
+    };
+
+    rightMount.querySelectorAll('.fiveGroupNoteBtn').forEach(button => {
       bindHeldButton(button,
-        (event) => bridge.bankDown(bank, sourceFor('bank', bank, event.pointerId)),
-        (event) => bridge.bankUp(bank, sourceFor('bank', bank, event.pointerId)));
+        event => beginVisibleNoteHold(button, event.pointerId),
+        () => endVisibleNoteHold(button));
     });
-    rightMount.querySelectorAll('[data-bridge-note]').forEach((button) => {
-      const note = Number(button.dataset.bridgeNote);
-      bindHeldButton(button,
-        (event) => bridge.noteDown(note, sourceFor('note', note, event.pointerId)),
-        (event) => bridge.noteUp(note, sourceFor('note', note, event.pointerId)));
+
+    leftMount.querySelectorAll('[data-auto-pick-sector]').forEach(button => {
+      button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        const sector = Math.max(0, Math.min(3, Number(button.dataset.autoPickSector) || 0));
+        bridge.wakeAudio().catch(() => {});
+        if (typeof bridge.setAutoPickMode === 'function') bridge.setAutoPickMode(sector, 'host-auto-pick-cross');
+        else {
+          const vectors = [[0,-1],[1,0],[0,1],[-1,0]];
+          const [x, y] = vectors[sector];
+          bridge.leftStick(x, y, 'host-auto-pick-cross');
+          bridge.releaseLeftStick();
+        }
+        readMode();
+      });
+      button.addEventListener('contextmenu', event => event.preventDefault());
     });
-    [...leftMount.querySelectorAll('[data-bridge-action]'), ...rightMount.querySelectorAll('[data-bridge-action]')].forEach((button) => {
+
+    [...leftMount.querySelectorAll('[data-bridge-action]'), ...rightMount.querySelectorAll('[data-bridge-action]')].forEach(button => {
       bindHeldButton(button, () => bridge.wakeAudio().catch(() => {}), () => bridge.tap(button.dataset.bridgeAction));
     });
-    leftMount.querySelector('[data-bridge-reset-harmony]')?.addEventListener('click', (event) => {
+    leftMount.querySelector('[data-bridge-reset-harmony]')?.addEventListener('click', event => {
       event.preventDefault();
       bridge.resetHarmony();
     });
 
-    // Toggles between free improvisation (the default on opening — see
-    // onPlayerFrameLoaded) and actually playing the one known songbook
-    // song. The label always names what tapping does NEXT, so it reads
-    // correctly in both states without a separate "current mode" readout.
-    const songModeBtn = leftMount.querySelector('[data-song-mode-toggle]');
-    const songModeLabel = songModeBtn?.querySelector('[data-song-mode-label]');
-    if (songModeBtn && songModeLabel) {
-      let playingSong = false;
-      songModeBtn.addEventListener('click', async (event) => {
-        event.preventDefault();
-        await bridge.wakeAudio?.().catch(() => {});
-        playingSong = !playingSong;
-        // startGameplaySong is a no-op while the selector is still on Free
-        // Play (its own default) — selectGameplaySong has to move it onto
-        // the known song first.
-        if (playingSong) { bridge.selectGameplaySong?.(KNOWN_SONG_ID); await bridge.startGameplaySong?.(); }
-        else bridge.enterJamMode?.();
-        songModeLabel.textContent = playingSong ? 'Improvise' : `Play ${KNOWN_SONG_TITLE}`;
+    const updateModeLabels = snapshot => {
+      const stateSnapshot = snapshot || bridge.getState?.() || {};
+      const labels = Array.isArray(stateSnapshot.leftStickModeLabels) ? stateSnapshot.leftStickModeLabels : ['SINGLE','F↔R','TREM 16','SKANK'];
+      const selectedSector = Math.max(0, Math.min(3, Number.isFinite(Number(stateSnapshot.leftStickSector)) ? Number(stateSnapshot.leftStickSector) : 0));
+      leftMount.querySelectorAll('[data-auto-pick-sector]').forEach(button => {
+        const sector = Number(button.dataset.autoPickSector);
+        const modeText = button.querySelector('.modeText');
+        if (modeText) modeText.textContent = String(labels[sector] || `MODE ${sector + 1}`).replace(/\s+/g, ' ').slice(0, 8);
+        button.classList.toggle('selected', sector === selectedSector);
       });
-    }
+      const hint = leftMount.querySelector('[data-auto-pick-hint]');
+      if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
+    };
+    const readMode = () => updateModeLabels(bridge.getState?.());
 
+    // ── Keyboard: installed on BOTH the host window and the iframe's own
+    // window, since frameEl.contentWindow.focus() (see onPlayerFrameLoaded)
+    // moves keyboard focus into the iframe, and that focus hand-off fires a
+    // `blur` the parent page's own gamepad-focus tracking would otherwise
+    // treat as "not focused". Listening on both windows means it doesn't
+    // matter which one actually holds focus. ──────────────────────────────
+    const installHostedKeyboardBridge = targetWindow => {
+      if (!targetWindow) return;
+      const previous = targetWindow.__hobunjiHostedKeyboardBridgeHandlers; // Rebuilds replace stale closures left behind by an earlier hosted-control instance.
+      if (previous) {
+        targetWindow.removeEventListener('keydown', previous.keydown, true);
+        targetWindow.removeEventListener('keyup', previous.keyup, true);
+        targetWindow.removeEventListener('blur', previous.blur);
+      }
+      const keydown = event => {
+        if (activeInputLayout !== 'keyboard' || event.repeat || event.target?.matches?.('input,select,textarea')) return;
+        const autoPickSector = autoPickSectorByArrow[event.code];
+        if (event.shiftKey && Number.isInteger(autoPickSector)) {
+          event.preventDefault();
+          event.stopImmediatePropagation?.();
+          bridge.wakeAudio().catch(() => {});
+          if (typeof bridge.setAutoPickMode === 'function') bridge.setAutoPickMode(autoPickSector, 'host-shift-arrow');
+          else {
+            const vectors = [[0,-1],[1,0],[0,1],[-1,0]];
+            const [x, y] = vectors[autoPickSector];
+            bridge.leftStick(x, y, 'host-shift-arrow');
+            bridge.releaseLeftStick();
+          }
+          readMode();
+          return;
+        }
+        const noteIndex = noteIndexByKeyCode[event.code];
+        if (Number.isInteger(noteIndex)) {
+          event.preventDefault();
+          event.stopImmediatePropagation?.();
+          const sourceId = `host-key-${event.code}`;
+          hostedKeyboardSources.set(event.code, { kind:'note', value:noteIndex, sourceId });
+          bridge.wakeAudio().catch(() => {});
+          bridge.noteDown(noteIndex, sourceId);
+          pulseNoteButton(activeBankSlot, noteIndex);
+          return;
+        }
+        const bankControl = keyboardBankByCode[event.code];
+        if (bankControl) {
+          event.preventDefault();
+          event.stopImmediatePropagation?.();
+          const sourceId = `host-key-${event.code}`;
+          hostedKeyboardSources.set(event.code, { kind:'bank', value:bankControl, sourceId });
+          heldBankControls.add(bankControl);
+          clearTimeout(activeBankResetTimer);
+          bridge.wakeAudio().catch(() => {});
+          bridge.bankDown(bankControl, sourceId);
+          setActiveBankSlot(bankSlotByControl[bankControl] || 'open');
+        }
+      };
+      const keyup = event => {
+        const binding = hostedKeyboardSources.get(event.code);
+        if (!binding) return;
+        event.preventDefault();
+        event.stopImmediatePropagation?.();
+        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'bank') {
+          bridge.bankUp(binding.value, binding.sourceId);
+          heldBankControls.delete(binding.value);
+        }
+        hostedKeyboardSources.delete(event.code);
+        if (binding.kind === 'bank') {
+          const remainingBank = [...heldBankControls].at(-1);
+          setActiveBankSlot(remainingBank ? (bankSlotByControl[remainingBank] || 'open') : 'open');
+        }
+      };
+      const blur = () => releaseHostedKeyboardInputs();
+      targetWindow.addEventListener('keydown', keydown, true);
+      targetWindow.addEventListener('keyup', keyup, true);
+      targetWindow.addEventListener('blur', blur);
+      targetWindow.__hobunjiHostedKeyboardBridgeHandlers = { keydown, keyup, blur };
+    };
+    installHostedKeyboardBridge(window);
+    installHostedKeyboardBridge(frame.contentWindow);
+
+    // ── Gamepad: the host owns the entire pad in Controller layout (see
+    // __hobunjiHostedInputLayout in lyre-performance.html — the ported
+    // app's own pollGamepad stops self-polling once that's set) so bank
+    // holds and the Lyre's active-bank glow share one input source. This
+    // loop runs continuously via its own generation counter so a rebuilt
+    // edge-controls instance invalidates any older poller instead of
+    // stacking two. ──────────────────────────────────────────────────────
+    const releaseHostedControllerInputs = () => {
+      for (const [key, binding] of hostedControllerSources.entries()) {
+        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'bank') {
+          bridge.bankUp(binding.value, binding.sourceId);
+          heldBankControls.delete(binding.value);
+        }
+        hostedControllerSources.delete(key);
+      }
+      bridge.releaseRightStick?.();
+      if (activeInputLayout === 'controller' && !heldBankControls.size) setActiveBankSlot('open');
+    };
+
+    const controllerPollGeneration = (window.__hobunjiHostedControllerPollGeneration || 0) + 1;
+    window.__hobunjiHostedControllerPollGeneration = controllerPollGeneration;
+    let controllerPrevButtons = [];
+    let controllerAutoPickSector = -1;
+    let controllerRightStickActive = false;
+    const controllerButton = (gamepad, index, key, kind, value) => {
+      const pressed = (gamepad.buttons[index]?.value || 0) > (kind === 'bank' ? 0.28 : 0.55);
+      const wasPressed = Boolean(controllerPrevButtons[index]);
+      if (pressed === wasPressed) return;
+      controllerPrevButtons[index] = pressed;
+      const sourceId = `host-gp-${key}`;
+      if (kind === 'note') {
+        if (pressed) {
+          hostedControllerSources.set(key, { kind, value, sourceId });
+          bridge.wakeAudio().catch(() => {});
+          bridge.noteDown(value, sourceId);
+          pulseNoteButton(activeBankSlot, value);
+        } else {
+          bridge.noteUp(value, sourceId);
+          hostedControllerSources.delete(key);
+        }
+        return;
+      }
+      if (kind === 'bank') {
+        if (pressed) {
+          hostedControllerSources.set(key, { kind, value, sourceId });
+          heldBankControls.add(value);
+          clearTimeout(activeBankResetTimer);
+          bridge.wakeAudio().catch(() => {});
+          bridge.bankDown(value, sourceId);
+          setActiveBankSlot(bankSlotByControl[value] || 'open');
+        } else {
+          bridge.bankUp(value, sourceId);
+          hostedControllerSources.delete(key);
+          heldBankControls.delete(value);
+          const remainingBank = [...heldBankControls].at(-1);
+          setActiveBankSlot(remainingBank ? (bankSlotByControl[remainingBank] || 'open') : 'open');
+        }
+        return;
+      }
+      if (kind === 'tap' && pressed) {
+        bridge.wakeAudio().catch(() => {});
+        bridge.tap(value);
+      }
+    };
+
+    const pollHostedController = () => {
+      if (window.__hobunjiHostedControllerPollGeneration !== controllerPollGeneration) return;
+      if (activeInputLayout !== 'controller') {
+        if (hostedControllerSources.size || controllerRightStickActive) releaseHostedControllerInputs();
+        controllerPrevButtons = [];
+        controllerAutoPickSector = -1;
+        requestAnimationFrame(pollHostedController);
+        return;
+      }
+      const gamepad = [...(navigator.getGamepads?.() || [])].find(Boolean);
+      if (!gamepad) {
+        if (hostedControllerSources.size || controllerRightStickActive) releaseHostedControllerInputs();
+        controllerPrevButtons = [];
+        controllerAutoPickSector = -1;
+        requestAnimationFrame(pollHostedController);
+        return;
+      }
+
+      controllerButton(gamepad, 2, 'x', 'note', 0);
+      controllerButton(gamepad, 0, 'a', 'note', 1);
+      controllerButton(gamepad, 1, 'b', 'note', 2);
+      controllerButton(gamepad, 3, 'y', 'note', 3);
+      controllerButton(gamepad, 6, 'lt', 'bank', 'lt');
+      controllerButton(gamepad, 7, 'rt', 'bank', 'rt');
+      controllerButton(gamepad, 4, 'lb', 'bank', 'lb');
+      controllerButton(gamepad, 5, 'rb', 'bank', 'rb');
+      controllerButton(gamepad, 9, 'start', 'tap', 'pause');
+      controllerButton(gamepad, 14, 'dpad-left', 'tap', 'scale-prev');
+      controllerButton(gamepad, 15, 'dpad-right', 'tap', 'scale-next');
+
+      const lxRaw = Number(gamepad.axes[0]) || 0;
+      const lyRaw = Number(gamepad.axes[1]) || 0;
+      const lx = Math.abs(lxRaw) < 0.22 ? 0 : lxRaw;
+      const ly = Math.abs(lyRaw) < 0.22 ? 0 : lyRaw;
+      if (Math.hypot(lx, ly) >= 0.58) {
+        const sector = Math.abs(lx) > Math.abs(ly) ? (lx > 0 ? 1 : 3) : (ly > 0 ? 2 : 0); // Up, Right, Down, Left.
+        if (sector !== controllerAutoPickSector) {
+          controllerAutoPickSector = sector;
+          bridge.setAutoPickMode?.(sector, 'host-gamepad-auto-pick');
+          readMode();
+        }
+      } else controllerAutoPickSector = -1;
+
+      const rxRaw = Number(gamepad.axes[2]) || 0;
+      const ryRaw = Number(gamepad.axes[3]) || 0;
+      const rx = Math.abs(rxRaw) < 0.14 ? 0 : rxRaw;
+      const ry = Math.abs(ryRaw) < 0.14 ? 0 : ryRaw;
+      if (Math.hypot(rx, ry) >= 0.12) {
+        controllerRightStickActive = true;
+        bridge.rightStick(rx, ry, 'host-gamepad-right-stick');
+      } else if (controllerRightStickActive) {
+        controllerRightStickActive = false;
+        bridge.releaseRightStick();
+      }
+      requestAnimationFrame(pollHostedController);
+    };
+    requestAnimationFrame(pollHostedController);
+
+    // Right stick (strum) still uses a drag gesture — a single up/down
+    // flick, not a 4-way pick, so it stays discoverable without a gamepad.
     const bindStick = (pad, hand, maxTranslate) => {
       const nub = pad?.querySelector('.edgeStickNub');
       if (!pad || !nub) return;
       let pointerId = null;
-      const normalized = (event) => {
+      const normalized = event => {
         const rect = pad.getBoundingClientRect();
         let x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
         let y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
@@ -409,17 +781,15 @@
         if (length > 1) { x /= length; y /= length; }
         return [x, y];
       };
-      const route = (event) => {
+      const route = event => {
         const [x, y] = normalized(event);
         nub.style.transform = `translate(${Math.max(-1, Math.min(1, x)) * maxTranslate}px, ${Math.max(-1, Math.min(1, y)) * maxTranslate}px)`;
         if (hand === 'left') bridge.leftStick(x, y, 'host-left-stick');
         else bridge.rightStick(x, y, 'host-right-stick');
       };
-      pad.addEventListener('pointerdown', (event) => {
+      pad.addEventListener('pointerdown', event => {
         if (pointerId != null) return;
         event.preventDefault();
-        if (event.pointerType === 'touch') _localInputDevice = 'touch';
-        else if (event.pointerType === 'mouse' || event.pointerType === 'pen') _localInputDevice = 'desktop';
         pointerId = event.pointerId;
         pad.classList.add('held');
         try { pad.setPointerCapture?.(event.pointerId); } catch {}
@@ -427,14 +797,15 @@
         bridge.announceInput(hand === 'left' ? 'arpPad' : 'strumPad');
         route(event);
       });
-      pad.addEventListener('pointermove', (event) => { if (pointerId === event.pointerId) { event.preventDefault(); route(event); } });
-      const release = (event) => {
+      pad.addEventListener('pointermove', event => { if (pointerId === event.pointerId) { event.preventDefault(); route(event); } });
+      const release = event => {
         if (pointerId !== event.pointerId) return;
         event.preventDefault();
         if (hand === 'left') bridge.releaseLeftStick(); else bridge.releaseRightStick();
         pointerId = null;
         pad.classList.remove('held');
         nub.style.transform = 'translate(0,0)';
+        readMode();
       };
       pad.addEventListener('pointerup', release);
       pad.addEventListener('pointercancel', release);
@@ -444,81 +815,21 @@
         pointerId = null;
         pad.classList.remove('held');
         nub.style.transform = 'translate(0,0)';
+        readMode();
       });
-      pad.addEventListener('contextmenu', (event) => event.preventDefault());
+      pad.addEventListener('contextmenu', event => event.preventDefault());
     };
-    // The right stick (strum) still uses the drag gesture — it's a single
-    // up/down flick, not a 6-way pick, so it stays discoverable without a
-    // button grid. The left stick's old job (drag into one of 6 wedges to
-    // pick an auto-arpeggio pattern) is handled by the pattern grid below
-    // instead — direct tap targets so it works without a gamepad and
-    // without needing a note held at the same time to "feel" the gesture.
-    bindStick(rightMount.querySelector('[data-bridge-stick="right"]'), 'right', 22);
+    bindStick(rightMount.querySelector('[data-bridge-stick="right"]'), 'right', 20);
 
-    const patternGrid = leftMount.querySelector('[data-pattern-grid]');
-    if (patternGrid) {
-      const menuState = bridge.getState?.() || {};
-      const ids = menuState.leftStickModeIds || ['direct'];
-      const labels = menuState.leftStickModeLabels || ['SINGLE'];
-      const selectedSector = menuState.leftStickSector ?? 0;
-      patternGrid.innerHTML = ids.map((id, index) => `<button type="button" class="edgePatternBtn${index === selectedSector ? ' selected' : ''}" data-pattern-index="${index}">${labels[index] || id}</button>`).join('');
-      patternGrid.querySelectorAll('[data-pattern-index]').forEach((button) => {
-        button.addEventListener('click', async (event) => {
-          event.preventDefault();
-          await bridge.wakeAudio?.().catch(() => {});
-          bridge.setAutoPickMode?.(Number(button.dataset.patternIndex));
-          patternGrid.querySelectorAll('.edgePatternBtn').forEach((other) => other.classList.toggle('selected', other === button));
-        });
-      });
-    }
+    applyHostedLayoutToFrame();
+    renderLayoutHud();
+    readMode();
+    applyActiveBankVisuals();
+    clearInterval(window.__hobunjiModeLabelTimer);
+    window.__hobunjiModeLabelTimer = setInterval(readMode, 180); // Keeps host labels synchronized after slot edits inside Music setup.
 
-    refreshHostGlyphs(); // Reflects whatever syncInputLayout already determined (called just before this, in onPlayerFrameLoaded) rather than resetting to a fixed default.
     return true;
   }
-
-  // ── Controller layout: host polls the real gamepad directly ─────────
-  // When syncInputLayout has set the iframe to 'controller', the ported
-  // app's own pollGamepad deliberately stops self-polling (see the V89
-  // comment in lyre-performance.html) so bank holds and the Lyre's active-
-  // bank glow share one input source instead of two independent pollers
-  // fighting over the same buttons. That leaves the host as the only thing
-  // driving the gamepad — this mirrors the ported app's own pre-V89
-  // pollGamepad button/axis mapping exactly, just calling the bridge's
-  // held-button methods instead of the app's internal state directly.
-  let _gpIndex = null;
-  let _gpPrevButtons = [];
-  let _gpLeftStickActive = false;
-  function pollHostGamepad(bridge) {
-    const pads = navigator.getGamepads?.() || [];
-    let pad = _gpIndex != null ? pads[_gpIndex] : null;
-    if (!pad) { pad = [...pads].find(Boolean); if (pad) _gpIndex = pad.index; }
-    if (!pad) return;
-    const press = (index, down, up) => {
-      const pressed = (pad.buttons[index]?.value || 0) > 0.55;
-      if (pressed === !!_gpPrevButtons[index]) return;
-      _gpPrevButtons[index] = pressed;
-      if (pressed) down(); else up?.();
-    };
-    press(2, () => bridge.noteDown(0, 'gp-x'), () => bridge.noteUp(0, 'gp-x'));
-    press(0, () => bridge.noteDown(1, 'gp-a'), () => bridge.noteUp(1, 'gp-a'));
-    press(1, () => bridge.noteDown(2, 'gp-b'), () => bridge.noteUp(2, 'gp-b'));
-    press(3, () => bridge.noteDown(3, 'gp-y'), () => bridge.noteUp(3, 'gp-y'));
-    press(6, () => bridge.bankDown('lt', 'gp-lt'), () => bridge.bankUp('lt', 'gp-lt'));
-    press(4, () => bridge.bankDown('lb', 'gp-lb'), () => bridge.bankUp('lb', 'gp-lb'));
-    press(7, () => bridge.bankDown('rt', 'gp-rt'), () => bridge.bankUp('rt', 'gp-rt'));
-    press(5, () => bridge.bankDown('rb', 'gp-rb'), () => bridge.bankUp('rb', 'gp-rb'));
-    press(9, () => bridge.tap('pause'));
-    press(14, () => bridge.tap('scale-prev'));
-    press(15, () => bridge.tap('scale-next'));
-    const lx = Math.abs(pad.axes[0] || 0) < 0.16 ? 0 : pad.axes[0];
-    const ly = Math.abs(pad.axes[1] || 0) < 0.16 ? 0 : pad.axes[1];
-    const rx = Math.abs(pad.axes[2] || 0) < 0.12 ? 0 : pad.axes[2];
-    const ry = Math.abs(pad.axes[3] || 0) < 0.12 ? 0 : pad.axes[3];
-    if (Math.hypot(lx, ly) >= 0.28) { _gpLeftStickActive = true; bridge.leftStick(lx, ly, 'gp-left-stick'); }
-    else if (_gpLeftStickActive) { _gpLeftStickActive = false; bridge.releaseLeftStick(); }
-    bridge.rightStick(rx, ry, 'gp-right-stick');
-  }
-  function resetHostGamepadState() { _gpIndex = null; _gpPrevButtons = []; _gpLeftStickActive = false; }
 
   // ── Ambient NPC performance (no visible UI, no human input) ─────────
   function stopAmbientForNpc(npcId) {
@@ -542,11 +853,6 @@
 
   let _tickAccum = 0;
   function tick(dt) {
-    syncInputLayout(); // Cheap no-op unless the player's device actually changed; runs every frame so switching to/from a controller mid-performance takes effect immediately.
-    if (playerSession && _syncedLayout === 'controller') {
-      const bridge = bridgeOf(frameEl);
-      if (bridge) pollHostGamepad(bridge);
-    }
     _tickAccum += dt;
     if (_tickAccum < AMBIENT_RECHECK_S) return;
     _tickAccum = 0;

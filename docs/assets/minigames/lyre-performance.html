@@ -487,6 +487,13 @@
 
 <style id="hobunjiV46ForcedIframeTransparency">
   :root { color-scheme: dark; background: transparent !important; }
+  /* color-scheme:dark makes Chromium paint the root canvas with an opaque
+     UA dark fill wherever nothing else paints, instead of true transparency
+     — background:transparent alone does not override that. Standalone
+     testing keeps the dark native-control styling; hosted mode (where the
+     3D scene must show through) drops color-scheme entirely so the canvas
+     is genuinely transparent. */
+  html:has(body.hosted-minigame) { color-scheme: normal !important; }
   html, body, body.hosted-minigame, body.hosted-minigame #app,
   body.hosted-minigame .layout, body.hosted-minigame .stage-shell,
   body.hosted-minigame .hud, body.hosted-minigame .stage,
