@@ -36,6 +36,7 @@
   // the one known song" today. Update this (and swap the toggle for a real
   // picker) once a second song exists in the songbook.
   const KNOWN_SONG_TITLE = 'When the Kininjis Bloom';
+  const KNOWN_SONG_ID = 'when-the-kininjis-bloom'; // Matches SONGBOOK's key in lyre-performance.html.
   const AMBIENT_RECHECK_S = 1; // How often tick() re-evaluates who should be ambiently performing — this doesn't need per-frame precision.
 
   const overlayEl = document.getElementById('musicMinigameOverlay');
@@ -88,10 +89,60 @@
   }
 
   // ── Player session (the visible overlay) ────────────────────────────
+  // The ported app gates its ENTIRE keyboard handler and its entire native
+  // gamepad-polling loop behind window.__hobunjiHostedInputLayout — without
+  // setting it, neither keyboard nor a real gamepad does anything at all
+  // inside the iframe (only the host's own edge-control taps would work).
+  //
+  // This can't just read game.js's own lastInputDevice: onPlayerFrameLoaded
+  // below calls frameEl.contentWindow.focus() so the iframe's own keydown
+  // listener actually receives keystrokes, and that focus hand-off fires a
+  // `blur` on the parent window — which game.js's own gamepad poller treats
+  // as "not focused" and stops updating lastInputDevice from. So this
+  // tracks the active device independently for the life of the overlay:
+  // keydown observed directly on the (same-origin) iframe's own window,
+  // gamepad activity polled unconditionally below, and touch inferred from
+  // pointerType on the host's own edge-control buttons.
+  let _localInputDevice = 'desktop';
+  function hostedLayoutFor(device) {
+    if (device === 'controller') return 'controller';
+    if (device === 'touch') return 'mobile';
+    return 'keyboard';
+  }
+  function anyGamepadActive() {
+    const pads = navigator.getGamepads?.() || [];
+    for (const pad of pads) {
+      if (!pad) continue;
+      if (pad.buttons.some(b => (b?.value || 0) > 0.5)) return true;
+      if (pad.axes.some(a => Math.abs(a || 0) > 0.35)) return true;
+    }
+    return false;
+  }
+  let _syncedLayout = null;
+  function syncInputLayout() {
+    if (!playerSession || !deps) return;
+    if (anyGamepadActive()) _localInputDevice = 'controller';
+    const layout = hostedLayoutFor(_localInputDevice);
+    if (layout === _syncedLayout) return;
+    _syncedLayout = layout;
+    try { frameEl.contentWindow.__hobunjiHostedInputLayout = layout; } catch {}
+    if (hostInputMethod !== device2GlyphSet(layout)) {
+      hostInputMethod = device2GlyphSet(layout);
+      refreshHostGlyphs();
+    }
+  }
+  function device2GlyphSet(layout) { return layout === 'keyboard' ? 'keyboard' : 'gamepad'; }
+
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
     const bridge = bridgeOf(frameEl);
     if (!bridge) { window.__farmLog?.('music minigame: control bridge missing after load', 'warn'); return; }
+    _syncedLayout = null;
+    _localInputDevice = deps?.getLastInputDevice?.() || 'desktop'; // Best guess before the player has touched anything inside the overlay yet.
+    try {
+      frameEl.contentWindow.addEventListener('keydown', () => { _localInputDevice = 'desktop'; }, { capture: true });
+    } catch {}
+    syncInputLayout();
     if (playerSession.mode === 'backup') bridge.startBackupPreviewSong?.(playerSession.songId);
     else bridge.enterJamMode?.(); // Regular/improvise mode — the ported app's own Songbook/Chords UI handles picking a song or a chord progression + tempo from here.
     buildEdgeControls(frameEl);
@@ -131,6 +182,9 @@
     overlayEl?.classList.remove('open');
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
     teardownEdgeControls();
+    _syncedLayout = null;
+    _localInputDevice = 'desktop';
+    resetHostGamepadState();
     if (mode === 'lead') {
       const leader = leaderByArea.get(area);
       if (leader?.type === 'player') leaderByArea.delete(area); // Frees the area up — an on-duty instrument NPC picks leadership back up on tick()'s next pass.
@@ -177,14 +231,11 @@
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data || data.source !== 'hobunji-music-minigame') return;
-    if (data.type === 'inputMethod') {
-      if (event.source !== frameEl?.contentWindow) return;
-      if (hostInputMethod === data.method) return;
-      hostInputMethod = data.method;
-      refreshHostGlyphs();
-    } else if (data.type === 'sounded-note') {
-      onSoundedNote(data, event.source);
-    }
+    // Input-method glyphs are host-driven now (see syncInputLayout) rather
+    // than iframe-detected — the ported app itself no longer knows which
+    // physical device the player is using; it only knows the layout the
+    // host told it to run.
+    if (data.type === 'sounded-note') onSoundedNote(data, event.source);
   });
 
   // Drives each performer's Kurraya twitch (see js/kurraya-instrument.js via
@@ -280,6 +331,8 @@
       button.addEventListener('pointerdown', (event) => {
         if (activePointer != null) return;
         event.preventDefault();
+        if (event.pointerType === 'touch') _localInputDevice = 'touch';
+        else if (event.pointerType === 'mouse' || event.pointerType === 'pen') _localInputDevice = 'desktop';
         activePointer = event.pointerId;
         button.classList.add('held');
         try { button.setPointerCapture?.(event.pointerId); } catch {}
@@ -335,7 +388,10 @@
         event.preventDefault();
         await bridge.wakeAudio?.().catch(() => {});
         playingSong = !playingSong;
-        if (playingSong) await bridge.startGameplaySong?.();
+        // startGameplaySong is a no-op while the selector is still on Free
+        // Play (its own default) — selectGameplaySong has to move it onto
+        // the known song first.
+        if (playingSong) { bridge.selectGameplaySong?.(KNOWN_SONG_ID); await bridge.startGameplaySong?.(); }
         else bridge.enterJamMode?.();
         songModeLabel.textContent = playingSong ? 'Improvise' : `Play ${KNOWN_SONG_TITLE}`;
       });
@@ -362,6 +418,8 @@
       pad.addEventListener('pointerdown', (event) => {
         if (pointerId != null) return;
         event.preventDefault();
+        if (event.pointerType === 'touch') _localInputDevice = 'touch';
+        else if (event.pointerType === 'mouse' || event.pointerType === 'pen') _localInputDevice = 'desktop';
         pointerId = event.pointerId;
         pad.classList.add('held');
         try { pad.setPointerCapture?.(event.pointerId); } catch {}
@@ -408,16 +466,59 @@
         button.addEventListener('click', async (event) => {
           event.preventDefault();
           await bridge.wakeAudio?.().catch(() => {});
-          bridge.setPatternSector?.(Number(button.dataset.patternIndex));
+          bridge.setAutoPickMode?.(Number(button.dataset.patternIndex));
           patternGrid.querySelectorAll('.edgePatternBtn').forEach((other) => other.classList.toggle('selected', other === button));
         });
       });
     }
 
-    hostInputMethod = 'gamepad';
-    refreshHostGlyphs();
+    refreshHostGlyphs(); // Reflects whatever syncInputLayout already determined (called just before this, in onPlayerFrameLoaded) rather than resetting to a fixed default.
     return true;
   }
+
+  // ── Controller layout: host polls the real gamepad directly ─────────
+  // When syncInputLayout has set the iframe to 'controller', the ported
+  // app's own pollGamepad deliberately stops self-polling (see the V89
+  // comment in lyre-performance.html) so bank holds and the Lyre's active-
+  // bank glow share one input source instead of two independent pollers
+  // fighting over the same buttons. That leaves the host as the only thing
+  // driving the gamepad — this mirrors the ported app's own pre-V89
+  // pollGamepad button/axis mapping exactly, just calling the bridge's
+  // held-button methods instead of the app's internal state directly.
+  let _gpIndex = null;
+  let _gpPrevButtons = [];
+  let _gpLeftStickActive = false;
+  function pollHostGamepad(bridge) {
+    const pads = navigator.getGamepads?.() || [];
+    let pad = _gpIndex != null ? pads[_gpIndex] : null;
+    if (!pad) { pad = [...pads].find(Boolean); if (pad) _gpIndex = pad.index; }
+    if (!pad) return;
+    const press = (index, down, up) => {
+      const pressed = (pad.buttons[index]?.value || 0) > 0.55;
+      if (pressed === !!_gpPrevButtons[index]) return;
+      _gpPrevButtons[index] = pressed;
+      if (pressed) down(); else up?.();
+    };
+    press(2, () => bridge.noteDown(0, 'gp-x'), () => bridge.noteUp(0, 'gp-x'));
+    press(0, () => bridge.noteDown(1, 'gp-a'), () => bridge.noteUp(1, 'gp-a'));
+    press(1, () => bridge.noteDown(2, 'gp-b'), () => bridge.noteUp(2, 'gp-b'));
+    press(3, () => bridge.noteDown(3, 'gp-y'), () => bridge.noteUp(3, 'gp-y'));
+    press(6, () => bridge.bankDown('lt', 'gp-lt'), () => bridge.bankUp('lt', 'gp-lt'));
+    press(4, () => bridge.bankDown('lb', 'gp-lb'), () => bridge.bankUp('lb', 'gp-lb'));
+    press(7, () => bridge.bankDown('rt', 'gp-rt'), () => bridge.bankUp('rt', 'gp-rt'));
+    press(5, () => bridge.bankDown('rb', 'gp-rb'), () => bridge.bankUp('rb', 'gp-rb'));
+    press(9, () => bridge.tap('pause'));
+    press(14, () => bridge.tap('scale-prev'));
+    press(15, () => bridge.tap('scale-next'));
+    const lx = Math.abs(pad.axes[0] || 0) < 0.16 ? 0 : pad.axes[0];
+    const ly = Math.abs(pad.axes[1] || 0) < 0.16 ? 0 : pad.axes[1];
+    const rx = Math.abs(pad.axes[2] || 0) < 0.12 ? 0 : pad.axes[2];
+    const ry = Math.abs(pad.axes[3] || 0) < 0.12 ? 0 : pad.axes[3];
+    if (Math.hypot(lx, ly) >= 0.28) { _gpLeftStickActive = true; bridge.leftStick(lx, ly, 'gp-left-stick'); }
+    else if (_gpLeftStickActive) { _gpLeftStickActive = false; bridge.releaseLeftStick(); }
+    bridge.rightStick(rx, ry, 'gp-right-stick');
+  }
+  function resetHostGamepadState() { _gpIndex = null; _gpPrevButtons = []; _gpLeftStickActive = false; }
 
   // ── Ambient NPC performance (no visible UI, no human input) ─────────
   function stopAmbientForNpc(npcId) {
@@ -441,6 +542,11 @@
 
   let _tickAccum = 0;
   function tick(dt) {
+    syncInputLayout(); // Cheap no-op unless the player's device actually changed; runs every frame so switching to/from a controller mid-performance takes effect immediately.
+    if (playerSession && _syncedLayout === 'controller') {
+      const bridge = bridgeOf(frameEl);
+      if (bridge) pollHostGamepad(bridge);
+    }
     _tickAccum += dt;
     if (_tickAccum < AMBIENT_RECHECK_S) return;
     _tickAccum = 0;

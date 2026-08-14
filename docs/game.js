@@ -22955,6 +22955,12 @@
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         showToast,
+        // The ported Lyre app gates its own keyboard/gamepad handlers on a
+        // host-set window.__hobunjiHostedInputLayout flag (see
+        // js/music-minigame.js) rather than auto-detecting a device itself,
+        // so it needs this game's own last-used-device tracking (the same
+        // signal action-prompt glyphs elsewhere already read).
+        getLastInputDevice: () => lastInputDevice,
         // Frames the performance in third-person (see the "music" camera
         // mode in scratchbones-config.js) instead of leaving the default
         // camera in place — matches how fishing/dialogue each get their

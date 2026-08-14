@@ -58,8 +58,6 @@
   .stick-section{display:grid;grid-template-columns:minmax(78px,1fr) 68px;gap:7px;min-height:106px}
   .stick-pad{position:relative;border-radius:50%;aspect-ratio:1;max-height:118px;justify-self:center;align-self:center;width:min(100%,118px);background:radial-gradient(circle,rgba(255,255,255,.08) 0 31%,rgba(0,0,0,.35) 33% 55%,rgba(255,255,255,.05) 57% 70%,rgba(0,0,0,.2) 72%);border:1px solid rgba(255,255,255,.16);touch-action:none}
   .stick-nub{position:absolute;width:42%;height:42%;left:29%;top:29%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#71809d,#20283a 64%,#0c1019);border:1px solid rgba(255,255,255,.22);box-shadow:0 6px 12px rgba(0,0,0,.45);pointer-events:none;display:grid;place-items:center;font-size:8px;color:var(--muted)}
-  .stick-key-hint{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);font-size:9px;font-weight:800;letter-spacing:.04em;color:var(--muted);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s ease}
-  .stick-key-hint.visible{opacity:1}
   /* Mobile Debug is a dev-only diagnostics dump (raw audio/marker state) — never player-facing. */
   button[data-open-modal="debugModal"]{display:none}
   .stick-side{display:flex;flex-direction:column;gap:7px;justify-content:center}
@@ -307,6 +305,7 @@
   .lyre-bridge-glyph{font-size:clamp(14px,1.8vw,24px);font-weight:1000;line-height:1;text-shadow:0 0 8px currentColor}
   .lyre-note-bead{--lyre-note-diameter:clamp(54px,7.84vw,86px);width:var(--lyre-note-diameter);height:var(--lyre-note-diameter);border-radius:50%;display:grid;place-items:center;background:rgba(8,12,20,.96);border:2px solid currentColor;box-shadow:0 0 16px color-mix(in srgb,currentColor 36%,transparent);z-index:5}
   .lyre-note-inner{position:absolute;left:50%;top:7%;z-index:3;transform:translateX(-50%);transform-origin:top center;display:grid;place-items:start center;width:100%;justify-items:center}
+  .hosted-lyre-note-glyph{font-size:calc(var(--lyre-note-diameter) * .56);font-weight:1000;line-height:1;color:currentColor;-webkit-text-stroke:1.6px rgba(0,0,0,.96);paint-order:stroke fill;text-shadow:0 1px 0 #000,0 -1px 0 #000,1px 0 0 #000,-1px 0 0 #000,0 0 10px color-mix(in srgb,currentColor 70%,transparent),0 0 20px color-mix(in srgb,currentColor 32%,transparent)}
   .bank-glyph{--glyph-y:0px;position:relative;z-index:3;display:grid;place-items:center;min-width:0;overflow:visible;color:#edf7ff;font-weight:1000;letter-spacing:.04em;text-transform:uppercase;text-shadow:none;transform:translateY(var(--glyph-y));transform-origin:top center}
   .bank-glyph-shape{position:absolute;inset:0;z-index:1;display:block;background:rgba(18,26,44,.96);border:1px solid rgba(255,255,255,.32);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15),0 0 0 1px rgba(0,0,0,.24)}
   .bank-glyph-label{display:block;position:absolute;left:50%;top:50%;line-height:1;z-index:4;overflow:visible;transform:translate(-50%,-50%)}
@@ -569,6 +568,78 @@
   }
   body.hosted-minigame .lyre-note-bead { will-change:left,top,transform; }
 
+  /* V85: keep inactive keyboard/controller Lyre strings fully colored while reducing only their brightness/glow. */
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field [data-lyre-string] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field [data-lyre-string] .lyre-string-line {
+    opacity:.68;
+    filter:brightness(.62) saturate(1) drop-shadow(0 0 2px var(--string-color));
+    stroke-width:.9 !important;
+    filter:drop-shadow(0 0 2px color-mix(in srgb,var(--string-color) 22%,transparent));
+  }
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field [data-lyre-string] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field [data-lyre-string] .lyre-nut-ring {
+    opacity:.62;
+    filter:brightness(.62) saturate(1) drop-shadow(0 0 2px var(--string-color));
+    filter:none;
+  }
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field [data-lyre-target],
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field [data-lyre-target] {
+    opacity:.62;
+    filter:saturate(1) brightness(.68);
+  }
+  /* V82: keyboard and controller bank shifts make the associated Lyre string glow very brightly. */
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-string="0"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-string="0"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-string="4"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-string="4"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-string="8"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-string="8"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-string="12"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-string="12"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-string="16"] .lyre-string-line,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-string="16"] .lyre-string-line {
+    opacity:1 !important;
+    stroke-width: 2.7 !important;
+    filter: drop-shadow(0 0 10px var(--string-color)) drop-shadow(0 0 20px var(--string-color)) drop-shadow(0 0 34px var(--string-color));
+  }
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-string="0"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-string="0"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-string="4"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-string="4"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-string="8"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-string="8"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-string="12"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-string="12"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-string="16"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-string="16"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-string="0"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-string="0"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-string="4"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-string="4"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-string="8"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-string="8"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-string="12"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-string="12"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-string="16"] .lyre-nut-ring,
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-string="16"] .lyre-nut-ring {
+    opacity:1 !important;
+    filter:drop-shadow(0 0 8px var(--string-color)) drop-shadow(0 0 16px var(--string-color));
+  }
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-target="0"],
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="0"] [data-lyre-target="0"],
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-target="4"],
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="4"] [data-lyre-target="4"],
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-target="8"],
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="8"] [data-lyre-target="8"],
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-target="12"],
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="12"] [data-lyre-target="12"],
+  body.hosted-minigame[data-hosted-layout="keyboard"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-target="16"],
+  body.hosted-minigame[data-hosted-layout="controller"] .lyre-field[data-hosted-active-bank="16"] [data-lyre-target="16"] {
+    opacity:1 !important;
+    box-shadow: 0 0 18px color-mix(in srgb,var(--string-color) 75%,transparent), 0 0 34px color-mix(in srgb,var(--string-color) 62%,transparent), inset 0 0 0 1px rgba(255,255,255,.14);
+    filter: brightness(1.65) saturate(1.25);
+  }
+
   /* The visible Music setup button remains a host-side sibling of the Lyre iframe. */
   #hostedMusicDrawerDock {
     width:0 !important;
@@ -597,7 +668,7 @@
 </style>
 
 <style id="hobunjiV64SixSectorAutoPick">
-  /* V64: six-sector automatic-pick selector and editable five-slot pattern library. */
+  /* V80: four-way automatic-pick selector and editable four-slot pattern library. */
   .arp-slot.pluck-mode-slot.six-sector-slot {
     width:46px;
     height:21px;
@@ -608,6 +679,8 @@
     white-space:normal;
     text-align:center;
   }
+  .arp-slot.pluck-mode-slot.four-sector-slot { width:42px;height:20px;margin:-10px 0 0 -21px;font-size:6px;line-height:1.05;text-align:center;padding:1px 3px;transform:rotate(var(--angle)) translateY(-36px) rotate(calc(-1 * var(--angle))); }
+
   .auto-pick-slot-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
   .auto-pick-slot-field {
     border:1px solid rgba(174,215,255,.18);
@@ -761,6 +834,39 @@
     to { transform:translate(-50%,28%) scale(.92); opacity:0; filter:grayscale(1); }
   }
 </style>
+
+<style id="hobunjiV92SquarePromptVisuals">
+  /* V92: the authored-song prompt keeps its tall rectangular hitbox, but only a centered square is drawn. */
+  body.hosted-minigame .lyre-note-bead {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  body.hosted-minigame .lyre-note-bead::before {
+    content:'';
+    position:absolute;
+    z-index:0;
+    left:50%;
+    top:50%;
+    width:var(--lyre-window-width);
+    aspect-ratio:1 / 1;
+    transform:translate(-50%,-50%);
+    border-radius:18%;
+    border:2px solid currentColor;
+    background:linear-gradient(180deg,color-mix(in srgb,currentColor 12%,rgba(8,12,20,.94)),rgba(8,12,20,.86));
+    box-shadow:0 0 15px color-mix(in srgb,currentColor 38%,transparent),inset 0 0 0 1px rgba(255,255,255,.06);
+    pointer-events:none;
+  }
+  body.hosted-minigame .lyre-note-bead.ready::before {
+    border-color:#fff;
+    background:linear-gradient(180deg,color-mix(in srgb,currentColor 25%,rgba(8,12,20,.9)),color-mix(in srgb,currentColor 12%,rgba(8,12,20,.84)));
+    box-shadow:0 0 24px currentColor,inset 0 0 16px color-mix(in srgb,currentColor 28%,transparent);
+  }
+  body.hosted-minigame .lyre-note-inner {
+    z-index:2 !important;
+  }
+</style>
+
 </head>
 <body class="hosted-minigame">
 <div id="app">
@@ -796,7 +902,6 @@
         <div class="stick-pad arp-stick" id="arpPad" aria-label="Rotate through hidden chord notes; each new sector plays immediately">
           <div class="arp-ring" id="arpRing"></div>
           <div class="stick-nub" id="arpNub">ARP 1</div>
-          <div class="stick-key-hint">U / O</div>
         </div>
         <div class="stick-side">
           <button class="controller-btn system-btn scale-unused" disabled><span class="glyph">L3</span><span class="action-label">Stick click unused</span></button>
@@ -867,7 +972,7 @@
         </section>
       </div>
       <div class="right-bottom">
-        <div class="stick-pad strum-stick" id="strumPad" aria-label="Flick vertically to strum all six virtual chord strings"><div class="arp-ring" id="rightArpRing"></div><div class="stick-nub" id="strumNub">STRUM</div><div class="stick-key-hint">I / K</div></div>
+        <div class="stick-pad strum-stick" id="strumPad" aria-label="Flick vertically to strum all six virtual chord strings"><div class="arp-ring" id="rightArpRing"></div><div class="stick-nub" id="strumNub">STRUM</div></div>
         <button class="controller-btn scale-unused" disabled><span class="glyph">R3</span><span class="action-label">Stick click unused</span></button>
         <button class="controller-btn" data-open-modal="debugModal"><span class="glyph">DBG</span><span class="action-label">Mobile Debug</span></button>
       </div>
@@ -884,14 +989,13 @@
     <div class="modal-head"><h2>Left-Stick Pattern Slots</h2><div class="top-spacer"></div><button class="mini-btn" data-close-modal>Close</button></div>
     <div class="modal-body">
       <section class="card">
-        <h3>Six-sector layout</h3>
-        <p class="auto-pick-rule-note"><strong>12 o’clock is permanently Single Note.</strong> The other five sectors are assignable. Every arpeggio definition begins with the melody note, and every generated strum voices the held melody as its highest note.</p>
+        <h3>Four-way layout</h3>
+        <p class="auto-pick-rule-note"><strong>Up, Right, Down, and Left are all assignable.</strong> Single Note is available as a slot choice alongside every automatic pattern. Every arpeggio definition begins with the melody note, and every generated strum voices the held melody as its highest note.</p>
         <div class="auto-pick-slot-grid" id="autoPickSlotGrid">
-          <label class="auto-pick-slot-field"><strong>Slot 1 · upper-right</strong><select data-auto-pick-slot="0"></select><small>About 2 o’clock.</small></label>
-          <label class="auto-pick-slot-field"><strong>Slot 2 · lower-right</strong><select data-auto-pick-slot="1"></select><small>About 4 o’clock.</small></label>
-          <label class="auto-pick-slot-field"><strong>Slot 3 · bottom</strong><select data-auto-pick-slot="2"></select><small>6 o’clock.</small></label>
-          <label class="auto-pick-slot-field"><strong>Slot 4 · lower-left</strong><select data-auto-pick-slot="3"></select><small>About 8 o’clock.</small></label>
-          <label class="auto-pick-slot-field"><strong>Slot 5 · upper-left</strong><select data-auto-pick-slot="4"></select><small>About 10 o’clock.</small></label>
+          <label class="auto-pick-slot-field"><strong>Up</strong><select data-auto-pick-slot="0"></select><small>Cross up / left stick up.</small></label>
+          <label class="auto-pick-slot-field"><strong>Right</strong><select data-auto-pick-slot="1"></select><small>Cross right / left stick right.</small></label>
+          <label class="auto-pick-slot-field"><strong>Down</strong><select data-auto-pick-slot="2"></select><small>Cross down / left stick down.</small></label>
+          <label class="auto-pick-slot-field"><strong>Left</strong><select data-auto-pick-slot="3"></select><small>Cross left / left stick left.</small></label>
         </div>
       </section>
       <section class="card">
@@ -965,8 +1069,8 @@
             <div class="field"><label for="harmonyProgression">Hidden Progression</label><select id="harmonyProgression"></select></div>
             <div class="field"><label for="harmonyBpm">Harmony Tempo</label><input id="harmonyBpm" type="number" min="40" max="240" value="96"></div>
             <div class="field"><label for="harmonyChordBeats">Beats per Chord</label><select id="harmonyChordBeats"><option value="2">2 beats</option><option value="4">4 beats</option><option value="8" selected>8 beats</option><option value="16">16 beats</option></select></div>
-            <div class="field"><label for="auditoryMetronome">Auditory Metronome</label><select id="auditoryMetronome"><option value="off" selected>Off</option><option value="on">On</option></select></div>
-            <div class="field"><label for="rootPadEnabled">Harmony Root Pad</label><select id="rootPadEnabled"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+            <div class="field"><label for="auditoryMetronome">Auditory Metronome</label><select id="auditoryMetronome"><option value="off">Off</option><option value="on" selected>On</option></select></div>
+            <div class="field"><label for="rootPadEnabled">Harmony Root Pad</label><select id="rootPadEnabled"><option value="off">Off</option><option value="on" selected>On</option></select></div>
             <div class="field"><label for="playMode">Note Mode</label><select id="playMode"><option value="pedal" selected>Pedal sustain / layer ring-out</option><option value="pluck">Pluck / retrigger</option></select></div>
             <div class="field"><label for="voiceSelect">Voice Filter</label><select id="voiceSelect"><option>Clean</option><option>Bright</option><option>Dark</option><option>Hollow</option></select></div>
             <div class="field"><label for="strumSensitivity">Strum Sensitivity</label><select id="strumSensitivity"><option value="0.42">High</option><option value="0.52" selected>Medium</option><option value="0.64">Low</option></select></div>
@@ -976,9 +1080,25 @@
           <div class="control-row"><label for="attackSlider">Attack</label><input id="attackSlider" type="range" min="0" max="250" value="6"><output id="attackOut">6 ms</output></div>
           <div class="control-row"><label for="releaseSlider">Tail / clear fade</label><input id="releaseSlider" type="range" min="20" max="1500" value="260"><output id="releaseOut">260 ms</output></div>
           <div class="control-row"><label for="volumeSlider">Master</label><input id="volumeSlider" type="range" min="0" max="100" value="78"><output id="volumeOut">78%</output></div>
-          <div class="control-row"><label for="rootPadLevelSlider">Root Pad Level</label><input id="rootPadLevelSlider" type="range" min="0" max="8" step="1" value="2"><output id="rootPadLevelOut">2%</output></div>
+          <div class="control-row"><label for="rootPadLevelSlider">Root Pad Level</label><input id="rootPadLevelSlider" type="range" min="0" max="20" step="1" value="4"><output id="rootPadLevelOut">4%</output></div>
           <div class="action-row"><button class="wide-btn" id="resetSamplerBtn">Reset Fallback</button><button class="wide-btn" id="saveSettingsBtn">Save Settings</button><button class="wide-btn danger" id="clearSampleCacheBtn">Forget Cached Sample</button></div>
           <p class="help-text" id="analysisReadout">The built-in pluck is tuned to C4. Import a clean note, then use Auto Analyze to estimate trimming, a stable sample body, and the nearest root note.</p>
+        </section>
+
+        <section class="card" id="rhythmSampleCard">
+          <h3>Rhythm & root samples</h3>
+          <p class="help-text">These are independent of the main instrument sample. A metronome sample replaces the synth click; a root-pad sample replaces the synth pad while <strong>Harmony Root Pad</strong> is on.</p>
+          <input id="metronomeSampleFile" type="file" accept="audio/*" hidden>
+          <input id="rootPadSampleFile" type="file" accept="audio/*" hidden>
+          <div class="form-grid">
+            <div class="field"><label>Metronome sample</label><div id="metronomeSampleStatus" class="help-text">Synth click fallback</div></div>
+            <div class="field"><label for="rootPadSampleRoot">Pad sample recorded root</label><select id="rootPadSampleRoot"></select></div>
+            <div class="field"><label>Root pad sample</label><div id="rootPadSampleStatus" class="help-text">Synth root-pad fallback</div></div>
+          </div>
+          <div class="control-row"><label for="metronomeSampleLevel">Metronome Sample Level</label><input id="metronomeSampleLevel" type="range" min="0" max="100" step="1" value="55"><output id="metronomeSampleLevelOut">55%</output></div>
+          <div class="action-row"><button class="wide-btn" id="importMetronomeSampleBtn">Import stomp / click</button><button class="wide-btn" id="previewMetronomeSampleBtn">Preview</button><button class="wide-btn danger" id="clearMetronomeSampleBtn">Clear</button></div>
+          <div class="control-row"><label for="rootPadSampleLevel">Pad Sample Level</label><input id="rootPadSampleLevel" type="range" min="0" max="100" step="1" value="34"><output id="rootPadSampleLevelOut">34%</output></div>
+          <div class="action-row"><button class="wide-btn" id="importRootPadSampleBtn">Import root pad</button><button class="wide-btn" id="previewRootPadSampleBtn">Preview</button><button class="wide-btn danger" id="clearRootPadSampleBtn">Clear</button></div>
         </section>
       </div>
     </div>
@@ -1016,13 +1136,13 @@
       <p><strong>Locked input layout:</strong> development now uses <em>5 Banks · Auto Pick</em> exclusively. Open, LT, LB, RT, and RB remain five ascending groups of four notes, while the left stick latches the automatic arpeggio or tremolo behavior.</p>
       <p><strong>Visual presets:</strong> <em>Falling Strings</em> preserves the existing twenty-lane presentation. <em>20-Note Timing Rings</em> keeps every playable note visible at once in five widely separated four-note islands: LT upper-left, LB lower-left, Open center, RT upper-right, and RB lower-right. Inside every island, X/A/B/Y use the same left/bottom/right/top diamond as the face buttons. The <em>Prompts</em> dropdown chooses how many beats ahead solid timing rings appear; each ring contracts onto its fixed note circle, which lights and pulses during the playable window.</p>
       <p><strong>Hidden harmony:</strong> one shared transport drives the falling melody notes, visual/auditory metronome, automatic-pick grid, and chord changes. Free play uses the selected hidden progression. Public-domain songs replace it with their own silent chord timeline, which changes the notes chosen by arpeggios without adding backing audio. The optional root pad remains the only sustained harmony sound.</p>
-      <p><strong>Automatic Pick:</strong> flick the left stick toward a direction to select a mode; it stays selected after the stick returns to center. Single Note is fixed at the top of a six-sector wheel, while the other five sectors can be assigned from the LS Slots library. The fast arpeggio uses a forward–reverse roll. Each new slow-arpeggio melody input alternates between a forward roll and a reverse roll. Every face-button press sounds its melody note immediately at the player's real tap time, then automatically fills every remaining subdivision before the next shared beat even if the button is released immediately. Base-rate mode therefore produces two total attacks when tapped within the first eighth-note slot of a beat; half-duration mode produces four, three, two, or one total attacks depending on how many sixteenth-note slots have already passed. Another musical input interrupts the remainder.</p>
+      <p><strong>Automatic Pick:</strong> flick the left stick toward a direction to select a mode; it stays selected after the stick returns to center. The Auto Pick selector is a four-way cross; Up, Right, Down, and Left can each be assigned independently from the LS Slots library, including Single Note. The fast arpeggio uses a forward–reverse roll. Each new slow-arpeggio melody input alternates between a forward roll and a reverse roll. Every face-button press sounds its melody note immediately at the player's real tap time, then automatically fills every remaining subdivision before the next shared beat even if the button is released immediately. Base-rate mode therefore produces two total attacks when tapped within the first eighth-note slot of a beat; half-duration mode produces four, three, two, or one total attacks depending on how many sixteenth-note slots have already passed. Another musical input interrupts the remainder.</p>
       <p><strong>Fretted Pluck:</strong> select a left-stick picking direction, then press X, A, B, or Y as the melody note. Both arpeggio and tremolo attack immediately at the exact tap time and begin their beat-filling sequence without a hold-confirmation delay. Holding continues the same subdivision grid across later beats. Releasing finishes only the remaining slots before the next beat boundary. For arpeggio, the current four-string chord shape first replaces its nearest chord tone with the melody note when needed. Octaves are chosen only afterward: forward rolls rise compactly from the melody, reverse rolls fall compactly from it, and the fast forward–reverse roll rebuilds each half around the melody. Only the initial human tap is a gameplay input; every generated arpeggio or tremolo continuation is strictly auditory and cannot score, miss, increment the input counter, or flash a gameplay target.</p>
       <p><strong>Visual presets:</strong> <em>Falling Strings</em> keeps the original 20-lane display. <em>20-Note Timing Rings</em> shows all twenty playable notes grouped into five face-button diamonds. <em>Lyre View</em> collapses the lanes down to four visible strings and moves the bank prompt into each falling note as an O / LT / LB / RT / RB glyph.</p>
       <p><strong>Successful Playthrough Preview:</strong> latch the left-stick mode you want to hear, choose a pattern, and press <em>Preview Run</em>. The normal gameplay view, prompts, metronome, chords, score, combo, and hit feedback remain active while the demo performs every required melody input perfectly. Its extra arpeggio or tremolo attacks use the selected left-stick mode but remain audio-only. Any real musical input interrupts the preview and returns control to you.</p>
-      <p><strong>Keyboard fallback:</strong> <code>A S D F</code> mirror X/A/B/Y, and <code>Q W E R</code> mirror the shoulder controls where that layout uses them. In either Auto Pick bank layout, number keys <code>1–6</code> select the six stick sectors clockwise from the fixed top Single Note sector. In Dual Arpeggio, U/O step the left wheel and I/K step the right wheel. In the original layouts U/O rotate the left arpeggio and I/K strum. Arrow Left/Right change the scale, and <code>Esc</code> pauses.</p>
+      <p><strong>Keyboard fallback:</strong> <code>A S D F</code> mirror X/A/B/Y, and <code>Q W E R</code> mirror the shoulder controls where that layout uses them. In the hosted desktop layout, hold <code>Shift</code> and press an arrow key to select the matching Auto Pick direction. Number keys <code>1–4</code> remain an embedded fallback for Up, Right, Down, and Left. In Dual Arpeggio, U/O step the left wheel and I/K step the right wheel. In the original layouts U/O rotate the left arpeggio and I/K strum. Arrow Left/Right change the scale, and <code>Esc</code> pauses.</p>
       <p><strong>Sampler:</strong> import an audio file, set its actual root note, and every input pitch-shifts that same sample. <em>Pedal sustain</em> behaves like a piano with the sustain pedal held: releasing a control never cuts its voice, later notes layer over it, and repeated copies of the same pitch do not interrupt one another. Each voice rings naturally from Start to End. <em>Pluck / retrigger</em> keeps only the newest voice from the same physical control. “Clear Notes” fades all currently ringing sample voices.</p>
-      <p><strong>Desktop controller:</strong> X/A/B/Y play the four notes in the active bank. LT, LB, RT, and RB select the four shifted banks, the left stick latches one of six Auto Pick sectors, the right stick strums, Start pauses, and D-pad Left/Right select the previous/next scale. L3/R3 are unused.</p>
+      <p><strong>Desktop controller:</strong> X/A/B/Y play the four notes in the active bank. LT, LB, RT, and RB select the four shifted banks, the left stick latches one of four cardinal Auto Pick modes, the right stick strums, Start pauses, and D-pad Left/Right select the previous/next scale. L3/R3 are unused.</p>
       <p><strong>Mobile audio:</strong> use Enable Audio once if the browser begins suspended. Imports are normalized, converted to phase-safe mono, and kept playable after returning from the mobile file picker.</p>
       <p><strong>MIDI Song Studio:</strong> import a Standard MIDI file, select its melody track/channel, choose how simultaneous notes collapse into one playable melody, and quantize or preserve its timing. The detector ranks possible tonic/scale combinations instead of hiding close alternatives. Time signatures now drive actual denominator-beat clicks, measure boundaries, count-ins, chord timing, prompt horizons, and automatic-pick subdivisions. Common signatures are presets; numerator, denominator, and accent grouping remain manually editable. Chords can be edited individually or batch-filled with a repeating Roman-numeral/scale-degree pattern over any measure range. Exported JSON can be reimported later or saved into the regular Pattern menu.</p>
       <p><strong>Recent change:</strong> Lyre View left arrows are now vivid green and right arrows are magenta, both with a much brighter glow. Their overflow beyond the clipped shoulder shapes, enlarged size, orientations, dimensions, note-circle sizing, and alignment remain unchanged.</p>
@@ -1167,7 +1287,9 @@
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
   const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
-  const NOTE_COLORS = ['#2f8dff','#43df75','#ff4f5f','#ffe04b'];
+  const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
+  const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
+  const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['A','S','D','F'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs.
   const FIVE_BANK_DEFINITIONS = [ // V55 maps the four ascending note banks to the most comfortable controller order.
     {offset:0,label:'OPEN',range:'1–4',control:null},
     {offset:4,label:'LT',range:'5–8',control:'lt'},
@@ -1191,6 +1313,19 @@
   const TRIGGER_OUTER_OFFSETS = {lt:0,rt:12}; // Maps held triggers to the outer groups in the 16-note preset.
   const TRIGGER_MIDDLE_OFFSETS = {lt:4,rt:8}; // Maps quick trigger taps to the two latched middle groups.
   const TRIGGER_TAP_MS = 260; // Separates a quick middle-group tap from a deliberate held outer-group shift.
+
+  function hostedInputLayout() {
+    return ['mobile','keyboard','controller'].includes(window.__hobunjiHostedInputLayout) ? window.__hobunjiHostedInputLayout : 'mobile';
+  }
+
+  function hostedNoteGlyph(noteIndex = 0) {
+    const labels = NOTE_INPUT_GLYPHS_BY_LAYOUT[hostedInputLayout()] || NOTE_INPUT_GLYPHS_BY_LAYOUT.mobile;
+    return labels[Math.max(0, Math.min(3, Number(noteIndex) || 0))] || labels[0];
+  }
+
+  function groupColorForOffset(modeOffset = 0) {
+    return GROUP_COLORS_BY_OFFSET[Number(modeOffset)] || GROUP_COLORS_BY_OFFSET[0];
+  }
   const DUAL_ARP_DEGREES = { // Interlocks odd and even chord-rooted note-set degrees across the two eight-sector sticks.
     left:[0,2,4,6,8,10,12,14],
     right:[1,3,5,7,9,11,13,15]
@@ -1199,7 +1334,7 @@
     left:['1','3','5','7','9','11','13','15'],
     right:['2','4','6','8','10','12','14','16']
   };
-  const AUTO_PICK_PATTERN_LIBRARY = { // V64: real-world-inspired automatic picking and strumming figures available to the five editable stick slots.
+  const AUTO_PICK_PATTERN_LIBRARY = { // V80: real-world-inspired automatic picking and strumming figures available to the four editable directional slots.
     direct:{label:'Single Note',short:'SINGLE',ringLabel:'SINGLE',kind:'direct',division:1,category:'Direct',tradition:'Universal',description:'One human melody attack with no automatic continuation.'},
     'arp-forward-8':{label:'Forward Roll · eighths',short:'FWD ROLL',ringLabel:'FWD<br>ROLL',kind:'arp',division:2,arpStyle:'forward',category:'Arpeggio',tradition:'Folk / harp',description:'Melody first, then a compact ascending broken chord.'},
     'arp-reverse-8':{label:'Reverse Roll · eighths',short:'REV ROLL',ringLabel:'REV<br>ROLL',kind:'arp',division:2,arpStyle:'reverse',category:'Arpeggio',tradition:'Classical / harp',description:'Melody first, then a compact descending broken chord.'},
@@ -1219,7 +1354,7 @@
     'strum-bluegrass-8':{label:'Bluegrass Boom–Chuck',short:'BOOM CHK',ringLabel:'BOOM<br>CHK',kind:'strum',division:2,strumStyle:'bluegrass',category:'Strum',tradition:'Appalachian bluegrass',description:'Alternates a low-plus-melody boom with a crisp melody-top chord.'}
   };
   const FRETTED_PLUCK_MODES = AUTO_PICK_PATTERN_LIBRARY; // Compatibility alias used by the existing automatic-pick scheduler and preview system.
-  const DEFAULT_AUTO_PICK_SLOTS = ['arp-forward-reverse-16','tremolo-16','tremolo-8','arp-forward-8','strum-reggae-8']; // Clockwise from upper-right to upper-left; Single Note remains fixed at 12 o’clock.
+  const DEFAULT_AUTO_PICK_SLOTS = ['direct','arp-forward-reverse-16','tremolo-16','strum-reggae-8']; // Up, Right, Down, Left defaults for the four-way slottable Auto Pick cross.
   // Hobunji's own authored songbook — replaces the earlier public-domain
   // placeholder tunes with the one real song, transcribed from Foroji's
   // theme MIDI (When the Kirrinji Bloom) at its native tempo/key: 100 BPM,
@@ -1283,9 +1418,9 @@
     rightArpeggioZone:-1, // Rearms the right dual-arpeggio wheel after the stick returns to center.
     lastRightArpeggioTriggerAt:0, // Debounces right-stick sector boundaries independently of the left stick.
     frettedSources:new Map(), // Stores held melody-note sources used by both automatic-picking presets.
-    pluckInputMode:'direct', // Holds the selected six-sector behavior; Single Note is the fixed top sector.
-    autoPickSlots:DEFAULT_AUTO_PICK_SLOTS.slice(), // Five editable clockwise sectors after the fixed top Single Note sector.
-    leftStickSector:0, // Six-sector selector index: 0 is fixed Single Note, 1–5 are editable slots.
+    pluckInputMode:'direct', // Holds the selected four-way Auto Pick behavior.
+    autoPickSlots:DEFAULT_AUTO_PICK_SLOTS.slice(), // Four editable directional slots: Up, Right, Down, Left.
+    leftStickSector:0, // Four-way selector index: 0 Up, 1 Right, 2 Down, 3 Left.
     pluckTimer:null, // Schedules repeated Fretted Pluck notes at the selected rhythmic subdivision.
     pluckGeneration:0, // Invalidates older pluck timers whenever the stick mode or fret changes.
     pluckStep:0, // Advances through the current chord-melody fingerpicking pattern.
@@ -1313,9 +1448,18 @@
     lastMetronomeBeat:-1,
     freePlayCapoCue:null, // Holds the currently falling curved capo cue for the next hidden free-play chord.
     freePlayCapoTargetStep:-1, // Identifies which progression step the current capo is predicting so landing flashes occur only at the correct boundary. // Prevents the visual metronome from retriggering more than once per beat.
-    auditoryMetronome:false, // Enables the optional Web Audio click on each visual metronome beat.
-    rootPadEnabled:false, // Enables a very quiet sustained tone on the current hidden chord root.
-    rootPadLevel:0.02, // Web Audio gain for the subtle harmony pad; exposed as a restrained 0–8% control.
+    auditoryMetronome:true, // Enabled by default; plays the synth click or imported stomp sample on each visual metronome beat.
+    metronomeSampleBuffer:null, // Optional imported one-shot used instead of the synthesized click.
+    metronomeSampleName:'', // Display name for the imported stomp/click sample.
+    metronomeSampleLevel:0.55, // Independent gain for the imported metronome sample.
+    pendingMetronomeSampleRecord:null, // Holds cached stomp PCM until Web Audio has been created.
+    rootPadEnabled:true, // Enabled by default; uses the synth root pad unless an imported pad sample is available.
+    rootPadLevel:0.02, // User-facing synth pad mix level; internally remapped so low roots remain audible.
+    rootPadSampleBuffer:null, // Optional imported looping pad source used instead of the synth oscillators.
+    rootPadSampleName:'', // Display name for the imported root-pad source.
+    rootPadSampleRootMidi:48, // Recorded pitch of the imported pad, used to transpose it to the current chord root.
+    rootPadSampleLevel:0.34, // Independent gain for the imported root-pad sample.
+    pendingRootPadSampleRecord:null, // Holds cached pad PCM until Web Audio has been created.
     rootPadVoices:[], // Holds the currently crossfading oscillator layers used by the harmony root pad.
     rootPadRootMidi:null, // Tracks the pad pitch so it only rebuilds when the hidden chord root changes.
     layoutPreset:'five-bank-auto', // V21 locks all development and song input to the five-bank automatic-picking layout.
@@ -1342,10 +1486,12 @@
     gamepadPrev:[],
     gamepadAxes:[0,0,0,0],
     paused:false,
+    postSongSilence:false, // V94 keeps a completed authored song selected while muting Free Play until Start is pressed again.
     visibilityPauseStarted:0, // Tracks hidden time for an active song without disabling free-play notes.
     customSongs:{}, // Persistent user-authored songs keyed by custom:<id>; loaded separately from sampler settings.
     midiStudio:{parsed:null,project:null,fileName:'',status:'idle',lastError:''}, // Holds the in-memory MIDI parser/editor state without serializing the raw file.
     selectedSong:'when-the-kininjis-bloom',
+    gameplaySelection:'freeplay', // V86: the song selector doubles as the Free Play/song mode switch.
     bpm:104,
     hitWindow:170,
     game:{active:false,startTime:0,pausedAt:0,pauseAccum:0,events:[],score:0,combo:0,hits:0,attempts:0,total:0,travelMs:3000,endAt:0,songType:null,beatMs:0,quarterBeatMs:0,timeSignature:[4,4],beatGrouping:[4],countInBeats:4,countInMs:0,totalSongBeats:0,demoActive:false,demoMode:null,demoNextSlowArpDirection:'forward',backupAccompaniment:false}, // Song notes, metronome, harmony, auto-pick, and successful-preview playback all read this shared beat transport.
@@ -1357,6 +1503,7 @@
     transportStatus:$('#transportStatus'), previewPlaythroughBtn:$('#previewPlaythroughBtn'), stage:$('#stage'), feedback:$('#feedback'), modeChip:$('#modeChip'), modeBankGrid:$('#modeBankGrid'), timingNoteField:$('#timingNoteField'), lyreField:$('#lyreField'), visualPresetSelect:$('#visualPresetSelect'), timingPromptPicker:$('#timingPromptPicker'), timingPromptBeatsSelect:$('#timingPromptBeatsSelect'), leftModifierPad:$('#leftModifierPad'),
     audioFile:$('#audioFile'), waveCanvas:$('#waveCanvas'), sampleRoot:$('#sampleRoot'), tonicSelect:$('#tonicSelect'), scaleSelect:$('#scaleSelect'),
     harmonyProgression:$('#harmonyProgression'), harmonyBpm:$('#harmonyBpm'), harmonyChordBeats:$('#harmonyChordBeats'), auditoryMetronome:$('#auditoryMetronome'), rootPadEnabled:$('#rootPadEnabled'), rootPadLevelSlider:$('#rootPadLevelSlider'), rootPadLevelOut:$('#rootPadLevelOut'),
+    metronomeSampleFile:$('#metronomeSampleFile'), metronomeSampleStatus:$('#metronomeSampleStatus'), metronomeSampleLevel:$('#metronomeSampleLevel'), metronomeSampleLevelOut:$('#metronomeSampleLevelOut'), rootPadSampleFile:$('#rootPadSampleFile'), rootPadSampleStatus:$('#rootPadSampleStatus'), rootPadSampleRoot:$('#rootPadSampleRoot'), rootPadSampleLevel:$('#rootPadSampleLevel'), rootPadSampleLevelOut:$('#rootPadSampleLevelOut'),
     playMode:$('#playMode'), voiceSelect:$('#voiceSelect'), strumSensitivity:$('#strumSensitivity'), playbackEngine:$('#playbackEngine'), pitchCacheMode:$('#pitchCacheMode'), analysisReadout:$('#analysisReadout'), debugState:$('#debugState'), debugLog:$('#debugLog'),
     arpPad:$('#arpPad'), arpNub:$('#arpNub'), arpRing:$('#arpRing'), strumPad:$('#strumPad'), strumNub:$('#strumNub'), rightArpRing:$('#rightArpRing'), dualArpGuide:$('#dualArpGuide'), dualArpLeftGuide:$('#dualArpLeftGuide'), dualArpRightGuide:$('#dualArpRightGuide'), toast:$('#toast'),
     harmonyVisual:$('#harmonyVisual'), harmonyDisc:$('#harmonyDisc'), chordDegree:$('#chordDegree'), chordRoman:$('#chordRoman'), metronomeDots:$('#metronomeDots'), metronomeLabel:$('#metronomeLabel'),
@@ -1399,6 +1546,7 @@
   function initSelects() {
     populateNoteSelect(refs.sampleRoot, 24, 96);
     populateNoteSelect(refs.tonicSelect, 24, 60);
+    if (refs.rootPadSampleRoot) populateNoteSelect(refs.rootPadSampleRoot, 24, 84);
     refs.scaleSelect.innerHTML = SCALE_NAMES.map(name => `<option value="${name}">${name}</option>`).join('');
     refs.harmonyProgression.innerHTML = HARMONY_PATTERN_NAMES.map(name => `<option value="${name}">${harmonyPatternLabel(name)}</option>`).join('');
     refs.sampleRoot.value = String(state.sampleRootMidi);
@@ -1445,6 +1593,8 @@
           });
           createFallbackBuffer();
           if (state.pendingCachedSample) hydrateCachedSampleRecord(state.pendingCachedSample, 'startup cache');
+          if (state.pendingMetronomeSampleRecord) hydrateAuxiliarySampleRecord(state.pendingMetronomeSampleRecord, 'metronome');
+          if (state.pendingRootPadSampleRecord) hydrateAuxiliarySampleRecord(state.pendingRootPadSampleRecord, 'rootPad');
           log('Audio context created', `${state.audioContext.sampleRate} Hz`);
         }
         if (state.audioContext.state !== 'running') await state.audioContext.resume();
@@ -1531,8 +1681,8 @@
   }
 
   function normalizeAutoPickSlots(slots = state.autoPickSlots) {
-    const validIds = Object.keys(AUTO_PICK_PATTERN_LIBRARY).filter(id => id !== 'direct');
-    const normalized = Array.from({length:5}, (_, index) => {
+    const validIds = Object.keys(AUTO_PICK_PATTERN_LIBRARY); // All four directions are fully slottable, including Single Note.
+    const normalized = Array.from({length:4}, (_, index) => {
       const candidate = Array.isArray(slots) ? slots[index] : null;
       return candidate && validIds.includes(candidate) ? candidate : DEFAULT_AUTO_PICK_SLOTS[index];
     });
@@ -1541,7 +1691,7 @@
   }
 
   function leftStickModeIds() {
-    return ['direct',...normalizeAutoPickSlots()];
+    return normalizeAutoPickSlots();
   }
 
   function automaticPatternDefinition(mode = state.pluckInputMode) {
@@ -1552,15 +1702,15 @@
     return automaticPatternDefinition(mode).label;
   }
 
-  function sixSectorIndex(x, y) {
-    const clockwiseFromTop = (Math.atan2(x,-y) + Math.PI * 2) % (Math.PI * 2); // Top is sector 0; sectors advance clockwise in 60° wedges.
-    return Math.floor((clockwiseFromTop + Math.PI / 6) / (Math.PI / 3)) % 6;
+  function fourWayIndex(x, y) {
+    if (Math.abs(x) > Math.abs(y)) return x >= 0 ? 1 : 3; // Right / Left.
+    return y >= 0 ? 2 : 0; // Down / Up.
   }
 
   function setLeftStickSector(sector, source = 'left stick') {
-    const safeSector = clamp(Math.round(Number(sector) || 0),0,5);
+    const safeSector = clamp(Math.round(Number(sector) || 0),0,3);
     state.leftStickSector = safeSector;
-    const mode = leftStickModeIds()[safeSector] || 'direct';
+    const mode = leftStickModeIds()[safeSector] || DEFAULT_AUTO_PICK_SLOTS[safeSector] || 'direct';
     startFrettedPluckMode(mode,source);
     updateArpeggioUI();
     updatePitchLabels();
@@ -2138,15 +2288,25 @@
     refs.metronomeLabel.textContent = beat.inCountIn ? `Count-in ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}` : `${beat.source === 'song' ? 'Song chord · ' : ''}Beat ${beat.beatInChord + 1} / ${beat.beatsPerChord} · ${beat.meter.label}`;
   }
 
-  function playMetronomeClick(beatData = 0) {
-    if (!state.auditoryMetronome || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
-    const context = state.audioContext; // Provides sample-accurate scheduling for the short click.
-    const startTime = context.currentTime; // Anchors this beat's oscillator and envelope together.
-    const oscillator = context.createOscillator(); // Generates the audible high/low metronome tick.
-    const clickGain = context.createGain(); // Shapes the oscillator into a very short percussive click.
+  function playMetronomeClick(beatData = 0, force = false) {
+    if ((!state.auditoryMetronome && !force) || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
+    const context = state.audioContext; // Provides sample-accurate scheduling for either the imported stomp or synthesized click.
+    const startTime = context.currentTime;
     const beatInChord = typeof beatData === 'number' ? beatData : beatData.beatInChord;
-    const accented = beatInChord === 0 || !!beatData?.isMeasureStart; // Chord/measure starts retain the strongest click.
-    const groupAccent = !accented && !!beatData?.isGroupStart; // Compound and odd meters receive a medium accent at manual/automatic group boundaries.
+    const accented = beatInChord === 0 || !!beatData?.isMeasureStart;
+    const groupAccent = !accented && !!beatData?.isGroupStart;
+    if (state.metronomeSampleBuffer) {
+      const source = context.createBufferSource(); // One-shot stomp/click; every beat gets an independent source.
+      const gain = context.createGain();
+      source.buffer = state.metronomeSampleBuffer;
+      gain.gain.setValueAtTime(clamp(state.metronomeSampleLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
+      source.connect(gain).connect(state.master);
+      source.start(startTime);
+      source.onended = () => { try { source.disconnect(); gain.disconnect(); } catch {} };
+      return;
+    }
+    const oscillator = context.createOscillator();
+    const clickGain = context.createGain();
     oscillator.type = 'square';
     oscillator.frequency.setValueAtTime(accented ? 1320 : groupAccent ? 1080 : 880, startTime);
     clickGain.gain.setValueAtTime(0.0001, startTime);
@@ -2163,12 +2323,18 @@
 
   function rootPadTargetMidi() {
     const harmony = currentHarmonyData();
-    return state.tonicMidi + harmony.rootOffset - 24; // Places the support tone two octaves below the tonic register so it reads as foundation, not melody.
+    return state.tonicMidi + harmony.rootOffset - 12; // V92 keeps the fallback pad one octave below the tonic register so small speakers can reproduce it while it remains a foundation voice.
+  }
+
+  function rootPadSynthGain() {
+    if (state.rootPadLevel <= 0) return 0;
+    return clamp(0.024 + state.rootPadLevel * 2.6, 0.024, 0.24); // V92 gives the synth fallback a dependable audible floor while the user-facing level still controls its mix.
   }
 
   function fadeOutRootPadVoice(voice, fadeSeconds = 0.7) {
     if (!voice || voice.stopping || !state.audioContext) return;
     voice.stopping = true;
+    voice.active = false;
     const context = state.audioContext;
     const now = context.currentTime;
     const end = now + Math.max(0.04, fadeSeconds);
@@ -2176,7 +2342,7 @@
       voice.gain.gain.cancelScheduledValues(now);
       voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
       voice.gain.gain.exponentialRampToValueAtTime(0.0001, end);
-      voice.oscillators.forEach(oscillator => oscillator.stop(end + 0.05));
+      voice.oscillators.forEach(oscillator => { try { oscillator.stop(end + 0.05); } catch {} });
     } catch {}
     setTimeout(() => {
       voice.oscillators.forEach(oscillator => { try { oscillator.disconnect(); } catch {} });
@@ -2207,19 +2373,48 @@
     upperOscillator.frequency.setValueAtTime(frequency * 2, now);
     rootOscillator.detune.setValueAtTime(-2, now);
     upperOscillator.detune.setValueAtTime(2, now);
-    rootLayer.gain.setValueAtTime(0.88, now);
-    upperLayer.gain.setValueAtTime(0.12, now);
+    rootLayer.gain.setValueAtTime(0.68, now);
+    upperLayer.gain.setValueAtTime(0.32, now); // V92 adds more octave-root energy so the fallback survives phone/laptop speaker rolloff.
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(520, now);
+    filter.frequency.setValueAtTime(880, now);
     filter.Q.setValueAtTime(0.35, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, state.rootPadLevel), now + 0.8);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, rootPadSynthGain()), now + 0.55);
     rootOscillator.connect(rootLayer).connect(filter);
     upperOscillator.connect(upperLayer).connect(filter);
     filter.connect(gain).connect(state.master);
     rootOscillator.start(now);
     upperOscillator.start(now);
-    const voice = {midi, oscillators:[rootOscillator, upperOscillator], filter, gain, stopping:false};
+    const voice = {midi, oscillators:[rootOscillator, upperOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
+    rootOscillator.onended = () => { voice.active = false; };
+    state.rootPadVoices.push(voice);
+    return voice;
+  }
+
+  function createRootPadSampleVoice(midi) {
+    const context = state.audioContext;
+    const buffer = state.rootPadSampleBuffer;
+    if (!context || context.state !== 'running' || !state.master || !buffer) return null;
+    const now = context.currentTime;
+    const source = context.createBufferSource(); // Loops the imported sustained pad and repitches it to the current chord root.
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    source.playbackRate.setValueAtTime(Math.pow(2, (midi - state.rootPadSampleRootMidi) / 12), now);
+    if (buffer.duration > 0.12) {
+      source.loop = true;
+      source.loopStart = Math.min(0.025, buffer.duration * 0.08);
+      source.loopEnd = Math.max(source.loopStart + 0.05, buffer.duration - Math.min(0.025, buffer.duration * 0.08));
+    }
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, now);
+    filter.Q.setValueAtTime(0.25, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, state.rootPadSampleLevel), now + 0.35);
+    source.connect(filter).connect(gain).connect(state.master);
+    source.start(now);
+    const voice = {midi, oscillators:[source], filter, gain, stopping:false, active:true, kind:'sample'};
+    source.onended = () => { voice.active = false; };
     state.rootPadVoices.push(voice);
     return voice;
   }
@@ -2231,18 +2426,25 @@
     }
     if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
     const targetMidi = rootPadTargetMidi();
-    if (!force && state.rootPadRootMidi === targetMidi && state.rootPadVoices.some(voice => !voice.stopping)) {
+    const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'synth';
+    const liveVoices = state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false);
+    if (!force && state.rootPadRootMidi === targetMidi && liveVoices.some(voice => voice.kind === desiredKind)) {
       const now = state.audioContext.currentTime;
-      state.rootPadVoices.filter(voice => !voice.stopping).forEach(voice => {
+      liveVoices.filter(voice => voice.kind === desiredKind).forEach(voice => {
         voice.gain.gain.cancelScheduledValues(now);
-        voice.gain.gain.setTargetAtTime(Math.max(0.0002, state.rootPadLevel), now, 0.12);
+        const targetGain = desiredKind === 'sample' ? state.rootPadSampleLevel : rootPadSynthGain();
+        voice.gain.gain.setTargetAtTime(Math.max(0.0002, targetGain), now, 0.12);
       });
       return;
     }
-    state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, 0.8));
+    state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, 0.5));
     state.rootPadRootMidi = targetMidi;
-    createRootPadVoice(targetMidi);
-    log('Harmony root pad changed', `${midiName(targetMidi)} · ${Math.round(state.rootPadLevel * 100)}%`);
+    const voice = desiredKind === 'sample' ? createRootPadSampleVoice(targetMidi) : createRootPadVoice(targetMidi);
+    if (!voice) {
+      state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
+      return;
+    }
+    log('Harmony root pad changed', `${midiName(targetMidi)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
   }
 
   function bankFooterMarkup(mode) {
@@ -2275,32 +2477,19 @@
 
 
   const TIMING_BANK_SLOTS = {0:'open',4:'lt',8:'rt',12:'lb',16:'rb'}; // V55 keeps timing-bank prompts aligned with LT/RT/LB/RB pitch order.
-  const LYRE_STRING_LAYOUT = [ // V58 widens the full Lyre by about 20% and widens the nut more than the bridge to soften the string angles.
-    {noteIndex:0,topX:18,bottomX:13,topY:3.5,bottomY:85.0,bridgeLift:9},
-    {noteIndex:1,topX:41.5,bottomX:37.5,topY:3.5,bottomY:92.4,bridgeLift:15},
-    {noteIndex:2,topX:58.5,bottomX:62.5,topY:3.5,bottomY:92.4,bridgeLift:15},
-    {noteIndex:3,topX:82,bottomX:87,topY:3.5,bottomY:85.0,bridgeLift:9}
-  ]; // The outer anchors spread farther than the bridge nodes so each string reaches the arc with a gentler outward slant.
-  // noteIndex 0-3 -> X/A/B/Y face button order (see bindKeyboard's
-  // noteKeyMap for the matching A/S/D/F keyboard order) — used to look the
-  // bridge glyph up per input method instead of a fixed per-string label.
-  const NOTE_INDEX_TO_BUTTON = ['x', 'a', 'b', 'y'];
-  function lyreBridgeGlyph(noteIndex) {
-    const glyphs = activeInputMethod === 'keyboard' ? KEYBOARD_GLYPHS : GAMEPAD_GLYPHS;
-    return glyphs[NOTE_INDEX_TO_BUTTON[noteIndex]] || '';
-  }
+  const LYRE_STRING_LAYOUT = [ // V78 keeps the five bank strings but makes the nut much narrower than the bridge.
+    {modeOffset:0,topX:34,bottomX:10,topY:3.5,bottomY:86.0,bridgeLift:8,label:'1'},
+    {modeOffset:4,topX:42,bottomX:30,topY:3.5,bottomY:90.5,bridgeLift:13,label:'2'},
+    {modeOffset:8,topX:50,bottomX:50,topY:3.5,bottomY:93.2,bridgeLift:16,label:'3'},
+    {modeOffset:12,topX:58,bottomX:70,topY:3.5,bottomY:90.5,bridgeLift:13,label:'4'},
+    {modeOffset:16,topX:66,bottomX:90,topY:3.5,bottomY:86.0,bridgeLift:8,label:'5'}
+  ]; // Top nut origins span only 32% of the field while bridge endpoints span 80%, so the strings fan outward.
 
-  // Falling bank-shift cues (see buildLyreField's bank-glyph markup): on
-  // gamepad these name the physical shoulder button (LB/LT/RB/RT); on
-  // keyboard those same banks are bound to the arrow keys (see
-  // bindKeyboard's bankKeyMap), so the cue shows the matching arrow
-  // instead of a button name the keyboard player has no equivalent for.
   function bankGlyphConfigForOffset(modeOffset = 0) {
-    const isKeyboard = activeInputMethod === 'keyboard';
-    if (modeOffset === 4) return {label: isKeyboard ? '◀' : 'LT', classes:'trigger lt'};
-    if (modeOffset === 8) return {label: isKeyboard ? '▶' : 'RT', classes:'trigger rt'};
-    if (modeOffset === 12) return {label: isKeyboard ? '▲' : 'LB', classes:'bumper lb'};
-    if (modeOffset === 16) return {label: isKeyboard ? '▼' : 'RB', classes:'bumper rb'};
+    if (modeOffset === 4) return {label:'←', classes:'trigger lt'};
+    if (modeOffset === 8) return {label:'→', classes:'trigger rt'};
+    if (modeOffset === 12) return {label:'←', classes:'bumper lb'};
+    if (modeOffset === 16) return {label:'→', classes:'bumper rb'};
     return {label:'O', classes:'open'};
   }
 
@@ -2336,16 +2525,17 @@
     refs.lyreField.innerHTML = `
       <svg class="lyre-string-geometry" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <path class="lyre-open-bridge-arc" d="M1 84.5 Q50 98.2 99 84.5"></path>
-        ${LYRE_STRING_LAYOUT.map(item => `<g style="--string-color:${NOTE_COLORS[item.noteIndex]}"><line class="lyre-string-line" x1="${item.topX}" y1="${item.topY}" x2="${item.bottomX}" y2="${item.bottomY}"></line><circle class="lyre-nut-ring" cx="${item.topX}" cy="${item.topY}" r="3.9"></circle></g>`).join('')}
+        ${LYRE_STRING_LAYOUT.map(item => `<g data-lyre-string="${item.modeOffset}" style="--string-color:${groupColorForOffset(item.modeOffset)}"><line class="lyre-string-line" x1="${item.topX}" y1="${item.topY}" x2="${item.bottomX}" y2="${item.bottomY}"></line><circle class="lyre-nut-ring" cx="${item.topX}" cy="${item.topY}" r="3.9"></circle></g>`).join('')}
       </svg>
       <div class="lyre-bridge">
-        ${LYRE_STRING_LAYOUT.map(item => `<div class="lyre-bridge-node" data-lyre-target="${item.noteIndex}" style="--bridge-left:${item.bottomX}%;--string-color:${NOTE_COLORS[item.noteIndex]};--bridge-lift:${item.bridgeLift}px;color:${NOTE_COLORS[item.noteIndex]}"><span class="lyre-bridge-glyph" data-bridge-note="${item.noteIndex}">${lyreBridgeGlyph(item.noteIndex)}</span></div>`).join('')}
+        ${LYRE_STRING_LAYOUT.map(item => `<div class="lyre-bridge-node" data-lyre-target="${item.modeOffset}" style="--bridge-left:${item.bottomX}%;--string-color:${groupColorForOffset(item.modeOffset)};--bridge-lift:${item.bridgeLift}px;color:${groupColorForOffset(item.modeOffset)}"><span class="lyre-bridge-glyph">${item.label}</span></div>`).join('')}
       </div>`;
   }
 
   function updateLyreField() {
     if (!refs.lyreField) return;
     refs.lyreField.dataset.activeBank = String(currentModeOffset());
+    refs.lyreField.dataset.hostedLayout = hostedInputLayout();
   }
 
   function setVisualPreset(preset, announce = true) {
@@ -2451,7 +2641,7 @@
       button.disabled = dualLayout;
       button.classList.toggle('fretted', (frettedLayout || autoBankLayout) && [...state.frettedSources.values()].some(fret => fret.noteIndex === Number(button.dataset.noteIndex)));
     });
-    refs.arpPad.setAttribute('aria-label', dualLayout ? 'Eight-sector odd-degree arpeggio wheel' : frettedLayout ? 'Automatic pluck input used with a held face-button fret' : autoBankLayout ? 'Six-sector latched selector: Single Note fixed at the top and five editable pattern slots clockwise around the stick' : 'Rotate through hidden chord notes; each new sector plays immediately');
+    refs.arpPad.setAttribute('aria-label', dualLayout ? 'Eight-sector odd-degree arpeggio wheel' : frettedLayout ? 'Automatic pluck input used with a held face-button fret' : autoBankLayout ? 'Four-way latched Auto Pick selector with editable Up, Right, Down, and Left pattern slots' : 'Rotate through hidden chord notes; each new sector plays immediately');
     refs.strumPad.setAttribute('aria-label', dualLayout ? 'Eight-sector even-degree arpeggio wheel' : 'Flick vertically to strum all six virtual chord strings');
   }
 
@@ -2460,7 +2650,7 @@
     if (state.layoutPreset === nextPreset && refs.modeBankGrid.children.length) return;
     releaseAllInputs();
     state.layoutPreset = nextPreset;
-    state.pluckInputMode = (nextPreset === 'five-bank-auto' || nextPreset === 'four-group-auto') ? 'direct' : null; // Six-sector Auto Pick begins safely in fixed-top Single Note mode.
+    state.pluckInputMode = (nextPreset === 'five-bank-auto' || nextPreset === 'four-group-auto') ? normalizeAutoPickSlots()[0] : null; // Four-way Auto Pick begins in the configured Up slot.
     if (nextPreset === 'five-bank-auto' || nextPreset === 'four-group-auto') state.nextSlowArpDirection = 'forward'; // Makes the first slow-arpeggio input predictably start with a forward roll.
     state.modeSources.clear();
     state.fourGroupShiftSources.clear();
@@ -2523,9 +2713,9 @@
       const modeIds = leftStickModeIds();
       const entries = modeIds.map((modeId,index) => {
         const definition = automaticPatternDefinition(modeId);
-        return {id:modeId,label:definition.ringLabel || definition.short,angle:index * 60,className:'pluck-mode-slot six-sector-slot'};
+        return {id:modeId,label:definition.ringLabel || definition.short,angle:index * 90,className:'pluck-mode-slot four-sector-slot'};
       });
-      renderStickRing(refs.arpRing, `six-auto:${state.autoPickSlots.join('|')}`, entries, state.leftStickSector);
+      renderStickRing(refs.arpRing, `four-auto:${state.autoPickSlots.join('|')}`, entries, state.leftStickSector);
       refs.arpNub.textContent = automaticPatternDefinition().short;
       refs.strumNub.textContent = 'STRUM';
       return;
@@ -3223,7 +3413,7 @@
       return;
     }
     if (state.visualPreset === 'lyre-view') {
-      const lyreTarget = $(`[data-lyre-target="${noteIndex}"]`,refs.lyreField);
+      const lyreTarget = $(`[data-lyre-target="${modeOffset}"]`,refs.lyreField);
       if (lyreTarget) {
         lyreTarget.classList.remove('flash');
         void lyreTarget.offsetWidth;
@@ -3497,11 +3687,11 @@
     state.leftStick = [clamp(x,-1,1),clamp(y,-1,1)];
     moveStickNub(refs.arpNub,state.leftStick[0],state.leftStick[1]);
     if (Math.hypot(x,y) < 0.38) {
-      updateArpeggioUI(); // Center is neutral and leaves the last six-sector selection latched.
+      updateArpeggioUI(); // Center is neutral and leaves the last four-way selection latched.
       updatePitchLabels();
       return;
     }
-    const sector = sixSectorIndex(x,y);
+    const sector = fourWayIndex(x,y);
     const mode = leftStickModeIds()[sector] || 'direct';
     state.leftStickSector = sector;
     if (mode !== state.pluckInputMode) startFrettedPluckMode(mode,source);
@@ -3709,87 +3899,42 @@
     });
   }
 
-  // ── Input-method-aware button prompts ───────────────────────────────
-  // The on-screen controller-style buttons (face notes, shoulder/trigger
-  // banks, Start) are labeled with gamepad glyphs by default since they're
-  // primarily a touch control surface styled to look like a controller.
-  // Keyboard play is fully supported (see bindKeyboard below) but until
-  // now the glyphs never reflected it, so a keyboard player saw "A/B/X/Y"
-  // instead of the key they should actually press. Every relevant button
-  // already carries a `data-label-key` attribute (authored but unused) —
-  // this swaps each one's glyph text between the keyboard and gamepad
-  // label sets depending on whichever device was used most recently.
-  // Touch/mouse taps count as "gamepad style" since those buttons *are*
-  // the touch input — there's nothing truer to swap them to.
-  const GAMEPAD_GLYPHS = {y:'Y',x:'X',b:'B',a:'A',lb:'LB',lt:'LT',rb:'RB',rt:'RT',start:'START'};
-  const KEYBOARD_GLYPHS = {y:'F',x:'A',b:'D',a:'S',lb:'▲',lt:'◀',rb:'▼',rt:'▶',start:'ESC'};
-  let activeInputMethod = 'gamepad';
-  function refreshControlGlyphs() {
-    const glyphs = activeInputMethod === 'keyboard' ? KEYBOARD_GLYPHS : GAMEPAD_GLYPHS;
-    $$('[data-label-key]').forEach(el => {
-      const glyph = glyphs[el.dataset.labelKey];
-      if (glyph) el.textContent = glyph;
-    });
-    $$('.stick-key-hint').forEach(el => { el.classList.toggle('visible', activeInputMethod === 'keyboard'); });
-    // The four bridge-node glyphs (X/A/B/Y vs A/S/D/F) aren't [data-label-key]
-    // spans — they're rebuilt from LYRE_STRING_LAYOUT/lyreBridgeGlyph rather
-    // than swapped in place, since buildLyreField() is also how they're
-    // created in the first place.
-    $$('.lyre-bridge-glyph[data-bridge-note]').forEach(el => {
-      el.textContent = lyreBridgeGlyph(Number(el.dataset.bridgeNote));
-    });
-    // In hosted-minigame mode these native buttons are hidden — the real
-    // touch surface is the host page's own edge controls (see
-    // buildEdgeControls in js/music-minigame.js), which mirror this same
-    // swap on their own [data-label-key] glyphs via this message.
-    try { parent.postMessage({source:'hobunji-music-minigame', type:'inputMethod', method:activeInputMethod}, '*'); } catch {}
-  }
-  function setActiveInputMethod(method) {
-    if (activeInputMethod === method) return;
-    activeInputMethod = method;
-    refreshControlGlyphs();
-  }
-  document.addEventListener('pointerdown', event => {
-    if (event.target?.closest?.('.controller-btn,.stick-pad')) setActiveInputMethod('gamepad');
-  }, {capture:true});
-
   const keyboardSources = new Map();
   function bindKeyboard() {
-    // Left hand: A/S/D/F play the four face notes (X/A/B/Y). Right hand:
-    // the arrow cluster covers the shoulder/trigger banks (◀/▶ = LT/RT,
-    // ▲/▼ = LB/RB) — a single reachable block instead of a QWER row split
-    // across the keyboard from the note keys. U/O still rotate the hidden
-    // chord left/right and I/K still strum up/down.
-    const noteKeyMap = new Map([['KeyA',0],['KeyS',1],['KeyD',2],['KeyF',3]]); // X/A/B/Y.
-    const bankKeyMap = new Map([['ArrowLeft','lt'],['ArrowUp','lb'],['ArrowRight','rt'],['ArrowDown','rb']]); // LT/LB/RT/RB where the active preset permits them.
+    const noteKeyMap = new Map([['KeyA',0],['KeyS',1],['KeyD',2],['KeyF',3]]); // Hosted keyboard layout uses ASDF as the four held melody inputs.
+    const bankKeyMap = new Map([['ArrowUp','lt'],['ArrowRight','rt'],['ArrowLeft','lb'],['ArrowDown','rb']]); // Plain arrows select the five color-group banks around Open.
+    const autoPickSectorMap = new Map([['ArrowUp',0],['ArrowRight',1],['ArrowDown',2],['ArrowLeft',3]]); // Shift+Arrow selects one of the four slottable Auto Pick modes.
     window.addEventListener('keydown', event => {
+      const hostedLayout = window.__hobunjiHostedInputLayout; // Prevents hidden iframe keyboard bindings from leaking into Mobile or Controller layout.
+      if (hostedLayout && hostedLayout !== 'keyboard') return;
       if (event.repeat || event.target?.matches?.('input,select,textarea')) return;
-      setActiveInputMethod('keyboard');
+      if (event.shiftKey && autoPickSectorMap.has(event.code) && isLatchedAutoBankLayout()) {
+        event.preventDefault();
+        setLeftStickSector(autoPickSectorMap.get(event.code),'keyboard Shift+Arrow Auto Pick');
+        return;
+      }
       if (noteKeyMap.has(event.code)) {
         event.preventDefault();
         const noteIndex = noteKeyMap.get(event.code);
         keyboardSources.set(event.code, {kind:'note', value:noteIndex});
         holdNote(noteIndex, `key-${event.code}`, true);
+        return;
       }
       if (bankKeyMap.has(event.code)) {
         event.preventDefault();
         const control = bankKeyMap.get(event.code);
         keyboardSources.set(event.code, {kind:'bank', value:control});
         handleBankControl(control, `key-${event.code}`, true);
+        return;
       }
-      if (isLatchedAutoBankLayout() && /^Digit[1-6]$/.test(event.code)) { event.preventDefault(); setLeftStickSector(Number(event.code.slice(-1)) - 1,'keyboard number sector'); return; }
-      if (event.code === 'KeyU') { event.preventDefault(); if (isLatchedAutoBankLayout()) setLeftStickSector(5,'keyboard upper-left sector'); else { state.arpeggioIndex = (state.arpeggioIndex + 7) % 8; updateArpeggioUI(); if (isDualArpLayout()) void triggerDualArpeggioNote('left',state.arpeggioIndex,'keyboard left wheel',1); else if (!isFrettedPluckLayout()) void triggerArpeggioStrum('rotation', 'keyboard rotate left', 1, state.arpeggioIndex); } }
-      if (event.code === 'KeyO') { event.preventDefault(); if (isLatchedAutoBankLayout()) setLeftStickSector(1,'keyboard upper-right sector'); else { state.arpeggioIndex = (state.arpeggioIndex + 1) % 8; updateArpeggioUI(); if (isDualArpLayout()) void triggerDualArpeggioNote('left',state.arpeggioIndex,'keyboard left wheel',1); else if (!isFrettedPluckLayout()) void triggerArpeggioStrum('rotation', 'keyboard rotate right', 1, state.arpeggioIndex); } }
-      if (event.code === 'KeyI') { event.preventDefault(); if (isDualArpLayout()) { state.rightArpeggioIndex = (state.rightArpeggioIndex + 7) % 8; updateArpeggioUI(); void triggerDualArpeggioNote('right',state.rightArpeggioIndex,'keyboard right wheel',1); } else if (isLatchedAutoBankLayout()) setLeftStickSector(0,'keyboard top single-note sector'); else if (isFrettedPluckLayout()) startFrettedPluckMode('tremolo-8','keyboard'); else triggerArpeggioStrum('up', 'keyboard', 1); }
-      if (event.code === 'KeyK') { event.preventDefault(); if (isDualArpLayout()) { state.rightArpeggioIndex = (state.rightArpeggioIndex + 1) % 8; updateArpeggioUI(); void triggerDualArpeggioNote('right',state.rightArpeggioIndex,'keyboard right wheel',1); } else if (isLatchedAutoBankLayout()) setLeftStickSector(3,'keyboard bottom sector'); else if (isFrettedPluckLayout()) startFrettedPluckMode('tremolo-16','keyboard'); else triggerArpeggioStrum('down', 'keyboard', 1); }
-      if (event.code === 'Comma') { event.preventDefault(); cycleScale(-1); }
-      if (event.code === 'Period') { event.preventDefault(); cycleScale(1); }
       if (event.code === 'Escape') { event.preventDefault(); requestExitOrPause(); }
     });
     window.addEventListener('keyup', event => {
-      if (isFrettedPluckLayout() && ['KeyU','KeyO','KeyI','KeyK'].includes(event.code)) stopFrettedPluck(true); // Auto Pick keyboard directions latch on keydown just like the stick.
+      const hostedLayout = window.__hobunjiHostedInputLayout;
+      if (hostedLayout && hostedLayout !== 'keyboard') return;
       const binding = keyboardSources.get(event.code);
       if (!binding) return;
+      event.preventDefault();
       if (binding.kind === 'note') holdNote(binding.value, `key-${event.code}`, false);
       else handleBankControl(binding.value, `key-${event.code}`, false);
       keyboardSources.delete(event.code);
@@ -3824,7 +3969,6 @@
     const pressed = (gamepad.buttons[buttonIndex]?.value || 0) > 0.55;
     const wasPressed = Boolean(state.gamepadPrev[buttonIndex]);
     if (pressed === wasPressed) return;
-    if (pressed) setActiveInputMethod('gamepad');
     if (kind === 'note') holdNote(action, sourceId, pressed);
     if (kind === 'bank') handleBankControl(action, sourceId, pressed);
     if (kind === 'tap' && pressed) tapAction(action);
@@ -3841,6 +3985,10 @@
     if (gamepad) {
       $('#gamepadLeftStatus').textContent = 'Gamepad live';
       $('#gamepadRightStatus').textContent = gamepad.id.slice(0, 22);
+      if (window.__hobunjiHostedInputLayout === 'controller') { // V89: the host owns the entire gamepad in Controller layout so bank holds and Lyre highlighting share one input state.
+        requestAnimationFrame(pollGamepad);
+        return;
+      }
       processGamepadButton(gamepad,2,0,'note','gp-x');
       processGamepadButton(gamepad,0,1,'note','gp-a');
       processGamepadButton(gamepad,1,2,'note','gp-b');
@@ -3900,6 +4048,59 @@
         fail(error);
       }
     });
+  }
+
+
+  function normalizeAuxiliaryDecodedBuffer(decoded) {
+    if (!decoded?.duration || decoded.duration < 0.03) throw new Error('The audio file is too short.');
+    if (decoded.duration > 90) throw new Error('Use an auxiliary sample shorter than 90 seconds.');
+    const context = state.audioContext;
+    const length = decoded.length;
+    const channels = Math.max(1, decoded.numberOfChannels);
+    const output = context.createBuffer(1, length, decoded.sampleRate);
+    const target = output.getChannelData(0);
+    let peak = 0;
+    for (let i = 0; i < length; i++) {
+      let sum = 0;
+      for (let ch = 0; ch < channels; ch++) sum += decoded.getChannelData(ch)[i] || 0;
+      const value = sum / channels;
+      target[i] = value;
+      peak = Math.max(peak, Math.abs(value));
+    }
+    if (peak < 1e-5) throw new Error('The selected sample appears silent.');
+    const gain = clamp(0.92 / peak, 0.1, 12);
+    for (let i = 0; i < length; i++) target[i] = clamp(target[i] * gain, -1, 1);
+    return output;
+  }
+
+  function auxiliarySampleRecord(key, name, buffer, extra = {}) {
+    const pcm = buffer.getChannelData(0).slice();
+    return {key, version:1, name, sampleRate:buffer.sampleRate, pcm:pcm.buffer, savedAt:Date.now(), ...extra};
+  }
+
+  function hydrateAuxiliarySampleRecord(record, kind) {
+    if (!record?.pcm || !state.audioContext) return false;
+    try {
+      const pcm = new Float32Array(record.pcm);
+      const buffer = state.audioContext.createBuffer(1, pcm.length, record.sampleRate);
+      buffer.copyToChannel(pcm, 0);
+      if (kind === 'metronome') {
+        state.metronomeSampleBuffer = buffer;
+        state.metronomeSampleName = record.name || 'Metronome sample';
+        state.pendingMetronomeSampleRecord = null;
+      } else {
+        state.rootPadSampleBuffer = buffer;
+        state.rootPadSampleName = record.name || 'Root pad sample';
+        state.rootPadSampleRootMidi = clamp(Number(record.rootMidi) || state.rootPadSampleRootMidi || 48, 24, 84);
+        state.pendingRootPadSampleRecord = null;
+      }
+      updateAuxiliarySampleUI();
+      if (kind === 'rootPad' && state.rootPadEnabled) syncRootPad(true);
+      return true;
+    } catch (error) {
+      log('Auxiliary sample restore failed', `${kind}: ${error.message}`);
+      return false;
+    }
   }
 
   function normalizeDecodedBuffer(decoded) {
@@ -4035,6 +4236,45 @@
     const db = await openSampleCacheDb();
     const transaction = db.transaction(SAMPLE_CACHE_STORE, 'readwrite');
     await idbRequest(transaction.objectStore(SAMPLE_CACHE_STORE).delete('last'));
+  }
+
+
+  async function readAuxiliaryCachedSample(key) {
+    const db = await openSampleCacheDb();
+    const transaction = db.transaction(SAMPLE_CACHE_STORE, 'readonly');
+    return idbRequest(transaction.objectStore(SAMPLE_CACHE_STORE).get(key));
+  }
+
+  async function writeAuxiliaryCachedSample(record) {
+    const db = await openSampleCacheDb();
+    const transaction = db.transaction(SAMPLE_CACHE_STORE, 'readwrite');
+    await idbRequest(transaction.objectStore(SAMPLE_CACHE_STORE).put(record));
+  }
+
+  async function deleteAuxiliaryCachedSample(key) {
+    const db = await openSampleCacheDb();
+    const transaction = db.transaction(SAMPLE_CACHE_STORE, 'readwrite');
+    await idbRequest(transaction.objectStore(SAMPLE_CACHE_STORE).delete(key));
+  }
+
+  async function restoreAuxiliarySamplesFromIndexedDB() {
+    try {
+      const [metronomeRecord, rootPadRecord] = await Promise.all([
+        readAuxiliaryCachedSample('metronome'),
+        readAuxiliaryCachedSample('rootPad')
+      ]);
+      if (metronomeRecord) {
+        state.pendingMetronomeSampleRecord = metronomeRecord;
+        if (state.audioContext) hydrateAuxiliarySampleRecord(metronomeRecord, 'metronome');
+      }
+      if (rootPadRecord) {
+        state.pendingRootPadSampleRecord = rootPadRecord;
+        if (state.audioContext) hydrateAuxiliarySampleRecord(rootPadRecord, 'rootPad');
+      }
+      updateAuxiliarySampleUI();
+    } catch (error) {
+      log('Auxiliary sample cache unavailable', error.message);
+    }
   }
 
   function sampleRecordFromCurrentBuffer() {
@@ -4517,6 +4757,91 @@
     updateMarkerOutputs();
   }
 
+  function updateAuxiliarySampleUI() {
+    if (refs.metronomeSampleStatus) refs.metronomeSampleStatus.textContent = state.metronomeSampleBuffer || state.pendingMetronomeSampleRecord ? (state.metronomeSampleName || state.pendingMetronomeSampleRecord?.name || 'Cached stomp/click') : 'Synth click fallback';
+    if (refs.rootPadSampleStatus) refs.rootPadSampleStatus.textContent = state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Cached root pad') : 'Synth root-pad fallback';
+    if (refs.rootPadSampleRoot) refs.rootPadSampleRoot.value = String(state.rootPadSampleRootMidi);
+    if (refs.metronomeSampleLevel) refs.metronomeSampleLevel.value = String(Math.round(state.metronomeSampleLevel * 100));
+    if (refs.metronomeSampleLevelOut) refs.metronomeSampleLevelOut.textContent = `${Math.round(state.metronomeSampleLevel * 100)}%`;
+    if (refs.rootPadSampleLevel) refs.rootPadSampleLevel.value = String(Math.round(state.rootPadSampleLevel * 100));
+    if (refs.rootPadSampleLevelOut) refs.rootPadSampleLevelOut.textContent = `${Math.round(state.rootPadSampleLevel * 100)}%`;
+  }
+
+  async function importAuxiliarySample(file, kind) {
+    if (!file) return;
+    await ensureAudio();
+    const bytes = await file.arrayBuffer();
+    if (!bytes.byteLength) throw new Error('The selected file was empty.');
+    const decoded = await decodeAudioDataCompat(bytes);
+    const normalized = normalizeAuxiliaryDecodedBuffer(decoded);
+    if (kind === 'metronome') {
+      state.metronomeSampleBuffer = normalized;
+      state.metronomeSampleName = file.name;
+      state.pendingMetronomeSampleRecord = null;
+      await writeAuxiliaryCachedSample(auxiliarySampleRecord('metronome', file.name, normalized));
+      playMetronomeClick(0, true);
+      toast('Metronome sample ready');
+    } else {
+      stopRootPad(0.15);
+      state.rootPadSampleBuffer = normalized;
+      state.rootPadSampleName = file.name;
+      state.pendingRootPadSampleRecord = null;
+      await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', file.name, normalized, {rootMidi:state.rootPadSampleRootMidi}));
+      if (state.rootPadEnabled) syncRootPad(true);
+      toast('Root pad sample ready');
+    }
+    updateAuxiliarySampleUI();
+    saveSettings();
+    log('Auxiliary sample imported', `${kind} · ${file.name} · ${normalized.duration.toFixed(2)}s`);
+  }
+
+  function previewRootPadSource() {
+    ensureAudio().then(() => {
+      const midi = rootPadTargetMidi();
+      const voice = state.rootPadSampleBuffer ? createRootPadSampleVoice(midi) : createRootPadVoice(midi);
+      if (!voice) return;
+      setTimeout(() => fadeOutRootPadVoice(voice, 0.35), 1400);
+    }).catch(error => toast(error.message, 2600));
+  }
+
+  function setupAuxiliarySampleControls() {
+    updateAuxiliarySampleUI();
+    $('#importMetronomeSampleBtn')?.addEventListener('click', async () => { try { await ensureAudio(); refs.metronomeSampleFile?.click(); } catch (error) { toast(error.message,2600); } });
+    $('#importRootPadSampleBtn')?.addEventListener('click', async () => { try { await ensureAudio(); refs.rootPadSampleFile?.click(); } catch (error) { toast(error.message,2600); } });
+    refs.metronomeSampleFile?.addEventListener('change', async event => {
+      const file = event.target.files?.[0];
+      try { await importAuxiliarySample(file, 'metronome'); } catch (error) { toast(`Metronome import failed: ${error.message}`, 3200); log('Metronome import failed', error.message); }
+      event.target.value = '';
+    });
+    refs.rootPadSampleFile?.addEventListener('change', async event => {
+      const file = event.target.files?.[0];
+      try { await importAuxiliarySample(file, 'rootPad'); } catch (error) { toast(`Root pad import failed: ${error.message}`, 3200); log('Root pad import failed', error.message); }
+      event.target.value = '';
+    });
+    $('#previewMetronomeSampleBtn')?.addEventListener('click', async () => { try { await ensureAudio(); playMetronomeClick(0, true); } catch (error) { toast(error.message,2600); } });
+    $('#previewRootPadSampleBtn')?.addEventListener('click', previewRootPadSource);
+    $('#clearMetronomeSampleBtn')?.addEventListener('click', async () => {
+      state.metronomeSampleBuffer = null; state.metronomeSampleName = ''; state.pendingMetronomeSampleRecord = null;
+      try { await deleteAuxiliaryCachedSample('metronome'); } catch {}
+      updateAuxiliarySampleUI(); saveSettings(); toast('Synth metronome restored');
+    });
+    $('#clearRootPadSampleBtn')?.addEventListener('click', async () => {
+      stopRootPad(0.2); state.rootPadSampleBuffer = null; state.rootPadSampleName = ''; state.pendingRootPadSampleRecord = null;
+      try { await deleteAuxiliaryCachedSample('rootPad'); } catch {}
+      updateAuxiliarySampleUI(); if (state.rootPadEnabled) syncRootPad(true); saveSettings(); toast('Synth root pad restored');
+    });
+    refs.metronomeSampleLevel?.addEventListener('input', event => { state.metronomeSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); saveSettings(); });
+    refs.rootPadSampleLevel?.addEventListener('input', event => { state.rootPadSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); if (state.rootPadEnabled && state.rootPadSampleBuffer) syncRootPad(); saveSettings(); });
+    refs.rootPadSampleRoot?.addEventListener('change', async event => {
+      state.rootPadSampleRootMidi = clamp(Number(event.target.value) || 48, 24, 84);
+      if (state.rootPadSampleBuffer) {
+        try { await writeAuxiliaryCachedSample(auxiliarySampleRecord('rootPad', state.rootPadSampleName || 'Root pad sample', state.rootPadSampleBuffer, {rootMidi:state.rootPadSampleRootMidi})); } catch {}
+        if (state.rootPadEnabled) syncRootPad(true);
+      }
+      saveSettings(); updateAuxiliarySampleUI();
+    });
+  }
+
   function setupSamplerControls() {
     refs.visualPresetSelect.addEventListener('change', () => setVisualPreset(refs.visualPresetSelect.value));
     refs.timingPromptBeatsSelect.addEventListener('change', () => setTimingPromptBeats(refs.timingPromptBeatsSelect.value));
@@ -4549,8 +4874,9 @@
       log('Harmony root pad changed', state.rootPadEnabled ? 'on' : 'off');
     });
     refs.rootPadLevelSlider.addEventListener('input', event => {
-      state.rootPadLevel = clamp(Number(event.target.value) / 100, 0, 0.08);
+      state.rootPadLevel = clamp(Number(event.target.value) / 100, 0, 0.2);
       refs.rootPadLevelOut.textContent = `${Math.round(state.rootPadLevel * 100)}%`;
+    updateAuxiliarySampleUI();
       syncRootPad();
       saveSettings();
     });
@@ -4604,7 +4930,7 @@
 
   function setupAutoPickSlotUI() {
     normalizeAutoPickSlots();
-    const selectablePatterns = Object.entries(AUTO_PICK_PATTERN_LIBRARY).filter(([id]) => id !== 'direct');
+    const selectablePatterns = Object.entries(AUTO_PICK_PATTERN_LIBRARY);
     const selects = $$('[data-auto-pick-slot]');
     const refresh = () => {
       selects.forEach((select,index) => {
@@ -4619,9 +4945,9 @@
     };
     selects.forEach((select,index) => select.addEventListener('change', () => {
       const previousMode = state.autoPickSlots[index];
-      const nextMode = AUTO_PICK_PATTERN_LIBRARY[select.value] && select.value !== 'direct' ? select.value : DEFAULT_AUTO_PICK_SLOTS[index];
+      const nextMode = AUTO_PICK_PATTERN_LIBRARY[select.value] ? select.value : DEFAULT_AUTO_PICK_SLOTS[index];
       state.autoPickSlots[index] = nextMode;
-      if (state.leftStickSector === index + 1 || state.pluckInputMode === previousMode && !leftStickModeIds().includes(previousMode)) {
+      if (state.leftStickSector === index || state.pluckInputMode === previousMode && !leftStickModeIds().includes(previousMode)) {
         state.pluckInputMode = nextMode;
         restartActiveFrettedPluck();
       }
@@ -4654,8 +4980,10 @@
       const legacyRaw = lowerRegisterRaw || localStorage.getItem('musicSystemDemoSettingsV10') || localStorage.getItem('musicSystemDemoSettingsV9') || localStorage.getItem('musicSystemDemoSettingsV8') || localStorage.getItem('musicSystemDemoSettingsV7') || localStorage.getItem('musicSystemDemoSettingsV5') || localStorage.getItem('musicSystemDemoSettingsV3') || localStorage.getItem('musicSystemDemoSettingsV2');
       const raw = currentRaw || legacyRaw;
       const v68ChordDurationMigrationKey = 'hobunjiV68ChordDurationDoubled'; // Ensures each user's currently saved free-play chord duration is doubled exactly once.
+      const v91AuxLayersDefaultOnKey = 'hobunjiV91AuxLayersDefaultOn'; // Turns the metronome and root pad on once for existing saves, then preserves later user choices.
       if (!raw) {
         localStorage.setItem(v68ChordDurationMigrationKey, '1'); // Fresh V68 installs already start at the doubled eight-beat default and must not double again on their second launch.
+        localStorage.setItem(v91AuxLayersDefaultOnKey, '1'); // Fresh V91 installs already start with both auxiliary layers enabled.
         return;
       }
       const saved = JSON.parse(raw);
@@ -4679,14 +5007,22 @@
       if (!Number.isFinite(state.masterVolume) || state.masterVolume < 0 || state.masterVolume > 1) state.masterVolume = 0.78;
       state.auditoryMetronome = state.auditoryMetronome === true;
       state.rootPadEnabled = state.rootPadEnabled === true;
-      state.rootPadLevel = clamp(Number(state.rootPadLevel) || 0.02, 0, 0.08);
+      if (!localStorage.getItem(v91AuxLayersDefaultOnKey)) {
+        state.auditoryMetronome = true;
+        state.rootPadEnabled = true;
+        localStorage.setItem(v91AuxLayersDefaultOnKey, '1');
+      }
+      state.rootPadLevel = clamp(Number(state.rootPadLevel) || 0.04, 0, 0.2);
+      state.metronomeSampleLevel = clamp(Number(state.metronomeSampleLevel) || 0.55, 0, 1);
+      state.rootPadSampleLevel = clamp(Number(state.rootPadSampleLevel) || 0.34, 0, 1);
+      state.rootPadSampleRootMidi = clamp(Number(state.rootPadSampleRootMidi) || 48, 24, 84);
       state.layoutPreset = 'five-bank-auto'; // Ignores legacy saved controller presets so future work always starts from the agreed input system.
       state.visualPreset = ['falling-strings','timing-rings','lyre-view'].includes(state.visualPreset) ? state.visualPreset : 'falling-strings';
       state.timingPromptBeats = clamp(Math.round(Number(state.timingPromptBeats) || 4),1,8);
       state.latchedMiddleOffset = [4,8].includes(Number(state.latchedMiddleOffset)) ? Number(state.latchedMiddleOffset) : 4;
       normalizeAutoPickSlots(state.autoPickSlots);
       if (!AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode]) state.pluckInputMode = 'direct';
-      state.leftStickSector = clamp(Math.round(Number(state.leftStickSector) || leftStickModeIds().indexOf(state.pluckInputMode)),0,5);
+      state.leftStickSector = clamp(Math.round(Number(state.leftStickSector) || leftStickModeIds().indexOf(state.pluckInputMode)),0,3);
     } catch (error) {
       log('Settings load failed', error.message);
     }
@@ -4696,7 +5032,7 @@
     normalizeAutoPickSlots(state.autoPickSlots);
     if (!AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode]) state.pluckInputMode = 'direct';
     state.layoutPreset = 'five-bank-auto';
-    state.leftStickSector = clamp(Math.round(Number(state.leftStickSector) || leftStickModeIds().indexOf(state.pluckInputMode)),0,5);
+    state.leftStickSector = clamp(Math.round(Number(state.leftStickSector) || leftStickModeIds().indexOf(state.pluckInputMode)),0,3);
     refs.visualPresetSelect.value = state.visualPreset;
     refs.timingPromptBeatsSelect.value = String(state.timingPromptBeats);
     refs.timingPromptPicker.hidden = state.visualPreset !== 'timing-rings';
@@ -5675,6 +6011,8 @@
 
   function startSong(type = state.selectedSong, options = {}) {
     clearSuccessfulPreviewTimers('new song start');
+    state.postSongSilence = false; // A deliberate restart exits the completed-song silent state without changing the selected song.
+
     const demoMode = AUTO_PICK_PATTERN_LIBRARY[options.demoMode] ? options.demoMode : null;
     const requestedDefinition = getSongDefinition(type);
     if (requestedDefinition?.bpm && type.startsWith?.('custom:')) $('#bpmInput').value = String(requestedDefinition.bpm);
@@ -5685,6 +6023,7 @@
       return;
     }
     state.selectedSong = type;
+    state.gameplaySelection = type; // V86: a started song is now the active selector mode.
     const melody = getSongDefinition(type);
     if (melody && state.scaleName !== melody.scaleName) {
       state.scaleName = melody.scaleName; // Public-domain songs use fixed diatonic degrees so their familiar interval pattern stays intact.
@@ -5702,7 +6041,6 @@
     clearNoteElements();
     state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo};
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
-    document.body.classList.add('game-active-hide-setup'); // Closes the technical-settings drawer for the duration of the performance — see hobunjiHostedMusicBridge.
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
     state.lastMetronomeBeat = -1;
@@ -5723,7 +6061,7 @@
           : isFourGroupAutoLayout()
             ? 'Four groups surround the Open notes: LT = −4, RT = +4, and hold RT before LT = +8. LS latches the same roll or tremolo behavior; Down/base tremolo is the default.'
             : isFiveBankAutoLayout()
-              ? 'Five normal banks remain active. LS has six sectors: fixed-top Single Note plus five editable patterns chosen in LS Slots. Automatic patterns begin from the real melody tap and fill later subdivisions without adding gameplay inputs. Curved capo cues fall toward the Lyre bridge to show the next hidden chord degree.'
+              ? 'Five normal banks remain active. LS has four cardinal modes—Up, Right, Down, and Left—chosen from the editable LS Slots. Automatic patterns begin from the real melody tap and fill later subdivisions without adding gameplay inputs. Curved capo cues fall toward the Lyre bridge to show the next hidden chord degree.'
             : 'Hold LT/LB/RT/RB for five melody banks. D-pad changes the scale; rotate LS for chord tones or flick RS to strum.';
     refs.transportStatus.innerHTML = `<strong>${message}</strong> ${layoutText}`;
   }
@@ -5732,7 +6070,8 @@
     clearSuccessfulPreviewTimers('song stopped');
     state.game.demoActive = false;
     state.game.active = false;
-    document.body.classList.remove('game-active-hide-setup');
+    state.postSongSilence = false;
+    state.gameplaySelection = 'freeplay'; // V86: stopping any authored song returns the selector to Free Play.
     state.paused = false;
     state.visibilityPauseStarted = 0;
     state.harmonyStartTime = nowMs();
@@ -5752,23 +6091,42 @@
       feedback('Preview Stopped','#ffc45f');
       return;
     }
+    if (!state.game.active && state.gameplaySelection !== 'freeplay') {
+      const replayTitle = songTitle(state.selectedSong); // Used by Start/Pause after a result screen or an idle authored-song selection.
+      state.postSongSilence = false;
+      state.paused = false;
+      ensureAudio().then(() => startSong(state.selectedSong)).catch(error => {
+        toast(`Could not start ${replayTitle}: ${error.message}`,2800);
+        log('Song restart failed',`${error.name}: ${error.message}`);
+      });
+      feedback('Start', '#67f4a4');
+      return;
+    }
     state.paused = !state.paused;
     if (state.paused) {
-      state.game.pausedAt = nowMs();
+      state.game.pausedAt = state.game.active ? nowMs() : 0;
       releaseAllInputs();
       stopRootPad(0.3);
-      refs.transportStatus.innerHTML = '<strong>Paused.</strong> Press Start to resume.';
+      refs.transportStatus.innerHTML = state.gameplaySelection === 'freeplay'
+        ? '<strong>Free Play paused.</strong> Press Start to resume Free Play.'
+        : '<strong>Paused.</strong> Press Start to resume.';
       feedback('Paused', '#84a8ff');
     } else {
+      state.postSongSilence = false;
       if (state.game.active && state.game.pausedAt) {
         state.game.pauseAccum += nowMs() - state.game.pausedAt;
         state.game.pausedAt = 0;
+      } else if (!state.game.active && state.gameplaySelection === 'freeplay') {
+        state.harmonyStartTime = nowMs(); // Starting Free Play from pause begins a fresh shared beat/harmony clock.
+        state.lastHarmonyStep = -1;
+        state.lastMetronomeBeat = -1;
+        updateFreePlayStatus('Free Play.');
       }
-      refs.transportStatus.innerHTML = '<strong>Resumed.</strong>';
+      refs.transportStatus.innerHTML = state.game.active ? '<strong>Resumed.</strong>' : refs.transportStatus.innerHTML;
       if (state.rootPadEnabled) ensureAudio().then(() => syncRootPad(true)).catch(() => {});
-      feedback('Resume', '#67f4a4');
+      feedback(state.game.active ? 'Resume' : 'Free Play', '#67f4a4');
     }
-    log(state.paused ? 'Paused' : 'Resumed');
+    log(state.paused ? 'Paused' : (state.game.active ? 'Resumed' : 'Free Play started'));
   }
 
   function gameTime() {
@@ -5791,10 +6149,10 @@
     }
     const element = document.createElement('div');
     element.className = state.visualPreset === 'lyre-view' && event.inputType !== 'strum' ? 'note-bead lyre-note-bead' : 'note-bead';
-    element.style.color = NOTE_COLORS[colorIndex];
+    element.style.color = state.visualPreset === 'lyre-view' && event.inputType !== 'strum' ? groupColorForOffset(event.modeOffset) : NOTE_COLORS[colorIndex];
     if (state.visualPreset === 'lyre-view' && event.inputType !== 'strum') {
-      const layout = LYRE_STRING_LAYOUT.find(item => item.noteIndex === event.noteIndex) || LYRE_STRING_LAYOUT[0];
-      event.lyrePath = layout; // V56 stores the selected string endpoints so the falling prompt can interpolate along its diagonal string.
+      const layout = LYRE_STRING_LAYOUT.find(item => item.modeOffset === event.modeOffset) || LYRE_STRING_LAYOUT[0];
+      event.lyrePath = layout; // V76 stores the selected bank-string path so the falling prompt tracks the active color group.
       const fieldRect = refs.lyreField?.getBoundingClientRect();
       const stageRect = refs.stage?.getBoundingClientRect();
       const initialLeft = fieldRect && stageRect
@@ -5805,7 +6163,7 @@
         : refs.stage.clientHeight * (layout.topY / 100);
       element.style.left = `${initialLeft}px`;
       element.style.top = `${initialTop}px`;
-      element.innerHTML = `<div class="lyre-note-inner">${bankGlyphMarkup(event.modeOffset)}</div>`;
+      element.innerHTML = `<div class="lyre-note-inner"><span class="hosted-lyre-note-glyph">${hostedNoteGlyph(event.noteIndex)}</span></div>`;
     } else {
       const laneCount = currentModeDefinitions().length * 4; // Keeps falling notes centered in the locked 20-lane input layout.
       element.style.left = `${(lane + 0.5) / laneCount * 100}%`;
@@ -5941,6 +6299,11 @@
   }
 
   function updateGameFrame() {
+    if (state.postSongSilence) {
+      updateDebugState();
+      requestAnimationFrame(updateGameFrame);
+      return;
+    }
     const harmonyStep = currentHarmonyStep();
     const beatData = currentHarmonyBeatData();
     const chordChanged = harmonyStep !== state.lastHarmonyStep;
@@ -5951,6 +6314,9 @@
       updateArpeggioUI();
       if (usesAutomaticPluckInput() && state.pluckInputMode && currentFretData()) restartActiveFrettedPluck();
       syncRootPad();
+    }
+    else if (state.rootPadEnabled && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
+      syncRootPad(true); // Self-heals a pad voice that ended or failed without waiting for the next chord boundary.
     }
     if (beatChanged) {
       state.lastMetronomeBeat = beatData.absoluteBeat;
@@ -6013,20 +6379,38 @@
         }
       }
       if (time > state.game.endAt) {
+        // Ambient NPC performance (see startAmbientLead in the host bridge):
+        // a solo demo run that just seamlessly starts itself over again
+        // instead of stopping or posting a result card, for as long as the
+        // host keeps it selected.
+        if (state.game.loopDemo) {
+          startSong(state.selectedSong, {demoMode:state.game.demoMode, loopDemo:true});
+          updateDebugState();
+          requestAnimationFrame(updateGameFrame);
+          return;
+        }
         const accuracy = state.game.total ? Math.round(state.game.hits / state.game.total * 100) : 0;
         const wasDemo = state.game.demoActive;
-        const loop = state.game.loopDemo, loopType = state.selectedSong, loopMode = state.game.demoMode;
+        const finishedTitle = songTitle(state.game.songType || state.selectedSong); // Preserved after completion so Start can replay this exact song from beat zero.
         const final = `${wasDemo ? 'Preview complete' : 'Finished'} · ${state.game.score.toLocaleString()} · ${accuracy}%`;
-        refs.transportStatus.innerHTML = `<strong>${final}</strong>${wasDemo ? ` · ${automaticPluckLabel(state.game.demoMode)} · automatic continuation notes were audio-only` : ''}`;
+        const resultPayload = {
+          source:'hobunji-music-minigame', type:'song-result', title:finishedTitle,
+          score:state.game.score, accuracy, hits:state.game.hits, total:state.game.total, demo:wasDemo,
+        }; // Host uses this to show a large result card outside the narrow Lyre iframe.
+        refs.transportStatus.innerHTML = `<strong>${final}</strong> · ${wasDemo ? 'Press Start to replay the selected song.' : 'Press Start to replay from the beginning.'}`;
         feedback(wasDemo ? 'Perfect Run' : accuracy >= 90 ? 'Mastered' : accuracy >= 70 ? 'Complete' : 'Keep Practicing', wasDemo || accuracy >= 70 ? '#67f4a4' : '#ffc45f');
         state.game.demoActive = false;
         clearSuccessfulPreviewTimers(wasDemo ? 'preview complete' : 'song complete');
         state.game.active = false;
-        log(wasDemo ? 'Successful preview finished' : 'Song finished', final);
-        // Ambient NPC performance (see startAmbientLead in the host bridge):
-        // a solo demo run that just seamlessly starts itself over again
-        // instead of stopping, for as long as the host keeps it selected.
-        if (loop) startSong(loopType, {demoMode: loopMode, loopDemo: true});
+        state.postSongSilence = true;
+        state.paused = true; // Prevents direct note input from silently becoming Free Play after an authored song ends.
+        state.game.pausedAt = 0;
+        state.visibilityPauseStarted = 0;
+        releaseAllInputs();
+        stopRootPad(0.18);
+        clearNoteElements();
+        try { parent.postMessage(resultPayload,'*'); } catch (_) {}
+        log(wasDemo ? 'Successful preview finished' : 'Song finished', `${final}; selected song retained; transport silent until Start`);
       }
     }
     updateDebugState();
@@ -6043,7 +6427,7 @@
   function setupSongUI() {
     bindSongCards();
     $('#startFromMenuBtn').addEventListener('click', () => startSong(state.selectedSong));
-    $('#startSongBtn').addEventListener('click', () => startSong(state.selectedSong));
+    $('#startSongBtn').addEventListener('click', togglePause);
     refs.previewPlaythroughBtn.addEventListener('click', startSuccessfulPlaythroughPreview);
     $('#freePlayBtn').addEventListener('click', () => stopSong('Free play.'));
     $('#freeFromMenuBtn').addEventListener('click', () => { stopSong('Free play.'); closeAllModals(); });
@@ -6097,9 +6481,9 @@
       `Import: ${state.sourceChannels} source ch → ${state.monoStrategy} | corr ${state.stereoCorrelation.toFixed(2)} | gain ×${state.sampleNormalizationGain.toFixed(2)} | peak ${state.samplePeakDb.toFixed(1)} dBFS`,
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,
-      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'count-in ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${activeSongMeter().label} clock${activeSongMeter().grouping.length>1 ? ` (${activeSongMeter().grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? 'on' : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} @ ${Math.round(state.rootPadLevel * 100)}%` : 'off'}`,
+      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'count-in ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${activeSongMeter().label} clock${activeSongMeter().grouping.length>1 ? ` (${activeSongMeter().grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'synth'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
       `Arpeggio: ${isDualArpLayout() ? `L ${DUAL_ARP_LABELS.left[state.arpeggioIndex]} ${midiName(dualArpeggioMidi('left',state.arpeggioIndex))} | R ${DUAL_ARP_LABELS.right[state.rightArpeggioIndex]} ${midiName(dualArpeggioMidi('right',state.rightArpeggioIndex))}` : usesAutomaticPluckInput() ? `${automaticPluckLabel()} | step ${state.pluckStep}${currentFretData() ? ` | ${automaticPatternSteps(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset),currentFretData(),state.pluckInputMode).label} | ${automaticPatternDefinition().kind}` : ''}` : `slot ${state.arpeggioIndex + 1} → ${midiName(arpeggioMidi())} | fixed register −1 oct`} | LS ${state.leftStick.map(value => value.toFixed(2)).join(', ')} | RS ${state.rightStick.map(value => value.toFixed(2)).join(', ')} | gesture channels ${state.gestureMediaChannels.size}`,
-      `Six-sector LS: selected ${state.leftStickSector + 1}/6 ${automaticPatternDefinition().short} | fixed top SINGLE | slots ${normalizeAutoPickSlots().map((id,index) => `${index + 1}:${automaticPatternDefinition(id).short}`).join(' · ')}`,
+      `Four-way LS: selected ${['UP','RIGHT','DOWN','LEFT'][state.leftStickSector] || 'UP'} ${automaticPatternDefinition().short} | slots ${normalizeAutoPickSlots().map((id,index) => `${['U','R','D','L'][index]}:${automaticPatternDefinition(id).short}`).join(' · ')}`,
       `Held notes/automatic melodies: ${state.noteSources.map((set,index) => set.size ? index+1 : null).filter(Boolean).join(', ') || 'none'} | auto-pick sources ${state.frettedSources.size} | mode sources ${state.modeSources.size} | ordered shifts ${state.fourGroupShiftSources.size} | trigger gestures ${state.triggerGestures.size} | active voice groups ${state.voices.size} / voices ${activeVoiceCount()}`,
       `Inputs received: ${state.inputCount} | audio-only automatic attacks: ${state.auditoryPulseCount} | last input ${state.lastInput}`,
       `MIDI studio: ${state.midiStudio.project ? `${state.midiStudio.project.title} · ${state.midiStudio.project.notes.length} events · ${state.midiStudio.project.chords.length} measures` : 'no editor project'} | saved songs ${Object.keys(state.customSongs).length} | status ${state.midiStudio.status}`,
@@ -6133,6 +6517,7 @@
   function init() {
     loadSettings();
     restoreLastSampleFromIndexedDB();
+    restoreAuxiliarySamplesFromIndexedDB();
     initSelects();
     syncControlsFromState();
     setupAutoPickSlotUI();
@@ -6145,6 +6530,7 @@
     bindKeyboard();
     setupFileImport();
     setupSamplerControls();
+    setupAuxiliarySampleControls();
     setupMidiStudio();
     setupSongUI();
     setupModals();
@@ -6155,7 +6541,6 @@
     updateHarmonyVisual(true, true);
     setAudioButton('idle');
     $('#bpmInput').value = String(state.bpm);
-    refreshControlGlyphs();
     window.addEventListener('gamepadconnected', event => connectGamepad(event.gamepad.index));
     window.addEventListener('gamepaddisconnected', event => {
       if (state.gamepadIndex === event.gamepad.index) {
@@ -6188,7 +6573,7 @@
     });
     pollGamepad();
     updateGameFrame();
-    log('Music System Demo V73 initialized', 'Authored songs use immediate hit/miss/wrong Groove judgments and vertical Lyre spatial hit windows; free play keeps configurable measure Groove.');
+    log('Music System Demo V90 initialized', 'Authored songs use immediate hit/miss/wrong Groove judgments and vertical Lyre spatial hit windows; free play keeps configurable measure Groove.');
   }
 
   // Same-origin host bridge: external gameplay controls call the real music engine
@@ -6198,7 +6583,6 @@
       return ensureAudio();
     },
     announceInput(control) {
-      setActiveInputMethod('gamepad'); // Every host-edge-control interaction (note/bank/tap/stick) routes through here — the same "touch counts as gamepad-style" convention bindKeyboard's own pointerdown listener uses.
       try {
         parent.postMessage({ source:'hobunji-music-minigame', type:'input', control:String(control || 'music-control') }, '*');
       } catch (_) {}
@@ -6254,16 +6638,11 @@
       setArpeggioFromStick(clamp(Number(x) || 0, -1, 1), clamp(Number(y) || 0, -1, 1), String(sourceId));
       return true;
     },
-    // Direct equivalent of the keyboard's Digit1-6 sector shortcut — lets a
-    // host build plain labeled buttons for the five-bank auto-pick patterns
-    // instead of requiring the drag-a-stick-into-a-wedge gesture (which,
-    // needing a note held down at the same time, is awkward on touch/mouse
-    // and undiscoverable without a real gamepad).
-    setPatternSector(index) {
-      if (!isLatchedAutoBankLayout()) return this.gameplayMenuState();
+    setAutoPickMode(sector, sourceId = 'host-auto-pick-cross') {
       void ensureAudio().catch(() => {});
-      setLeftStickSector(clamp(Math.round(Number(index) || 0), 0, 5), 'host-pattern-select');
-      return this.gameplayMenuState();
+      setLeftStickSector(clamp(Math.round(Number(sector) || 0),0,3), String(sourceId));
+      this.announceInput(`auto-pick-${state.leftStickSector}`);
+      return true;
     },
     rightStick(x, y, sourceId = 'host-right-stick') {
       void ensureAudio().catch(() => {});
@@ -6302,17 +6681,20 @@
       const importedSongs = Object.values(state.customSongs || {})
         .sort((a,b) => String(a.title || '').localeCompare(String(b.title || '')))
         .map(song => ({id:customSongKey(song.id),title:song.title || 'Imported song',group:'Imported',bpm:Number(song.bpm) || 104}));
+      const activeSelection = state.gameplaySelection || (state.game.active ? state.selectedSong : 'freeplay');
+      const freePlayEntry = {id:'freeplay',title:'Free Play',group:'Songs'}; // V86: Free Play is deliberately the first selectable song-list entry.
       return {
         harmonyPattern:state.harmonyPattern,
         harmonyPatternLabel:harmonyPatternLabel(state.harmonyPattern),
         harmonyPatterns:HARMONY_PATTERN_NAMES.map(name => ({id:name,label:harmonyPatternLabel(name)})),
-        selectedSong:state.selectedSong,
-        selectedSongTitle:songTitle(state.selectedSong),
-        songs:[...songbookSongs,...importedSongs,...practiceSongs],
+        selectedSong:activeSelection,
+        selectedSongTitle:activeSelection === 'freeplay' ? 'Free Play' : songTitle(state.selectedSong),
+        songs:[freePlayEntry,...songbookSongs,...importedSongs,...practiceSongs],
         gameActive:!!state.game.active,
         gameDemoActive:!!state.game.demoActive,
         backupAccompaniment:!!state.game.backupAccompaniment,
         paused:!!state.paused,
+        postSongSilence:!!state.postSongSilence,
         countInBeats:Number(state.game.countInBeats) || 0,
         countInMs:Number(state.game.countInMs) || 0,
         beatMs:Number(state.game.beatMs) || (60000 / Math.max(1,Number(state.bpm) || 104)),
@@ -6336,9 +6718,17 @@
     },
     selectGameplaySong(songId) {
       const requested = String(songId || '');
+      if (requested === 'freeplay') {
+        stopSong('Free Play.');
+        state.gameplaySelection = 'freeplay';
+        feedback('Free Play','#67f4a4');
+        log('Gameplay mode selected','Free Play');
+        return this.gameplayMenuState();
+      }
       const isPractice = ['scale','harmony','octaves','etude'].includes(requested);
       if (!isPractice && !getSongDefinition(requested)) return this.gameplayMenuState();
       state.selectedSong = requested;
+      state.gameplaySelection = requested; // V86: selecting a real song immediately leaves the Free Play selection state.
       const definition = getSongDefinition(requested);
       const defaultBpm = Number(definition?.defaultBpm || definition?.bpm);
       if (Number.isFinite(defaultBpm) && document.getElementById('bpmInput')) document.getElementById('bpmInput').value = String(defaultBpm);
@@ -6348,6 +6738,7 @@
       return this.gameplayMenuState();
     },
     async startGameplaySong() {
+      if (state.gameplaySelection === 'freeplay') return this.gameplayMenuState();
       await ensureAudio();
       startSong(state.selectedSong);
       const menu = this.gameplayMenuState();
@@ -6381,7 +6772,7 @@
     },
     // Ambient NPC performance (no human input at all): a solo demo
     // playthrough that keeps restarting itself — see loopDemo in
-    // startSong/the endAt handler above — for as long as an NPC is parked
+    // startSong/the endAt handler below — for as long as an NPC is parked
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
     async startAmbientLead(songId) {
@@ -6474,14 +6865,8 @@
     const stageShell = layout?.querySelector('.stage-shell');
     const topbar = app?.querySelector(':scope > .topbar');
     const transport = stageShell?.querySelector(':scope > .transport');
-    // V74: the two side-panel asides hold the actual play controls (face
-    // notes, shoulder/trigger banks, sticks) — those stay on the main
-    // layout, visible and immediately usable. Only the topbar (Sampler/
-    // LS Slots/Groove/Help/MIDI/visual preset/audio-enable/import) and the
-    // transport row (Free Play/Choose Pattern/Preview Run/Start) are
-    // "technical settings" in the sense a gameplay session cares about, so
-    // only those two collapse into a single closed-by-default drawer.
-    if (!app || !layout || !stageShell || !topbar) {
+    const sidePanels = layout ? Array.from(layout.querySelectorAll(':scope > .side-panel')) : [];
+    if (!app || !layout || !stageShell || !topbar || sidePanels.length < 2) {
       post({ type:'error', message:'Hosted music layout could not find the expected V42 interface nodes.' });
       return;
     }
@@ -6489,14 +6874,16 @@
     const dock = document.createElement('div');
     dock.id = 'hostedMusicDrawerDock';
     const performance = makeDrawer('Music setup');
+    const controllers = makeDrawer('Controls', 'hostedControllerGrid');
     performance.body.append(topbar);
     if (transport) performance.body.append(transport);
-    dock.append(performance.details);
+    sidePanels.forEach(panel => controllers.body.append(panel));
+    dock.append(performance.details, controllers.details);
     document.body.append(dock);
 
     const hint = document.createElement('div');
     hint.id = 'hostedMusicHint';
-    hint.textContent = 'Lyre View · full systems are in the closed menu';
+    hint.textContent = 'Lyre View · full systems are in the closed menus';
     document.body.append(hint);
 
     const visual = document.getElementById('visualPresetSelect');
@@ -6505,15 +6892,12 @@
       visual.dispatchEvent(new Event('change', { bubbles:true }));
     }
 
-    performance.details.addEventListener('toggle', () => {
-      if (performance.details.open) post({ type:'drawer', label:performance.details.querySelector('summary')?.textContent || 'Music setup' });
-    });
-    // Belt-and-suspenders: whenever a song actually starts playing, force
-    // the technical-settings drawer shut even if the player left it open
-    // while browsing patterns — gameplay itself should never have Sampler/
-    // MIDI/Groove/etc. sitting open over the performance field.
-    new MutationObserver(() => { if (document.body.classList.contains('game-active-hide-setup')) performance.details.open = false; })
-      .observe(document.body, { attributes:true, attributeFilter:['class'] });
+    // Only one drawer stays open at once so the performance field is never permanently buried.
+    [performance.details, controllers.details].forEach(active => active.addEventListener('toggle', () => {
+      if (!active.open) return;
+      [performance.details, controllers.details].forEach(other => { if (other !== active) other.open = false; });
+      post({ type:'drawer', label:active.querySelector('summary')?.textContent || 'Music controls' });
+    }));
 
     const score = document.getElementById('scoreHud');
     const combo = document.getElementById('comboHud');
