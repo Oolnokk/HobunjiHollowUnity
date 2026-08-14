@@ -507,3 +507,12 @@
 
   global.PanelUI = { makeCollapsible, makeResizableEdge, makeResizableGridColumn, makeResizableBox, fixScroll, installTouchDragScroll, injectStyles };
 })(window);
+
+// The attack editor has a small extension for shared tool/weapon idle stances.
+// Load it only there so the generic PanelUI helper remains harmless elsewhere.
+if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
+  const idleStanceScript = document.createElement('script');
+  idleStanceScript.src = '../../js/attack-idle-stance-editor.js?v=20260814a';
+  idleStanceScript.defer = true;
+  document.head.appendChild(idleStanceScript);
+}
