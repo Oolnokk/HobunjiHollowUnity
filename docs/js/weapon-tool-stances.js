@@ -238,6 +238,17 @@
     return null;
   }
 
+  // game.js rotates every sweep-style tool's child sprite plane -90 degrees so
+  // the same source PNGs line up with sweep animation math. Idle stance poses,
+  // however, are authored as the shared visual Neutral pose. Undo that child
+  // twist in the holder only while a weapon idle stance is rendered, so axes
+  // match hoes in Heavy and fishing maces match spears/pick-shovels in Light.
+  function renderedTargetPoseFor(activeSlot, itemKey, def) {
+    const targetPose = targetPoseFor(activeSlot, itemKey, def);
+    if (!targetPose || activeSlot !== 'weapon' || def?.animStyle !== 'sweep') return targetPose;
+    return { ...targetPose, roll: (Number(targetPose.roll) || 0) + 90 };
+  }
+
   function activeState() {
     const activeSlot = deps?.getActiveTool?.() || null;
     const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null;
@@ -285,7 +296,7 @@
       const holderMoving = holderIsMoving(now);
       const { activeSlot, itemKey, def, mesh } = activeState();
       const combatBusy = activeSlot === 'weapon' && (combatHoldActive || now < combatBusyUntil);
-      const targetPose = targetPoseFor(activeSlot, itemKey, def);
+      const targetPose = renderedTargetPoseFor(activeSlot, itemKey, def);
       const sourcePose = ENGINE_NEUTRAL_POSES[def?.animStyle] || ENGINE_NEUTRAL_POSES.thrust;
       let savedPosition = null;
       let savedQuaternion = null;
@@ -335,6 +346,7 @@
       shape: shapeFor(state.itemKey, state.def),
       weaponIdleClass: weaponIdleClass(state.itemKey, state.def),
       sourceAnimStyle: state.def?.animStyle || null,
+      sweepSpriteCompensationDeg: state.activeSlot === 'weapon' && state.def?.animStyle === 'sweep' ? 90 : 0,
       stanceApplied,
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
       holderMotionBasis: playerMesh ? 'player-body-relative' : 'composer-body-missing',
