@@ -19,11 +19,11 @@ const pendingStrike = game.indexOf('if (pendingAction && !strikeFired && progres
 assert.ok(itemModeReturn >= 0 && pendingStrike > itemModeReturn,
   'held item mode returns before the hidden tool strike can fire a queued action');
 
-assert.match(bridge, /document\.addEventListener\('pointerup'[\s\S]*?stopImmediatePropagation\(\)[\s\S]*?dispatchPlant\(action\)/,
-  'Plant pointer taps are claimed before game.js can queue them into the hidden tool swing');
+assert.match(bridge, /document\.addEventListener\('pointerup'[\s\S]*?if \(!dispatchPlant\(action\)\) return;[\s\S]*?stopImmediatePropagation\(\)/,
+  'Plant pointer taps dispatch directly, but leave native fallback untouched if the planting owner is not ready');
 assert.doesNotMatch(bridge, /function\s+touchLikePointer/,
   'Plant interception does not depend on browsers reporting a touch-specific pointer type');
-assert.match(bridge, /currentDesktopBinding\(plant\.slot\)[\s\S]*?dispatchPlant\(plant\.action\)/,
+assert.match(bridge, /currentDesktopBinding\(plant\.slot\)[\s\S]*?if \(!dispatchPlant\(plant\.action\)\) return;/,
   'desktop semantic action bindings dispatch held seeds directly too');
 assert.match(bridge, /WebGLRenderer\?\.prototype[\s\S]*?applyPlantReticle\(scene\)[\s\S]*?previousRendererRender\.call/,
   'the held-seed reticle is corrected at the actual renderer boundary after game.js updates it');
@@ -46,6 +46,10 @@ assert.equal(sandbox.window.HobunjiHeldSeedActionBridge.dispatchPlant('plant_red
   'public held-seed dispatch claims a normal plant action');
 assert.equal(dispatchedAction, 'plant_redberries',
   'held-seed dispatch delegates the exact semantic crop action to planting metadata bridge');
+
+sandbox.window.HobunjiInventoryActionMetadataBridge.tryPlantAction = () => ({ handled: false, ok: false });
+assert.equal(sandbox.window.HobunjiHeldSeedActionBridge.dispatchPlant('plant_redberries'), false,
+  'unready planting metadata leaves the native input path available instead of swallowing the action');
 
 const metadataIndex = loader.indexOf('inventory-action-metadata-bridge.js'); // Used to ensure tryPlantAction exists before the held-seed adapter executes.
 const seedBridgeIndex = loader.indexOf('held-seed-action-bridge.js'); // Used to verify the new lifecycle adapter is parser-blocking before game.js.
