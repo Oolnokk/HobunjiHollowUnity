@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
@@ -11,6 +12,8 @@ function source(relativePath) {
 
 const game = source('docs/game.js');
 const alcohol = source('docs/js/alcohol-gameplay-bridge.js');
+const inventoryMetadata = source('docs/js/inventory-action-metadata-bridge.js');
+const controls = source('docs/config/scratchbones-config.js');
 const combat = source('docs/js/combat/combat-core.js');
 const loader = source('docs/js/combat/combat-config-loader.js');
 // Mobile Pixel Probe diagnostics expose the populated action-arch slots.
@@ -27,6 +30,14 @@ assert.match(alcohol, /const heldMode = itemDeps\?\.getHeldMode\?\.\(\);[\s\S]*?
 
 assert.match(game, /getHeldItemAction\?\.\(\);\s*if \(consumeAction\) btns\.unshift\(consumeAction\);/,
   'a held consumable occupies item action slot 1');
+assert.match(game, /if \(item && item\.seedFor\)[\s\S]{0,500}?const plantAct\s*=\s*'plant_' \+ cropName;[\s\S]{0,500}?btns\.push\(/,
+  'every selected seedFor entry routes through the generic numbered plant action');
+assert.match(game, /isCookedFood[\s\S]{0,300}?action: 'consume_food_item'/,
+  'generated cooked meals expose a numbered Eat action');
+assert.match(game, /activeAction === 'consume_food_item'[\s\S]{0,300}?CookingSystem\.eat\(/,
+  'generated cooked meals consume through CookingSystem from normal action dispatch');
+assert.match(game, /const isItemButton = b =>[\s\S]{0,500}?consume_held_item[\s\S]{0,500}?consume_food_item[\s\S]{0,500}?plant_[\s\S]{0,500}?place_[\s\S]{0,500}?spawn_[\s\S]{0,500}?harvest/,
+  'mobile item-button packing recognizes consume, plant, place, spawn, and harvest actions');
 assert.match(game, /window\.FarmCrates\?\.init\(\{[\s\S]*?getHeldMode: \(\) => heldMode/,
   'the consumable bridge receives the current semantic held mode');
 assert.match(game, /const actionButtonKey = btns\.map[\s\S]*?\|\$\{actionButtonKey\}`/,
@@ -42,6 +53,50 @@ assert.match(game, /if \(key === 'e' && isDesktop\)[\s\S]*?if \(!wasHeld\) runIn
 assert.match(pixelProbe, /Mobile action arch:/,
   'Pixel Probe reports all mobile action-arch slots without desktop devtools');
 
+const inventoryStart = game.indexOf('const inventoryItems = ['); // Used to audit every currently authored seed-bearing item instead of naming a hand-picked subset.
+const inventoryEnd = game.indexOf('];', inventoryStart);
+assert.ok(inventoryStart >= 0 && inventoryEnd > inventoryStart, 'inventory item registry is present');
+const inventoryBlock = game.slice(inventoryStart, inventoryEnd); // Used to scope seed consistency checks to selectable inventory entries.
+const seedEntries = [...inventoryBlock.matchAll(/\{[^{}\n]*key:\s*'([^']+)'[^{}\n]*seedFor:\s*'([^']+)'[^{}\n]*\}/g)]; // Used to enumerate all authored seeds in the held-item scroll.
+assert.ok(seedEntries.length > 0, 'at least one held seed entry is authored');
+for (const [, seedKey, cropKey] of seedEntries) {
+  const escapedSeedKey = seedKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Used to safely match the current seed key inside ITEM_DEFS.
+  assert.match(game, new RegExp(`\\b${escapedSeedKey}\\s*:\\s*\\{[^\\n]*cat:\\s*'seed'`),
+    `${seedKey} (${cropKey}) has a canonical seed definition`);
+}
+
+for (let slot = 1; slot <= 5; slot++) {
+  const binding = new RegExp(`\\{\\s*"id":\\s*"action${slot}"[^\\n]*"desktop":\\s*"[^"]+"[^\\n]*"controller":\\s*"[^"]+"[^\\n]*\\}`); // Used to verify each mobile-visible semantic slot remains reachable from keyboard and controller.
+  assert.match(controls, binding, `action${slot} has both desktop and controller bindings`);
+}
+
+assert.match(inventoryMetadata, /Object\.assign\(entry, \{ \.\.\.definition, \.\.\.entry \}\);/,
+  'canonical metadata enriches selectable entries without overwriting scroll-owned context fields');
+assert.match(inventoryMetadata, /originalInit\(injectedDeps\);[\s\S]{0,120}?syncInventoryEntries\(injectedDeps\);/,
+  'inventory metadata synchronizes immediately after cooking/item registration');
+
+const bridgeWindow = {}; // Used to exercise the future-CookingSystem hook without requiring a browser.
+vm.runInNewContext(inventoryMetadata, { window: bridgeWindow });
+const fakeCookingSystem = {
+  init(injectedDeps) { return injectedDeps; },
+  registerIngredientItems() { return true; },
+}; // Used to verify late CookingSystem assignment receives the bridge wrappers.
+bridgeWindow.CookingSystem = fakeCookingSystem;
+const heldCropEntry = { key: 'redberries', icon: '🍓', label: 'REDBERRIES', max: 99 }; // Used to model the minimal scroll entry that previously lost food semantics.
+const fakeCookingDeps = {
+  ITEM_DEFS: { redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', tags: ['Crop', 'Berry'] } },
+  inventoryItems: [heldCropEntry],
+}; // Used to prove canonical food metadata becomes visible to the held-item resolver while presentation remains stable.
+bridgeWindow.CookingSystem.init(fakeCookingDeps);
+assert.equal(heldCropEntry.cat, 'crop', 'raw crop category reaches the selectable held item');
+assert.deepEqual(Array.from(heldCropEntry.tags), ['Crop', 'Berry'], 'raw crop tags reach the selectable held item');
+assert.equal(heldCropEntry.label, 'REDBERRIES', 'scroll-owned presentation survives metadata synchronization');
+
+const metadataModuleIndex = loader.indexOf('inventory-action-metadata-bridge.js'); // Used to verify the bridge installs before the consumable provider in the parser-blocking compatibility bootstrap.
+const alcoholBridgeIndex = loader.indexOf('alcohol-gameplay-bridge.js');
+assert.ok(metadataModuleIndex >= 0 && alcoholBridgeIndex > metadataModuleIndex,
+  'inventory action metadata bridge loads before alcohol gameplay action discovery');
+
 const areaSet = combat.indexOf('devDeps.setCurrentArea(targetArea);');
 const townBuild = combat.indexOf('devDeps.buildTownScene?.();', areaSet);
 const gridRead = combat.indexOf('devDeps.getActiveGrid?.();', townBuild);
@@ -55,4 +110,4 @@ const alcoholBridge = loader.indexOf('alcohol-gameplay-bridge.js?v=');
 assert.ok(elevationBridge >= 0 && alcoholBridge > elevationBridge,
   'the latest town body-elevation bridge remains loaded before alcohol gameplay');
 
-console.log('blackout travel and item action tests passed');
+console.log('blackout travel and standard item action routing tests passed');
