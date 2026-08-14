@@ -74,8 +74,14 @@ assert.match(inventoryMetadata, /Object\.assign\(entry, \{ \.\.\.definition, \.\
   'canonical metadata enriches selectable entries without overwriting scroll-owned context fields');
 assert.match(inventoryMetadata, /originalInit\(injectedDeps\);[\s\S]{0,120}?syncInventoryEntries\(injectedDeps\);/,
   'inventory metadata synchronizes immediately after cooking/item registration');
+assert.match(inventoryMetadata, /document\.addEventListener\('pointerup'[\s\S]*?syntheticPointerCleanup\(button, event\);[\s\S]*?finishPlantContext\(context\);/,
+  'touch Plant taps bypass the stale tool-swing gate while preserving the native pointer cleanup path');
+assert.match(inventoryMetadata, /scene\.onBeforeRender[\s\S]*?applyPlantReticleOverride\(scene\);/,
+  'held seeds can override the stale active-tool reticle color immediately before rendering');
+assert.match(loader, /inventory-action-metadata-bridge\.js\?v=20260813b/,
+  'the mobile seed-action bridge revision is cache-busted');
 
-const bridgeWindow = {}; // Used to exercise the future-CookingSystem hook without requiring a browser.
+const bridgeWindow = {}; // Used to exercise future-global hooks without requiring a browser.
 vm.runInNewContext(inventoryMetadata, { window: bridgeWindow });
 const fakeCookingSystem = {
   init(injectedDeps) { return injectedDeps; },
@@ -84,19 +90,74 @@ const fakeCookingSystem = {
 bridgeWindow.CookingSystem = fakeCookingSystem;
 const heldCropEntry = { key: 'redberries', icon: '🍓', label: 'REDBERRIES', max: 99 }; // Used to model the minimal scroll entry that previously lost food semantics.
 const heldFishEntry = { key: 'testFish', icon: '🐟', label: 'TEST FISH', max: 99 }; // Used to model canonical fish, whose ITEM_DEFS category is material but which is still ordinary edible food.
+const heldSeedEntry = { key: 'redberrySeeds', icon: '🍓', label: 'REDBERRY SEEDS', max: 99, seedFor: 'redberries' }; // Used to exercise the same seedFor metadata the mobile Plant button consumes.
+const fakeTile = { type: 'tilled', crop: null, cropAge: 0, cropReady: false, stress: '' }; // Used as the live mutable reticle tile for the mobile planting regression.
+const calls = { clamp: 0, refreshItems: 0, buildInventory: 0, refreshActions: 0, saveMember: 0, water: 0, dirty: 0, saveLayout: 0, toast: [] }; // Used to verify the direct mobile route mirrors the ordinary successful farm-mutation side effects.
 const fakeCookingDeps = {
   ITEM_DEFS: {
     redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', tags: ['Crop', 'Berry'] },
     testFish: { icon: '🐟', label: 'Test Fish', cat: 'material', tags: ['Fish', 'Common'] },
+    redberrySeeds: { icon: '🍓', label: 'Redberry Seeds', cat: 'seed', tags: ['Seed', 'Berry'] },
   },
-  inventoryItems: [heldCropEntry, heldFishEntry],
-}; // Used to prove canonical food metadata becomes visible to the held-item resolver while presentation remains stable.
+  inventoryItems: [heldCropEntry, heldFishEntry, heldSeedEntry],
+  inventory: { redberrySeeds: 2 },
+  clampInventoryStack() { calls.clamp++; },
+  refreshItemScroll() { calls.refreshItems++; },
+  buildInventoryGrid() { calls.buildInventory++; },
+  refreshActionBar() { calls.refreshActions++; },
+  saveMemberWorldData() { calls.saveMember++; },
+  showToast(message, ok) { calls.toast.push({ message, ok }); },
+}; // Used to prove canonical food metadata and direct mobile planting share the same inventory registry.
 bridgeWindow.CookingSystem.init(fakeCookingDeps);
 assert.equal(heldCropEntry.cat, 'crop', 'raw crop category reaches the selectable held item');
 assert.deepEqual(Array.from(heldCropEntry.tags), ['Crop', 'Berry'], 'raw crop tags reach the selectable held item');
 assert.equal(heldCropEntry.label, 'REDBERRIES', 'scroll-owned presentation survives metadata synchronization');
 assert.ok(Array.from(heldFishEntry.tags).includes('Food'), 'canonical fish gains the held-food semantic tag');
 assert.equal(heldFishEntry.cat, 'material', 'fish keeps its canonical inventory category while becoming edible');
+
+const fakeFishingSystem = { init(injectedDeps) { return injectedDeps; } }; // Used to prove the future targeting hook retains the game's real reticle/tile providers.
+const fakeHousePieces = { init(injectedDeps) { return injectedDeps; } }; // Used to prove the future farm-world hook retains persistence/permission helpers.
+bridgeWindow.Fishing = fakeFishingSystem;
+bridgeWindow.HousePieces = fakeHousePieces;
+bridgeWindow.Fishing.init({
+  getReticleTile: () => ({ col: 4, row: 7 }),
+  getActiveTileAt: () => fakeTile,
+  getCurrentArea: () => 'farm',
+});
+bridgeWindow.HousePieces.init({
+  hasFarmPermission: permission => permission === 'plant',
+  recomputeWater() { calls.water++; },
+  markTileDirty(col, row) { assert.deepEqual([col, row], [4, 7]); calls.dirty++; },
+  saveFarmLayout() { calls.saveLayout++; },
+  scene: null,
+});
+assert.equal(bridgeWindow.HobunjiInventoryActionMetadataBridge.getDebug().plantingReady, true,
+  'mobile planting becomes ready after cooking, targeting, and farm-world init');
+
+const planted = bridgeWindow.HobunjiInventoryActionMetadataBridge.tryPlantAction('plant_redberries');
+assert.equal(planted.handled, true, 'the mobile seed bridge claims authored plant actions');
+assert.equal(planted.ok, true, 'tilled soil accepts the selected seed immediately');
+assert.equal(fakeCookingDeps.inventory.redberrySeeds, 1, 'successful mobile planting consumes exactly one seed');
+assert.equal(fakeTile.crop, 'redberries', 'successful mobile planting writes the crop onto the targeted tile');
+assert.equal(fakeTile.cropAge, 0, 'new mobile-planted crops start at age zero');
+assert.equal(fakeTile.cropReady, false, 'new mobile-planted crops are not prematurely harvestable');
+assert.equal(calls.dirty, 1, 'successful mobile planting marks the target tile dirty for visual rebuild');
+assert.equal(calls.saveLayout, 1, 'successful mobile planting persists the farm layout');
+assert.equal(calls.water, 1, 'successful mobile planting follows the ordinary farm recompute path');
+assert.equal(calls.clamp, 1, 'successful mobile planting clamps the consumed seed stack');
+assert.equal(calls.refreshItems, 1, 'successful mobile planting refreshes the selected-item HUD');
+assert.equal(calls.refreshActions, 1, 'successful mobile planting refreshes action availability');
+assert.equal(calls.saveMember, 1, 'successful mobile planting also persists member/world inventory state');
+
+fakeTile.type = 'grass';
+fakeTile.crop = null;
+const blockedPlant = bridgeWindow.HobunjiInventoryActionMetadataBridge.tryPlantAction('plant_redberries');
+assert.equal(blockedPlant.handled, true, 'invalid soil is still handled by the mobile seed route for immediate feedback');
+assert.equal(blockedPlant.ok, false, 'grass remains invalid planting soil');
+assert.equal(fakeCookingDeps.inventory.redberrySeeds, 1, 'blocked mobile planting does not consume a seed');
+assert.equal(calls.dirty, 1, 'blocked mobile planting does not dirty or rebuild the tile');
+assert.match(calls.toast.at(-1)?.message || '', /tilled or raised soil/i,
+  'blocked mobile planting explains the soil requirement instead of silently doing nothing');
 
 const metadataModuleIndex = loader.indexOf('inventory-action-metadata-bridge.js'); // Used to verify the bridge installs before the consumable provider in the parser-blocking compatibility bootstrap.
 const alcoholBridgeIndex = loader.indexOf('alcohol-gameplay-bridge.js');
