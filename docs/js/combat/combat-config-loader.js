@@ -84,7 +84,7 @@
     ['js/alcohol-gameplay-bridge.js?v=20260811g', () => !!window.HobunjiDrunkGameplayBridge],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
-    ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecoveryBridge],
+    ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
   ];
 
   function loadModule(src, alreadyLoaded) {
