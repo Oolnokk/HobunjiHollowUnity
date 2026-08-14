@@ -20877,6 +20877,21 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          // Building interiors return early above and never reach the
+          // farm/zone/town item-context block further down (it also relies
+          // on a reticle/tile pair this branch never computes) — without
+          // this, held-item actions like eating or playing a Kurraya
+          // silently had no button anywhere indoors, not just in the inn.
+          // Mirrors the same three checks in that block, in the same
+          // priority order; the plant/seed part below them doesn't apply
+          // indoors so isn't duplicated here.
+          if (heldMode === 'item') {
+            const heldItem = getActiveInventoryItem();
+            const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+            if (consumeAction) return [consumeAction];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+          }
           return [];
         }
 
