@@ -2,25 +2,28 @@
   'use strict';
 
   // Centralizes the visual language for tools that can also occupy the weapon slot.
-  // game.js remains authoritative for attacks/tool actions; this module augments
-  // live definitions and swaps the neutral holder transform while Three builds matrices.
-  let deps = null; // Live EquipmentPanel dependencies: slots, defs, active slot, holder, meshes.
-  let holderHookInstalled = false; // Guards the toolHolder.updateMatrixWorld render-pose hook.
-  let combatHooksInstalled = false; // Guards combat visual wrappers used to protect active attacks.
-  let lastRelativeHolderQuaternion = null; // Previous holder orientation relative to the player body.
-  let holderMotionBusyUntil = 0; // Grace period keeping idle poses out of active tool swings.
-  let combatBusyUntil = 0; // End of current non-held combat visual window.
-  let combatHoldActive = false; // True while a charged/held attack is frozen at windup.
-  let lastDebugSignature = ''; // Compact in-game debug signature, avoiding frame-by-frame spam.
-  let stanceApplied = false; // Diagnostic: whether the most recent matrix build used a stance override.
+  // game.js remains authoritative for attack playback; this module supplies the
+  // slot-specific Neutral pose and fixes the sprite-plane basis at render time.
+  let deps = null;
+  let holderHookInstalled = false;
+  let combatHooksInstalled = false;
+  let lastRelativeHolderQuaternion = null;
+  let holderMotionBusyUntil = 0;
+  let combatHoldActive = false;
+  let combatVisualState = null;
+  let lastDebugSignature = '';
+  let stanceApplied = false;
   let stanceConfigLoadStarted = false;
   let stanceConfigSource = 'built-in-defaults';
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260814a';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260814b';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
+  const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
+  const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']);
+  const RAD_TO_DEG = 180 / Math.PI;
 
-  // Existing neutral poses from game.js. These are the source poses written by
-  // updateToolMesh(); slot-specific idle stances are authored separately below.
+  // game.js's legacy rest poses. These remain the source basis for ordinary tool
+  // mode and for converting old procedural combat arcs into pose-driven attacks.
   const ENGINE_NEUTRAL_POSES = Object.freeze({
     thrust: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     sweep: Object.freeze({ x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0 }),
@@ -31,7 +34,7 @@
   // makes the stance system disappear. The attack editor authors the same schema.
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
-    hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -90 }),
+    hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
     heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }),
     lightWeapon: Object.freeze({ x: 0.04, y: 0, z: 0, pitch: 20, yaw: -70, bodyYaw: 0, roll: -65 }),
   });
@@ -45,15 +48,17 @@
     lightWeapon: { ...DEFAULT_IDLE_STANCES.lightWeapon },
   };
 
-  const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
-
   function normalizePose(raw, fallback) {
     const pose = {};
     for (const key of POSE_KEYS) {
       const value = Number(raw?.[key]);
-      pose[key] = Number.isFinite(value) ? value : fallback[key];
+      pose[key] = Number.isFinite(value) ? value : Number(fallback?.[key]) || 0;
     }
     return pose;
+  }
+
+  function clonePose(pose) {
+    return normalizePose(pose, {});
   }
 
   function applyStanceConfig(raw, sourceLabel) {
@@ -124,6 +129,34 @@
     }
   }
 
+  function activeState() {
+    const activeSlot = deps?.getActiveTool?.() || null;
+    const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null;
+    const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null;
+    const mesh = activeSlot ? deps?.toolMeshMap?.[activeSlot] : null;
+    return { activeSlot, itemKey, def, mesh };
+  }
+
+  function targetPoseFor(activeSlot, itemKey, def) {
+    const shape = shapeFor(itemKey, def);
+    if (activeSlot !== 'weapon') {
+      if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
+      if (def?.animStyle === 'thrust') return idleStances.tool;
+      return null;
+    }
+    const idleClass = weaponIdleClass(itemKey, def);
+    if (idleClass === 'heavy') return idleStances.heavyWeapon;
+    if (idleClass === 'light') return idleStances.lightWeapon;
+    return null;
+  }
+
+  function currentCombatNeutral() {
+    const state = activeState();
+    if (state.activeSlot !== 'weapon') return null;
+    const pose = targetPoseFor(state.activeSlot, state.itemKey, state.def);
+    return pose ? clonePose(pose) : null;
+  }
+
   function deg(value) {
     return (Number(value) || 0) * Math.PI / 180;
   }
@@ -168,8 +201,6 @@
   function holderIsMoving(now) {
     const relativeQ = relativeHolderQuaternion();
     if (!relativeQ) {
-      // Do not fall back to raw toolHolder rotation: character facing would
-      // then be mistaken for a tool swing, which is the bug this basis avoids.
       lastRelativeHolderQuaternion = null;
       return false;
     }
@@ -184,83 +215,208 @@
     return now < holderMotionBusyUntil;
   }
 
-  function markCombatVisualBusy(durationS, opts = {}) {
-    const baseSeconds = Math.max(0, Number(durationS) || 0);
-    const holdSeconds = Math.max(0, Number(opts?.holdS) || 0);
-    const safeTailSeconds = 0.75;
-    combatBusyUntil = Math.max(
-      combatBusyUntil,
-      performance.now() + (baseSeconds + holdSeconds + safeTailSeconds) * 1000
-    );
+  // Bake game.js's old procedural attack endpoints into the generic pose schema.
+  // Once an attack has a pose object, game.js's own fourPhaseLerp() can use the
+  // active Heavy/Light stance as Neutral for the real Neutral→Windup→Strike→Neutral cycle.
+  function legacyProceduralEndpoints(anim, power) {
+    const p = Number.isFinite(Number(power)) ? Number(power) : 1;
+    if (anim === 'chop') {
+      const neutral = ENGINE_NEUTRAL_POSES.chop;
+      const rawWindup = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13, bodyYaw: -29, roll: -112 };
+      const rawStrike = { x: 0, y: 0, z: 0.12, pitch: 13, yaw: -28, bodyYaw: 29, roll: -91 };
+      const scaleFromNeutral = raw => {
+        const out = {};
+        for (const key of POSE_KEYS) out[key] = neutral[key] + (raw[key] - neutral[key]) * p;
+        return out;
+      };
+      return { windup: scaleFromNeutral(rawWindup), strike: scaleFromNeutral(rawStrike) };
+    }
+    if (anim === 'sweep') {
+      return {
+        windup: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: -2.20 * RAD_TO_DEG * p, roll: 0 },
+        strike: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 2.12 * RAD_TO_DEG * p, roll: 0 },
+      };
+    }
+    // Thrust's pitch is intentionally not power-scaled in game.js; the reach,
+    // lateral offset, tool yaw and body yaw are.
+    return {
+      windup: { x: 0, y: 0, z: -0.40 * p, pitch: 10.31, yaw: 0, bodyYaw: -45 * p, roll: 0 },
+      strike: { x: -0.23 * p, y: 0, z: 0.32 * p, pitch: 1, yaw: -45 * p, bodyYaw: 46 * p, roll: 0 },
+    };
+  }
+
+  function bakeAuthoredEndpoint(raw, sourceNeutral, power) {
+    const out = {};
+    for (const key of POSE_KEYS) {
+      const rawValue = Number(raw?.[key]);
+      const endpoint = Number.isFinite(rawValue) ? rawValue : sourceNeutral[key];
+      out[key] = sourceNeutral[key] + (endpoint - sourceNeutral[key]) * power;
+    }
+    return out;
+  }
+
+  // game.js mirrors x/yaw/roll/bodyYaw after interpolating them whenever dirSign
+  // is -1. Pre-unmirror Neutral so both forehand and backhand attacks still start
+  // and end on the exact same combat idle stance visible before the attack.
+  function neutralInputForSign(targetNeutral, sign) {
+    const out = {};
+    for (const key of POSE_KEYS) {
+      out[key] = MIRRORED_POSE_KEYS.has(key) ? targetNeutral[key] * sign : targetNeutral[key];
+    }
+    return out;
+  }
+
+  function prepareCombatOptions(rawOpts = {}) {
+    const state = activeState();
+    const targetNeutral = currentCombatNeutral();
+    if (!targetNeutral || state.activeSlot !== 'weapon') return rawOpts || {};
+
+    const anim = rawOpts.anim || state.def?.animStyle || 'thrust';
+    const authoredPose = rawOpts.pose && typeof rawOpts.pose === 'object' ? rawOpts.pose : null;
+    const requestedSign = rawOpts.dirSign === -1 ? -1 : 1;
+    // Legacy procedural thrust/chop never used combatSwingSign; preserve that.
+    const effectiveSign = authoredPose || anim === 'sweep' ? requestedSign : 1;
+    const powerValue = Number(rawOpts.power);
+    const power = Number.isFinite(powerValue) ? powerValue : 1;
+    let windup;
+    let strike;
+
+    if (authoredPose) {
+      const styleNeutral = ENGINE_NEUTRAL_POSES[anim] || ENGINE_NEUTRAL_POSES.thrust;
+      const sourceNeutral = normalizePose(authoredPose.neutral, styleNeutral);
+      windup = bakeAuthoredEndpoint(authoredPose.windup, sourceNeutral, power);
+      strike = bakeAuthoredEndpoint(authoredPose.strike, sourceNeutral, power);
+    } else {
+      ({ windup, strike } = legacyProceduralEndpoints(anim, power));
+    }
+
+    return {
+      ...rawOpts,
+      anim,
+      dirSign: effectiveSign,
+      // Windup/strike are already baked to the exact endpoints the old animation
+      // would have reached. power=1 prevents a changed Neutral from rescaling them.
+      power: 1,
+      pose: {
+        neutral: neutralInputForSign(targetNeutral, effectiveSign),
+        windup,
+        strike,
+      },
+    };
+  }
+
+  function beginCombatVisual(durationS, opts, held) {
+    const duration = Math.max(0, Number(durationS) || 0);
+    const windupFrac = Number.isFinite(Number(opts?.windupFrac)) ? Number(opts.windupFrac) : 0.16;
+    const strikeFrac = Number.isFinite(Number(opts?.strikeFrac)) ? Number(opts.strikeFrac) : 0.28;
+    const returnTailS = strikeFrac < 0.999 ? 0 : Math.max(0.12, duration * 0.35);
+    const holdS = Math.max(0, Number(opts?.holdS) || 0);
+    const totalS = Math.max(0.05, duration + returnTailS + holdS);
+    const wf = Math.max(0, Math.min(0.99, windupFrac * duration / totalS));
+    const sf = Math.max(wf, Math.min(0.99, strikeFrac * duration / totalS));
+    const hf = holdS > 0
+      ? Math.min(0.99, sf + holdS / totalS)
+      : Math.min(0.99, sf + (1 - sf) * 0.3);
+    combatVisualState = {
+      anim: opts?.anim || activeState().def?.animStyle || 'thrust',
+      totalS,
+      wf,
+      sf,
+      hf,
+      elapsedS: 0,
+      lastNow: performance.now(),
+      held: !!held,
+      progress: 0,
+      completedAt: 0,
+      clearQueued: false,
+    };
+    combatHoldActive = !!held;
+    holderMotionBusyUntil = 0;
+  }
+
+  function advanceCombatVisual(now) {
+    const state = combatVisualState;
+    if (!state) return null;
+    const dt = Math.max(0, (now - state.lastNow) / 1000);
+    state.lastNow = now;
+    const windupEndS = state.wf * state.totalS;
+    if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
+    else state.elapsedS = Math.min(state.totalS, state.elapsedS + dt);
+    state.progress = Math.max(0, Math.min(1, state.elapsedS / state.totalS));
+    if (!state.held && state.progress >= 1 && !state.clearQueued) {
+      state.completedAt = now;
+      state.clearQueued = true;
+      // Clear after the current synchronous render finishes. That keeps every
+      // render pass in this frame on the exact attack Neutral, then lets the
+      // next updateToolMesh write its ordinary rest transform for the idle hook.
+      setTimeout(() => {
+        if (combatVisualState === state && state.clearQueued) combatVisualState = null;
+      }, 0);
+    }
+    return state;
+  }
+
+  function neutralWeightForVisual(state) {
+    if (!state) return 1;
+    const p = state.progress;
+    if (p <= state.wf) return state.wf > 1e-6 ? 1 - p / state.wf : 0;
+    if (p <= state.hf) return 0;
+    return Math.max(0, Math.min(1, (p - state.hf) / Math.max(1e-6, 1 - state.hf)));
   }
 
   function installCombatVisualHooks() {
     const combatDeps = window.Combat?.deps;
     if (!combatDeps || combatHooksInstalled || combatDeps.__weaponToolStanceVisualHooks) return;
 
-    const wrap = (name, before) => {
-      const original = combatDeps[name];
-      if (typeof original !== 'function') return;
-      combatDeps[name] = function weaponToolStanceAwareCombatVisual(...args) {
-        before(...args);
-        return original.apply(this, args);
+    const originalSwing = combatDeps.triggerWeaponSwingVisual;
+    if (typeof originalSwing === 'function') {
+      combatDeps.triggerWeaponSwingVisual = function weaponToolStanceAwareSwing(durationS, opts = {}) {
+        const prepared = prepareCombatOptions(opts);
+        beginCombatVisual(durationS, prepared, false);
+        return originalSwing.call(this, durationS, prepared);
       };
-    };
+    }
 
-    wrap('triggerWeaponSwingVisual', (durationS, opts) => markCombatVisualBusy(durationS, opts));
-    wrap('triggerWeaponHoldVisual', (durationS, opts) => {
-      combatHoldActive = true;
-      markCombatVisualBusy(durationS, opts);
-    });
-    wrap('releaseWeaponSwingHold', () => {
-      combatHoldActive = false;
-      combatBusyUntil = Math.max(combatBusyUntil, performance.now() + 1200);
-    });
-    wrap('cancelWeaponSwingHold', () => {
-      combatHoldActive = false;
-      combatBusyUntil = Math.max(combatBusyUntil, performance.now() + 250);
-    });
+    const originalHold = combatDeps.triggerWeaponHoldVisual;
+    if (typeof originalHold === 'function') {
+      combatDeps.triggerWeaponHoldVisual = function weaponToolStanceAwareHold(durationS, opts = {}) {
+        const prepared = prepareCombatOptions(opts);
+        beginCombatVisual(durationS, prepared, true);
+        return originalHold.call(this, durationS, prepared);
+      };
+    }
+
+    const originalRelease = combatDeps.releaseWeaponSwingHold;
+    if (typeof originalRelease === 'function') {
+      combatDeps.releaseWeaponSwingHold = function weaponToolStanceAwareRelease(...args) {
+        if (combatVisualState) {
+          advanceCombatVisual(performance.now());
+          combatVisualState.held = false;
+          combatVisualState.lastNow = performance.now();
+        }
+        combatHoldActive = false;
+        return originalRelease.apply(this, args);
+      };
+    }
+
+    const originalCancel = combatDeps.cancelWeaponSwingHold;
+    if (typeof originalCancel === 'function') {
+      combatDeps.cancelWeaponSwingHold = function weaponToolStanceAwareCancel(...args) {
+        combatVisualState = null;
+        combatHoldActive = false;
+        holderMotionBusyUntil = 0;
+        return originalCancel.apply(this, args);
+      };
+    }
 
     Object.defineProperty(combatDeps, '__weaponToolStanceVisualHooks', { value: true, configurable: true });
     combatHooksInstalled = true;
   }
 
-  function targetPoseFor(activeSlot, itemKey, def) {
-    const shape = shapeFor(itemKey, def);
-    if (activeSlot !== 'weapon') {
-      if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
-      if (def?.animStyle === 'thrust') return idleStances.tool;
-      return null;
-    }
-    const idleClass = weaponIdleClass(itemKey, def);
-    if (idleClass === 'heavy') return idleStances.heavyWeapon;
-    if (idleClass === 'light') return idleStances.lightWeapon;
-    return null;
-  }
-
-  // game.js rotates every sweep-style tool's child sprite plane -90 degrees so
-  // the same source PNGs line up with sweep animation math. Idle stance poses,
-  // however, are authored as the shared visual Neutral pose. Undo that child
-  // twist in the holder only while a weapon idle stance is rendered, so axes
-  // match hoes in Heavy and fishing maces match spears/pick-shovels in Light.
-  function renderedTargetPoseFor(activeSlot, itemKey, def) {
-    const targetPose = targetPoseFor(activeSlot, itemKey, def);
-    if (!targetPose || activeSlot !== 'weapon' || def?.animStyle !== 'sweep') return targetPose;
-    return { ...targetPose, roll: (Number(targetPose.roll) || 0) + 90 };
-  }
-
-  function activeState() {
-    const activeSlot = deps?.getActiveTool?.() || null;
-    const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null;
-    const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null;
-    const mesh = activeSlot ? deps?.toolMeshMap?.[activeSlot] : null;
-    return { activeSlot, itemKey, def, mesh };
-  }
-
-  // updateToolMesh writes its pose to toolHolder, not to each tool child.
-  // Recover the holder's base orientation by subtracting the normal source
-  // neutral, then rebuild it with the target neutral. Position deltas are
-  // rotated through that same base so x/y/z remain player-relative.
+  // updateToolMesh writes its ordinary rest pose to toolHolder. Recover that
+  // holder basis, remove the legacy rest pose, and rebuild it with the selected
+  // idle stance. Attacks do not use this path: their Neutral is injected directly
+  // into game.js's own pose-driven four-phase interpolation above.
   function applyRelativeHolderPose(holder, sourcePose, targetPose) {
     const sourceQ = poseQuaternion(sourcePose);
     const targetQ = poseQuaternion(targetPose);
@@ -293,15 +449,20 @@
       stanceApplied = false;
 
       const now = performance.now();
-      const holderMoving = holderIsMoving(now);
+      const visual = advanceCombatVisual(now);
       const { activeSlot, itemKey, def, mesh } = activeState();
-      const combatBusy = activeSlot === 'weapon' && (combatHoldActive || now < combatBusyUntil);
-      const targetPose = renderedTargetPoseFor(activeSlot, itemKey, def);
+      const attackInProgress = activeSlot === 'weapon' && !!visual;
+      // Weapon attacks are explicitly tracked by the combat wrappers, so never let
+      // their real holder rotation poison the tool-motion idle suppression timer.
+      const holderMoving = activeSlot === 'weapon' ? false : holderIsMoving(now);
+      const targetPose = targetPoseFor(activeSlot, itemKey, def);
       const sourcePose = ENGINE_NEUTRAL_POSES[def?.animStyle] || ENGINE_NEUTRAL_POSES.thrust;
       let savedPosition = null;
       let savedQuaternion = null;
+      let savedPlaneRotationZ = null;
+      const toolPlane = mesh?.userData?.toolPlane || null;
 
-      if (mesh && targetPose && !holderMoving && !combatBusy) {
+      if (mesh && targetPose && !holderMoving && !attackInProgress) {
         savedPosition = this.position.clone();
         savedQuaternion = this.quaternion.clone();
         try {
@@ -312,19 +473,36 @@
         }
       }
 
-      const stateLabel = stanceApplied ? 'idle-holder' : combatBusy ? 'combat' : holderMoving ? 'tool-motion' : 'default';
+      // game.js writes a -90° local-Z twist into the child plane whenever the
+      // active animation is sweep. That twist belongs to the sweep motion, not
+      // to the shared Heavy/Light Neutral stance. Cancel it at Neutral itself
+      // (fully while idle, fading out by windup, fading back in on return)
+      // directly on the child plane's own local axis instead of guessing a
+      // compensating holder/global Euler rotation.
+      if (toolPlane && activeSlot === 'weapon') {
+        const idleSweep = !visual && def?.animStyle === 'sweep';
+        const attackSweep = visual?.anim === 'sweep';
+        const neutralWeight = attackSweep ? neutralWeightForVisual(visual) : (idleSweep ? 1 : 0);
+        if (neutralWeight > 0) {
+          savedPlaneRotationZ = toolPlane.rotation.z;
+          toolPlane.rotation.z += Math.PI / 2 * neutralWeight;
+        }
+      }
+
+      const stateLabel = attackInProgress
+        ? `attack-neutral=${visual?.progress?.toFixed?.(2) ?? '0'}`
+        : stanceApplied ? 'idle-holder' : holderMoving ? 'tool-motion' : 'default';
       logState(activeSlot, itemKey, def, stateLabel);
 
       let result;
       try {
-        // Three computes this holder and all descendant tool matrices while the
-        // slot-specific stance is temporarily present, so the rendered sprite
-        // actually receives the alternate silhouette.
         result = originalUpdateMatrixWorld.call(this, force);
       } finally {
+        if (savedPlaneRotationZ != null && toolPlane) {
+          toolPlane.rotation.z = savedPlaneRotationZ;
+          toolPlane.updateMatrix?.();
+        }
         if (savedPosition && savedQuaternion) {
-          // Restore gameplay-local state after descendant matrices are built.
-          // matrixWorld intentionally remains the posed render result for this frame.
           this.position.copy(savedPosition);
           this.quaternion.copy(savedQuaternion);
           this.updateMatrix?.();
@@ -340,19 +518,25 @@
   function debugSnapshot() {
     const state = activeState();
     const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    const visual = combatVisualState;
     return {
       activeSlot: state.activeSlot,
       itemKey: state.itemKey,
       shape: shapeFor(state.itemKey, state.def),
       weaponIdleClass: weaponIdleClass(state.itemKey, state.def),
       sourceAnimStyle: state.def?.animStyle || null,
-      sweepSpriteCompensationDeg: state.activeSlot === 'weapon' && state.def?.animStyle === 'sweep' ? 90 : 0,
       stanceApplied,
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
       holderMotionBasis: playerMesh ? 'player-body-relative' : 'composer-body-missing',
       holderMotionBusyMs: Math.max(0, Math.round(holderMotionBusyUntil - performance.now())),
-      combatBusyMs: Math.max(0, Math.round(combatBusyUntil - performance.now())),
       combatHoldActive,
+      combatNeutralInjected: !!visual,
+      combatAnim: visual?.anim || null,
+      combatProgress: visual?.progress ?? null,
+      combatNeutralWeight: visual ? neutralWeightForVisual(visual) : null,
+      sweepPlaneNeutralCompensationDeg: visual?.anim === 'sweep'
+        ? Math.round(90 * neutralWeightForVisual(visual))
+        : (state.activeSlot === 'weapon' && state.def?.animStyle === 'sweep' ? 90 : 0),
       stanceConfigSource,
       hoeWeaponEligible: !!deps?.TOOL_ITEM_DEFS?.bronzehoe?.slots?.includes('weapon'),
       hoeDamageType: deps?.TOOL_ITEM_DEFS?.bronzehoe?.dmgType || null,
@@ -371,10 +555,8 @@
     installCombatVisualHooks();
     installHolderMatrixHook();
     loadStanceConfig();
-    // Do not force inventory/action UI here: sibling systems receive their
-    // own init(deps) payloads later in game.js's normal boot sequence.
     window.__farmLog?.(
-      `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} motion=player-body-relative hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
+      `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} neutral=attack-cycle sweep-plane=local hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
       'combat'
     );
   }
@@ -386,6 +568,8 @@
       stanceConfigLoadStarted = false;
       return loadStanceConfig();
     },
+    combatNeutralPose: currentCombatNeutral,
+    prepareCombatOptions,
     debugSnapshot,
     poses: idleStances,
   };
