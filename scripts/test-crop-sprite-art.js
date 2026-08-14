@@ -28,7 +28,7 @@ assert.match(cropArtSource, /heftroot:\s*Object\.freeze\(\{ spriteIcon: 'heftroo
   'heftroot keeps procedural world foliage while adopting the new item/held PNG');
 assert.match(cropArtSource, /\[0xd8d0b0, 'garlink'\][\s\S]*?\[0xc07a3d, 'ongyums'\]/,
   'world billboard discovery is restricted to exact garlink/ongyums placeholder palettes');
-assert.match(cropArtSource, /geometry\.type !== 'BoxGeometry'[\s\S]*?mesh\.material\?\.isMeshLambertMaterial/,
+assert.match(cropArtSource, /mesh\.material\?\.isMeshLambertMaterial[\s\S]*?geometry\.type !== 'BoxGeometry'/,
   'world replacement is constrained to the generic Lambert BoxGeometry placeholder shape');
 assert.match(cropArtSource, /new window\.THREE\.PlaneGeometry\(aspect, 1\)/,
   'placeholder crops become true aspect-preserving billboard planes');
