@@ -2276,17 +2276,31 @@
 
   const TIMING_BANK_SLOTS = {0:'open',4:'lt',8:'rt',12:'lb',16:'rb'}; // V55 keeps timing-bank prompts aligned with LT/RT/LB/RB pitch order.
   const LYRE_STRING_LAYOUT = [ // V58 widens the full Lyre by about 20% and widens the nut more than the bridge to soften the string angles.
-    {noteIndex:0,topX:18,bottomX:13,topY:3.5,bottomY:85.0,bridgeLift:9,label:'X'},
-    {noteIndex:1,topX:41.5,bottomX:37.5,topY:3.5,bottomY:92.4,bridgeLift:15,label:'A'},
-    {noteIndex:2,topX:58.5,bottomX:62.5,topY:3.5,bottomY:92.4,bridgeLift:15,label:'B'},
-    {noteIndex:3,topX:82,bottomX:87,topY:3.5,bottomY:85.0,bridgeLift:9,label:'Y'}
+    {noteIndex:0,topX:18,bottomX:13,topY:3.5,bottomY:85.0,bridgeLift:9},
+    {noteIndex:1,topX:41.5,bottomX:37.5,topY:3.5,bottomY:92.4,bridgeLift:15},
+    {noteIndex:2,topX:58.5,bottomX:62.5,topY:3.5,bottomY:92.4,bridgeLift:15},
+    {noteIndex:3,topX:82,bottomX:87,topY:3.5,bottomY:85.0,bridgeLift:9}
   ]; // The outer anchors spread farther than the bridge nodes so each string reaches the arc with a gentler outward slant.
+  // noteIndex 0-3 -> X/A/B/Y face button order (see bindKeyboard's
+  // noteKeyMap for the matching A/S/D/F keyboard order) — used to look the
+  // bridge glyph up per input method instead of a fixed per-string label.
+  const NOTE_INDEX_TO_BUTTON = ['x', 'a', 'b', 'y'];
+  function lyreBridgeGlyph(noteIndex) {
+    const glyphs = activeInputMethod === 'keyboard' ? KEYBOARD_GLYPHS : GAMEPAD_GLYPHS;
+    return glyphs[NOTE_INDEX_TO_BUTTON[noteIndex]] || '';
+  }
 
+  // Falling bank-shift cues (see buildLyreField's bank-glyph markup): on
+  // gamepad these name the physical shoulder button (LB/LT/RB/RT); on
+  // keyboard those same banks are bound to the arrow keys (see
+  // bindKeyboard's bankKeyMap), so the cue shows the matching arrow
+  // instead of a button name the keyboard player has no equivalent for.
   function bankGlyphConfigForOffset(modeOffset = 0) {
-    if (modeOffset === 4) return {label:'←', classes:'trigger lt'};
-    if (modeOffset === 8) return {label:'→', classes:'trigger rt'};
-    if (modeOffset === 12) return {label:'←', classes:'bumper lb'};
-    if (modeOffset === 16) return {label:'→', classes:'bumper rb'};
+    const isKeyboard = activeInputMethod === 'keyboard';
+    if (modeOffset === 4) return {label: isKeyboard ? '◀' : 'LT', classes:'trigger lt'};
+    if (modeOffset === 8) return {label: isKeyboard ? '▶' : 'RT', classes:'trigger rt'};
+    if (modeOffset === 12) return {label: isKeyboard ? '▲' : 'LB', classes:'bumper lb'};
+    if (modeOffset === 16) return {label: isKeyboard ? '▼' : 'RB', classes:'bumper rb'};
     return {label:'O', classes:'open'};
   }
 
@@ -2325,7 +2339,7 @@
         ${LYRE_STRING_LAYOUT.map(item => `<g style="--string-color:${NOTE_COLORS[item.noteIndex]}"><line class="lyre-string-line" x1="${item.topX}" y1="${item.topY}" x2="${item.bottomX}" y2="${item.bottomY}"></line><circle class="lyre-nut-ring" cx="${item.topX}" cy="${item.topY}" r="3.9"></circle></g>`).join('')}
       </svg>
       <div class="lyre-bridge">
-        ${LYRE_STRING_LAYOUT.map(item => `<div class="lyre-bridge-node" data-lyre-target="${item.noteIndex}" style="--bridge-left:${item.bottomX}%;--string-color:${NOTE_COLORS[item.noteIndex]};--bridge-lift:${item.bridgeLift}px;color:${NOTE_COLORS[item.noteIndex]}"><span class="lyre-bridge-glyph">${item.label}</span></div>`).join('')}
+        ${LYRE_STRING_LAYOUT.map(item => `<div class="lyre-bridge-node" data-lyre-target="${item.noteIndex}" style="--bridge-left:${item.bottomX}%;--string-color:${NOTE_COLORS[item.noteIndex]};--bridge-lift:${item.bridgeLift}px;color:${NOTE_COLORS[item.noteIndex]}"><span class="lyre-bridge-glyph" data-bridge-note="${item.noteIndex}">${lyreBridgeGlyph(item.noteIndex)}</span></div>`).join('')}
       </div>`;
   }
 
@@ -3409,7 +3423,22 @@
     if (action === 'scale-next') cycleScale(1);
     if (action === 'voice') cycleVoice();
     if (action === 'songs') openModal('songsModal');
-    if (action === 'pause') togglePause();
+    if (action === 'pause') requestExitOrPause();
+  }
+
+  // Start/Escape's usual job (pause) only makes sense as this app's own
+  // standalone control — hosted inside the live game, the same physical
+  // button is "open the menu" everywhere else, so here it should back out
+  // of the minigame entirely rather than pausing something the player has
+  // no obvious way to un-pause from outside. Left as togglePause() when
+  // this file is opened standalone (not hosted), where there is no host to
+  // ask and pausing is still the only sensible behavior.
+  function requestExitOrPause() {
+    if (document.body.classList.contains('hosted-minigame')) {
+      try { parent.postMessage({source:'hobunji-music-minigame', type:'exit-requested'}, '*'); } catch {}
+      return;
+    }
+    togglePause();
   }
 
   function cycleScale(direction = 1) {
@@ -3702,6 +3731,13 @@
       if (glyph) el.textContent = glyph;
     });
     $$('.stick-key-hint').forEach(el => { el.classList.toggle('visible', activeInputMethod === 'keyboard'); });
+    // The four bridge-node glyphs (X/A/B/Y vs A/S/D/F) aren't [data-label-key]
+    // spans — they're rebuilt from LYRE_STRING_LAYOUT/lyreBridgeGlyph rather
+    // than swapped in place, since buildLyreField() is also how they're
+    // created in the first place.
+    $$('.lyre-bridge-glyph[data-bridge-note]').forEach(el => {
+      el.textContent = lyreBridgeGlyph(Number(el.dataset.bridgeNote));
+    });
     // In hosted-minigame mode these native buttons are hidden — the real
     // touch surface is the host page's own edge controls (see
     // buildEdgeControls in js/music-minigame.js), which mirror this same
@@ -3748,7 +3784,7 @@
       if (event.code === 'KeyK') { event.preventDefault(); if (isDualArpLayout()) { state.rightArpeggioIndex = (state.rightArpeggioIndex + 1) % 8; updateArpeggioUI(); void triggerDualArpeggioNote('right',state.rightArpeggioIndex,'keyboard right wheel',1); } else if (isLatchedAutoBankLayout()) setLeftStickSector(3,'keyboard bottom sector'); else if (isFrettedPluckLayout()) startFrettedPluckMode('tremolo-16','keyboard'); else triggerArpeggioStrum('down', 'keyboard', 1); }
       if (event.code === 'Comma') { event.preventDefault(); cycleScale(-1); }
       if (event.code === 'Period') { event.preventDefault(); cycleScale(1); }
-      if (event.code === 'Escape') { event.preventDefault(); togglePause(); }
+      if (event.code === 'Escape') { event.preventDefault(); requestExitOrPause(); }
     });
     window.addEventListener('keyup', event => {
       if (isFrettedPluckLayout() && ['KeyU','KeyO','KeyI','KeyK'].includes(event.code)) stopFrettedPluck(true); // Auto Pick keyboard directions latch on keydown just like the stick.

@@ -41,6 +41,42 @@
   const overlayEl = document.getElementById('musicMinigameOverlay');
   const frameEl = document.getElementById('musicMinigameFrame');
   const closeBtnEl = document.getElementById('musicMinigameCloseBtn');
+  const menuBtnEl = document.getElementById('menuBtn');
+
+  // While the overlay is open, the menu button becomes the minigame's own
+  // exit button (its usual job — pause/menu — is meaningless mid-
+  // performance, and the player has no other obvious way back out besides
+  // the small ✕ in the overlay's corner), and the farm-edit/furniture-
+  // placer buttons — which don't apply while playing an instrument and
+  // would otherwise float uselessly over the overlay — are hidden. The
+  // hiding is a body class + CSS !important (see style.css), not direct
+  // style.display here: those two buttons' own visibility is re-asserted
+  // by refreshActionBar() (FurniturePlacer.refreshVisibility() /
+  // DevSpawner.refreshEditorButtonVisibility(), both called on basically
+  // every action-bar update) on its own schedule regardless of the
+  // overlay, which silently clobbered a one-time style.display write here.
+  let _menuBtnOriginal = null;
+  function setHostChromeSuppressed(suppressed) {
+    document.body.classList.toggle('music-minigame-open', suppressed);
+    if (!menuBtnEl) return;
+    if (suppressed) {
+      if (_menuBtnOriginal == null) _menuBtnOriginal = { html: menuBtnEl.innerHTML, label: menuBtnEl.getAttribute('aria-label') };
+      menuBtnEl.innerHTML = '✕';
+      menuBtnEl.setAttribute('aria-label', 'Exit minigame');
+    } else if (_menuBtnOriginal) {
+      menuBtnEl.innerHTML = _menuBtnOriginal.html;
+      menuBtnEl.setAttribute('aria-label', _menuBtnOriginal.label || 'Open menu');
+      _menuBtnOriginal = null;
+    }
+  }
+  // Captured in the bubble phase, ahead of game.js's own menuBtn handler,
+  // so the normal open/closeMenu logic never runs while the overlay is up.
+  menuBtnEl?.addEventListener('click', (event) => {
+    if (!playerSession) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    close();
+  }, true);
 
   let playerSession = null; // { mode:'lead'|'backup', area, npcId, songId } while the overlay is open, else null.
   const leaderByArea = new Map(); // area -> { type:'player'|'npc', id, songId, startedAt }
@@ -85,6 +121,7 @@
     frameEl.src = MUSIC_MINIGAME_SRC;
     deps.beginMusicCamera?.(playerSession.npcId || null);
     deps.refreshActionBar?.();
+    setHostChromeSuppressed(true);
   }
 
   function close() {
@@ -104,10 +141,20 @@
     // it plainly.
     deps?.endMusicCamera?.();
     deps?.refreshActionBar?.();
+    setHostChromeSuppressed(false);
   }
 
   closeBtnEl?.addEventListener('pointerup', (event) => { event.stopPropagation(); close(); });
   closeBtnEl?.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
+  // The iframe's own Start/Escape (see requestExitOrPause in
+  // lyre-performance.html) asks to be closed the same way — its usual job,
+  // pausing, doesn't make sense hosted inside the live game where the same
+  // physical button is "open the menu" everywhere else.
+  window.addEventListener('message', (event) => {
+    if (event.source !== frameEl?.contentWindow) return;
+    const data = event.data;
+    if (data?.source === 'hobunji-music-minigame' && data.type === 'exit-requested') close();
+  });
 
   // ── Edge controls (the actual touch/mouse play surface) ─────────────
   // Ported from the original mockup's buildHostedMusicEdgeControls: the
@@ -184,53 +231,48 @@
     // fixes the song to whatever they're leading (see beginPlayerSession),
     // so there's nothing to pick.
     const showSongToggle = playerSession?.mode === 'lead';
+    // Floating circular buttons around a joystick, matching the game's own
+    // regular mobile arch + joystick placement (see #joystickZone and
+    // #arcContainer in style.css) — individually floating glass circles
+    // anchored near a screen edge, not a bordered card wrapping everything.
+    // The pattern grid is the one exception: it's inherently textual (6
+    // named patterns), so it keeps its own small card for legibility.
     leftMount.innerHTML = `
-      <aside class="edgeMusicPanel" aria-label="Left controller panel">
-        ${showSongToggle ? `<button class="edgeControllerBtn system edgeSongModeBtn" data-song-mode-toggle><span class="glyph">🎵</span><span class="action-label" data-song-mode-label>Play ${KNOWN_SONG_TITLE}</span></button>` : ''}
-        <div class="edgeShoulderGrid" aria-label="Shoulder controls">
-          <div class="edgeShoulderStack">
-            <button class="edgeControllerBtn edgeBumperBtn" data-bridge-bank="lb"><span class="glyph" data-label-key="lb">▲</span><span class="action-label">Notes +12</span></button>
-            <button class="edgeControllerBtn edgeTriggerBtn" data-bridge-bank="lt"><span class="glyph" data-label-key="lt">◀</span><span class="action-label">Notes +4</span></button>
-          </div>
-          <div class="edgeShoulderStack">
-            <button class="edgeControllerBtn edgeBumperBtn" data-bridge-bank="rb"><span class="glyph" data-label-key="rb">▼</span><span class="action-label">Notes +16</span></button>
-            <button class="edgeControllerBtn edgeTriggerBtn" data-bridge-bank="rt"><span class="glyph" data-label-key="rt">▶</span><span class="action-label">Notes +8</span></button>
-          </div>
-        </div>
-        <div class="edgeClusterTitle">Pick a pattern, then hold a note</div>
-        <div class="edgePatternGrid" aria-label="Auto-arpeggio pattern — pick one, then hold a note to repeat it" data-pattern-grid></div>
-        <div class="edgeLeftStickRow" aria-label="Transport controls">
-          <button class="edgeControllerBtn system" data-bridge-action="pause"><span class="glyph" data-label-key="start">START</span><span class="action-label">Pause</span></button>
-          <button class="edgeControllerBtn" data-bridge-reset-harmony><span class="glyph">↻</span><span class="action-label">Restart Harmony</span></button>
-        </div>
-      </aside>`;
+      <div class="lyreJoystickPad" data-bridge-stick="left" aria-label="Rotate through hidden chord notes; each new sector plays immediately">
+        <div class="lyreJoystickBase"></div>
+        <div class="lyreJoystickKnob edgeStickNub">ARP</div>
+      </div>
+      <div class="lyreBankRow" aria-label="Melody bank shift">
+        <button class="lyreCircBtn bumper" data-bridge-bank="lb"><span class="glyph" data-label-key="lb">▲</span></button>
+        <button class="lyreCircBtn trigger" data-bridge-bank="lt"><span class="glyph" data-label-key="lt">◀</span></button>
+        <button class="lyreCircBtn trigger" data-bridge-bank="rt"><span class="glyph" data-label-key="rt">▶</span></button>
+        <button class="lyreCircBtn bumper" data-bridge-bank="rb"><span class="glyph" data-label-key="rb">▼</span></button>
+      </div>
+      <div class="lyrePatternCard" aria-label="Auto-arpeggio pattern — pick one, then hold a note to repeat it">
+        <div class="lyrePatternHint">Pick a pattern, then hold a note</div>
+        <div class="edgePatternGrid" data-pattern-grid></div>
+      </div>
+      <div class="lyreUtilRow">
+        ${showSongToggle ? `<button class="lyrePillBtn" data-song-mode-toggle><span class="glyph">🎵</span><span data-song-mode-label>Play ${KNOWN_SONG_TITLE}</span></button>` : ''}
+        <button class="lyreCircBtn system small" data-bridge-reset-harmony title="Restart Harmony"><span class="glyph">↻</span></button>
+      </div>`;
     rightMount.innerHTML = `
-      <aside class="edgeMusicPanel" aria-label="Right controller panel">
-        <div class="edgeRightTop">
-          <section class="edgeControlCluster" aria-label="D-pad controls">
-            <div class="edgeClusterTitle">Scale</div>
-            <div class="edgeDpadWrap"><div class="edgeDpad">
-              <button class="edgeControllerBtn unused up" disabled><span class="glyph">▲</span></button>
-              <button class="edgeControllerBtn system left" data-bridge-action="scale-prev"><span class="glyph">◀</span></button>
-              <div class="edgeDpadCenter">SET</div>
-              <button class="edgeControllerBtn system right" data-bridge-action="scale-next"><span class="glyph">▶</span></button>
-              <button class="edgeControllerBtn unused down" disabled><span class="glyph">▼</span></button>
-            </div></div>
-          </section>
-          <section class="edgeControlCluster" aria-label="Face button controls">
-            <div class="edgeClusterTitle">Notes</div>
-            <div class="edgeFaceWrap"><div class="edgeFacePad">
-              <button class="edgeControllerBtn violet y" data-bridge-note="3"><span class="glyph" data-label-key="y">Y</span></button>
-              <button class="edgeControllerBtn cyan x" data-bridge-note="0"><span class="glyph" data-label-key="x">X</span></button>
-              <button class="edgeControllerBtn violet b" data-bridge-note="2"><span class="glyph" data-label-key="b">B</span></button>
-              <button class="edgeControllerBtn amber a" data-bridge-note="1"><span class="glyph" data-label-key="a">A</span></button>
-            </div></div>
-          </section>
-        </div>
-        <div class="edgeRightBottom" aria-label="Right stick controls">
-          <div class="edgeStickPad strum" data-bridge-stick="right" aria-label="Flick vertically to strum"><div class="edgeStickNub">STRUM</div></div>
-        </div>
-      </aside>`;
+      <div class="lyreFaceDiamond" aria-label="Note buttons">
+        <button class="lyreCircBtn face violet y" data-bridge-note="3"><span class="glyph" data-label-key="y">Y</span></button>
+        <button class="lyreCircBtn face cyan x" data-bridge-note="0"><span class="glyph" data-label-key="x">X</span></button>
+        <button class="lyreCircBtn face violet b" data-bridge-note="2"><span class="glyph" data-label-key="b">B</span></button>
+        <button class="lyreCircBtn face amber a" data-bridge-note="1"><span class="glyph" data-label-key="a">A</span></button>
+      </div>
+      <div class="lyreJoystickPad strum" data-bridge-stick="right" aria-label="Flick vertically to strum">
+        <div class="lyreJoystickBase"></div>
+        <div class="lyreJoystickKnob edgeStickNub">STRUM</div>
+      </div>
+      <div class="lyreBankRow">
+        <button class="lyreCircBtn system small" data-bridge-action="scale-prev"><span class="glyph">◀</span></button>
+        <span class="lyreClusterTitle">Scale</span>
+        <button class="lyreCircBtn system small" data-bridge-action="scale-next"><span class="glyph">▶</span></button>
+      </div>
+      <button class="lyreCircBtn system exit" data-bridge-action="pause"><span class="glyph" data-label-key="start">START</span><span class="lyreCircBtn-label">Exit</span></button>`;
 
     const sourceFor = (kind, value, pointerId) => `host-${kind}-${value}:${pointerId}`;
     const bindHeldButton = (button, down, up) => {

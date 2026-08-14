@@ -22165,7 +22165,19 @@
           }
           return;
         }
-        if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
+        if (key === 'escape') {
+          event.preventDefault();
+          // Normally unreachable — the overlay's iframe holds focus and
+          // handles Escape itself (see requestExitOrPause in
+          // lyre-performance.html, which asks js/music-minigame.js to
+          // close()) — but if focus ever lands back on the host page while
+          // the overlay is still open, this is the same fallback Fishing
+          // uses above rather than opening the menu underneath it.
+          if (window.MusicMinigame?.state?.active) { window.MusicMinigame.close(); return; }
+          if (dialogueOpen) { closeNpcDialogue(); return; }
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
         // M: wilderness map — closes if already open on the map tab (mirrors
         // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
         if (key === 'm') {
