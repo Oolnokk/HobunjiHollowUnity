@@ -27,6 +27,12 @@ assert.match(game, /offsets = \[\[-0\.20, 0, 0\.14\], \[0\.22, 0, 0\.14\], \[0\.
 
 assert.match(bridge, /BILLBOARD_PATH = 'assets\/objectsprites\/heftroot\.png'/,
   'planted heftroot uses the authored heftroot PNG');
+assert.match(bridge, /BILLBOARD_SCALE = 0\.75/,
+  'planted heftroot renders at 75% of its previous billboard size');
+assert.match(bridge, /plane\.scale\.set\(authoredAspect \* BILLBOARD_SCALE, BILLBOARD_SCALE, BILLBOARD_SCALE\)/,
+  'initial heftroot billboard scale preserves aspect while applying the 75% reduction');
+assert.match(bridge, /plane\.scale\.x = authoredAspect \* BILLBOARD_SCALE[\s\S]*?plane\.scale\.y = BILLBOARD_SCALE/,
+  'async texture aspect updates preserve the same 75% world scale');
 assert.match(bridge, /foliage\.buildHeftrootMesh = function authoredHeftrootBillboardMesh/,
   'the bridge replaces only the public heftroot mesh factory');
 assert.doesNotMatch(bridge, /buildNeedlegrainMesh\s*=/,
