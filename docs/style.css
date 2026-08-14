@@ -2739,23 +2739,30 @@
       z-index: 240; touch-action: none; pointer-events: none;
     }
     #musicMinigameOverlay.open { display: block; }
+    /* Locked to the note-lane strip's own measured aspect ratio (269:872,
+       from actually rendering the reference — see the composition comment
+       above) via the dual-min() "contain" trick, instead of an independent
+       width + a breakpoint that swapped in a whole different (centered)
+       layout past a fixed px/vh threshold. That swap was the real bug
+       behind "snaps to the middle above 75% zoom": browser zoom shrinks
+       the effective CSS viewport, so at high enough zoom the real window
+       still crossed the 760px/560px breakpoint and silently jumped to the
+       small-screen layout. Whichever of width/height is the more
+       constraining dimension wins continuously at every size/zoom level —
+       no step function, so nothing to snap. No border/shadow/background
+       either: the frame is a pure iframe-sizing box now, not a card — the
+       note lanes render directly over the 3D scene, same as the
+       reference's own "leave only the glyphs and note field floating"
+       treatment (already applied inside lyre-performance.html itself). */
     #musicMinigameFrame {
-      /* height as an explicit calc(), NOT top+bottom-with-height:auto: an
-         <iframe> is a replaced element, and replaced elements don't get
-         the usual absolutely-positioned auto-stretch-to-fill-top-and-
-         bottom behavior — they fall back to their intrinsic size (a bare
-         iframe's ~150px default) instead, which silently produced a
-         squashed 150px-tall frame here. */
-      position: absolute; left: min(19vw, 250px); top: 3vh;
-      width: clamp(220px, 14vw, 320px); height: calc(100vh - 6vh);
-      border: 1px solid rgba(220, 238, 255, .22); border-radius: 20px;
-      box-shadow: 0 20px 44px rgba(0, 0, 0, .48);
-      pointer-events: auto; background: transparent;
+      --frame-avail-w: min(24vw, 320px);
+      --frame-avail-h: 94vh;
+      position: absolute; left: min(19vw, 250px); top: 50%; transform: translateY(-50%);
+      width: min(var(--frame-avail-w), var(--frame-avail-h) * 269 / 872);
+      height: min(var(--frame-avail-h), var(--frame-avail-w) * 872 / 269);
+      border: none; box-shadow: none; background: transparent;
+      pointer-events: auto;
     }
-    /* Vertically centered rather than reproducing the reference's exact
-       (lower-biased) Y position — our panel's own button set differs
-       enough in height that copying its precise offset risks the same
-       overflow mistake fixed earlier; centering is robust to that. */
     #leftMusicControls {
       position: absolute; left: 1.5vw; top: 50%; transform: translateY(-50%);
       pointer-events: none;
@@ -2763,11 +2770,6 @@
     #rightMusicControls {
       position: absolute; right: 1.5vw; top: 50%; transform: translateY(-50%);
       pointer-events: none;
-    }
-    @media (max-width: 760px), (max-height: 560px) {
-      #musicMinigameFrame { left: 50%; top: 6vh; bottom: auto; transform: translateX(-50%); width: min(92vw, 480px); height: min(38vh, 340px); }
-      #leftMusicControls { left: 50%; top: auto; bottom: 1vh; transform: translateX(-50%); }
-      #rightMusicControls { right: 50%; top: auto; bottom: 1vh; transform: translateX(50%); }
     }
     .edgeMusicPanel {
       pointer-events: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px;
