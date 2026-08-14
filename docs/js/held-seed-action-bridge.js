@@ -116,10 +116,12 @@
       // desktop touch emulation report coarse taps as mouse pointers; game.js
       // still receives those pointer events, so this bridge must claim the
       // semantic Plant action regardless of how the browser labels the pointer.
+      // Dispatch first: if the planting owner is not initialized yet, leave the
+      // event untouched so game.js retains its original fallback behavior.
+      if (!dispatchPlant(action)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       cleanNativeButtonState(button, event);
-      dispatchPlant(action);
     }, true);
   }
 
@@ -140,9 +142,9 @@
       if (event.repeat) return;
       const plant = visiblePlantSlot(); // Used so keyboard follows the same slot the mobile arch and controller semantics expose right now.
       if (!plant || event.code !== currentDesktopBinding(plant.slot)) return;
+      if (!dispatchPlant(plant.action)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      dispatchPlant(plant.action);
     }, true);
   }
 
