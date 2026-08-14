@@ -1,361 +1,54 @@
 (() => {
   'use strict';
-
-  // Runtime mirror of docs/references/(HA)HobunjiFishEditorV1.html.
-  // The editor remains the authoring source; this small module only adapts
-  // its fish records to the game's fishing, item/economy, and sprite APIs.
-  const GURUMAHI_IGNORES = Object.freeze([
-    { hex: '#7d7d76', sensitivity: 22 },
-    { hex: '#98978e', sensitivity: 48 },
-    { hex: '#706f69', sensitivity: 48 },
-  ]);
-  const ROCKSCALE_IGNORES = Object.freeze([
-    { hex: '#7f6e77', sensitivity: 7 },
-    { hex: '#bababa', sensitivity: 45 },
-  ]);
-
-  // The standalone editor still presents familiar four-season labels.
-  // Map them positionally onto Hobunji Hollow's four regional seasons.
-  const SEASON_MAP = Object.freeze({
-    spring: 'Stormtide',
-    summer: 'Deadgrass',
-    fall: 'Longpour',
-    winter: 'Coldmuck',
-  });
-
-  const FISH = Object.freeze([
-    {
-      key: 'gurumahi_tawny', label: 'Gurumahi Tawny', species: 'gurumahi',
-      sprite: 'fish_gurumahi.png', baseColor: '#9b6f49', ignoredSourceColors: GURUMAHI_IGNORES,
-      minigameScale: 1.06, fishClass: 'smooth', difficulty: 34,
-      zones: ['farm', 'town'], seasons: ['spring', 'summer', 'fall'], times: ['day', 'dusk'], rarity: 'common', sellPrice: 30,
-    },
-    {
-      key: 'gurumahi_charcoal', label: 'Gurumahi Charcoal', species: 'gurumahi',
-      sprite: 'fish_gurumahi.png', baseColor: '#4e4f52', ignoredSourceColors: GURUMAHI_IGNORES,
-      minigameScale: 1.12, fishClass: 'mixed', difficulty: 46,
-      zones: ['town', 'northernCliffs'], seasons: ['any'], times: ['dawn', 'day'], rarity: 'uncommon', sellPrice: 42,
-    },
-    {
-      key: 'gurumahi_creamback', label: 'Gurumahi Creamback', species: 'gurumahi',
-      sprite: 'fish_gurumahi.png', baseColor: '#d7c39d', ignoredSourceColors: GURUMAHI_IGNORES,
-      minigameScale: 0.98, fishClass: 'floater', difficulty: 28,
-      zones: ['farm'], seasons: ['spring', 'summer'], times: ['dawn', 'day'], rarity: 'common', sellPrice: 24,
-    },
-    {
-      key: 'gurumahi_snowmuzzle', label: 'Gurumahi Snowmuzzle', species: 'gurumahi',
-      sprite: 'fish_gurumahi.png', baseColor: '#c9ced1', ignoredSourceColors: GURUMAHI_IGNORES,
-      minigameScale: 1.03, fishClass: 'sinker', difficulty: 39,
-      zones: ['cloudForest', 'northernCliffs'], seasons: ['winter'], times: ['day', 'night'], rarity: 'uncommon', sellPrice: 38,
-    },
-    {
-      key: 'rockscale_goldplate', label: 'Rockscale Goldplate', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#c9a24f', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.14, fishClass: 'sinker', difficulty: 52,
-      zones: ['town', 'northernCliffs'], seasons: ['any'], times: ['day', 'dusk'], rarity: 'common', sellPrice: 48,
-    },
-    {
-      key: 'rockscale_giltback', label: 'Rockscale Giltback', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#e0bc67', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.18, fishClass: 'mixed', difficulty: 56,
-      zones: ['town', 'cloudForest'], seasons: ['any'], times: ['dawn', 'day'], rarity: 'common', sellPrice: 52,
-    },
-    {
-      key: 'rockscale_silverplate', label: 'Rockscale Silverplate', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#b9bec8', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.15, fishClass: 'smooth', difficulty: 50,
-      zones: ['town', 'northernCliffs'], seasons: ['any'], times: ['dawn', 'day'], rarity: 'uncommon', sellPrice: 58,
-    },
-    {
-      key: 'rockscale_ironvein', label: 'Rockscale Ironvein', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#8e5541', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.17, fishClass: 'dart', difficulty: 63,
-      zones: ['northernCliffs'], seasons: ['fall', 'winter'], times: ['day', 'dusk'], rarity: 'uncommon', sellPrice: 64,
-    },
-    {
-      key: 'rockscale_slateplate', label: 'Rockscale Slateplate', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#58616c', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.20, fishClass: 'sinker', difficulty: 60,
-      zones: ['cloudForest', 'northernCliffs'], seasons: ['any'], times: ['night'], rarity: 'uncommon', sellPrice: 66,
-    },
-    {
-      key: 'rockscale_quartzshield', label: 'Rockscale Quartzshield', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#d8d4ca', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.10, fishClass: 'smooth', difficulty: 44,
-      zones: ['farm', 'cloudForest'], seasons: ['spring', 'winter'], times: ['dawn', 'day'], rarity: 'common', sellPrice: 44,
-    },
-    {
-      key: 'rockscale_copperbloom', label: 'Rockscale Copperbloom', species: 'rockscale',
-      sprite: 'fish_rockscale.png', baseColor: '#9a7352', ignoredSourceColors: ROCKSCALE_IGNORES,
-      minigameScale: 1.16, fishClass: 'mixed', difficulty: 58,
-      zones: ['town', 'cloudForest'], seasons: ['summer', 'fall'], times: ['day', 'dusk'], rarity: 'uncommon', sellPrice: 61,
-    },
-    {
-      key: 'sixfin_honeystripe', label: 'Sixfin Honeystripe', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#d7b161', stripes: '#5c3520' }, minigameScale: 0.94,
-      fishClass: 'mixed', difficulty: 36, zones: ['farm', 'town'], seasons: ['spring', 'summer'], times: ['day'], rarity: 'common', sellPrice: 26,
-    },
-    {
-      key: 'sixfin_coalbar', label: 'Sixfin Coalbar', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#7c7366', stripes: '#2f2f34' }, minigameScale: 1.02,
-      fishClass: 'dart', difficulty: 49, zones: ['town', 'northernCliffs'], seasons: ['any'], times: ['dusk', 'night'], rarity: 'uncommon', sellPrice: 34,
-    },
-    {
-      key: 'sixfin_redlash', label: 'Sixfin Redlash', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#c7a794', stripes: '#8e4938' }, minigameScale: 0.98,
-      fishClass: 'mixed', difficulty: 41, zones: ['farm', 'town'], seasons: ['summer', 'fall'], times: ['dawn', 'day'], rarity: 'common', sellPrice: 28,
-    },
-    {
-      key: 'sixfin_mossband', label: 'Sixfin Mossband', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#94a780', stripes: '#415d3e' }, minigameScale: 1.01,
-      fishClass: 'smooth', difficulty: 32, zones: ['cloudForest', 'farm'], seasons: ['spring', 'summer', 'fall'], times: ['day', 'dusk'], rarity: 'common', sellPrice: 27,
-    },
-    {
-      key: 'sixfin_azureband', label: 'Sixfin Azureband', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#8ab9c8', stripes: '#315d78' }, minigameScale: 1.04,
-      fishClass: 'floater', difficulty: 38, zones: ['cloudForest', 'town'], seasons: ['summer'], times: ['dawn', 'day'], rarity: 'uncommon', sellPrice: 33,
-    },
-    {
-      key: 'sixfin_sunember', label: 'Sixfin Sunember', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#dbc890', stripes: '#b55a2c' }, minigameScale: 0.97,
-      fishClass: 'dart', difficulty: 54, zones: ['town', 'cloudForest'], seasons: ['summer', 'fall'], times: ['day', 'dusk'], rarity: 'uncommon', sellPrice: 36,
-    },
-    {
-      key: 'sixfin_milkstripe', label: 'Sixfin Milkstripe', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#e5dbc6', stripes: '#545257' }, minigameScale: 0.92,
-      fishClass: 'smooth', difficulty: 29, zones: ['farm'], seasons: ['spring', 'winter'], times: ['dawn', 'day'], rarity: 'common', sellPrice: 23,
-    },
-    {
-      key: 'sixfin_violetreef', label: 'Sixfin Violetreef', species: 'sixfin', sprite: 'fish_sixfin.png',
-      overlays: { base: '#ab99bf', stripes: '#5a4379' }, minigameScale: 1.05,
-      fishClass: 'mixed', difficulty: 47, zones: ['cloudForest', 'town'], seasons: ['any'], times: ['dusk', 'night'], rarity: 'uncommon', sellPrice: 35,
-    },
-  ]);
-
-  const byKey = new Map(FISH.map(fish => [fish.key, fish]));
-  const imageCache = new Map();
-  const canvasCache = new Map();
-
-  function runtimeSeasons(seasons) {
-    if (!Array.isArray(seasons) || seasons.includes('any')) return ['any'];
-    return seasons.map(name => SEASON_MAP[name] || name);
-  }
-
-  function buildFishingDefs() {
-    const zones = { farm: [], town: [], northernCliffs: [], cloudForest: [] };
-    for (const fish of FISH) {
-      const runtime = {
-        key: fish.key,
-        label: fish.label,
-        image: `assets/objectsprites/${fish.sprite}`,
-        fishClass: fish.fishClass,
-        difficulty: fish.difficulty,
-        seasons: runtimeSeasons(fish.seasons),
-        times: [...fish.times],
-        rarity: fish.rarity,
-        sellPrice: fish.sellPrice,
-        minigameScale: fish.minigameScale,
-      };
-      fish.zones.forEach(zone => zones[zone]?.push(runtime));
-    }
-    return zones;
-  }
-
-  function buildItemDefs() {
-    const defs = {};
-    for (const fish of FISH) {
-      defs[fish.key] = {
-        label: fish.label,
-        icon: '🐟',
-        cat: 'Fish',
-        category: 'Fish',
-        tags: ['fish', 'edible'],
-        desc: `${fish.label}, an edible fish found around Hobunji Hollow.`,
-        color: 0x6db6d6,
-        secondary: 0x2f6f7f,
-        sellPrice: fish.sellPrice,
-        spriteIcon: fish.sprite,
-        spriteMode: `fish:${fish.key}`,
-      };
-    }
-    return defs;
-  }
-
-  function buildBasePrices() {
-    return Object.fromEntries(FISH.map(fish => [fish.key, fish.sellPrice]));
-  }
-
-  function clamp01(value) { return Math.max(0, Math.min(1, value)); }
-
-  function hexToRgb(hex) {
-    const value = parseInt(String(hex || '#000000').replace('#', ''), 16) || 0;
-    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-  }
-
-  function rgbToHsl(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const lightness = (max + min) / 2;
-    if (max === min) return [0, 0, lightness];
-    const delta = max - min;
-    const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-    let hue;
-    if (max === r) hue = (g - b) / delta + (g < b ? 6 : 0);
-    else if (max === g) hue = (b - r) / delta + 2;
-    else hue = (r - g) / delta + 4;
-    return [hue / 6, saturation, lightness];
-  }
-
-  function hueToRgb(p, q, t) {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  }
-
-  function hslToRgb(h, s, l) {
-    if (s === 0) {
-      const value = Math.round(l * 255);
-      return [value, value, value];
-    }
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    return [
-      Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
-      Math.round(hueToRgb(p, q, h) * 255),
-      Math.round(hueToRgb(p, q, h - 1 / 3) * 255),
-    ];
-  }
-
-  function shouldIgnore(r, g, b, ignored) {
-    return (ignored || []).some(entry => {
-      const [ir, ig, ib] = hexToRgb(entry.hex);
-      return Math.hypot(r - ir, g - ig, b - ib) <= Number(entry.sensitivity || 0);
-    });
-  }
-
-  function recolorBrightnessPreserving(imageData, color, ignored = []) {
-    const [tr, tg, tb] = hexToRgb(color);
-    const [targetHue, targetSaturation] = rgbToHsl(tr, tg, tb);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] === 0) continue;
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      if (shouldIgnore(r, g, b, ignored)) continue;
-      const [, , lightness] = rgbToHsl(r, g, b);
-      // Mirrors the editor's current outline rule. White and black naturally
-      // stay at their original value because source lightness is retained.
-      if (lightness <= 0.08) continue;
-      const [nr, ng, nb] = hslToRgb(targetHue, targetSaturation, clamp01(lightness));
-      data[i] = nr; data[i + 1] = ng; data[i + 2] = nb;
-    }
-  }
-
-  function loadImage(path) {
-    if (imageCache.has(path)) return imageCache.get(path);
-    const promise = new Promise((resolve, reject) => {
-      const image = new Image();
-      image.crossOrigin = 'anonymous';
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error(`Failed to load fish sprite ${path}`));
-      image.src = path;
-    });
-    imageCache.set(path, promise);
-    return promise;
-  }
-
-  async function recoloredLayer(path, color, ignored = []) {
-    const image = await loadImage(path);
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(image, 0, 0);
-    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    recolorBrightnessPreserving(pixels, color, ignored);
-    ctx.putImageData(pixels, 0, 0);
-    return canvas;
-  }
-
-  async function renderFishCanvas(spritePath, fish) {
-    if (fish.species !== 'sixfin') {
-      return recoloredLayer(spritePath, fish.baseColor, fish.ignoredSourceColors);
-    }
-
-    const image = await loadImage(spritePath);
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    // Sixfin keeps its authored main sprite intact. Only the two masks are
-    // recolored, exactly as in the editor.
-    ctx.drawImage(image, 0, 0);
-    const base = await recoloredLayer('assets/objectsprites/fish_patterns/base.png', fish.overlays.base);
-    const stripes = await recoloredLayer('assets/objectsprites/fish_patterns/stripes.png', fish.overlays.stripes);
-    ctx.drawImage(base, 0, 0, canvas.width, canvas.height);
-    ctx.drawImage(stripes, 0, 0, canvas.width, canvas.height);
-    return canvas;
-  }
-
-  function getRecoloredCanvas(spritePath, fishKey) {
-    const fish = byKey.get(fishKey);
-    if (!fish) return Promise.reject(new Error(`Unknown authored fish ${fishKey}`));
-    const cacheKey = `${fishKey}|${spritePath}`;
-    if (!canvasCache.has(cacheKey)) {
-      canvasCache.set(cacheKey, renderFishCanvas(spritePath, fish).catch(error => {
-        canvasCache.delete(cacheKey);
-        throw error;
-      }));
-    }
-    return canvasCache.get(cacheKey);
-  }
-
-  function installRuntimeCatalog() {
-    const shippingReady = window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(), buildBasePrices()) === true;
-    if (!shippingReady || !window.Fishing?.init) return false;
-    // Fishing.init merges dependencies, so this replaces only FISH_DEFS and
-    // leaves the live world/input/render hooks injected by game.js untouched.
-    window.Fishing.init({ FISH_DEFS: buildFishingDefs() });
-    window.__farmLog?.(`[fish-catalog] installed ${FISH.length} authored fish; old fish retained as legacy save items only`, 'items');
-    return true;
-  }
-
-  function keepMinigameScaleInSync() {
-    const fishDef = window.Fishing?.state?.fishDef;
-    const image = document.getElementById('fishDeformedImage');
-    if (image) {
-      const scale = Number.isFinite(Number(fishDef?.minigameScale)) ? Number(fishDef.minigameScale) : 1;
-      image.style.transformBox = 'fill-box';
-      image.style.transformOrigin = 'center';
-      image.style.transform = `scale(${scale})`;
-    }
-    requestAnimationFrame(keepMinigameScaleInSync);
-  }
-
-  function installWhenGameReady() {
-    let attempts = 0;
-    const tryInstall = () => {
-      if (installRuntimeCatalog()) return;
-      if (attempts++ < 160) setTimeout(tryInstall, 50);
-      else console.warn('[fish-catalog] game data hooks were not ready; catalog not installed');
-    };
-    tryInstall();
-    // game.js is a synchronous script, so load is a reliable final pass even
-    // if the async catalog module happened to arrive during game bootstrap.
-    window.addEventListener('load', () => installRuntimeCatalog(), { once: true });
-  }
-
-  window.FishCatalog = {
-    entries: FISH,
-    get: key => byKey.get(key) || null,
-    buildFishingDefs,
-    buildItemDefs,
-    getRecoloredCanvas,
-    install: installRuntimeCatalog,
-  };
-
-  installWhenGameReady();
-  requestAnimationFrame(keepMinigameScaleInSync);
+  const SEASON={spring:'Stormtide',summer:'Deadgrass',fall:'Longpour',winter:'Coldmuck'};
+  const G=[['#7d7d76',22],['#98978e',48],['#706f69',48]],R=[['#7f6e77',7],['#bababa',45]];
+  const ROWS=[
+    ['gurumahi_tawny','Gurumahi Tawny','gurumahi','#9b6f49',1.06,.25,'smooth',34,['farm','town'],'spring,summer,fall',['day','dusk'],'common',30],
+    ['gurumahi_charcoal','Gurumahi Charcoal','gurumahi','#4e4f52',1.12,.25,'mixed',46,['town','northernCliffs'],'any',['dawn','day'],'uncommon',42],
+    ['gurumahi_creamback','Gurumahi Creamback','gurumahi','#d7c39d',.98,.25,'floater',28,['farm'],'spring,summer',['dawn','day'],'common',24],
+    ['gurumahi_snowmuzzle','Gurumahi Snowmuzzle','gurumahi','#c9ced1',1.03,.25,'sinker',39,['cloudForest','northernCliffs'],'winter',['day','night'],'uncommon',38],
+    ['rockscale_goldplate','Rockscale Goldplate','rockscale','#c9a24f',1.14,1,'sinker',52,['town','northernCliffs'],'any',['day','dusk'],'common',48],
+    ['rockscale_giltback','Rockscale Giltback','rockscale','#e0bc67',1.18,1,'mixed',56,['town','cloudForest'],'any',['dawn','day'],'common',52],
+    ['rockscale_silverplate','Rockscale Silverplate','rockscale','#b9bec8',1.15,1,'smooth',50,['town','northernCliffs'],'any',['dawn','day'],'uncommon',58],
+    ['rockscale_ironvein','Rockscale Ironvein','rockscale','#8e5541',1.17,1,'dart',63,['northernCliffs'],'fall,winter',['day','dusk'],'uncommon',64],
+    ['rockscale_slateplate','Rockscale Slateplate','rockscale','#58616c',1.2,1,'sinker',60,['cloudForest','northernCliffs'],'any',['night'],'uncommon',66],
+    ['rockscale_quartzshield','Rockscale Quartzshield','rockscale','#d8d4ca',1.1,1,'smooth',44,['farm','cloudForest'],'spring,winter',['dawn','day'],'common',44],
+    ['rockscale_copperbloom','Rockscale Copperbloom','rockscale','#9a7352',1.16,1,'mixed',58,['town','cloudForest'],'summer,fall',['day','dusk'],'uncommon',61],
+    ['sixfin_honeystripe','Sixfin Honeystripe','sixfin','#fff',.94,0,'mixed',36,['farm','town'],'spring,summer',['day'],'common',26,'#d7b161','#5c3520'],
+    ['sixfin_coalbar','Sixfin Coalbar','sixfin','#fff',1.02,0,'dart',49,['town','northernCliffs'],'any',['dusk','night'],'uncommon',34,'#7c7366','#2f2f34'],
+    ['sixfin_redlash','Sixfin Redlash','sixfin','#fff',.98,0,'mixed',41,['farm','town'],'summer,fall',['dawn','day'],'common',28,'#c7a794','#8e4938'],
+    ['sixfin_mossband','Sixfin Mossband','sixfin','#fff',1.01,0,'smooth',32,['cloudForest','farm'],'spring,summer,fall',['day','dusk'],'common',27,'#94a780','#415d3e'],
+    ['sixfin_azureband','Sixfin Azureband','sixfin','#fff',1.04,0,'floater',38,['cloudForest','town'],'summer',['dawn','day'],'uncommon',33,'#8ab9c8','#315d78'],
+    ['sixfin_sunember','Sixfin Sunember','sixfin','#fff',.97,0,'dart',54,['town','cloudForest'],'summer,fall',['day','dusk'],'uncommon',36,'#dbc890','#b55a2c'],
+    ['sixfin_milkstripe','Sixfin Milkstripe','sixfin','#fff',.92,0,'smooth',29,['farm'],'spring,winter',['dawn','day'],'common',23,'#e5dbc6','#545257'],
+    ['sixfin_violetreef','Sixfin Violetreef','sixfin','#fff',1.05,0,'mixed',47,['cloudForest','town'],'any',['dusk','night'],'uncommon',35,'#ab99bf','#5a4379']
+  ];
+  const FISH=Object.freeze(ROWS.map(r=>({key:r[0],label:r[1],species:r[2],baseColor:r[3],minigameScale:r[4],valueBoost:r[5],fishClass:r[6],difficulty:r[7],zones:r[8],seasons:r[9],timesOfDay:r[10],rarity:r[11],sellPrice:r[12],patterns:r[13]?{base:r[13],stripes:r[14]}:{}})));
+  const byKey=new Map(FISH.map(f=>[f.key,f])),imgCache=new Map(),canvasCache=new Map();
+  const sprite=f=>f.species==='gurumahi'?'fish_gurumahi.png':f.species==='rockscale'?'fish_rockscale.png':'fish_sixfin.png';
+  const ignores=f=>(f.species==='gurumahi'?G:f.species==='rockscale'?R:[]).map(([hex,sensitivity])=>({hex,sensitivity}));
+  const seasons=s=>s==='any'?'any':s.split(',').map(x=>SEASON[x]||x);
+  function buildFishingDefs(){const z={farm:[],town:[],northernCliffs:[],cloudForest:[]};for(const f of FISH){const d={key:f.key,label:f.label,icon:'🐟',rarity:f.rarity,sellPrice:f.sellPrice,seasons:seasons(f.seasons),timesOfDay:[...f.timesOfDay],fishClass:f.fishClass,difficulty:f.difficulty,minigameScale:f.minigameScale};for(const zone of f.zones)z[zone]?.push(d);}return z;}
+  function buildItemDefs(){const o={};for(const f of FISH)o[f.key]={icon:'🐟',label:f.label,cat:'material',category:'Fish',sellPrice:f.sellPrice,tags:['Fish','Edible'],desc:`${f.label}, a fish found around Hobunji Hollow.`,spriteIcon:sprite(f),spriteColor:0xffffff,spriteMode:`fish:${f.key}`};return o;}
+  const buildBasePrices=()=>Object.fromEntries(FISH.map(f=>[f.key,f.sellPrice]));
+  const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+  function hexRgb(h){h=String(h).replace('#','');if(h.length===3)h=[...h].map(x=>x+x).join('');const n=parseInt(h,16)||0;return[(n>>16)&255,(n>>8)&255,n&255];}
+  function rgbHsv(r,g,b){r/=255;g/=255;b/=255;const M=Math.max(r,g,b),m=Math.min(r,g,b),d=M-m;let h=0;if(d){if(M===r)h=((g-b)/d+(g<b?6:0))/6;else if(M===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;}return[h,M?d/M:0,M];}
+  function hsvRgb(h,s,v){const i=Math.floor(h*6),f=h*6-i,p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);let r,g,b;switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
+  const hueDist=(a,b)=>{const d=Math.abs(a-b)%1;return Math.min(d,1-d)};
+  const ignored=(r,g,b,list)=>list.some(e=>{const c=hexRgb(e.hex);return Math.hypot(r-c[0],g-c[1],b-c[2])<=e.sensitivity});
+  const chroma=(r,g,b)=>{const s=r+g+b;return s?[r/s,g/s,b/s]:[1/3,1/3,1/3]};
+  const cd=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+  function rockProfile(px,list){const u=[];for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if(r===255&&g===255&&b===255||ignored(r,g,b,list))continue;const v=rgbHsv(r,g,b)[2];if(v<=.08)continue;u.push({r,g,b,v,c:chroma(r,g,b)});}if(!u.length)return{enabled:false,v:1};const cell=.025,bins=new Map();for(const p of u){const k=`${Math.round(p.c[0]/cell)},${Math.round(p.c[1]/cell)}`;let q=bins.get(k);if(!q){q={n:0,sr:0,sg:0,sb:0,m:0,sv:0};bins.set(k,q)}q.n++;q.sr+=p.c[0];q.sg+=p.c[1];q.sb+=p.c[2];q.sv+=p.v;q.m=Math.max(q.m,p.v)}let best=null;for(const q of bins.values()){if(q.n<Math.max(3,u.length*.01))continue;const score=q.m*3+q.sv/q.n+Math.min(q.n,u.length*.18)/Math.max(1,u.length*.18)*.75;if(!best||score>best.score)best={...q,score}}if(!best)for(const q of bins.values()){const score=q.m*3+q.sv/q.n+Math.min(q.n,u.length*.18)/Math.max(1,u.length*.18)*.75;if(!best||score>best.score)best={...q,score}}if(!best)return{enabled:false,v:1};const c=[best.sr/best.n,best.sg/best.n,best.sb/best.n];let d=.065,f=u.filter(p=>cd(p.c,c)<=d);if(f.length<Math.max(8,u.length*.04)){d=.1;f=u.filter(p=>cd(p.c,c)<=d)}let hi=f[0]||u[0];for(const p of f)if(p.v>hi.v)hi=p;return{enabled:!!f.length,v:hi.v||1,match:(r,g,b)=>cd(chroma(r,g,b),c)<=d};}
+  function guruProfile(px,list){const bins=36,scores=new Float64Array(bins),u=[];for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if(r===255&&g===255&&b===255||ignored(r,g,b,list))continue;const[h,s,v]=rgbHsv(r,g,b);if(v<=.08)continue;u.push({h,s,v});if(s>=.055)scores[Math.min(bins-1,Math.floor(h*bins))]+=.25+s;}if(!u.length)return{enabled:false,v:1};let bi=-1,bs=0;for(let b=0;b<bins;b++){const sc=scores[(b-1+bins)%bins]*.35+scores[b]+scores[(b+1)%bins]*.35;if(sc>bs){bs=sc;bi=b}}if(bi<0||!bs){let hi=u[0];for(const p of u)if(p.v>hi.v)hi=p;return{enabled:false,v:hi.v||1}}const h=(bi+.5)/bins,d=3.25/bins,f=u.filter(p=>p.s>=.035&&hueDist(p.h,h)<=d);let hi=f[0]||u[0];for(const p of f)if(p.v>hi.v)hi=p;return{enabled:!!f.length,v:hi.v||1,match:(H,S)=>S>=.035&&hueDist(H,h)<=d};}
+  function recolorBase(data,f){const px=data.data,t=rgbHsv(...hexRgb(f.baseColor)),list=ignores(f),p=f.species==='rockscale'?rockProfile(px,list):guruProfile(px,list);let hi=p.v||1;for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if(r===255&&g===255&&b===255||ignored(r,g,b,list))continue;const[H,S,V]=rgbHsv(r,g,b);if(V<=.08)continue;if(p.enabled){const ok=p.match.length===3?p.match(r,g,b):p.match(H,S);if(!ok)continue}const[nr,ng,nb]=hsvRgb(t[0],t[1],clamp(t[2]*(V/hi)*(1+f.valueBoost)));px[i]=nr;px[i+1]=ng;px[i+2]=nb;}}
+  function load(path){if(imgCache.has(path))return imgCache.get(path);const p=new Promise((res,rej)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>rej(new Error(`Failed fish sprite ${path}`));i.src=path});imgCache.set(path,p);return p;}
+  async function layer(path,color){const i=await load(path),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);const d=x.getImageData(0,0,c.width,c.height),t=rgbHsv(...hexRgb(color));for(let n=0;n<d.data.length;n+=4){if(!d.data[n+3])continue;const v=rgbHsv(d.data[n],d.data[n+1],d.data[n+2])[2],[r,g,b]=hsvRgb(t[0],t[1],v);d.data[n]=r;d.data[n+1]=g;d.data[n+2]=b}x.putImageData(d,0,0);return c;}
+  async function render(path,f){const i=await load(path),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);if(f.species==='sixfin'){x.drawImage(await layer('assets/objectsprites/fish_patterns/base.png',f.patterns.base),0,0,c.width,c.height);x.drawImage(await layer('assets/objectsprites/fish_patterns/stripes.png',f.patterns.stripes),0,0,c.width,c.height);}else{const d=x.getImageData(0,0,c.width,c.height);recolorBase(d,f);x.putImageData(d,0,0)}return c;}
+  function getRecoloredCanvas(path,key){const f=byKey.get(key);if(!f)return Promise.reject(new Error(`Unknown authored fish ${key}`));const k=`${key}|${path}`;if(!canvasCache.has(k))canvasCache.set(k,render(path,f).catch(e=>{canvasCache.delete(k);throw e}));return canvasCache.get(k);}
+  function wrap(api){if(!api?.init||api.__fishCatalogWrapped)return api;const init=api.init;let last=null;api.init=d=>{last={...(last||{}),...(d||{}),FISH_DEFS:buildFishingDefs()};return init(last)};Object.defineProperty(api,'__fishCatalogWrapped',{value:true,configurable:true});return api;}
+  function hookFishing(){const d=Object.getOwnPropertyDescriptor(window,'Fishing');if(d&&!d.configurable){wrap(window.Fishing);return}let cur=wrap(window.Fishing);Object.defineProperty(window,'Fishing',{configurable:true,enumerable:true,get:()=>cur,set:v=>{cur=wrap(v)}});}
+  function registerItems(){let n=0;const go=()=>{if(window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(),buildBasePrices())===true){window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish`,'items');return}if(n++<200)setTimeout(go,50);else console.warn('[fish-catalog] item bridge unavailable')};go();}
+  function scaleLoop(){const f=window.Fishing?.state?.fishDef,i=document.getElementById('fishDeformedImage');if(i){const s=Number.isFinite(Number(f?.minigameScale))?Number(f.minigameScale):1;i.style.transformBox='fill-box';i.style.transformOrigin='center';i.style.transform=`scale(${s})`}requestAnimationFrame(scaleLoop);}
+  window.FishCatalog={entries:FISH,get:k=>byKey.get(k)||null,buildFishingDefs,buildItemDefs,getRecoloredCanvas};hookFishing();registerItems();requestAnimationFrame(scaleLoop);
 })();
