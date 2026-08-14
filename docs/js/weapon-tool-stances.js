@@ -2,31 +2,28 @@
   'use strict';
 
   // Centralizes the visual language for tools that can also occupy the weapon slot.
-  // The game still owns authoritative tool definitions and swing timing; this module
-  // only augments those live definitions and applies an idle-only visual offset at render time.
-  let deps = null; // Live EquipmentPanel dependencies used to read slots, tool definitions, and meshes.
-  let rendererHookInstalled = false; // Guards the one-time WebGLRenderer.render wrapper used for late idle offsets.
-  let combatHooksInstalled = false; // Guards the one-time Combat.deps visual wrappers used to protect active attacks.
-  let lastHolderQuaternion = null; // Previous tool-holder orientation used to recognize ordinary tool swing motion.
-  let holderMotionBusyUntil = 0; // Grace period that keeps an idle stance from returning during a moving tool action.
-  let combatBusyUntil = 0; // End of the current non-held combat visual window, used by applyBeforeRender().
-  let combatHoldActive = false; // True while a charge/hold attack is frozen at windup, even though the holder stops moving.
-  let lastDebugSignature = ''; // Last compact stance state logged to the in-game Debug log, avoiding per-frame spam.
-  let stanceApplied = false; // Current-frame diagnostic flag exposed through debugSnapshot().
-  const meshBaselines = new WeakMap(); // Original local transforms for meshes this module offsets and later restores.
-  const stancedMeshes = new Set(); // Only meshes modified by this module; restored at the beginning of the next render pass.
+  // game.js remains authoritative for attacks/tool actions; this module only augments
+  // live definitions and swaps the neutral holder transform while Three builds matrices.
+  let deps = null; // Live EquipmentPanel dependencies: slots, defs, active slot, holder, meshes.
+  let holderHookInstalled = false; // Guards the toolHolder.updateMatrixWorld render-pose hook.
+  let combatHooksInstalled = false; // Guards combat visual wrappers used to protect active attacks.
+  let lastHolderQuaternion = null; // Previous unmodified holder orientation for tool-motion detection.
+  let holderMotionBusyUntil = 0; // Grace period keeping idle poses out of active tool swings.
+  let combatBusyUntil = 0; // End of current non-held combat visual window.
+  let combatHoldActive = false; // True while a charged/held attack is frozen at windup.
+  let lastDebugSignature = ''; // Compact in-game debug signature, avoiding frame-by-frame spam.
+  let stanceApplied = false; // Diagnostic: whether the most recent matrix build used a stance override.
 
-  // These are the existing neutral pose values from game.js, reused here to
-  // calculate a relative transform without duplicating updateToolMesh itself.
+  // Existing neutral poses from game.js. These are used only to calculate the
+  // delta from the normal animStyle neutral to the desired slot-specific idle.
   const ENGINE_NEUTRAL_POSES = Object.freeze({
     thrust: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, roll: 0 }),
     sweep: Object.freeze({ x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, roll: 0 }),
     chop: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82 }),
   });
 
-  // Used for fishing spear/mace and pick-shovel weapon idle: starts from the
-  // shovel/thrust neutral, tips the working end down, and carries the haft
-  // diagonally behind the back for the requested staff/Darth-Maul silhouette.
+  // Fishing spear/mace and pick-shovel weapon idle: working end down and the
+  // haft carried diagonally behind the back for the requested staff silhouette.
   const LIGHT_WEAPON_POSE = Object.freeze({
     x: -0.02,
     y: 0.02,
@@ -36,8 +33,6 @@
     roll: -18,
   });
 
-  // Tracks which shape family each item belongs to; used by both weapon-slot
-  // eligibility and the heavy/light idle routing below.
   function shapeFor(itemKey, def) {
     if (def?.shapeKey) return def.shapeKey;
     if (itemKey === 'bronzehoe') return 'hoe';
@@ -49,7 +44,7 @@
   }
 
   function weaponIdleClass(itemKey, def) {
-    const shape = shapeFor(itemKey, def); // Shape family selects the reusable combat-idle class.
+    const shape = shapeFor(itemKey, def);
     if (shape === 'hoe' || shape === 'hatchet') return 'heavy';
     if (shape === 'fishingmace' || shape === 'fishingspear' || shape === 'pickshovel') return 'light';
     return null;
@@ -59,16 +54,15 @@
     if (!deps?.TOOL_ITEM_DEFS) return;
     for (const [itemKey, def] of Object.entries(deps.TOOL_ITEM_DEFS)) {
       if (!def) continue;
-      const shape = shapeFor(itemKey, def); // Shape identifies starter and smith-crafted hoes uniformly.
+      const shape = shapeFor(itemKey, def);
       if (shape === 'hoe') {
-        // EquipmentPanel consumes slots live, while combat consumes dmgType live from the same object.
         if (!Array.isArray(def.slots)) def.slots = ['hoe'];
         if (!def.slots.includes('weapon')) def.slots.push('weapon');
         def.dmgType = 'blunt';
+        def.toolIdleStyle = 'thrust';
       }
-      const idleClass = weaponIdleClass(itemKey, def); // Metadata also makes stance routing visible to debug/UI readers.
+      const idleClass = weaponIdleClass(itemKey, def);
       if (idleClass) def.weaponIdleClass = idleClass;
-      if (shape === 'hoe') def.toolIdleStyle = 'thrust';
     }
   }
 
@@ -77,65 +71,42 @@
   }
 
   function poseQuaternion(pose) {
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), deg(pose.yaw)); // Local yaw component.
-    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(pose.pitch)); // Local pitch component.
-    const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), deg(pose.roll)); // Local roll component.
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), deg(pose.yaw));
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(pose.pitch));
+    const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), deg(pose.roll));
     return qYaw.multiply(qPitch).multiply(qRoll);
   }
 
-  function captureBaseline(mesh) {
-    let baseline = meshBaselines.get(mesh); // Baseline is reused for every later render pass of this exact mesh.
-    if (baseline) return baseline;
-    baseline = {
-      position: mesh.position.clone(),
-      quaternion: mesh.quaternion.clone(),
-      scale: mesh.scale.clone(),
-    };
-    meshBaselines.set(mesh, baseline);
-    return baseline;
-  }
-
-  function restoreMesh(mesh) {
-    if (!mesh) return;
-    const baseline = captureBaseline(mesh); // Restores only local transforms this module is allowed to touch.
-    mesh.position.copy(baseline.position);
-    mesh.quaternion.copy(baseline.quaternion);
-    mesh.scale.copy(baseline.scale);
-  }
-
-  function restoreStancedMeshes() {
-    for (const mesh of stancedMeshes) restoreMesh(mesh);
-    stancedMeshes.clear();
-  }
-
   function holderIsMoving(now) {
-    const holder = deps?.toolHolder; // Shared holder rotation changes during tool work and combat swings.
+    const holder = deps?.toolHolder;
     if (!holder?.quaternion) return false;
     if (!lastHolderQuaternion) {
       lastHolderQuaternion = holder.quaternion.clone();
       return false;
     }
-    const dot = Math.min(1, Math.abs(lastHolderQuaternion.dot(holder.quaternion))); // Quaternion similarity for this frame.
-    const angularStep = 2 * Math.acos(dot); // Radians moved since the previous rendered frame.
+    const dot = Math.min(1, Math.abs(lastHolderQuaternion.dot(holder.quaternion)));
+    const angularStep = 2 * Math.acos(dot);
     lastHolderQuaternion.copy(holder.quaternion);
-    // A tool swing always rotates the holder; this grace window prevents the idle offset from reappearing mid-hit.
     if (angularStep > 0.004) holderMotionBusyUntil = Math.max(holderMotionBusyUntil, now + 650);
     return now < holderMotionBusyUntil;
   }
 
   function markCombatVisualBusy(durationS, opts = {}) {
-    const baseSeconds = Math.max(0, Number(durationS) || 0); // Caller-authored attack visual duration.
-    const holdSeconds = Math.max(0, Number(opts?.holdS) || 0); // Explicit strike-pose hold baked into some combo steps.
-    const safeTailSeconds = 0.75; // Covers game.js's automatic return-to-neutral tail after callers' nominal duration.
-    combatBusyUntil = Math.max(combatBusyUntil, performance.now() + (baseSeconds + holdSeconds + safeTailSeconds) * 1000);
+    const baseSeconds = Math.max(0, Number(durationS) || 0);
+    const holdSeconds = Math.max(0, Number(opts?.holdS) || 0);
+    const safeTailSeconds = 0.75;
+    combatBusyUntil = Math.max(
+      combatBusyUntil,
+      performance.now() + (baseSeconds + holdSeconds + safeTailSeconds) * 1000
+    );
   }
 
   function installCombatVisualHooks() {
-    const combatDeps = window.Combat?.deps; // Shared combat dependency object used lazily by every ability module.
+    const combatDeps = window.Combat?.deps;
     if (!combatDeps || combatHooksInstalled || combatDeps.__weaponToolStanceVisualHooks) return;
 
     const wrap = (name, before) => {
-      const original = combatDeps[name]; // Existing game.js callback retained as the authoritative visual implementation.
+      const original = combatDeps[name];
       if (typeof original !== 'function') return;
       combatDeps[name] = function weaponToolStanceAwareCombatVisual(...args) {
         before(...args);
@@ -162,83 +133,105 @@
   }
 
   function targetPoseFor(activeSlot, itemKey, def) {
-    const shape = shapeFor(itemKey, def); // Current physical tool shape distinguishes tool-mode hoe from weapon-mode hoe.
+    const shape = shapeFor(itemKey, def);
     if (activeSlot === 'hoe' && shape === 'hoe') return ENGINE_NEUTRAL_POSES.thrust;
     if (activeSlot !== 'weapon') return null;
-    const idleClass = weaponIdleClass(itemKey, def); // Weapon slot selects one of the two reusable combat silhouettes.
+    const idleClass = weaponIdleClass(itemKey, def);
     if (idleClass === 'heavy') return ENGINE_NEUTRAL_POSES.chop;
     if (idleClass === 'light') return LIGHT_WEAPON_POSE;
     return null;
   }
 
-  function applyRelativePose(mesh, sourcePose, targetPose) {
-    const baseline = captureBaseline(mesh); // Existing sprite/metal-specific local transform remains the starting point.
-    const sourceQ = poseQuaternion(sourcePose); // Holder-space neutral currently produced by updateToolMesh.
-    const targetQ = poseQuaternion(targetPose); // Holder-space neutral we want the player to see instead.
-    const deltaQ = sourceQ.clone().invert().multiply(targetQ); // Child correction satisfying source * delta = target.
-
-    // Pose positions are expressed in the player's right/up/forward frame.
-    // Convert that world-facing delta into the current source holder's local frame.
-    const deltaPosition = new THREE.Vector3(
-      (targetPose.x || 0) - (sourcePose.x || 0),
-      (targetPose.y || 0) - (sourcePose.y || 0),
-      (targetPose.z || 0) - (sourcePose.z || 0),
-    ).applyQuaternion(sourceQ.clone().invert());
-
-    mesh.position.copy(baseline.position).add(deltaPosition);
-    mesh.quaternion.copy(deltaQ).multiply(baseline.quaternion);
-    stancedMeshes.add(mesh);
-  }
-
   function activeState() {
-    const activeSlot = deps?.getActiveTool?.() || null; // Slot, not item key, is what tells tool mode from weapon mode.
-    const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null; // Live item currently assigned to that active slot.
-    const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null; // Canonical item definition shared with combat/equipment UI.
-    const mesh = activeSlot ? deps?.toolMeshMap?.[activeSlot] : null; // Visible slot mesh receiving the late idle correction.
+    const activeSlot = deps?.getActiveTool?.() || null;
+    const itemKey = activeSlot ? deps?.equipmentSlots?.[activeSlot] : null;
+    const def = itemKey ? deps?.TOOL_ITEM_DEFS?.[itemKey] : null;
+    const mesh = activeSlot ? deps?.toolMeshMap?.[activeSlot] : null;
     return { activeSlot, itemKey, def, mesh };
   }
 
-  function applyBeforeRender() {
-    if (!deps) return;
-    restoreStancedMeshes();
-    stanceApplied = false;
-    installCombatVisualHooks();
+  // updateToolMesh writes its pose to toolHolder, not to each tool child.
+  // Recover the holder's base orientation by subtracting the normal source
+  // neutral, then rebuild it with the target neutral. Position deltas are
+  // rotated through that same base so x/y/z remain player-relative.
+  function applyRelativeHolderPose(holder, sourcePose, targetPose) {
+    const sourceQ = poseQuaternion(sourcePose);
+    const targetQ = poseQuaternion(targetPose);
+    const baseQ = holder.quaternion.clone().multiply(sourceQ.clone().invert());
+    const positionDelta = new THREE.Vector3(
+      (targetPose.x || 0) - (sourcePose.x || 0),
+      (targetPose.y || 0) - (sourcePose.y || 0),
+      (targetPose.z || 0) - (sourcePose.z || 0),
+    ).applyQuaternion(baseQ);
 
-    const now = performance.now(); // Shared timestamp for motion and combat-busy gating this render pass.
-    const holderMoving = holderIsMoving(now); // Ordinary farming/tool motion gate.
-    const { activeSlot, itemKey, def, mesh } = activeState();
-    const combatBusy = activeSlot === 'weapon' && (combatHoldActive || now < combatBusyUntil); // Explicit combat gate, including frozen holds.
-    const targetPose = targetPoseFor(activeSlot, itemKey, def); // Desired idle pose for this exact slot/item combination.
-    const sourcePose = ENGINE_NEUTRAL_POSES[def?.animStyle] || ENGINE_NEUTRAL_POSES.thrust; // Engine neutral currently underneath the mesh.
-
-    if (mesh && targetPose && !holderMoving && !combatBusy) {
-      applyRelativePose(mesh, sourcePose, targetPose);
-      stanceApplied = true;
-    }
-
-    const stateLabel = stanceApplied ? 'idle' : combatBusy ? 'combat' : holderMoving ? 'moving' : 'default'; // Compact mobile-debug state.
-    const signature = `${activeSlot || '-'}|${itemKey || '-'}|${weaponIdleClass(itemKey, def) || '-'}|${stateLabel}`;
-    if (signature !== lastDebugSignature) {
-      lastDebugSignature = signature;
-      window.__farmLog?.(`[weapon-stance] ${signature}`, 'combat');
-    }
+    holder.position.add(positionDelta);
+    holder.quaternion.copy(baseQ).multiply(targetQ);
   }
 
-  function installRendererHook() {
-    if (rendererHookInstalled || !window.THREE?.WebGLRenderer?.prototype) return;
-    rendererHookInstalled = true;
-    const proto = THREE.WebGLRenderer.prototype; // Shared renderer prototype is the post-update seam for every game render pass.
-    const originalRender = proto.render; // Authoritative Three.js render implementation called after the stance correction.
-    // This runs after game.js updates updateToolMesh, so idle offsets affect only the visible frame without replacing engine logic.
-    proto.render = function weaponToolStanceRender(scene, camera) {
-      try { applyBeforeRender(); }
-      catch (error) { window.__farmLog?.(`[weapon-stance] render hook failed: ${error.message}`, 'warn'); }
-      return originalRender.call(this, scene, camera);
+  function logState(activeSlot, itemKey, def, stateLabel) {
+    const signature = `${activeSlot || '-'}|${itemKey || '-'}|${weaponIdleClass(itemKey, def) || '-'}|${stateLabel}`;
+    if (signature === lastDebugSignature) return;
+    lastDebugSignature = signature;
+    window.__farmLog?.(`[weapon-stance] ${signature}`, 'combat');
+  }
+
+  function installHolderMatrixHook() {
+    const holder = deps?.toolHolder;
+    if (!holder || holderHookInstalled || holder.__weaponToolStanceMatrixHook) return;
+    const originalUpdateMatrixWorld = holder.updateMatrixWorld;
+    if (typeof originalUpdateMatrixWorld !== 'function') return;
+
+    holder.updateMatrixWorld = function weaponToolStanceUpdateMatrixWorld(force) {
+      installCombatVisualHooks();
+      stanceApplied = false;
+
+      const now = performance.now();
+      const holderMoving = holderIsMoving(now);
+      const { activeSlot, itemKey, def, mesh } = activeState();
+      const combatBusy = activeSlot === 'weapon' && (combatHoldActive || now < combatBusyUntil);
+      const targetPose = targetPoseFor(activeSlot, itemKey, def);
+      const sourcePose = ENGINE_NEUTRAL_POSES[def?.animStyle] || ENGINE_NEUTRAL_POSES.thrust;
+      let savedPosition = null;
+      let savedQuaternion = null;
+
+      if (mesh && targetPose && !holderMoving && !combatBusy) {
+        savedPosition = this.position.clone();
+        savedQuaternion = this.quaternion.clone();
+        try {
+          applyRelativeHolderPose(this, sourcePose, targetPose);
+          stanceApplied = true;
+        } catch (error) {
+          window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');
+        }
+      }
+
+      const stateLabel = stanceApplied ? 'idle-holder' : combatBusy ? 'combat' : holderMoving ? 'moving' : 'default';
+      logState(activeSlot, itemKey, def, stateLabel);
+
+      let result;
+      try {
+        // Three computes this holder and all descendant tool matrices while the
+        // slot-specific stance is temporarily present, so the rendered sprite
+        // actually receives the alternate silhouette.
+        result = originalUpdateMatrixWorld.call(this, force);
+      } finally {
+        if (savedPosition && savedQuaternion) {
+          // Restore gameplay-local state after descendant matrices are built.
+          // matrixWorld intentionally remains the posed render result for this frame.
+          this.position.copy(savedPosition);
+          this.quaternion.copy(savedQuaternion);
+          this.updateMatrix?.();
+        }
+      }
+      return result;
     };
+
+    Object.defineProperty(holder, '__weaponToolStanceMatrixHook', { value: true, configurable: true });
+    holderHookInstalled = true;
   }
 
   function debugSnapshot() {
-    const state = activeState(); // Live state makes the snapshot useful from the game's existing mobile Debug surface.
+    const state = activeState();
     return {
       activeSlot: state.activeSlot,
       itemKey: state.itemKey,
@@ -246,6 +239,7 @@
       weaponIdleClass: weaponIdleClass(state.itemKey, state.def),
       sourceAnimStyle: state.def?.animStyle || null,
       stanceApplied,
+      hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
       holderMotionBusyMs: Math.max(0, Math.round(holderMotionBusyUntil - performance.now())),
       combatBusyMs: Math.max(0, Math.round(combatBusyUntil - performance.now())),
       combatHoldActive,
@@ -259,13 +253,13 @@
     deps = injectedDeps;
     augmentToolDefinitions();
     installCombatVisualHooks();
-    installRendererHook();
-    // Do not render inventory/action UI here. EquipmentPanel.init runs before
-    // sibling systems such as WhistleEquip and CalendarSystem receive their own
-    // init(deps) payloads; forcing those render paths here caused null-dependency
-    // boot crashes. Their normal game.js initialization/render flow will see the
-    // already-mutated live tool definitions when they render later.
-    window.__farmLog?.('[weapon-stance] initialized: hoes=weapon/blunt, heavy=hoe+axe, light=fishing spear+mace+pick-shovel', 'combat');
+    installHolderMatrixHook();
+    // Do not force inventory/action UI here: sibling systems receive their
+    // own init(deps) payloads later in game.js's normal boot sequence.
+    window.__farmLog?.(
+      `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
+      'combat'
+    );
   }
 
   window.WeaponToolStances = {
