@@ -78,7 +78,7 @@
     ['js/player-body-attachment-bridge.js?v=20260810a', () => !!window.PlayerBodyAttachmentBridge],
     ['js/town-player-body-elevation-bridge.js?v=20260810a', () => !!window.HobunjiTownBodyElevationBridge],
     ['js/drunk-locomotion.js?v=20260812a', () => !!window.HobunjiDrunkWalk],
-    ['js/inventory-action-metadata-bridge.js?v=20260813a', () => !!window.HobunjiInventoryActionMetadataBridge],
+    ['js/inventory-action-metadata-bridge.js?v=20260813b', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/alcohol-gameplay-bridge.js?v=20260811g', () => !!window.HobunjiDrunkGameplayBridge],
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
