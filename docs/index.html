@@ -1609,20 +1609,20 @@
        controls, driving the iframe's engine directly through its exposed
        HobunjiMusicControlBridge. -->
   <div id="musicMinigameOverlay">
-    <!-- Frame (above) and controls dock (below) share the available height
-         through flexbox rather than independent vh percentages — see
-         #musicLeftColumn in style.css. Fixed percentages of two separately
-         positioned elements can't account for how tall the dock's actual
-         content ends up on a given screen, so on shorter viewports the
-         dock would grow upward into the frame instead of the frame simply
-         shrinking to make room. -->
-    <div id="musicLeftColumn">
-      <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
-      <div id="musicControlsDock">
-        <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
-        <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
-      </div>
-    </div>
+    <!-- Three independently-docked pieces, matching how the reference
+         mockup (docs/references/(HA)MusicMinigameV2.html, rendered and
+         measured headlessly rather than guessed from a screenshot) actually
+         composes its own hosted embedding: a tall, narrow note-lane strip
+         (not a modest centered box) with the left-hand bank/pattern panel
+         immediately beside it, and the right-hand note/scale/strum panel
+         anchored separately at the far right edge of the screen — not
+         bundled into one dock. That leaves the whole center-right of the
+         screen clear for the "music" camera framing (player + whichever
+         NPC they're playing with) rather than the frame or its controls
+         sitting on top of it. See style.css for the actual positioning. -->
+    <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
+    <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
+    <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
     <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
   </div>
 

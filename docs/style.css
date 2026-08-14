@@ -2719,69 +2719,61 @@
        the iframe itself renders transparent (its own "hosted-minigame"
        body styling — see lyre-performance.html — hides its native
        topbar/side-panel chrome), so the live 3D scene stays visible
-       around it. Frame (note lanes) above, both control clusters gathered
-       into one dock below it — matching the reference mockup's own
-       bottom-left controller cluster (see the uploaded
-       HAMusicMinigameV2.html's #gameplayMusicPanel) — rather than the
-       clusters spanning the full screen height on opposite edges, which
-       used to cut the view in half. This leaves the right ~2/3 of the
-       screen fully clear, so the "music" camera mode's framing of the
-       player and whichever NPC they're playing with stays watchable.
-       #musicLeftColumn is a flex column, NOT independently-sized vh
-       percentages on the frame and dock: the dock's actual content height
-       varies with viewport height in ways a fixed percentage can't
-       predict, so on a shorter screen a percentage-sized dock would grow
-       upward into the frame instead of the frame simply shrinking to make
-       room, which is what flex:1/min-height:0 on the frame gets for free. */
+       around it.
+       Composition below is measured from actually rendering the reference
+       mockup (docs/references/(HA)MusicMinigameV2.html) headlessly and
+       reading real getBoundingClientRect() values — not guessed from a
+       (non-fullscreen) screenshot, and not reused out of context from an
+       unrelated full-page layout. The reference's own hosted embedding is:
+       a TALL, NARROW note-lane strip (not a modest centered box) with the
+       left-hand bank/pattern panel immediately beside it, and the
+       right-hand note/scale/strum panel anchored separately at the far
+       right edge of the screen — not bundled into one dock below the
+       frame. Reproduced here at proportionally similar (not pixel-
+       identical — the reference's own extra chrome/header differs from
+       ours) viewport-relative sizes. This leaves the whole center-right of
+       the screen clear for the "music" camera mode's framing of the player
+       and whichever NPC they're playing with. */
     #musicMinigameOverlay {
       display: none; position: fixed; inset: 0;
       z-index: 240; touch-action: none; pointer-events: none;
     }
     #musicMinigameOverlay.open { display: block; }
-    /* Column width matches the reference file's OWN authored panel widths
-       (lyre-performance.html's native, non-hosted .layout grid —
-       grid-template-columns: clamp(150px,18vw,215px) minmax(260px,1fr)
-       clamp(235px,31vw,350px) — i.e. its left+right side-panel widths,
-       215px + 350px + the dock's own 10px gap, not a guessed number. */
-    #musicLeftColumn {
-      position: absolute; left: 2vw; top: 2vh; bottom: 2vh;
-      width: min(46vw, 575px);
-      display: flex; flex-direction: column; gap: 10px;
-      pointer-events: none;
-    }
     #musicMinigameFrame {
-      flex: 1 1 auto; min-height: 120px; width: 100%;
+      /* height as an explicit calc(), NOT top+bottom-with-height:auto: an
+         <iframe> is a replaced element, and replaced elements don't get
+         the usual absolutely-positioned auto-stretch-to-fill-top-and-
+         bottom behavior — they fall back to their intrinsic size (a bare
+         iframe's ~150px default) instead, which silently produced a
+         squashed 150px-tall frame here. */
+      position: absolute; left: min(19vw, 250px); top: 3vh;
+      width: clamp(220px, 14vw, 320px); height: calc(100vh - 6vh);
       border: 1px solid rgba(220, 238, 255, .22); border-radius: 20px;
       box-shadow: 0 20px 44px rgba(0, 0, 0, .48);
       pointer-events: auto; background: transparent;
     }
-    /* One dock holding both control clusters together, below the frame —
-       the iframe's own native controls are hidden in hosted-minigame mode
-       (by design, to keep the 3D scene clear), so these are the actual
-       touch/mouse play surface, driving the iframe's engine directly
-       through its exposed HobunjiMusicControlBridge (see
-       buildEdgeControls in js/music-minigame.js). Keyboard play works
-       independently, straight into the focused iframe. flex:0 0 auto
-       means the dock always gets exactly the height its content needs —
-       never fought over by the frame — with its own overflow-y as a last
-       resort on truly cramped screens rather than spilling into the frame. */
-    #musicControlsDock {
-      flex: 0 0 auto; max-height: 100%; overflow-y: auto; overflow-x: hidden;
-      display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+    /* Vertically centered rather than reproducing the reference's exact
+       (lower-biased) Y position — our panel's own button set differs
+       enough in height that copying its precise offset risks the same
+       overflow mistake fixed earlier; centering is robust to that. */
+    #leftMusicControls {
+      position: absolute; left: 1.5vw; top: 50%; transform: translateY(-50%);
       pointer-events: none;
     }
-    #leftMusicControls, #rightMusicControls { pointer-events: none; }
+    #rightMusicControls {
+      position: absolute; right: 1.5vw; top: 50%; transform: translateY(-50%);
+      pointer-events: none;
+    }
     @media (max-width: 760px), (max-height: 560px) {
-      #musicLeftColumn { left: 50%; transform: translateX(-50%); width: min(92vw, 480px); align-items: center; }
-      #musicControlsDock { justify-content: center; }
+      #musicMinigameFrame { left: 50%; top: 6vh; bottom: auto; transform: translateX(-50%); width: min(92vw, 480px); height: min(38vh, 340px); }
+      #leftMusicControls { left: 50%; top: auto; bottom: 1vh; transform: translateX(-50%); }
+      #rightMusicControls { right: 50%; top: auto; bottom: 1vh; transform: translateX(50%); }
     }
     .edgeMusicPanel {
       pointer-events: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px;
       border: 1px solid rgba(220,238,255,.18); border-radius: 18px; background: rgba(7,16,26,.4);
       box-shadow: inset 0 0 0 1px rgba(255,255,255,.025); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
     }
-    /* Same clamp() ranges as the reference's own .layout side-panel columns
-       (see #musicLeftColumn above) — not independently guessed widths. */
     #leftMusicControls .edgeMusicPanel { width: clamp(150px, 18vw, 215px); }
     #rightMusicControls .edgeMusicPanel { width: clamp(235px, 31vw, 350px); }
     .edgeSongModeBtn { width: 100%; min-height: 36px; flex-direction: row; gap: 6px; }
@@ -2871,7 +2863,6 @@
     .edgeFacePad .a { grid-column: 2; grid-row: 3; }
     .edgeRightBottom { display: flex; justify-content: center; align-items: center; padding-top: 2px; }
     @media (max-width: 900px) and (orientation: landscape) {
-      #musicControlsDock { left: 1vw; bottom: 1vh; gap: 6px; }
       .edgeMusicPanel { gap: 6px; padding: 6px; }
       .edgeControllerBtn { min-height: 34px; }
       .edgePatternBtn { min-height: 28px; font-size: 8px; }
