@@ -2,7 +2,7 @@
   'use strict';
 
   // Centralizes the visual language for tools that can also occupy the weapon slot.
-  // game.js remains authoritative for attacks/tool actions; this module only augments
+  // game.js remains authoritative for attacks/tool actions; this module augments
   // live definitions and swaps the neutral holder transform while Three builds matrices.
   let deps = null; // Live EquipmentPanel dependencies: slots, defs, active slot, holder, meshes.
   let holderHookInstalled = false; // Guards the toolHolder.updateMatrixWorld render-pose hook.
@@ -13,25 +13,83 @@
   let combatHoldActive = false; // True while a charged/held attack is frozen at windup.
   let lastDebugSignature = ''; // Compact in-game debug signature, avoiding frame-by-frame spam.
   let stanceApplied = false; // Diagnostic: whether the most recent matrix build used a stance override.
+  let stanceConfigLoadStarted = false;
+  let stanceConfigSource = 'built-in-defaults';
 
-  // Existing neutral poses from game.js. These are used only to calculate the
-  // delta from the normal animStyle neutral to the desired slot-specific idle.
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20260814a';
+  const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
+
+  // Existing neutral poses from game.js. These are the source poses written by
+  // updateToolMesh(); slot-specific idle stances are authored separately below.
   const ENGINE_NEUTRAL_POSES = Object.freeze({
-    thrust: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, roll: 0 }),
-    sweep: Object.freeze({ x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, roll: 0 }),
-    chop: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82 }),
+    thrust: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
+    sweep: Object.freeze({ x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0 }),
+    chop: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }),
   });
 
-  // Fishing spear/mace and pick-shovel weapon idle: working end down and the
-  // haft carried diagonally behind the back for the requested staff silhouette.
-  const LIGHT_WEAPON_POSE = Object.freeze({
-    x: -0.02,
-    y: 0.02,
-    z: -0.08,
-    pitch: -18,
-    yaw: -52,
-    roll: -18,
+  // Mirrors docs/config/combat/weapon-idle-stances.json so a missing fetch never
+  // makes the stance system disappear. The attack editor authors the same schema.
+  const DEFAULT_IDLE_STANCES = Object.freeze({
+    tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
+    hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -90 }),
+    heavyWeapon: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }),
+    lightWeapon: Object.freeze({ x: 0.04, y: 0, z: 0, pitch: 20, yaw: -70, bodyYaw: 0, roll: -65 }),
   });
+
+  // Keep these objects stable so external debug/editor references do not go stale
+  // when a fetched config or Local Override replaces their values.
+  const idleStances = {
+    tool: { ...DEFAULT_IDLE_STANCES.tool },
+    hoeTool: { ...DEFAULT_IDLE_STANCES.hoeTool },
+    heavyWeapon: { ...DEFAULT_IDLE_STANCES.heavyWeapon },
+    lightWeapon: { ...DEFAULT_IDLE_STANCES.lightWeapon },
+  };
+
+  const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
+
+  function normalizePose(raw, fallback) {
+    const pose = {};
+    for (const key of POSE_KEYS) {
+      const value = Number(raw?.[key]);
+      pose[key] = Number.isFinite(value) ? value : fallback[key];
+    }
+    return pose;
+  }
+
+  function applyStanceConfig(raw, sourceLabel) {
+    if (!raw || raw.kind !== 'hobunji_weapon_idle_stances' || !raw.stances) return false;
+    for (const key of Object.keys(idleStances)) {
+      Object.assign(idleStances[key], normalizePose(raw.stances[key], DEFAULT_IDLE_STANCES[key]));
+    }
+    stanceConfigSource = sourceLabel;
+    return true;
+  }
+
+  async function loadStanceConfig() {
+    if (stanceConfigLoadStarted) return;
+    stanceConfigLoadStarted = true;
+
+    try {
+      const response = await fetch(STANCE_CONFIG_URL, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const parsed = await response.json();
+      if (!applyStanceConfig(parsed, 'committed-json')) throw new Error('schema mismatch');
+    } catch (error) {
+      window.__farmLog?.(`[weapon-stance] idle config fallback: ${error?.message || error}`, 'warn');
+    }
+
+    try {
+      const localRaw = localStorage.getItem(STANCE_LOCAL_STORAGE_KEY);
+      if (localRaw) {
+        const parsed = JSON.parse(localRaw);
+        if (!applyStanceConfig(parsed, 'local-override')) throw new Error('schema mismatch');
+      }
+    } catch (error) {
+      window.__farmLog?.(`[weapon-stance] ignored invalid local idle override: ${error?.message || error}`, 'warn');
+    }
+
+    window.__farmLog?.(`[weapon-stance] idle config source=${stanceConfigSource}`, 'combat');
+  }
 
   function shapeFor(itemKey, def) {
     if (def?.shapeKey) return def.shapeKey;
@@ -169,11 +227,11 @@
 
   function targetPoseFor(activeSlot, itemKey, def) {
     const shape = shapeFor(itemKey, def);
-    if (activeSlot === 'hoe' && shape === 'hoe') return ENGINE_NEUTRAL_POSES.thrust;
+    if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
     if (activeSlot !== 'weapon') return null;
     const idleClass = weaponIdleClass(itemKey, def);
-    if (idleClass === 'heavy') return ENGINE_NEUTRAL_POSES.chop;
-    if (idleClass === 'light') return LIGHT_WEAPON_POSE;
+    if (idleClass === 'heavy') return idleStances.heavyWeapon;
+    if (idleClass === 'light') return idleStances.lightWeapon;
     return null;
   }
 
@@ -280,9 +338,15 @@
       holderMotionBusyMs: Math.max(0, Math.round(holderMotionBusyUntil - performance.now())),
       combatBusyMs: Math.max(0, Math.round(combatBusyUntil - performance.now())),
       combatHoldActive,
+      stanceConfigSource,
       hoeWeaponEligible: !!deps?.TOOL_ITEM_DEFS?.bronzehoe?.slots?.includes('weapon'),
       hoeDamageType: deps?.TOOL_ITEM_DEFS?.bronzehoe?.dmgType || null,
-      lightWeaponPose: { ...LIGHT_WEAPON_POSE },
+      poses: {
+        tool: { ...idleStances.tool },
+        hoeTool: { ...idleStances.hoeTool },
+        heavyWeapon: { ...idleStances.heavyWeapon },
+        lightWeapon: { ...idleStances.lightWeapon },
+      },
     };
   }
 
@@ -291,6 +355,7 @@
     augmentToolDefinitions();
     installCombatVisualHooks();
     installHolderMatrixHook();
+    loadStanceConfig();
     // Do not force inventory/action UI here: sibling systems receive their
     // own init(deps) payloads later in game.js's normal boot sequence.
     window.__farmLog?.(
@@ -302,11 +367,11 @@
   window.WeaponToolStances = {
     init,
     refreshDefinitions: augmentToolDefinitions,
-    debugSnapshot,
-    poses: {
-      heavy: ENGINE_NEUTRAL_POSES.chop,
-      light: LIGHT_WEAPON_POSE,
-      hoeTool: ENGINE_NEUTRAL_POSES.thrust,
+    reloadConfig() {
+      stanceConfigLoadStarted = false;
+      return loadStanceConfig();
     },
+    debugSnapshot,
+    poses: idleStances,
   };
 })();
