@@ -328,6 +328,12 @@
     updateDraggability();
   }
 
+  function selectParent() {
+    if (!selectedEl || !selectedEl.parentElement) return;
+    if (selectedEl.parentElement === document.documentElement) return;
+    selectElement(selectedEl.parentElement);
+  }
+
   function selectElement(el) {
     selectedEl = el;
     selectedSelector = getStableSelector(el);
@@ -474,10 +480,53 @@
   // ── input capture ───────────────────────────────────────────────────
   function isInOwnRoot(target) { return !!(target && target.closest && target.closest('#uiEditorRoot')); }
 
+  // While picking, a CSS rule forces pointer-events:auto everywhere so
+  // click-through HUD chrome (see isFloating's neighboring comment —
+  // e.g. the status pill, deliberately pointer-events:none so clicks
+  // fall through to the world) becomes hit-testable. That same override
+  // can also expose an otherwise-invisible closed modal/overlay that's
+  // still laid out full-size with opacity:0 — without this, the first
+  // one of those under the cursor would swallow every click. Resolve by
+  // walking past anything that isn't actually visible, punching a
+  // temporary hole through it and re-testing what's underneath.
+  // opacity:0 isn't inherited in computed-style terms — a canvas inside a
+  // closed, fully transparent modal still reports its own opacity as "1",
+  // so invisibility has to be checked up the whole ancestor chain, not
+  // just on the hit element itself.
+  function isEffectivelyVisible(el) {
+    let node = el;
+    while (node && node.nodeType === 1) {
+      const cs = getComputedStyle(node);
+      if (cs.opacity === '0' || cs.visibility === 'hidden' || cs.display === 'none') return false;
+      node = node.parentElement;
+    }
+    return true;
+  }
+
+  function resolvePickTarget(x, y) {
+    const punched = [];
+    let el = document.elementFromPoint(x, y);
+    let guard = 0;
+    while (el && guard++ < 8) {
+      if (isInOwnRoot(el)) { el = null; break; }
+      if (isEffectivelyVisible(el)) break;
+      const prevVal = el.style.getPropertyValue('pointer-events');
+      const prevPriority = el.style.getPropertyPriority('pointer-events');
+      punched.push({ el, prevVal, prevPriority });
+      el.style.setProperty('pointer-events', 'none', 'important');
+      el = document.elementFromPoint(x, y);
+    }
+    punched.forEach(p => {
+      if (p.prevVal) p.el.style.setProperty('pointer-events', p.prevVal, p.prevPriority);
+      else p.el.style.removeProperty('pointer-events');
+    });
+    return el;
+  }
+
   function onMouseMove(e) {
     if (mode !== 'picking') return;
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    if (!el || isInOwnRoot(el)) { hoverBox.style.display = 'none'; return; }
+    const el = resolvePickTarget(e.clientX, e.clientY);
+    if (!el) { hoverBox.style.display = 'none'; return; }
     updateHoverBox(el);
   }
 
@@ -490,7 +539,8 @@
     if (isInOwnRoot(e.target)) return;
     if (mode !== 'picking') return;
     e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    selectElement(e.target);
+    const el = resolvePickTarget(e.clientX, e.clientY);
+    if (el) selectElement(el);
   }
 
   function onKeyDown(e) {
@@ -556,6 +606,7 @@
           <div class="ui-editor-selected-path" id="uiEditorSelectedPath">No element selected</div>
           <div class="ui-editor-toolbar">
             <button type="button" id="uiEditorPickAgainBtn" class="settings-small-btn">Pick New</button>
+            <button type="button" id="uiEditorParentBtn" class="settings-small-btn" title="Select this element's parent — useful for containers with no exposed area of their own, like a panel whose header/content fill it edge to edge">Parent ↑</button>
             <button type="button" id="uiEditorResetElBtn" class="settings-small-btn">Reset This</button>
           </div>
           <div class="ui-editor-fields" id="uiEditorFields"></div>
@@ -573,6 +624,7 @@
 
     root.querySelector('#uiEditorTabHead').addEventListener('click', onTabHeadClick);
     root.querySelector('#uiEditorPickAgainBtn').addEventListener('click', (e) => { e.stopPropagation(); setMode('picking'); });
+    root.querySelector('#uiEditorParentBtn').addEventListener('click', (e) => { e.stopPropagation(); selectParent(); });
     root.querySelector('#uiEditorResetElBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       if (!selectedSelector) return;

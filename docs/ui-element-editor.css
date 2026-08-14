@@ -115,10 +115,11 @@
 
 .ui-editor-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
 }
-.ui-editor-toolbar .settings-small-btn { flex: 1 1 auto; }
+.ui-editor-toolbar .settings-small-btn { flex: 1 1 auto; padding: 5px 6px; }
 
 .ui-editor-fields {
   display: flex;
@@ -199,4 +200,14 @@
 body.ui-editor-picking,
 body.ui-editor-picking * {
   cursor: crosshair !important;
+}
+
+/* Some HUD chrome is deliberately pointer-events:none so clicks fall
+   through to the 3D world beneath it (e.g. the status pill showing
+   time/weather/gold) — which also makes it invisible to elementFromPoint
+   hit-testing. Force everything hit-testable while actively picking so
+   click-through elements can still be selected; the editor's own overlay
+   keeps whatever pointer-events it already declares. */
+body.ui-editor-picking *:not(#uiEditorRoot):not(#uiEditorRoot *) {
+  pointer-events: auto !important;
 }
