@@ -36,6 +36,71 @@
   const KNOWN_SONG_ID = 'when-the-kininjis-bloom'; // Matches SONGBOOK's key in lyre-performance.html.
   const AMBIENT_RECHECK_S = 1; // How often tick() re-evaluates who should be ambiently performing — this doesn't need per-frame precision.
 
+  // ── Rebindable note keys ──────────────────────────────────────────────
+  // The falling glyphs always show plain ordinal numbers (1-4 — see
+  // NOTE_INPUT_GLYPHS_BY_LAYOUT in lyre-performance.html) rather than a
+  // literal key name, specifically so this mapping can be rebound to any
+  // key without the on-screen prompts going stale. Settings UI lives in
+  // #lyreNoteKeyBindings (see renderNoteKeySettings, called once at boot
+  // by game.js the same way it calls window.InputSettingsPanel.render()).
+  const NOTE_KEY_STORAGE_KEY = 'hobunji.lyreNoteKeys.v1';
+  const DEFAULT_NOTE_KEY_CODES = ['KeyA', 'KeyS', 'KeyD', 'KeyF'];
+  function loadNoteKeyBindings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(NOTE_KEY_STORAGE_KEY) || 'null');
+      if (Array.isArray(saved) && saved.length === 4) return saved.slice();
+    } catch {}
+    return DEFAULT_NOTE_KEY_CODES.slice();
+  }
+  const noteKeyCodes = loadNoteKeyBindings(); // index -> KeyboardEvent.code, e.g. noteKeyCodes[0] === 'KeyA'.
+  function saveNoteKeyBindings() { localStorage.setItem(NOTE_KEY_STORAGE_KEY, JSON.stringify(noteKeyCodes)); }
+  function noteIndexForKeyCode(code) {
+    const index = noteKeyCodes.indexOf(code);
+    return index === -1 ? null : index;
+  }
+  function keyLabel(code) {
+    return String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '');
+  }
+  const RESERVED_LYRE_KEY_LABELS = { ArrowLeft:'the LT bank shift', ArrowUp:'the RT bank shift', ArrowRight:'the LB bank shift', ArrowDown:'the RB bank shift' }; // Fixed bank-shift keys — see keyboardBankByCode below.
+  function renderNoteKeySettings() {
+    const container = document.getElementById('lyreNoteKeyBindings');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let noteIndex = 0; noteIndex < 4; noteIndex++) {
+      const row = document.createElement('div');
+      row.className = 'input-binding-row';
+      row.innerHTML = `<span class="settings-name">Note ${noteIndex + 1}</span><button type="button" class="input-bind-btn">${keyLabel(noteKeyCodes[noteIndex])}</button><div class="input-binding-warning"></div>`;
+      const button = row.children[1];
+      const warn = row.querySelector('.input-binding-warning');
+      button.addEventListener('click', () => {
+        button.classList.add('is-listening');
+        button.textContent = 'Press key…';
+        const once = event => {
+          event.preventDefault();
+          const code = event.code;
+          const conflictIndex = noteKeyCodes.indexOf(code);
+          if (RESERVED_LYRE_KEY_LABELS[code]) {
+            warn.textContent = `Reserved for ${RESERVED_LYRE_KEY_LABELS[code]}.`;
+            button.textContent = keyLabel(noteKeyCodes[noteIndex]);
+            button.classList.remove('is-listening');
+          } else if (conflictIndex !== -1 && conflictIndex !== noteIndex) {
+            warn.textContent = `Already bound to Note ${conflictIndex + 1}.`;
+            button.textContent = keyLabel(noteKeyCodes[noteIndex]);
+            button.classList.remove('is-listening');
+          } else {
+            noteKeyCodes[noteIndex] = code;
+            warn.textContent = '';
+            saveNoteKeyBindings();
+            renderNoteKeySettings();
+          }
+          window.removeEventListener('keydown', once, true);
+        };
+        window.addEventListener('keydown', once, true);
+      });
+      container.appendChild(row);
+    }
+  }
+
   const overlayEl = document.getElementById('musicMinigameOverlay');
   const frameEl = document.getElementById('musicMinigameFrame');
   const closeBtnEl = document.getElementById('musicMinigameCloseBtn');
@@ -194,6 +259,25 @@
     document.getElementById('compactSongPicker')?.remove();
     document.getElementById('musicLayoutHud')?.remove();
     document.getElementById('musicModeShiftHud')?.remove();
+    // installHostedKeyboardBridge (see buildEdgeControls) attaches its
+    // keydown/keyup to the HOST window in the capture phase, which runs
+    // before ANY bubble-phase listener on window regardless of
+    // registration order — including game.js's own movement/action keydown
+    // handler. Without removing it here, it stays attached forever after
+    // the overlay closes and keeps swallowing whatever keys are currently
+    // bound to Lyre notes/banks (A/S/D/F and the arrows by default) before
+    // movement ever sees them.
+    const staleKeyboard = window.__hobunjiHostedKeyboardBridgeHandlers;
+    if (staleKeyboard) {
+      window.removeEventListener('keydown', staleKeyboard.keydown, true);
+      window.removeEventListener('keyup', staleKeyboard.keyup, true);
+      window.removeEventListener('blur', staleKeyboard.blur);
+      window.__hobunjiHostedKeyboardBridgeHandlers = null;
+    }
+    // Retires the rAF gamepad poller (see pollHostedController) rather than
+    // leaving it running forever against a bridge whose iframe document is
+    // about to be torn down.
+    window.__hobunjiHostedControllerPollGeneration = (window.__hobunjiHostedControllerPollGeneration || 0) + 1;
   }
 
   // ── Edge controls (the actual touch/mouse/keyboard/gamepad play surface) ──
@@ -228,12 +312,11 @@
       { slot:'rb', control:'rb', color:'#92efbb', keyboardHint:'▼', controllerHint:'RB' },
     ];
     const noteDefinitions = [{ noteIndex:0 }, { noteIndex:1 }, { noteIndex:2 }, { noteIndex:3 }];
-    const noteGlyphsByLayout = { mobile:['1','2','3','4'], keyboard:['A','S','D','F'], controller:['X','A','B','Y'] };
+    const noteGlyphsByLayout = { mobile:['1','2','3','4'], keyboard:['1','2','3','4'], controller:['X','A','B','Y'] }; // Keyboard shows ordinal numbers, not the literal bound key — see noteKeyCodes, which is player-rebindable.
     const bankSlotByControl = Object.fromEntries(groupDefinitions.filter(g => g.control).map(g => [g.control, g.slot]));
     const controlForBankSlot = Object.fromEntries(groupDefinitions.filter(g => g.control).map(g => [g.slot, g.control]));
     const hostedBankOffsetBySlot = { open:0, lt:4, rt:8, lb:12, rb:16 }; // Used only by the Lyre highlight, so hosted keyboard/controller visuals have one authoritative active string.
     const keyboardBankByCode = { ArrowLeft:'lt', ArrowUp:'rt', ArrowRight:'lb', ArrowDown:'rb' }; // Keyboard shift order follows the visible bank sequence: Left, Up, Right, Down.
-    const noteIndexByKeyCode = { KeyA:0, KeyS:1, KeyD:2, KeyF:3 };
     const autoPickSectorByArrow = { ArrowUp:0, ArrowRight:1, ArrowDown:2, ArrowLeft:3 }; // Shift+Arrow selects one of the four slottable Auto Pick modes.
     let activeInputLayout = ['mobile','keyboard','controller'].includes(window.__hobunjiHostedControlLayout) ? window.__hobunjiHostedControlLayout : 'mobile'; // Persists the player's last manual choice across overlay opens.
     let activeBankSlot = 'open'; // Which color group glows in keyboard/controller layouts.
@@ -594,7 +677,7 @@
           readMode();
           return;
         }
-        const noteIndex = noteIndexByKeyCode[event.code];
+        const noteIndex = noteIndexForKeyCode(event.code);
         if (Number.isInteger(noteIndex)) {
           event.preventDefault();
           event.stopImmediatePropagation?.();
@@ -884,6 +967,12 @@
     beginPlayerSession,
     close,
     tick,
+    renderNoteKeySettings, // Called once at boot by game.js, the same way it calls window.InputSettingsPanel.render().
     get state() { return playerSession; },
+    // True while any instrument NPC's ambient audio is sounding, even when
+    // the player's own overlay is closed — see updateLyreDucking in
+    // js/music-system.js, which ducks the game's ambient bgm/cues for as
+    // long as either this or the player session is active.
+    get ambientActive() { return ambientFrames.size > 0; },
   };
 })();

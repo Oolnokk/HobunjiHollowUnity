@@ -874,6 +874,19 @@
   }
 </style>
 
+<style id="hobunjiHostedSmallerNotePrompts">
+  /* --lyre-note-diameter (54-86px, tuned for the reference's own wider
+     standalone viewport) barely shrinks inside our much narrower hosted
+     iframe since it's driven by vw of the iframe's own width — with five
+     lanes side by side that leaves adjacent prompts touching or
+     overlapping, unreadable at a glance. Shrinks the shared size variable
+     hosted mode specifically; every dependent size (the square itself,
+     its glyph, the bank-shift capo glyphs) scales off this one value. */
+  body.hosted-minigame .lyre-note-bead {
+    --lyre-note-diameter: clamp(20px, 5.6vw, 30px);
+  }
+</style>
+
 </head>
 <body class="hosted-minigame">
 <div id="app">
@@ -1296,7 +1309,7 @@
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
-  const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['A','S','D','F'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs.
+  const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['1','2','3','4'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs. Keyboard shows ordinal numbers, not the literal bound key, since which physical key plays note 1-4 is player-rebindable (see js/music-minigame.js) — a fixed A/S/D/F glyph would go stale the moment a key is remapped.
   const FIVE_BANK_DEFINITIONS = [ // V55 maps the four ascending note banks to the most comfortable controller order.
     {offset:0,label:'OPEN',range:'1–4',control:null},
     {offset:4,label:'LT',range:'5–8',control:'lt'},

@@ -19653,6 +19653,7 @@
         window.Music?.updateExteriorBgs();
         window.Music?.updateFurnitureSfxSources();
         window.Music?.updateAmbientCues();
+        window.Music?.updateLyreDucking();
         window.Music?.logAudioTickDiagnostics();
 
         if (!paused) {
@@ -22153,6 +22154,7 @@
         saveInputBindings,
       });
       window.InputSettingsPanel.render();
+      window.MusicMinigame?.renderNoteKeySettings();
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();

@@ -1227,6 +1227,13 @@
             <div class="mode-shift-list" id="modeShiftList"></div>
             <button type="button" class="settings-small-btn" id="addModeShiftBtn">Add Mode Shift</button>
           </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Note Keys</div>
+              <div class="settings-desc">Which key plays each of the Lyre minigame's four melody notes. Click a binding, then press a key.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyreNoteKeyBindings"></div>
+          </div>
           <div class="settings-section-title" style="margin-top:10px">Performance</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -1649,7 +1656,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260811c"></script>
+  <script src="js/music-system.js?v=20260814a"></script>
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
@@ -1680,7 +1687,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20260813a"></script>
+  <script src="js/music-minigame.js?v=20260814a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -1718,7 +1725,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811k"></script>
+  <script src="game.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
