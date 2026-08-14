@@ -146,6 +146,10 @@
   // inventory slots) reuse one canvas instead of re-decoding/re-walking pixels.
   // opts: { keyHue, hueTolerance, keyColors: [[r,g,b]] } — keyed mode only.
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
+    if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) {
+      return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
+    }
+
     const cacheKey = 'hue-key-value-v2|' + spritePath + '|' + mode + '|' + targetHex;
     const cached = _canvasCache.get(cacheKey);
     if (cached) return Promise.resolve(cached);
@@ -164,9 +168,22 @@
     });
   }
 
+  function loadFishCatalogForGame() {
+    if (!document.getElementById('fishingOverlay') || window.FishCatalog || document.querySelector('script[data-fish-catalog]')) return;
+    const ownSrc = document.currentScript?.src;
+    const src = ownSrc ? new URL('fish-catalog.js?v=20260814a', ownSrc).href : 'js/fish-catalog.js?v=20260814a';
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.fishCatalog = 'true';
+    script.onerror = () => console.warn('[sprite-recolor] failed to load fish-catalog.js');
+    document.head.appendChild(script);
+  }
+
   window.SpriteRecolor = {
     getRecoloredCanvas,
     recolorImageData, relativeLuminance, shadeFillConfig,
     DEFAULT_KEY_A, DEFAULT_KEY_B, KEY_HUE_TOLERANCE,
   };
+
+  loadFishCatalogForGame();
 })();
