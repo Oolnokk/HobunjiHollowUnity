@@ -1306,6 +1306,7 @@
   const NOTE_GLYPHS = ['X','A','B','Y'];
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
   const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
+  const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
@@ -2255,7 +2256,7 @@
     state.pluckStep = gridStep; // Keeps roll voices aligned to the shared subdivision that will actually sound next.
     state.pluckNextPulseAt = nextTarget;
     clearTimeout(state.pluckTimer);
-    state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs()));
+    state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
     const remainingBeforeBeat = Math.max(0,division - gridStep);
     return {delay:Math.max(0,nextTarget - currentTime),nextStep:gridStep,beatAnchorAt:timing.beatAnchorAt,beatStopAt:fret.beatStopAt,remainingBeforeBeat,totalTapAttacks:1 + remainingBeforeBeat};
   }
@@ -2798,7 +2799,7 @@
     };
   }
 
-  function createVoiceNodes(midi, gainAmount) {
+  function createVoiceNodes(midi, gainAmount, startAt = null) {
     const context = state.audioContext;
     if (!context || !state.buffer) throw new Error('Sampler audio is not ready.');
     const source = context.createBufferSource();
@@ -2816,10 +2817,19 @@
     if (state.voice === 'Dark') { filter.type = 'lowpass'; filter.frequency.value = 1800; filter.Q.value = 0.65; }
     if (state.voice === 'Hollow') { filter.type = 'bandpass'; filter.frequency.value = 760; filter.Q.value = 0.75; }
     source.connect(filter).connect(gain).connect(state.master);
-    const startTime = context.currentTime;
+    const startTime = Number.isFinite(startAt) ? Math.max(startAt, context.currentTime) : context.currentTime;
     gain.gain.setValueAtTime(0.0001, startTime);
     gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, gainAmount), startTime + Math.max(0.001, state.attack));
     return {kind:'webaudio', source, filter, gain, midi, startedAt:startTime, released:false, markers:playback.markers, usedPitchCache:playback.cached};
+  }
+
+  // Converts a performance.now()-space target time into a precise AudioContext.currentTime-space
+  // start time, so playback stays sample-accurate even when the JS callback that requests it fires
+  // late due to main-thread contention from rendering or other systems (look-ahead scheduling; see
+  // Chris Wilson's "A Tale of Two Clocks"). Falls back to "right now" when whenMs is absent/past.
+  function audioStartTimeFor(context, whenMs) {
+    if (!Number.isFinite(whenMs)) return context.currentTime;
+    return context.currentTime + Math.max(0, (whenMs - nowMs()) / 1000);
   }
 
   async function playDeviceTone() {
@@ -3066,21 +3076,22 @@
     log('Ringing voices cleared', `${reason} · ${count} voice${count === 1 ? '' : 's'}`);
   }
 
-  async function startSamplerVoice(midi, voiceKey, gainAmount = 0.72) {
+  async function startSamplerVoice(midi, voiceKey, gainAmount = 0.72, whenMs = null) {
     await ensureAudio();
     if (state.paused) return null;
-    const voice = createVoiceNodes(midi, gainAmount);
+    const context = state.audioContext;
+    const startAt = audioStartTimeFor(context, whenMs);
+    const voice = createVoiceNodes(midi, gainAmount, startAt);
     voice.sequence = ++state.voiceSequence;
     const markers = voice.markers;
     const {source, gain} = voice;
     const rate = Math.max(0.01, source.playbackRate.value);
-    const context = state.audioContext;
     try {
       const outputDuration = Math.max(0.025, (markers.trimEnd - markers.trimStart) / rate);
-      const releaseStart = context.currentTime + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
+      const releaseStart = startAt + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
       gain.gain.setTargetAtTime(0.0001, releaseStart, Math.max(0.01, state.release / 4));
-      source.start(context.currentTime, markers.trimStart);
-      source.stop(context.currentTime + outputDuration + 0.04);
+      source.start(startAt, markers.trimStart);
+      source.stop(startAt + outputDuration + 0.04);
       source.onended = () => removeVoiceFromGroup(voiceKey, voice);
       return voice;
     } catch (error) {
@@ -3096,12 +3107,14 @@
     state.noteSources[noteIndex].delete(sourceId); // Piano-pedal mode decouples physical release from the already-triggered audio voice.
   }
 
-  async function playAuditoryOnlyMidi(midi, voiceKey, gainAmount = 0.78, gestureChannel = null, countAsAutomaticPulse = true) {
+  async function playAuditoryOnlyMidi(midi, voiceKey, gainAmount = 0.78, gestureChannel = null, countAsAutomaticPulse = true, whenMs = null) {
     if (state.paused) return null;
     let voice;
     if (canUseCompatibilitySampler()) {
+      // Plain <audio>-element playback (mobile/compatibility fallback) has no equivalent to Web Audio's
+      // sample-accurate start(), so look-ahead scheduling only applies to the Web Audio sampler path below.
       voice = gestureChannel ? startGestureMediaVoice(midi,voiceKey,gainAmount,gestureChannel) : startMediaVoice(midi,voiceKey,gainAmount);
-    } else voice = await startSamplerVoice(midi,voiceKey,gainAmount);
+    } else voice = await startSamplerVoice(midi,voiceKey,gainAmount,whenMs);
     if (!voice) return null;
     registerVoice(voiceKey,voice);
     if (countAsAutomaticPulse) state.auditoryPulseCount += 1;
@@ -3322,16 +3335,20 @@
           return voice;
         };
         if (step?.type === 'note') {
-          const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),'touch-left-fretted-pluck'));
+          const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),'touch-left-fretted-pluck',true,pulseTarget));
           if (voice) refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()} · ${pattern.label}:</strong> ${patternIndex === 0 ? 'auditory melody return' : 'auditory chord voice'} ${midiName(step.midi)} · automatic continuation only · ${currentHarmonyData().chordName}`;
         } else if (step?.type === 'strum' || step?.type === 'boom') {
           const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom') : melodyTopStrumMidis(fretMidi,step.voicing || 'full');
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
-          ordered.forEach((midi,stringIndex) => setTimeout(async () => {
-            if (generation !== state.pluckGeneration || state.paused) return;
-            const voice = await playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.42 * (step.velocity || 1),null);
-            gateVoice(voice);
-          },stringIndex * Math.max(10,Math.round(STRUM_NOTE_DELAY_MS * .72))));
+          ordered.forEach((midi,stringIndex) => {
+            const stringDelay = stringIndex * Math.max(10,Math.round(STRUM_NOTE_DELAY_MS * .72));
+            const stringWhenMs = pulseTarget + stringDelay;
+            setTimeout(async () => {
+              if (generation !== state.pluckGeneration || state.paused) return;
+              const voice = await playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.42 * (step.velocity || 1),null,true,stringWhenMs);
+              gateVoice(voice);
+            },stringDelay);
+          });
           refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()}:</strong> melody-top ${step.type === 'boom' ? 'boom' : `${step.direction || 'down'} strum`} · ${pattern.label} · automatic continuation only`;
         } else {
           refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()}:</strong> rhythmic space · ${pattern.label}`;
@@ -3349,7 +3366,7 @@
       }
       if (state.autoReleaseTail && nextTarget >= state.autoReleaseTail.stopAt - 2) nextTarget = state.autoReleaseTail.stopAt; // Schedules a silent cleanup at the boundary instead of adding an unwanted downbeat attack.
       state.pluckNextPulseAt = nextTarget;
-      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs()));
+      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
     }
   }
 
