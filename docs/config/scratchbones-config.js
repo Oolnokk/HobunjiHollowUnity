@@ -232,8 +232,8 @@ window.SCRATCHBONES_CONFIG = {
       "actions": [
         { "id": "interact", "label": "Interact", "desktop": "KeyE", "controller": "Button0" },
         { "id": "dodge", "label": "Dodge", "desktop": "KeyX", "controller": "Button1" },
-        { "id": "action1", "label": "Tool/Item Action 1", "desktop": "Space", "controller": "RightTrigger" },
-        { "id": "action2", "label": "Tool/Item Action 2", "desktop": "KeyQ", "controller": "LeftTrigger" },
+        { "id": "action1", "label": "Tool/Item Action 1", "desktop": "Mouse0", "controller": "RightTrigger" },
+        { "id": "action2", "label": "Tool/Item Action 2", "desktop": "Mouse2", "controller": "LeftTrigger" },
         { "id": "action3", "label": "Tool/Item Action 3", "desktop": "KeyR", "controller": "Button2" },
         { "id": "action4", "label": "Tool/Item Action 4", "desktop": "Enter", "controller": "Button3" },
         { "id": "action5", "label": "Tool/Item Action 5", "desktop": "Digit7", "controller": "Button12" },

@@ -27,7 +27,30 @@
           control.value = deps.inputBindings.controller[action.id] || '';
           control.addEventListener('change', () => { const conflict = deps.bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = deps.inputBindings.controller[action.id] || ''; } else { deps.inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; deps.saveInputBindings(); } });
         } else {
-          control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = deps.bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { deps.inputBindings[device][action.id] = code; warn.textContent = ''; deps.saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
+          control.addEventListener('click', () => {
+            control.classList.add('is-listening'); control.textContent = 'Press a key or click…';
+            // Desktop bindings accept either a keyboard key or a mouse
+            // button (Mouse0/1/2 = left/middle/right) — whichever the
+            // player presses first wins and both listeners are torn down,
+            // so an action ends up bound to exactly one input.
+            const cleanup = () => {
+              window.removeEventListener('keydown', onKey, true);
+              window.removeEventListener('mousedown', onMouse, true);
+              window.removeEventListener('contextmenu', onContextMenu, true);
+            };
+            const resolve = code => {
+              cleanup();
+              const conflict = deps.bindingConflict(device, code, action.id);
+              if (conflict) { warn.textContent = conflict; }
+              else { deps.inputBindings[device][action.id] = code; warn.textContent = ''; deps.saveInputBindings(); renderInputSettings(); }
+            };
+            const onKey = ev => { ev.preventDefault(); resolve(ev.code); };
+            const onMouse = ev => { ev.preventDefault(); resolve(`Mouse${ev.button}`); };
+            const onContextMenu = ev => ev.preventDefault();
+            window.addEventListener('keydown', onKey, true);
+            window.addEventListener('mousedown', onMouse, true);
+            window.addEventListener('contextmenu', onContextMenu, true);
+          });
         }
         el.appendChild(row);
       }

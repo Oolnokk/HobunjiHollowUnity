@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260811b"></script>
+  <script src="config/scratchbones-config.js?v=20260814a"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
   <link rel="stylesheet" href="style.css?v=20260811c">
@@ -367,7 +367,7 @@
        render() during its own boot sequence (unlike its sibling panels,
        this one renders once at boot rather than lazily on first tab
        open). -->
-  <script src="js/input-settings-panel.js?v=20260807a"></script>
+  <script src="js/input-settings-panel.js?v=20260814a"></script>
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — pure DOM/state, no other window.* system reads; load order relative
        to the other systems above doesn't matter; must load before game.js,
@@ -1673,7 +1673,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811k"></script>
+  <script src="game.js?v=20260814a"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

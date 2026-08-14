@@ -21600,8 +21600,15 @@
       function loadInputBindings() {
         try {
           const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
+          const desktop = { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) };
+          // KeyQ/KeyE are reserved for the hold-to-open tool/item wheel
+          // gesture and can never fire through the generic binding dispatch
+          // (see the keydown handler's exclusion below) — a save from
+          // before action2's default moved off KeyQ would otherwise leave
+          // action2 permanently unbound in practice.
+          if (desktop.action2 === 'KeyQ') desktop.action2 = INPUT_DEFAULTS.desktop.action2;
           return {
-            desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
+            desktop,
             controller: { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) },
             modeShifts: Array.isArray(saved?.modeShifts) ? saved.modeShifts : INPUT_DEFAULTS.modeShifts
           };
@@ -21629,7 +21636,7 @@
         return INPUT_DEFAULTS.actions.find(a => a.id === id)?.label || id;
       }
       function buttonLabel(code) {
-        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓' };
+        const labels = { LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓', Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click' };
         return labels[code] || String(code || 'Unbound').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
       }
 
@@ -21932,17 +21939,6 @@
           return;
         }
 
-        // Legacy unbound primary keys. Configured action bindings return above;
-        // desktop E is handled as Interact on keyup after its tool-wheel hold.
-        if (key === ' ' || key === 'enter' || key === 'e') {
-          event.preventDefault();
-          if (!event.repeat) {
-            actionHeldDown = true;
-            useActiveAction();
-          }
-          return;
-        }
-
         if (key === '1') setActiveTool('shovel');
         if (key === '2') setActiveTool('hoe');
         if (key === '3') setActiveTool('weapon');
@@ -22002,8 +21998,8 @@
         if (window.Fishing?.state?.active) return;
         // Symmetric release for whatever keydown dispatched as a 'press' —
         // same binding lookup/exclusion as keydown above, so a held weapon
-        // action (e.g. Space/action1) actually reaches Combat.input.pressEnd
-        // instead of only ever firing as an instant tap.
+        // action bound to a key (e.g. action1/action2) actually reaches
+        // Combat.input.pressEnd instead of only ever firing as an instant tap.
         const boundDesktopActionUp = getActionForButton('desktop', event.code);
         if (boundDesktopActionUp && !['KeyE', 'KeyQ'].includes(event.code)) {
           runInputAction(boundDesktopActionUp, 'release');
@@ -22017,14 +22013,19 @@
         if (key === 'q' && isDesktop) {
           event.preventDefault();
           const wasHeld = finishDesktopHoldKey('q');
+          // A plain Q tap (not held long enough to open the item wheel) just
+          // cycles the active tool's action mode, mirroring the non-desktop
+          // keydown handling above — it no longer fires action2 itself,
+          // since that duplicated whatever input the player has actually
+          // assigned to Tool/Item Action 2 in the control menu.
           if (!wasHeld) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
+            const actions = toolActions[activeTool];
+            const idx = actions.indexOf(activeAction);
+            activeAction = actions[(idx + 1) % actions.length];
+            refreshActionBar();
           }
           return;
         }
-        if (key === ' ' || key === 'enter' || key === 'e') actionHeldDown = false;
       });
 
       // Scroll wheel: Q+wheel swaps items, E+wheel swaps tools, otherwise zooms the camera.
@@ -22157,38 +22158,30 @@
       window.addEventListener('pointerup', clearCameraDragPointer);
       window.addEventListener('pointercancel', clearCameraDragPointer);
 
-      // Left click = tool action 1 (tap/hold), right click = tool action 2
-      // (tap/hold) when wielding the weapon tool — routed through
-      // Combat.input so the loadout's 4 ability slots can claim them.
-      // Every other tool keeps its previous click behavior unchanged: left
-      // click = primary action, right click = secondary action.
+      // Mouse buttons are bindable inputs like any keyboard key (see
+      // inputBindings.desktop / the Controls settings menu) — resolved
+      // through the same getActionForButton/runInputAction pipeline
+      // keyboard input uses, as 'Mouse0'/'Mouse1'/'Mouse2' (left/middle/
+      // right), so each action fires from exactly one assigned input
+      // instead of a key and a click both firing it. Combat's own
+      // tap/hold + loadout-slot routing for a held weapon tool (see
+      // weaponActionSlot) already lives inside runInputAction, so it
+      // applies here automatically.
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
           if (menuOpen || farmEditMode || e.shiftKey) return;
-          if (activeTool === 'weapon' && window.Combat?.input) {
-            if (e.button === 0) { actionHeldDown = true; window.Combat.input.pressStart(1); }
-            else if (e.button === 2) { window.Combat.input.pressStart(2); }
-            return;
-          }
-          if (e.button === 0) {
-            actionHeldDown = true;
-            useActiveAction();
-          } else if (e.button === 2) {
-            const btns = computeActionButtons();
-            const second = btns.find((b, i) => i > 0 && b.allowed);
-            if (second) { activeAction = second.action; useActiveAction(); }
-          }
+          const actionId = getActionForButton('desktop', `Mouse${e.button}`);
+          if (!actionId) return;
+          e.preventDefault();
+          lastInputDevice = 'desktop';
+          runInputAction(actionId, 'press');
         });
       }
       window.addEventListener('pointerup', (e) => {
         if (e.pointerType !== 'mouse') return;
-        if (activeTool === 'weapon' && window.Combat?.input) {
-          if (e.button === 0) { actionHeldDown = false; window.Combat.input.pressEnd(1); }
-          else if (e.button === 2) { window.Combat.input.pressEnd(2); }
-          return;
-        }
-        if (e.button === 0) actionHeldDown = false;
+        const actionId = getActionForButton('desktop', `Mouse${e.button}`);
+        if (actionId) runInputAction(actionId, 'release');
       });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
