@@ -227,8 +227,11 @@
 
   function targetPoseFor(activeSlot, itemKey, def) {
     const shape = shapeFor(itemKey, def);
-    if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
-    if (activeSlot !== 'weapon') return null;
+    if (activeSlot !== 'weapon') {
+      if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
+      if (def?.animStyle === 'thrust') return idleStances.tool;
+      return null;
+    }
     const idleClass = weaponIdleClass(itemKey, def);
     if (idleClass === 'heavy') return idleStances.heavyWeapon;
     if (idleClass === 'light') return idleStances.lightWeapon;
