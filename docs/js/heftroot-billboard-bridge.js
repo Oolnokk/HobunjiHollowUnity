@@ -14,6 +14,7 @@
   if (!THREE || !foliage?.buildHeftrootMesh) return;
 
   const BILLBOARD_PATH = 'assets/objectsprites/heftroot.png'; // Used as the planted heftroot world sprite source.
+  const BILLBOARD_SCALE = 0.75; // Used to render planted heftroot at 75% of the previous billboard size without affecting held/icon art.
   const SYNTHETIC_COL_STEP = 127; // Matches game.js's seed-only offset for the second/third legacy heftroot cluster members.
   const SYNTHETIC_ROW_STEP = 61; // Matches game.js's seed-only row offset; farm coordinates themselves are only 36x26.
   const PRIMARY_OFFSET_X = -0.20; // Matches game.js's first legacy cluster-member X offset so the single replacement plane can cancel it.
@@ -28,9 +29,9 @@
   function applyAuthoredAspect() {
     for (const plane of planes) {
       if (!plane?.scale) continue;
-      plane.scale.x = authoredAspect;
-      plane.scale.y = 1;
-      plane.scale.z = 1;
+      plane.scale.x = authoredAspect * BILLBOARD_SCALE;
+      plane.scale.y = BILLBOARD_SCALE;
+      plane.scale.z = BILLBOARD_SCALE;
     }
   }
 
@@ -64,7 +65,7 @@
   function buildHeftrootBillboard() {
     const group = new THREE.Group(); // Used to preserve the group shape/transform contract expected by game.js's heftroot cluster builder.
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), ensureMaterial()); // Used as the single authored 2D heftroot crop visual.
-    plane.scale.set(authoredAspect, 1, 1);
+    plane.scale.set(authoredAspect * BILLBOARD_SCALE, BILLBOARD_SCALE, BILLBOARD_SCALE);
     plane.position.set(-PRIMARY_OFFSET_X, 0, -PRIMARY_OFFSET_Z);
     plane.castShadow = false;
     plane.receiveShadow = false;
@@ -134,6 +135,7 @@
   window.HobunjiHeftrootBillboardBridge = {
     getDebug: () => ({
       source: BILLBOARD_PATH,
+      scale: BILLBOARD_SCALE,
       activePlanes: planes.size,
       aspect: authoredAspect,
       originalBuilderAvailable: typeof originalBuildHeftrootMesh === 'function',
