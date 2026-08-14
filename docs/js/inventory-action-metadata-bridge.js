@@ -33,6 +33,12 @@
       // seedFor, icon/label presentation, max stack size, and future context
       // fields cannot be erased by this bridge.
       Object.assign(entry, { ...definition, ...entry });
+
+      const semanticTags = Array.isArray(entry.tags) ? entry.tags : []; // Used to make canonical fish items count as ordinary edible food without changing ITEM_DEFS category/filter ownership.
+      if (semanticTags.some(tag => String(tag).toLowerCase() === 'fish')
+        && !semanticTags.some(tag => String(tag).toLowerCase() === 'food')) {
+        entry.tags = [...semanticTags, 'Food'];
+      }
       synced++;
     }
 
