@@ -83,14 +83,20 @@ const fakeCookingSystem = {
 }; // Used to verify late CookingSystem assignment receives the bridge wrappers.
 bridgeWindow.CookingSystem = fakeCookingSystem;
 const heldCropEntry = { key: 'redberries', icon: '🍓', label: 'REDBERRIES', max: 99 }; // Used to model the minimal scroll entry that previously lost food semantics.
+const heldFishEntry = { key: 'testFish', icon: '🐟', label: 'TEST FISH', max: 99 }; // Used to model canonical fish, whose ITEM_DEFS category is material but which is still ordinary edible food.
 const fakeCookingDeps = {
-  ITEM_DEFS: { redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', tags: ['Crop', 'Berry'] } },
-  inventoryItems: [heldCropEntry],
+  ITEM_DEFS: {
+    redberries: { icon: '🍓', label: 'Redberries', cat: 'crop', tags: ['Crop', 'Berry'] },
+    testFish: { icon: '🐟', label: 'Test Fish', cat: 'material', tags: ['Fish', 'Common'] },
+  },
+  inventoryItems: [heldCropEntry, heldFishEntry],
 }; // Used to prove canonical food metadata becomes visible to the held-item resolver while presentation remains stable.
 bridgeWindow.CookingSystem.init(fakeCookingDeps);
 assert.equal(heldCropEntry.cat, 'crop', 'raw crop category reaches the selectable held item');
 assert.deepEqual(Array.from(heldCropEntry.tags), ['Crop', 'Berry'], 'raw crop tags reach the selectable held item');
 assert.equal(heldCropEntry.label, 'REDBERRIES', 'scroll-owned presentation survives metadata synchronization');
+assert.ok(Array.from(heldFishEntry.tags).includes('Food'), 'canonical fish gains the held-food semantic tag');
+assert.equal(heldFishEntry.cat, 'material', 'fish keeps its canonical inventory category while becoming edible');
 
 const metadataModuleIndex = loader.indexOf('inventory-action-metadata-bridge.js'); // Used to verify the bridge installs before the consumable provider in the parser-blocking compatibility bootstrap.
 const alcoholBridgeIndex = loader.indexOf('alcohol-gameplay-bridge.js');
