@@ -260,9 +260,11 @@
     augmentToolDefinitions();
     installCombatVisualHooks();
     installRendererHook();
-    deps?.buildInventoryGrid?.();
-    window.EquipmentPanel?.buildEquipmentSlots?.();
-    deps?.refreshActionBar?.();
+    // Do not render inventory/action UI here. EquipmentPanel.init runs before
+    // sibling systems such as WhistleEquip and CalendarSystem receive their own
+    // init(deps) payloads; forcing those render paths here caused null-dependency
+    // boot crashes. Their normal game.js initialization/render flow will see the
+    // already-mutated live tool definitions when they render later.
     window.__farmLog?.('[weapon-stance] initialized: hoes=weapon/blunt, heavy=hoe+axe, light=fishing spear+mace+pick-shovel', 'combat');
   }
 
