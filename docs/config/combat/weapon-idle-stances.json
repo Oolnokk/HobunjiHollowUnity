@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "kind": "hobunji_weapon_idle_stances",
+  "stances": {
+    "tool": {
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "pitch": 10.31,
+      "yaw": 0,
+      "bodyYaw": 0,
+      "roll": 0
+    },
+    "hoeTool": {
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "pitch": 10.31,
+      "yaw": 0,
+      "bodyYaw": 0,
+      "roll": -90
+    },
+    "heavyWeapon": {
+      "x": 0.03,
+      "y": 0.37,
+      "z": -0.01,
+      "pitch": -155,
+      "yaw": -79,
+      "bodyYaw": 2,
+      "roll": -82
+    },
+    "lightWeapon": {
+      "x": 0.04,
+      "y": 0,
+      "z": 0,
+      "pitch": 20,
+      "yaw": -70,
+      "bodyYaw": 0,
+      "roll": -65
+    }
+  }
+}
