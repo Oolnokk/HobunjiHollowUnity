@@ -22155,6 +22155,8 @@
       });
       window.InputSettingsPanel.render();
       window.MusicMinigame?.renderNoteKeySettings();
+      window.MusicMinigame?.renderPatternLoadoutSettings();
+      window.MusicMinigame?.renderFreeplayKeySettings();
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();

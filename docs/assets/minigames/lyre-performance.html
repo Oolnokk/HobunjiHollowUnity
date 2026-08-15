@@ -396,7 +396,19 @@
     box-shadow:0 18px 55px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.07);
     backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px);
   }
-  body.hosted-minigame .hud { height:48px; padding-right:136px; background:rgba(3,7,14,.52); }
+  /* The Score/Combo/Accuracy row and the mode/chord readouts below it were
+     laid out for a full-width standalone screen; squeezed into this
+     narrow note-lane strip (see the composition comment on
+     #musicMinigameFrame in style.css) their text overlaps and clips at the
+     frame edges instead of just being small. hobunjiHostedMusicBridge (see
+     the closing hobunjiHostedMusicBridge script) already tracks score/combo/accuracy/chord/
+     feedback via MutationObserver and posts them to the host — js/music-
+     minigame.js's buildEdgeControls renders that into a host-side readout
+     with real screen space instead, so the in-frame originals are hidden
+     rather than clipped. */
+  body.hosted-minigame .hud,
+  body.hosted-minigame .mode-readout,
+  body.hosted-minigame .harmony-visual { display:none; }
   body.hosted-minigame .stage { min-height:0; background-color:rgba(3,8,15,.22); }
   body.hosted-minigame #rotateOverlay { display:none !important; }
   body.hosted-minigame .modal-backdrop { position:fixed; }

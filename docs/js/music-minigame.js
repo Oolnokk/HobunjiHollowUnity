@@ -101,6 +101,100 @@
     }
   }
 
+  // ── Pattern loadout + freeplay key ──────────────────────────────────────
+  // Both settle into the app's own combined settings blob
+  // (musicSystemDemoSettingsV13, written by lyre-performance.html's own
+  // saveSettings/loadSettings) rather than a dedicated key like the note
+  // bindings above, since autoPickSlots/scaleName/tonicMidi already live
+  // there and the app reloads that blob fresh every session (the iframe is
+  // torn down and rebuilt each time — see close()) — so a change made here
+  // from the overworld Settings menu is picked up the next time a
+  // performance starts, the same way a note-key rebind is. The pattern
+  // library/scale list below mirror AUTO_PICK_PATTERN_LIBRARY/SCALES in
+  // lyre-performance.html — that vocabulary is part of the app's fixed
+  // design, not something read live from a (possibly not currently loaded)
+  // iframe instance.
+  const LYRE_APP_SETTINGS_KEY = 'musicSystemDemoSettingsV13';
+  function loadLyreAppSettings() {
+    try { return JSON.parse(localStorage.getItem(LYRE_APP_SETTINGS_KEY) || 'null') || {}; }
+    catch { return {}; }
+  }
+  function saveLyreAppSettings(patch) {
+    try { localStorage.setItem(LYRE_APP_SETTINGS_KEY, JSON.stringify({ ...loadLyreAppSettings(), ...patch })); }
+    catch {}
+  }
+  const AUTO_PICK_PATTERNS = [
+    ['direct', 'Single Note'],
+    ['arp-forward-8', 'Forward Roll · eighths'],
+    ['arp-reverse-8', 'Reverse Roll · eighths'],
+    ['arp-forward-reverse-16', 'Forward–Reverse Roll · sixteenths'],
+    ['arp-alternating-8', 'Alternating Roll · eighths'],
+    ['arp-alberti-16', 'Melody-Led Alberti Figure'],
+    ['arp-baroque-16', 'Baroque Broken-Chord Cycle'],
+    ['arp-romantic-triplet', 'Romantic Harp Sweep · triplets'],
+    ['tremolo-8', 'Measured Tremolo · eighths'],
+    ['tremolo-16', 'Rapid Tremolo · sixteenths'],
+    ['tremolo-triplet', 'Triplet Tremolo'],
+    ['tremolo-burst-16', 'Three-Stroke Tremolo Burst'],
+    ['strum-reggae-8', 'Reggae Offbeat Skank'],
+    ['strum-bossa-16', 'Bossa Nova Syncopation'],
+    ['strum-rasgueado-16', 'Rasgueado Burst'],
+    ['strum-waltz', 'Waltz Down–Up–Up'],
+    ['strum-bluegrass-8', 'Bluegrass Boom–Chuck'],
+  ];
+  const DEFAULT_AUTO_PICK_SLOTS = ['direct', 'arp-forward-reverse-16', 'tremolo-16', 'strum-reggae-8']; // Up, Right, Down, Left — matches lyre-performance.html's own default.
+  const AUTO_PICK_SLOT_LABELS = ['Up', 'Right', 'Down', 'Left'];
+  function renderPatternLoadoutSettings() {
+    const container = document.getElementById('lyrePatternLoadoutSettings');
+    if (!container) return;
+    container.innerHTML = '';
+    const saved = loadLyreAppSettings();
+    const validIds = new Set(AUTO_PICK_PATTERNS.map(([id]) => id));
+    const slots = Array.from({ length: 4 }, (_, index) => {
+      const candidate = Array.isArray(saved.autoPickSlots) ? saved.autoPickSlots[index] : null;
+      return candidate && validIds.has(candidate) ? candidate : DEFAULT_AUTO_PICK_SLOTS[index];
+    });
+    slots.forEach((currentId, slotIndex) => {
+      const row = document.createElement('div');
+      row.className = 'input-binding-row';
+      row.innerHTML = `<span class="settings-name">${AUTO_PICK_SLOT_LABELS[slotIndex]}</span><select class="settings-select">${AUTO_PICK_PATTERNS.map(([id, label]) => `<option value="${id}"${id === currentId ? ' selected' : ''}>${label}</option>`).join('')}</select>`;
+      row.querySelector('select').addEventListener('change', event => {
+        slots[slotIndex] = event.target.value;
+        saveLyreAppSettings({ autoPickSlots: slots.slice() });
+      });
+      container.appendChild(row);
+    });
+  }
+
+  const FREEPLAY_TONIC_NOTES = [['C',0],['C#',1],['D',2],['D#',3],['E',4],['F',5],['F#',6],['G',7],['G#',8],['A',9],['A#',10],['B',11]];
+  const FREEPLAY_TONIC_BASE_MIDI = 48; // C3 — matches lyre-performance.html's own default tonicMidi.
+  const FREEPLAY_SCALE_NAMES = ['Pentatonic Minor', 'Pentatonic Major', 'Chromatic', 'Hexatonic', 'Major', 'Minor', 'Hirajoshi', 'Phrygian', 'Yo'];
+  function renderFreeplayKeySettings() {
+    const container = document.getElementById('lyreFreeplayKeySettings');
+    if (!container) return;
+    container.innerHTML = '';
+    const saved = loadLyreAppSettings();
+    const savedTonicMidi = Number.isFinite(saved.tonicMidi) ? saved.tonicMidi : FREEPLAY_TONIC_BASE_MIDI;
+    const currentOffset = ((savedTonicMidi - FREEPLAY_TONIC_BASE_MIDI) % 12 + 12) % 12;
+    const currentScale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Major';
+
+    const keyRow = document.createElement('div');
+    keyRow.className = 'input-binding-row';
+    keyRow.innerHTML = `<span class="settings-name">Root note</span><select class="settings-select">${FREEPLAY_TONIC_NOTES.map(([name, offset]) => `<option value="${offset}"${offset === currentOffset ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
+    keyRow.querySelector('select').addEventListener('change', event => {
+      saveLyreAppSettings({ tonicMidi: FREEPLAY_TONIC_BASE_MIDI + Number(event.target.value) });
+    });
+    container.appendChild(keyRow);
+
+    const scaleRow = document.createElement('div');
+    scaleRow.className = 'input-binding-row';
+    scaleRow.innerHTML = `<span class="settings-name">Scale</span><select class="settings-select">${FREEPLAY_SCALE_NAMES.map(name => `<option value="${name}"${name === currentScale ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
+    scaleRow.querySelector('select').addEventListener('change', event => {
+      saveLyreAppSettings({ scaleName: event.target.value });
+    });
+    container.appendChild(scaleRow);
+  }
+
   const overlayEl = document.getElementById('musicMinigameOverlay');
   const frameEl = document.getElementById('musicMinigameFrame');
   const closeBtnEl = document.getElementById('musicMinigameCloseBtn');
@@ -259,6 +353,11 @@
     document.getElementById('compactSongPicker')?.remove();
     document.getElementById('musicLayoutHud')?.remove();
     document.getElementById('musicModeShiftHud')?.remove();
+    const performanceHud = document.getElementById('musicPerformanceHud');
+    if (performanceHud) {
+      if (performanceHud.__hobunjiStatusListener) window.removeEventListener('message', performanceHud.__hobunjiStatusListener);
+      performanceHud.remove();
+    }
     // installHostedKeyboardBridge (see buildEdgeControls) attaches its
     // keydown/keyup to the HOST window in the capture phase, which runs
     // before ANY bubble-phase listener on window regardless of
@@ -461,6 +560,47 @@
       modeHud.id = 'musicModeShiftHud';
       document.body.appendChild(modeHud);
     }
+
+    // ── Score/combo/accuracy/chord readout ───────────────────────────────
+    // The iframe's own Score/Combo/Accuracy row and chord/mode labels are
+    // hidden in hosted mode (see lyre-performance.html) because they're
+    // laid out for a full-width screen and clip inside this narrow note-
+    // lane strip. lyre-performance.html's own hobunjiHostedMusicBridge
+    // script already tracks them via MutationObserver and posts
+    // {type:'status', score, combo, accuracy, feedback, chord} on every
+    // change — this just renders that into a host-side readout with real
+    // screen space (top-right, clear of #musicLayoutHud/#musicModeShiftHud).
+    let performanceHud = document.getElementById('musicPerformanceHud');
+    if (!performanceHud) {
+      performanceHud = document.createElement('section');
+      performanceHud.id = 'musicPerformanceHud';
+      performanceHud.innerHTML = `
+        <div class="perfHudRow perfHudScore"><span>Score</span><strong data-perf="score">0</strong></div>
+        <div class="perfHudRow perfHudCombo"><span>Combo</span><strong data-perf="combo">0</strong><span data-perf="accuracy" class="perfHudAccuracy"></span></div>
+        <div class="perfHudChord" data-perf="chord"></div>
+        <div class="perfHudFeedback" data-perf="feedback"></div>`;
+      document.body.appendChild(performanceHud);
+    }
+    const perfHudNodes = {
+      score: performanceHud.querySelector('[data-perf="score"]'),
+      combo: performanceHud.querySelector('[data-perf="combo"]'),
+      accuracy: performanceHud.querySelector('[data-perf="accuracy"]'),
+      chord: performanceHud.querySelector('[data-perf="chord"]'),
+      feedback: performanceHud.querySelector('[data-perf="feedback"]'),
+    };
+    const onStatusMessage = event => {
+      if (event.source !== frame.contentWindow) return;
+      const data = event.data;
+      if (!data || data.source !== 'hobunji-music-minigame' || data.type !== 'status') return;
+      if (perfHudNodes.score) perfHudNodes.score.textContent = data.score;
+      if (perfHudNodes.combo) perfHudNodes.combo.textContent = data.combo;
+      if (perfHudNodes.accuracy) perfHudNodes.accuracy.textContent = data.accuracy && data.accuracy !== '—' ? `· ${data.accuracy}` : '';
+      if (perfHudNodes.chord) perfHudNodes.chord.textContent = data.chord || '';
+      if (perfHudNodes.feedback) perfHudNodes.feedback.classList.toggle('show', !!data.feedbackVisible);
+      if (perfHudNodes.feedback && data.feedback) perfHudNodes.feedback.textContent = data.feedback;
+    };
+    window.addEventListener('message', onStatusMessage);
+    performanceHud.__hobunjiStatusListener = onStatusMessage;
 
     const applyHostedLayoutToFrame = () => {
       try { if (frame.contentWindow) frame.contentWindow.__hobunjiHostedInputLayout = activeInputLayout; } catch {}
@@ -980,6 +1120,8 @@
     close,
     tick,
     renderNoteKeySettings, // Called once at boot by game.js, the same way it calls window.InputSettingsPanel.render().
+    renderPatternLoadoutSettings,
+    renderFreeplayKeySettings,
     get state() { return playerSession; },
     // True while any instrument NPC's ambient audio is sounding, even when
     // the player's own overlay is closed — see updateLyreDucking in
