@@ -8898,16 +8898,25 @@
                   // not a canned swing loop.
                   //
                   // Anchored to this NPC's own scanned hand-attach point
-                  // (avatarGroup.userData.handAttachX/handAttachY — the same
-                  // per-species/gender data updateHeldItemHolder reads via
-                  // playerToolBaseX/playerItemHoldY for the player's own
-                  // Kurraya) instead of one flat guess for every avatar —
-                  // species/gender proportions differ enough that a
-                  // one-size-fits-all offset visibly floats the instrument
-                  // away from whichever avatar doesn't match the tuned guess.
+                  // (avatarGroup.userData.handAttachX/handAttachY) instead
+                  // of one flat guess for every avatar — species/gender
+                  // proportions differ enough that a one-size-fits-all
+                  // offset visibly floats the instrument away from
+                  // whichever avatar doesn't match the tuned guess.
+                  //
+                  // Deliberately NOT the player's playerToolBaseX*0.4 /
+                  // playerItemHoldY(=handAttachY+0.19) formula — that's
+                  // calibrated for the player's WALKING-with-it-stowed
+                  // carry pose (cradled in close to the chest). This is an
+                  // actively PERFORMING pose (arms out, actually playing),
+                  // for which docs/references/(HA)MusicMinigameV3.html's
+                  // own default attachment (defaultKurrayaConfig, used
+                  // whenever no hand-authored per-NPC record exists) places
+                  // it right at the raw hand-attach point with no such
+                  // offset — see effectiveDefaultAttachment there.
                   const handX = avatarGroup.userData?.handAttachX ?? -(avatarGroup.userData?.portraitModelWidth || avatarHeight) / 2;
                   const handY = avatarGroup.userData?.handAttachY ?? avatarHeight / 2;
-                  this.stationToolMesh.position.set(handX * 0.4, handY + 0.19 - 0.05, HELD_ITEM_FORWARD_OFFSET);
+                  this.stationToolMesh.position.set(handX, handY, HELD_ITEM_FORWARD_OFFSET);
                   updateKurrayaTwitch(this.stationKurrayaTwitch, this.stationToolMesh);
                 } else if (this.stationToolMesh) {
                   // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
