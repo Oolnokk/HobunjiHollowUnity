@@ -131,8 +131,8 @@
   const rendererUrl = sibling('foliage-furniture-renderer.js?v=20260815a');
   const runtimeUrl = sibling('foliage-furniture-runtime.js?v=20260815a');
   if (document.readyState === 'loading') {
-    document.write('<script src="' + rendererUrl.replace(/"/g, '&quot;') + '"><\\/script>');
-    document.write('<script src="' + runtimeUrl.replace(/"/g, '&quot;') + '"><\\/script>');
+    document.write('<script src="' + rendererUrl.replace(/"/g, '&quot;') + '"></' + 'script>');
+    document.write('<script src="' + runtimeUrl.replace(/"/g, '&quot;') + '"></' + 'script>');
     return;
   }
   const load = (url) => new Promise((resolve, reject) => { // Fallback used only when this module is loaded after parser-time boot in a tool/test harness.
