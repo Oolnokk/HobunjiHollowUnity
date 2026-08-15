@@ -8,6 +8,20 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Narrow bridge for modular content catalogs. ITEM_DEFS and BASE_PRICES are
+  // live objects owned by game.js; mutating them here keeps inventory, item
+  // info, shipping, and every other reader on the same canonical records.
+  function registerItemDefinitions(definitions = {}, basePrices = {}) {
+    if (!deps?.ITEM_DEFS || !deps?.BASE_PRICES) return false;
+    Object.entries(definitions).forEach(([key, definition]) => {
+      deps.ITEM_DEFS[key] = { ...(deps.ITEM_DEFS[key] || {}), ...definition };
+    });
+    Object.entries(basePrices).forEach(([key, price]) => {
+      deps.BASE_PRICES[key] = price;
+    });
+    return true;
+  }
+
   let shippingSelected = { side: 'left', key: null }; // Used by the transfer controls.
   let shippingAmount = 1; // Used by the stepper and transfer buttons.
   const shippingActiveCat = { left: 'all', right: 'all' }; // Used by the category filters.
@@ -156,6 +170,7 @@
 
   window.ShippingPanel = {
     init,
+    registerItemDefinitions,
     build: buildShippingTransferUI,
     selectItem: selectShippingItem,
     bumpAmount: bumpShippingAmount,
