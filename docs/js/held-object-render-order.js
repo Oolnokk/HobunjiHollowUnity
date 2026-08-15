@@ -3,17 +3,19 @@
 
   // Held-object layering policy.
   //
-  // game.js historically stamped tool/held-item planes with renderOrder=1.5.
-  // Treat that value only as a legacy discovery marker, then return the plane
-  // to renderOrder=0 so Three.js can position/depth-sort it normally against
-  // characters, furniture, trees, buildings, etc.
+  // game.js historically stamps tool/held-item planes with renderOrder=1.5.
+  // That value is now only a discovery marker. Once discovered, held planes are
+  // owned by this module and re-normalized before every real base-world render.
   //
-  // Ground-like surfaces are moved to a dedicated render layer. The main
-  // screen pass renders that layer first, clears ONLY depth, then renders the
-  // ordinary world. Ground/road/grass colors remain visible, but their depth
-  // can no longer incorrectly cover a held sprite that should visually sit in
-  // front of them. Other world objects still participate in the second pass's
-  // normal depth buffer, so they can cover the tool according to position.
+  // The one exceptional rule is ground cover: terrain/floor textures, road
+  // surfaces, and grass billboard planes are rendered first, then ONLY their
+  // depth is cleared before the rest of the world renders. That makes those
+  // ground-like surfaces incapable of covering a held sprite, while characters,
+  // furniture, vegetation, buildings, etc. still depth-test normally against it.
+  //
+  // This deliberately runs on the offscreen base render used by Hobunji's
+  // outline/postprocess pipeline. Secondary shell/material-ID/PNG-depth passes
+  // are left alone.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   const objectProto = THREE?.Object3D?.prototype;
@@ -28,11 +30,19 @@
   const GROUND_LAYER = 30;
   const GROUND_MASK = (1 << GROUND_LAYER) >>> 0;
   const DEFAULT_MASK = (1 << DEFAULT_LAYER) >>> 0;
+  const MASK_ALL = 0xFFFFFFFF >>> 0;
+  const MASK_SHELL = (1 << 1) >>> 0;
+  const MASK_MATERIAL_ID = (1 << 3) >>> 0;
+  const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
 
-  // Tracks objects classified by this module; WeakSets avoid owning scene nodes.
+  // WeakSets prevent classification bookkeeping from owning scene nodes.
+  // heldMeshRegistry is intentionally iterable so the invariant can be repaired
+  // immediately before every base-world render. There are only a handful of
+  // held planes in normal play.
   const groundMeshes = new WeakSet();
   const heldMeshes = new WeakSet();
+  const heldMeshRegistry = new Set();
   const knownLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
@@ -40,6 +50,8 @@
   let heldCount = 0;
   let renderSplitCount = 0;
   let passthroughCount = 0;
+  let invariantRepairCount = 0;
+  let baseWorldRenderCount = 0;
   let internalRender = false;
   let lastDebugSignature = '';
 
@@ -93,19 +105,75 @@
     return Math.abs(Number(object.renderOrder) - LEGACY_HELD_RENDER_ORDER) < 1e-6;
   }
 
+  function forEachMaterial(material, fn) {
+    if (Array.isArray(material)) {
+      for (const entry of material) if (entry) fn(entry);
+      return;
+    }
+    if (material) fn(material);
+  }
+
+  // Reassert properties that no stance, animation, sprite recolor, material
+  // replacement, mastery/verdigris refresh, or equipment rebuild is allowed to
+  // permanently override. We intentionally do NOT disable depth testing or
+  // force depthWrite: held tools must still obey ordinary positional occlusion
+  // against non-ground world objects.
+  function enforceHeldMesh(mesh) {
+    if (!mesh?.isMesh) return false;
+    let repaired = false;
+
+    mesh.userData = mesh.userData || {};
+    if (mesh.userData.hobunjiHeldObjectPlane !== true) {
+      mesh.userData.hobunjiHeldObjectPlane = true;
+      repaired = true;
+    }
+    mesh.userData.hobunjiLegacyRenderOrder = LEGACY_HELD_RENDER_ORDER;
+
+    if (mesh.renderOrder !== 0) {
+      mesh.renderOrder = 0;
+      repaired = true;
+    }
+
+    // The ordinary world/base pass always includes layer 0. Preserve any other
+    // special layers a held plane may use, but guarantee it cannot be moved out
+    // of the visible world by a later subsystem.
+    if (!hasLayer(mesh, DEFAULT_LAYER)) {
+      mesh.layers.enable(DEFAULT_LAYER);
+      repaired = true;
+    }
+
+    // Recolor systems may replace material/map objects. Always inspect the
+    // CURRENT material immediately before the real base render.
+    forEachMaterial(mesh.material, (material) => {
+      if ('depthTest' in material && material.depthTest !== true) {
+        material.depthTest = true;
+        material.needsUpdate = true;
+        repaired = true;
+      }
+    });
+
+    if (repaired) invariantRepairCount++;
+    return repaired;
+  }
+
   function markHeldPlane(mesh) {
     if (!mesh?.isMesh) return false;
     const already = heldMeshes.has(mesh) || mesh.userData?.hobunjiHeldObjectPlane === true;
-    mesh.userData = mesh.userData || {};
-    mesh.userData.hobunjiHeldObjectPlane = true;
-    mesh.userData.hobunjiLegacyRenderOrder = LEGACY_HELD_RENDER_ORDER;
-
-    // renderOrder=0 restores Three's ordinary transparent-object z sorting.
-    // The ground split below is what gives the tool its one special rule.
-    mesh.renderOrder = 0;
     heldMeshes.add(mesh);
+    heldMeshRegistry.add(mesh);
+    enforceHeldMesh(mesh);
     if (!already) heldCount++;
     return !already;
+  }
+
+  function enforceHeldInvariant() {
+    for (const mesh of heldMeshRegistry) {
+      if (!mesh?.isMesh) {
+        heldMeshRegistry.delete(mesh);
+        continue;
+      }
+      enforceHeldMesh(mesh);
+    }
   }
 
   function markGroundMesh(mesh) {
@@ -150,13 +218,18 @@
     });
   }
 
-  // Classify new runtime objects as they are attached so the normal render path
-  // does not need a full scene traversal every frame. A slow fallback scan in
-  // wrappedRender catches unusual code that mutates tags after attachment.
+  // Classify new runtime objects as they are attached. The microtask retry also
+  // catches builders that attach a mesh and then synchronously stamp renderOrder
+  // or userData later in the same JavaScript turn.
   const originalAdd = objectProto.add;
   function wrappedAdd(...objects) {
     const result = originalAdd.apply(this, objects);
     for (const object of objects) classifyTree(object);
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(() => {
+        for (const object of objects) classifyTree(object);
+      });
+    }
     return result;
   }
   wrappedAdd.__hobunjiHeldRenderOrderWrapped = true;
@@ -181,6 +254,22 @@
     return false;
   }
 
+  function isSecondaryOutlinePass(scene, camera) {
+    const mask = Number(camera?.layers?.mask ?? 0) >>> 0;
+    if (scene?.overrideMaterial) return true;
+    return mask === MASK_SHELL || mask === MASK_MATERIAL_ID || mask === MASK_PNG_OCCLUDER;
+  }
+
+  // OutlineRenderPerformance uses the same definition for its logical "base"
+  // pass: all camera layers, no override material. It may target an offscreen
+  // framebuffer; that is the IMPORTANT path because the final screen is
+  // composited from it. Direct rendering with the same full-world mask uses the
+  // exact same policy.
+  function isBaseWorldPass(scene, camera) {
+    if (!scene?.isScene || !camera?.isCamera || scene.overrideMaterial) return false;
+    return (Number(camera.layers.mask) >>> 0) === MASK_ALL;
+  }
+
   function withGroundLayerIncluded(renderer, scene, camera, originalRender) {
     const oldMask = Number(camera.layers.mask) >>> 0;
     camera.layers.mask = (oldMask | GROUND_MASK) >>> 0;
@@ -202,14 +291,30 @@
 
     const oldCameraMask = Number(camera.layers.mask) >>> 0;
     const seesDefaultWorld = !!(oldCameraMask & DEFAULT_MASK);
-    const isOffscreen = typeof this.getRenderTarget === 'function' && this.getRenderTarget() !== null;
-    const isOverridePass = !!scene.overrideMaterial;
+    const baseWorldPass = isBaseWorldPass(scene, camera);
+    const secondaryOutlinePass = isSecondaryOutlinePass(scene, camera);
+
+    // This is the authoritative point of enforcement. It happens immediately
+    // before every real base-world render, after gameplay/animation/recolor
+    // updates for the frame and before Three.js builds its render lists.
+    if (baseWorldPass) {
+      baseWorldRenderCount++;
+      enforceHeldInvariant();
+    }
+
     const hasVisibleHeld = heldCount > 0 && sceneHasVisibleHeld(scene);
 
-    // Offscreen/material-ID/debug passes should retain their original single
-    // render, but a pass that expects layer 0 also needs the relocated ground.
-    if (!seesDefaultWorld || isOffscreen || isOverridePass || groundCount === 0 || !hasVisibleHeld) {
-      if (seesDefaultWorld && groundCount > 0) {
+    // Never split secondary outline/depth/material-ID passes. Other non-base
+    // passes stay single-pass as well, but if they expect layer 0 they also get
+    // the relocated ground layer so debug/minimap/auxiliary views do not lose it.
+    if (!baseWorldPass || groundCount === 0 || !hasVisibleHeld) {
+      if (
+        !baseWorldPass
+        && !secondaryOutlinePass
+        && seesDefaultWorld
+        && groundCount > 0
+        && !(oldCameraMask & GROUND_MASK)
+      ) {
         return withGroundLayerIncluded(this, scene, camera, originalRender);
       }
       passthroughCount++;
@@ -224,21 +329,23 @@
 
     internalRender = true;
     try {
-      // Pass 1: background + terrain/path/grass only.
+      // Pass 1: background + terrain/path/grass only. This works on whichever
+      // render target is currently bound, including the outline pipeline's
+      // offscreen base framebuffer.
       camera.layers.mask = GROUND_MASK;
       this.autoClear = oldAutoClear;
       originalRender.call(this, scene, camera);
 
-      // Ground's color remains, but its depth is intentionally discarded.
+      // Preserve ground COLOR in that target, discard only its depth.
       this.clearDepth();
 
-      // Pass 2: ordinary world. With ground absent from this depth buffer,
-      // held sprites use normal positional/depth sorting against every other
-      // object instead of being arbitrarily covered by ground decorations.
+      // Pass 2: every ordinary world object except the dedicated ground layer.
+      // Held sprites therefore remain depth-tested against characters, props,
+      // vegetation, buildings, etc., but ground/road/grass can never cover them.
       camera.layers.mask = ordinaryMask;
       this.autoClear = false;
       scene.background = null;
-      if (shadowMap) shadowMap.autoUpdate = false; // first pass already refreshed shadows
+      if (shadowMap) shadowMap.autoUpdate = false; // pass 1 already refreshed shadows
       const result = originalRender.call(this, scene, camera);
       renderSplitCount++;
       return result;
@@ -262,8 +369,10 @@
       groundLayer: GROUND_LAYER,
       groundMeshes: groundCount,
       heldMeshes: heldCount,
+      baseWorldRenders: baseWorldRenderCount,
       renderSplits: renderSplitCount,
       passthroughRenders: passthroughCount,
+      invariantRepairs: invariantRepairCount,
     };
   }
 
@@ -272,7 +381,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-layer] held=${state.heldMeshes} ground=${state.groundMeshes} splitRenders=${state.renderSplits} passthrough=${state.passthroughRenders}`;
+      const message = `[held-layer] held=${state.heldMeshes} ground=${state.groundMeshes} base=${state.baseWorldRenders} split=${state.renderSplits} repairs=${state.invariantRepairs} passthrough=${state.passthroughRenders}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -285,6 +394,7 @@
     LEGACY_HELD_RENDER_ORDER,
     markHeldPlane,
     markGroundMesh,
+    enforceHeldInvariant,
     scanScene,
     snapshot,
     debugLogSnapshot,
