@@ -323,6 +323,14 @@
        place. Must load before game.js, which calls
        window.FurniturePlacer.init(...) during its own setup. -->
   <script src="js/furniture-placer.js?v=20260809c"></script>
+  <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
+       the merged dynamic-water mesh renderer (window.WaterSystem). Must
+       load before game.js — unusually early among these, in fact: game.js
+       calls window.WaterSystem.init(...) right before its very first
+       createInitialGrid() call (which itself calls recomputeWater()
+       synchronously to settle day-one water levels), well before most of
+       the other window.<Namespace>.init(...) calls below. -->
+  <script src="js/water-system.js?v=20260815a"></script>
   <!-- Weather rolling, day/night + weather lighting overlay, and trench
        water particle/paddy ripple FX (window.WeatherFX) — reads
        window.CalendarSystem at call time (already global by then), so load

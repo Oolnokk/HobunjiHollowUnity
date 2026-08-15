@@ -61,13 +61,26 @@
     return state.settings;
   }
 
+  // Interaction prompts sit in state.active with lifetimeMs: Infinity for as
+  // long as the player stands near their target, so avatarMetrics() runs
+  // every frame for that root the whole time — cache the resolved avatar
+  // child (once actually found) instead of re-walking the subtree each
+  // call. Checked for .parent on reuse so a torn-down/re-skinned avatar
+  // (detached from the scene graph) is detected and re-resolved rather than
+  // silently reused stale.
+  const _avatarRootCache = new WeakMap();
   function avatarMetrics(root) {
     const THREE = state.deps?.THREE;
     if (!THREE || !root) return null;
-    let avatarRoot = null;
-    root.traverse?.(child => {
-      if (!avatarRoot && Number.isFinite(child.userData?.portraitModelHeight)) avatarRoot = child;
-    });
+    let avatarRoot = _avatarRootCache.get(root) || null;
+    if (avatarRoot && !avatarRoot.parent) avatarRoot = null;
+    if (!avatarRoot) {
+      root.traverse?.(child => {
+        if (!avatarRoot && Number.isFinite(child.userData?.portraitModelHeight)) avatarRoot = child;
+      });
+      if (avatarRoot) _avatarRootCache.set(root, avatarRoot);
+      else _avatarRootCache.delete(root);
+    }
     if (avatarRoot) {
       const height = Number(avatarRoot.userData.portraitModelHeight);
       const width = Number(avatarRoot.userData.portraitModelWidth) || height;
