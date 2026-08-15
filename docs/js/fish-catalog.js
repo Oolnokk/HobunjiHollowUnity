@@ -51,7 +51,6 @@
   const curveCache = new Map();
   const CURVE_CACHE_LIMIT = 18;
   const FISH_RING_RADIUS = 96;
-  const DEFORM_BODY_WIDTH = 64;
 
   const sprite = f => f.species === 'gurumahi' ? 'fish_gurumahi.png' : f.species === 'rockscale' ? 'fish_rockscale.png' : 'fish_sixfin.png';
   const ignores = f => (f.species === 'gurumahi' ? GURUMAHI_IGNORES : f.species === 'rockscale' ? ROCKSCALE_IGNORES : []).map(([hex,sensitivity]) => ({hex,sensitivity}));
@@ -82,12 +81,12 @@
     }
     return out;
   }
-  const buildBasePrices = () => Object.fromEntries(FISH.map(f => [f.key, f.sellPrice]));
+  const buildBasePrices = () => Object.fromEntries(FISH.map(f => [f.key,f.sellPrice]));
 
   const clamp = (v,a=0,b=1) => Math.max(a,Math.min(b,v));
   function hexRgb(h) { h=String(h).replace('#',''); if(h.length===3) h=[...h].map(x=>x+x).join(''); const n=parseInt(h,16)||0; return[(n>>16)&255,(n>>8)&255,n&255]; }
-  function rgbHsv(r,g,b) { r/=255;g/=255;b/=255; const M=Math.max(r,g,b),m=Math.min(r,g,b),d=M-m; let h=0; if(d){if(M===r)h=((g-b)/d+(g<b?6:0))/6;else if(M===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;} return[h,M?d/M:0,M]; }
-  function hsvRgb(h,s,v) { const i=Math.floor(h*6),f=h*6-i,p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);let r,g,b;switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}return[Math.round(r*255),Math.round(g*255),Math.round(b*255)]; }
+  function rgbHsv(r,g,b) { r/=255;g/=255;b/=255; const M=Math.max(r,g,b),m=Math.min(r,g,b),d=M-m; let h=0;if(d){if(M===r)h=((g-b)/d+(g<b?6:0))/6;else if(M===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;}return[h,M?d/M:0,M]; }
+  function hsvRgb(h,s,v) { const i=Math.floor(h*6),f=h*6-i,p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);let r,g,b;switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
   const hueDist=(a,b)=>{const d=Math.abs(a-b)%1;return Math.min(d,1-d)};
   const ignored=(r,g,b,list)=>list.some(e=>{const c=hexRgb(e.hex);return Math.hypot(r-c[0],g-c[1],b-c[2])<=e.sensitivity});
   const chroma=(r,g,b)=>{const s=r+g+b;return s?[r/s,g/s,b/s]:[1/3,1/3,1/3]};
@@ -181,24 +180,74 @@
     while(curveCache.size>CURVE_CACHE_LIMIT)curveCache.delete(curveCache.keys().next().value);
   }
 
+  // Treat the already-animated straight silhouette as a waveform, then map that
+  // entire local coordinate frame onto the ring. Each source slice is carried
+  // to a point on the circular centerline and its x/y basis is rotated into the
+  // ring tangent/normal. Because the original spline wiggle/shear is already in
+  // the raster, it is preserved continuously instead of being offset after the
+  // fact (which made the wiggle appear to snap as the fish rounded the ring).
   function curveSilhouetteDataUrl(sourceHref, scaleX, scaleY) {
-    const cacheKey=`${scaleX.toFixed(3)}|${scaleY.toFixed(3)}|${sourceHref}`;
+    const sxScale=Math.max(.2,Number(scaleX)||1);
+    const syScale=Math.max(.2,Number(scaleY)||1);
+    const cacheKey=`${sxScale.toFixed(3)}|${syScale.toFixed(3)}|${sourceHref}`;
     if(curveCache.has(cacheKey))return Promise.resolve(curveCache.get(cacheKey));
+
     return new Promise((resolve,reject)=>{
       const img=new Image();
       img.onload=()=>{
-        const canvas=document.createElement('canvas');canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;
-        const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=true;
-        const slices=28,sw=img.naturalWidth/slices,dw=canvas.width/slices,center=canvas.width/2;
+        const canvas=document.createElement('canvas');
+        canvas.width=img.naturalWidth;
+        canvas.height=img.naturalHeight;
+        const ctx=canvas.getContext('2d');
+        ctx.imageSmoothingEnabled=true;
+
+        const slices=28;
+        const sw=img.naturalWidth/slices;
+        const dw=canvas.width/slices;
+        const centerX=canvas.width/2;
+        const centerY=canvas.height/2;
+
         for(let i=0;i<slices;i++){
           const sourceCenter=(i+0.5)*sw;
-          const bodyX=clamp(sourceCenter-center,-DEFORM_BODY_WIDTH/2,DEFORM_BODY_WIDTH/2);
-          const scaledX=Math.min(Math.abs(bodyX*scaleX),FISH_RING_RADIUS*0.96);
-          const sagScreen=FISH_RING_RADIUS-Math.sqrt(Math.max(0,FISH_RING_RADIUS*FISH_RING_RADIUS-scaledX*scaledX));
-          const sagLocal=sagScreen/Math.max(.2,scaleY);
-          ctx.drawImage(img,i*sw,0,sw+1,img.naturalHeight,i*dw,sagLocal,dw+1,img.naturalHeight);
+          // Arc length is measured after the authored width scale, so a long
+          // Rockscale genuinely occupies more of the ring than a compact Gurumahi.
+          const arcLength=(sourceCenter-centerX)*sxScale;
+          const theta=arcLength/FISH_RING_RADIUS;
+          const sinT=Math.sin(theta);
+          const cosT=Math.cos(theta);
+
+          // Circle in final screen-space, converted back to the unscaled image's
+          // coordinates because the SVG applies sx/sy after this raster warp.
+          const arcScreenX=FISH_RING_RADIUS*sinT;
+          const arcScreenY=FISH_RING_RADIUS*(1-cosT);
+          const destCenterX=centerX+arcScreenX/sxScale;
+          const destCenterY=centerY+arcScreenY/syScale;
+
+          // This compensated affine basis is important when width != height:
+          // after the SVG's anisotropic scale, +X lies exactly on the circle's
+          // tangent and +Y exactly on its inward normal. The original animated
+          // spline therefore bends with the ring rather than sliding vertically.
+          const a=cosT;
+          const b=sinT*sxScale/syScale;
+          const c=-sinT*syScale/sxScale;
+          const d=cosT;
+
+          ctx.save();
+          ctx.translate(destCenterX,destCenterY);
+          ctx.transform(a,b,c,d,0,0);
+          ctx.drawImage(
+            img,
+            i*sw,0,sw+1,img.naturalHeight,
+            -dw/2-0.75,-img.naturalHeight/2,dw+1.5,img.naturalHeight
+          );
+          ctx.restore();
         }
-        try{const url=canvas.toDataURL('image/png');curveCacheSet(cacheKey,url);resolve(url);}catch(e){reject(e);}
+
+        try{
+          const url=canvas.toDataURL('image/png');
+          curveCacheSet(cacheKey,url);
+          resolve(url);
+        }catch(e){reject(e);}
       };
       img.onerror=()=>reject(new Error('Failed to curve fish silhouette frame'));
       img.src=sourceHref;
@@ -206,16 +255,44 @@
   }
 
   let observedFishImage=null, curveObserver=null;
-  let lastWarpSource=null,lastWarpedHref=null,warpGeneration=0;
+  let lastWarpSource=null,lastWarpedHref=null;
+  let warpBusy=false;
+  const warpQueue=[];
+  const MAX_WARP_QUEUE=3;
 
   function observeCurvedSilhouette(image) {
     if (image === observedFishImage) return;
+
     curveObserver?.disconnect();
     observedFishImage=image;
-    lastWarpSource=null;lastWarpedHref=null;warpGeneration++;
+    lastWarpSource=null;
+    lastWarpedHref=null;
+    warpBusy=false;
+    warpQueue.length=0;
     if (!image) return;
 
     const observe=()=>curveObserver?.observe(image,{attributes:true,attributeFilter:['href']});
+    const setHrefWithoutObserving=(href)=>{
+      curveObserver.disconnect();
+      image.setAttribute('href',href);
+      observe();
+    };
+
+    const processQueue=()=>{
+      if(warpBusy||!warpQueue.length||image!==observedFishImage)return;
+      const job=warpQueue.shift();
+      warpBusy=true;
+
+      curveSilhouetteDataUrl(job.source,job.sx,job.sy).then(curved=>{
+        if(image!==observedFishImage)return;
+        lastWarpedHref=curved;
+        setHrefWithoutObserving(curved);
+      }).catch(()=>{}).finally(()=>{
+        warpBusy=false;
+        if(image===observedFishImage&&warpQueue.length)processQueue();
+      });
+    };
+
     curveObserver=new MutationObserver(()=>{
       const state=window.Fishing?.state, fishDef=state?.fishDef;
       if(state?.phase!=='active'||!fishDef)return;
@@ -225,25 +302,20 @@
       const sx=Math.max(.2,Number(fishDef.minigameScaleX ?? fishDef.minigameScale ?? 1)||1);
       const sy=Math.max(.2,Number(fishDef.minigameScaleY ?? fishDef.minigameScale ?? 1)||1);
       lastWarpSource=source;
-      const generation=++warpGeneration;
 
-      // The game writes a fresh straight-spine deform URL every frame. Keep the
-      // last curved frame on the SVG until its replacement is ready, preventing
-      // a visible straight/curved flicker while the new data URL is decoded.
-      if(lastWarpedHref){
-        curveObserver.disconnect();
-        image.setAttribute('href',lastWarpedHref);
-        observe();
+      // Preserve source-frame order. The previous generation-cancel approach
+      // could discard an in-flight spline frame whenever the next 12fps texture
+      // arrived, which made a smooth sine motion visibly jump ahead.
+      warpQueue.push({source,sx,sy});
+      if(warpQueue.length>MAX_WARP_QUEUE){
+        warpQueue.splice(0,warpQueue.length-MAX_WARP_QUEUE);
       }
 
-      curveSilhouetteDataUrl(source,sx,sy).then(curved=>{
-        if(generation!==warpGeneration||image!==observedFishImage)return;
-        lastWarpedHref=curved;
-        curveObserver.disconnect();
-        image.setAttribute('href',curved);
-        observe();
-      }).catch(()=>{});
+      // Never flash a straight frame while its curved version is being decoded.
+      if(lastWarpedHref)setHrefWithoutObserving(lastWarpedHref);
+      processQueue();
     });
+
     observe();
   }
 
@@ -253,9 +325,13 @@
     if(image&&fishDef){
       const sx=Math.max(.2,Number(fishDef.minigameScaleX ?? fishDef.minigameScale ?? 1)||1);
       const sy=Math.max(.2,Number(fishDef.minigameScaleY ?? fishDef.minigameScale ?? 1)||1);
-      image.style.transformBox='fill-box';image.style.transformOrigin='center';image.style.transform=`scale(${sx},${sy})`;
-      if(state?.phase!=='active'&&(lastWarpSource||lastWarpedHref)){
-        lastWarpSource=null;lastWarpedHref=null;warpGeneration++;
+      image.style.transformBox='fill-box';
+      image.style.transformOrigin='center';
+      image.style.transform=`scale(${sx},${sy})`;
+      if(state?.phase!=='active'&&(lastWarpSource||lastWarpedHref||warpQueue.length)){
+        lastWarpSource=null;
+        lastWarpedHref=null;
+        warpQueue.length=0;
       }
     }
     requestAnimationFrame(presentationLoop);
