@@ -29,8 +29,8 @@
 
   function silhouetteAxes(species, scalar) {
     const s = Math.max(0.2, Number(scalar) || 1);
-    if (species === 'gurumahi') return { x: s * 0.90, y: s * 1.15 }; // compact and thick
-    if (species === 'rockscale') return { x: s * 1.22, y: s * 1.12 }; // long, eel-like, but still hefty
+    if (species === 'gurumahi') return { x: s * 0.90, y: s * 1.15 };
+    if (species === 'rockscale') return { x: s * 1.22, y: s * 1.12 };
     return { x: s, y: s };
   }
 
@@ -48,8 +48,6 @@
   const byKey = new Map(FISH.map(f => [f.key, f]));
   const imgCache = new Map();
   const canvasCache = new Map();
-  const curveCache = new Map();
-  const CURVE_CACHE_LIMIT = 18;
   const FISH_RING_RADIUS = 96;
 
   const sprite = f => f.species === 'gurumahi' ? 'fish_gurumahi.png' : f.species === 'rockscale' ? 'fish_rockscale.png' : 'fish_sixfin.png';
@@ -170,168 +168,190 @@
   function configureCatchCamera() {
     const cfg=window.SCRATCHBONES_CONFIG?.game?.camera?.modes?.fishCatch;
     if(!cfg)return;
-    cfg.distanceTiles=5.6;            // 7 / 1.25: 25% tighter magnification
-    cfg.angleFromGroundDeg=0;        // camera is horizontally level with the displayed fish
-    cfg.targetYOffsetTiles=0.9;      // held-fish/chest presentation height
+    cfg.distanceTiles=5.6;
+    cfg.angleFromGroundDeg=0;
+    cfg.targetYOffsetTiles=0.9;
   }
 
-  function curveCacheSet(key,value) {
-    curveCache.set(key,value);
-    while(curveCache.size>CURVE_CACHE_LIMIT)curveCache.delete(curveCache.keys().next().value);
+  // Render the animated silhouette directly from its source layers instead of
+  // bending the minigame's already-encoded 12fps PNG in a second async pass.
+  // This keeps the temporal phase continuous and lets the waveform itself be
+  // authored in ring-local coordinates.
+  const CURVED_FISH_ART = {
+    imgW:64, imgH:40, slices:28, boneCount:6,
+    bodyAmpScale:0.82, whiskerAmpScale:0.3, whiskerRate:0.38,
+    waveCycles:1.05,
+    frameInterval:1/18,
+  };
+  let silhouetteBody=null, silhouetteWhiskers=null, silhouetteLoadPromise=null;
+  let curvedCanvas=null, curvedCtx=null, lastCurvedUrl=null, lastCurvedAt=-Infinity;
+  let observedFishImage=null, hrefObserver=null, settingHref=false;
+
+  function ensureSilhouetteAssets() {
+    if (silhouetteBody) return Promise.resolve(true);
+    if (!silhouetteLoadPromise) {
+      silhouetteLoadPromise=Promise.all([
+        load('assets/hud/fish_silhouette-body.png'),
+        load('assets/hud/fish_silhouette-whiskers.png')
+      ]).then(([body,whiskers])=>{silhouetteBody=body;silhouetteWhiskers=whiskers;return true;})
+        .catch(err=>{console.warn('[fish-catalog] silhouette animation assets failed',err);return false;});
+    }
+    return silhouetteLoadPromise;
   }
 
-  // Treat the already-animated straight silhouette as a waveform, then map that
-  // entire local coordinate frame onto the ring. Each source slice is carried
-  // to a point on the circular centerline and its x/y basis is rotated into the
-  // ring tangent/normal. Because the original spline wiggle/shear is already in
-  // the raster, it is preserved continuously instead of being offset after the
-  // fact (which made the wiggle appear to snap as the fish rounded the ring).
-  function curveSilhouetteDataUrl(sourceHref, scaleX, scaleY) {
-    const sxScale=Math.max(.2,Number(scaleX)||1);
-    const syScale=Math.max(.2,Number(scaleY)||1);
-    const cacheKey=`${sxScale.toFixed(3)}|${syScale.toFixed(3)}|${sourceHref}`;
-    if(curveCache.has(cacheKey))return Promise.resolve(curveCache.get(cacheKey));
-
-    return new Promise((resolve,reject)=>{
-      const img=new Image();
-      img.onload=()=>{
-        const canvas=document.createElement('canvas');
-        canvas.width=img.naturalWidth;
-        canvas.height=img.naturalHeight;
-        const ctx=canvas.getContext('2d');
-        ctx.imageSmoothingEnabled=true;
-
-        const slices=28;
-        const sw=img.naturalWidth/slices;
-        const dw=canvas.width/slices;
-        const centerX=canvas.width/2;
-        const centerY=canvas.height/2;
-
-        for(let i=0;i<slices;i++){
-          const sourceCenter=(i+0.5)*sw;
-          // Arc length is measured after the authored width scale, so a long
-          // Rockscale genuinely occupies more of the ring than a compact Gurumahi.
-          const arcLength=(sourceCenter-centerX)*sxScale;
-          const theta=arcLength/FISH_RING_RADIUS;
-          const sinT=Math.sin(theta);
-          const cosT=Math.cos(theta);
-
-          // Circle in final screen-space, converted back to the unscaled image's
-          // coordinates because the SVG applies sx/sy after this raster warp.
-          const arcScreenX=FISH_RING_RADIUS*sinT;
-          const arcScreenY=FISH_RING_RADIUS*(1-cosT);
-          const destCenterX=centerX+arcScreenX/sxScale;
-          const destCenterY=centerY+arcScreenY/syScale;
-
-          // This compensated affine basis is important when width != height:
-          // after the SVG's anisotropic scale, +X lies exactly on the circle's
-          // tangent and +Y exactly on its inward normal. The original animated
-          // spline therefore bends with the ring rather than sliding vertically.
-          const a=cosT;
-          const b=sinT*sxScale/syScale;
-          const c=-sinT*syScale/sxScale;
-          const d=cosT;
-
-          ctx.save();
-          ctx.translate(destCenterX,destCenterY);
-          ctx.transform(a,b,c,d,0,0);
-          ctx.drawImage(
-            img,
-            i*sw,0,sw+1,img.naturalHeight,
-            -dw/2-0.75,-img.naturalHeight/2,dw+1.5,img.naturalHeight
-          );
-          ctx.restore();
-        }
-
-        try{
-          const url=canvas.toDataURL('image/png');
-          curveCacheSet(cacheKey,url);
-          resolve(url);
-        }catch(e){reject(e);}
-      };
-      img.onerror=()=>reject(new Error('Failed to curve fish silhouette frame'));
-      img.src=sourceHref;
-    });
+  function buildWaveOffsets(sliceCount, amp, phase, rateScale=1) {
+    const bones=[];
+    const cycles=CURVED_FISH_ART.waveCycles;
+    for(let i=0;i<CURVED_FISH_ART.boneCount;i++){
+      const t=CURVED_FISH_ART.boneCount===1?0.5:i/(CURVED_FISH_ART.boneCount-1);
+      const taper=Math.sin(Math.PI*t);
+      // 1.05 broad waves across the body instead of the original 2.15:
+      // the swimming spikes sit much farther apart from one another and are
+      // visually distinct from the much larger, static curvature of the ring.
+      const leadLag=t*Math.PI*2*cycles;
+      bones.push(Math.sin(phase*rateScale+leadLag)*amp*taper);
+    }
+    const offsets=[];
+    for(let i=0;i<sliceCount;i++){
+      const t=sliceCount===1?0.5:i/(sliceCount-1);
+      const scaled=t*(bones.length-1);
+      const left=Math.max(0,Math.min(bones.length-2,Math.floor(scaled)));
+      const local=scaled-left;
+      offsets.push(bones[left]+(bones[left+1]-bones[left])*local);
+    }
+    return offsets;
   }
 
-  let observedFishImage=null, curveObserver=null;
-  let lastWarpSource=null,lastWarpedHref=null;
-  let warpBusy=false;
-  const warpQueue=[];
-  const MAX_WARP_QUEUE=3;
+  function ensureCurvedCanvas() {
+    const pad=Math.ceil(CURVED_FISH_ART.imgH*0.45);
+    const w=Math.ceil(CURVED_FISH_ART.imgW+pad*2);
+    const h=Math.ceil(CURVED_FISH_ART.imgH+pad*2);
+    if(!curvedCanvas){curvedCanvas=document.createElement('canvas');curvedCtx=curvedCanvas.getContext('2d');}
+    if(curvedCanvas.width!==w||curvedCanvas.height!==h){curvedCanvas.width=w;curvedCanvas.height=h;}
+    return {canvas:curvedCanvas,ctx:curvedCtx,w,h};
+  }
 
-  function observeCurvedSilhouette(image) {
-    if (image === observedFishImage) return;
+  function drawWaveLayerOnRing(ctx,image,canvasW,canvasH,drawW,drawH,offsets,sxScale,syScale,alpha) {
+    if(!image?.naturalWidth)return;
+    const slices=CURVED_FISH_ART.slices;
+    const srcSliceW=image.naturalWidth/slices;
+    const dstSliceW=drawW/slices;
+    const startX=(canvasW-drawW)*0.5;
+    const centerX=canvasW*0.5;
+    const centerY=canvasH*0.5;
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    ctx.imageSmoothingEnabled=true;
 
-    curveObserver?.disconnect();
+    for(let i=0;i<slices;i++){
+      const localBaseX=startX+(i+0.5)*dstSliceW-centerX;
+      const theta=(localBaseX*sxScale)/FISH_RING_RADIUS;
+      const sinT=Math.sin(theta),cosT=Math.cos(theta);
+      const arcScreenX=FISH_RING_RADIUS*sinT;
+      const arcScreenY=FISH_RING_RADIUS*(1-cosT);
+      const destX=centerX+arcScreenX/sxScale;
+      const destY=centerY+arcScreenY/syScale;
+      const offset=offsets[i]||0;
+      const nextOffset=offsets[Math.min(offsets.length-1,i+1)]??offset;
+      const shear=clamp((nextOffset-offset)/Math.max(1,dstSliceW),-0.28,0.28);
+
+      // Compensate for the later independent SVG width/height scaling so the
+      // local X axis becomes the ring tangent and local Y becomes its normal.
+      const a=cosT;
+      const b=sinT*sxScale/syScale;
+      const c=-sinT*syScale/sxScale;
+      const d=cosT;
+
+      ctx.save();
+      ctx.translate(destX,destY);
+      ctx.transform(a,b,c,d,0,0);
+      ctx.translate(0,offset);
+      ctx.transform(1,shear,0,1,0,0);
+      ctx.beginPath();
+      ctx.rect(-dstSliceW*0.65,-canvasH,dstSliceW*1.3,canvasH*2);
+      ctx.clip();
+      ctx.drawImage(
+        image,
+        i*srcSliceW,0,srcSliceW+1,image.naturalHeight,
+        -dstSliceW/2-0.75,-drawH/2,dstSliceW+1.5,drawH
+      );
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function renderCurvedFishFrame(state,sxScale,syScale) {
+    if(!silhouetteBody||state?.phase!=='active')return null;
+    if(lastCurvedUrl&&state.fishAnimT-lastCurvedAt<CURVED_FISH_ART.frameInterval)return lastCurvedUrl;
+
+    const art=CURVED_FISH_ART;
+    const {canvas,ctx,w,h}=ensureCurvedCanvas();
+    ctx.clearRect(0,0,w,h);
+
+    // Keep swim tempo independent of ring locomotion. The old source phase also
+    // added fish.angle, so abrupt velocity/retarget changes could jerk the wave.
+    const phase=state.fishAnimT*7.5;
+    const bodyAmp=Math.max(2,art.imgH*0.075*art.bodyAmpScale);
+    const bodyOffsets=buildWaveOffsets(art.slices,bodyAmp,phase,1);
+    const whiskerOffsets=buildWaveOffsets(art.slices,bodyAmp*art.whiskerAmpScale,phase+0.85,art.whiskerRate);
+
+    drawWaveLayerOnRing(ctx,silhouetteBody,w,h,art.imgW,art.imgH,bodyOffsets,sxScale,syScale,1);
+    if(silhouetteWhiskers?.naturalWidth){
+      drawWaveLayerOnRing(ctx,silhouetteWhiskers,w,h,art.imgW,art.imgH,whiskerOffsets,sxScale,syScale,0.95);
+    }
+
+    try{
+      lastCurvedUrl=canvas.toDataURL('image/png');
+      lastCurvedAt=state.fishAnimT;
+      return lastCurvedUrl;
+    }catch(err){
+      console.warn('[fish-catalog] curved silhouette encode failed',err);
+      return lastCurvedUrl;
+    }
+  }
+
+  function setFishHref(image,href) {
+    if(!image||!href||image.getAttribute('href')===href)return;
+    settingHref=true;
+    image.setAttribute('href',href);
+    settingHref=false;
+  }
+
+  function observeFishImage(image) {
+    if(image===observedFishImage)return;
+    hrefObserver?.disconnect();
     observedFishImage=image;
-    lastWarpSource=null;
-    lastWarpedHref=null;
-    warpBusy=false;
-    warpQueue.length=0;
-    if (!image) return;
-
-    const observe=()=>curveObserver?.observe(image,{attributes:true,attributeFilter:['href']});
-    const setHrefWithoutObserving=(href)=>{
-      curveObserver.disconnect();
-      image.setAttribute('href',href);
-      observe();
-    };
-
-    const processQueue=()=>{
-      if(warpBusy||!warpQueue.length||image!==observedFishImage)return;
-      const job=warpQueue.shift();
-      warpBusy=true;
-
-      curveSilhouetteDataUrl(job.source,job.sx,job.sy).then(curved=>{
-        if(image!==observedFishImage)return;
-        lastWarpedHref=curved;
-        setHrefWithoutObserving(curved);
-      }).catch(()=>{}).finally(()=>{
-        warpBusy=false;
-        if(image===observedFishImage&&warpQueue.length)processQueue();
-      });
-    };
-
-    curveObserver=new MutationObserver(()=>{
-      const state=window.Fishing?.state, fishDef=state?.fishDef;
-      if(state?.phase!=='active'||!fishDef)return;
-      const source=image.getAttribute('href')||'';
-      if(!source.startsWith('data:image')||source===lastWarpedHref||source===lastWarpSource)return;
-
-      const sx=Math.max(.2,Number(fishDef.minigameScaleX ?? fishDef.minigameScale ?? 1)||1);
-      const sy=Math.max(.2,Number(fishDef.minigameScaleY ?? fishDef.minigameScale ?? 1)||1);
-      lastWarpSource=source;
-
-      // Preserve source-frame order. The previous generation-cancel approach
-      // could discard an in-flight spline frame whenever the next 12fps texture
-      // arrived, which made a smooth sine motion visibly jump ahead.
-      warpQueue.push({source,sx,sy});
-      if(warpQueue.length>MAX_WARP_QUEUE){
-        warpQueue.splice(0,warpQueue.length-MAX_WARP_QUEUE);
+    if(!image)return;
+    hrefObserver=new MutationObserver(()=>{
+      if(settingHref)return;
+      const state=window.Fishing?.state;
+      if(state?.phase==='active'&&lastCurvedUrl&&image.getAttribute('href')!==lastCurvedUrl){
+        setFishHref(image,lastCurvedUrl);
       }
-
-      // Never flash a straight frame while its curved version is being decoded.
-      if(lastWarpedHref)setHrefWithoutObserving(lastWarpedHref);
-      processQueue();
     });
-
-    observe();
+    hrefObserver.observe(image,{attributes:true,attributeFilter:['href']});
   }
 
   function presentationLoop() {
-    const state=window.Fishing?.state, fishDef=state?.fishDef, image=document.getElementById('fishDeformedImage');
-    observeCurvedSilhouette(image);
+    const state=window.Fishing?.state;
+    const fishDef=state?.fishDef;
+    const image=document.getElementById('fishDeformedImage');
+    observeFishImage(image);
+    ensureSilhouetteAssets();
+
     if(image&&fishDef){
-      const sx=Math.max(.2,Number(fishDef.minigameScaleX ?? fishDef.minigameScale ?? 1)||1);
-      const sy=Math.max(.2,Number(fishDef.minigameScaleY ?? fishDef.minigameScale ?? 1)||1);
+      const sx=Math.max(.2,Number(fishDef.minigameScaleX??fishDef.minigameScale??1)||1);
+      const sy=Math.max(.2,Number(fishDef.minigameScaleY??fishDef.minigameScale??1)||1);
       image.style.transformBox='fill-box';
       image.style.transformOrigin='center';
       image.style.transform=`scale(${sx},${sy})`;
-      if(state?.phase!=='active'&&(lastWarpSource||lastWarpedHref||warpQueue.length)){
-        lastWarpSource=null;
-        lastWarpedHref=null;
-        warpQueue.length=0;
+
+      if(state?.phase==='active'){
+        const href=renderCurvedFishFrame(state,sx,sy);
+        if(href)setFishHref(image,href);
+      }else{
+        lastCurvedUrl=null;
+        lastCurvedAt=-Infinity;
       }
     }
     requestAnimationFrame(presentationLoop);
@@ -341,5 +361,6 @@
   configureCatchCamera();
   hookFishing();
   registerItems();
+  ensureSilhouetteAssets();
   requestAnimationFrame(presentationLoop);
 })();
