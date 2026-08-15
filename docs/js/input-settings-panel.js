@@ -8,7 +8,28 @@
   // stay in game.js — this only renders/edits the settings UI that
   // configures what those handlers look up.
   let deps = null;
+  const ACTION_BUTTON_IDS = new Set(['action1', 'action2', 'action3', 'action4', 'action5']); // Used to give the five visible gameplay buttons player-facing names in Settings.
+
   function init(injectedDeps) { deps = injectedDeps; }
+
+  function actionDisplayLabel(action) {
+    if (!action?.id || !ACTION_BUTTON_IDS.has(action.id)) return action?.label || action?.id || '';
+    const slot = Number(action.id.slice('action'.length)); // Used to name the exact visible action-button slot the player is rebinding.
+    return `Action Button ${slot}`;
+  }
+
+  function notifyBindingChanged(device, actionId) {
+    if (!device || !actionId) return;
+    const binding = deps?.inputBindings?.[device]?.[actionId] || null; // Used by the HUD/action router to refresh the displayed badge immediately after a Settings remap.
+    window.dispatchEvent(new CustomEvent('hobunji-input-bindings-changed', {
+      detail: { device, actionId, binding },
+    }));
+  }
+
+  function saveBindingChange(device, actionId) {
+    deps.saveInputBindings();
+    notifyBindingChanged(device, actionId);
+  }
 
   function renderInputSettings() {
     const desktopEl = document.getElementById('desktopInputBindings');
@@ -19,15 +40,47 @@
       el.innerHTML = '';
       for (const action of deps.INPUT_DEFAULTS.actions) {
         const row = document.createElement('div'); row.className = 'input-binding-row';
-        row.innerHTML = `<span class="settings-name">${action.label}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${deps.buttonLabel(deps.inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
+        if (ACTION_BUTTON_IDS.has(action.id)) {
+          row.classList.add('action-button-binding');
+          row.dataset.actionSlot = action.id.slice('action'.length); // Used for inspection/debugging and future Settings styling without inferring from label text.
+          row.title = 'Controls the matching visible gameplay action button.';
+        }
+        row.innerHTML = `<span class="settings-name">${actionDisplayLabel(action)}</span>${device === 'controller' ? '<select class="settings-select"></select>' : `<button type="button" class="input-bind-btn">${deps.buttonLabel(deps.inputBindings[device][action.id])}</button>`}<div class="input-binding-warning"></div>`;
         const control = row.children[1]; const warn = row.querySelector('.input-binding-warning');
         if (device === 'controller') {
           control.add(new Option('Unbound', ''));
           deps.CONTROLLER_INPUT_OPTIONS.forEach(code => control.add(new Option(deps.buttonLabel(code), code)));
           control.value = deps.inputBindings.controller[action.id] || '';
-          control.addEventListener('change', () => { const conflict = deps.bindingConflict(device, control.value, action.id); if (conflict) { warn.textContent = conflict; control.value = deps.inputBindings.controller[action.id] || ''; } else { deps.inputBindings.controller[action.id] = control.value || null; warn.textContent = ''; deps.saveInputBindings(); } });
+          control.addEventListener('change', () => {
+            const conflict = deps.bindingConflict(device, control.value, action.id);
+            if (conflict) {
+              warn.textContent = conflict;
+              control.value = deps.inputBindings.controller[action.id] || '';
+            } else {
+              deps.inputBindings.controller[action.id] = control.value || null;
+              warn.textContent = '';
+              saveBindingChange(device, action.id);
+            }
+          });
         } else {
-          control.addEventListener('click', () => { control.classList.add('is-listening'); control.textContent = 'Press input…'; const once = ev => { ev.preventDefault(); const code = ev.code; const conflict = deps.bindingConflict(device, code, action.id); if (conflict) warn.textContent = conflict; else { deps.inputBindings[device][action.id] = code; warn.textContent = ''; deps.saveInputBindings(); renderInputSettings(); } window.removeEventListener('keydown', once, true); }; window.addEventListener('keydown', once, true); });
+          control.addEventListener('click', () => {
+            control.classList.add('is-listening');
+            control.textContent = 'Press input…';
+            const once = ev => {
+              ev.preventDefault();
+              const code = ev.code;
+              const conflict = deps.bindingConflict(device, code, action.id);
+              if (conflict) warn.textContent = conflict;
+              else {
+                deps.inputBindings[device][action.id] = code;
+                warn.textContent = '';
+                saveBindingChange(device, action.id);
+                renderInputSettings();
+              }
+              window.removeEventListener('keydown', once, true);
+            };
+            window.addEventListener('keydown', once, true);
+          });
         }
         el.appendChild(row);
       }
@@ -49,7 +102,7 @@
           const bRow = document.createElement('div'); bRow.className = 'mode-shift-row';
           bRow.innerHTML = `<span class="settings-name">${deps.buttonLabel(button)}</span><select class="settings-select"></select><span class="input-binding-warning"></span><button type="button" class="settings-small-btn">Remove</button>`;
           const select = bRow.children[1];
-          deps.INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(action.label, action.id)));
+          deps.INPUT_DEFAULTS.actions.forEach(action => select.add(new Option(actionDisplayLabel(action), action.id)));
           select.value = actionId;
           select.addEventListener('change', e => { shift.bindings[button] = e.target.value; deps.saveInputBindings(); renderInputSettings(); });
           bRow.children[3].addEventListener('click', () => { delete shift.bindings[button]; deps.saveInputBindings(); renderInputSettings(); });
