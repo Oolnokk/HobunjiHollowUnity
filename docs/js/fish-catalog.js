@@ -205,32 +205,56 @@
     });
   }
 
+  let observedFishImage=null, curveObserver=null;
   let lastWarpSource=null,lastWarpedHref=null,warpGeneration=0;
+
+  function observeCurvedSilhouette(image) {
+    if (image === observedFishImage) return;
+    curveObserver?.disconnect();
+    observedFishImage=image;
+    lastWarpSource=null;lastWarpedHref=null;warpGeneration++;
+    if (!image) return;
+
+    const observe=()=>curveObserver?.observe(image,{attributes:true,attributeFilter:['href']});
+    curveObserver=new MutationObserver(()=>{
+      const state=window.Fishing?.state, fishDef=state?.fishDef;
+      if(state?.phase!=='active'||!fishDef)return;
+      const source=image.getAttribute('href')||'';
+      if(!source.startsWith('data:image')||source===lastWarpedHref||source===lastWarpSource)return;
+
+      const sx=Math.max(.2,Number(fishDef.minigameScaleX ?? fishDef.minigameScale ?? 1)||1);
+      const sy=Math.max(.2,Number(fishDef.minigameScaleY ?? fishDef.minigameScale ?? 1)||1);
+      lastWarpSource=source;
+      const generation=++warpGeneration;
+
+      // The game writes a fresh straight-spine deform URL every frame. Keep the
+      // last curved frame on the SVG until its replacement is ready, preventing
+      // a visible straight/curved flicker while the new data URL is decoded.
+      if(lastWarpedHref){
+        curveObserver.disconnect();
+        image.setAttribute('href',lastWarpedHref);
+        observe();
+      }
+
+      curveSilhouetteDataUrl(source,sx,sy).then(curved=>{
+        if(generation!==warpGeneration||image!==observedFishImage)return;
+        lastWarpedHref=curved;
+        curveObserver.disconnect();
+        image.setAttribute('href',curved);
+        observe();
+      }).catch(()=>{});
+    });
+    observe();
+  }
+
   function presentationLoop() {
     const state=window.Fishing?.state, fishDef=state?.fishDef, image=document.getElementById('fishDeformedImage');
+    observeCurvedSilhouette(image);
     if(image&&fishDef){
       const sx=Math.max(.2,Number(fishDef.minigameScaleX ?? fishDef.minigameScale ?? 1)||1);
       const sy=Math.max(.2,Number(fishDef.minigameScaleY ?? fishDef.minigameScale ?? 1)||1);
       image.style.transformBox='fill-box';image.style.transformOrigin='center';image.style.transform=`scale(${sx},${sy})`;
-
-      if(state?.phase==='active'){
-        const href=image.getAttribute('href')||'';
-        if(href&&href.startsWith('data:image')&&href!==lastWarpedHref&&href!==lastWarpSource){
-          lastWarpSource=href;
-          const generation=++warpGeneration;
-          curveSilhouetteDataUrl(href,sx,sy).then(curved=>{
-            if(generation!==warpGeneration)return;
-            const live=document.getElementById('fishDeformedImage');
-            if(!live)return;
-            const liveHref=live.getAttribute('href')||'';
-            if(liveHref!==href&&liveHref!==lastWarpedHref)return;
-            lastWarpedHref=curved;
-            live.setAttribute('href',curved);
-          }).catch(()=>{});
-        } else if(href===lastWarpSource&&lastWarpedHref&&href!==lastWarpedHref){
-          image.setAttribute('href',lastWarpedHref);
-        }
-      } else {
+      if(state?.phase!=='active'&&(lastWarpSource||lastWarpedHref)){
         lastWarpSource=null;lastWarpedHref=null;warpGeneration++;
       }
     }
