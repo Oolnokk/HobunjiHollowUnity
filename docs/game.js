@@ -37,6 +37,8 @@
       const spTile    = document.getElementById('spTile');
       const spWater   = document.getElementById('spWater');
       const spGold    = document.getElementById('spGold');
+      const spItem    = document.getElementById('spItem');
+      const spItemDiv = document.getElementById('spItemDiv');
 
       // Menu
       const menuBtn        = document.getElementById('menuBtn');
@@ -71,6 +73,9 @@
       const itemIcon   = document.getElementById('itemIcon');
       const itemName   = document.getElementById('itemName');
       const itemCount  = document.getElementById('itemCount');
+      const itemBtnEl  = document.getElementById('itemBtn');
+      const isPrevIconEl = document.getElementById('isPrevIcon');
+      const isNextIconEl = document.getElementById('isNextIcon');
 
 
       // ── Split layout fit ──────────────────────────────────────────
@@ -6775,10 +6780,22 @@
       const _vbHealthFill  = document.getElementById('vbHealthFill');
       const _vbStaminaFill = document.getElementById('vbStaminaFill');
       const _vbFootingFill = document.getElementById('vbFootingFill');
+      // Rounded so idle frames (no regen/damage delta, sub-1% drift) don't
+      // rewrite the same style.width value every frame.
+      let _vbLastHealthPct = -1, _vbLastStaminaPct = -1, _vbLastFootingPct = -1;
       function refreshVitalsHud() {
-        if (_vbHealthFill)  _vbHealthFill.style.width  = `${Math.max(0, Math.min(100, player.health  / player.maxHealth  * 100))}%`;
-        if (_vbStaminaFill) _vbStaminaFill.style.width = `${Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100))}%`;
-        if (_vbFootingFill && player.maxFooting) _vbFootingFill.style.width = `${Math.max(0, Math.min(100, player.footing / player.maxFooting * 100))}%`;
+        if (_vbHealthFill) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.health / player.maxHealth * 100)));
+          if (pct !== _vbLastHealthPct) { _vbLastHealthPct = pct; _vbHealthFill.style.width = `${pct}%`; }
+        }
+        if (_vbStaminaFill) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100)));
+          if (pct !== _vbLastStaminaPct) { _vbLastStaminaPct = pct; _vbStaminaFill.style.width = `${pct}%`; }
+        }
+        if (_vbFootingFill && player.maxFooting) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.footing / player.maxFooting * 100)));
+          if (pct !== _vbLastFootingPct) { _vbLastFootingPct = pct; _vbFootingFill.style.width = `${pct}%`; }
+        }
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -11555,9 +11572,8 @@
         });
       }
 
-      function getActiveInventoryItem() {
+      function getActiveInventoryItem(stacks = getInventoryStackItems()) {
         // Used by planting, shipping-box quick deposit, HUD, and item scroll.
-        const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         if (activeItemIndex >= stacks.length) activeItemIndex = 0;
         if (activeItemIndex < 0) activeItemIndex = stacks.length - 1;
@@ -20519,7 +20535,7 @@
       // Track last state to avoid rebuilding the stack every frame
       let _lastBarKey = '';
 
-      function refreshActionBar() {
+      function refreshActionBar(stacks = getInventoryStackItems()) {
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
         const reticle = getReticleTile();
@@ -20534,7 +20550,7 @@
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
           : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
         // Consumable counts must invalidate the cached action after the last item is used.
-        const selectedItem = getActiveInventoryItem();
+        const selectedItem = getActiveInventoryItem(stacks);
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
@@ -20845,18 +20861,20 @@
       }
 
       // ── Item scroll ────────────────────────────────────────
-      function refreshItemScroll() {
-        const stacks = getInventoryStackItems();
+      let _lastItemScrollKey = null;
+      function refreshItemScroll(stacks = getInventoryStackItems()) {
         const n = stacks.length;
-        const iBtnEl = document.getElementById('itemBtn');
+        const iBtnEl = itemBtnEl;
         if (n === 0) {
+          if (_lastItemScrollKey === 'empty') return;
+          _lastItemScrollKey = 'empty';
           itemIcon.textContent  = '□';
           itemName.textContent  = 'EMPTY';
           itemCount.textContent = '×0';
           itemCount.className   = 'is-count empty';
           if (iBtnEl) iBtnEl.textContent = '□';
-          const prevEl = document.getElementById('isPrevIcon');
-          const nextEl = document.getElementById('isNextIcon');
+          const prevEl = isPrevIconEl;
+          const nextEl = isNextIconEl;
           clearItemSpriteIcon(itemIcon);
           clearItemSpriteIcon(iBtnEl);
           if (prevEl) prevEl.textContent = '□';
@@ -20871,6 +20889,9 @@
         const prev = stacks[(activeItemIndex - 1 + n) % n];
         const next = stacks[(activeItemIndex + 1) % n];
         const count = inventory[curr.key] || 0;
+        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
+        if (key === _lastItemScrollKey) return;
+        _lastItemScrollKey = key;
         // Current item
         itemIcon.textContent  = curr.icon;
         itemName.textContent  = curr.label;
@@ -20880,8 +20901,8 @@
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)
-        const prevEl = document.getElementById('isPrevIcon');
-        const nextEl = document.getElementById('isNextIcon');
+        const prevEl = isPrevIconEl;
+        const nextEl = isNextIconEl;
         if (prevEl) {
           prevEl.textContent = prev.icon;
           applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
@@ -20902,12 +20923,21 @@
         refreshActionBar();
       });
 
+      // Status-pill fields only actually change a few times a (real) second
+      // at most (season/weather/day/gold on world-state events, time once a
+      // simulated minute, tool/tile/water on reticle or equip changes) —
+      // updateHud runs every frame, so each field caches its last-written
+      // string/color and skips the DOM write (and, for spTile/spWater,
+      // the string-building) when nothing changed.
+      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
+
       function updateHud() {
         const season = window.CalendarSystem.currentSeason();
         const clock  = formatClock(window.CalendarSystem.getHour());
 
         // Season (changes slowly)
-        spSeason.textContent = season.emoji + ' ' + season.name;
+        const seasonText = season.emoji + ' ' + season.name;
+        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
 
         // Current weather + precipitation rate
         let weatherText, precipText;
@@ -20926,43 +20956,60 @@
           weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
           precipText  = '⬇️ none';
         }
-        spWeather.textContent = weatherText + ' ' + precipText;
+        const weatherFull = weatherText + ' ' + precipText;
+        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
 
-        spTime.textContent = clock;
-        if (spDay) spDay.textContent = window.CalendarSystem.formatCalendarDate();
-        spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
+        if (spDay) {
+          const dayText = window.CalendarSystem.formatCalendarDate();
+          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
+        }
+        const toolText = toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
 
         // Reticle tile info
         const reticle  = getReticleTile();
         const tile     = getActiveTileAt(reticle.col, reticle.row);
         const tStyle   = tileStyles[tile.type] || tileStyles.grass;
         const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
-        spTile.textContent = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
 
         const waterPct = Math.round((tile.water / MAX_WATER) * 100);
         const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
-        spWater.textContent  = '💧 ' + depthStr;
-        spWater.style.color  = waterPct > 80 ? '#4488ff'
-                             : waterPct > 40 ? '#6ec6f0'
-                             : waterPct > 10 ? '#aaddee' : '#888';
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+        const waterText = '💧 ' + depthStr;
+        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
+        const waterColor = waterPct > 80 ? '#4488ff'
+                          : waterPct > 40 ? '#6ec6f0'
+                          : waterPct > 10 ? '#aaddee' : '#888';
+        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
+        if (spGold) {
+          const goldText = '💰 ' + inventory.gold + 'g';
+          if (goldText !== _hud.gold) { _hud.gold = goldText; spGold.textContent = goldText; }
+        }
+
+        // Computed once and threaded through below instead of letting
+        // refreshItemScroll/refreshActionBar (and the desktop item pill)
+        // each re-filter-and-sort the whole inventory from scratch — this
+        // runs every frame, and inventory contents don't change nearly
+        // that often.
+        const stacks = getInventoryStackItems();
 
         // Desktop: show active item in status pill (item scroll is hidden)
         if (isDesktop) {
-          const item = getActiveInventoryItem();
-          const spItem = document.getElementById('spItem');
-          const spItemDiv = document.getElementById('spItemDiv');
+          const item = getActiveInventoryItem(stacks);
           if (spItem && item) {
             spItem.style.display = '';
             spItemDiv.style.display = '';
-            spItem.textContent = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
           }
         }
 
-        refreshItemScroll();
+        refreshItemScroll(stacks);
         // refreshActionBar is called after actions and on tool/item change;
         // the dirty-key check makes it cheap to call here too for reticle updates
-        refreshActionBar();
+        refreshActionBar(stacks);
         if (menuOpen) {
           // Keep wallet display live while menu is open
           const wd = document.getElementById('invWalletDisplay');

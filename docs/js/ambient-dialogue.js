@@ -627,9 +627,18 @@
     });
   }
 
+  // updateGreetings does an O(walkers^2) friend-pair scan; nothing about
+  // when a greeting is allowed to fire depends on checking every single
+  // frame (tryGreeting already cooldown-gates on state.lastGreetingAt in
+  // the seconds range), so it's throttled to ~5Hz here — imperceptible
+  // against that cooldown, but cuts the scan rate by roughly 90%+ at 60fps.
+  let _lastGreetingsScan = 0;
   function update(now = performance.now()) {
     updateActive(now);
-    updateGreetings(now);
+    if (now - _lastGreetingsScan >= 200) {
+      _lastGreetingsScan = now;
+      updateGreetings(now);
+    }
   }
 
   function clear() {
