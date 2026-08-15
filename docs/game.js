@@ -22692,6 +22692,12 @@
         esc,
       });
 
+      // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
+      // declared here (game.js scope) rather than inside the deps object
+      // literal, since that object's own methods don't close over each
+      // other's sibling keys the way a plain local variable does.
+      let _furnitureLightScanCache = { scene: null, objs: null, lastScan: 0 };
+
       window.WeatherFX?.init({
         calendar,
         seededRandom,
@@ -22721,15 +22727,30 @@
         // Used by WeatherFX's player lantern mask to follow the avatar's
         // smoothed world elevation instead of projecting from flat Y=0.
         getPlayerWorldY: () => playerMesh.position.y,
-        // Lighting is sampled at 10 Hz, so collecting the active scene's
-        // tagged furniture lights here stays cheap and avoids stale coords.
+        // Lighting is sampled at 10 Hz, but a full scene.traverse() every one
+        // of those ticks still visits every node in the active scene (not
+        // just the lights) to find the handful tagged furnitureLightMask —
+        // real, avoidable cost in a decor-dense area (a lot of furniture/
+        // NPCs/terrain chunks, e.g. the inn) since it scales with total
+        // scene size, not light count. Re-scanning is still cheap and
+        // correctness matters more than shaving cost further, so this only
+        // throttles the traversal itself down to 2s (light *positions* are
+        // re-read fresh from world matrices every call regardless — only
+        // which objects count as sources is cached) rather than trying to
+        // track furniture add/remove sites to invalidate it precisely.
         getFurnitureLightSources: () => {
-          const sources = [];
+          const cache = _furnitureLightScanCache;
+          const scene = getActiveScene();
+          const now = performance.now();
+          if (cache.scene !== scene || now - cache.lastScan >= 2000) {
+            const objs = [];
+            scene?.traverse(obj => { if (obj.isPointLight && obj.userData?.furnitureLightMask) objs.push(obj); });
+            cache.scene = scene; cache.objs = objs; cache.lastScan = now;
+          }
           const worldPosition = new THREE.Vector3();
-          getActiveScene()?.traverse(obj => {
-            if (!obj.isPointLight || !obj.userData?.furnitureLightMask) return;
+          return (cache.objs || []).map(obj => {
             obj.getWorldPosition(worldPosition);
-            sources.push({
+            return {
               x: worldPosition.x,
               y: worldPosition.y,
               z: worldPosition.z,
@@ -22740,9 +22761,8 @@
                 g: Math.round(obj.color.g * 255),
                 b: Math.round(obj.color.b * 255),
               },
-            });
+            };
           });
-          return sources;
         },
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
