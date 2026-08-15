@@ -717,7 +717,19 @@
           setActiveBankSlot(remainingBank ? (bankSlotByControl[remainingBank] || 'open') : 'open');
         }
       };
-      const blur = () => releaseHostedKeyboardInputs();
+      // A blur on the host window or the iframe's own window can mean focus
+      // merely moved to the OTHER half of this hosted pair (e.g. the player
+      // mouse-looked/clicked the 3D scene while still physically holding a
+      // note key) rather than the player actually alt-tabbing away — both
+      // windows fire real note keydown/keyup independently of which one has
+      // focus, so releasing every held note on that harmless internal
+      // handoff would silently cut an arpeggio off mid-hold even though the
+      // key is still down, with no further keydown ever arriving to revive
+      // it (repeat events are filtered, and the real keyup lands on an
+      // already-cleared source). document.hasFocus() stays true for the
+      // whole tab through that handoff — only release when it's actually
+      // false, meaning the tab/window itself lost focus.
+      const blur = () => { if (!document.hasFocus()) releaseHostedKeyboardInputs(); };
       targetWindow.addEventListener('keydown', keydown, true);
       targetWindow.addEventListener('keyup', keyup, true);
       targetWindow.addEventListener('blur', blur);

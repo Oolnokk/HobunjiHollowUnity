@@ -3976,7 +3976,19 @@
       else handleBankControl(binding.value, `key-${event.code}`, false);
       keyboardSources.delete(event.code);
     });
-    window.addEventListener('blur', releaseAllInputs);
+    // Hosted mode splits keyboard listening across this iframe's own window
+    // and the host page's window (see installHostedKeyboardBridge in
+    // js/music-minigame.js) so notes/banks work regardless of which one
+    // currently has OS focus. That means a blur here can just be focus
+    // handing off to the host page (e.g. the player mouse-looked the 3D
+    // scene while still physically holding a note key) rather than the
+    // player actually alt-tabbing away — releasing every held note on that
+    // harmless internal handoff would silently cut an arpeggio off mid-hold
+    // with no further keydown ever arriving to revive it (repeat events are
+    // filtered, and the eventual real keyup lands on an already-cleared
+    // source). document.hasFocus() stays true for the whole tab through
+    // that handoff — only release when it's actually false.
+    window.addEventListener('blur', () => { if (!document.hasFocus()) releaseAllInputs(); });
   }
 
   function releaseAllInputs() {
