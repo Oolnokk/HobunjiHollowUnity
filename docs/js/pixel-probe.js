@@ -162,7 +162,7 @@
       for (const w of deps.npcWalkers) {
         if (node === w.root) {
           const appearance = w.rec?.appearance || {};
-          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors };
+          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w };
         }
       }
       for (const c of deps.companionObjects) {
@@ -309,6 +309,46 @@
       } else {
         lines.push(`Rig anchors unavailable for this species/creature pairing (perch=${!!perch} grip=${!!grip}) — falls back to the flat CHAR_SHOULDER_PERCENT_FALLBACK/PET_GRIP_PERCENT_FALLBACK offset instead of authored rig data.`);
       }
+    }
+    return lines;
+  }
+
+  // A scheduled NPC behaving visibly wrong — wandering somewhere they
+  // shouldn't, or standing still without ever picking up their instrument
+  // — is a state-machine question, not a rendering one, but it's exactly
+  // the kind of "something is obviously off, why" report this tool exists
+  // to answer for pixels. Two real bugs have lived in this exact system
+  // (see js/npc-scheduling.js's own header comment): a positionRedirect
+  // silently dropping a station's toolKey/label metadata, and toolKey
+  // stations failing to opt out of station-wander, both invisible from a
+  // screenshot alone but immediate from the walker's own live state and
+  // resolved schedule target. Gated the same way seated-leg/shoulder-pet
+  // diagnostics are — only when the probe actually landed on an NPC's own
+  // avatar — so an unrelated click doesn't pad the report.
+  function _pixelProbeNpcSchedulingLines(hits) {
+    const owner = hits.map(h => _pixelProbeOwnerInfo(h.object)).find(o => o?.kind === 'npc' && o.walker);
+    if (!owner) return null;
+    const walker = owner.walker;
+    const target = walker.currentScheduleTarget;
+    const lines = ['', '=== NPC scheduling diagnostics ==='];
+    lines.push(`NPC: ${walker.rec?.name || walker.rec?.id || '?'} (id ${walker.rec?.id || '?'})   area=${walker.area}   walker.state=${walker.state}`);
+    if (target) {
+      lines.push(`Schedule target: "${target.label || target.stationId || '(unlabeled)'}" area=${target.area} c=${target.c} r=${target.r} pose=${target.pose || '-'} toolKey=${target.toolKey || '(none)'}`);
+      lines.push(`Wander config: mode=${target.wanderMode || '-'} radiusTiles=${target.wanderRadiusTiles ?? 0} shapeTiles=${target.wanderShapeTiles?.length ?? 0}`);
+      if (Number.isFinite(target.c) && Number.isFinite(target.r)) {
+        const dist = Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5));
+        lines.push(`Distance to target center: ${dist.toFixed(3)} tiles`);
+      }
+    } else {
+      lines.push('Schedule target: (none resolved this tick — see console for [schedule] warnings)');
+    }
+    lines.push(`Currently equipped station tool: ${walker.stationToolKey || '(none)'}`);
+    const onDuty = target?.label ? !!window.NpcScheduling?.isNpcOnDutyAtStation?.(walker, target.label) : null;
+    if (onDuty != null) lines.push(`isNpcOnDutyAtStation(this NPC, "${target.label}"): ${onDuty ? 'YES' : 'no'}`);
+    if (target?.toolKey && walker.state === 'station-wander') {
+      lines.push(`>>> MISMATCH — this station has a toolKey ("${target.toolKey}") but the walker is in 'station-wander' state. toolKey stations should opt out of wandering entirely — worth a closer look.`);
+    } else if (target?.toolKey && !walker.stationToolKey && walker.state === 'idle') {
+      lines.push(`>>> MISMATCH — walker is idle at a toolKey station ("${target.toolKey}") but hasn't equipped it (stationToolKey is empty).`);
     }
     return lines;
   }
@@ -560,6 +600,9 @@
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
     if (shoulderPetLines) lines.push(...shoulderPetLines);
+
+    const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
+    if (npcSchedulingLines) lines.push(...npcSchedulingLines);
 
     if (blendCheck) {
       lines.push('');
