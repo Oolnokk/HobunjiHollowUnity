@@ -4713,21 +4713,20 @@
                               },
                               {
                                     "from": "08:00",
-                                    "to": "14:00",
+                                    "to": "19:00",
                                     "mapId": "map_i_general_store",
                                     "stationId": "station_k7m3q",
                                     "activity": "checking shelves"
                               },
                               {
-                                    "from": "14:00",
-                                    "to": "19:00",
-                                    "mapId": "map_hobunji_town",
-                                    "routeId": "route_wjhen",
-                                    "activity": "playing music",
-                                    "stationId": "station_foroji_music"
+                                    "from": "19:00",
+                                    "to": "23:00",
+                                    "mapId": "map_i_inn",
+                                    "activity": "playing music at the inn",
+                                    "stationId": "station_foroji_inn_music"
                               },
                               {
-                                    "from": "19:00",
+                                    "from": "23:00",
                                     "to": "08:00",
                                     "mapId": "map_i_general_store_F2_R1",
                                     "stationId": "station_v4n8x",

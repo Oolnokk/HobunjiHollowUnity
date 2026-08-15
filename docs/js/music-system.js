@@ -283,7 +283,8 @@
     attachMusicGain(snd);
     setMusicVolumeNow(snd, 0);
     let fadingOut = false;
-    const targetVolume = () => Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
+    let ducked = _lyreDucked; // A track that starts while the Lyre minigame is already sounding (e.g. the previous song looped over) should come up silent, not at full volume.
+    const targetVolume = () => ducked ? 0 : Math.max(0, baseVolume) * (_musicLoudnessGain.get(resolveAudioUrl(url)) ?? 1);
     fadeMusicVolume(snd, targetVolume(), fadeInMs);
     musicLoudnessGain(url).then(() => {
       if (!fadingOut && !snd.paused) fadeMusicVolume(snd, targetVolume(), 400);
@@ -303,6 +304,16 @@
       fadingOut = true;
       fadeMusicVolume(snd, 0, stopFadeMs, () => { retireMusicTrack(snd); resolve(); });
     });
+    // Ducks toward silence and back without pausing or losing the
+    // playhead — see updateLyreDucking, which calls this on every track
+    // whenever the Lyre minigame's own music starts/stops sounding
+    // (whether the player is playing or a nearby NPC is performing
+    // ambiently) so the two never compete for the listener's attention.
+    snd._setDuck = (duck, fadeMs = 900) => {
+      if (ducked === duck || fadingOut || snd._musicRetired) return;
+      ducked = duck;
+      fadeMusicVolume(snd, targetVolume(), fadeMs);
+    };
     // Some decode failures never surface as an 'error' event: the element
     // reports paused=false (and the gain ramp completes normally) but
     // currentTime never advances — silently stuck forever with nothing
@@ -454,6 +465,27 @@
   function stopAmbientCue(reason = 'music context changed') {
     stopMusicSlot('currentCue', reason);
     stopMusicSlot('currentBgm', reason);
+  }
+
+  // ── Ducking for the Lyre minigame ────────────────────────────────────
+  // Unlike combat's stopAmbientCue above (which retires the track and
+  // resumes with a fresh pick), the Lyre performance should never
+  // interrupt the ambient track underneath it — the player might only be
+  // playing along with an NPC for a few bars. This just rides the same
+  // track's volume down and back up around whatever the Lyre is doing.
+  let _lyreDucked = false;
+  function isLyreMusicPlaying() {
+    return !!(window.MusicMinigame?.state?.active || window.MusicMinigame?.ambientActive);
+  }
+  function updateLyreDucking() {
+    const shouldDuck = isLyreMusicPlaying();
+    if (shouldDuck === _lyreDucked) return;
+    _lyreDucked = shouldDuck;
+    const fadeMs = 900;
+    for (const key of ['currentBgm', 'currentCue', 'currentCombatBgm']) {
+      _ambientCueState[key]?._setDuck?.(shouldDuck, fadeMs);
+    }
+    audioDebug('lyre ducking ' + (shouldDuck ? 'engaged' : 'released'), 'lyre-duck-' + shouldDuck, 0, 'bgm');
   }
 
   function isNightTime() {
@@ -984,6 +1016,7 @@
     registerMapAudio,
     resetAmbientCueTimer,
     updateAmbientCues,
+    updateLyreDucking,
     updateExteriorBgs,
     updateRainAudio,
     updateFurnitureSfxSources,

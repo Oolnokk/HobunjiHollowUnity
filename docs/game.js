@@ -188,7 +188,7 @@
         if (id === 'inventory') { buildInventoryGrid(); window.EquipmentPanel.buildEquipmentSlots(); }
         if (id === 'crafting') window.CraftingPanel.render();
         if (id === 'calendar') window.CalendarSystem.renderCalendarPanel();
-        if (id === 'map') window.WildernessMap.renderMapPanel();
+        if (id === 'map') { window.WildernessMap.renderMapPanel(); renderNpcGatheringPanel(); }
         if (id === 'farm') window.FarmPanel.render();
         if (id === 'stable') window.FarmPanel.renderStablePanel();
         if (id === 'shipping') window.ShippingPanel.build();
@@ -1465,6 +1465,12 @@
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
         fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
+        // Decorative only (no `slots`, so it's never equippable/craftable —
+        // see the TOOL_ITEM_DEFS.forEach ITEM_DEFS-registration loop below,
+        // which only fires for entries with a metalKey). Held by Foroji at
+        // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
+        // he visibly has his instrument out while playing.
+        kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: [], animStyle: 'strum' },
       };
 
       // ── Metal registry (dug-up bars, the verdigris hierarchy) ──────────
@@ -3297,6 +3303,116 @@
       // checks for the "Stand" override.
       let sitInteraction = null;
       const SIT_TRANSITION_S = 0.35; // matches HARVEST_TRANSITION_S's quick-lerp feel
+
+      // ── NPC gathering points: walk-to navigation, not teleport ─────────
+      // { path:[{col,row},...], npcId, label } while an auto-walk is in
+      // progress toward a nearby NPC's current schedule spot, else null.
+      // Player-driven the whole way — see advancePlayerAutoWalk's use in
+      // updateMovement, which feeds computed direction through the exact
+      // same ix/iy → speed/collision pipeline manual input uses, and any
+      // real manual input cancels it outright rather than fighting it.
+      let playerAutoWalk = null;
+      const PLAYER_AUTOWALK_ARRIVE_PX = TILE * 0.35;
+      const PLAYER_AUTOWALK_PATH_PADDING_TILES = 10;
+      const NPC_GATHERING_NEARBY_TILES = 16; // "nearby" scope for the walk-to list — a screen's-width-ish radius, not the whole map.
+
+      function nearbyNpcGatheringPoints() {
+        const px = player.x / TILE, py = player.y / TILE;
+        return npcWalkers
+          .filter(w => w.area === currentArea && w.rec?.id && w.currentScheduleTarget)
+          .map(w => {
+            const target = w.currentScheduleTarget;
+            const dist = Math.hypot(w.root.position.x - px, w.root.position.z - py);
+            return { id: w.rec.id, name: w.rec.name || w.rec.id, activity: target.activity || '', dist };
+          })
+          .filter(entry => entry.dist <= NPC_GATHERING_NEARBY_TILES)
+          .sort((a, b) => a.dist - b.dist);
+      }
+
+      // Sets a walk-to destination toward `npcId`'s current schedule spot —
+      // a navigation target the player still walks to themselves (through
+      // normal collision/speed/footsteps), not an instant teleport. Silently
+      // cancels any walk already in progress if the NPC can't be reached.
+      function startWalkToNpc(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId && w.area === currentArea);
+        const target = walker?.currentScheduleTarget;
+        if (!walker || !target || !Number.isFinite(target.c) || !Number.isFinite(target.r)) {
+          showToast("Can't find them right now.", false);
+          playerAutoWalk = null;
+          return;
+        }
+        const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
+        const path = window.TilePathfinding?.findPath(startCol, startRow, target.c, target.r,
+          (c, r) => isNpcTileWalkable(currentArea, c, r),
+          { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, PLAYER_AUTOWALK_PATH_PADDING_TILES) });
+        if (!path || !path.length) {
+          showToast('No clear path there.', false);
+          playerAutoWalk = null;
+          return;
+        }
+        playerAutoWalk = { path, npcId, label: walker.rec?.name || 'them' };
+      }
+
+      // Advances the current auto-walk one frame and returns the unit
+      // direction manual input would otherwise supply, or null once the
+      // path is exhausted (also clearing playerAutoWalk itself).
+      function advancePlayerAutoWalk() {
+        if (!playerAutoWalk) return null;
+        const wp = playerAutoWalk.path[0];
+        if (!wp) { playerAutoWalk = null; return null; }
+        const wx = (wp.col + 0.5) * TILE, wy = (wp.row + 0.5) * TILE;
+        const dx = wx - player.x, dy = wy - player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= PLAYER_AUTOWALK_ARRIVE_PX) {
+          playerAutoWalk.path.shift();
+          if (!playerAutoWalk.path.length) {
+            showToast(`Arrived at ${playerAutoWalk.label}.`, true);
+            playerAutoWalk = null;
+            return null;
+          }
+          return advancePlayerAutoWalk();
+        }
+        return { x: dx / dist, y: dy / dist };
+      }
+
+      // Populates the Map tab's "Nearby" list — see nearbyNpcGatheringPoints/
+      // startWalkToNpc above. Called on entering the Map tab; the list is a
+      // one-shot snapshot rather than live-updating while the panel sits
+      // open, same as the rest of the menu's tab-switch-triggered renders.
+      function renderNpcGatheringPanel() {
+        const listEl = document.getElementById('wmapGatheringList');
+        if (!listEl) return;
+        const entries = nearbyNpcGatheringPoints();
+        if (!entries.length) {
+          listEl.innerHTML = '<div class="wmap-gathering-empty">No one nearby right now.</div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        for (const entry of entries) {
+          const row = document.createElement('div');
+          row.className = 'wmap-gathering-row';
+          const info = document.createElement('div');
+          info.className = 'wmap-gathering-info';
+          const name = document.createElement('div');
+          name.className = 'wmap-gathering-name';
+          name.textContent = entry.name;
+          info.appendChild(name);
+          if (entry.activity) {
+            const activity = document.createElement('div');
+            activity.className = 'wmap-gathering-activity';
+            activity.textContent = entry.activity;
+            info.appendChild(activity);
+          }
+          row.appendChild(info);
+          const goBtn = document.createElement('button');
+          goBtn.type = 'button';
+          goBtn.className = 'wmap-gathering-go';
+          goBtn.textContent = 'Go';
+          goBtn.addEventListener('click', () => { startWalkToNpc(entry.id); closeMenu(); });
+          row.appendChild(goBtn);
+          listEl.appendChild(row);
+        }
+      }
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
       const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
       const SEATED_HEAD_MAX_YAW_DEG = 70; // realistic head-turn-without-body-turning range; look straight ahead past this instead of holding at the clamp (see updateSitInteraction)
@@ -6702,7 +6818,9 @@
       let worldTownTransitions = [];   // town: same shape
       let worldRoutes          = [];   // shared routes: { id, label, area, nodes: [[c,r],...] }
       let worldTownRoutes      = [];   // town shared routes
-      const npcStationsById    = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec }
+      // npcStationsById (stationId → { id, label, area, c, r, rotY, pose,
+      // toolKey, toolIntervalSec, ... }) now lives in js/npc-scheduling.js —
+      // aliased back near spawnScheduledNpcs below.
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
@@ -7827,9 +7945,6 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
       }
       function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
-      function normalizeStationLabel(label) {
-        return String(label || '').trim().toLowerCase();
-      }
       function isGeneralStoreNpcOnDuty(walker) {
         const cfg = generalStoreButtonConfig();
         const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
@@ -7881,6 +7996,13 @@
           allowed: true,
         };
       }
+
+      // INSTRUMENT_NPC_DEFS, isNpcOnDutyAtStation, listInstrumentPerformers,
+      // and window.__farmDebugTools now live in js/npc-scheduling.js —
+      // aliased back to these same names below, right after
+      // window.NpcScheduling.init(...) (see the NPC scheduling module init
+      // block further down, near spawnScheduledNpcs) so every existing call
+      // site here keeps working unchanged.
 
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
@@ -8101,39 +8223,14 @@
         return path;
       }
 
-      function isNpcTileWalkable(area, c, r) {
-        const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
-        const tile = g[r]?.[c];
-        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
-        if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
-        if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
-        if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
-        if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
-        if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
-        return true;
-      }
+      // isNpcTileWalkable and canNpcBeeline now live in js/npc-pathfinding.js
+      // — aliased back below (see the NpcPathfinding init block further
+      // down, right after the functions they depend on are all defined) so
+      // every call site above and below keeps working unchanged.
 
-      function canNpcBeeline(area, fromX, fromZ, targetC, targetR, allowOccupiedTarget = false) {
-        const tx = targetC + 0.5, tz = targetR + 0.5;
-        const dist = Math.hypot(tx - fromX, tz - fromZ);
-        const step = npcMovementConfig().beelineSampleStepTiles ?? 0.25;
-        const samples = Math.max(1, Math.ceil(dist / step));
-        for (let i = 0; i <= samples; i++) {
-          const t = i / samples;
-          const c = Math.floor(fromX + (tx - fromX) * t);
-          const r = Math.floor(fromZ + (tz - fromZ) * t);
-          if (!isNpcTileWalkable(area, c, r) && !(allowOccupiedTarget && c === targetC && r === targetR)) return false;
-        }
-        return true;
-      }
-
-      function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
-      function currentGameMinutes() { return Math.round(window.CalendarSystem.getHour() * 60); }
-      function isNowWithinNpcRuleWindow(now, start, end) {
-        if (start === null || end === null) return false;
-        if (start <= end) return now >= start && now < end;
-        return now >= start || now < end;
-      }
+      // parseNpcTimeMinutes/currentGameMinutes/isNowWithinNpcRuleWindow now
+      // live in js/npc-scheduling.js (schedule-rule time-window matching);
+      // normalizeNpcArea stays here since it's used well beyond scheduling.
       function normalizeNpcArea(area) {
         if (!area) return 'farm';
         if (area === 'interior') return 'interior';
@@ -8143,52 +8240,11 @@
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
-      function normalizeNpcStation(station, fallbackArea) {
-        if (!station || !station.id) return null;
-        const c = station.c ?? station.col;
-        const r = station.r ?? station.row;
-        if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
-        return {
-          id: station.id,
-          label: station.label || station.id,
-          area: normalizeNpcArea(station.area || station.mapId || fallbackArea || 'farm'),
-          c, r,
-          rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
-          pose: station.pose || 'stand',
-          furnitureKey: station.furnitureKey
-            || getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
-            || (DECORATIVE_FURNITURE_DEFS[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
-          seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
-          toolKey: station.toolKey || '',
-          toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
-          toolAnimStyle: station.toolAnimStyle || '',
-          // Multi-tile wander footprint around this station's root tile —
-          // see makeNpcWalker's _updateStationWander/_pickStationWanderTile.
-          // wanderMode 'radius' (default) samples a random offset within
-          // wanderRadiusTiles of (c,r); 'shape' instead picks uniformly
-          // among the hand-painted wanderShapeTiles (each a [dc,dr] offset
-          // from (c,r), authored in the Map Editor's station paint tool) —
-          // lets an author cover an irregular region a circle can't express
-          // (an L-shaped yard, a field that hugs a path, etc). Neither set
-          // (radius 0, empty shape) keeps today's behavior: an NPC freezes
-          // exactly at (c,r).
-          wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
-          wanderMode: station.wanderMode === 'shape' ? 'shape' : 'radius',
-          wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
-            ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
-            : [],
-        };
-      }
-      function registerNpcStations(stations, fallbackArea) {
-        (stations || []).forEach(st => {
-          const normalized = normalizeNpcStation(st, fallbackArea);
-          if (normalized) npcStationsById.set(normalized.id, normalized);
-        });
-      }
-      function resolveNpcStationTarget(stationId) {
-        const station = npcStationsById.get(stationId);
-        return station ? { ...station, stationId: station.id } : null;
-      }
+      // normalizeNpcStation/registerNpcStations/resolveNpcStationTarget and
+      // the npcStationsById registry they operate on now live in js/npc-
+      // scheduling.js — aliased back below (see the NpcScheduling init block
+      // near spawnScheduledNpcs) so registerNpcStations/npcStationsById here
+      // keep working exactly as before.
 
       // Chairs auto-register as NPC scheduling stations wherever they're
       // placed — no map author has to hand-add an npcStations entry for
@@ -8238,22 +8294,8 @@
         return target;
       }
 
-      const _scheduleFallbackLogKeys = new Set();
-      function logScheduleFallbackOnce(rec, kind, area, c, r) {
-        const minuteBucket = Math.floor(currentGameMinutes() / 10);
-        const key = [rec?.id || 'npc', kind, currentArea, area, c, r, minuteBucket].join('|');
-        if (_scheduleFallbackLogKeys.has(key)) return;
-        _scheduleFallbackLogKeys.add(key);
-        window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
-      }
-
-      // A rule may restrict itself to one or more weekdays via "day" (single
-      // name) or "days" (array); rules with neither run every day, same as before.
-      function isNpcRuleActiveOnDay(rule) {
-        if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
-        if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
-        return true;
-      }
+      // _scheduleFallbackLogKeys, logScheduleFallbackOnce, and isNpcRuleActiveOnDay
+      // now live in js/npc-scheduling.js alongside resolveNpcScheduleTarget below.
 
       // Village-wide shared schedule overrides (e.g. Temple Service, Anan
       // 9-11am): any NPC tagged `appliesToTag`, without a rule of their own
@@ -8265,75 +8307,8 @@
       // spawnScheduledNpcs() below. Used to be hardcoded Temple-Service-only
       // constants here; kept generic so any future event just needs data.
       let npcSharedSchedules = [];
-      function hashNpcIdToIndex(id, mod) {
-        let h = 0;
-        const s = String(id || '');
-        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-        return Math.abs(h) % mod;
-      }
-
-      function resolveNpcScheduleTarget(rec) {
-        const hooks = rec?.scheduleHooks || {};
-        const now = currentGameMinutes();
-        for (const rule of hooks.rules || []) {
-          if (rule.contentIncomplete) continue; // flagged by the Schedule Editor / migration — not a real target yet
-          if (!isNpcRuleActiveOnDay(rule)) continue;
-          const start = parseNpcTimeMinutes(rule.start ?? rule.from);
-          const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
-          const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
-          if (ruleActive && rule.stationId) {
-            const stationTarget = resolveNpcStationTarget(rule.stationId);
-            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
-            // The station's building scene may simply not have been visited/loaded
-            // yet this session (its npcStations only register once it loads) —
-            // warm it up so the lookup succeeds on a later tick, and throttle the
-            // warning instead of spamming it every tick until that load completes.
-            const missingArea = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-            if (_isBuildingArea(missingArea) && !_buildingScenes.has(missingArea)) loadBuildingScene(missingArea);
-            const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
-            if (!_scheduleFallbackLogKeys.has(warnKey)) {
-              _scheduleFallbackLogKeys.add(warnKey);
-              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
-            }
-          }
-          const c = rule.c ?? rule.position?.c;
-          const r = rule.r ?? rule.position?.r;
-          const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-          if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
-            return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
-        }
-        for (const shared of npcSharedSchedules) {
-          if (!shared || shared.contentIncomplete) continue;
-          const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
-          if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
-          if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
-          if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
-          if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
-          const ids = shared.stationIds || [];
-          if (!ids.length) continue;
-          const target = resolveNpcStationTarget(ids[hashNpcIdToIndex(rec?.id, ids.length)]);
-          if (target) return { ...target, activity: shared.label || shared.id || 'Shared Event' };
-        }
-        if (hooks.defaultStationId) {
-          const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
-          if (stationTarget) return stationTarget;
-          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
-        }
-        // contentIncomplete NPCs (flagged by the migration/Schedule Editor —
-        // e.g. a defaultPosition that was only ever a {0,0} placeholder)
-        // skip the raw-position fallback entirely rather than spawn at a
-        // made-up tile; they fall through to "no target" below, which
-        // spawnScheduledNpcs()/​_retrySpawnDeferredNpcs() already treat as
-        // "defer and retry" instead of a visible glitch.
-        if (!hooks.contentIncomplete && hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
-          const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
-          logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
-          return { ...hooks.defaultPosition, area: defArea };
-        }
-        const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
-        return null;
-      }
+      // hashNpcIdToIndex and resolveNpcScheduleTarget now live in
+      // js/npc-scheduling.js — aliased back below near spawnScheduledNpcs.
 
       // Pool of transition spots that live "in" the given area, in the same
       // shape checkTransitionSpots() uses for the player.
@@ -8343,59 +8318,8 @@
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
-      // One-hop links reachable directly from `area`, in the shape
-      // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
-      // findNpcAreaLink() searches below. Mirrors the exact matching rules the
-      // single-hop version of this code used to use, so existing direct links
-      // (town↔building, building→town, farm↔interior) behave identically.
-      function areaLinksFrom(area) {
-        const pool = npcTransitionPool(area);
-        const links = [];
-        for (const t of pool) {
-          if (t.target === 'building' && t.targetMapId) {
-            if (!_buildingScenes.has(t.targetMapId)) loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
-            const bi = _buildingScenes.get(t.targetMapId);
-            const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
-              : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
-            links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
-          } else if (t.target === 'exit_building') {
-            const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === area);
-            const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
-            links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
-          } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
-            links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
-          }
-        }
-        return links;
-      }
-
-      // Resolves the door an NPC should walk to in order to leave `fromArea`
-      // toward `toArea`, plus the spot they should appear at once they arrive —
-      // i.e. the Spot doubles as both the movement target on the way out and
-      // the spawn point on the way in, so NPCs are never warped straight to
-      // their final schedule target through a wall. `toArea` may be several
-      // hops away (e.g. town → a building's ground floor → one of its
-      // upstairs rooms) — this does a short BFS over the area graph and
-      // returns only the *first* hop; the caller re-resolves on arrival,
-      // which naturally chains the walk leg by leg instead of skipping
-      // straight to the final room.
-      function findNpcAreaLink(fromArea, toArea) {
-        if (fromArea === toArea) return null;
-        const visited = new Set([fromArea]);
-        const queue = [{ area: fromArea, firstHop: null }];
-        while (queue.length) {
-          const { area, firstHop } = queue.shift();
-          for (const link of areaLinksFrom(area)) {
-            const hop = firstHop || link;
-            if (link.toArea === toArea) return hop;
-            if (!visited.has(link.toArea)) {
-              visited.add(link.toArea);
-              queue.push({ area: link.toArea, firstHop: hop });
-            }
-          }
-        }
-        return null;
-      }
+      // areaLinksFrom/findNpcAreaLink now live in js/npc-pathfinding.js —
+      // aliased back below alongside isNpcTileWalkable/canNpcBeeline.
 
       async function spawnScheduledNpcs(extraRecords) {
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
@@ -8463,6 +8387,67 @@
           else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
         }, 1000);
       }
+
+      // NPC scheduling (resolveNpcScheduleTarget, the station registry, and
+      // the on-duty check ambient performances poll) lives in
+      // js/npc-scheduling.js — aliased back to these same names so every
+      // call site above and below keeps working unchanged.
+      window.NpcScheduling.init({
+        npcWalkers,
+        calendar,
+        getCurrentArea: () => currentArea,
+        getWorldNpcPaths: () => worldNpcPaths,
+        getSharedSchedules: () => npcSharedSchedules,
+        isBuildingArea: _isBuildingArea,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        normalizeNpcArea,
+        getDecorativeFurnitureKeyByItemKey,
+        decorativeFurnitureDefs: DECORATIVE_FURNITURE_DEFS,
+      });
+      const {
+        registerNpcStations,
+        resolveNpcStationTarget,
+        resolveNpcScheduleTarget,
+        isNpcOnDutyAtStation,
+        listInstrumentPerformers,
+        normalizeStationLabel,
+      } = window.NpcScheduling;
+      const npcStationsById = window.NpcScheduling.stationsById;
+
+      // NPC walkability/beeline checks and area-graph search (isNpcTileWalkable,
+      // canNpcBeeline, areaLinksFrom, findNpcAreaLink) live in
+      // js/npc-pathfinding.js — aliased back to these same names so every
+      // call site above and below keeps working unchanged.
+      window.NpcPathfinding.init({
+        getGrid: () => grid,
+        getTownGrid: () => townGrid,
+        // interiorGrid is a plain const (never reassigned) but is declared
+        // further down in this same closure — referencing it directly here
+        // would hit the const/let temporal dead zone (unlike the function
+        // declarations below, which are hoisted regardless of position).
+        getInteriorGrid: () => interiorGrid,
+        TileType,
+        worldObjects,
+        isSolid,
+        isHouseFootprint,
+        isTownBuildingCollisionTile,
+        isZoneArea: _isZoneArea,
+        isBuildingArea: _isBuildingArea,
+        furnitureBlocksMovementAt,
+        npcGridForArea,
+        npcMovementConfig,
+        npcTransitionPool,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        buildingSpawnFromExit,
+      });
+      const {
+        isNpcTileWalkable,
+        canNpcBeeline,
+        areaLinksFrom,
+        findNpcAreaLink,
+      } = window.NpcPathfinding;
 
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
@@ -8659,7 +8644,7 @@
               if (!this._tryStartGridPath(target)) { this.state = 'idle'; return; }
             }
             const nextHop = this._gridPath[0];
-            if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) this._gridPath.shift();
+            if (this.moveToward(nextHop.col + 0.5, nextHop.row + 0.5, dt)) this._gridPath.shift();
             if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
           },
           // Station wander — active once state === 'station-wander' (entered
@@ -8717,7 +8702,7 @@
             }
             if (this._wanderGridPath && this._wanderGridPath.length) {
               const hop = this._wanderGridPath[0];
-              if (this.moveToward(hop.c + 0.5, hop.r + 0.5, dt)) this._wanderGridPath.shift();
+              if (this.moveToward(hop.col + 0.5, hop.row + 0.5, dt)) this._wanderGridPath.shift();
               return;
             }
             if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
@@ -8782,7 +8767,17 @@
               footprintHalfDepth: seatTransform.footprintHalfDepth,
               anchorZ: seatTransform.anchorZ,
             } : undefined;
-            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false, seatedPose);
+            // Procedural leg IK is real per-frame cost (stride/lift solving
+            // for both legs) that's purely visual — pointless work for an
+            // NPC nobody can see because they're not in the player's
+            // current area. Suppressed mode (the same one drink-interaction
+            // locks use) just holds a neutral resting pose instead of
+            // solving a gait, at a fraction of the cost. Every walker still
+            // updates every frame regardless of area (see updateNpcWalkers)
+            // so schedules/arrivals stay correct — only the parts nobody
+            // can see get cheaper.
+            const isVisibleArea = this.area === currentArea;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose);
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
               window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
@@ -8822,7 +8817,19 @@
               return;
             }
             this._exitSpot = null;
-            const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
+            // Station wander takes over completely once entered (see below) and
+            // returns early every tick from then on — it never reaches the
+            // toolKey-equip block or the state:'idle' this sets, both further
+            // down. That's invisible for a plain wander-while-working station
+            // (no toolKey to equip, nothing reads its 'idle' state), but for a
+            // toolKey station it means the NPC can wander right past ever
+            // picking up their tool, and isNpcOnDutyAtStation (which requires
+            // state==='idle') never sees them as on duty either — exactly what
+            // happened to Foroji's inn station, the only one with a wander
+            // radius set: he'd circle near the stage, kurraya never in hand, no
+            // ambient music. A performer needs to actually stay at their
+            // instrument to play it, so toolKey stations opt out of wandering.
+            const wanderEnabled = !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
             // once entered, instead of the plain freeze-at-the-exact-tile
@@ -8839,14 +8846,25 @@
               this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
             }
             if (this.state === 'station-wander') {
-              this._updateStationWander(target, dt);
-              const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-              root.position.y += (wty - root.position.y) * 0.2;
-              if (this._moveSpeedTiles > 0.05) {
-                const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
-                root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              // _updateStationWander is real per-frame cost when it's not
+              // just idly waiting — picking a random tile, a canNpcBeeline
+              // scan, and potentially a full TilePathfinding.findPath — for
+              // an NPC nobody can see because they're not in the player's
+              // current area. Wandering itself is pure flavor with no
+              // gameplay consequence off-screen, so an invisible NPC just
+              // holds its current spot instead of paying for it; the next
+              // tick after the player actually visits resumes wandering
+              // normally from wherever it was left.
+              if (isVisibleArea) {
+                this._updateStationWander(target, dt);
+                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                root.position.y += (wty - root.position.y) * 0.2;
+                if (this._moveSpeedTiles > 0.05) {
+                  const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                  root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+                }
+                groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               }
-              groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
@@ -8864,13 +8882,41 @@
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
+                const isKurraya = target.toolKey === 'kurraya';
                 if (this.stationToolKey !== target.toolKey) {
                   if (this.stationToolMesh) root.remove(this.stationToolMesh);
-                  this.stationToolMesh = makeToolPlaneMesh(target.toolKey);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
                   if (this.stationToolMesh) root.add(this.stationToolMesh);
                 }
-                if (this.stationToolMesh) {
+                if (this.stationToolMesh && isKurraya) {
+                  // Same held-still-until-a-note-sounds treatment as the
+                  // player's own Kurraya (see updateHeldItemHolder) — driven
+                  // externally by triggerNpcKurrayaTwitch on each real
+                  // 'sounded-note' from this NPC's ambient performance iframe,
+                  // not a canned swing loop.
+                  //
+                  // Position/scale mirror the player's own updateHeldItemHolder
+                  // isKurraya branch exactly — that's the one place in this
+                  // codebase with an already-proven-right Kurraya pose (cradled
+                  // across the chest at its authored rest tilt; the assembly
+                  // itself carries that tilt). An earlier version of this code
+                  // used the raw per-species hand-attach point directly instead,
+                  // on the theory that an actively-performing pose should sit
+                  // further out than the player's carry pose — but the player
+                  // uses this exact cradled formula whether just carrying the
+                  // Kurraya or actively playing it; there's no separate
+                  // "performing" pose anywhere else in this codebase to diverge
+                  // toward, and that version was also missing the player's 0.85
+                  // scale-down, which alone would render the NPC's copy visibly
+                  // larger than the player's own.
+                  const handX = avatarGroup.userData?.handAttachX ?? -(avatarGroup.userData?.portraitModelWidth || avatarHeight) / 2;
+                  const handY = avatarGroup.userData?.handAttachY ?? avatarHeight / 2;
+                  this.stationToolMesh.position.set(handX * 0.4, handY + 0.14, HELD_ITEM_FORWARD_OFFSET);
+                  this.stationToolMesh.scale.setScalar(0.85);
+                  updateKurrayaTwitch(this.stationKurrayaTwitch, this.stationToolMesh);
+                } else if (this.stationToolMesh) {
                   // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
                   // entirely in root-local space: the mesh is a child of `root`, so root's
                   // own rotation.y already carries this NPC's facing — using the fixed
@@ -8896,12 +8942,12 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = '';
+                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; }
+            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
             if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
@@ -11106,6 +11152,11 @@
         blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: 10, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
         greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: 9, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        // isInstrument gates the held-item "Play" action button (see
+        // computeActionButtons' item-context section) — held it opens the
+        // music minigame instead of any tool-slot behavior, so this is
+        // deliberately not also a TOOL_ITEM_DEFS entry.
+        kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Hold it and play — solo, or fall in behind whoever's already playing nearby." },
         pineLog:      { icon: '🪵', label: 'Pine Log',      cat: 'material', sellPrice: 6,  tags: ['Material', 'Wood', 'Northern Cliffs'],   desc: "A rough-cut log felled from a Northern Cliffs crowned pine. Good building timber." },
         shadewoodLog: { icon: '🪵', label: 'Shadewood Log', cat: 'material', sellPrice: 9,  tags: ['Material', 'Wood', 'Cloud Forest'],       desc: 'A dense, dark log felled from a Southern Cloud Forest shadewood tree. Prized building timber.' },
         stone:  { icon: '🪨', label: 'Stone',  cat: 'material', sellPrice: 5, tags: ['Material', 'Stone'], desc: 'Rough building stone broken from an ore rock with a pick. A carpenter can build with it.' },
@@ -12318,6 +12369,17 @@
       }
 
       function updateMovement(dt) {
+        // Every mode below that takes over movement/input outright (dialogue,
+        // fishing, the music minigame, sitting, mounted, prone...) should
+        // drop a walk-to-NPC in progress rather than silently resuming it
+        // once that mode ends somewhere the player never chose to walk to.
+        if (playerAutoWalk && (
+          window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement') ||
+          window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || dialogueOpen ||
+          window.FarmAnimals.isHarvesting() || sitInteraction ||
+          window.Fishing?.state?.active || window.MusicMinigame?.state?.active ||
+          window.Mounts?.rideState === 'mounted' || player.prone
+        )) playerAutoWalk = null;
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'movement')) {
           input.x = 0; input.y = 0;
           player.vx = 0; player.vy = 0;
@@ -12351,6 +12413,7 @@
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
+        if (window.MusicMinigame?.state?.active) return;
         if (window.Mounts?.rideState === 'mounted') { window.Mounts.updateMountedMovement(dt); return; }
         // Zero-Footing ragdoll/prone — see enterProneIfFootingDepleted above
         // and performDodge below (the somersault-recovery trigger). Covers
@@ -12463,6 +12526,16 @@
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
         let iy = usingKeyboard ? keyboardVector.y : input.y;
+
+        if (playerAutoWalk) {
+          if (usingKeyboard || Math.hypot(ix, iy) > 0.15) {
+            playerAutoWalk = null; // Any real movement input takes back manual control.
+          } else {
+            const auto = advancePlayerAutoWalk();
+            if (auto) { ix = auto.x; iy = auto.y; }
+          }
+        }
+
         let inputLen = Math.hypot(ix, iy);
 
         // Keyboard is digital, joystick is analog. Normalize keyboard to full speed,
@@ -13714,6 +13787,10 @@
           const result = window.CookingSystem.eat(held?.key);
           showToast(result.message, result.ok !== false);
           refreshActionBar();
+          return;
+        }
+        if (activeAction === 'play_instrument') {
+          window.MusicMinigame?.beginPlayerSession();
           return;
         }
         if (activeAction === 'npc_offer_alcohol_swig') {
@@ -17085,6 +17162,26 @@
         return g;
       }
 
+      // ── Kurraya hold assembly + reactive twitch ─────────────────────
+      // Lives in js/kurraya-instrument.js (window.KurrayaInstrument) —
+      // ported directly from the reference mockup's authored two-plane
+      // "avatarEquipmentAuthoring.kurraya" fit rather than approximated
+      // here. Thin local aliases below so call sites (updateHeldItemHolder,
+      // the NPC station prop, and the 'sounded-note' relay in
+      // js/music-minigame.js) read the same as before the split.
+      window.KurrayaInstrument?.init({
+        THREE,
+        toolTextures,
+        TOOL_MODEL_WIDTH,
+        toolTexLoader: _toolTexLoader,
+        heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
+        getKurrayaDef: () => TOOL_ITEM_DEFS.kurraya,
+      });
+      const buildKurrayaAssembly = (...a) => window.KurrayaInstrument?.buildAssembly(...a) ?? null;
+      const newKurrayaTwitchState = (...a) => window.KurrayaInstrument?.newTwitchState(...a);
+      const triggerKurrayaTwitch = (...a) => window.KurrayaInstrument?.triggerTwitch(...a);
+      const updateKurrayaTwitch = (...a) => window.KurrayaInstrument?.updateTwitch(...a);
+
       // Build/rebuild the toolMeshMap from currently equipped items
       const toolMeshMap = {};
       function rebuildToolMeshes() {
@@ -17195,6 +17292,12 @@
         plane.geometry?.dispose?.();
         plane.material?.dispose?.();
         ownedTexture?.dispose?.();
+        // makeToolPlaneMesh (used for the Kurraya — see updateHeldItemHolder)
+        // returns a Group whose own geometry/material own live on its child
+        // plane instead; that child's texture is the shared, cached
+        // toolTextures entry and must NOT be disposed here.
+        plane.userData.toolPlane?.geometry?.dispose?.();
+        plane.userData.toolPlane?.material?.dispose?.();
       }
 
       function usesThrustHeldPose(item) {
@@ -17219,6 +17322,7 @@
       let _heldItemPlane = null, _heldItemKey = null;
       // Countdown used by updateHeldItemHolder to retain and animate a consumed bottle.
       let _heldDrinkAnimT = 0;
+      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
       // Full duration used to normalize the drink countdown into animation progress.
       let _heldDrinkAnimDuration = 0;
 
@@ -17323,14 +17427,34 @@
           return;
         }
         if (!item) { heldItemHolder.visible = false; return; }
+        const isKurraya = item.key === 'kurraya';
         if (item.key !== _heldItemKey) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
-          _heldItemPlane = makeHeldItemPlaneMesh(item);
+          // The Kurraya's real art lives at assets/toolsprites (the same
+          // sprite/texture Foroji's NPC station prop uses — see
+          // TOOL_ITEM_DEFS.kurraya) rather than assets/objectsprites, and
+          // it's a finished painted asset, not a dye-tintable template —
+          // makeHeldItemPlaneMesh's spriteIcon path assumes the latter
+          // (recolors through window.SpriteRecolor). Uses the authored
+          // crossed front+top plane assembly (see buildKurrayaAssembly)
+          // instead of a single flat billboard.
+          _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
+          _playerKurrayaTwitch = newKurrayaTwitchState();
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
-          window.__farmLog?.(`[held-item] ${item.key}: pose=${usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${ITEM_DEFS[item.key]?.spriteIcon || 'emoji'}`);
+          window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
-        if (usesThrustHeldPose(item)) {
+        if (isKurraya) {
+          // Cradled across the chest at its authored rest tilt (see
+          // buildKurrayaAssembly) — the assembly itself carries that tilt
+          // and any note-reactive twitch (see triggerPlayerKurrayaTwitch,
+          // called from js/music-minigame.js on each 'sounded-note'
+          // relay); only position/scale belong to the outer holder.
+          heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
+          heldItemHolder.rotation.set(0, 0, 0);
+          heldItemHolder.scale.setScalar(0.85);
+          updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
           // Potion/alcohol sprites stay on the same hand pivot, but render
@@ -19400,11 +19524,13 @@
         }
 
         if (window.Fishing?.state?.active) window.Fishing.update(dt);
+        window.MusicMinigame?.tick(dt);
 
         window.Music?.updateRainAudio();
         window.Music?.updateExteriorBgs();
         window.Music?.updateFurnitureSfxSources();
         window.Music?.updateAmbientCues();
+        window.Music?.updateLyreDucking();
         window.Music?.logAudioTickDiagnostics();
 
         if (!paused) {
@@ -20553,6 +20679,10 @@
             { icon: '🏳️', label: 'Give up', action: 'fish_cancel', style: 'secondary', allowed: true },
           ];
         }
+        // Music minigame overlay has its own full-screen controls (see
+        // js/music-minigame.js) and the close button lives in the overlay
+        // itself — no action-bar buttons underneath it.
+        if (window.MusicMinigame?.state?.active) return [];
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
         if (nearbyNpcWalker && !farmEditMode) {
           const btns = [npcDialogueButton()];
@@ -20625,6 +20755,21 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          // Building interiors return early above and never reach the
+          // farm/zone/town item-context block further down (it also relies
+          // on a reticle/tile pair this branch never computes) — without
+          // this, held-item actions like eating or playing a Kurraya
+          // silently had no button anywhere indoors, not just in the inn.
+          // Mirrors the same three checks in that block, in the same
+          // priority order; the plant/seed part below them doesn't apply
+          // indoors so isn't duplicated here.
+          if (heldMode === 'item') {
+            const heldItem = getActiveInventoryItem();
+            const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
+            if (consumeAction) return [consumeAction];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
+          }
           return [];
         }
 
@@ -20685,6 +20830,7 @@
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
+        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
         const item = getActiveInventoryItem();
@@ -20793,7 +20939,7 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${actionButtonKey}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -20804,7 +20950,7 @@
         if (!needsRebuild) return;
 
         // Split tool actions from item-owned consume/plant/place/harvest actions.
-        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action.startsWith('plant_')
+        const isItemButton = b => b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('plant_')
           || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
         const toolBtns = btns.filter(b => !isItemButton(b));
         const itemBtns = btns.filter(isItemButton);
@@ -21738,7 +21884,7 @@
         // Interact is reserved for world targets such as doors, NPCs, and
         // furniture. Tool swings and every held-item action use action slots.
         const toolSet = new Set(Object.values(toolActions).flat());
-        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item'
+        const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
@@ -21885,6 +22031,9 @@
         saveInputBindings,
       });
       window.InputSettingsPanel.render();
+      window.MusicMinigame?.renderNoteKeySettings();
+      window.MusicMinigame?.renderPatternLoadoutSettings();
+      window.MusicMinigame?.renderFreeplayKeySettings();
 
       window.addEventListener('keydown', (event) => {
         const key = event.key.toLowerCase();
@@ -21897,7 +22046,19 @@
           }
           return;
         }
-        if (key === 'escape') { event.preventDefault(); if (dialogueOpen) { closeNpcDialogue(); return; } menuOpen ? closeMenu() : openMenu(); return; }
+        if (key === 'escape') {
+          event.preventDefault();
+          // Normally unreachable — the overlay's iframe holds focus and
+          // handles Escape itself (see requestExitOrPause in
+          // lyre-performance.html, which asks js/music-minigame.js to
+          // close()) — but if focus ever lands back on the host page while
+          // the overlay is still open, this is the same fallback Fishing
+          // uses above rather than opening the menu underneath it.
+          if (window.MusicMinigame?.state?.active) { window.MusicMinigame.close(); return; }
+          if (dialogueOpen) { closeNpcDialogue(); return; }
+          menuOpen ? closeMenu() : openMenu();
+          return;
+        }
         // M: wilderness map — closes if already open on the map tab (mirrors
         // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
         if (key === 'm') {
@@ -22347,6 +22508,9 @@
         actionButtons: () => computeActionButtons(),
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
+        npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
+        npcGridTileAt: (area, c, r) => { const g = npcGridForArea(area); return g?.[r]?.[c] || null; },
+        farmGridTileAt: (c, r) => grid?.[r]?.[c] || null,
         placeProcessing: placeProcessingFurniture,
         moveProcessing: moveProcessingFurniture,
         rotateProcessing: rotateProcessingFurniture,
@@ -22666,6 +22830,72 @@
         setToolSwingT: (v) => { toolSwingT = v; },
         setStrikeFired: (v) => { strikeFired = v; },
         setFishThrowActive: (v) => { fishThrowActive = v; },
+      });
+
+      let _musicPrevCameraMode = null;
+      let _musicPrevCameraTarget = null;
+      // Resolves a random real-recording footstep URL for whatever surface
+      // this NPC is currently standing on — same surface resolution
+      // _tickFootsteps uses for their actual footfalls — turned into an
+      // absolute URL so it still loads correctly from inside the Lyre
+      // minigame's own iframe (a different base path under assets/minigames/).
+      // Used to give an ambient NPC performance's metronome a beat that
+      // matches the ground they're actually playing on instead of a
+      // generic click.
+      function npcFootstepSampleUrl(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId);
+        if (!walker || !window.AudioSystem) return null;
+        const wx = walker.root.position.x * TILE, wy = walker.root.position.z * TILE;
+        const tile = window.AudioSystem.footstepTileAt(walker.area, wx, wy, npcGridForArea(walker.area));
+        const surfaceKey = window.AudioSystem.footstepSurfaceKey(walker.area, tile?.type ?? null);
+        const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls;
+        if (!urls?.length) return null;
+        const url = urls[Math.floor(Math.random() * urls.length)];
+        try { return new URL(url, document.baseURI).href; } catch { return url; }
+      }
+
+      window.MusicMinigame?.init({
+        refreshActionBar,
+        getCurrentArea: () => currentArea,
+        listInstrumentPerformers,
+        getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        showToast,
+        // Frames the performance in third-person (see the "music" camera
+        // mode in scratchbones-config.js) instead of leaving the default
+        // camera in place — matches how fishing/dialogue each get their
+        // own framing. In backup mode the target sits at the midpoint
+        // between the player and whichever NPC they joined, so both stay
+        // in shot; in lead/solo mode it just follows the player as usual.
+        beginMusicCamera: (npcId) => {
+          _musicPrevCameraMode = activeCameraMode;
+          _musicPrevCameraTarget = activeCameraTarget;
+          activeCameraMode = 'music';
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.root) {
+            const midX = (player.x / TILE + walker.root.position.x) / 2;
+            const midZ = (player.y / TILE + walker.root.position.z) / 2;
+            activeCameraTarget = { position: new THREE.Vector3(midX, 0, midZ) };
+          } else {
+            activeCameraTarget = null;
+          }
+        },
+        endMusicCamera: () => {
+          activeCameraMode = _musicPrevCameraMode ?? 'default';
+          activeCameraTarget = _musicPrevCameraTarget ?? null;
+          _musicPrevCameraMode = null;
+          _musicPrevCameraTarget = null;
+        },
+        // Driven by js/music-minigame.js's 'sounded-note' relay from either
+        // the player's overlay iframe or an NPC's ambient performance iframe
+        // — see updateHeldItemHolder (player) and the station-tool block
+        // above (NPC) for what actually owns each twitch state.
+        triggerPlayerKurrayaTwitch: () => {
+          if (_heldItemPlane?.userData.kurrayaAssembly) triggerKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+        },
+        triggerNpcKurrayaTwitch: (npcId) => {
+          const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
+          if (walker?.stationToolMesh?.userData.kurrayaAssembly) triggerKurrayaTwitch(walker.stationKurrayaTwitch, walker.stationToolMesh);
+        },
       });
 
       window.BanditCombat?.init({

@@ -19,7 +19,7 @@
   <script src="config/scratchbones-config.js?v=20260811b"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
-  <link rel="stylesheet" href="style.css?v=20260811c">
+  <link rel="stylesheet" href="style.css?v=20260815a">
   <link rel="stylesheet" href="cooking-ui.css?v=20260811a">
   <!-- Portrait system (ScratchbonesGame) -->
   <script>
@@ -826,6 +826,13 @@
           <span><i style="background:#c084fc"></i> Great Fey shrine</span>
           <span><i style="background:#6ec6f0"></i> Story location</span>
         </div>
+        <!-- Nearby NPCs — walk-to navigation targets, not teleports; only
+             NPCs currently near the player show up here. See
+             nearbyNpcGatheringPoints/startWalkToNpc in game.js. -->
+        <div class="wmap-gathering" id="wmapGatheringPoints">
+          <h3 class="wmap-gathering-title">Nearby</h3>
+          <div class="wmap-gathering-list" id="wmapGatheringList"></div>
+        </div>
       </div><!-- /mpMap -->
 
       <!-- ── Farm pane: the farm's identity/progression hub — name, owner,
@@ -1220,6 +1227,27 @@
             <div class="mode-shift-list" id="modeShiftList"></div>
             <button type="button" class="settings-small-btn" id="addModeShiftBtn">Add Mode Shift</button>
           </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Note Keys</div>
+              <div class="settings-desc">Which key plays each of the Lyre minigame's four melody notes. Click a binding, then press a key.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyreNoteKeyBindings"></div>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Pattern Loadout</div>
+              <div class="settings-desc">Which automatic picking/strumming pattern each Auto Pick direction plays while you hold a melody note.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyrePatternLoadoutSettings"></div>
+          </div>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Lyre Freeplay Key</div>
+              <div class="settings-desc">The root note and scale free play starts in. Changes take effect next time you start playing.</div>
+            </div>
+            <div class="input-bindings-grid" id="lyreFreeplayKeySettings"></div>
+          </div>
           <div class="settings-section-title" style="margin-top:10px">Performance</div>
           <label class="settings-row">
             <div class="settings-label">
@@ -1589,6 +1617,36 @@
   <!-- Spearfishing minigame overlay (built dynamically in game.js) -->
   <div id="fishingOverlay"></div>
 
+  <!-- Music (Lyre) minigame overlay — a self-contained app loaded into an
+       iframe rather than built inline like the fishing ring (see
+       js/music-minigame.js): it's a large pre-built instrument/rhythm
+       system with its own CSS namespace, so an iframe avoids ID/style
+       collisions with the rest of the page. The iframe itself renders
+       transparent with its own native controls hidden (its "hosted-
+       minigame" body class) so the real 3D scene — the player, and
+       whichever NPC they may be playing alongside — stays fully visible
+       underneath; js/music-minigame.js's buildEdgeControls() populates
+       leftMusicControls/rightMusicControls with the actual touch/mouse
+       controls, driving the iframe's engine directly through its exposed
+       HobunjiMusicControlBridge. -->
+  <div id="musicMinigameOverlay">
+    <!-- Three independently-docked pieces, matching how the reference
+         mockup (docs/references/(HA)MusicMinigameV2.html, rendered and
+         measured headlessly rather than guessed from a screenshot) actually
+         composes its own hosted embedding: a tall, narrow note-lane strip
+         (not a modest centered box) with the left-hand bank/pattern panel
+         immediately beside it, and the right-hand note/scale/strum panel
+         anchored separately at the far right edge of the screen — not
+         bundled into one dock. That leaves the whole center-right of the
+         screen clear for the "music" camera framing (player + whichever
+         NPC they're playing with) rather than the frame or its controls
+         sitting on top of it. See style.css for the actual positioning. -->
+    <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
+    <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
+    <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
+    <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
+  </div>
+
   <!-- Fish-catch victory view: camera zooms on the player, who holds the
        caught fish and faces the camera, while this shows the star rating
        and a Continue button — see beginFishCatchView/continueFromFishCatch. -->
@@ -1612,7 +1670,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20260811c"></script>
+  <script src="js/music-system.js?v=20260814a"></script>
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
@@ -1636,6 +1694,22 @@
        own setup. game.js's own tool-swing code reads window.Fishing.state/
        .readyPose directly. -->
   <script src="js/fishing-minigame.js?v=20260811a"></script>
+  <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
+       — must load before game.js, which calls window.KurrayaInstrument.init(...)
+       during its own setup, mirroring window.Fishing above. -->
+  <script src="js/kurraya-instrument.js?v=20260813a"></script>
+  <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
+       load before game.js, which calls window.MusicMinigame.init(...)
+       during its own setup, mirroring window.Fishing above. -->
+  <script src="js/music-minigame.js?v=20260815b"></script>
+  <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
+       checks — window.NpcScheduling) — must load before game.js, which
+       calls window.NpcScheduling.init(...) during its own setup. -->
+  <script src="js/npc-scheduling.js?v=20260815a"></script>
+  <!-- NPC walkability/beeline checks + area-graph pathfinding
+       (window.NpcPathfinding) — must load before game.js, which calls
+       window.NpcPathfinding.init(...) during its own setup. -->
+  <script src="js/npc-pathfinding.js?v=20260815a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
@@ -1673,7 +1747,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260811k"></script>
+  <script src="game.js?v=20260815c"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

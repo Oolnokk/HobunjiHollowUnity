@@ -196,6 +196,14 @@ window.SCRATCHBONES_CONFIG = {
           "followLerp": 0.15,
           "targetYOffsetTiles": 0.9
         },
+        "music": {
+          "distanceTiles": 8.5,
+          "angleFromGroundDeg": 20,
+          "azimuthDeg": 28,
+          "fovDeg": 42,
+          "followLerp": 0.12,
+          "targetYOffsetTiles": 0.55
+        },
         "harvestInteraction": {
           "distanceTiles": 6,
           "angleFromGroundDeg": 16,
