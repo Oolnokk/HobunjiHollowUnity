@@ -8041,6 +8041,78 @@
         return out;
       }
 
+      // ── Dev/test-only scheduling hooks ────────────────────────────────
+      // Lets headless tests (and manual console poking) validate the NPC
+      // station-arrival/perform pipeline — pathfind to a station, go idle,
+      // pick up its toolKey mesh, register as on-duty for
+      // listInstrumentPerformers/ambient audio — in seconds instead of
+      // waiting out TARGET_DAY_LENGTH_SECONDS for a real schedule window to
+      // arrive. Works on any existing NPC and any station (test or
+      // authored), so the same two calls cover any future "does the
+      // scheduling system actually work" question, not just instrument
+      // performance. Always-on, matching window.__farmLog's existing
+      // always-available debug surface — not gated behind a dev-mode flag.
+      window.__farmDebugTools = {
+        // Jumps the calendar directly rather than waiting real time out.
+        jumpTime(day, time01) {
+          if (Number.isFinite(day)) calendar.day = Math.max(1, Math.round(day));
+          if (Number.isFinite(time01)) calendar.time01 = Math.max(0, Math.min(0.999, time01));
+          return { day: calendar.day, time01: calendar.time01, hour: window.CalendarSystem?.getHour?.() };
+        },
+        // Registers an ad-hoc station and pins npcId to it via an
+        // always-active rule prepended to their schedule, overriding
+        // whatever their real schedule currently says. Station/rule ids are
+        // namespaced 'test_' so they're easy to spot and never collide with
+        // authored content. Returns false if the NPC doesn't exist.
+        forceNpcToTestStation(npcId, { area, c, r, toolKey = '', toolIntervalSec = 2.4, toolAnimStyle = '', label = 'Test Station', rotY = 0 } = {}) {
+          const walker = npcWalkers.find(w => w.rec?.id === npcId);
+          if (!walker) return false;
+          const targetArea = area || walker.area;
+          const stationId = `test_station_${npcId}`;
+          registerNpcStations([{ id: stationId, label, area: targetArea, c, r, rotY, pose: 'stand', toolKey, toolIntervalSec, toolAnimStyle }], targetArea);
+          const hooks = walker.rec.scheduleHooks || (walker.rec.scheduleHooks = { rules: [] });
+          hooks.rules = (hooks.rules || []).filter(r => r.id !== `test_rule_${npcId}`);
+          hooks.rules.unshift({ id: `test_rule_${npcId}`, from: '00:00', to: '23:59', mapId: targetArea, stationId, activity: label });
+          return true;
+        },
+        // Undoes forceNpcToTestStation, letting the NPC's real schedule resume.
+        clearNpcTestStation(npcId) {
+          const walker = npcWalkers.find(w => w.rec?.id === npcId);
+          if (!walker?.rec?.scheduleHooks?.rules) return false;
+          walker.rec.scheduleHooks.rules = walker.rec.scheduleHooks.rules.filter(r => r.id !== `test_rule_${npcId}`);
+          npcStationsById.delete(`test_station_${npcId}`);
+          return true;
+        },
+        // Reproduces exactly what local-db-overrides.js's _applyPositionRedirect
+        // does to a rule (registers a real station with metadata, then points a
+        // rule at a raw c/r with sourceStationId set and stationId deleted)
+        // without needing a real schedule-overrides.json entry or waiting for a
+        // matching day/time — for testing resolveNpcScheduleTarget's handling of
+        // that exact shape directly.
+        forceNpcToRedirectedTestStation(npcId, { area, c, r, toolKey = '', toolIntervalSec = 2.4, toolAnimStyle = '', label = 'Redirected Test Station', rotY = 0 } = {}) {
+          const walker = npcWalkers.find(w => w.rec?.id === npcId);
+          if (!walker) return false;
+          const targetArea = area || walker.area;
+          const sourceStationId = `test_source_station_${npcId}`;
+          registerNpcStations([{ id: sourceStationId, label, area: targetArea, c: c + 25, r: r + 25, rotY, pose: 'stand', toolKey, toolIntervalSec, toolAnimStyle }], targetArea);
+          const hooks = walker.rec.scheduleHooks || (walker.rec.scheduleHooks = { rules: [] });
+          hooks.rules = (hooks.rules || []).filter(rule => rule.id !== `test_rule_${npcId}`);
+          hooks.rules.unshift({ id: `test_rule_${npcId}`, from: '00:00', to: '23:59', mapId: targetArea, sourceStationId, c, r, activity: label });
+          return true;
+        },
+        listNpcIds() { return npcWalkers.map(w => w.rec?.id).filter(Boolean); },
+        npcSnapshot(npcId) {
+          const walker = npcWalkers.find(w => w.rec?.id === npcId);
+          if (!walker) return null;
+          return {
+            area: walker.area, state: walker.state,
+            x: walker.root?.position?.x, z: walker.root?.position?.z,
+            stationToolKey: walker.stationToolKey || null,
+            currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
+          };
+        },
+      };
+
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
         return Array.isArray(offsets) && offsets.length ? offsets : [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }];
@@ -8458,8 +8530,24 @@
           const c = rule.c ?? rule.position?.c;
           const r = rule.r ?? rule.position?.r;
           const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-          if (ruleActive && Number.isFinite(c) && Number.isFinite(r))
+          if (ruleActive && Number.isFinite(c) && Number.isFinite(r)) {
+            // A positionRedirect (see local-db-overrides.js's _applyPositionRedirect)
+            // moves a station-backed rule to a raw c/r without rewriting the map file —
+            // it deletes rule.stationId, so this branch runs instead of the stationId
+            // one above, and a bare {area,c,r} target carries none of the original
+            // station's label/toolKey/pose/etc. That's fine for plain wandering rules,
+            // but for a redirected rule it silently drops everything that made the
+            // station meaningful (an NPC still walks to the right tile but never picks
+            // up their toolKey item or matches any label-based on-duty check, e.g.
+            // isNpcOnDutyAtStation/listInstrumentPerformers). The redirect preserves
+            // sourceStationId exactly so it can be re-attached here.
+            const sourceStation = rule.sourceStationId ? npcStationsById.get(rule.sourceStationId) : null;
+            if (sourceStation) {
+              const { id: _id, c: _sc, r: _sr, area: _sarea, ...stationMetadata } = sourceStation;
+              return { ...stationMetadata, area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
+            }
             return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
+          }
         }
         for (const shared of npcSharedSchedules) {
           if (!shared || shared.contentIncomplete) continue;
