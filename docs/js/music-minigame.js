@@ -569,14 +569,17 @@
     // script already tracks them via MutationObserver and posts
     // {type:'status', score, combo, accuracy, feedback, chord} on every
     // change — this just renders that into a host-side readout with real
-    // screen space (top-right, clear of #musicLayoutHud/#musicModeShiftHud).
+    // screen space — a bar along the bottom, ending just left of the
+    // right-hand note buttons (see #musicPerformanceHud in style.css).
     let performanceHud = document.getElementById('musicPerformanceHud');
     if (!performanceHud) {
       performanceHud = document.createElement('section');
       performanceHud.id = 'musicPerformanceHud';
       performanceHud.innerHTML = `
-        <div class="perfHudRow perfHudScore"><span>Score</span><strong data-perf="score">0</strong></div>
-        <div class="perfHudRow perfHudCombo"><span>Combo</span><strong data-perf="combo">0</strong><span data-perf="accuracy" class="perfHudAccuracy"></span></div>
+        <div class="perfHudMainRow">
+          <div class="perfHudRow perfHudScore"><span>Score</span><strong data-perf="score">0</strong></div>
+          <div class="perfHudRow perfHudCombo"><span>Combo</span><strong data-perf="combo">0</strong><span data-perf="accuracy" class="perfHudAccuracy"></span></div>
+        </div>
         <div class="perfHudChord" data-perf="chord"></div>
         <div class="perfHudFeedback" data-perf="feedback"></div>`;
       document.body.appendChild(performanceHud);
@@ -801,7 +804,24 @@
         targetWindow.removeEventListener('blur', previous.blur);
       }
       const keydown = event => {
-        if (activeInputLayout !== 'keyboard' || event.repeat || event.target?.matches?.('input,select,textarea')) return;
+        if (activeInputLayout !== 'keyboard' || event.target?.matches?.('input,select,textarea')) return;
+        if (event.repeat) {
+          // A physically held key fires a continuous stream of OS auto-repeat
+          // keydowns (dozens/sec) for as long as it stays down — unlike a
+          // mouse/touch hold, which fires nothing further after the initial
+          // press. Only the very first (non-repeat) keydown should ever
+          // re-trigger noteDown/bankDown below, but a repeat for a key we're
+          // already holding as a Lyre note/bank still needs to be fully
+          // consumed here (preventDefault + stopImmediatePropagation) rather
+          // than silently falling through to every other keydown listener on
+          // the page — otherwise the game's own input handling reprocesses
+          // that same repeat stream for the entire hold, adding continuous
+          // background work exactly correlated with holding a note that a
+          // mouse/touch hold never causes. Keys we're not tracking (e.g. an
+          // unrelated key repeating while typing) pass through untouched.
+          if (hostedKeyboardSources.has(event.code)) { event.preventDefault(); event.stopImmediatePropagation?.(); }
+          return;
+        }
         const autoPickSector = autoPickSectorByArrow[event.code];
         if (event.shiftKey && Number.isInteger(autoPickSector)) {
           event.preventDefault();

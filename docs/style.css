@@ -2976,24 +2976,28 @@
     .modeHudChip small { display: none; }
     .modeHudChip.active { box-shadow: 0 0 18px color-mix(in srgb, var(--group-color) 58%, transparent), inset 0 0 0 1px rgba(255,255,255,.08); transform: translateY(-1px); }
 
-    /* Score/combo/accuracy/chord readout — top right, the one corner
-       #musicLayoutHud (top center) and #musicModeShiftHud (top left) leave
-       clear. Mirrors values the iframe posts via postMessage (see
-       hobunjiHostedMusicBridge in lyre-performance.html and the listener in
-       buildEdgeControls) since the iframe's own copies are hidden there —
-       laid out for a full-width screen, they clipped inside the narrow
-       note-lane strip. */
+    /* Score/combo/accuracy/chord readout — a bar along the bottom, ending
+       just left of the right-hand note buttons (#rightMusicControls'
+       fiveGroupBoardPanel: right-inset + its own clamp(168px,19vw,216px)
+       width + a gap) rather than floating over open screen space. Mirrors
+       values the iframe posts via postMessage (see hobunjiHostedMusicBridge
+       in lyre-performance.html and the listener in buildEdgeControls) since
+       the iframe's own copies are hidden there — laid out for a full-width
+       screen, they clipped inside the narrow note-lane strip. */
     #musicPerformanceHud {
-      position: fixed; z-index: 60; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right));
-      width: min(158px, 42vw); padding: 6px 9px; display: grid; gap: 3px; pointer-events: none;
-      border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: rgba(5,10,18,.9);
+      position: fixed; z-index: 60; bottom: max(6px, calc(env(safe-area-inset-bottom) + 4px));
+      right: calc(max(6px, env(safe-area-inset-right)) + clamp(168px, 19vw, 216px) + 10px);
+      width: min(196px, 26vw); padding: 6px 10px; display: flex; flex-direction: column; gap: 3px;
+      pointer-events: none;
+      border-radius: 14px; border: 1px solid rgba(255,255,255,.14); background: rgba(5,10,18,.9);
       box-shadow: 0 10px 24px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05);
       backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
       color: #eef8ff; font-size: 9px;
     }
-    .perfHudRow { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+    .perfHudMainRow { display: flex; align-items: baseline; gap: 10px; }
+    .perfHudRow { display: flex; align-items: baseline; gap: 5px; }
     .perfHudRow span:first-child { color: #9eb2cb; font-size: 7px; letter-spacing: .1em; text-transform: uppercase; }
-    .perfHudRow strong { font-size: 12px; letter-spacing: .02em; }
+    .perfHudRow strong { font-size: 13px; letter-spacing: .02em; }
     .perfHudScore strong { color: #8fe4ff; }
     .perfHudAccuracy { color: #9eb2cb; font-size: 8px; }
     .perfHudChord { font-size: 8px; color: #ffc45f; letter-spacing: .04em; min-height: 1em; }
@@ -3002,7 +3006,9 @@
       transition: opacity .15s ease, transform .15s ease;
     }
     .perfHudFeedback.show { opacity: 1; transform: translateY(0); }
-    @media (max-width: 640px) { #musicPerformanceHud { width: min(140px, 40vw); font-size: 8px; } }
+    @media (max-width: 640px) {
+      #musicPerformanceHud { width: min(168px, 34vw); font-size: 8px; right: calc(max(6px, env(safe-area-inset-right)) + clamp(140px, 22vw, 180px) + 8px); }
+    }
 
     /* Collapsible song picker above the bottom-left panel — position
        measured in JS (positionCompactSongPicker in music-minigame.js) to
