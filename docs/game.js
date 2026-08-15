@@ -6818,7 +6818,9 @@
       let worldTownTransitions = [];   // town: same shape
       let worldRoutes          = [];   // shared routes: { id, label, area, nodes: [[c,r],...] }
       let worldTownRoutes      = [];   // town shared routes
-      const npcStationsById    = new Map(); // stationId → { id, label, area, c, r, rotY, pose, toolKey, toolIntervalSec }
+      // npcStationsById (stationId → { id, label, area, c, r, rotY, pose,
+      // toolKey, toolIntervalSec, ... }) now lives in js/npc-scheduling.js —
+      // aliased back near spawnScheduledNpcs below.
       let worldNpcPaths        = [];   // legacy only: { id, label, npcId, area, nodes: [[c,r],...] }
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
@@ -7943,9 +7945,6 @@
         return window.SCRATCHBONES_CONFIG?.game?.mobileControls?.generalStoreButton || {};
       }
       function generalStoreAction() { return generalStoreButtonConfig().action || 'open_general_store'; }
-      function normalizeStationLabel(label) {
-        return String(label || '').trim().toLowerCase();
-      }
       function isGeneralStoreNpcOnDuty(walker) {
         const cfg = generalStoreButtonConfig();
         const ids = Array.isArray(cfg.npcIds) ? cfg.npcIds : ['furunji_funji', 'foroji_funji'];
@@ -7998,120 +7997,12 @@
         };
       }
 
-      // Registry of NPCs who perform an instrument at a specific station —
-      // each NPC's own station/time window still lives in their
-      // scheduleHooks (see hobunji-starter-npc-database.json); this just
-      // says which of their stations counts as "performing" and which song
-      // they lead there. Add future instrument NPCs here — js/music-
-      // minigame.js's leader/backup logic treats every entry identically
-      // (whoever started playing first in a given area leads, everyone
-      // else who joins falls in as backup — see listInstrumentPerformers).
-      const INSTRUMENT_NPC_DEFS = [
-        // Foroji busks in the square on his day off (Naru) and plays the
-        // inn at night after his shop shift the rest of the week — two
-        // stations, same NPC, same song; only one can ever be on duty at
-        // once so listInstrumentPerformers below never double-counts him.
-        { npcId: 'foroji_funji', stationLabel: 'Playing Music in the Square', songId: 'when-the-kininjis-bloom' },
-        { npcId: 'foroji_funji', stationLabel: 'Playing Music at the Inn', songId: 'when-the-kininjis-bloom' },
-      ];
-
-      // Mirrors isGeneralStoreNpcOnDuty/isCarpenterNpcOnDuty's idle/station/
-      // label gate above, generalized for any station label instead of one
-      // hardcoded shop.
-      function isNpcOnDutyAtStation(walker, stationLabel) {
-        const target = walker?.currentScheduleTarget || null;
-        const label = normalizeStationLabel(target?.label);
-        const isAtStation = walker?.state === 'idle' && target && Number.isFinite(target.c) && Number.isFinite(target.r)
-          && Math.hypot(walker.root.position.x - (target.c + 0.5), walker.root.position.z - (target.r + 0.5)) <= (npcMovementConfig().arrivalRadiusTiles ?? 0.18);
-        return isAtStation && label === normalizeStationLabel(stationLabel);
-      }
-
-      // Every INSTRUMENT_NPC_DEFS entry currently on duty — read by
-      // js/music-minigame.js's ambient-performance ticker (who should be
-      // playing ambiently right now) and by the player's own "Play"
-      // action (is there someone nearby already leading to join instead).
-      function listInstrumentPerformers() {
-        const out = [];
-        for (const def of INSTRUMENT_NPC_DEFS) {
-          const walker = npcWalkers.find(w => w.rec?.id === def.npcId);
-          if (walker && isNpcOnDutyAtStation(walker, def.stationLabel)) {
-            out.push({ npcId: def.npcId, name: walker.rec?.name || def.npcId, area: walker.area, songId: def.songId });
-          }
-        }
-        return out;
-      }
-
-      // ── Dev/test-only scheduling hooks ────────────────────────────────
-      // Lets headless tests (and manual console poking) validate the NPC
-      // station-arrival/perform pipeline — pathfind to a station, go idle,
-      // pick up its toolKey mesh, register as on-duty for
-      // listInstrumentPerformers/ambient audio — in seconds instead of
-      // waiting out TARGET_DAY_LENGTH_SECONDS for a real schedule window to
-      // arrive. Works on any existing NPC and any station (test or
-      // authored), so the same two calls cover any future "does the
-      // scheduling system actually work" question, not just instrument
-      // performance. Always-on, matching window.__farmLog's existing
-      // always-available debug surface — not gated behind a dev-mode flag.
-      window.__farmDebugTools = {
-        // Jumps the calendar directly rather than waiting real time out.
-        jumpTime(day, time01) {
-          if (Number.isFinite(day)) calendar.day = Math.max(1, Math.round(day));
-          if (Number.isFinite(time01)) calendar.time01 = Math.max(0, Math.min(0.999, time01));
-          return { day: calendar.day, time01: calendar.time01, hour: window.CalendarSystem?.getHour?.() };
-        },
-        // Registers an ad-hoc station and pins npcId to it via an
-        // always-active rule prepended to their schedule, overriding
-        // whatever their real schedule currently says. Station/rule ids are
-        // namespaced 'test_' so they're easy to spot and never collide with
-        // authored content. Returns false if the NPC doesn't exist.
-        forceNpcToTestStation(npcId, { area, c, r, toolKey = '', toolIntervalSec = 2.4, toolAnimStyle = '', label = 'Test Station', rotY = 0 } = {}) {
-          const walker = npcWalkers.find(w => w.rec?.id === npcId);
-          if (!walker) return false;
-          const targetArea = area || walker.area;
-          const stationId = `test_station_${npcId}`;
-          registerNpcStations([{ id: stationId, label, area: targetArea, c, r, rotY, pose: 'stand', toolKey, toolIntervalSec, toolAnimStyle }], targetArea);
-          const hooks = walker.rec.scheduleHooks || (walker.rec.scheduleHooks = { rules: [] });
-          hooks.rules = (hooks.rules || []).filter(r => r.id !== `test_rule_${npcId}`);
-          hooks.rules.unshift({ id: `test_rule_${npcId}`, from: '00:00', to: '23:59', mapId: targetArea, stationId, activity: label });
-          return true;
-        },
-        // Undoes forceNpcToTestStation, letting the NPC's real schedule resume.
-        clearNpcTestStation(npcId) {
-          const walker = npcWalkers.find(w => w.rec?.id === npcId);
-          if (!walker?.rec?.scheduleHooks?.rules) return false;
-          walker.rec.scheduleHooks.rules = walker.rec.scheduleHooks.rules.filter(r => r.id !== `test_rule_${npcId}`);
-          npcStationsById.delete(`test_station_${npcId}`);
-          return true;
-        },
-        // Reproduces exactly what local-db-overrides.js's _applyPositionRedirect
-        // does to a rule (registers a real station with metadata, then points a
-        // rule at a raw c/r with sourceStationId set and stationId deleted)
-        // without needing a real schedule-overrides.json entry or waiting for a
-        // matching day/time — for testing resolveNpcScheduleTarget's handling of
-        // that exact shape directly.
-        forceNpcToRedirectedTestStation(npcId, { area, c, r, toolKey = '', toolIntervalSec = 2.4, toolAnimStyle = '', label = 'Redirected Test Station', rotY = 0 } = {}) {
-          const walker = npcWalkers.find(w => w.rec?.id === npcId);
-          if (!walker) return false;
-          const targetArea = area || walker.area;
-          const sourceStationId = `test_source_station_${npcId}`;
-          registerNpcStations([{ id: sourceStationId, label, area: targetArea, c: c + 25, r: r + 25, rotY, pose: 'stand', toolKey, toolIntervalSec, toolAnimStyle }], targetArea);
-          const hooks = walker.rec.scheduleHooks || (walker.rec.scheduleHooks = { rules: [] });
-          hooks.rules = (hooks.rules || []).filter(rule => rule.id !== `test_rule_${npcId}`);
-          hooks.rules.unshift({ id: `test_rule_${npcId}`, from: '00:00', to: '23:59', mapId: targetArea, sourceStationId, c, r, activity: label });
-          return true;
-        },
-        listNpcIds() { return npcWalkers.map(w => w.rec?.id).filter(Boolean); },
-        npcSnapshot(npcId) {
-          const walker = npcWalkers.find(w => w.rec?.id === npcId);
-          if (!walker) return null;
-          return {
-            area: walker.area, state: walker.state,
-            x: walker.root?.position?.x, z: walker.root?.position?.z,
-            stationToolKey: walker.stationToolKey || null,
-            currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
-          };
-        },
-      };
+      // INSTRUMENT_NPC_DEFS, isNpcOnDutyAtStation, listInstrumentPerformers,
+      // and window.__farmDebugTools now live in js/npc-scheduling.js —
+      // aliased back to these same names below, right after
+      // window.NpcScheduling.init(...) (see the NPC scheduling module init
+      // block further down, near spawnScheduledNpcs) so every existing call
+      // site here keeps working unchanged.
 
       function npcDialogueStagingOffsets() {
         const offsets = npcDialogueStagingConfig().playerDiagonalOffsets;
@@ -8358,13 +8249,9 @@
         return true;
       }
 
-      function parseNpcTimeMinutes(t) { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
-      function currentGameMinutes() { return Math.round(window.CalendarSystem.getHour() * 60); }
-      function isNowWithinNpcRuleWindow(now, start, end) {
-        if (start === null || end === null) return false;
-        if (start <= end) return now >= start && now < end;
-        return now >= start || now < end;
-      }
+      // parseNpcTimeMinutes/currentGameMinutes/isNowWithinNpcRuleWindow now
+      // live in js/npc-scheduling.js (schedule-rule time-window matching);
+      // normalizeNpcArea stays here since it's used well beyond scheduling.
       function normalizeNpcArea(area) {
         if (!area) return 'farm';
         if (area === 'interior') return 'interior';
@@ -8374,52 +8261,11 @@
         window.__farmLog?.(`[schedule] Unknown area "${area}" → fallback to farm`, 'warn');
         return 'farm';
       }
-      function normalizeNpcStation(station, fallbackArea) {
-        if (!station || !station.id) return null;
-        const c = station.c ?? station.col;
-        const r = station.r ?? station.row;
-        if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
-        return {
-          id: station.id,
-          label: station.label || station.id,
-          area: normalizeNpcArea(station.area || station.mapId || fallbackArea || 'farm'),
-          c, r,
-          rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
-          pose: station.pose || 'stand',
-          furnitureKey: station.furnitureKey
-            || getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
-            || (DECORATIVE_FURNITURE_DEFS[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
-          seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
-          toolKey: station.toolKey || '',
-          toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
-          toolAnimStyle: station.toolAnimStyle || '',
-          // Multi-tile wander footprint around this station's root tile —
-          // see makeNpcWalker's _updateStationWander/_pickStationWanderTile.
-          // wanderMode 'radius' (default) samples a random offset within
-          // wanderRadiusTiles of (c,r); 'shape' instead picks uniformly
-          // among the hand-painted wanderShapeTiles (each a [dc,dr] offset
-          // from (c,r), authored in the Map Editor's station paint tool) —
-          // lets an author cover an irregular region a circle can't express
-          // (an L-shaped yard, a field that hugs a path, etc). Neither set
-          // (radius 0, empty shape) keeps today's behavior: an NPC freezes
-          // exactly at (c,r).
-          wanderRadiusTiles: Number.isFinite(station.wanderRadiusTiles) ? Math.max(0, station.wanderRadiusTiles) : 0,
-          wanderMode: station.wanderMode === 'shape' ? 'shape' : 'radius',
-          wanderShapeTiles: Array.isArray(station.wanderShapeTiles)
-            ? station.wanderShapeTiles.filter(t => Array.isArray(t) && Number.isFinite(t[0]) && Number.isFinite(t[1]))
-            : [],
-        };
-      }
-      function registerNpcStations(stations, fallbackArea) {
-        (stations || []).forEach(st => {
-          const normalized = normalizeNpcStation(st, fallbackArea);
-          if (normalized) npcStationsById.set(normalized.id, normalized);
-        });
-      }
-      function resolveNpcStationTarget(stationId) {
-        const station = npcStationsById.get(stationId);
-        return station ? { ...station, stationId: station.id } : null;
-      }
+      // normalizeNpcStation/registerNpcStations/resolveNpcStationTarget and
+      // the npcStationsById registry they operate on now live in js/npc-
+      // scheduling.js — aliased back below (see the NpcScheduling init block
+      // near spawnScheduledNpcs) so registerNpcStations/npcStationsById here
+      // keep working exactly as before.
 
       // Chairs auto-register as NPC scheduling stations wherever they're
       // placed — no map author has to hand-add an npcStations entry for
@@ -8469,22 +8315,8 @@
         return target;
       }
 
-      const _scheduleFallbackLogKeys = new Set();
-      function logScheduleFallbackOnce(rec, kind, area, c, r) {
-        const minuteBucket = Math.floor(currentGameMinutes() / 10);
-        const key = [rec?.id || 'npc', kind, currentArea, area, c, r, minuteBucket].join('|');
-        if (_scheduleFallbackLogKeys.has(key)) return;
-        _scheduleFallbackLogKeys.add(key);
-        window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${currentArea}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
-      }
-
-      // A rule may restrict itself to one or more weekdays via "day" (single
-      // name) or "days" (array); rules with neither run every day, same as before.
-      function isNpcRuleActiveOnDay(rule) {
-        if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
-        if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
-        return true;
-      }
+      // _scheduleFallbackLogKeys, logScheduleFallbackOnce, and isNpcRuleActiveOnDay
+      // now live in js/npc-scheduling.js alongside resolveNpcScheduleTarget below.
 
       // Village-wide shared schedule overrides (e.g. Temple Service, Anan
       // 9-11am): any NPC tagged `appliesToTag`, without a rule of their own
@@ -8496,91 +8328,8 @@
       // spawnScheduledNpcs() below. Used to be hardcoded Temple-Service-only
       // constants here; kept generic so any future event just needs data.
       let npcSharedSchedules = [];
-      function hashNpcIdToIndex(id, mod) {
-        let h = 0;
-        const s = String(id || '');
-        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-        return Math.abs(h) % mod;
-      }
-
-      function resolveNpcScheduleTarget(rec) {
-        const hooks = rec?.scheduleHooks || {};
-        const now = currentGameMinutes();
-        for (const rule of hooks.rules || []) {
-          if (rule.contentIncomplete) continue; // flagged by the Schedule Editor / migration — not a real target yet
-          if (!isNpcRuleActiveOnDay(rule)) continue;
-          const start = parseNpcTimeMinutes(rule.start ?? rule.from);
-          const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
-          const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
-          if (ruleActive && rule.stationId) {
-            const stationTarget = resolveNpcStationTarget(rule.stationId);
-            if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
-            // The station's building scene may simply not have been visited/loaded
-            // yet this session (its npcStations only register once it loads) —
-            // warm it up so the lookup succeeds on a later tick, and throttle the
-            // warning instead of spamming it every tick until that load completes.
-            const missingArea = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-            if (_isBuildingArea(missingArea) && !_buildingScenes.has(missingArea)) loadBuildingScene(missingArea);
-            const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
-            if (!_scheduleFallbackLogKeys.has(warnKey)) {
-              _scheduleFallbackLogKeys.add(warnKey);
-              window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
-            }
-          }
-          const c = rule.c ?? rule.position?.c;
-          const r = rule.r ?? rule.position?.r;
-          const area = normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-          if (ruleActive && Number.isFinite(c) && Number.isFinite(r)) {
-            // A positionRedirect (see local-db-overrides.js's _applyPositionRedirect)
-            // moves a station-backed rule to a raw c/r without rewriting the map file —
-            // it deletes rule.stationId, so this branch runs instead of the stationId
-            // one above, and a bare {area,c,r} target carries none of the original
-            // station's label/toolKey/pose/etc. That's fine for plain wandering rules,
-            // but for a redirected rule it silently drops everything that made the
-            // station meaningful (an NPC still walks to the right tile but never picks
-            // up their toolKey item or matches any label-based on-duty check, e.g.
-            // isNpcOnDutyAtStation/listInstrumentPerformers). The redirect preserves
-            // sourceStationId exactly so it can be re-attached here.
-            const sourceStation = rule.sourceStationId ? npcStationsById.get(rule.sourceStationId) : null;
-            if (sourceStation) {
-              const { id: _id, c: _sc, r: _sr, area: _sarea, ...stationMetadata } = sourceStation;
-              return { ...stationMetadata, area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
-            }
-            return { area, c, r, routeId: rule.routeId || null, activity: rule.activity || '' };
-          }
-        }
-        for (const shared of npcSharedSchedules) {
-          if (!shared || shared.contentIncomplete) continue;
-          const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
-          if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
-          if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
-          if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
-          if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
-          const ids = shared.stationIds || [];
-          if (!ids.length) continue;
-          const target = resolveNpcStationTarget(ids[hashNpcIdToIndex(rec?.id, ids.length)]);
-          if (target) return { ...target, activity: shared.label || shared.id || 'Shared Event' };
-        }
-        if (hooks.defaultStationId) {
-          const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
-          if (stationTarget) return stationTarget;
-          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
-        }
-        // contentIncomplete NPCs (flagged by the migration/Schedule Editor —
-        // e.g. a defaultPosition that was only ever a {0,0} placeholder)
-        // skip the raw-position fallback entirely rather than spawn at a
-        // made-up tile; they fall through to "no target" below, which
-        // spawnScheduledNpcs()/​_retrySpawnDeferredNpcs() already treat as
-        // "defer and retry" instead of a visible glitch.
-        if (!hooks.contentIncomplete && hooks.defaultPosition && Number.isFinite(hooks.defaultPosition.c) && Number.isFinite(hooks.defaultPosition.r)) {
-          const defArea = normalizeNpcArea(hooks.defaultPosition.area || hooks.defaultMapId || 'town');
-          logScheduleFallbackOnce(rec, 'defaultPosition', defArea, hooks.defaultPosition.c, hooks.defaultPosition.r);
-          return { ...hooks.defaultPosition, area: defArea };
-        }
-        const legacy = worldNpcPaths.find(p => p.npcId === rec?.id);
-        if (legacy?.nodes?.length) { const [c, r] = legacy.nodes[legacy.nodes.length - 1]; const legArea = normalizeNpcArea(legacy.area || 'farm'); logScheduleFallbackOnce(rec, 'legacy path', legArea, c, r); return { area: legArea, c, r, legacyPath: legacy }; }
-        return null;
-      }
+      // hashNpcIdToIndex and resolveNpcScheduleTarget now live in
+      // js/npc-scheduling.js — aliased back below near spawnScheduledNpcs.
 
       // Pool of transition spots that live "in" the given area, in the same
       // shape checkTransitionSpots() uses for the player.
@@ -8710,6 +8459,33 @@
           else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
         }, 1000);
       }
+
+      // NPC scheduling (resolveNpcScheduleTarget, the station registry, and
+      // the on-duty check ambient performances poll) lives in
+      // js/npc-scheduling.js — aliased back to these same names so every
+      // call site above and below keeps working unchanged.
+      window.NpcScheduling.init({
+        npcWalkers,
+        calendar,
+        getCurrentArea: () => currentArea,
+        getWorldNpcPaths: () => worldNpcPaths,
+        getSharedSchedules: () => npcSharedSchedules,
+        isBuildingArea: _isBuildingArea,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        normalizeNpcArea,
+        getDecorativeFurnitureKeyByItemKey,
+        decorativeFurnitureDefs: DECORATIVE_FURNITURE_DEFS,
+      });
+      const {
+        registerNpcStations,
+        resolveNpcStationTarget,
+        resolveNpcScheduleTarget,
+        isNpcOnDutyAtStation,
+        listInstrumentPerformers,
+        normalizeStationLabel,
+      } = window.NpcScheduling;
+      const npcStationsById = window.NpcScheduling.stationsById;
 
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
@@ -9069,7 +8845,19 @@
               return;
             }
             this._exitSpot = null;
-            const wanderEnabled = target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0;
+            // Station wander takes over completely once entered (see below) and
+            // returns early every tick from then on — it never reaches the
+            // toolKey-equip block or the state:'idle' this sets, both further
+            // down. That's invisible for a plain wander-while-working station
+            // (no toolKey to equip, nothing reads its 'idle' state), but for a
+            // toolKey station it means the NPC can wander right past ever
+            // picking up their tool, and isNpcOnDutyAtStation (which requires
+            // state==='idle') never sees them as on duty either — exactly what
+            // happened to Foroji's inn station, the only one with a wander
+            // radius set: he'd circle near the stage, kurraya never in hand, no
+            // ambient music. A performer needs to actually stay at their
+            // instrument to play it, so toolKey stations opt out of wandering.
+            const wanderEnabled = !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
             // once entered, instead of the plain freeze-at-the-exact-tile
