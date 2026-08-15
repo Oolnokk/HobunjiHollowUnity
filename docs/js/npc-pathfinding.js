@@ -119,3 +119,25 @@
     findNpcAreaLink,
   };
 })();
+
+// Foliage-furniture runtime bootstrap. This file loads immediately before
+// game.js, so parser-time synchronous insertion lets the renderer/adapter wrap
+// the existing wilderness/furniture module init() calls before gameplay boot.
+(() => {
+  'use strict';
+  if (typeof document === 'undefined' || window.FoliageFurnitureRuntime) return;
+  const currentUrl = document.currentScript?.src || ''; // Used to resolve sibling runtime modules on any host/branch.
+  const sibling = name => currentUrl ? new URL(name, currentUrl).toString() : `js/${name}`;
+  const rendererUrl = sibling('foliage-furniture-renderer.js?v=20260815a');
+  const runtimeUrl = sibling('foliage-furniture-runtime.js?v=20260815a');
+  if (document.readyState === 'loading') {
+    document.write('<script src="' + rendererUrl.replace(/"/g, '&quot;') + '"><\\/script>');
+    document.write('<script src="' + runtimeUrl.replace(/"/g, '&quot;') + '"><\\/script>');
+    return;
+  }
+  const load = (url) => new Promise((resolve, reject) => { // Fallback used only when this module is loaded after parser-time boot in a tool/test harness.
+    const script = document.createElement('script'); script.src = url; script.async = false; script.onload = resolve;
+    script.onerror = () => reject(new Error(`Failed to load ${url}`)); document.head.appendChild(script);
+  });
+  load(rendererUrl).then(() => load(runtimeUrl)).catch(error => console.error('[FoliageFurnitureRuntime]', error));
+})();

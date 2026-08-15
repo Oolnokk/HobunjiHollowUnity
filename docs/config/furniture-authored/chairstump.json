@@ -1,0 +1,100 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "chairstump",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msuv9ruc_a867c",
+      "kind": "box",
+      "name": "Chairstump Invisible Seat Proxy",
+      "transform": {
+        "x": 0,
+        "y": 0.2595,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.6114,
+        "sy": 0.4799,
+        "sz": 0.5896
+      },
+      "color": "#65e6ff",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "custom",
+      "materialTexture": null,
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 0,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "foliageSeatProxy": true
+    }
+  ],
+  "seatAnchors": [
+    {
+      "position": {
+        "x": 0.0,
+        "y": 0.52145,
+        "z": 0
+      },
+      "rotationDeg": {
+        "x": -5,
+        "y": 0,
+        "z": 0
+      },
+      "normalOffset": 0.01
+    }
+  ],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "foliageFurniture": {
+    "version": 3,
+    "sourcePath": "docs/config/foliage-authored/chairstump.json",
+    "sourceSha": "22715c428468ccb9a8041e910ac24ebdf768375c",
+    "generatorPath": "docs/references/(HA)FoliageGeneratorV27.html",
+    "assetType": "Stump",
+    "seed": "tree-1",
+    "transform": {
+      "x": -0.0486,
+      "y": -0.2448,
+      "z": -0.0202,
+      "rx": 180,
+      "ry": -8.277,
+      "rz": 180,
+      "sx": 0.8922,
+      "sy": 1,
+      "sz": 0.9023
+    },
+    "proxyPartId": "part_msuv9ruc_a867c",
+    "proxyHiddenInRuntime": true,
+    "seatCount": 1,
+    "note": "Foliage geometry is generated from sourcePath; the authored box is an invisible seating/collision proxy. Seat anchors use editable per-anchor normal offsets.",
+    "defaultSeatNormalOffset": 0.01
+  }
+}
