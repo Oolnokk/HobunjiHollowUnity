@@ -1,25 +1,25 @@
 (() => {
   'use strict';
 
-  // Held-object layering policy.
+  // Held-object selective ground x-ray policy.
   //
-  // game.js historically stamps tool/held-item planes with renderOrder=1.5.
-  // That value is now only a discovery marker. Once discovered, held planes are
-  // owned by this module and re-normalized before every real base-world render.
+  // The normal world render is left intact. On a real full-world base render,
+  // held planes are omitted from that first color pass and then drawn exactly
+  // once against a reconstructed depth buffer that contains every NON-ground
+  // occluder. Ground/terrain, paved path bricks, and grass billboards therefore
+  // cannot cover a held sprite, while characters, furniture, vegetation,
+  // buildings, etc. still occlude it according to position.
   //
-  // The one exceptional rule is ground cover: terrain/floor textures, road
-  // surfaces, and grass billboard planes are rendered first, then ONLY their
-  // depth is cleared before the rest of the world renders. That makes those
-  // ground-like surfaces incapable of covering a held sprite, while characters,
-  // furniture, vegetation, buildings, etc. still depth-test normally against it.
-  //
-  // This deliberately runs on the offscreen base render used by Hobunji's
-  // outline/postprocess pipeline. Secondary shell/material-ID/PNG-depth passes
-  // are left alone.
+  // After the held overlay is drawn, ground depth is replayed colorless so the
+  // outline/postprocess pipeline receives the same complete scene depth it
+  // expects. No ground layer is removed, no ground material is permanently
+  // changed, and the finished terrain/grass color image is never re-rendered or
+  // downsampled by this module.
   const THREE = window.THREE;
   const rendererProto = THREE?.WebGLRenderer?.prototype;
   const objectProto = THREE?.Object3D?.prototype;
-  if (!THREE || !rendererProto || !objectProto || typeof rendererProto.render !== 'function') return;
+  const sceneProto = THREE?.Scene?.prototype;
+  if (!THREE || !rendererProto || !objectProto || !sceneProto || typeof rendererProto.render !== 'function') return;
 
   const existing = window.HeldObjectRenderOrder;
   if (existing?.installed) return;
@@ -27,32 +27,34 @@
   const LEGACY_HELD_RENDER_ORDER = 1.5;
   const DEFAULT_LAYER = 0;
   const MATERIAL_ID_LAYER = 3;
-  const GROUND_LAYER = 30;
-  const GROUND_MASK = (1 << GROUND_LAYER) >>> 0;
-  const DEFAULT_MASK = (1 << DEFAULT_LAYER) >>> 0;
+  const PNG_OCCLUDER_LAYER = 4;
+  const GROUND_REPLAY_LAYER = 28;
+  const HELD_OVERLAY_LAYER = 29;
+  const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
+  const HELD_OVERLAY_MASK = (1 << HELD_OVERLAY_LAYER) >>> 0;
   const MASK_ALL = 0xFFFFFFFF >>> 0;
-  const MASK_SHELL = (1 << 1) >>> 0;
-  const MASK_MATERIAL_ID = (1 << 3) >>> 0;
-  const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
 
-  // WeakSets prevent classification bookkeeping from owning scene nodes.
-  // heldMeshRegistry is intentionally iterable so the invariant can be repaired
-  // immediately before every base-world render. There are only a handful of
-  // held planes in normal play.
-  const groundMeshes = new WeakSet();
   const heldMeshes = new WeakSet();
-  const heldMeshRegistry = new Set();
-  const knownLights = new WeakSet();
+  const groundMeshes = new WeakSet();
+  const heldRegistry = new Set();
+  const groundRegistry = new Set();
+  const guardedHeldMeshes = new WeakSet();
+  const guardedGroundMeshes = new WeakSet();
+  const preparedLights = new WeakSet();
   const lastSceneScan = new WeakMap();
 
-  let groundCount = 0;
   let heldCount = 0;
-  let renderSplitCount = 0;
-  let passthroughCount = 0;
-  let invariantRepairCount = 0;
+  let groundCount = 0;
+  let grassCount = 0;
+  let roadCount = 0;
+  let terrainCount = 0;
   let baseWorldRenderCount = 0;
-  let internalRender = false;
+  let selectiveOverlayCount = 0;
+  let nonGroundDepthReplayCount = 0;
+  let groundDepthRestoreCount = 0;
+  let invariantRepairCount = 0;
+  let internalReplay = false;
   let lastDebugSignature = '';
 
   function hasLayer(object, layer) {
@@ -75,19 +77,21 @@
   }
 
   function isRoadSurface(object) {
-    return hasAncestorFlag(object, 'hobunjiPathSurface');
+    return !!object?.isMesh && hasAncestorFlag(object, 'hobunjiPathSurface');
   }
 
   function isTerrainSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
+
+    // Spatial terrain chunks are generated only from whole-zone floor meshes.
     if (object.userData?.terrainRenderChunk === true || object.userData?.terrainRenderChunkSource === true) return true;
 
-    // Farm/town/wilderness merged floor meshes are marked for the terrain
-    // material-ID pass on layer 3, receive shadows, and do not cast them.
+    // Farm/town/wilderness floor meshes opt into the terrain material-ID layer,
+    // receive shadows, and do not cast them. This is the same bounded signature
+    // TerrainRenderChunks uses to identify world-floor geometry.
     if (object.receiveShadow && !object.castShadow && hasLayer(object, MATERIAL_ID_LAYER)) return true;
 
-    // Conservative fallback for untagged floor meshes. Requiring receiveShadow
-    // and !castShadow keeps furniture/building meshes out of this path.
+    // Conservative legacy fallback for untagged floor meshes only.
     if (object.receiveShadow && !object.castShadow) {
       const name = String(object.name || '').toLowerCase();
       if (/(^|[_-])(ground|terrain|zone_floor|floor|path_network)([_-]|$)/.test(name)) return true;
@@ -95,8 +99,11 @@
     return false;
   }
 
-  function isGroundSurface(object) {
-    return !!object?.isMesh && (isGrassGroundCover(object) || isRoadSurface(object) || isTerrainSurface(object));
+  function groundKind(object) {
+    if (isGrassGroundCover(object)) return 'grass';
+    if (isRoadSurface(object)) return 'road';
+    if (isTerrainSurface(object)) return 'terrain';
+    return null;
   }
 
   function isLegacyHeldPlane(object) {
@@ -113,41 +120,46 @@
     if (material) fn(material);
   }
 
-  // Reassert properties that no stance, animation, sprite recolor, material
-  // replacement, mastery/verdigris refresh, or equipment rebuild is allowed to
-  // permanently override. We intentionally do NOT disable depth testing or
-  // force depthWrite: held tools must still obey ordinary positional occlusion
-  // against non-ground world objects.
+  function prepareLight(light) {
+    if (!light?.isLight || preparedLights.has(light)) return;
+    // The held overlay uses its own camera layer. Add that layer to lights so a
+    // future lit held material behaves the same as it does in the base pass.
+    light.layers.enable(HELD_OVERLAY_LAYER);
+    preparedLights.add(light);
+  }
+
   function enforceHeldMesh(mesh) {
     if (!mesh?.isMesh) return false;
     let repaired = false;
-
     mesh.userData = mesh.userData || {};
+
     if (mesh.userData.hobunjiHeldObjectPlane !== true) {
       mesh.userData.hobunjiHeldObjectPlane = true;
       repaired = true;
     }
     mesh.userData.hobunjiLegacyRenderOrder = LEGACY_HELD_RENDER_ORDER;
 
+    // Neutral renderOrder restores Three's ordinary positioning semantics in
+    // any non-overlay/debug view. The selective depth replay supplies the one
+    // exceptional ground-x-ray rule.
     if (mesh.renderOrder !== 0) {
       mesh.renderOrder = 0;
       repaired = true;
     }
-
-    // The ordinary world/base pass always includes layer 0. Preserve any other
-    // special layers a held plane may use, but guarantee it cannot be moved out
-    // of the visible world by a later subsystem.
     if (!hasLayer(mesh, DEFAULT_LAYER)) {
       mesh.layers.enable(DEFAULT_LAYER);
       repaired = true;
     }
+    if (!hasLayer(mesh, HELD_OVERLAY_LAYER)) {
+      mesh.layers.enable(HELD_OVERLAY_LAYER);
+      repaired = true;
+    }
 
-    // Recolor systems may replace material/map objects. Always inspect the
-    // CURRENT material immediately before the real base render.
+    // Recolor/mastery refreshes can replace a material object. Repair the
+    // CURRENT material instead of assuming the creation-time material survives.
     forEachMaterial(mesh.material, (material) => {
       if ('depthTest' in material && material.depthTest !== true) {
         material.depthTest = true;
-        material.needsUpdate = true;
         repaired = true;
       }
     });
@@ -156,50 +168,69 @@
     return repaired;
   }
 
+  function installHeldGuard(mesh) {
+    if (!mesh?.isMesh || guardedHeldMeshes.has(mesh)) return;
+    const originalUpdateMatrixWorld = mesh.updateMatrixWorld;
+    if (typeof originalUpdateMatrixWorld !== 'function') return;
+    mesh.updateMatrixWorld = function heldGroundXrayInvariant(force) {
+      enforceHeldMesh(this);
+      return originalUpdateMatrixWorld.call(this, force);
+    };
+    guardedHeldMeshes.add(mesh);
+  }
+
   function markHeldPlane(mesh) {
     if (!mesh?.isMesh) return false;
     const already = heldMeshes.has(mesh) || mesh.userData?.hobunjiHeldObjectPlane === true;
     heldMeshes.add(mesh);
-    heldMeshRegistry.add(mesh);
+    heldRegistry.add(mesh);
     enforceHeldMesh(mesh);
+    installHeldGuard(mesh);
     if (!already) heldCount++;
     return !already;
   }
 
-  function enforceHeldInvariant() {
-    for (const mesh of heldMeshRegistry) {
-      if (!mesh?.isMesh) {
-        heldMeshRegistry.delete(mesh);
-        continue;
-      }
-      enforceHeldMesh(mesh);
-    }
-  }
-
-  function markGroundMesh(mesh) {
+  function enforceGroundMesh(mesh) {
     if (!mesh?.isMesh) return false;
-    const already = groundMeshes.has(mesh) || mesh.userData?.hobunjiHeldGroundLayer === true;
+    let repaired = false;
     mesh.userData = mesh.userData || {};
-    mesh.userData.hobunjiHeldGroundLayer = true;
-    if (mesh.userData.hobunjiHeldGroundOriginalLayerMask == null) {
-      mesh.userData.hobunjiHeldGroundOriginalLayerMask = Number(mesh.layers.mask) >>> 0;
+    if (mesh.userData.hobunjiHeldGroundReplay !== true) {
+      mesh.userData.hobunjiHeldGroundReplay = true;
+      repaired = true;
     }
-
-    // Keep special-purpose layers (notably material-ID layer 3) but remove the
-    // normal world layer. Main rendering is supplied by GROUND_LAYER instead.
-    mesh.layers.disable(DEFAULT_LAYER);
-    mesh.layers.enable(GROUND_LAYER);
-    groundMeshes.add(mesh);
-    if (!already) groundCount++;
-    return !already;
+    // Additive only: never remove the normal world/material-ID layers.
+    if (!hasLayer(mesh, GROUND_REPLAY_LAYER)) {
+      mesh.layers.enable(GROUND_REPLAY_LAYER);
+      repaired = true;
+    }
+    return repaired;
   }
 
-  function prepareLight(light) {
-    if (!light?.isLight || knownLights.has(light)) return false;
-    // Ground's first pass still needs the same lighting as the ordinary world.
-    light.layers.enable(GROUND_LAYER);
-    knownLights.add(light);
-    return true;
+  function installGroundGuard(mesh) {
+    if (!mesh?.isMesh || guardedGroundMeshes.has(mesh)) return;
+    const originalUpdateMatrixWorld = mesh.updateMatrixWorld;
+    if (typeof originalUpdateMatrixWorld !== 'function') return;
+    mesh.updateMatrixWorld = function heldGroundReplayInvariant(force) {
+      enforceGroundMesh(this);
+      return originalUpdateMatrixWorld.call(this, force);
+    };
+    guardedGroundMeshes.add(mesh);
+  }
+
+  function markGroundMesh(mesh, kind = groundKind(mesh)) {
+    if (!mesh?.isMesh || !kind) return false;
+    const already = groundMeshes.has(mesh) || mesh.userData?.hobunjiHeldGroundReplay === true;
+    groundMeshes.add(mesh);
+    groundRegistry.add(mesh);
+    enforceGroundMesh(mesh);
+    installGroundGuard(mesh);
+    if (!already) {
+      groundCount++;
+      if (kind === 'grass') grassCount++;
+      else if (kind === 'road') roadCount++;
+      else if (kind === 'terrain') terrainCount++;
+    }
+    return !already;
   }
 
   function classifyObject(object) {
@@ -207,7 +238,8 @@
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
-    if (isGroundSurface(object)) markGroundMesh(object);
+    const kind = groundKind(object);
+    if (kind) markGroundMesh(object, kind);
   }
 
   function classifyTree(root) {
@@ -218,23 +250,33 @@
     });
   }
 
-  // Classify new runtime objects as they are attached. The microtask retry also
-  // catches builders that attach a mesh and then synchronously stamp renderOrder
-  // or userData later in the same JavaScript turn.
-  const originalAdd = objectProto.add;
-  function wrappedAdd(...objects) {
-    const result = originalAdd.apply(this, objects);
-    for (const object of objects) classifyTree(object);
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(() => {
-        for (const object of objects) classifyTree(object);
-      });
-    }
-    return result;
+  function queueClassification(objects) {
+    const deferred = () => {
+      for (const object of objects) classifyTree(object);
+    };
+    if (typeof queueMicrotask === 'function') queueMicrotask(deferred);
+    else Promise.resolve().then(deferred);
   }
-  wrappedAdd.__hobunjiHeldRenderOrderWrapped = true;
-  wrappedAdd.__hobunjiHeldRenderOrderOriginal = originalAdd;
-  objectProto.add = wrappedAdd;
+
+  // Scene.add has already been wrapped by natural-surface modules before this
+  // file loads, so wrap BOTH the current Scene.add and Object3D.add. This catches
+  // direct scene attachment as well as children created inside runtime groups.
+  function wrapAdd(proto, marker) {
+    const previousAdd = proto?.add;
+    if (!proto || typeof previousAdd !== 'function' || previousAdd[marker]) return;
+    function wrappedAdd(...objects) {
+      const result = previousAdd.apply(this, objects);
+      for (const object of objects) classifyTree(object);
+      queueClassification(objects); // catches tags stamped just after add()
+      return result;
+    }
+    wrappedAdd[marker] = true;
+    wrappedAdd.__hobunjiHeldGroundXrayOriginal = previousAdd;
+    proto.add = wrappedAdd;
+  }
+
+  wrapAdd(objectProto, '__hobunjiHeldGroundXrayObjectAdd');
+  wrapAdd(sceneProto, '__hobunjiHeldGroundXraySceneAdd');
 
   function scanScene(scene, force = false) {
     if (!scene?.isScene) return;
@@ -245,117 +287,221 @@
     classifyTree(scene);
   }
 
-  function sceneHasVisibleHeld(root, ancestorsVisible = true) {
-    if (!root || !ancestorsVisible || root.visible === false) return false;
-    if (root.isMesh && root.userData?.hobunjiHeldObjectPlane === true) return true;
-    for (const child of root.children || []) {
-      if (sceneHasVisibleHeld(child, true)) return true;
+  function sceneForObject(object) {
+    let node = object;
+    while (node?.parent) node = node.parent;
+    return node?.isScene ? node : null;
+  }
+
+  function ancestorsVisible(object, stopScene) {
+    for (let node = object; node; node = node.parent) {
+      if (node.visible === false) return false;
+      if (node === stopScene) return true;
     }
     return false;
   }
 
-  function isSecondaryOutlinePass(scene, camera) {
-    const mask = Number(camera?.layers?.mask ?? 0) >>> 0;
-    if (scene?.overrideMaterial) return true;
-    return mask === MASK_SHELL || mask === MASK_MATERIAL_ID || mask === MASK_PNG_OCCLUDER;
+  function collectVisible(registry, scene) {
+    const result = [];
+    for (const object of registry) {
+      if (!object?.isMesh) {
+        registry.delete(object);
+        continue;
+      }
+      const ownerScene = sceneForObject(object);
+      if (!ownerScene) {
+        // Detached runtime meshes should not be kept alive by our iterable set.
+        registry.delete(object);
+        continue;
+      }
+      if (ownerScene !== scene) continue;
+      if (!ancestorsVisible(object, scene)) continue;
+      result.push(object);
+    }
+    return result;
   }
 
-  // OutlineRenderPerformance uses the same definition for its logical "base"
-  // pass: all camera layers, no override material. It may target an offscreen
-  // framebuffer; that is the IMPORTANT path because the final screen is
-  // composited from it. Direct rendering with the same full-world mask uses the
-  // exact same policy.
   function isBaseWorldPass(scene, camera) {
     if (!scene?.isScene || !camera?.isCamera || scene.overrideMaterial) return false;
     return (Number(camera.layers.mask) >>> 0) === MASK_ALL;
   }
 
-  function withGroundLayerIncluded(renderer, scene, camera, originalRender) {
-    const oldMask = Number(camera.layers.mask) >>> 0;
-    camera.layers.mask = (oldMask | GROUND_MASK) >>> 0;
-    try {
-      passthroughCount++;
-      return originalRender.call(renderer, scene, camera);
-    } finally {
-      camera.layers.mask = oldMask;
+  function hideObjects(objects) {
+    const states = new Map();
+    for (const object of objects) {
+      if (!object || states.has(object)) continue;
+      states.set(object, object.visible);
+      object.visible = false;
+    }
+    return states;
+  }
+
+  function restoreVisibility(states) {
+    for (const [object, visible] of states) object.visible = visible;
+  }
+
+  function saveMaterialState(states, material) {
+    if (!material || states.has(material)) return;
+    states.set(material, {
+      colorWrite: material.colorWrite,
+      depthWrite: material.depthWrite,
+    });
+  }
+
+  function restoreMaterialStates(states) {
+    for (const [material, state] of states) {
+      material.colorWrite = state.colorWrite;
+      material.depthWrite = state.depthWrite;
     }
   }
 
+  function prepareNonGroundDepthMaterials(scene) {
+    const states = new Map();
+    scene.traverseVisible((object) => {
+      if (!object?.isMesh) return;
+      const forceCutoutDepth = hasLayer(object, PNG_OCCLUDER_LAYER);
+      forEachMaterial(object.material, (material) => {
+        saveMaterialState(states, material);
+        material.colorWrite = false;
+        // PNG avatar planes intentionally disable normal depth writing for
+        // avatar-vs-avatar ordering. For this temporary occlusion buffer only,
+        // use the game's existing layer-4 convention and preserve the real
+        // alpha-tested silhouette while making it capable of blocking a tool.
+        if (forceCutoutDepth || Number(material.alphaTest || 0) > 0) material.depthWrite = true;
+      });
+    });
+    return states;
+  }
+
+  function prepareGroundDepthMaterials(ground) {
+    const states = new Map();
+    for (const object of ground) {
+      forEachMaterial(object.material, (material) => {
+        saveMaterialState(states, material);
+        material.colorWrite = false;
+        // Preserve depthWrite exactly. Farm/town grass currently writes depth;
+        // wilderness grass intentionally does not. Replaying each as authored
+        // reconstructs the postprocess depth buffer without changing its color.
+      });
+    }
+    return states;
+  }
+
+  function unwrapRendererRender(fn) {
+    const seen = new Set();
+    let current = fn;
+    while (typeof current === 'function' && !seen.has(current)) {
+      seen.add(current);
+      const next = current.__hobunjiTerrainChunkOriginal
+        || current.__hobunjiOutlineRenderPerfOriginal
+        || current.__hobunjiHeldRenderOrderOriginal
+        || null;
+      if (typeof next !== 'function' || next === current) break;
+      current = next;
+    }
+    return current;
+  }
+
   const originalRender = rendererProto.render;
+  const rawRender = unwrapRendererRender(originalRender);
+
+  function replaySelectiveHeldOverlay(renderer, scene, camera, held, ground, originalCameraMask) {
+    if (!held.length || !ground.length) return;
+
+    const oldAutoClear = renderer.autoClear;
+    const oldAutoClearColor = renderer.autoClearColor;
+    const oldAutoClearDepth = renderer.autoClearDepth;
+    const oldAutoClearStencil = renderer.autoClearStencil;
+    const oldBackground = scene.background;
+    const oldSceneAutoUpdate = scene.autoUpdate;
+    const shadowMap = renderer.shadowMap;
+    const oldShadowAutoUpdate = shadowMap?.autoUpdate;
+
+    internalReplay = true;
+    try {
+      renderer.autoClear = false;
+      renderer.autoClearColor = false;
+      renderer.autoClearDepth = false;
+      renderer.autoClearStencil = false;
+      scene.background = null;
+      scene.autoUpdate = false; // base pass already produced current matrices
+      if (shadowMap) shadowMap.autoUpdate = false;
+
+      // 1) Rebuild depth from every ordinary world object, excluding exactly
+      // the held planes and classified ground cover. Color is untouched.
+      renderer.clearDepth();
+      const hidden = hideObjects([...ground, ...held]);
+      const depthMaterialStates = prepareNonGroundDepthMaterials(scene);
+      try {
+        camera.layers.mask = originalCameraMask;
+        rawRender.call(renderer, scene, camera);
+        nonGroundDepthReplayCount++;
+      } finally {
+        restoreMaterialStates(depthMaterialStates);
+        restoreVisibility(hidden);
+      }
+
+      // 2) Draw the held sprite ONCE against only that non-ground depth. This
+      // is the actual selective x-ray: ground is absent from the depth buffer,
+      // but all position-based ordinary occluders remain.
+      camera.layers.mask = HELD_OVERLAY_MASK;
+      rawRender.call(renderer, scene, camera);
+      selectiveOverlayCount++;
+
+      // 3) Put authored ground depth back without touching color. The outline
+      // and material-seam pipeline therefore receives a complete depth buffer
+      // just as if the normal base pass had remained untouched.
+      const groundMaterialStates = prepareGroundDepthMaterials(ground);
+      try {
+        camera.layers.mask = GROUND_REPLAY_MASK;
+        rawRender.call(renderer, scene, camera);
+        groundDepthRestoreCount++;
+      } finally {
+        restoreMaterialStates(groundMaterialStates);
+      }
+    } finally {
+      camera.layers.mask = originalCameraMask;
+      if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
+      scene.autoUpdate = oldSceneAutoUpdate;
+      scene.background = oldBackground;
+      renderer.autoClear = oldAutoClear;
+      renderer.autoClearColor = oldAutoClearColor;
+      renderer.autoClearDepth = oldAutoClearDepth;
+      renderer.autoClearStencil = oldAutoClearStencil;
+      internalReplay = false;
+    }
+  }
+
   function wrappedRender(scene, camera) {
-    if (internalRender || !scene?.isScene || !camera?.isCamera) {
+    if (internalReplay || !scene?.isScene || !camera?.isCamera) {
       return originalRender.call(this, scene, camera);
     }
 
     scanScene(scene);
+    if (!isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
 
-    const oldCameraMask = Number(camera.layers.mask) >>> 0;
-    const seesDefaultWorld = !!(oldCameraMask & DEFAULT_MASK);
-    const baseWorldPass = isBaseWorldPass(scene, camera);
-    const secondaryOutlinePass = isSecondaryOutlinePass(scene, camera);
+    const originalCameraMask = Number(camera.layers.mask) >>> 0;
+    const held = collectVisible(heldRegistry, scene);
+    const ground = collectVisible(groundRegistry, scene);
+    if (!held.length || !ground.length) return originalRender.call(this, scene, camera);
 
-    // This is the authoritative point of enforcement. It happens immediately
-    // before every real base-world render, after gameplay/animation/recolor
-    // updates for the frame and before Three.js builds its render lists.
-    if (baseWorldPass) {
-      baseWorldRenderCount++;
-      enforceHeldInvariant();
-    }
+    baseWorldRenderCount++;
+    for (const mesh of held) enforceHeldMesh(mesh);
+    for (const mesh of ground) enforceGroundMesh(mesh);
 
-    const hasVisibleHeld = heldCount > 0 && sceneHasVisibleHeld(scene);
-
-    // Never split secondary outline/depth/material-ID passes. Other non-base
-    // passes stay single-pass as well, but if they expect layer 0 they also get
-    // the relocated ground layer so debug/minimap/auxiliary views do not lose it.
-    if (!baseWorldPass || groundCount === 0 || !hasVisibleHeld) {
-      if (
-        !baseWorldPass
-        && !secondaryOutlinePass
-        && seesDefaultWorld
-        && groundCount > 0
-        && !(oldCameraMask & GROUND_MASK)
-      ) {
-        return withGroundLayerIncluded(this, scene, camera, originalRender);
-      }
-      passthroughCount++;
-      return originalRender.call(this, scene, camera);
-    }
-
-    const oldAutoClear = this.autoClear;
-    const oldBackground = scene.background;
-    const shadowMap = this.shadowMap;
-    const oldShadowAutoUpdate = shadowMap?.autoUpdate;
-    const ordinaryMask = (oldCameraMask & ~GROUND_MASK) >>> 0;
-
-    internalRender = true;
+    // Do not draw the tool in the ordinary base pass and then blend it a second
+    // time in the selective overlay. Hiding it here means the final base color
+    // contains exactly one tool draw, with no doubled alpha/edge darkening.
+    const heldVisibility = hideObjects(held);
+    let result;
     try {
-      // Pass 1: background + terrain/path/grass only. This works on whichever
-      // render target is currently bound, including the outline pipeline's
-      // offscreen base framebuffer.
-      camera.layers.mask = GROUND_MASK;
-      this.autoClear = oldAutoClear;
-      originalRender.call(this, scene, camera);
-
-      // Preserve ground COLOR in that target, discard only its depth.
-      this.clearDepth();
-
-      // Pass 2: every ordinary world object except the dedicated ground layer.
-      // Held sprites therefore remain depth-tested against characters, props,
-      // vegetation, buildings, etc., but ground/road/grass can never cover them.
-      camera.layers.mask = ordinaryMask;
-      this.autoClear = false;
-      scene.background = null;
-      if (shadowMap) shadowMap.autoUpdate = false; // pass 1 already refreshed shadows
-      const result = originalRender.call(this, scene, camera);
-      renderSplitCount++;
-      return result;
+      result = originalRender.call(this, scene, camera);
     } finally {
-      if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
-      scene.background = oldBackground;
-      this.autoClear = oldAutoClear;
-      camera.layers.mask = oldCameraMask;
-      internalRender = false;
+      restoreVisibility(heldVisibility);
     }
+
+    replaySelectiveHeldOverlay(this, scene, camera, held, ground, originalCameraMask);
+    return result;
   }
 
   wrappedRender.__hobunjiHeldRenderOrderWrapped = true;
@@ -365,13 +511,19 @@
   function snapshot() {
     return {
       installed: true,
+      mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
-      groundLayer: GROUND_LAYER,
-      groundMeshes: groundCount,
+      heldOverlayLayer: HELD_OVERLAY_LAYER,
+      groundReplayLayer: GROUND_REPLAY_LAYER,
       heldMeshes: heldCount,
+      groundMeshes: groundCount,
+      grassMeshes: grassCount,
+      roadMeshes: roadCount,
+      terrainMeshes: terrainCount,
       baseWorldRenders: baseWorldRenderCount,
-      renderSplits: renderSplitCount,
-      passthroughRenders: passthroughCount,
+      selectiveOverlays: selectiveOverlayCount,
+      nonGroundDepthReplays: nonGroundDepthReplayCount,
+      groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
     };
   }
@@ -381,34 +533,35 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-layer] held=${state.heldMeshes} ground=${state.groundMeshes} base=${state.baseWorldRenders} split=${state.renderSplits} repairs=${state.invariantRepairs} passthrough=${state.passthroughRenders}`;
+      const message = `[held-xray] held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
     return state;
   }
 
-  const api = {
+  window.HeldObjectRenderOrder = {
     installed: true,
-    GROUND_LAYER,
+    mode: 'selective-depth-replay',
     LEGACY_HELD_RENDER_ORDER,
+    HELD_OVERLAY_LAYER,
+    GROUND_REPLAY_LAYER,
     markHeldPlane,
     markGroundMesh,
-    enforceHeldInvariant,
     scanScene,
     snapshot,
     debugLogSnapshot,
-    // Debug-only classifier readout for the in-game/mobile console.
+    enforceHeldInvariant() {
+      for (const mesh of heldRegistry) enforceHeldMesh(mesh);
+    },
     classify(object) {
       return {
         held: isLegacyHeldPlane(object),
-        ground: isGroundSurface(object),
+        ground: !!groundKind(object),
         grass: isGrassGroundCover(object),
         road: isRoadSurface(object),
         terrain: isTerrainSurface(object),
       };
     },
   };
-
-  window.HeldObjectRenderOrder = api;
 })();
