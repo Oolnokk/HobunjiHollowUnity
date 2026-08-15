@@ -8224,6 +8224,24 @@
       }
 
       function isNpcTileWalkable(area, c, r) {
+        // Building interiors have their own small, self-contained col/row
+        // grid — its (c,r) values have nothing to do with the outdoor farm
+        // grid's coordinate space, so a building tile could coincide with a
+        // solid/water/crop farm tile at that same raw coordinate purely by
+        // chance. Falling through to the farm/interior/town branch below
+        // (as this used to) checked that irrelevant farm tile FIRST and
+        // could reject (or approve) a perfectly normal interior tile based
+        // on what's built on the farm at that spot — this silently broke
+        // pathfinding for any building NPC whose route or station-wander
+        // radius happened to land on a blocked farm coordinate (seen as an
+        // NPC arriving at a building, then never moving again: every
+        // wander-tile pick or grid-path attempt failed and silently
+        // retried forever). Resolve buildings against their own grid only.
+        if (_isBuildingArea(area)) {
+          const bg = npcGridForArea(area);
+          if (!bg?.[r]?.[c] || isSolid(bg[r][c].type)) return false;
+          return !furnitureBlocksMovementAt(area, c + 0.5, r + 0.5);
+        }
         const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
         const tile = g[r]?.[c];
         if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
@@ -8231,7 +8249,6 @@
         if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
         if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
         if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
-        if (_isBuildingArea(area)) { const g = npcGridForArea(area); return !!g?.[r]?.[c] && !isSolid(g[r][c].type); }
         return true;
       }
 
@@ -22507,6 +22524,9 @@
         actionButtons: () => computeActionButtons(),
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
+        npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
+        npcGridTileAt: (area, c, r) => { const g = npcGridForArea(area); return g?.[r]?.[c] || null; },
+        farmGridTileAt: (c, r) => grid?.[r]?.[c] || null,
         placeProcessing: placeProcessingFurniture,
         moveProcessing: moveProcessingFurniture,
         rotateProcessing: rotateProcessingFurniture,
