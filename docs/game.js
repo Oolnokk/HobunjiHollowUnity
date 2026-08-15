@@ -8223,48 +8223,10 @@
         return path;
       }
 
-      function isNpcTileWalkable(area, c, r) {
-        // Building interiors have their own small, self-contained col/row
-        // grid — its (c,r) values have nothing to do with the outdoor farm
-        // grid's coordinate space, so a building tile could coincide with a
-        // solid/water/crop farm tile at that same raw coordinate purely by
-        // chance. Falling through to the farm/interior/town branch below
-        // (as this used to) checked that irrelevant farm tile FIRST and
-        // could reject (or approve) a perfectly normal interior tile based
-        // on what's built on the farm at that spot — this silently broke
-        // pathfinding for any building NPC whose route or station-wander
-        // radius happened to land on a blocked farm coordinate (seen as an
-        // NPC arriving at a building, then never moving again: every
-        // wander-tile pick or grid-path attempt failed and silently
-        // retried forever). Resolve buildings against their own grid only.
-        if (_isBuildingArea(area)) {
-          const bg = npcGridForArea(area);
-          if (!bg?.[r]?.[c] || isSolid(bg[r][c].type)) return false;
-          return !furnitureBlocksMovementAt(area, c + 0.5, r + 0.5);
-        }
-        const g = area === 'interior' ? interiorGrid : area === 'town' ? townGrid : grid;
-        const tile = g[r]?.[c];
-        if (!tile || isSolid(tile.type) || tile.crop || tile.type === TileType.TRENCH || tile.type === TileType.RIVER || tile.type === TileType.STREAM) return false;
-        if (area === 'farm' && (worldObjects.has(c + ',' + r) || isHouseFootprint(c, r))) return false;
-        if (area !== 'town' && furnitureBlocksMovementAt(area, c + 0.5, r + 0.5)) return false;
-        if (area === 'town' && isTownBuildingCollisionTile(c, r)) return false;
-        if (_isZoneArea(area) && isTownBuildingCollisionTile(c, r, area)) return false;
-        return true;
-      }
-
-      function canNpcBeeline(area, fromX, fromZ, targetC, targetR, allowOccupiedTarget = false) {
-        const tx = targetC + 0.5, tz = targetR + 0.5;
-        const dist = Math.hypot(tx - fromX, tz - fromZ);
-        const step = npcMovementConfig().beelineSampleStepTiles ?? 0.25;
-        const samples = Math.max(1, Math.ceil(dist / step));
-        for (let i = 0; i <= samples; i++) {
-          const t = i / samples;
-          const c = Math.floor(fromX + (tx - fromX) * t);
-          const r = Math.floor(fromZ + (tz - fromZ) * t);
-          if (!isNpcTileWalkable(area, c, r) && !(allowOccupiedTarget && c === targetC && r === targetR)) return false;
-        }
-        return true;
-      }
+      // isNpcTileWalkable and canNpcBeeline now live in js/npc-pathfinding.js
+      // — aliased back below (see the NpcPathfinding init block further
+      // down, right after the functions they depend on are all defined) so
+      // every call site above and below keeps working unchanged.
 
       // parseNpcTimeMinutes/currentGameMinutes/isNowWithinNpcRuleWindow now
       // live in js/npc-scheduling.js (schedule-rule time-window matching);
@@ -8356,59 +8318,8 @@
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
-      // One-hop links reachable directly from `area`, in the shape
-      // { toArea, exit:{c,r}, spawn:{c,r} } — the raw edges of the area graph
-      // findNpcAreaLink() searches below. Mirrors the exact matching rules the
-      // single-hop version of this code used to use, so existing direct links
-      // (town↔building, building→town, farm↔interior) behave identically.
-      function areaLinksFrom(area) {
-        const pool = npcTransitionPool(area);
-        const links = [];
-        for (const t of pool) {
-          if (t.target === 'building' && t.targetMapId) {
-            if (!_buildingScenes.has(t.targetMapId)) loadBuildingScene(t.targetMapId); // warm it up before an NPC reaches the door
-            const bi = _buildingScenes.get(t.targetMapId);
-            const spawn = bi ? buildingSpawnFromExit(bi, bi.cols, bi.rows)
-              : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
-            links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
-          } else if (t.target === 'exit_building') {
-            const townSpot = worldTownTransitions.find(x => x.target === 'building' && x.targetMapId === area);
-            const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
-            links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
-          } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
-            links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
-          }
-        }
-        return links;
-      }
-
-      // Resolves the door an NPC should walk to in order to leave `fromArea`
-      // toward `toArea`, plus the spot they should appear at once they arrive —
-      // i.e. the Spot doubles as both the movement target on the way out and
-      // the spawn point on the way in, so NPCs are never warped straight to
-      // their final schedule target through a wall. `toArea` may be several
-      // hops away (e.g. town → a building's ground floor → one of its
-      // upstairs rooms) — this does a short BFS over the area graph and
-      // returns only the *first* hop; the caller re-resolves on arrival,
-      // which naturally chains the walk leg by leg instead of skipping
-      // straight to the final room.
-      function findNpcAreaLink(fromArea, toArea) {
-        if (fromArea === toArea) return null;
-        const visited = new Set([fromArea]);
-        const queue = [{ area: fromArea, firstHop: null }];
-        while (queue.length) {
-          const { area, firstHop } = queue.shift();
-          for (const link of areaLinksFrom(area)) {
-            const hop = firstHop || link;
-            if (link.toArea === toArea) return hop;
-            if (!visited.has(link.toArea)) {
-              visited.add(link.toArea);
-              queue.push({ area: link.toArea, firstHop: hop });
-            }
-          }
-        }
-        return null;
-      }
+      // areaLinksFrom/findNpcAreaLink now live in js/npc-pathfinding.js —
+      // aliased back below alongside isNpcTileWalkable/canNpcBeeline.
 
       async function spawnScheduledNpcs(extraRecords) {
         if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
@@ -8503,6 +8414,40 @@
         normalizeStationLabel,
       } = window.NpcScheduling;
       const npcStationsById = window.NpcScheduling.stationsById;
+
+      // NPC walkability/beeline checks and area-graph search (isNpcTileWalkable,
+      // canNpcBeeline, areaLinksFrom, findNpcAreaLink) live in
+      // js/npc-pathfinding.js — aliased back to these same names so every
+      // call site above and below keeps working unchanged.
+      window.NpcPathfinding.init({
+        getGrid: () => grid,
+        getTownGrid: () => townGrid,
+        // interiorGrid is a plain const (never reassigned) but is declared
+        // further down in this same closure — referencing it directly here
+        // would hit the const/let temporal dead zone (unlike the function
+        // declarations below, which are hoisted regardless of position).
+        getInteriorGrid: () => interiorGrid,
+        TileType,
+        worldObjects,
+        isSolid,
+        isHouseFootprint,
+        isTownBuildingCollisionTile,
+        isZoneArea: _isZoneArea,
+        isBuildingArea: _isBuildingArea,
+        furnitureBlocksMovementAt,
+        npcGridForArea,
+        npcMovementConfig,
+        npcTransitionPool,
+        buildingScenes: _buildingScenes,
+        loadBuildingScene,
+        buildingSpawnFromExit,
+      });
+      const {
+        isNpcTileWalkable,
+        canNpcBeeline,
+        areaLinksFrom,
+        findNpcAreaLink,
+      } = window.NpcPathfinding;
 
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
@@ -8822,7 +8767,17 @@
               footprintHalfDepth: seatTransform.footprintHalfDepth,
               anchorZ: seatTransform.anchorZ,
             } : undefined;
-            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, false, seatedPose);
+            // Procedural leg IK is real per-frame cost (stride/lift solving
+            // for both legs) that's purely visual — pointless work for an
+            // NPC nobody can see because they're not in the player's
+            // current area. Suppressed mode (the same one drink-interaction
+            // locks use) just holds a neutral resting pose instead of
+            // solving a gait, at a fraction of the cost. Every walker still
+            // updates every frame regardless of area (see updateNpcWalkers)
+            // so schedules/arrivals stay correct — only the parts nobody
+            // can see get cheaper.
+            const isVisibleArea = this.area === currentArea;
+            if (this.legs) this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose);
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
               window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
@@ -8891,14 +8846,25 @@
               this._wanderTarget = null; this._wanderGridPath = null; this._wanderWaitT = 0;
             }
             if (this.state === 'station-wander') {
-              this._updateStationWander(target, dt);
-              const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-              root.position.y += (wty - root.position.y) * 0.2;
-              if (this._moveSpeedTiles > 0.05) {
-                const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
-                root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+              // _updateStationWander is real per-frame cost when it's not
+              // just idly waiting — picking a random tile, a canNpcBeeline
+              // scan, and potentially a full TilePathfinding.findPath — for
+              // an NPC nobody can see because they're not in the player's
+              // current area. Wandering itself is pure flavor with no
+              // gameplay consequence off-screen, so an invisible NPC just
+              // holds its current spot instead of paying for it; the next
+              // tick after the player actually visits resumes wandering
+              // normally from wherever it was left.
+              if (isVisibleArea) {
+                this._updateStationWander(target, dt);
+                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                root.position.y += (wty - root.position.y) * 0.2;
+                if (this._moveSpeedTiles > 0.05) {
+                  const npcBobEffort = clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
+                  root.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * npcBobEffort);
+                }
+                groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               }
-              groundShadow.position.y = wty - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';

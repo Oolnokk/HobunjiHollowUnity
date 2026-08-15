@@ -1706,6 +1706,10 @@
        checks — window.NpcScheduling) — must load before game.js, which
        calls window.NpcScheduling.init(...) during its own setup. -->
   <script src="js/npc-scheduling.js?v=20260815a"></script>
+  <!-- NPC walkability/beeline checks + area-graph pathfinding
+       (window.NpcPathfinding) — must load before game.js, which calls
+       window.NpcPathfinding.init(...) during its own setup. -->
+  <script src="js/npc-pathfinding.js?v=20260815a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the
