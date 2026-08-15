@@ -8699,7 +8699,7 @@
               if (!this._tryStartGridPath(target)) { this.state = 'idle'; return; }
             }
             const nextHop = this._gridPath[0];
-            if (this.moveToward(nextHop.c + 0.5, nextHop.r + 0.5, dt)) this._gridPath.shift();
+            if (this.moveToward(nextHop.col + 0.5, nextHop.row + 0.5, dt)) this._gridPath.shift();
             if (!this._gridPath.length) this.state = 'idle'; // arrived — next tick re-evaluates the real target
           },
           // Station wander — active once state === 'station-wander' (entered
@@ -8757,7 +8757,7 @@
             }
             if (this._wanderGridPath && this._wanderGridPath.length) {
               const hop = this._wanderGridPath[0];
-              if (this.moveToward(hop.c + 0.5, hop.r + 0.5, dt)) this._wanderGridPath.shift();
+              if (this.moveToward(hop.col + 0.5, hop.row + 0.5, dt)) this._wanderGridPath.shift();
               return;
             }
             if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
