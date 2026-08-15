@@ -8930,7 +8930,18 @@
                   // externally by triggerNpcKurrayaTwitch on each real
                   // 'sounded-note' from this NPC's ambient performance iframe,
                   // not a canned swing loop.
-                  this.stationToolMesh.position.set(-0.28, 0.18, 0);
+                  //
+                  // Anchored to this NPC's own scanned hand-attach point
+                  // (avatarGroup.userData.handAttachX/handAttachY — the same
+                  // per-species/gender data updateHeldItemHolder reads via
+                  // playerToolBaseX/playerItemHoldY for the player's own
+                  // Kurraya) instead of one flat guess for every avatar —
+                  // species/gender proportions differ enough that a
+                  // one-size-fits-all offset visibly floats the instrument
+                  // away from whichever avatar doesn't match the tuned guess.
+                  const handX = avatarGroup.userData?.handAttachX ?? -(avatarGroup.userData?.portraitModelWidth || avatarHeight) / 2;
+                  const handY = avatarGroup.userData?.handAttachY ?? avatarHeight / 2;
+                  this.stationToolMesh.position.set(handX * 0.4, handY + 0.19 - 0.05, HELD_ITEM_FORWARD_OFFSET);
                   updateKurrayaTwitch(this.stationKurrayaTwitch, this.stationToolMesh);
                 } else if (this.stationToolMesh) {
                   // Repeats the player's own chop/thrust swing curve (see updateToolMesh)
