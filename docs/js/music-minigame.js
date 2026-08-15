@@ -1102,7 +1102,11 @@
     frame.allow = 'autoplay';
     document.body.appendChild(frame);
     ambientFrames.set(npcId, frame);
-    frame.addEventListener('load', () => { bridgeOf(frame)?.startAmbientLead?.(songId); }, { once: true });
+    // Gives the ambient metronome a beat matching the ground this NPC is
+    // actually standing on (see game.js's npcFootstepSampleUrl) instead of
+    // a generic click — null falls back to the iframe's own default.
+    const footstepSampleUrl = deps.getNpcFootstepSampleUrl?.(npcId) || null;
+    frame.addEventListener('load', () => { bridgeOf(frame)?.startAmbientLead?.(songId, footstepSampleUrl); }, { once: true });
     frame.src = MUSIC_MINIGAME_SRC;
   }
 
@@ -1114,10 +1118,17 @@
     if (!deps) return;
     const performers = deps.listInstrumentPerformers();
     const performingIds = new Set(performers.map(p => p.npcId));
+    // The hidden ambient <iframe> plays through the browser's normal (non-
+    // positional) audio output, so it's audible everywhere regardless of
+    // which map it's attached to — only ever start/keep one sounding for
+    // whichever area the player is actually standing in right now.
+    const currentArea = deps.getCurrentArea();
 
-    // Stop ambient audio (and release leadership) for anyone no longer on duty.
+    // Stop ambient audio (and release leadership) for anyone no longer on
+    // duty, or on duty in a map the player has since left.
     for (const npcId of [...ambientFrames.keys()]) {
-      if (performingIds.has(npcId)) continue;
+      const performer = performers.find(p => p.npcId === npcId);
+      if (performer && performer.area === currentArea) continue;
       stopAmbientForNpc(npcId);
       for (const [area, leader] of leaderByArea) {
         if (leader.type === 'npc' && leader.id === npcId) leaderByArea.delete(area);
@@ -1125,6 +1136,7 @@
     }
 
     for (const performer of performers) {
+      if (performer.area !== currentArea) continue; // Not audible from here — don't even start it.
       if (ambientFrames.has(performer.npcId)) continue; // Already sounding.
       if (playerSession?.mode === 'backup' && playerSession.area === performer.area && playerSession.npcId === performer.npcId) continue; // The player's own overlay is standing in as this NPC's audio right now.
       const leader = leaderByArea.get(performer.area);

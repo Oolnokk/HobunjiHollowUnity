@@ -34,6 +34,6 @@
   "npcStations": [
     { "id": "station_inn_bar_stand", "label": "Standing Behind Bar", "col": 3, "row": 4, "rotY": 180, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "", "wanderMode": "radius", "wanderRadiusTiles": 2 },
     { "id": "station_inn_bar_kegs", "label": "Checking Kegs", "col": 7, "row": 4, "rotY": 0, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "", "wanderMode": "radius", "wanderRadiusTiles": 2 },
-    { "id": "station_foroji_inn_music", "label": "Playing Music at the Inn", "col": 15, "row": 3, "rotY": 180, "pose": "stand", "toolKey": "kurraya", "toolIntervalSec": 2.4, "toolAnimStyle": "strum", "wanderMode": "radius", "wanderRadiusTiles": 1 }
+    { "id": "station_foroji_inn_music", "label": "Playing Music at the Inn", "col": 15, "row": 3, "rotY": 0, "pose": "stand", "toolKey": "kurraya", "toolIntervalSec": 2.4, "toolAnimStyle": "strum", "wanderMode": "radius", "wanderRadiusTiles": 1 }
   ]
 }

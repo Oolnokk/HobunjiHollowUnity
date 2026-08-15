@@ -22830,10 +22830,31 @@
 
       let _musicPrevCameraMode = null;
       let _musicPrevCameraTarget = null;
+      // Resolves a random real-recording footstep URL for whatever surface
+      // this NPC is currently standing on — same surface resolution
+      // _tickFootsteps uses for their actual footfalls — turned into an
+      // absolute URL so it still loads correctly from inside the Lyre
+      // minigame's own iframe (a different base path under assets/minigames/).
+      // Used to give an ambient NPC performance's metronome a beat that
+      // matches the ground they're actually playing on instead of a
+      // generic click.
+      function npcFootstepSampleUrl(npcId) {
+        const walker = npcWalkers.find(w => w.rec?.id === npcId);
+        if (!walker || !window.AudioSystem) return null;
+        const wx = walker.root.position.x * TILE, wy = walker.root.position.z * TILE;
+        const tile = window.AudioSystem.footstepTileAt(walker.area, wx, wy, npcGridForArea(walker.area));
+        const surfaceKey = window.AudioSystem.footstepSurfaceKey(walker.area, tile?.type ?? null);
+        const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls;
+        if (!urls?.length) return null;
+        const url = urls[Math.floor(Math.random() * urls.length)];
+        try { return new URL(url, document.baseURI).href; } catch { return url; }
+      }
+
       window.MusicMinigame?.init({
         refreshActionBar,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
+        getNpcFootstepSampleUrl: npcFootstepSampleUrl,
         showToast,
         // Frames the performance in third-person (see the "music" camera
         // mode in scratchbones-config.js) instead of leaving the default

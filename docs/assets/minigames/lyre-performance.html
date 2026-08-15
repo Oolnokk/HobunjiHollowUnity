@@ -1494,6 +1494,7 @@
     metronomeSampleName:'', // Display name for the imported stomp/click sample.
     metronomeSampleLevel:0.55, // Independent gain for the imported metronome sample.
     pendingMetronomeSampleRecord:null, // Holds cached stomp PCM until Web Audio has been created.
+    ambientMetronomeBuffer:null, // Ambient (no-human-input) NPC performance only — the tile-footstep sample the musician is standing on (see startAmbientLead), overriding metronomeSampleBuffer for as long as this session runs. Never persisted.
     rootPadEnabled:true, // Enabled by default; uses the synth root pad unless an imported pad sample is available.
     rootPadLevel:0.02, // User-facing synth pad mix level; internally remapped so low roots remain audible.
     rootPadSampleBuffer:null, // Optional imported looping pad source used instead of the synth oscillators.
@@ -2330,12 +2331,31 @@
   }
 
   function playMetronomeClick(beatData = 0, force = false) {
-    if ((!state.auditoryMetronome && !force) || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
+    // An ambient NPC performance (state.game.loopDemo — see startAmbientLead)
+    // always keeps its footstep-sample beat regardless of the player's own
+    // auditory-metronome preference: that toggle is a practice aid for the
+    // player's own play session, not something an onlooking NPC performance
+    // should be silenced by.
+    if ((!state.auditoryMetronome && !force && !state.game.loopDemo) || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
     const context = state.audioContext; // Provides sample-accurate scheduling for either the imported stomp or synthesized click.
     const startTime = context.currentTime;
     const beatInChord = typeof beatData === 'number' ? beatData : beatData.beatInChord;
     const accented = beatInChord === 0 || !!beatData?.isMeasureStart;
     const groupAccent = !accented && !!beatData?.isGroupStart;
+    if (state.ambientMetronomeBuffer) {
+      // Ambient NPC performance: the tile-footstep sample the musician is
+      // standing on, at double the normal metronome-sample gain so it reads
+      // as a clear rhythmic stomp to an onlooker instead of an incidental
+      // footstep-quiet sound.
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = state.ambientMetronomeBuffer;
+      gain.gain.setValueAtTime(clamp(2 * state.metronomeSampleLevel * (accented ? 1 : groupAccent ? 0.86 : 0.72), 0, 1.2), startTime);
+      source.connect(gain).connect(state.master);
+      source.start(startTime);
+      source.onended = () => { try { source.disconnect(); gain.disconnect(); } catch {} };
+      return;
+    }
     if (state.metronomeSampleBuffer) {
       const source = context.createBufferSource(); // One-shot stomp/click; every beat gets an independent source.
       const gain = context.createGain();
@@ -6844,9 +6864,17 @@
     // startSong/the endAt handler below — for as long as an NPC is parked
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
-    async startAmbientLead(songId) {
+    async startAmbientLead(songId, footstepSampleUrl) {
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
+      state.ambientMetronomeBuffer = null;
+      if (footstepSampleUrl) {
+        try {
+          const response = await fetch(footstepSampleUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          state.ambientMetronomeBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
+        } catch (error) { log('Ambient footstep metronome sample failed to load', error?.message || error); }
+      }
       const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
       startSong(state.selectedSong,{demoMode:mode,loopDemo:true});
       return { started:!!state.game.active, title:songTitle(state.selectedSong) };
