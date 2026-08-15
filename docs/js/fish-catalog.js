@@ -144,10 +144,19 @@
   function wrap(api) {
     if(!api?.init||api.__fishCatalogWrapped)return api;
     const init=api.init;
+    const beginCast=api.beginCast;
     api.init=d=>{
       capturedFishingDeps={...(capturedFishingDeps||{}),...(d||{}),FISH_DEFS:buildFishingDefs()};
       return init(capturedFishingDeps);
     };
+    if(typeof beginCast==='function'){
+      api.beginCast=(...args)=>{
+        ensureSilhouetteAssets();
+        const result=beginCast.apply(api,args);
+        startPresentationLoop();
+        return result;
+      };
+    }
     Object.defineProperty(api,'__fishCatalogWrapped',{value:true,configurable:true});
     return api;
   }
@@ -161,7 +170,14 @@
 
   function registerItems() {
     let n=0;
-    const go=()=>{if(window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(),buildBasePrices())===true){window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish`,'items');return}if(n++<200)setTimeout(go,50);else console.warn('[fish-catalog] item bridge unavailable')};
+    const go=()=>{
+      if(window.ShippingPanel?.registerItemDefinitions?.(buildItemDefs(),buildBasePrices())===true){
+        window.__farmLog?.(`[fish-catalog] registered ${FISH.length} authored fish`,'items');
+        return;
+      }
+      if(n++<40)setTimeout(go,250);
+      else console.warn('[fish-catalog] item bridge unavailable');
+    };
     go();
   }
 
@@ -173,10 +189,6 @@
     cfg.targetYOffsetTiles=0.9;
   }
 
-  // Render the animated silhouette directly from its source layers instead of
-  // bending the minigame's already-encoded 12fps PNG in a second async pass.
-  // This keeps the temporal phase continuous and lets the waveform itself be
-  // authored in ring-local coordinates.
   const CURVED_FISH_ART = {
     imgW:64, imgH:40, slices:28, boneCount:6,
     bodyAmpScale:0.82, whiskerAmpScale:0.3, whiskerRate:0.38,
@@ -185,7 +197,7 @@
   };
   let silhouetteBody=null, silhouetteWhiskers=null, silhouetteLoadPromise=null;
   let curvedCanvas=null, curvedCtx=null, lastCurvedUrl=null, lastCurvedAt=-Infinity;
-  let observedFishImage=null, hrefObserver=null, settingHref=false;
+  let observedFishImage=null, hrefObserver=null, settingHref=false, presentationRunning=false;
 
   function ensureSilhouetteAssets() {
     if (silhouetteBody) return Promise.resolve(true);
@@ -205,9 +217,6 @@
     for(let i=0;i<CURVED_FISH_ART.boneCount;i++){
       const t=CURVED_FISH_ART.boneCount===1?0.5:i/(CURVED_FISH_ART.boneCount-1);
       const taper=Math.sin(Math.PI*t);
-      // 1.05 broad waves across the body instead of the original 2.15:
-      // the swimming spikes sit much farther apart from one another and are
-      // visually distinct from the much larger, static curvature of the ring.
       const leadLag=t*Math.PI*2*cycles;
       bones.push(Math.sin(phase*rateScale+leadLag)*amp*taper);
     }
@@ -254,9 +263,6 @@
       const offset=offsets[i]||0;
       const nextOffset=offsets[Math.min(offsets.length-1,i+1)]??offset;
       const shear=clamp((nextOffset-offset)/Math.max(1,dstSliceW),-0.28,0.28);
-
-      // Compensate for the later independent SVG width/height scaling so the
-      // local X axis becomes the ring tangent and local Y becomes its normal.
       const a=cosT;
       const b=sinT*sxScale/syScale;
       const c=-sinT*syScale/sxScale;
@@ -270,11 +276,7 @@
       ctx.beginPath();
       ctx.rect(-dstSliceW*0.65,-canvasH,dstSliceW*1.3,canvasH*2);
       ctx.clip();
-      ctx.drawImage(
-        image,
-        i*srcSliceW,0,srcSliceW+1,image.naturalHeight,
-        -dstSliceW/2-0.75,-drawH/2,dstSliceW+1.5,drawH
-      );
+      ctx.drawImage(image,i*srcSliceW,0,srcSliceW+1,image.naturalHeight,-dstSliceW/2-0.75,-drawH/2,dstSliceW+1.5,drawH);
       ctx.restore();
     }
     ctx.restore();
@@ -283,23 +285,15 @@
   function renderCurvedFishFrame(state,sxScale,syScale) {
     if(!silhouetteBody||state?.phase!=='active')return null;
     if(lastCurvedUrl&&state.fishAnimT-lastCurvedAt<CURVED_FISH_ART.frameInterval)return lastCurvedUrl;
-
     const art=CURVED_FISH_ART;
     const {canvas,ctx,w,h}=ensureCurvedCanvas();
     ctx.clearRect(0,0,w,h);
-
-    // Keep swim tempo independent of ring locomotion. The old source phase also
-    // added fish.angle, so abrupt velocity/retarget changes could jerk the wave.
     const phase=state.fishAnimT*7.5;
     const bodyAmp=Math.max(2,art.imgH*0.075*art.bodyAmpScale);
     const bodyOffsets=buildWaveOffsets(art.slices,bodyAmp,phase,1);
     const whiskerOffsets=buildWaveOffsets(art.slices,bodyAmp*art.whiskerAmpScale,phase+0.85,art.whiskerRate);
-
     drawWaveLayerOnRing(ctx,silhouetteBody,w,h,art.imgW,art.imgH,bodyOffsets,sxScale,syScale,1);
-    if(silhouetteWhiskers?.naturalWidth){
-      drawWaveLayerOnRing(ctx,silhouetteWhiskers,w,h,art.imgW,art.imgH,whiskerOffsets,sxScale,syScale,0.95);
-    }
-
+    if(silhouetteWhiskers?.naturalWidth)drawWaveLayerOnRing(ctx,silhouetteWhiskers,w,h,art.imgW,art.imgH,whiskerOffsets,sxScale,syScale,0.95);
     try{
       lastCurvedUrl=canvas.toDataURL('image/png');
       lastCurvedAt=state.fishAnimT;
@@ -325,28 +319,36 @@
     hrefObserver=new MutationObserver(()=>{
       if(settingHref)return;
       const state=window.Fishing?.state;
-      if(state?.phase==='active'&&lastCurvedUrl&&image.getAttribute('href')!==lastCurvedUrl){
-        setFishHref(image,lastCurvedUrl);
-      }
+      if(state?.phase==='active'&&lastCurvedUrl&&image.getAttribute('href')!==lastCurvedUrl)setFishHref(image,lastCurvedUrl);
     });
     hrefObserver.observe(image,{attributes:true,attributeFilter:['href']});
   }
 
+  function stopPresentationLoop() {
+    presentationRunning=false;
+    hrefObserver?.disconnect();
+    hrefObserver=null;
+    observedFishImage=null;
+    lastCurvedUrl=null;
+    lastCurvedAt=-Infinity;
+  }
+
   function presentationLoop() {
     const state=window.Fishing?.state;
-    const fishDef=state?.fishDef;
+    if(!state){
+      stopPresentationLoop();
+      return;
+    }
+    const fishDef=state.fishDef;
     const image=document.getElementById('fishDeformedImage');
     observeFishImage(image);
-    ensureSilhouetteAssets();
-
     if(image&&fishDef){
       const sx=Math.max(.2,Number(fishDef.minigameScaleX??fishDef.minigameScale??1)||1);
       const sy=Math.max(.2,Number(fishDef.minigameScaleY??fishDef.minigameScale??1)||1);
       image.style.transformBox='fill-box';
       image.style.transformOrigin='center';
       image.style.transform=`scale(${sx},${sy})`;
-
-      if(state?.phase==='active'){
+      if(state.phase==='active'){
         const href=renderCurvedFishFrame(state,sx,sy);
         if(href)setFishHref(image,href);
       }else{
@@ -354,6 +356,12 @@
         lastCurvedAt=-Infinity;
       }
     }
+    if(presentationRunning)requestAnimationFrame(presentationLoop);
+  }
+
+  function startPresentationLoop() {
+    if(presentationRunning)return;
+    presentationRunning=true;
     requestAnimationFrame(presentationLoop);
   }
 
@@ -361,6 +369,4 @@
   configureCatchCamera();
   hookFishing();
   registerItems();
-  ensureSilhouetteAssets();
-  requestAnimationFrame(presentationLoop);
 })();
