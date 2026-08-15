@@ -13,7 +13,7 @@
   const ACTION_BUTTON_IDS = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']; // Used as the five rendered semantic action slots populated by refreshActionBar().
   const activePresses = new Map(); // Used to pair keydown/keyup with the exact button pressed even if the action bar refreshes mid-hold.
   const ownedCodes = new Set(); // Used to stop game.js's older array-index fallback from also firing a claimed action key.
-  const qHoldState = { down: false, held: false, timer: null }; // Used to preserve Q-hold item selection while making a Q tap activate rendered action2.
+  const qHoldState = { down: false, held: false, timer: null }; // Used to preserve Q-hold item selection while Q remains the player's Action Button 2 binding.
   let syntheticPointerId = 9100; // Used to give keyboard-driven button presses stable pointer identities accepted by the existing pointer handlers.
   let lastRouteDebug = null; // Used by diagnostics to report the last desktop action route.
   let badgeSyncPending = false; // Used to coalesce repeated action-bar DOM mutations into one badge refresh.
@@ -144,7 +144,7 @@
       return true;
     }
 
-    const actionId = actionIdForDesktopCode('KeyQ'); // Used so Q tap follows its configured semantic action instead of game.js's old "second allowed action" shortcut.
+    const actionId = actionIdForDesktopCode('KeyQ'); // Used so a Q tap follows its current player binding while Q is still assigned to Action Button 2.
     const slot = actionSlotFromId(actionId);
     if (!slot) return true;
     const started = startRenderedPress('KeyQ', slot, event);
@@ -161,13 +161,13 @@
   function onKeyDown(event) {
     if (gameplayBlocked(event)) return;
 
-    if (event.code === 'KeyQ') {
+    const actionId = actionIdForDesktopCode(event.code); // Used to resolve configured desktop action-slot keys, including player remaps.
+    if (event.code === 'KeyQ' && actionId === 'action2') {
       beginQHold(event);
       claim(event);
       return;
     }
 
-    const actionId = actionIdForDesktopCode(event.code); // Used to resolve non-Q configured desktop action-slot keys.
     const slot = actionSlotFromId(actionId);
     if (!slot || event.repeat) return;
     ownedCodes.add(event.code);
@@ -254,10 +254,17 @@
     }
   }
 
+  function onBindingsChanged(event) {
+    if (event?.detail?.device && event.detail.device !== 'desktop') return;
+    resetPressedState(); // Used to prevent an old key held during a remap from staying paired to a stale button after Settings changes it.
+    scheduleBadgeSync();
+  }
+
   window.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('keyup', onKeyUp, true);
   window.addEventListener('wheel', onWheel, { capture: true, passive: false });
   window.addEventListener('blur', resetPressedState);
+  window.addEventListener('hobunji-input-bindings-changed', onBindingsChanged);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installBadgeSync, { once: true });
   else installBadgeSync();
 
