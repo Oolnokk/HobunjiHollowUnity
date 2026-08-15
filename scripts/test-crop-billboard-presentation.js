@@ -9,24 +9,35 @@ function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
 }
 
-const presentation = source('docs/js/crop-billboard-presentation.js'); // Used to pin planted garlink/ongyums presentation-only transforms.
-const loader = source('docs/js/combat/combat-config-loader.js'); // Used to ensure the presentation wrapper installs after crop-sprite-art.
+const presentation = source('docs/js/crop-billboard-presentation.js'); // Used to pin shared farm-crop soil anchoring and clustered billboard grounding.
+const loader = source('docs/js/combat/combat-config-loader.js'); // Used to ensure the presentation wrapper installs after crop sprite/heftroot bridges.
+const game = source('docs/game.js'); // Used to pin the exact water lift this presentation cancels.
 
-assert.match(presentation, /const PRESENTATION_SCALE = 0\.5/,
-  'new planted crop billboards render at half their previous size');
-assert.match(presentation, /key === 'garlink' \|\| key === 'ongyums'/,
-  'only garlink and ongyums world billboards receive the new planted transform');
-assert.match(presentation, /mesh\.position\.y -= gameScale \* 0\.5 \+ SURFACE_EPSILON/,
-  'billboard center is moved from the old cube center down to the soil surface');
-assert.match(presentation, /mesh\.scale\.set\([\s\S]*?PRESENTATION_SCALE/,
-  'billboard presentation halves the game-owned growth scale before draw');
+assert.match(game, /const WATER_UNIT = SLAB_H \/ MAX_WATER/,
+  'game.js still computes crop water lift from the shared water-depth conversion');
+assert.match(game, /const surfY\s*= tileSurfaceY\(tile\.type\) \+ tile\.water \* WATER_UNIT/,
+  'game.js still supplies water-raised crop positions that the presentation layer must counter at draw time');
+assert.match(presentation, /const WATER_UNIT = 0\.5 \/ 3\.0/,
+  'presentation mirrors the current 0.5/3 water-depth-to-world-Y conversion');
+assert.match(presentation, /waterLift = waterDepth \* WATER_UNIT/,
+  'live tile water depth is converted into the exact crop Y correction');
+assert.match(presentation, /root\.position\.y -= waterLift \+ centerLift/,
+  'crop roots are lowered back to soil rather than riding on the water surface');
+assert.match(presentation, /hobunjiCropRootKey \|\| object\?\.userData\?\.hobunjiCropSpriteKey/,
+  'the shared soil correction discovers procedural, clustered, and generic crop-root tags');
+assert.match(presentation, /cropKey === 'garlink' \|\| cropKey === 'ongyums'/,
+  'only converted garlink/ongyums clusters also remove the old generic cube center lift');
+assert.match(presentation, /root\.userData\?\.hobunjiCropClusterCount === 3/,
+  'cube-center correction waits until garlink/ongyums have actually converted into three-member billboard clusters');
+assert.doesNotMatch(presentation, /root\.scale\.set|mesh\.scale\.set/,
+  'the presentation layer no longer shrinks the whole crop root; individual cluster members own their requested size');
 assert.match(presentation, /try \{[\s\S]*?previousRender\.call[\s\S]*?finally \{[\s\S]*?restoreTransforms/,
-  'presentation transforms are restored after rendering so crop simulation remains owned by game.js');
+  'temporary soil anchoring is restored after rendering so crop simulation remains owned by game.js');
 
 const artIndex = loader.indexOf('crop-sprite-art.js?v=20260814a');
+const heftrootIndex = loader.indexOf('heftroot-billboard-bridge.js');
 const presentationIndex = loader.indexOf('crop-billboard-presentation.js?v=20260814a');
-const metadataIndex = loader.indexOf('inventory-action-metadata-bridge.js');
-assert.ok(artIndex >= 0 && presentationIndex > artIndex && metadataIndex > presentationIndex,
-  'billboard presentation loads after crop conversion and before unrelated held-item metadata');
+assert.ok(artIndex >= 0 && heftrootIndex > artIndex && presentationIndex > heftrootIndex,
+  'shared crop presentation loads after both authored crop conversion bridges');
 
-console.log('crop billboard presentation tests passed');
+console.log('crop soil-anchor presentation tests passed');
