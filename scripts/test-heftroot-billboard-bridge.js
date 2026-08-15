@@ -23,28 +23,26 @@ assert.match(game, /crop === 'needlegrain'[\s\S]*?FG\.buildNeedlegrainMesh/,
 assert.match(game, /crop === 'heftroot'[\s\S]*?FG\.buildHeftrootMesh/,
   'heftroot continues through the normal crop lifecycle while its visual builder is replaceable');
 assert.match(game, /offsets = \[\[-0\.20, 0, 0\.14\], \[0\.22, 0, 0\.14\], \[0\.0, 0, -0\.22\]\]/,
-  'the legacy three-plant heftroot wrapper still owns its existing offsets');
+  'the legacy three-plant heftroot wrapper still owns its existing triangle offsets');
 
 assert.match(bridge, /BILLBOARD_PATH = 'assets\/objectsprites\/heftroot\.png'/,
   'planted heftroot uses the authored heftroot PNG');
-assert.match(bridge, /BILLBOARD_SCALE = 0\.75/,
-  'planted heftroot renders at 75% of its previous billboard size');
+assert.match(bridge, /BILLBOARD_SCALE = 0\.5625/,
+  'each clustered heftroot is 25% smaller than the previous 0.75-scale billboard');
 assert.match(bridge, /plane\.scale\.set\(authoredAspect \* BILLBOARD_SCALE, BILLBOARD_SCALE, BILLBOARD_SCALE\)/,
-  'initial heftroot billboard scale preserves aspect while applying the 75% reduction');
+  'initial heftroot billboard scale preserves aspect while applying the new reduction');
 assert.match(bridge, /plane\.scale\.x = authoredAspect \* BILLBOARD_SCALE[\s\S]*?plane\.scale\.y = BILLBOARD_SCALE/,
-  'async texture aspect updates preserve the same 75% world scale');
-assert.match(bridge, /foliage\.buildHeftrootMesh = function authoredHeftrootBillboardMesh/,
-  'the bridge replaces only the public heftroot mesh factory');
-assert.doesNotMatch(bridge, /buildNeedlegrainMesh\s*=/,
-  'the bridge never replaces needlegrain foliage');
-assert.match(bridge, /new THREE\.PlaneGeometry\(1, 1\)/,
-  'heftroot world geometry is a 2D plane instead of procedural tuber geometry');
-assert.match(bridge, /isSyntheticClusterSeed\(col, row\)[\s\S]*?return new THREE\.Group\(\)/,
-  'the two RNG-only legacy cluster calls return empty groups instead of duplicate heftroot PNGs');
-assert.match(bridge, /plane\.position\.set\(-PRIMARY_OFFSET_X, 0, -PRIMARY_OFFSET_Z\)/,
-  'the single visible billboard cancels the legacy first-cluster offset and lands at tile center');
-assert.match(bridge, /hobunjiCropSpriteKey = 'heftroot'/,
-  'heftroot billboard planes are explicitly tagged for diagnostics/presentation');
+  'async texture aspect updates preserve the same reduced world scale');
+assert.match(bridge, /foliage\.buildHeftrootMesh = function authoredHeftrootBillboardMesh[\s\S]*?return buildHeftrootBillboard\(\)/,
+  'all three legacy builder calls now produce visible PNG members');
+assert.doesNotMatch(bridge, /isSyntheticClusterSeed/,
+  'the synthetic seed calls are no longer suppressed because they now supply cluster members two and three');
+assert.match(bridge, /plane\.position\.set\(0, 0, 0\)/,
+  'the PNG stays at each legacy wrapper member origin instead of cancelling the first offset back to tile center');
+assert.match(bridge, /clusterCount: 3/,
+  'heftroot diagnostics expose the three-plant cluster count');
+assert.match(bridge, /hobunjiCropRootKey = 'heftroot'/,
+  'heftroot billboard members are tagged for shared soil/flood anchoring');
 assert.match(bridge, /parentWorldQ\)\.invert\(\)\.multiply\(cameraWorldQ\)/,
   'heftroot planes remain true camera-facing billboards even under ripe-crop parent rotation');
 assert.match(bridge, /root !== scene/,
