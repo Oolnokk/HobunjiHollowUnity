@@ -9640,23 +9640,34 @@
           const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
-          const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
-          // Floor tiles only for defined floor set
-          for (const [c, r] of (mapData.floor || [])) {
-            const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
-            fl.position.set(c + 0.5, -0.05, r + 0.5);
-            bScene.add(fl);
-          }
-          // Irregular brick walls with gaps at all exit tiles — or, for a den's
-          // cavern (mapData.wallStyle === 'cavern'), solid deformed rock walls,
-          // or for a canvas tent interior (mapData.wallStyle === 'canvas'),
-          // flat cloth-colored panels matching the exterior tent piece's
-          // 'canvas' material (see HousePieceGen's matCanvas) instead of brick.
-          const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
-          if (wallPanels.length) {
-            const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
-            _markOutline(wallGroup);
-            bScene.add(wallGroup);
+          // A den's cavern (mapData.wallStyle === 'cavern') carries its own
+          // pre-carved organic rock shell (see generateCavernFloor/
+          // CavernSculptor.carveMazeCavern) — floor, walls, and ceiling as
+          // one mesh, replacing the flat per-tile floor boxes and flat wall
+          // panels every other interior style still uses below.
+          if (mapData.wallStyle === 'cavern' && mapData.mesh) {
+            const cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, mapData.mesh);
+            _markOutline(cavernMesh);
+            bScene.add(cavernMesh);
+          } else {
+            const floorMat = InteriorSceneBuilder.buildFloorMaterial(THREE, mapData.wallStyle, 'assets/');
+            // Floor tiles only for defined floor set
+            for (const [c, r] of (mapData.floor || [])) {
+              const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.position.set(c + 0.5, -0.05, r + 0.5);
+              bScene.add(fl);
+            }
+            // Irregular brick walls with gaps at all exit tiles, or for a
+            // canvas tent interior (mapData.wallStyle === 'canvas'), flat
+            // cloth-colored panels matching the exterior tent piece's
+            // 'canvas' material (see HousePieceGen's matCanvas) instead of
+            // brick.
+            const wallPanels = InteriorSceneBuilder.buildWallPanels(floorSet, exitTileSet, INTERIOR_WALL_HEIGHT);
+            if (wallPanels.length) {
+              const wallGroup = InteriorSceneBuilder.buildWallGroup(THREE, houseWallBuilder, wallPanels, mapData.wallStyle, { usePlaceholder: false });
+              _markOutline(wallGroup);
+              bScene.add(wallGroup);
+            }
           }
           // A den's cavern entrance had no visual distinguishing it from any
           // other dark corner of the cave (see generateCavernFloor's
@@ -9788,6 +9799,53 @@
             const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
             nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
             bScene.add(nestMarker);
+
+            // A "bigger, tunnely" den (see generateCavernFloor) deserves real
+            // content along the crawl to the Den-Mother rather than an empty
+            // corridor — sparse mineable ore rocks and a few regular
+            // (non-Den-Mother) creatures from the same native pool, both
+            // picked deterministically by synthesizeCavernMapData (see
+            // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
+            const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb0703a, tin: 0x9aa0a6, iron: 0x8a5a42, silver: 0xc4c8ce, gold: 0xd8b23a, crystal: 0x8fd6e0 };
+            // Fresh map each build (rather than reusing any Map left over
+            // from a stale pre-Tothal-Shift cavern of the same mapId — see
+            // forgetZoneDenState) so removeZoneMineableRockVisual never
+            // targets an orphaned rock group from a layout that no longer
+            // exists.
+            const oreRockMeshes = new Map();
+            if (mapData.oreRocks?.length) _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
+            for (const rock of (mapData.oreRocks || [])) {
+              if (bGrid[rock.row]?.[rock.col]) {
+                bGrid[rock.row][rock.col].type = TileType.ROCK;
+                bGrid[rock.row][rock.col].rockKind = 'diggableRockOre';
+                bGrid[rock.row][rock.col].oreKind = rock.oreKind;
+              }
+              const { stoneGeo } = buildRockTileGeo(rock.col, rock.row);
+              if (!stoneGeo) continue;
+              const rockMesh = new THREE.Mesh(stoneGeo, new THREE.MeshLambertMaterial({ color: CAVERN_ORE_TINTS[rock.oreKind] || CAVERN_ORE_TINTS.stone }));
+              rockMesh.castShadow = rockMesh.receiveShadow = true;
+              const rockGroup = new THREE.Group();
+              rockGroup.add(rockMesh);
+              rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+              bScene.add(rockGroup);
+              _markOutline(rockGroup);
+              // Reuses the same mineableRocksByTile/isMineableRockTile/
+              // removeZoneMineableRockVisual pipeline the outdoor ore rocks
+              // already go through (see mergeZoneTiles/buildMergedZoneGrid),
+              // so mining one here needs no new gameplay code.
+              oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
+            }
+            for (const spawn of (mapData.creatureSpawns || [])) {
+              const spawnFamily = window.WildlifeSpawn.denGenotypeFamily(spawn.kind);
+              const spawnGenotype = spawnFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, spawnFamily) : null;
+              const sx = (spawn.col + 0.5) * TILE, sy = (spawn.row + 0.5) * TILE;
+              const creature = makeCreatureEntity(spawn.kind, sx, sy, {
+                scene: bScene, grid: bGrid, cols, rows,
+                areaId: mapId, homeX: sx, homeY: sy, state: 'idle',
+                isDenMother: false, genotype: spawnGenotype,
+              });
+              if (creature) hostileObjects.add(creature);
+            }
           }
           const _stationSrc = (_wsOverride?.npcStations?.length ? _wsOverride.npcStations : mapData.npcStations) || [];
           registerNpcStations(_stationSrc.map(st => ({ ...st, area: mapId })), mapId);
@@ -10246,11 +10304,15 @@
         return true;
       }
 
-      // Removes one separately-built wilderness resource rock. Its full
-      // grass floor tile is already in the merged ground mesh, so only the
-      // small mound group needs to disappear when mining completes.
+      // Removes one separately-built resource rock's mound. For a wilderness
+      // zone its full grass floor tile is already in the merged ground mesh,
+      // so only the small mound group needs to disappear when mining
+      // completes; for a den's cavern (see loadBuildingScene's oreRocks
+      // handling) the mound sits directly on the carved floor with nothing
+      // else to reveal underneath. Resolves either scene registry so both
+      // share this one removal path instead of duplicating it per area kind.
       function removeZoneMineableRockVisual(mapId, col, row) {
-        const zi = _zoneScenes.get(mapId);
+        const zi = _zoneScenes.get(mapId) || _buildingScenes.get(mapId);
         const byTile = _zoneMineableRockMeshes.get(mapId);
         const rockGroup = byTile?.get(`${col},${row}`);
         if (!zi || !rockGroup) return false;
