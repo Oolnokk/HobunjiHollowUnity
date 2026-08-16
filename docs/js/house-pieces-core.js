@@ -197,14 +197,12 @@
     return { col: entry.col + f.lx + dir.dc, row: entry.row + f.ly + dir.dr };
   }
   function _featureOnLocalTile(entry, lx, ly) { return (entry.features || []).find(f => f.lx === lx && f.ly === ly) || null; }
-  // Whether an entrance's exterior tile (one step past the wall, in
-  // whichever direction it faces) is actually clear enough for its door to
-  // register — _exposedSidesAt only checks that no OTHER PIECE sits there
-  // (enough for the wall to look "open"), but a farm decoration (tree,
-  // rock, ...) sitting on that same tile blocks _registerFeatureDoors from
-  // ever creating the interactable, silently leaving a "valid-looking" but
-  // completely unenterable door. Chimneys don't register anything on their
-  // exterior tile, so this only matters for entrances.
+  // Whether an entrance's exterior approach tile (one step past the wall, in
+  // whichever direction it faces) is clear enough for its door to register.
+  // The interaction itself lives on the wall/entry-tunnel tile so the player
+  // can stand on this approach tile and aim into the doorway, matching town
+  // buildings. The approach remains reserved for house-layout validation so
+  // a decoration or another manually placed room cannot silently seal it.
   function _entranceExteriorClear(entry, f) {
     const { col, row } = _featureExteriorTile(entry, f);
     if (col < 0 || row < 0 || col >= deps.COLS || row >= deps.ROWS) return false;
@@ -596,24 +594,27 @@
     }
   }
 
-  // Each entrance feature's exterior tile (usually just outside its own
-  // piece's footprint) gets its own registered "Enter" world object — a
-  // piece with two manual entrances gets two fully independent doors, both
-  // leading into the same merged interior via enterInterior(entry.id). If
-  // another piece ends up sitting directly on a feature's exterior tile,
-  // the door is silently left unregistered rather than blocking that
-  // placement (_refreshArchitecturalFeatures recovers the feature itself
-  // into the fixture inventory in that case, so it's never just silently lost).
+  // Each entrance gets an "Enter" interaction on its wall/entry-tunnel tile,
+  // matching town buildings: the player stands on the exterior approach and
+  // aims inward. A separate non-interactable reservation stays on the exterior
+  // tile so house-layout validation still protects manual entrances and can
+  // intentionally swallow auto entrances via house-pieces-elevation-bootstrap.
+  // A piece with two manual entrances gets two independent doors, both leading
+  // into the same merged interior via enterInterior(entry.id).
   function _registerFeatureDoors(entry) {
     (entry.features || []).forEach(f => {
       if (f.type !== 'entrance' || f.invalid) return;
-      const { col, row } = _featureExteriorTile(entry, f);
-      if (col < 0 || row < 0 || col >= deps.COLS || row >= deps.ROWS) return;
-      if (_tileOccupiedByAnyPiece(col, row)) return;
-      const occupant = deps.worldObjects.get(col + ',' + row);
-      if (occupant) return;
+      const approach = _featureExteriorTile(entry, f); // Reserved stand/approach tile immediately outside this doorway.
+      if (approach.col < 0 || approach.row < 0 || approach.col >= deps.COLS || approach.row >= deps.ROWS) return;
+      if (_tileOccupiedByAnyPiece(approach.col, approach.row)) return;
+      const approachKey = approach.col + ',' + approach.row; // worldObjects key used by house-layout occupancy checks.
+      if (deps.worldObjects.get(approachKey)) return;
+      const door = _featureGlobalTile(entry, f); // Wall/entry-tunnel tile the reticle must target to enter.
+      const doorKey = door.col + ',' + door.row; // worldObjects key replacing the ordinary footprint object while registered.
+      const doorOccupant = deps.worldObjects.get(doorKey); // Only this piece's own footprint object may be replaced by the door.
+      if (doorOccupant && doorOccupant !== entry._worldObj) return;
       const doorObj = {
-        id: 'house_entrance_' + f.id, type: 'house_entrance', col, row,
+        id: 'house_entrance_' + f.id, type: 'house_entrance', col: door.col, row: door.row,
         getButtons() { return [{ icon: '🚪', label: 'Enter', action: 'obj_enter_house', style: 'primary', allowed: true }]; },
         onAction(action) {
           if (action === 'obj_enter_house') {
@@ -623,15 +624,35 @@
           return { ok: false, message: 'Unknown house action.' };
         },
       };
+      const approachObj = {
+        id: 'house_entrance_approach_' + f.id,
+        type: 'house_entrance_approach',
+        col: approach.col,
+        row: approach.row,
+        getButtons() { return []; },
+        onAction() { return { ok: false, message: 'Aim into the doorway to enter.' }; },
+      };
       f._doorObj = doorObj;
-      f._doorKey = col + ',' + row;
+      f._doorKey = doorKey;
+      f._approachObj = approachObj;
+      f._approachKey = approachKey;
       deps.worldObjects.set(f._doorKey, doorObj);
+      deps.worldObjects.set(f._approachKey, approachObj);
     });
   }
   function _unregisterFeatureDoors(entry) {
     (entry.features || []).forEach(f => {
-      if (f._doorObj && deps.worldObjects.get(f._doorKey) === f._doorObj) deps.worldObjects.delete(f._doorKey);
+      if (f._doorObj && deps.worldObjects.get(f._doorKey) === f._doorObj) {
+        deps.worldObjects.delete(f._doorKey);
+        // The interaction temporarily replaced this piece's ordinary footprint
+        // object. Restore it so a mesh-only door rebuild leaves the structural
+        // tile registered; callers removing/moving the piece unregister doors
+        // before unregistering the footprint and therefore remove it normally.
+        if (entry._worldObj) deps.worldObjects.set(f._doorKey, entry._worldObj);
+      }
+      if (f._approachObj && deps.worldObjects.get(f._approachKey) === f._approachObj) deps.worldObjects.delete(f._approachKey);
       f._doorObj = null; f._doorKey = null;
+      f._approachObj = null; f._approachKey = null;
     });
   }
 
@@ -734,8 +755,8 @@
     const recovered = entry.stage === 'built'
       ? deps.recoverFurnitureInInteriorRect(entry.col * 2, entry.row * 2, entry.w * 2, entry.h * 2)
       : 0;
-    _unregisterFootprint(entry);
     _unregisterFeatureDoors(entry);
+    _unregisterFootprint(entry);
     _disposeMesh(entry._mesh);
     deps.setHousePieces(pieces.filter(p => p.id !== id));
     // Removing this piece can change its former neighbors' roof-axis vote
@@ -767,7 +788,7 @@
     // Unregister every piece's footprint/door first so the hazard/barn check
     // below doesn't trip over the house's own current tiles, then validate
     // every piece's new position before touching anything else.
-    pieces.forEach(p => { _unregisterFootprint(p); _unregisterFeatureDoors(p); });
+    pieces.forEach(p => { _unregisterFeatureDoors(p); _unregisterFootprint(p); });
     const allClear = pieces.every(p => _footprintClearOfHazardsAndBarns(p.col + dCol, p.row + dRow, p.w, p.h));
     if (!allClear) {
       pieces.forEach(p => { _registerFootprint(p); _registerFeatureDoors(p); });
@@ -806,8 +827,8 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry || entry.id === 'house_starter') return false;
     const others = pieces.filter(p => p.id !== id);
-    _unregisterFootprint(entry);
     _unregisterFeatureDoors(entry);
+    _unregisterFootprint(entry);
     const ok = _footprintClearOfHazardsAndBarns(col, row, entry.w, entry.h)
       && !others.some(b => rectsOverlap(col, row, entry.w, entry.h, b.col, b.row, b.w, b.h))
       && others.some(b => rectsAdjacent(col, row, entry.w, entry.h, b.col, b.row, b.w, b.h));
@@ -835,8 +856,8 @@
       return { ok: false, message: 'Cannot move there — needs clear, untilled ground touching the rest of your house.' };
     }
 
-    _unregisterFootprint(entry);
     _unregisterFeatureDoors(entry);
+    _unregisterFootprint(entry);
     const oldRect = { col: entry.col, row: entry.row, w: entry.w, h: entry.h };
     entry.col = newCol; entry.row = newRow;
     deps.transformFurnitureWithHousePiece?.(entry.id, oldRect, { col: entry.col, row: entry.row, w: entry.w, h: entry.h }, false);
@@ -873,8 +894,8 @@
     const newW = entry.h, newH = entry.w;
 
     const others = pieces.filter(p => p.id !== id);
-    _unregisterFootprint(entry);
     _unregisterFeatureDoors(entry);
+    _unregisterFootprint(entry);
     const clear = _footprintClearOfHazardsAndBarns(entry.col, entry.row, newW, newH)
       && !others.some(b => rectsOverlap(entry.col, entry.row, newW, newH, b.col, b.row, b.w, b.h))
       && others.some(b => rectsAdjacent(entry.col, entry.row, newW, newH, b.col, b.row, b.w, b.h));
@@ -1023,7 +1044,7 @@
 
   function clearAll() {
     const pieces = deps.getHousePieces();
-    pieces.forEach(entry => { _unregisterFootprint(entry); _unregisterFeatureDoors(entry); _disposeMesh(entry._mesh); });
+    pieces.forEach(entry => { _unregisterFeatureDoors(entry); _unregisterFootprint(entry); _disposeMesh(entry._mesh); });
     _extensionProxyMeshes.forEach(m => _disposeMesh(m));
     _extensionProxyMeshes = [];
     deps.setHousePieces([]);
@@ -1107,6 +1128,7 @@
       features: (e.features || []).map(f => ({
         id: f.id, type: f.type, lx: f.lx, ly: f.ly, side: f.side, edgeSlot: f.edgeSlot,
         autoGenerated: !!f.autoGenerated, invalid: !!f.invalid, hasDoorObj: !!f._doorObj,
+        doorTile: f._doorKey || null, approachTile: f._approachKey || null,
       })),
     }));
   }

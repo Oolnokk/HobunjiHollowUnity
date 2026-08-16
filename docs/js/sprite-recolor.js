@@ -157,6 +157,8 @@
   // parser-blocking in docs/index.html, document.write keeps the catalog in that
   // same parser-ordered sequence instead of racing it as an async dynamic script.
   function loadFishCatalogForGame() {
+    // Rendering helpers are also evaluated by DOM-less Node test harnesses.
+    if (typeof document === 'undefined') return;
     if (!document.getElementById('fishingOverlay') || window.FishCatalog || document.querySelector('script[data-fish-catalog]')) return;
     const ownSrc = document.currentScript?.src;
     const src = ownSrc ? new URL('fish-catalog.js?v=20260814b', ownSrc).href : 'js/fish-catalog.js?v=20260814b';

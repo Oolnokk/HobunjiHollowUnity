@@ -21,6 +21,9 @@ assert.match(recolorSource, /CreatureGeneticsRender\?\.recolorPixels[\s\S]*?Crea
   'direct whole-sprite fills still delegate to the animal shade-fill recolorer');
 assert.match(recolorSource, /img\.crossOrigin = 'anonymous';[\s\S]*?img\.src = spritePath/,
   'item sprites use the animal loader CORS mode before canvas pixel readback');
+assert.match(recolorSource,
+  /function loadFishCatalogForGame\(\)[\s\S]*?typeof document === 'undefined'/,
+  'fish catalog bootstrap stays inert when rendering helpers run without a browser DOM');
 
 const recolorContext = { window: {} };
 vm.runInNewContext(recolorSource, recolorContext);

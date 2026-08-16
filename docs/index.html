@@ -256,7 +256,7 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20260807a"></script>
+  <script src="js/climb-system.js?v=20260816a"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -1665,11 +1665,11 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20260712d"></script>
-  <script src="js/sprite-recolor.js?v=20260811c"></script>
+  <script src="js/sprite-recolor.js?v=20260815a"></script>
   <script src="js/tool-metal-recolor.js?v=20260719a"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
-  <script src="js/mount-system.js?v=20260806a"></script>
+  <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
   <script src="js/audio-system.js?v=20260806a"></script>
@@ -1682,7 +1682,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260811f"></script>
+  <script src="js/pixel-probe.js?v=20260816b"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1755,7 +1755,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260815c"></script>
+  <script src="game.js?v=20260816b"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {
