@@ -862,15 +862,24 @@
     probeDigBursts: 4, probeMaxPasses: 120,
     faceThreshold: 10, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
     wallGridMargin: .05, wallGridClaim: .35,
-    // sizeY is the sculpt volume's total height. pathYOffset and the
-    // wall-detection probe's Y-reach are no longer independent constants
-    // here — carveMazeCavern derives both directly from sizeY (probe Y
-    // reaches the volume's full height; the path sits 70% of the way up
-    // from its bottom face to its top face), so there's nothing to default
-    // for either — see carveMazeCavern's own docblock for the exact
-    // formulas.
-    sizeY: 1.5, floorOffset: 0, entranceLength: 3,
+    // sizeY is the sculpt volume's total height (doubled from 1.5 — see
+    // carveMazeCavern's own comment on why that's what actually keeps
+    // walls tall once pathHeightFrac pushes the path up near the ceiling).
+    // pathYOffset and the wall-detection probe's Y-reach are not
+    // independent constants here — carveMazeCavern derives both directly
+    // from sizeY (probe Y reaches the volume's full height; the path sits
+    // pathHeightFrac of the way up from the volume's bottom face to its
+    // top face), so there's nothing to default for either — see
+    // carveMazeCavern's own docblock for the exact formulas.
+    sizeY: 3.0, floorOffset: 0, entranceLength: 3,
     tileSize: 1,
+    // How far up the volume's own height the probe travels — confirmed
+    // directly (headless field sampling) that .7 only barely opened the
+    // ceiling (field values right at ~0, i.e. a wafer-thin, inconsistent
+    // cap rather than genuinely open); .95 clears the domain's actual grid
+    // top by a wide, robust margin everywhere along a path instead of
+    // marginally at just a few points.
+    pathHeightFrac: .95,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -970,20 +979,20 @@
     const denseLocal = chainPaths.map(({ points, narrow }) => ({ points: points.map(clampPt), narrow }));
 
     // No ceilingY at all — see this function's docblock for why that's
-    // deliberate, not an oversight. The detection oval's Y reach is now an
+    // deliberate, not an oversight. The detection oval's Y reach is an
     // absolute value — half the sculpt volume's own height (sizeY) — not a
     // multiple of probeRadius, so X/Z stay narrow for a tight connector
     // while Y still always reaches the volume's full extent (see
-    // findProbeIntrusions). pathYOffset is derived the same way: 70% of the
-    // way up from the volume's bottom face to its top face, not a flat
-    // constant, so both track sizeY automatically if it ever changes.
-    // floorY is derived directly from the oval's own actual bottom
-    // (pathYOffset - probeYRadius) rather than a separate formula that
-    // could drift out of sync with wherever the probe really sits — the
-    // protected floor is always exactly as tight as the detection shape
-    // allows.
+    // findProbeIntrusions). pathYOffset is derived the same way:
+    // pathHeightFrac of the way up from the volume's bottom face to its
+    // top face, not a flat constant, so both track sizeY automatically if
+    // it ever changes. floorY is derived directly from the oval's own
+    // actual bottom (pathYOffset - probeYRadius) rather than a separate
+    // formula that could drift out of sync with wherever the probe really
+    // sits — the protected floor is always exactly as tight as the
+    // detection shape allows.
     const probeYRadius = opts.sizeY / 2;
-    const pathYOffset = lerp(-probeYRadius, probeYRadius, .7);
+    const pathYOffset = lerp(-probeYRadius, probeYRadius, opts.pathHeightFrac);
     const floorY = pathYOffset - probeYRadius + opts.floorOffset;
     const carveOpts = Object.assign({}, opts, {
       floorY, ceilingY: null, probeYRadius,
