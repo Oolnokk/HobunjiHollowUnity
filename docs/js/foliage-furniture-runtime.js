@@ -1,50 +1,264 @@
-// Wilderness adapter: promotes generated stump/fallenLog placeholders into
-// authored, sittable foliage furniture while preserving the generator's RNG.
-(function(root,factory){const api=factory(root||globalThis);if(typeof module==='object'&&module.exports)module.exports=api;else root.FoliageFurnitureRuntime=api;})(typeof window!=='undefined'?window:globalThis,function(root){
-'use strict';
-const DEFAULT_SEAT_NORMAL_OFFSET=.01; // Matches the current standard chair/bench authored seat-normal offset.
-const GENERATED_KIND_TO_FURNITURE=Object.freeze({stump:'chairstump',fallenLog:'benchlog'}); // Maps generator placeholders to authored foliage furniture keys.
-const recordsByMapId=new Map(); // Retains normalized generated records until their zone scene/interactions are built.
-const spawnedByMapId=new Map(); // Prevents duplicate async visual spawning on zone refresh.
-let townDeps=null,interactDeps=null,installed=false;
-const finite=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
-const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
-function debug(message,level='info'){const text=`[FoliageFurnitureRuntime] ${message}`;if(townDeps?.debugLog)townDeps.debugLog(text,level);else if(typeof root.__farmLog==='function')root.__farmLog(text,level);else if(level==='error')console.error(text);else if(level==='warn')console.warn(text);else console.log(text);}
-function furnitureKeyForGeneratedKind(kind){return GENERATED_KIND_TO_FURNITURE[String(kind||'')]||null;}
-function normalizeGeneratedObject(object){if(!object||typeof object!=='object')return object;const key=object.furnitureKey||furnitureKeyForGeneratedKind(object.type);if(!key)return object;if(object.type==='stump'){object.w=1;object.h=1;}else if(object.type==='fallenLog'){const vertical=Math.max(1,finite(object.h,1))>Math.max(1,finite(object.w,1));object.w=vertical?1:2;object.h=vertical?2:1;}object.furnitureKey=key;object.foliageFurniture=true;object.foliageFurnitureVersion=1;return object;}
-function generatedObjectsFrom(value){if(Array.isArray(value?.wildernessFoliageFurniture))return value.wildernessFoliageFurniture;if(Array.isArray(value?.objects))return value.objects;if(Array.isArray(value?.map?.objects))return value.map.objects;return[];}
-function recordFromGeneratedObject(object,mapId=''){const key=object?.furnitureKey||furnitureKeyForGeneratedKind(object?.type);if(!key)return null;const w=Math.max(1,finite(object.w,1)),d=Math.max(1,finite(object.h,1));return{id:String(object.id||`${object.type}_${finite(object.x)}_${finite(object.y)}`),mapId:String(mapId||''),sourceObjectType:object.type,furnitureKey:key,col:finite(object.x),row:finite(object.y),footprintW:w,footprintD:d,centerX:finite(object.x)+w/2,centerZ:finite(object.y)+d/2,yawDeg:object.type==='fallenLog'&&d>w?90:0,elevTier:finite(object.elevTier??object.elevation??object.height,0)};}
-function deriveRecords(value,mapId=''){const records=[];for(const object of generatedObjectsFrom(value)){normalizeGeneratedObject(object);const record=recordFromGeneratedObject(object,mapId);if(record)records.push(record);}return records;}
-function annotateWorkspace(workspace,fallbackMapId=''){if(!workspace||typeof workspace!=='object')return workspace;const mapId=workspace.maps?.[0]?.id||fallbackMapId||workspace.mapId||'';const records=deriveRecords(workspace,mapId);workspace.wildernessFoliageFurniture=records.map(clone);if(mapId)recordsByMapId.set(mapId,records);if(fallbackMapId)recordsByMapId.set(fallbackMapId,records);return workspace;}
-function recordsForMap(mapId,zoneData){const cached=recordsByMapId.get(mapId);if(cached?.length)return cached;const records=deriveRecords(zoneData,mapId);if(records.length)recordsByMapId.set(mapId,records);return records;}
-function authoredFootprint(data){return{w:Math.max(1,finite(data?.footprint?.w,1)),d:Math.max(1,finite(data?.footprint?.d,1))};}
-function makeZoneSitObject(record,data,instance=null){const fp=authoredFootprint(data),seatCol=record.centerX-fp.w/2,seatRow=record.centerZ-fp.d/2,count=Array.isArray(data?.seatAnchors)?data.seatAnchors.length:0;return{id:`foliage_furniture_${record.id}`,type:'decorative_furniture',furnitureKey:record.furnitureKey,col:Math.floor(record.centerX),row:Math.floor(record.centerZ),mesh:instance,label:count>1?'🪵 Sit on log':'🪵 Sit on stump',getButtons(){return Array.from({length:count},(_,index)=>({icon:'💺',label:count===1?'Sit':`Sit · seat ${index+1}`,action:`obj_foliage_sit_${index}`,style:'primary',allowed:true}));},onAction(action){const match=/^obj_foliage_sit_(\d+)$/.exec(String(action||''));if(!match)return{ok:false,message:'Unknown action.'};const bridge=root.__hobunjiFurnitureDebug;if(typeof bridge?.sit!=='function')return{ok:false,message:'Sitting is not ready yet.'};return bridge.sit(record.furnitureKey,seatCol,seatRow,fp.w,fp.d,record.yawDeg||0,Number(match[1])||0);}};}
-function syncZoneInteractivity(mapId){const registries=interactDeps?._zoneReagentObjects;if(!registries?.get||!registries?.set)return 0;let registry=registries.get(mapId);if(!registry){registry=new Map();registries.set(mapId,registry);}const records=recordsForMap(mapId,townDeps?.zoneLayouts?.get?.(mapId));let added=0;for(const record of records){const data=root.AuthoredFurniture?.peek?.(record.furnitureKey);if(!data?.seatAnchors?.length)continue;const instance=spawnedByMapId.get(mapId)?.__instances?.get?.(record.id)||null,object=makeZoneSitObject(record,data,instance);for(let dz=0;dz<record.footprintD;dz++)for(let dx=0;dx<record.footprintW;dx++){const key=`${Math.floor(record.col)+dx},${Math.floor(record.row)+dz}`;if(registry.has(key)&&!registry.get(key)?.foliageFurniture)continue;registry.set(key,{...object,foliageFurniture:true});added++;}}return added;}
-async function spawnForMap(mapId){if(!townDeps||!root.FoliageFurnitureRenderer)return[];const zoneData=townDeps.zoneLayouts?.get?.(mapId),records=recordsForMap(mapId,zoneData);if(!records.length)return[];if(spawnedByMapId.has(mapId))return spawnedByMapId.get(mapId);const instanceMap=new Map();const pending=(async()=>{const scene=townDeps.zoneScenes?.get?.(mapId)?.scene;if(!scene)return[];const tracked=townDeps.zoneDecorFurnitureGroups?.get?.(mapId)||[],built=[];for(const record of records){try{const{instance,data}=await root.FoliageFurnitureRenderer.buildInstance(record,zoneData,townDeps);if(townDeps.zoneScenes?.get?.(mapId)?.scene!==scene)break;townDeps.markOutline?.(instance);townDeps.markFurnitureEdgeId?.(instance);scene.add(instance);tracked.push(instance);built.push(instance);instanceMap.set(record.id,instance);debug(`Spawned ${record.furnitureKey} for ${record.id} with ${data.seatAnchors?.length||0} seat(s).`);}catch(error){debug(`Failed to spawn ${record.furnitureKey}: ${error?.message||error}`,'warn');}}if(!townDeps.zoneDecorFurnitureGroups?.has?.(mapId)&&townDeps.zoneDecorFurnitureGroups?.set)townDeps.zoneDecorFurnitureGroups.set(mapId,tracked);syncZoneInteractivity(mapId);return built;})();pending.__instances=instanceMap;spawnedByMapId.set(mapId,pending);pending.catch(()=>spawnedByMapId.delete(mapId));return pending;}
-function installGeneratorObjectExport(){
-  const generator=root.WildernessMapGenerator;
-  if(!root.document||!generator?.generateZoneWorkspace||generator.__foliageFurnitureObjectExport)return true;
-  if(typeof root.XMLHttpRequest!=='function'){debug('XMLHttpRequest unavailable; generated stump/log export was not installed.','warn');return false;}
-  try{
-    const currentUrl=root.document.currentScript?.src||''; // Used to locate the exact wilderness generator source loaded by this page.
-    const sourceUrl=currentUrl?new URL('wilderness-map-generator.js',currentUrl).toString():'js/wilderness-map-generator.js';
-    const xhr=new root.XMLHttpRequest();xhr.open('GET',sourceUrl,false);xhr.send(null);
-    if(xhr.status&&xhr.status!==200)throw new Error(`generator source HTTP ${xhr.status}`);
-    const source=String(xhr.responseText||'');
-    const needle='    const workspace = buildHobunjiMapExport();';
-    if(!source.includes(needle))throw new Error('generateWorkspace export marker not found');
-    const injection=`${needle}\n    workspace.wildernessFoliageFurniture = (map.objects || [])\n      .filter(object => object.type === 'stump' || object.type === 'fallenLog')\n      .map(object => {\n        const vertical = object.type === 'fallenLog' && (object.h || 1) > (object.w || 1);\n        const semanticW = object.type === 'stump' ? 1 : (vertical ? 1 : 2);\n        const semanticH = object.type === 'stump' ? 1 : (vertical ? 2 : 1);\n        const sourceTile = tileAt(object.x, object.y);\n        return { id: object.id, type: object.type, x: object.x, y: object.y, w: semanticW, h: semanticH, elevTier: sourceTile ? (sourceTile.elevation || 0) : 0, generatedScaleW: object.w || 1, generatedScaleH: object.h || 1 };\n      });`;
-    const patched=source.replace(needle,injection);
-    const script=root.document.createElement('script');script.textContent=patched+'\n//# sourceURL=wilderness-map-generator.foliage-furniture.js';root.document.head.appendChild(script);script.remove();
-    if(!root.WildernessMapGenerator?.generateZoneWorkspace||root.WildernessMapGenerator===generator)throw new Error('patched generator did not replace the original');
-    root.WildernessMapGenerator.__foliageFurnitureObjectExport=true;
-    debug('Generator now exports its existing stump/fallenLog placements for foliage furniture.');
-    return true;
-  }catch(error){debug(`Could not expose generated stump/log placements: ${error?.message||error}`,'warn');return false;}
-}
-function patchGenerator(){const generator=root.WildernessMapGenerator;if(!generator?.generateZoneWorkspace||generator.__foliageFurniturePatch)return;const original=generator.generateZoneWorkspace;generator.generateZoneWorkspace=function(zoneId,seed,...rest){const workspace=original.call(this,zoneId,seed,...rest);annotateWorkspace(workspace,zoneId);return workspace;};generator.__foliageFurniturePatch=true;}
-function patchTown(){const town=root.TownZoneBuildings;if(!town||town.__foliageFurniturePatch)return;if(typeof town.init==='function'){const original=town.init;town.init=function(deps){townDeps=deps;return original.call(this,deps);};}if(typeof town.spawnZoneDecorFurniture==='function'){const original=town.spawnZoneDecorFurniture;town.spawnZoneDecorFurniture=function(mapId,...rest){const result=original.call(this,mapId,...rest);Promise.resolve().then(()=>spawnForMap(mapId));return result;};}town.__foliageFurniturePatch=true;}
-function patchReagents(){const reagents=root.ReagentPlants;if(!reagents||reagents.__foliageFurniturePatch)return;if(typeof reagents.init==='function'){const original=reagents.init;reagents.init=function(deps){interactDeps=deps;return original.call(this,deps);};}if(typeof reagents.ensureZoneReagents==='function'){const original=reagents.ensureZoneReagents;reagents.ensureZoneReagents=function(mapId,...rest){const result=original.call(this,mapId,...rest);Promise.resolve().then(()=>syncZoneInteractivity(mapId));return result;};}if(typeof reagents.respawnAllZoneReagents==='function'){const original=reagents.respawnAllZoneReagents;reagents.respawnAllZoneReagents=function(...args){const result=original.apply(this,args);Promise.resolve().then(()=>{for(const mapId of recordsByMapId.keys())syncZoneInteractivity(mapId);});return result;};}reagents.__foliageFurniturePatch=true;}
-function install(){if(installed)return api;installed=true;root.FoliageFurnitureRenderer?.patchAuthoredFurnitureOpacity?.();installGeneratorObjectExport();patchGenerator();patchTown();patchReagents();debug('Installed wilderness stump/log → authored foliage furniture adapter.');return api;}
-const api={DEFAULT_SEAT_NORMAL_OFFSET,GENERATED_KIND_TO_FURNITURE,furnitureKeyForGeneratedKind,normalizeGeneratedObject,recordFromGeneratedObject,deriveRecords,annotateWorkspace,makeZoneSitObject,syncZoneInteractivity,recordsForMap,spawnForMap,installGeneratorObjectExport,install};if(typeof window!=='undefined'&&root.document)install();return api;
+// Wilderness foliage-furniture lifecycle. Generated stump/log records stay
+// plain map data; this module owns their authored visuals, collision and sit
+// interactions for exactly as long as the corresponding zone scene exists.
+(function (root, factory) {
+  const api = factory(root || globalThis);
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.FoliageFurnitureRuntime = api;
+})(typeof window !== 'undefined' ? window : globalThis, function (root) {
+  'use strict';
+
+  const DEFAULT_SEAT_NORMAL_OFFSET = 0.01;
+  const GENERATED_KIND_TO_FURNITURE = Object.freeze({ stump: 'chairstump', fallenLog: 'benchlog' });
+  const recordsByMapId = new Map();
+  const objectsByMapId = new Map();
+  const spawnStatesByMapId = new Map();
+  let deps = null;
+
+  const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+
+  function debug(message, level = 'info') {
+    const text = `[FoliageFurnitureRuntime] ${message}`;
+    if (typeof deps?.debugLog === 'function') deps.debugLog(text, level);
+    else if (typeof root.__farmLog === 'function') root.__farmLog(text, level);
+    else if (level === 'error') console.error(text);
+    else if (level === 'warn') console.warn(text);
+    else console.log(text);
+  }
+
+  function furnitureKeyForGeneratedKind(kind) {
+    return GENERATED_KIND_TO_FURNITURE[String(kind || '')] || null;
+  }
+
+  function normalizeGeneratedObject(object) {
+    if (!object || typeof object !== 'object') return object;
+    const kind = object.sourceObjectType || object.type;
+    const key = object.furnitureKey || furnitureKeyForGeneratedKind(kind);
+    if (!key) return object;
+    if (kind === 'stump') {
+      object.w = 1;
+      object.h = 1;
+    } else if (kind === 'fallenLog') {
+      const vertical = Math.max(1, finite(object.h ?? object.footprintD, 1)) > Math.max(1, finite(object.w ?? object.footprintW, 1));
+      object.w = vertical ? 1 : 2;
+      object.h = vertical ? 2 : 1;
+    }
+    object.furnitureKey = key;
+    object.foliageFurniture = true;
+    object.foliageFurnitureVersion = 1;
+    return object;
+  }
+
+  function generatedObjectsFrom(value) {
+    if (Array.isArray(value?.wildernessFoliageFurniture)) return value.wildernessFoliageFurniture;
+    if (Array.isArray(value?.foliageFurniture)) return value.foliageFurniture;
+    if (Array.isArray(value?.objects)) return value.objects;
+    if (Array.isArray(value?.map?.objects)) return value.map.objects;
+    return [];
+  }
+
+  function recordFromGeneratedObject(object, mapId = '') {
+    const kind = object?.sourceObjectType || object?.type;
+    const key = object?.furnitureKey || furnitureKeyForGeneratedKind(kind);
+    if (!key) return null;
+    const col = finite(object.col ?? object.x);
+    const row = finite(object.row ?? object.y);
+    const w = Math.max(1, finite(object.footprintW ?? object.w, 1));
+    const d = Math.max(1, finite(object.footprintD ?? object.h, 1));
+    return {
+      id: String(object.id || `${kind}_${col}_${row}`),
+      mapId: String(mapId || object.mapId || ''),
+      sourceObjectType: kind,
+      furnitureKey: key,
+      col,
+      row,
+      footprintW: w,
+      footprintD: d,
+      centerX: finite(object.centerX, col + w / 2),
+      centerZ: finite(object.centerZ, row + d / 2),
+      yawDeg: finite(object.yawDeg, kind === 'fallenLog' && d > w ? 90 : 0),
+      elevTier: finite(object.elevTier ?? object.elevation ?? object.height, 0),
+    };
+  }
+
+  function deriveRecords(value, mapId = '') {
+    const records = [];
+    for (const source of generatedObjectsFrom(value)) {
+      const object = normalizeGeneratedObject({ ...source });
+      const record = recordFromGeneratedObject(object, mapId);
+      if (record) records.push(record);
+    }
+    return records;
+  }
+
+  function annotateWorkspace(workspace, fallbackMapId = '') {
+    if (!workspace || typeof workspace !== 'object') return workspace;
+    const mapId = workspace.maps?.[0]?.id || fallbackMapId || workspace.mapId || '';
+    const records = deriveRecords(workspace, mapId);
+    workspace.wildernessFoliageFurniture = records.map(clone);
+    if (mapId) recordsByMapId.set(mapId, records);
+    return workspace;
+  }
+
+  function recordsForMap(mapId, zoneData = deps?.zoneLayouts?.get?.(mapId)) {
+    if (recordsByMapId.has(mapId)) return recordsByMapId.get(mapId);
+    const records = deriveRecords(zoneData, mapId);
+    recordsByMapId.set(mapId, records);
+    return records;
+  }
+
+  function authoredFootprint(data) {
+    return {
+      w: Math.max(1, finite(data?.footprint?.w, 1)),
+      d: Math.max(1, finite(data?.footprint?.d, 1)),
+    };
+  }
+
+  function makeZoneSitObject(record, data, instance = null) {
+    const footprint = authoredFootprint(data);
+    const seatCol = record.centerX - footprint.w / 2;
+    const seatRow = record.centerZ - footprint.d / 2;
+    const seatCount = Array.isArray(data?.seatAnchors) ? data.seatAnchors.length : 0;
+    return {
+      id: `foliage_furniture_${record.id}`,
+      type: 'decorative_furniture',
+      furnitureKey: record.furnitureKey,
+      foliageFurniture: true,
+      col: Math.floor(record.col),
+      row: Math.floor(record.row),
+      mesh: instance,
+      interactIcon: '💺',
+      interactLabel: seatCount > 1 ? 'Sit on log' : 'Sit on stump',
+      label: seatCount > 1 ? '🪵 Sit on log' : '🪵 Sit on stump',
+      getButtons() {
+        return Array.from({ length: seatCount }, (_, index) => ({
+          icon: '💺',
+          label: seatCount === 1 ? 'Sit' : `Sit · seat ${index + 1}`,
+          action: `obj_foliage_sit_${index}`,
+          style: 'primary',
+          allowed: true,
+        }));
+      },
+      onAction(action) {
+        const match = /^obj_foliage_sit_(\d+)$/.exec(String(action || ''));
+        if (!match) return { ok: false, message: 'Unknown action.' };
+        if (typeof deps?.sit !== 'function') return { ok: false, message: 'Sitting is not ready yet.' };
+        return deps.sit(record.furnitureKey, seatCol, seatRow, footprint.w, footprint.d, record.yawDeg || 0, Number(match[1]) || 0);
+      },
+    };
+  }
+
+  function registerInteraction(mapId, record, data, instance) {
+    let registry = objectsByMapId.get(mapId);
+    if (!registry) {
+      registry = new Map();
+      objectsByMapId.set(mapId, registry);
+    }
+    const object = makeZoneSitObject(record, data, instance);
+    for (let dz = 0; dz < Math.ceil(record.footprintD); dz++) {
+      for (let dx = 0; dx < Math.ceil(record.footprintW); dx++) {
+        registry.set(`${Math.floor(record.col) + dx},${Math.floor(record.row) + dz}`, object);
+      }
+    }
+    return object;
+  }
+
+  function objectAt(mapId, col, row) {
+    return objectsByMapId.get(mapId)?.get(`${Math.floor(col)},${Math.floor(row)}`) || null;
+  }
+
+  function blocksPoint(mapId, x, z) {
+    return recordsForMap(mapId).some(record =>
+      x >= record.col && x < record.col + record.footprintW
+      && z >= record.row && z < record.row + record.footprintD);
+  }
+
+  async function spawnForMap(mapId) {
+    if (!deps || !root.FoliageFurnitureRenderer) return [];
+    const scene = deps.zoneScenes?.get?.(mapId)?.scene;
+    if (!scene) return [];
+    const previous = spawnStatesByMapId.get(mapId);
+    if (previous?.scene === scene) return previous.promise;
+    disposeMap(mapId);
+    const zoneData = deps.zoneLayouts?.get?.(mapId);
+    const records = recordsForMap(mapId, zoneData);
+    const state = { scene, status: 'loading', instances: new Map(), error: null, promise: null };
+    const pending = (async () => {
+      const built = [];
+      const tracked = deps.zoneDecorFurnitureGroups?.get?.(mapId) || [];
+      if (!deps.zoneDecorFurnitureGroups?.has?.(mapId)) deps.zoneDecorFurnitureGroups?.set?.(mapId, tracked);
+      for (const record of records) {
+        try {
+          const { instance, data } = await root.FoliageFurnitureRenderer.buildInstance(record, zoneData, deps);
+          if (spawnStatesByMapId.get(mapId) !== state || deps.zoneScenes?.get?.(mapId)?.scene !== scene) break;
+          deps.markOutline?.(instance);
+          deps.markFurnitureEdgeId?.(instance);
+          scene.add(instance);
+          tracked.push(instance);
+          built.push(instance);
+          state.instances.set(record.id, instance);
+          registerInteraction(mapId, record, data, instance);
+          debug(`Spawned ${record.furnitureKey} for ${record.id} with ${data.seatAnchors?.length || 0} seat(s).`);
+        } catch (error) {
+          debug(`Failed to spawn ${record.furnitureKey}: ${error?.message || error}`, 'warn');
+        }
+      }
+      if (spawnStatesByMapId.get(mapId) === state) state.status = 'ready';
+      return built;
+    })().catch(error => {
+      state.status = 'failed';
+      state.error = String(error?.message || error);
+      throw error;
+    });
+    state.promise = pending;
+    spawnStatesByMapId.set(mapId, state);
+    return pending;
+  }
+
+  function disposeMap(mapId) {
+    spawnStatesByMapId.delete(mapId);
+    recordsByMapId.delete(mapId);
+    objectsByMapId.delete(mapId);
+  }
+
+  function debugState(mapId = '') {
+    const ids = mapId ? [mapId] : [...new Set([...recordsByMapId.keys(), ...spawnStatesByMapId.keys(), ...objectsByMapId.keys()])];
+    return ids.map(id => {
+      const state = spawnStatesByMapId.get(id);
+      return {
+        mapId: id,
+        recordCount: recordsForMap(id).length,
+        interactionTileCount: objectsByMapId.get(id)?.size || 0,
+        instanceCount: state?.instances?.size || 0,
+        status: state?.status || 'not-spawned',
+        error: state?.error || null,
+      };
+    });
+  }
+
+  function init(injectedDeps) {
+    deps = injectedDeps || {};
+    debug('Initialized wilderness stump/log authored-furniture lifecycle.');
+    return api;
+  }
+
+  const api = {
+    DEFAULT_SEAT_NORMAL_OFFSET,
+    GENERATED_KIND_TO_FURNITURE,
+    furnitureKeyForGeneratedKind,
+    normalizeGeneratedObject,
+    recordFromGeneratedObject,
+    deriveRecords,
+    annotateWorkspace,
+    recordsForMap,
+    makeZoneSitObject,
+    objectAt,
+    blocksPoint,
+    spawnForMap,
+    disposeMap,
+    debugState,
+    init,
+  };
+  return api;
 });

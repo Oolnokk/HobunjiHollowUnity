@@ -81,29 +81,3 @@
 
   window.LegBones = { solveTwoBoneLeg };
 })();
-
-// Furniture Avatar Author extension bootstrap. This dependency is already
-// loaded by the editor; keep the seat-offset and foliage mode decoupled from
-// the very large index.html while installing them after V58 has finished boot.
-(function () {
-  'use strict';
-  if (typeof document === 'undefined' || !/\/tools\/furniture-avatar-author\/(?:index\.html)?$/i.test(window.location.pathname)) return;
-  const scriptUrl = document.currentScript?.src || ''; // Used to resolve editor extensions on any host/branch.
-  const extensionUrl = name => scriptUrl ? new URL(`../tools/furniture-avatar-author/${name}`, scriptUrl).toString() : name;
-  function loadExtension(name, id) {
-    return new Promise((resolve, reject) => {
-      if (document.getElementById(id)) return resolve();
-      const script = document.createElement('script'); // Used to load each editor extension in deterministic order.
-      script.id = id; script.src = extensionUrl(name); script.onload = resolve;
-      script.onerror = () => reject(new Error(`Failed to load ${name}`)); document.head.appendChild(script);
-    });
-  }
-  async function loadFurnitureExtensions() {
-    try {
-      await loadExtension('editable-seat-offset.js', 'editableSeatOffsetScript');
-      await loadExtension('foliage-furniture-mode.js', 'foliageFurnitureModeScript');
-    } catch (error) { console.error('[Furniture Author]', error); }
-  }
-  if (document.readyState === 'complete') loadFurnitureExtensions();
-  else window.addEventListener('load', loadFurnitureExtensions, { once: true });
-})();
