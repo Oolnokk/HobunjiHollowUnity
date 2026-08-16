@@ -53,8 +53,15 @@
     // ends up claiming — scaled from the target so bigger dens actually
     // grow bigger networks instead of just denser/thicker corridors.
     const branchCount = Math.max(6, Math.round(targetTiles / 7));
+    // entranceLength (the root's point count, see carveMazeCavern) has to
+    // scale right alongside branchCount — a short root with a lot of
+    // branches all crowd the same small patch near the entrance and merge
+    // into one open pit with no walls between corridors, instead of a real
+    // branching network. Root points are spaced one branchLength apart, so
+    // this gives every branch genuine room to land somewhere distinct.
+    const entranceLength = Math.max(6, Math.round(branchCount * 0.6));
 
-    const result = window.CavernSculptor.carveMazeCavern({ branchCount }, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ branchCount, entranceLength }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1

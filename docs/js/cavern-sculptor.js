@@ -407,6 +407,50 @@
     return st.field[idxP(st, i, j, k)];
   }
 
+  // The organic spline carve doesn't know or care about tile boundaries —
+  // a hook stamp near a claimed tile's edge can bleed into an unclaimed
+  // neighbor and thin (or erase) the wall that should separate them, even
+  // though that neighbor never got carved enough of its own 9-point
+  // coverage sample to become floor itself (see snapClaimTiles). Confirmed
+  // via headless verification: ~35-65% of a maze's boundary edges were
+  // missing their wall entirely before this ran. Restores a guaranteed-
+  // solid strip just inside every unclaimed tile that borders a claimed
+  // one — skipCapEdges (the entrance's doorway/vestibule) is excluded, or
+  // this would silently re-seal the one opening that's supposed to exist.
+  function solidifyBoundaryWalls(st, claimed, depth, skipCapEdges) {
+    const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
+    const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
+    for (const key of claimed) {
+      const [c, r] = key.split(',').map(Number);
+      const edges = [
+        { dir: 'W', nc: c - 1, nr: r, x0: c - depth, x1: c, z0: r, z1: r + 1 },
+        { dir: 'E', nc: c + 1, nr: r, x0: c + 1, x1: c + 1 + depth, z0: r, z1: r + 1 },
+        { dir: 'N', nc: c, nr: r - 1, x0: c, x1: c + 1, z0: r - depth, z1: r },
+        { dir: 'S', nc: c, nr: r + 1, x0: c, x1: c + 1, z0: r + 1, z1: r + 1 + depth },
+      ];
+      for (const e of edges) {
+        if (claimed.has(`${e.nc},${e.nr}`)) continue; // shared wall between two claimed tiles stays open
+        if (skipCapEdges?.has(`${c},${r},${e.dir}`)) continue; // the doorway/vestibule — never re-seal it
+        const g0 = worldToGrid(st, { x: e.x0, y: -st.domainHalf.y, z: e.z0 });
+        const g1 = worldToGrid(st, { x: e.x1, y: st.domainHalf.y, z: e.z1 });
+        const i0 = Math.max(0, Math.floor(Math.min(g0.x, g1.x))), i1 = Math.min(st.N, Math.ceil(Math.max(g0.x, g1.x)));
+        const k0 = Math.max(0, Math.floor(Math.min(g0.z, g1.z))), k1 = Math.min(st.N, Math.ceil(Math.max(g0.z, g1.z)));
+        for (let k = k0; k <= k1; k++) {
+          const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
+          for (let j = 0; j <= st.N; j++) {
+            const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
+            for (let i = i0; i <= i1; i++) {
+              const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
+              const id = idxP(st, i, j, k);
+              const pristine = pristineAt(x, y, z);
+              if (pristine > st.field[id]) st.field[id] = pristine; // only ever restore, never carve
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Pushes the wall out to exactly this tile's edges (plus a small
   // margin), floor to ceiling — same idea as the tool's carveGridRect.
   function carveTileColumn(st, c, r, opts) {
@@ -699,9 +743,21 @@
   function carveMazeCavern(opts, rng) {
     opts = Object.assign({}, DEFAULT_OPTS, opts);
 
+    // The tool's own maze root spans nearly the whole board before any
+    // branch attaches to it (rootCount points stretched corner-to-corner —
+    // see (HA)TunnelSculptorV1.html's buildMazePaths), which is what keeps
+    // branchCount branches from clustering on top of each other: each one
+    // attaches at a random point along whatever's already grown, and a
+    // long root gives them room to land far apart. A den's root can't span
+    // a pre-existing board (there isn't one — the domain is sized from the
+    // path afterward), so it has to be long on its own terms; too short
+    // and every branch crowds the same small patch near the entrance,
+    // carving one merged pit with no walls between corridors instead of a
+    // real branching network. entranceLength is scaled from the target
+    // network size in cavern-generator.js for exactly this reason.
     const rootLen = Math.max(4, opts.entranceLength);
     const rootPts = [{ x: 0, y: 0, z: 0 }];
-    for (let i = 1; i < rootLen; i++) rootPts.push({ x: (rng() * 2 - 1) * 1.5, y: 0, z: -i * (opts.branchLength * .55) });
+    for (let i = 1; i < rootLen; i++) rootPts.push({ x: (rng() * 2 - 1) * 1.5, y: 0, z: -i * opts.branchLength });
 
     const paths = buildMazePaths(rootPts, opts, rng);
     const dense = paths.map(p => sampleSpline(p, 10));
@@ -711,7 +767,16 @@
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
     }
-    const pad = opts.probeRadius * 2 + 2;
+    // Generous on purpose — snapClaimTiles below is allowed to claim tiles
+    // right out to the sculpted block's own edge, and a carve stamp can
+    // bleed past its control point by brushRadius+jitter. Too little pad
+    // here means a tile near the edge gets claimed with no solid rock left
+    // beyond it for a wall to form against — stitchBoundaryCaps' solidTopAtXZ
+    // finds nothing there and the boundary is left open (a real, confirmed
+    // bug: headless verification found ~35% of boundary edges missing their
+    // wall when this was probeRadius*2+2 ≈ 3, right after entranceLength
+    // started scaling the root much longer).
+    const pad = opts.probeRadius * 3 + opts.brushRadius * 3 + 4;
     minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
     const dims = { x: maxX - minX, y: opts.sizeY, z: maxZ - minZ };
 
@@ -791,6 +856,13 @@
     // exactly like any other cavern boundary would — without this
     // exclusion, stitchBoundaryCaps walls that edge shut too.
     const skipCapEdges = new Set(entranceTiles.map(([c, r]) => `${c},${r},S`));
+
+    // Heal any wall the organic carve thinned or erased where it bled past
+    // a claimed tile's edge into an unclaimed neighbor (see this
+    // function's docblock) — run once, after every carve/claim/force step
+    // above has finished, right before meshing.
+    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges);
+
     const mesh = extractMesh(st, claimed, skipCapEdges);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
@@ -802,6 +874,7 @@
 
   window.CavernSculptor = {
     createSculptState, carveHook, carveSphere, buildMazePaths, sampleSpline,
-    carveAlongSpline2D, snapClaimTiles, carveTileColumn, extractMesh, carveMazeCavern,
+    carveAlongSpline2D, snapClaimTiles, carveTileColumn, solidifyBoundaryWalls,
+    extractMesh, carveMazeCavern,
   };
 })();
