@@ -526,6 +526,10 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
+    if (mountSync?.active) {
+      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
+    }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     if (held?.actionArch?.length) {

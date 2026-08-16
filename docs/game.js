@@ -18651,6 +18651,12 @@
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        // updateMountRide has already written the carrier's final smoothed
+        // mesh transform this frame. In steady riding, use that exact render
+        // position so rider and mount cannot trail each other through two
+        // independent lerps. Mounting/dismounting states intentionally keep
+        // the transition positioning above.
+        window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
         playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
