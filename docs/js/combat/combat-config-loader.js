@@ -89,6 +89,7 @@
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
+    ['js/combat/combat-grehlr-burrow.js?v=20260816a', () => !!window.HobunjiGrehlrBurrow],
   ];
 
   function loadModule(src, alreadyLoaded) {
