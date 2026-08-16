@@ -424,11 +424,17 @@
   // ── Wall-detection-sphere carve along a spline ─────────────────────────
   function findProbeIntrusions(st, center, radius, opts, limit) {
     limit = limit || 160;
+    // probeYScale (default 2, see DEFAULT_OPTS) stretches the detection
+    // region into an oval taller than it is wide — dividing the Y delta by
+    // it before the hypot check is the standard cheap ellipsoid-SDF trick
+    // (X/Z stay at `radius`, Y effectively reaches radius*probeYScale).
+    const yScale = opts?.probeYScale || 1;
     const g = worldToGrid(st, center);
     const sx = 2 * st.domainHalf.x / st.N, sy = 2 * st.domainHalf.y / st.N, sz = 2 * st.domainHalf.z / st.N;
     const cellPad = Math.hypot(sx, sy, sz) * .52;
     const scanR = radius + cellPad;
-    const ir = Math.ceil(scanR / sx) + 1, jr = Math.ceil(scanR / sy) + 1, kr = Math.ceil(scanR / sz) + 1;
+    const scanRY = radius * yScale + cellPad;
+    const ir = Math.ceil(scanR / sx) + 1, jr = Math.ceil(scanRY / sy) + 1, kr = Math.ceil(scanR / sz) + 1;
     const i0 = Math.max(0, Math.floor(g.x) - ir), i1 = Math.min(st.N, Math.ceil(g.x) + ir);
     const j0 = Math.max(0, Math.floor(g.y) - jr), j1 = Math.min(st.N, Math.ceil(g.y) + jr);
     const k0 = Math.max(0, Math.floor(g.z) - kr), k1 = Math.min(st.N, Math.ceil(g.z) + kr);
@@ -448,7 +454,7 @@
           const v = st.field[idxP(st, i, j, k)];
           if (v <= 0) continue;
           const x = lerp(-st.domainHalf.x, st.domainHalf.x, i / st.N);
-          const d = Math.hypot(x - center.x, y - center.y, z - center.z);
+          const d = Math.hypot(x - center.x, (y - center.y) / yScale, z - center.z);
           if (d > scanR) continue;
           hits.push({ p: { x, y, z }, d, solid: v });
         }
@@ -850,6 +856,11 @@
     // carve opens to open sky) noticeably taller.
     sizeY: 1.5, pathYOffset: .35, floorOffset: 0, entranceLength: 3,
     tileSize: 1,
+    // The wall-detection probe (see findProbeIntrusions) is an oval, not a
+    // sphere — probeYScale stretches its Y reach to probeRadius*probeYScale
+    // while X/Z stay at probeRadius, carving a passage taller than it is
+    // wide (like a real cave tunnel) instead of a round tube.
+    probeYScale: 2,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -942,10 +953,20 @@
     const clampPt = p => ({ x: clampNum(p.x, -boundX, boundX), y: p.y, z: clampNum(p.z, -boundZ, boundZ) });
     const denseLocal = chainPaths.map(({ points, narrow }) => ({ points: points.map(clampPt), narrow }));
 
-    // Matches the tool's own floorHeightAt exactly, with floorVariation
-    // forced to 0 (flat floor, no undulation). No ceilingY at all — see
-    // this function's docblock for why that's deliberate, not an oversight.
-    const floorY = opts.pathYOffset - opts.probeRadius + opts.floorOffset;
+    // No ceilingY at all — see this function's docblock for why that's
+    // deliberate, not an oversight. The probe still travels at pathYOffset,
+    // but floorY is derived directly from the oval's own actual bottom
+    // (pathYOffset - probeYRadius) instead of the old sphere's (pathYOffset
+    // - probeRadius) — with probeYScale=2 that alone drops the floor a full
+    // probeRadius lower than before (there's no headroom to *also* shift
+    // the probe's own travel level down without probeYRadius pushing the
+    // floor past the domain's own bottom — sizeY is shallow by design, see
+    // pathYOffset's own comment above, and probeYRadius already eats most
+    // of that budget). Because floorY always tracks wherever the oval
+    // actually sits instead of a separate, looser formula, the protected
+    // floor is exactly as tight as the detection shape allows.
+    const probeYRadius = opts.probeRadius * (opts.probeYScale || 1);
+    const floorY = opts.pathYOffset - probeYRadius + opts.floorOffset;
     const carveOpts = Object.assign({}, opts, {
       floorY, ceilingY: null,
       levels: [opts.pathYOffset],
