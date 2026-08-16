@@ -6376,11 +6376,24 @@
               .filter(den => den.mouthAnchor)
               .map(den => {
                 const cavernMapId = window.WildlifeSpawn.denCavernMapId(zoneId, den.id);
-                const { exitCol, exitRow } = window.CavernGenerator.generateCavernFloor(cavernMapId);
+                // No eager generateCavernFloor(cavernMapId) call here on
+                // purpose: its SDF carve is real work (unlike the old
+                // blob-growth generator this replaced), and this transition
+                // list gets rebuilt for every den in the zone whenever the
+                // zone itself (re)generates — including at world boot's
+                // fire-and-forget Tothal Shift across all four zones (see
+                // spawnPlayerAvatar's checkTothalShift() call). Eagerly
+                // resolving every den's spawn tile here meant carving every
+                // den in every zone up front, whether or not the player
+                // ever visits it, which is exactly the boot-time freeze
+                // this avoids. targetCol/targetRow are left unset;
+                // loadBuildingScene's cavern branch resolves the real
+                // (guaranteed-walkable) spawn tile itself, the one time a
+                // player actually enters this specific den — see its
+                // _pendingEntrySpawnFromExit handling.
                 return {
                   id: `den_${den.id}_enter`, label: 'A dark burrow', col: den.mouthAnchor.x, row: den.mouthAnchor.y,
                   target: 'building', targetMapId: cavernMapId,
-                  targetCol: exitCol, targetRow: exitRow,
                 };
               });
             _zoneLayouts.set(zoneId, {
@@ -9876,7 +9889,16 @@
             }
             if (_pendingEntrySpawnFromExit) {
               _pendingEntrySpawnFromExit = false;
-              const sp = buildingSpawnFromExit(info, cols, rows);
+              // A den's cavern skips the generic "average exit col, one
+              // tile north" heuristic — mapData.exitCol/exitRow (the
+              // guaranteed-walkable middle entrance tile generateCavernFloor
+              // already computed above) is exact, where that heuristic can
+              // land outside the organic floor blob (see denTransitions'
+              // comment in performTothalShift for why this is resolved
+              // lazily here rather than eagerly at zone-generation time).
+              const sp = mapData.wallStyle === 'cavern' && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)
+                ? { col: mapData.exitCol, row: mapData.exitRow }
+                : buildingSpawnFromExit(info, cols, rows);
               player.x = (sp.col + 0.5) * TILE;
               player.y = (sp.row + 0.5) * TILE;
               _snapCameraTarget();
