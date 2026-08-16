@@ -522,7 +522,12 @@
     return null;
   }
 
-  function stitchBoundaryCaps(st, keepTiles, addTri) {
+  // skipCapEdges: an optional Set of "c,r,DIR" keys (DIR one of N/S/E/W)
+  // marking boundary edges that must stay open — e.g. the entrance's mouth,
+  // which borders unclaimed (exterior) tiles just like any other cavern
+  // wall would, but must NOT get a wall face stitched across it or the
+  // room reads as sealed shut with no way in or out.
+  function stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges) {
     const hy = st.domainHalf.y;
     const cellSpan = (2 * st.domainHalf.x / st.N + 2 * st.domainHalf.z / st.N) * .5;
     const addEdge = (x0, z0, x1, z1, flip) => {
@@ -542,16 +547,17 @@
         prev = cur;
       }
     };
+    const skip = (c, r, dir) => skipCapEdges?.has(`${c},${r},${dir}`);
     for (const key of keepTiles) {
       const [c, r] = key.split(',').map(Number);
-      if (!keepTiles.has(`${c - 1},${r}`)) addEdge(c, r, c, r + 1, false);
-      if (!keepTiles.has(`${c + 1},${r}`)) addEdge(c + 1, r, c + 1, r + 1, true);
-      if (!keepTiles.has(`${c},${r - 1}`)) addEdge(c, r, c + 1, r, true);
-      if (!keepTiles.has(`${c},${r + 1}`)) addEdge(c, r + 1, c + 1, r + 1, false);
+      if (!keepTiles.has(`${c - 1},${r}`) && !skip(c, r, 'W')) addEdge(c, r, c, r + 1, false);
+      if (!keepTiles.has(`${c + 1},${r}`) && !skip(c, r, 'E')) addEdge(c + 1, r, c + 1, r + 1, true);
+      if (!keepTiles.has(`${c},${r - 1}`) && !skip(c, r, 'N')) addEdge(c, r, c + 1, r, true);
+      if (!keepTiles.has(`${c},${r + 1}`) && !skip(c, r, 'S')) addEdge(c, r + 1, c + 1, r + 1, false);
     }
   }
 
-  function clipAndStitch(st, positions, indices, keepTiles) {
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges) {
     const outPositions = []; const outIndices = []; const vmap = new Map();
     const addVertex = v => {
       // Quantized key shares clipped/stitched vertices along the same tile
@@ -592,11 +598,11 @@
       }
     }
 
-    stitchBoundaryCaps(st, keepTiles, addTri);
+    stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges);
     return { positions: new Float32Array(outPositions), indices: outIndices };
   }
 
-  function extractMesh(st, keepTiles) {
+  function extractMesh(st, keepTiles, skipCapEdges) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -642,17 +648,56 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges);
+  }
+
+  // Removes the flat ceiling-cap surface (every vertex within `tolerance`
+  // of ceilingY — nothing else in the mesh sits at exactly that height,
+  // since it's precisely where FLOOR_CEILING_MARGIN's protected rock
+  // begins) while leaving the floor and every wall intact.
+  function stripCeilingCap(mesh, ceilingY, tolerance) {
+    const pos = mesh.positions, idx = mesh.indices;
+    const kept = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      const ia = idx[t] * 3, ib = idx[t + 1] * 3, ic = idx[t + 2] * 3;
+      const isCeiling = Math.abs(pos[ia + 1] - ceilingY) < tolerance &&
+        Math.abs(pos[ib + 1] - ceilingY) < tolerance &&
+        Math.abs(pos[ic + 1] - ceilingY) < tolerance;
+      if (isCeiling) continue;
+      kept.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    return { positions: pos, indices: kept };
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
+  // Every value below matches (HA)TunnelSculptorV1.html's own V5-baseline
+  // defaults (see its applyModeDefaults) exactly, except where this den
+  // use case is structurally different from the tool's own — the tool
+  // carves a thin ~1.5-unit top-down slab with a spline route running
+  // corner-to-corner; a den needs a real walkable room with one fixed
+  // dead-end mouth, not a through-tunnel. Those necessary departures:
+  //   - ceilingHeight/entranceLength have no tool equivalent at all (the
+  //     tool has no notion of room height, and its maze root spans the
+  //     whole board rather than growing from one fixed mouth).
+  //   - branchCount is computed per-den from the target tile count (see
+  //     cavern-generator.js) rather than fixed, so dens actually vary in
+  //     size — the tool's own default (16) is kept here only as the
+  //     fallback for a direct/standalone call.
+  //   - floorVariation/pathYOffset/pathStep/pathPointCount have no
+  //     equivalent — this carves real 3D height via carveAlongSpline2D's
+  //     multi-level sweep instead of the tool's single-Y top-down slab,
+  //     and flat floor (no undulation) is a deliberate v1 simplification.
+  // Every other knob below is load-bearing and finicky enough (see the
+  // floor/ceiling-cap and phantom-intrusion bugs already hit) that it's
+  // not worth deviating from the tool's own tuned values without a
+  // specific reason.
   const DEFAULT_OPTS = {
-    branchCount: 10, branchLength: 4.5, turnChaos: .42, loopChance: .18,
-    probeRadius: .55, brushRadius: .34, radiusChaos: .38, dirChaos: .58,
-    pickJitter: .48, hookLength: .3, hitsPerStep: 3,
-    probeDigBursts: 4, probeMaxPasses: 90,
-    faceThreshold: 8, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
-    wallGridMargin: .05, wallGridClaim: .3,
+    branchCount: 16, branchLength: 3.75, turnChaos: .42, loopChance: .18,
+    probeRadius: .5, brushRadius: .34, radiusChaos: .38, dirChaos: .58,
+    pickJitter: .48, hookLength: .24, hitsPerStep: 3,
+    probeDigBursts: 4, probeMaxPasses: 120,
+    faceThreshold: 10, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
+    wallGridMargin: .05, wallGridClaim: .35,
     ceilingHeight: 3.2, entranceLength: 3,
   };
 
@@ -749,7 +794,39 @@
     const nestTiles = [[nfx, nfy], [nfx + 1, nfy], [nfx, nfy + 1], [nfx + 1, nfy + 1]];
     for (const [c, r] of nestTiles) { claimed.add(`${c},${r}`); carveTileColumn(st, c, r, carveOpts); }
 
-    const mesh = extractMesh(st, claimed);
+    // Carving the entrance tiles themselves (above) only opens their own
+    // column — nothing south of the entrance row was ever carved by the
+    // maze, so without this the doorway is an isolated pocket walled shut
+    // on every side, including the threshold itself: the real solid/open
+    // SDF surface sits right at the visible boundary. Carve a shallow
+    // vestibule beyond it too (never added to `claimed`, so it's never
+    // rendered) purely to push that real surface out past the clipped
+    // region, so the doorway reads as a genuine opening.
+    const VESTIBULE_DEPTH = 2;
+    for (const [c, r] of entranceTiles) {
+      for (let dr = 1; dr <= VESTIBULE_DEPTH; dr++) carveTileColumn(st, c, r + dr, carveOpts);
+    }
+
+    // The entrance tiles border unclaimed (exterior/vestibule) tiles on
+    // their south side (+r, growth heads toward -z which maps to -r)
+    // exactly like any other cavern boundary would — without this
+    // exclusion, stitchBoundaryCaps walls that edge shut too.
+    const skipCapEdges = new Set(entranceTiles.map(([c, r]) => `${c},${r},S`));
+    let mesh = extractMesh(st, claimed, skipCapEdges);
+
+    // Every other interior in this game (see interior-scene-builder.js's
+    // buildWallGroup/buildCavernWalls) is walls-only with no roof, so the
+    // game's angled camera can see down into the room — that's also
+    // exactly how the standalone tool's top-down mode is meant to be
+    // viewed. A full dual-contour extraction naturally seals a genuine
+    // ceiling cap over the room (real solid rock immediately above
+    // ceilingY, same technique the floor cap below uses) — strip just
+    // that flat cap surface here, after generation, rather than trying to
+    // avoid ever carving/capping a ceiling in the first place: it's the
+    // one piece of "protected rock" geometry (see FLOOR_CEILING_MARGIN)
+    // that isn't wanted in the final render, everything below it is.
+    mesh = stripCeilingCap(mesh, ceilingY, Math.max(.1, opts.probeRadius * .3));
+
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor).
     for (let i = 1; i < mesh.positions.length; i += 3) mesh.positions[i] += -floorY;
