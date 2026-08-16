@@ -20444,9 +20444,14 @@
           return btnsSpot;
         }
 
-        // Zone: a climbable cliff face straight ahead takes priority over tool use.
-        if (_isZoneArea(currentArea) && !player.climbing && window.ClimbSystem.getClimbTarget()) {
-          return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
+        // Zone: a climbable cliff face straight ahead takes priority over
+        // tool use. Keep the target visible while riding, but disable it so
+        // mobile clearly communicates that the rider must dismount instead
+        // of letting the mount and scripted climb fight over player.x/y.
+        const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
+        if (climbTarget) {
+          const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
+          return [{ icon: '🧗', label: climbAllowed ? 'Climb' : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
         }
 
         const tile    = getActiveGrid()[reticle.row][reticle.col];
@@ -23146,6 +23151,8 @@
         isSolid,
         tileSurfaceYInArea,
         clamp,
+        getMountRideState: () => window.Mounts?.rideState ?? 'none',
+        showToast,
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },

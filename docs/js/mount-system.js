@@ -59,6 +59,11 @@
   }
 
   function beginSummonMount() {
+    if (deps.player.climbing) {
+      deps.showToast('Finish climbing before calling your mount.', false);
+      window.__farmLog?.('[mount] summon blocked during cliff climb', 'wildlife');
+      return;
+    }
     if (!mountAllowedInArea(deps.getCurrentArea())) {
       deps.showToast('Mounts cannot be called indoors.', false);
       return;

@@ -530,6 +530,10 @@
     if (mountSync?.active) {
       lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
     }
+    const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
+    if (climbSafety) {
+      lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}`);
+    }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     if (held?.actionArch?.length) {
