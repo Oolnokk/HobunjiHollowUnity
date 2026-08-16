@@ -541,9 +541,11 @@
       // walkers, and bandits: WALK is the amplitude right as a character
       // starts moving, RUN is the amplitude at full effort (current speed at
       // that character's own max) — each call site lerps between the two by
-      // its own effort ratio rather than using a flat distance.
-      const MOVE_BOB_WALK_AMP = 0.015;
-      const MOVE_BOB_RUN_AMP  = 0.03;
+      // its own effort ratio rather than using a flat distance. Kept subtle
+      // so the procedural feet carry the gait without making the whole body
+      // visibly bounce at ordinary walking speed.
+      const MOVE_BOB_WALK_AMP = 0.0075;
+      const MOVE_BOB_RUN_AMP  = 0.015;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
@@ -3700,13 +3702,16 @@
       // creaturePlaneGroundOffset), or a Set of pending callbacks while
       // the very first scan of that species' idle sprite is still loading.
       const _creatureGroundAnchorCache = new Map();
+      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
 
       // Scans a species' idle sprite (cached per URL, so only the first
       // creature of each species actually pays for it) for how far down its
-      // real opaque pixels extend. All these sprites are nominally
+      // fully opaque pixels extend. All these sprites are nominally
       // 1375×600, but if the art itself doesn't reach the canvas's bottom
       // edge (transparent padding), anchoring on the raw rectangle leaves
       // the visible creature hovering above the ground/its own shadow.
+      // Using alpha 255 deliberately ignores antialiased fringe pixels that
+      // would otherwise make the apparent foot line vary with faint padding.
       function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
         const cached = _creatureGroundAnchorCache.get(spriteUrl);
         if (typeof cached === 'number') { onReady(cached); return; }
@@ -3719,7 +3724,7 @@
         };
         const img = new Image();
         img.onload = () => {
-          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD);
           finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
         };
         img.onerror = () => finish(1);
