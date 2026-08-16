@@ -1266,6 +1266,11 @@
           label: 'Southern Cloud Forest',
           cols: 22, rows: 16,
           groundColor: 0x2d4a3a, fogColor: 0x1c2e24,
+          // Previously the only zone with no packSpecies pool at all, so
+          // gar-wolf (a real CREATURE_DB/DEN_MOTHER_DEFS entry — see
+          // scratchbones-config.js's wildlife.denMothers) had no zone to
+          // ever spawn from, anywhere.
+          packSpecies: ['gar-wolf'],
           herbivoreSpecies: ['drenkirra'],
           entryCol: 11, entryRow: 1,
           exitCol: 11, exitRow: 0,
@@ -9649,8 +9654,22 @@
           }
           const bScene = new THREE.Scene();
           bScene.background = new THREE.Color(0x2a1a0a);
-          bScene.add(new THREE.AmbientLight(0xfff5e0, 0.7));
-          const dl = new THREE.DirectionalLight(0xffeedd, 0.5);
+          // A den's cavern is meant to read as genuinely dark — the warm
+          // door light + floor glow patch below (built fresh every time
+          // this scene loads, i.e. every time the player actually enters)
+          // is the only real light source, standing in for daylight
+          // spilling through the mouth. A near-zero ambient/key light keeps
+          // the rest of the room from washing that out — every other
+          // interior style keeps the normal bright, evenly-lit look.
+          // Matches the farmhouse interior's own "dark room, single warm
+          // lantern" baseline (see the _intAmbient/_intKey pair near the
+          // Three.js renderer setup) rather than a guessed-lower value —
+          // near-zero ambient read as almost pure black even right next to
+          // the door light in a headless render check, since a point
+          // light's falloff only reaches surfaces facing toward it.
+          const isCavernInterior = mapData.wallStyle === 'cavern';
+          bScene.add(new THREE.AmbientLight(0xfff5e0, isCavernInterior ? 0.15 : 0.7));
+          const dl = new THREE.DirectionalLight(0xffeedd, isCavernInterior ? 0.08 : 0.5);
           dl.position.set(5, 10, 5);
           bScene.add(dl);
           // A den's cavern (mapData.wallStyle === 'cavern') carries its own
