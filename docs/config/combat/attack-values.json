@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_attack_values.v1",
-  "note": "Single source of truth for every attack's tunable numbers - player weapon abilities, combo/quick-attack/charged-breaker/flurry/counter-shield tuning, creature named-attack constants (pounce/guard charge), per-species creature attack stats, and the bandit baseline melee bite. Authored via docs/tools/attack-animation-editor/ (Stats tab). Pose/timing animation data is a SEPARATE concern authored by the same tool's existing pose editor and is not duplicated here. Angles are authored in degrees and ranges in tiles for readability; game.js/combat-*.js convert to radians/pixels at load time using the same TILE constant weaponAbility() already uses.",
+  "note": "Single source of truth for every attack's tunable numbers - player weapon abilities, combo/quick-attack/charged-breaker/flurry/counter-shield tuning, creature named-attack constants (pounce/guard charge/Grehlr burrow), per-species creature attack stats, and the bandit baseline melee bite. Authored via docs/tools/attack-animation-editor/ (Stats tab). Pose/timing animation data is a SEPARATE concern authored by the same tool's existing pose editor and is not duplicated here. Angles are authored in degrees and ranges in tiles for readability; game.js/combat-*.js convert to radians/pixels at load time using the same TILE constant weaponAbility() already uses.",
 
   "weaponAbilities": {
     "cut":   { "damage": 6,  "halfConeDeg": 18, "rangeTiles": 2.0, "staminaCost": 12, "knockbackPxS": 720,  "trailHalfWidthTiles": 0.38, "trailFarTiles": 2.0, "trailMaxAgeSeconds": 0.24 },
@@ -73,6 +73,28 @@
     "guardCharge": {
       "DURATION_S": 0.12, "KNOCKBACK_PX_S": 900,
       "TARGET_ANGLE_WEIGHT": 0.55, "AWAY_FROM_MASTER_WEIGHT": 0.45
+    },
+    "grehlrBurrow": {
+      "DIVE_S": 0.5,
+      "BURROW_MIN_S": 3,
+      "BURROW_MAX_S": 8,
+      "TELEGRAPH_S": 2,
+      "EMERGE_S": 0.5,
+      "HIDDEN_SCALE_Y": 0.06,
+      "DIVE_TILT_DEG": 66,
+      "BURROW_SPEED_MULTIPLIER": 1.2,
+      "MIN_RADIUS_TILES": 1.35,
+      "MODEL_RADIUS_MULTIPLIER": 0.55,
+      "DAMAGE_MULTIPLIER": 2.5,
+      "KNOCKBACK_PX_S": 980,
+      "SELF_FOOTING_DRAIN_FRACTION": 0.8,
+      "SELF_STAMINA_DRAIN_FRACTION": 0.9,
+      "TRAIL_PARTICLES_PER_S": 24,
+      "TELEGRAPH_PARTICLES_PER_S": 34,
+      "INITIAL_RING_PARTICLES": 28,
+      "DIVE_BURST_PARTICLES": 18,
+      "BURROW_BURST_PARTICLES": 24,
+      "EMERGE_BURST_PARTICLES": 42
     }
   },
 
@@ -86,12 +108,12 @@
     "dabinggi-hound":            { "attackDamage": 10, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 45, "attackStaminaCost": 14, "attackCooldownS": 1.1, "attackTag": "poison", "attacks": ["pounce"] },
     "uumkaoii":                  { "attackDamage": 6,  "attackRangeTiles": 0.8,  "attackHalfConeDeg": 45, "attackStaminaCost": 12, "attackCooldownS": 1.3, "attackTag": "blunt",  "attacks": ["pounce"] },
     "gar-wolf":                  { "attackDamage": 12, "attackRangeTiles": 0.85, "attackHalfConeDeg": 42, "attackStaminaCost": 12, "attackCooldownS": 1.0, "attackTag": "sharp",  "attacks": ["pounce"] },
-    "grehlr":                    { "attackDamage": 14, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 44, "attackStaminaCost": 13, "attackCooldownS": 1.05, "attackTag": "sharp", "attacks": ["pounce"] },
+    "grehlr":                    { "attackDamage": 14, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 44, "attackStaminaCost": 13, "attackCooldownS": 1.05, "attackTag": "sharp", "attacks": ["grehlrBurrow"] },
     "drenkirra":                 { "attackDamage": 13, "attackRangeTiles": 0.85, "attackHalfConeDeg": 43, "attackStaminaCost": 12, "attackCooldownS": 0.95, "attackTag": "sharp", "attacks": ["pounce"] },
     "gar-wolf-alpha":            { "attackDamage": 18, "attackRangeTiles": 0.95, "attackHalfConeDeg": 46, "attackStaminaCost": 16, "attackCooldownS": 1.0, "attackTag": "sharp",  "attacks": ["pounce"] },
     "gar-wolf-den-mother":       { "attackDamage": 24, "attackRangeTiles": 1.0,  "attackHalfConeDeg": 46, "attackStaminaCost": 16, "attackCooldownS": 1.0, "attackTag": "sharp",  "attacks": ["pounce"] },
     "uumkaoii-wild-den-mother":  { "attackDamage": 17, "attackRangeTiles": 0.9,  "attackHalfConeDeg": 45, "attackStaminaCost": 14, "attackCooldownS": 1.1, "attackTag": "blunt",  "attacks": ["pounce"] },
-    "grehlr-den-mother":           { "attackDamage": 26, "attackRangeTiles": 1.0,  "attackHalfConeDeg": 46, "attackStaminaCost": 17, "attackCooldownS": 1.05, "attackTag": "sharp", "attacks": ["pounce"] },
-    "drenkirra-den-mother":        { "attackDamage": 22, "attackRangeTiles": 0.95, "attackHalfConeDeg": 45, "attackStaminaCost": 15, "attackCooldownS": 1.1, "attackTag": "blunt",  "attacks": ["pounce"] }
+    "grehlr-den-mother":         { "attackDamage": 26, "attackRangeTiles": 1.0,  "attackHalfConeDeg": 46, "attackStaminaCost": 17, "attackCooldownS": 1.05, "attackTag": "sharp", "attacks": ["grehlrBurrow"] },
+    "drenkirra-den-mother":      { "attackDamage": 22, "attackRangeTiles": 0.95, "attackHalfConeDeg": 45, "attackStaminaCost": 15, "attackCooldownS": 1.1, "attackTag": "blunt",  "attacks": ["pounce"] }
   }
 }
