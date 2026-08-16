@@ -335,10 +335,11 @@
       const z = lerp(-st.domainHalf.z, st.domainHalf.z, k / st.N);
       for (let j = j0; j <= j1; j++) {
         const y = lerp(-st.domainHalf.y, st.domainHalf.y, j / st.N);
-        // Rock outside [floorY,ceilingY] is permanently protected (see
-        // carveSphere/carveTileColumn) — never report it as an intrusion,
-        // or clearProbeAt would spin forever trying to clear rock that can
-        // never actually be carved (see FLOOR_CEILING_MARGIN's comment).
+        // Rock below floorY is permanently protected (see carveSphere/
+        // carveTileColumn) — never report it as an intrusion, or
+        // clearProbeAt would spin forever trying to clear rock that can
+        // never actually be carved. There's deliberately no ceilingY guard
+        // at all (see carveMazeCavern's docblock).
         if (opts?.floorY != null && y < opts.floorY) continue;
         if (opts?.ceilingY != null && y > opts.ceilingY) continue;
         for (let i = i0; i <= i1; i++) {
@@ -651,46 +652,33 @@
     return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges);
   }
 
-  // Removes the flat ceiling-cap surface (every vertex within `tolerance`
-  // of ceilingY — nothing else in the mesh sits at exactly that height,
-  // since it's precisely where FLOOR_CEILING_MARGIN's protected rock
-  // begins) while leaving the floor and every wall intact.
-  function stripCeilingCap(mesh, ceilingY, tolerance) {
-    const pos = mesh.positions, idx = mesh.indices;
-    const kept = [];
-    for (let t = 0; t < idx.length; t += 3) {
-      const ia = idx[t] * 3, ib = idx[t + 1] * 3, ic = idx[t + 2] * 3;
-      const isCeiling = Math.abs(pos[ia + 1] - ceilingY) < tolerance &&
-        Math.abs(pos[ib + 1] - ceilingY) < tolerance &&
-        Math.abs(pos[ic + 1] - ceilingY) < tolerance;
-      if (isCeiling) continue;
-      kept.push(idx[t], idx[t + 1], idx[t + 2]);
-    }
-    return { positions: pos, indices: kept };
-  }
-
   // ── Top-level orchestration ─────────────────────────────────────────
   // Every value below matches (HA)TunnelSculptorV1.html's own V5-baseline
-  // defaults (see its applyModeDefaults) exactly, except where this den
-  // use case is structurally different from the tool's own — the tool
-  // carves a thin ~1.5-unit top-down slab with a spline route running
-  // corner-to-corner; a den needs a real walkable room with one fixed
-  // dead-end mouth, not a through-tunnel. Those necessary departures:
-  //   - ceilingHeight/entranceLength have no tool equivalent at all (the
-  //     tool has no notion of room height, and its maze root spans the
-  //     whole board rather than growing from one fixed mouth).
+  // defaults (see its applyModeDefaults) exactly — including sizeY/
+  // pathYOffset/floorOffset, the thin-slab top-down setup itself. That's
+  // deliberate: earlier attempts reinterpreted this as a tall walkable
+  // room (a fixed room-height constant, a multi-level probe sweep to
+  // reach it, an artificial solid margin so dual contouring had a ceiling
+  // to cap against, then a post-process to strip that cap back out) and
+  // each layer of reinterpretation introduced its own new bug — a sealed
+  // ceiling and a walled-shut doorway among them. The tool's own approach
+  // avoids the ceiling problem entirely, by construction: pathYOffset
+  // (.55) + probeRadius (.5) already reaches past sizeY's own half-height
+  // (.75), so the single carve naturally punches through the slab's
+  // nominal top with nothing left to cap — there is no ceiling to strip
+  // because there's no protected rock left up there to form one from. Only
+  // floorOffset is protected (via floorY below), same as the tool's own
+  // floorHeightAt with floorVariation forced to 0 (flat, no undulation —
+  // the one deliberate v1 simplification kept from the earlier attempt).
   //   - branchCount is computed per-den from the target tile count (see
   //     cavern-generator.js) rather than fixed, so dens actually vary in
   //     size — the tool's own default (16) is kept here only as the
   //     fallback for a direct/standalone call.
-  //   - floorVariation/pathYOffset/pathStep/pathPointCount have no
-  //     equivalent — this carves real 3D height via carveAlongSpline2D's
-  //     multi-level sweep instead of the tool's single-Y top-down slab,
-  //     and flat floor (no undulation) is a deliberate v1 simplification.
-  // Every other knob below is load-bearing and finicky enough (see the
-  // floor/ceiling-cap and phantom-intrusion bugs already hit) that it's
-  // not worth deviating from the tool's own tuned values without a
-  // specific reason.
+  //   - entranceLength has no tool equivalent (the tool's maze root spans
+  //     the whole board corner-to-corner; a den instead grows from one
+  //     fixed dead-end mouth, which is also why carveMazeCavern forces a
+  //     3-wide entrance and a shallow vestibule beyond it below — the
+  //     tool has no "entrance" concept to begin with).
   const DEFAULT_OPTS = {
     branchCount: 16, branchLength: 3.75, turnChaos: .42, loopChance: .18,
     probeRadius: .5, brushRadius: .34, radiusChaos: .38, dirChaos: .58,
@@ -698,7 +686,7 @@
     probeDigBursts: 4, probeMaxPasses: 120,
     faceThreshold: 10, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
     wallGridMargin: .05, wallGridClaim: .35,
-    ceilingHeight: 3.2, entranceLength: 3,
+    sizeY: 1.5, pathYOffset: .55, floorOffset: 0, entranceLength: 3,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -725,19 +713,7 @@
     }
     const pad = opts.probeRadius * 2 + 2;
     minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
-    // The sculpt block's own Y-extent must reach past the carve's
-    // floor/ceiling bounds, not just match them exactly — carving never
-    // touches rock outside [floorY,ceilingY] (see carveSphere/
-    // carveTileColumn's floorY/ceilingY guards), but dual contouring can
-    // only place a floor/ceiling cap surface where there's genuine solid
-    // rock immediately beyond that boundary to transition *from*. Without
-    // this margin the block's own uncarved exterior sits flush with
-    // floorY/ceilingY, which is already open air out there by definition
-    // (outside the nominal box), so carving a claimed tile's column would
-    // leave it open on both sides of the boundary with no sign change —
-    // and therefore no floor/ceiling mesh at all.
-    const FLOOR_CEILING_MARGIN = 0.5;
-    const dims = { x: maxX - minX, y: opts.ceilingHeight + FLOOR_CEILING_MARGIN * 2, z: maxZ - minZ };
+    const dims = { x: maxX - minX, y: opts.sizeY, z: maxZ - minZ };
 
     const st = createSculptState(dims, opts.gridN, opts.baseCell);
 
@@ -747,10 +723,13 @@
     const toLocal = p => ({ x: p.x - cx, z: p.z - cz });
     const denseLocal = dense.map(path => path.map(toLocal));
 
-    const floorY = -opts.ceilingHeight / 2, ceilingY = opts.ceilingHeight / 2;
+    // Matches the tool's own floorHeightAt exactly, with floorVariation
+    // forced to 0 (flat floor, no undulation). No ceilingY at all — see
+    // this function's docblock for why that's deliberate, not an oversight.
+    const floorY = opts.pathYOffset - opts.probeRadius + opts.floorOffset;
     const carveOpts = Object.assign({}, opts, {
-      floorY, ceilingY,
-      levels: [floorY + opts.probeRadius * 1.1, 0, ceilingY - opts.probeRadius * 1.1],
+      floorY, ceilingY: null,
+      levels: [opts.pathYOffset],
     });
 
     for (const path of denseLocal) carveAlongSpline2D(st, path, carveOpts, rng);
@@ -812,20 +791,7 @@
     // exactly like any other cavern boundary would — without this
     // exclusion, stitchBoundaryCaps walls that edge shut too.
     const skipCapEdges = new Set(entranceTiles.map(([c, r]) => `${c},${r},S`));
-    let mesh = extractMesh(st, claimed, skipCapEdges);
-
-    // Every other interior in this game (see interior-scene-builder.js's
-    // buildWallGroup/buildCavernWalls) is walls-only with no roof, so the
-    // game's angled camera can see down into the room — that's also
-    // exactly how the standalone tool's top-down mode is meant to be
-    // viewed. A full dual-contour extraction naturally seals a genuine
-    // ceiling cap over the room (real solid rock immediately above
-    // ceilingY, same technique the floor cap below uses) — strip just
-    // that flat cap surface here, after generation, rather than trying to
-    // avoid ever carving/capping a ceiling in the first place: it's the
-    // one piece of "protected rock" geometry (see FLOOR_CEILING_MARGIN)
-    // that isn't wanted in the final render, everything below it is.
-    mesh = stripCeilingCap(mesh, ceilingY, Math.max(.1, opts.probeRadius * .3));
+    const mesh = extractMesh(st, claimed, skipCapEdges);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor).
