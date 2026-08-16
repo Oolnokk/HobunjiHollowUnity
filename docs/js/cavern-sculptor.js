@@ -743,50 +743,82 @@
   function carveMazeCavern(opts, rng) {
     opts = Object.assign({}, DEFAULT_OPTS, opts);
 
-    // The tool's own maze root spans nearly the whole board before any
-    // branch attaches to it (rootCount points stretched corner-to-corner —
-    // see (HA)TunnelSculptorV1.html's buildMazePaths), which is what keeps
-    // branchCount branches from clustering on top of each other: each one
-    // attaches at a random point along whatever's already grown, and a
-    // long root gives them room to land far apart. A den's root can't span
-    // a pre-existing board (there isn't one — the domain is sized from the
-    // path afterward), so it has to be long on its own terms; too short
-    // and every branch crowds the same small patch near the entrance,
-    // carving one merged pit with no walls between corridors instead of a
-    // real branching network. entranceLength is scaled from the target
-    // network size in cavern-generator.js for exactly this reason.
-    const rootLen = Math.max(4, opts.entranceLength);
-    const rootPts = [{ x: 0, y: 0, z: 0 }];
-    for (let i = 1; i < rootLen; i++) rootPts.push({ x: (rng() * 2 - 1) * 1.5, y: 0, z: -i * opts.branchLength });
-
-    const paths = buildMazePaths(rootPts, opts, rng);
-    const dense = paths.map(p => sampleSpline(p, 10));
-
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const path of paths) for (const p of path) {
-      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-      minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
-    }
-    // Generous on purpose — snapClaimTiles below is allowed to claim tiles
-    // right out to the sculpted block's own edge, and a carve stamp can
-    // bleed past its control point by brushRadius+jitter. Too little pad
-    // here means a tile near the edge gets claimed with no solid rock left
-    // beyond it for a wall to form against — stitchBoundaryCaps' solidTopAtXZ
-    // finds nothing there and the boundary is left open (a real, confirmed
-    // bug: headless verification found ~35% of boundary edges missing their
-    // wall when this was probeRadius*2+2 ≈ 3, right after entranceLength
-    // started scaling the root much longer).
-    const pad = opts.probeRadius * 3 + opts.brushRadius * 3 + 4;
-    minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
-    const dims = { x: maxX - minX, y: opts.sizeY, z: maxZ - minZ };
+    // The tool's own board (sizeX/sizeZ) is a fixed size the user sets
+    // independently of branchCount — branches that happen to reach past its
+    // edges just carve nothing there (every carve/probe function clamps its
+    // grid indices to [0,N]), so a bigger branchCount only makes the same
+    // fixed board denser, never bigger. This module used to derive dims from
+    // the generated path's own bounding box instead, so the maze would never
+    // "waste" carve work outside the mesh — but branches routinely attach to
+    // other branches, not just the root (see buildMazePaths — parentIndex is
+    // uniform over every curve so far), so that footprint has no real upper
+    // bound and grows quietly with branchCount. That's what was inflating
+    // domain size well past the tool's own ~18x12 reference board (confirmed:
+    // a 130-tile target den reached ~24x36 units), which starves the
+    // gridN=64 base SDF lattice's resolution down to ~0.55-unit cells — more
+    // than half a tile wide — and that, not any bleed/erosion the carve
+    // passes cause, is why walls between corridors were coming out as
+    // scattered fragments with gaps: the base grid was too coarse to even
+    // hold a tile-wide solid strip. (Bumping gridN to compensate was tried
+    // and confirmed *not* viable: matching the tool's own resolution density
+    // over a domain that large needs gridN>150, and this engine's carve cost
+    // scales far worse than the O(N^3) field size alone — a single den took
+    // minutes to generate at gridN=128.) Sizing the domain analytically from
+    // branchCount instead — the same way the tool's own fixed board is
+    // independent of its branch count — keeps physical scale (and therefore
+    // gridN=64's resolution) matched to the tool's reference density
+    // regardless of how big/branchy a den's target tile count asks for.
+    // The 1.5x factor compensates for the area boundsRect/rootLen actually
+    // get to use once they're kept clear of the domain's open-air padding
+    // margin below, so cavern-generator.js's target tile counts still land
+    // where intended — confirmed against headless generation runs.
+    const refArea = 18 * 12 * 1.5, refAspect = 18 / 12, refBranchCount = 16;
+    const area = refArea * (Math.max(1, opts.branchCount) / refBranchCount);
+    const domPad = opts.probeRadius * 3 + opts.brushRadius * 3 + 4;
+    const baseZ = Math.sqrt(area / refAspect), baseX = refAspect * baseZ;
+    const dims = { x: baseX + domPad, y: opts.sizeY, z: baseZ + domPad };
 
     const st = createSculptState(dims, opts.gridN, opts.baseCell);
 
-    // createSculptState centers the block on the origin — reproject every
-    // path sample (and the entrance) into that same centered local space.
-    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
-    const toLocal = p => ({ x: p.x - cx, z: p.z - cz });
-    const denseLocal = dense.map(path => path.map(toLocal));
+    // The root and its branches are generated directly in this final local
+    // (domain-centered) space — dims no longer depends on where the path
+    // ends up, so there's no separate raw-space-then-reproject step needed.
+    // The entrance sits a fixed margin in from the domain's south edge
+    // (matching the vestibule/doorway logic below — open room south of the
+    // entrance, maze room north of it), centered in X (root/branches fan out
+    // roughly evenly either side). rootLen has to fit the domain's own north
+    // margin now that the domain is fixed-size instead of grown to fit
+    // whatever the root produced — a root spec'd to run past the domain edge
+    // would just waste most of its own length carving nothing (branches
+    // still fan out from wherever it actually lands, same as the tool's own
+    // board-independent branchCount), so it's derived from the available
+    // room instead of straight from entranceLength.
+    const entranceMarginZ = Math.max(5, domPad * .6);
+    const entranceZ = dims.z / 2 - entranceMarginZ;
+    const availableRootZ = Math.max(opts.branchLength * 3, dims.z - entranceMarginZ - domPad * .5);
+    const rootLen = Math.max(4, Math.min(opts.entranceLength, Math.floor(availableRootZ / opts.branchLength) + 1));
+    const rootPts = [{ x: 0, y: 0, z: entranceZ }];
+    for (let i = 1; i < rootLen; i++) rootPts.push({ x: (rng() * 2 - 1) * 1.5, y: 0, z: entranceZ - i * opts.branchLength });
+
+    const paths = buildMazePaths(rootPts, opts, rng);
+
+    // Branches routinely chain onto other branches (not just the root — see
+    // buildMazePaths), so the network's total reach has no real bound and
+    // can land right at (or past) the domain's own edge. That's fatal here:
+    // pristineAt/createSculptState's initial fill both go negative (open)
+    // for any point beyond dims/2 — the outer domainHalf padding is
+    // deliberately open air so dual-contouring can close the mesh's outer
+    // shell cleanly, not a solid buffer — so a claimed tile whose boundary
+    // lands out there can never grow a wall no matter what solidifyBoundaryWalls
+    // does: pristineAt itself reports "open" there, before any carve ever
+    // ran (confirmed directly — a tile's healed edge sampled bit-for-bit
+    // identical before and after the heal pass, because both readings were
+    // already past dims/2). Clamp every carve point safely inside dims/2
+    // instead of trusting the network to stay in bounds on its own.
+    const clipMargin = Math.max(2.5, domPad * .5);
+    const boundX = dims.x / 2 - clipMargin, boundZ = dims.z / 2 - clipMargin;
+    const clampPt = p => ({ x: clampNum(p.x, -boundX, boundX), y: p.y, z: clampNum(p.z, -boundZ, boundZ) });
+    const denseLocal = paths.map(p => sampleSpline(p, 10).map(clampPt));
 
     // Matches the tool's own floorHeightAt exactly, with floorVariation
     // forced to 0 (flat floor, no undulation). No ceilingY at all — see
@@ -799,18 +831,25 @@
 
     for (const path of denseLocal) carveAlongSpline2D(st, path, carveOpts, rng);
 
+    // Constrained to boundX/boundZ (dims/2 minus clipMargin), NOT out to
+    // dims/2 itself — the old "+1 past dims/2" version reached straight into
+    // the domain's always-open padding margin (see the clampPt comment
+    // above), so every tile along the outermost ring of this rect sampled as
+    // "open" unconditionally, before any carve ever ran, and got claimed
+    // with no solid rock possible beyond it for a wall to form against.
+    // Confirmed directly: with the old bounds, 100% of the maze's missing
+    // walls sat exactly on this rect's own perimeter (row/col 1 and the
+    // opposite edge), none in the interior — the corridor-separating walls
+    // this whole heal pass was built for were already fine.
     const boundsRect = {
-      minC: Math.floor(-dims.x / 2) - 1, maxC: Math.ceil(dims.x / 2) + 1,
-      minR: Math.floor(-dims.z / 2) - 1, maxR: Math.ceil(dims.z / 2) + 1,
+      minC: Math.floor(-boundX), maxC: Math.ceil(boundX),
+      minR: Math.floor(-boundZ), maxR: Math.ceil(boundZ),
     };
     const claimed = snapClaimTiles(st, boundsRect, carveOpts);
 
     // Guarantee the 3-wide entrance regardless of how the organic carve
     // landed on the tile grid.
-    const entranceTiles = [-1, 0, 1].map(dx => {
-      const p = toLocal({ x: dx, z: 0 });
-      return [Math.floor(p.x), Math.floor(p.z)];
-    });
+    const entranceTiles = [-1, 0, 1].map(dx => [Math.floor(dx), Math.floor(entranceZ)]);
     for (const [c, r] of entranceTiles) { claimed.add(`${c},${r}`); carveTileColumn(st, c, r, carveOpts); }
 
     // Reserve a 2x2 nest chamber at the tile farthest (by walk distance)
