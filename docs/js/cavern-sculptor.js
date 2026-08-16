@@ -780,28 +780,6 @@
 
     const st = createSculptState(dims, opts.gridN, opts.baseCell);
 
-    // The root and its branches are generated directly in this final local
-    // (domain-centered) space — dims no longer depends on where the path
-    // ends up, so there's no separate raw-space-then-reproject step needed.
-    // The entrance sits a fixed margin in from the domain's south edge
-    // (matching the vestibule/doorway logic below — open room south of the
-    // entrance, maze room north of it), centered in X (root/branches fan out
-    // roughly evenly either side). rootLen has to fit the domain's own north
-    // margin now that the domain is fixed-size instead of grown to fit
-    // whatever the root produced — a root spec'd to run past the domain edge
-    // would just waste most of its own length carving nothing (branches
-    // still fan out from wherever it actually lands, same as the tool's own
-    // board-independent branchCount), so it's derived from the available
-    // room instead of straight from entranceLength.
-    const entranceMarginZ = Math.max(5, domPad * .6);
-    const entranceZ = dims.z / 2 - entranceMarginZ;
-    const availableRootZ = Math.max(opts.branchLength * 3, dims.z - entranceMarginZ - domPad * .5);
-    const rootLen = Math.max(4, Math.min(opts.entranceLength, Math.floor(availableRootZ / opts.branchLength) + 1));
-    const rootPts = [{ x: 0, y: 0, z: entranceZ }];
-    for (let i = 1; i < rootLen; i++) rootPts.push({ x: (rng() * 2 - 1) * 1.5, y: 0, z: entranceZ - i * opts.branchLength });
-
-    const paths = buildMazePaths(rootPts, opts, rng);
-
     // Branches routinely chain onto other branches (not just the root — see
     // buildMazePaths), so the network's total reach has no real bound and
     // can land right at (or past) the domain's own edge. That's fatal here:
@@ -813,10 +791,61 @@
     // does: pristineAt itself reports "open" there, before any carve ever
     // ran (confirmed directly — a tile's healed edge sampled bit-for-bit
     // identical before and after the heal pass, because both readings were
-    // already past dims/2). Clamp every carve point safely inside dims/2
-    // instead of trusting the network to stay in bounds on its own.
+    // already past dims/2). Clamp every carve point (and bound the root's
+    // own width below) safely inside dims/2 instead of trusting the network
+    // to stay in bounds on its own.
     const clipMargin = Math.max(2.5, domPad * .5);
     const boundX = dims.x / 2 - clipMargin, boundZ = dims.z / 2 - clipMargin;
+
+    // The root and its branches are generated directly in this final local
+    // (domain-centered) space — dims no longer depends on where the path
+    // ends up, so there's no separate raw-space-then-reproject step needed.
+    // The entrance sits a fixed margin in from the domain's south edge
+    // (matching the vestibule/doorway logic below — open room south of the
+    // entrance, maze room north of it).
+    //
+    // The root itself spans the domain's full WIDTH (X), not depth (Z) —
+    // matching the tool's own buildMazePaths exactly ((HA)TunnelSculptorV1.
+    // html lines 736-745: rootCount points lerp from -hx-margin to hx+margin,
+    // i.e. corner-to-corner across the board's width, with only a small
+    // sine-enveloped Z wiggle). A root built that way is self-bounded by
+    // construction — it's automatically exactly as long as the domain is
+    // wide, for any domain size, with no length to separately derive or fit.
+    // This module's root used to run depth-wise instead (small X jitter,
+    // z=-i*branchLength), which needed its own length threaded in from
+    // outside and had no natural relationship to domain size — fitting it to
+    // the domain's own north margin (an earlier fix attempt) starved it down
+    // to ~4 points for a typically-sized den, so most of branchCount's
+    // branches ended up attaching within the same short stretch and merging
+    // into one open pit with no dividing walls between them (confirmed
+    // visually: a top-down render showed one solid blob with two small
+    // holes, not a branching corridor network) — the exact "short root,
+    // crowded branches" failure mode from earlier in this fix's history,
+    // just reintroduced by a different route. Branches (not the root) carry
+    // exploration into the other axis via their own wide (50-104°)
+    // attachment angles off the root's tangent — since the root runs along
+    // X here, that tangent is +X, so branches naturally shoot off roughly
+    // north/south (Z) into the den's depth, exactly the exploration this
+    // needs, for free, the same way the tool gets it on its own free-floating
+    // board.
+    const entranceMarginZ = Math.max(5, domPad * .6);
+    const entranceZ = dims.z / 2 - entranceMarginZ;
+    const rootCount = Math.max(4, opts.pathPointCount || 7);
+    const rootMargin = Math.max(opts.probeRadius * 1.35, .35);
+    const rootHalfX = Math.max(1, boundX - rootMargin);
+    const rootPts = [];
+    for (let i = 0; i < rootCount; i++) {
+      const t = i / (rootCount - 1);
+      const x = lerp(-rootHalfX, rootHalfX, t);
+      const envelope = Math.sin(Math.PI * t);
+      // Wiggles north only (never back toward the entrance's south-facing
+      // vestibule) — the tool's own root wiggles both ways since its board
+      // has no fixed entrance side to respect.
+      const z = (i === 0 || i === rootCount - 1) ? entranceZ : entranceZ - rng() * (opts.pathWiggle ?? .62) * envelope * opts.branchLength * 1.2;
+      rootPts.push({ x, y: 0, z });
+    }
+
+    const paths = buildMazePaths(rootPts, opts, rng);
     const clampPt = p => ({ x: clampNum(p.x, -boundX, boundX), y: p.y, z: clampNum(p.z, -boundZ, boundZ) });
     const denseLocal = paths.map(p => sampleSpline(p, 10).map(clampPt));
 
