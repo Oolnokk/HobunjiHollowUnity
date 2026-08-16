@@ -136,6 +136,11 @@ runtime.init({
   assert(game.includes('window.FoliageFurnitureRuntime?.objectAt(currentArea, col, row)'));
   assert(game.includes('window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)'));
   assert(game.includes('wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || []'));
+  assert.match(game, /const seatSurfaceY = activeSurfaceYAtWorld\(seat\.x, seat\.z\);[\s\S]{0,300}const seatAbsoluteWorldY = seatSurfaceY \+ seat\.y;/);
+  assert.match(game, /activeCameraTarget = \{ position: new THREE\.Vector3\(seat\.x, seatAbsoluteWorldY \+ 0\.15, seat\.z\) \};/);
+  assert.match(game, /seatWorldY: seat\.y,[\s\S]{0,100}seatSurfaceY,[\s\S]{0,100}seatAbsoluteWorldY,/);
+  const pixelProbe = read('docs/js/pixel-probe.js').toString('utf8');
+  assert(pixelProbe.includes('localHeight=${localSeatY.toFixed(5)} surfaceY=${surfaceSeatY.toFixed(5)} absoluteY=${absoluteSeatY.toFixed(5)}'));
 
   console.log(`foliage furniture wilderness checks passed (${generated.length} generated records)`);
 })().catch(error => {

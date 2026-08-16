@@ -3453,6 +3453,8 @@
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
         const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
+        const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
+        const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
@@ -3461,13 +3463,15 @@
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
           seatWorldY: seat.y,
+          seatSurfaceY,
+          seatAbsoluteWorldY,
           seatNormalDeg: seat.normalDeg,
           seatFootprintHalfDepth: seat.footprintHalfDepth,
           seatAnchorZ: seat.anchorZ,
           prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
         activeCameraMode = 'seated';
-        activeCameraTarget = { position: new THREE.Vector3(seat.x, seat.y + 0.15, seat.z) };
+        activeCameraTarget = { position: new THREE.Vector3(seat.x, seatAbsoluteWorldY + 0.15, seat.z) };
         // Start looking at the seated character's BACK rather than whatever
         // the 'seated' mode's base azimuth happens to be (which has no
         // relationship to which way the character is actually facing).
@@ -14926,6 +14930,8 @@
               desiredDistance: desiredSafeDist,
               solvedDistance: safeDist,
               sideOffsetDeg: chosenSideOffsetDeg,
+              targetY: camTargetY,
+              floorY: _playerGroundY(),
             };
           } else {
             _seatedOcclusionDistance = null;
