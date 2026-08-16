@@ -9848,14 +9848,36 @@
               // so mining one here needs no new gameplay code.
               oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
             }
+            // Regular wildlife species (e.g. uumkaoii-wild) are hostile:false
+            // outdoors — pure fleeable prey, per CREATURE_DB's own comment —
+            // with no aggroRangePx/attack stats at all. A den's own pack
+            // defends its home turf regardless of species though, so a
+            // spawn here whose species wouldn't otherwise fight gets a
+            // modest defensive combat profile merged onto a per-instance
+            // clone of its def (creature.def, not the shared CREATURE_DB
+            // entry — makeCreatureEntity's opts.def overrides it cleanly via
+            // restOpts, which spreads after `def` in the creature object
+            // literal, so every existing hostile/aggroRangePx/attack* read
+            // throughout updateHostiles picks it up with no other changes
+            // needed). Weaker/shorter-ranged than an actual predator's pack
+            // (e.g. gar-wolf) — a startled herbivore defending its nest, not
+            // a hunter.
+            const DEN_HERBIVORE_DEFENDER_STATS = {
+              hostile: true, aggroRangePx: TILE * 4.5, leashRangePx: TILE * 4,
+              attackDamage: 10, attackRangePx: TILE * 0.8, attackHalfConeRad: 40 * Math.PI / 180,
+              attackStaminaCost: 10, attackCooldownS: 1.3, attacks: ['pounce'], attackTag: 'blunt',
+            };
             for (const spawn of (mapData.creatureSpawns || [])) {
               const spawnFamily = window.WildlifeSpawn.denGenotypeFamily(spawn.kind);
               const spawnGenotype = spawnFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, spawnFamily) : null;
               const sx = (spawn.col + 0.5) * TILE, sy = (spawn.row + 0.5) * TILE;
+              const baseDef = CREATURE_DB[spawn.kind];
+              const defOverride = baseDef && baseDef.hostile === false ? Object.assign({}, baseDef, DEN_HERBIVORE_DEFENDER_STATS) : null;
               const creature = makeCreatureEntity(spawn.kind, sx, sy, {
                 scene: bScene, grid: bGrid, cols, rows,
                 areaId: mapId, homeX: sx, homeY: sy, state: 'idle',
                 isDenMother: false, genotype: spawnGenotype,
+                ...(defOverride ? { def: defOverride } : {}),
               });
               if (creature) hostileObjects.add(creature);
             }

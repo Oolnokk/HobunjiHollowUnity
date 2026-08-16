@@ -319,6 +319,108 @@
     return paths;
   }
 
+  // Neuron-shaped topology: chaotic branchy "cluster" zones (each one its
+  // own small buildMazePaths network, clamped to a compact radius so it
+  // reads as one dense pocket instead of sprawling) chained together by
+  // long, thin, bent single-corridor connectors — soma/dendrite clusters
+  // linked by curved axon-like segments, the way a real neuron's shape
+  // (just far more chaotic/random about it) suggested a maze could hide a
+  // cluster's own contents (animals, ore, the nest) behind a narrow
+  // approach instead of exposing the whole network from any one corridor.
+  // Detection/sight-blocking rides on real facts about this codebase, not
+  // extra machinery: creature aggro (updateHostiles) is pure straight-line
+  // distance, no line-of-sight raycast at all — so a connector only needs
+  // to keep consecutive cluster centers farther apart than any species'
+  // aggroRangePx (a handful of tiles) for the next cluster's inhabitants to
+  // stay oblivious until the player is actually close; and the taller
+  // walls (see DEFAULT_OPTS.pathYOffset) plus a narrower probe/brush radius
+  // on connector-only carves (see the caller) block the isometric camera's
+  // sightline around each bend, hiding the next cluster's mesh/contents
+  // until the player rounds it. Returns a flat list of
+  // {points, narrow} path descriptors — narrow ones get a tighter probe/
+  // brush radius when carved (see carveMazeCavern), everything else uses
+  // the normal cluster-interior radius.
+  function buildClusterChain(opts, rng, boundX, boundZ, entranceZ) {
+    const clusterCount = Math.max(2, Math.round(opts.branchCount / 6));
+    const branchesPerCluster = Math.max(3, Math.round(opts.branchCount / clusterCount));
+    // Half-length splines within a cluster (per the halved tile size —
+    // see cavern-generator.js) keep each cluster's own chaotic tangle
+    // covering roughly the same tile footprint it did before the grid got
+    // twice as fine, rather than ballooning along with it.
+    const clusterBranchLength = opts.branchLength * .5;
+    const clusterRadius = clusterBranchLength * 2.4;
+    const connectorLength = Math.max(opts.branchLength * 1.2, clusterRadius * .9);
+
+    const out = [];
+    let anchor = { x: 0, z: entranceZ };
+    let incomingDir = { x: 0, z: -1 }; // heading away from the entrance into the den
+
+    for (let ci = 0; ci < clusterCount; ci++) {
+      // A short local root spanning perpendicular to the direction this
+      // cluster was approached from — same "root spans width, branches
+      // explore depth" logic carveMazeCavern's own whole-network root used
+      // to use, just scoped down to one cluster instead of the whole den.
+      const perp = { x: -incomingDir.z, z: incomingDir.x };
+      const localRootCount = Math.max(3, Math.round((opts.pathPointCount || 7) * .5));
+      const localRootHalf = Math.max(.6, clusterRadius * .45);
+      const localRoot = Array.from({ length: localRootCount }, (_, i) => {
+        const t = localRootCount > 1 ? i / (localRootCount - 1) : .5;
+        const off = lerp(-localRootHalf, localRootHalf, t);
+        return { x: anchor.x + perp.x * off, y: 0, z: anchor.z + perp.z * off };
+      });
+      const clusterOpts = Object.assign({}, opts, { branchCount: branchesPerCluster, branchLength: clusterBranchLength });
+      const clusterPaths = buildMazePaths(localRoot, clusterOpts, rng);
+      const clampToCluster = p => {
+        const dx = p.x - anchor.x, dz = p.z - anchor.z;
+        const d = Math.hypot(dx, dz);
+        if (d <= clusterRadius || d < 1e-6) return p;
+        const s = clusterRadius / d;
+        return { x: anchor.x + dx * s, y: p.y, z: anchor.z + dz * s };
+      };
+      for (const path of clusterPaths) out.push({ points: sampleSpline(path, 10).map(clampToCluster), narrow: false });
+
+      if (ci === clusterCount - 1) break; // the last cluster has no outgoing connector — it's the deepest pocket, where the nest lands
+
+      // Next cluster's direction: mostly forward but genuinely chaotic (up
+      // to ~108° off the incoming heading either way) so the chain
+      // wanders in curves and random turns rather than marching in a
+      // straight line — "the shape of a neuron, except more chaotic".
+      const turnAngle = (rng() * 2 - 1) * Math.PI * .6;
+      const dir = rotateXZ(incomingDir, turnAngle);
+      const rawNext = { x: anchor.x + dir.x * connectorLength, z: anchor.z + dir.z * connectorLength };
+      // Clamped to the safe carve region on every side, and never allowed
+      // to wander back south past the entrance — matches the vestibule's
+      // own "maze room stays north of the entrance" convention.
+      const nextAnchor = {
+        x: clampNum(rawNext.x, -boundX + clusterRadius, boundX - clusterRadius),
+        z: clampNum(rawNext.z, -boundZ + clusterRadius, entranceZ - clusterRadius),
+      };
+
+      // The connector is a single bent path (not straight) from this
+      // cluster's own edge to the next cluster's anchor — a random
+      // sideways bend partway along, so it reads as a real curved passage
+      // rather than a ruler-straight corridor.
+      const bendPerp = rotateXZ(dir, (rng() < .5 ? 1 : -1) * Math.PI * .5);
+      const bendMag = connectorLength * (.15 + rng() * .25);
+      const midT = .35 + rng() * .3;
+      const mid = {
+        x: lerp(anchor.x, nextAnchor.x, midT) + bendPerp.x * bendMag,
+        y: 0,
+        z: lerp(anchor.z, nextAnchor.z, midT) + bendPerp.z * bendMag,
+      };
+      const connectorPts = [
+        { x: anchor.x + dir.x * clusterRadius * .6, y: 0, z: anchor.z + dir.z * clusterRadius * .6 },
+        mid,
+        { x: nextAnchor.x, y: 0, z: nextAnchor.z },
+      ];
+      out.push({ points: sampleSpline(connectorPts, 14), narrow: true });
+
+      anchor = nextAnchor;
+      incomingDir = dir;
+    }
+    return out;
+  }
+
   // ── Wall-detection-sphere carve along a spline ─────────────────────────
   function findProbeIntrusions(st, center, radius, opts, limit) {
     limit = limit || 160;
@@ -417,16 +519,21 @@
   // solid strip just inside every unclaimed tile that borders a claimed
   // one — skipCapEdges (the entrance's doorway/vestibule) is excluded, or
   // this would silently re-seal the one opening that's supposed to exist.
-  function solidifyBoundaryWalls(st, claimed, depth, skipCapEdges) {
+  function solidifyBoundaryWalls(st, claimed, depth, skipCapEdges, tileSize) {
+    const ts = tileSize || 1;
     const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
     const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
     for (const key of claimed) {
       const [c, r] = key.split(',').map(Number);
+      // c/r are tile indices; depth is a physical-world margin (independent
+      // of tile size — it's derived from brush/probe radius), so only the
+      // tile edges themselves convert through tileSize, not depth.
+      const wx0 = c * ts, wx1 = (c + 1) * ts, wz0 = r * ts, wz1 = (r + 1) * ts;
       const edges = [
-        { dir: 'W', nc: c - 1, nr: r, x0: c - depth, x1: c, z0: r, z1: r + 1 },
-        { dir: 'E', nc: c + 1, nr: r, x0: c + 1, x1: c + 1 + depth, z0: r, z1: r + 1 },
-        { dir: 'N', nc: c, nr: r - 1, x0: c, x1: c + 1, z0: r - depth, z1: r },
-        { dir: 'S', nc: c, nr: r + 1, x0: c, x1: c + 1, z0: r + 1, z1: r + 1 + depth },
+        { dir: 'W', nc: c - 1, nr: r, x0: wx0 - depth, x1: wx0, z0: wz0, z1: wz1 },
+        { dir: 'E', nc: c + 1, nr: r, x0: wx1, x1: wx1 + depth, z0: wz0, z1: wz1 },
+        { dir: 'N', nc: c, nr: r - 1, x0: wx0, x1: wx1, z0: wz0 - depth, z1: wz0 },
+        { dir: 'S', nc: c, nr: r + 1, x0: wx0, x1: wx1, z0: wz1, z1: wz1 + depth },
       ];
       for (const e of edges) {
         if (claimed.has(`${e.nc},${e.nr}`)) continue; // shared wall between two claimed tiles stays open
@@ -454,8 +561,9 @@
   // Pushes the wall out to exactly this tile's edges (plus a small
   // margin), floor to ceiling — same idea as the tool's carveGridRect.
   function carveTileColumn(st, c, r, opts) {
-    const margin = opts.wallGridMargin ?? .05;
-    const x0 = c - margin, x1 = c + 1 + margin, z0 = r - margin, z1 = r + 1 + margin;
+    const ts = opts.tileSize || 1;
+    const margin = opts.wallGridMargin ?? .05; // physical margin, independent of tile size
+    const x0 = c * ts - margin, x1 = (c + 1) * ts + margin, z0 = r * ts - margin, z1 = (r + 1) * ts + margin;
     const cx = (x0 + x1) * .5, cz = (z0 + z1) * .5, hx = (x1 - x0) * .5, hz = (z1 - z0) * .5;
     const g0 = worldToGrid(st, { x: x0, y: -st.domainHalf.y, z: z0 });
     const g1 = worldToGrid(st, { x: x1, y: st.domainHalf.y, z: z1 });
@@ -482,6 +590,7 @@
   // then squares up each claimed tile's walls. The claimed set *is* the
   // room's floor tile set — replaces a separate blob-growth algorithm.
   function snapClaimTiles(st, boundsRect, opts) {
+    const ts = opts.tileSize || 1;
     const fractions = [.2, .5, .8];
     const required = Math.max(1, Math.ceil(9 * (opts.wallGridClaim ?? .35)));
     const sampleY = opts.floorY + Math.max(.06, Math.min(.16, opts.probeRadius * .28));
@@ -490,9 +599,9 @@
       for (let c = boundsRect.minC; c <= boundsRect.maxC; c++) {
         let open = 0;
         for (const fz of fractions) {
-          const z = lerp(r, r + 1, fz);
+          const z = lerp(r * ts, (r + 1) * ts, fz);
           for (const fx of fractions) {
-            const x = lerp(c, c + 1, fx);
+            const x = lerp(c * ts, (c + 1) * ts, fx);
             if (sampleFieldNearestWorld(st, x, sampleY, z) <= 0) open++;
           }
         }
@@ -572,7 +681,8 @@
   // which borders unclaimed (exterior) tiles just like any other cavern
   // wall would, but must NOT get a wall face stitched across it or the
   // room reads as sealed shut with no way in or out.
-  function stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges) {
+  function stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges, tileSize) {
+    const ts = tileSize || 1;
     const hy = st.domainHalf.y;
     const cellSpan = (2 * st.domainHalf.x / st.N + 2 * st.domainHalf.z / st.N) * .5;
     const addEdge = (x0, z0, x1, z1, flip) => {
@@ -595,14 +705,16 @@
     const skip = (c, r, dir) => skipCapEdges?.has(`${c},${r},${dir}`);
     for (const key of keepTiles) {
       const [c, r] = key.split(',').map(Number);
-      if (!keepTiles.has(`${c - 1},${r}`) && !skip(c, r, 'W')) addEdge(c, r, c, r + 1, false);
-      if (!keepTiles.has(`${c + 1},${r}`) && !skip(c, r, 'E')) addEdge(c + 1, r, c + 1, r + 1, true);
-      if (!keepTiles.has(`${c},${r - 1}`) && !skip(c, r, 'N')) addEdge(c, r, c + 1, r, true);
-      if (!keepTiles.has(`${c},${r + 1}`) && !skip(c, r, 'S')) addEdge(c, r + 1, c + 1, r + 1, false);
+      const x0 = c * ts, x1 = (c + 1) * ts, z0 = r * ts, z1 = (r + 1) * ts;
+      if (!keepTiles.has(`${c - 1},${r}`) && !skip(c, r, 'W')) addEdge(x0, z0, x0, z1, false);
+      if (!keepTiles.has(`${c + 1},${r}`) && !skip(c, r, 'E')) addEdge(x1, z0, x1, z1, true);
+      if (!keepTiles.has(`${c},${r - 1}`) && !skip(c, r, 'N')) addEdge(x0, z0, x1, z0, true);
+      if (!keepTiles.has(`${c},${r + 1}`) && !skip(c, r, 'S')) addEdge(x0, z1, x1, z1, false);
     }
   }
 
-  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges) {
+  function clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize) {
+    const ts = tileSize || 1;
     const outPositions = []; const outIndices = []; const vmap = new Map();
     const addVertex = v => {
       // Quantized key shares clipped/stitched vertices along the same tile
@@ -628,26 +740,26 @@
       const areaXZ = Math.abs((tri[1].x - tri[0].x) * (tri[2].z - tri[0].z) - (tri[2].x - tri[0].x) * (tri[1].z - tri[0].z));
       if (areaXZ < 1e-10) {
         const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cz = (tri[0].z + tri[1].z + tri[2].z) / 3;
-        if (keepTiles.has(`${Math.floor(cx)},${Math.floor(cz)}`)) addTri(tri[0], tri[1], tri[2]);
+        if (keepTiles.has(`${Math.floor(cx / ts)},${Math.floor(cz / ts)}`)) addTri(tri[0], tri[1], tri[2]);
         continue;
       }
       const minX = Math.min(tri[0].x, tri[1].x, tri[2].x), maxX = Math.max(tri[0].x, tri[1].x, tri[2].x);
       const minZ = Math.min(tri[0].z, tri[1].z, tri[2].z), maxZ = Math.max(tri[0].z, tri[1].z, tri[2].z);
-      const ix0 = Math.floor(minX), ix1 = Math.floor(maxX - 1e-7);
-      const iz0 = Math.floor(minZ), iz1 = Math.floor(maxZ - 1e-7);
+      const ix0 = Math.floor(minX / ts), ix1 = Math.floor((maxX - 1e-7) / ts);
+      const iz0 = Math.floor(minZ / ts), iz1 = Math.floor((maxZ - 1e-7) / ts);
       for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
         if (!keepTiles.has(`${ix},${iz}`)) continue;
-        const poly = clipPolyToXZRect(tri, ix, ix + 1, iz, iz + 1);
+        const poly = clipPolyToXZRect(tri, ix * ts, (ix + 1) * ts, iz * ts, (iz + 1) * ts);
         if (poly.length < 3) continue;
         for (let p = 1; p < poly.length - 1; p++) addTri(poly[0], poly[p], poly[p + 1]);
       }
     }
 
-    stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges);
+    stitchBoundaryCaps(st, keepTiles, addTri, skipCapEdges, ts);
     return { positions: new Float32Array(outPositions), indices: outIndices };
   }
 
-  function extractMesh(st, keepTiles, skipCapEdges) {
+  function extractMesh(st, keepTiles, skipCapEdges, tileSize) {
     const leafVertexIndex = new Map();
     const positions = [];
     for (const leaf of st.leaves) {
@@ -693,7 +805,7 @@
     }
 
     if (!keepTiles) return { positions: new Float32Array(positions), indices };
-    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges);
+    return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize);
   }
 
   // ── Top-level orchestration ─────────────────────────────────────────
@@ -730,7 +842,14 @@
     probeDigBursts: 4, probeMaxPasses: 120,
     faceThreshold: 10, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
     wallGridMargin: .05, wallGridClaim: .35,
-    sizeY: 1.5, pathYOffset: .55, floorOffset: 0, entranceLength: 3,
+    // pathYOffset sits lower than the tool's own default (.55) — floorY
+    // (= pathYOffset - probeRadius) tracks it 1:1, so lowering it drops the
+    // floor further from the domain's fixed top (domainHalf.y, set by
+    // sizeY alone) without changing sizeY/probeRadius/carve behavior at
+    // all — the only lever that makes the visible wall (floor to where the
+    // carve opens to open sky) noticeably taller.
+    sizeY: 1.5, pathYOffset: .35, floorOffset: 0, entranceLength: 3,
+    tileSize: 1,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -771,12 +890,21 @@
     // The 1.5x factor compensates for the area boundsRect/rootLen actually
     // get to use once they're kept clear of the domain's open-air padding
     // margin below, so cavern-generator.js's target tile counts still land
-    // where intended — confirmed against headless generation runs.
-    const refArea = 18 * 12 * 1.5, refAspect = 18 / 12, refBranchCount = 16;
+    // where intended — confirmed against headless generation runs. Square
+    // aspect (not the tool's own 18:12) since the neuron-cluster chain
+    // below (see buildClusterChain) wanders in both X and Z rather than
+    // favoring one axis the way a single width-spanning root did; spreadPad
+    // adds real bounding-box room for that chain's reach — clusters
+    // themselves only need refArea's density, but connectors carry them
+    // apart from each other by design (see buildClusterChain's docblock on
+    // why that separation matters for detection/sight-blocking).
+    const refArea = 18 * 12 * 1.5, refBranchCount = 16;
     const area = refArea * (Math.max(1, opts.branchCount) / refBranchCount);
     const domPad = opts.probeRadius * 3 + opts.brushRadius * 3 + 4;
-    const baseZ = Math.sqrt(area / refAspect), baseX = refAspect * baseZ;
-    const dims = { x: baseX + domPad, y: opts.sizeY, z: baseZ + domPad };
+    const clusterCountEstimate = Math.max(2, Math.round(opts.branchCount / 6));
+    const spreadPad = clusterCountEstimate * (opts.branchLength * 1.2) * .6;
+    const baseSide = Math.sqrt(area) + spreadPad;
+    const dims = { x: baseSide + domPad, y: opts.sizeY, z: baseSide + domPad };
 
     const st = createSculptState(dims, opts.gridN, opts.baseCell);
 
@@ -797,57 +925,22 @@
     const clipMargin = Math.max(2.5, domPad * .5);
     const boundX = dims.x / 2 - clipMargin, boundZ = dims.z / 2 - clipMargin;
 
-    // The root and its branches are generated directly in this final local
+    // The cluster chain is generated directly in this final local
     // (domain-centered) space — dims no longer depends on where the path
     // ends up, so there's no separate raw-space-then-reproject step needed.
     // The entrance sits a fixed margin in from the domain's south edge
     // (matching the vestibule/doorway logic below — open room south of the
-    // entrance, maze room north of it).
-    //
-    // The root itself spans the domain's full WIDTH (X), not depth (Z) —
-    // matching the tool's own buildMazePaths exactly ((HA)TunnelSculptorV1.
-    // html lines 736-745: rootCount points lerp from -hx-margin to hx+margin,
-    // i.e. corner-to-corner across the board's width, with only a small
-    // sine-enveloped Z wiggle). A root built that way is self-bounded by
-    // construction — it's automatically exactly as long as the domain is
-    // wide, for any domain size, with no length to separately derive or fit.
-    // This module's root used to run depth-wise instead (small X jitter,
-    // z=-i*branchLength), which needed its own length threaded in from
-    // outside and had no natural relationship to domain size — fitting it to
-    // the domain's own north margin (an earlier fix attempt) starved it down
-    // to ~4 points for a typically-sized den, so most of branchCount's
-    // branches ended up attaching within the same short stretch and merging
-    // into one open pit with no dividing walls between them (confirmed
-    // visually: a top-down render showed one solid blob with two small
-    // holes, not a branching corridor network) — the exact "short root,
-    // crowded branches" failure mode from earlier in this fix's history,
-    // just reintroduced by a different route. Branches (not the root) carry
-    // exploration into the other axis via their own wide (50-104°)
-    // attachment angles off the root's tangent — since the root runs along
-    // X here, that tangent is +X, so branches naturally shoot off roughly
-    // north/south (Z) into the den's depth, exactly the exploration this
-    // needs, for free, the same way the tool gets it on its own free-floating
-    // board.
+    // entrance, maze room north of it); buildClusterChain grows the actual
+    // network (chaotic clusters + thin connectors, see its own docblock)
+    // north from there. Every point still gets clamped safely inside
+    // dims/2 regardless — buildClusterChain keeps its own anchors in
+    // bounds, but an individual cluster's own chaotic branches can still
+    // reach past clusterRadius same as the old root/branch network could.
     const entranceMarginZ = Math.max(5, domPad * .6);
     const entranceZ = dims.z / 2 - entranceMarginZ;
-    const rootCount = Math.max(4, opts.pathPointCount || 7);
-    const rootMargin = Math.max(opts.probeRadius * 1.35, .35);
-    const rootHalfX = Math.max(1, boundX - rootMargin);
-    const rootPts = [];
-    for (let i = 0; i < rootCount; i++) {
-      const t = i / (rootCount - 1);
-      const x = lerp(-rootHalfX, rootHalfX, t);
-      const envelope = Math.sin(Math.PI * t);
-      // Wiggles north only (never back toward the entrance's south-facing
-      // vestibule) — the tool's own root wiggles both ways since its board
-      // has no fixed entrance side to respect.
-      const z = (i === 0 || i === rootCount - 1) ? entranceZ : entranceZ - rng() * (opts.pathWiggle ?? .62) * envelope * opts.branchLength * 1.2;
-      rootPts.push({ x, y: 0, z });
-    }
-
-    const paths = buildMazePaths(rootPts, opts, rng);
+    const chainPaths = buildClusterChain(opts, rng, boundX, boundZ, entranceZ);
     const clampPt = p => ({ x: clampNum(p.x, -boundX, boundX), y: p.y, z: clampNum(p.z, -boundZ, boundZ) });
-    const denseLocal = paths.map(p => sampleSpline(p, 10).map(clampPt));
+    const denseLocal = chainPaths.map(({ points, narrow }) => ({ points: points.map(clampPt), narrow }));
 
     // Matches the tool's own floorHeightAt exactly, with floorVariation
     // forced to 0 (flat floor, no undulation). No ceilingY at all — see
@@ -857,8 +950,17 @@
       floorY, ceilingY: null,
       levels: [opts.pathYOffset],
     });
+    // Connectors carve noticeably narrower than a cluster's own chaotic
+    // branches — see buildClusterChain's docblock: a tight passage is what
+    // actually hides the next cluster's contents around each bend and
+    // keeps its inhabitants out of aggro range until the player commits to
+    // walking through.
+    const narrowCarveOpts = Object.assign({}, carveOpts, {
+      probeRadius: carveOpts.probeRadius * .5,
+      brushRadius: carveOpts.brushRadius * .55,
+    });
 
-    for (const path of denseLocal) carveAlongSpline2D(st, path, carveOpts, rng);
+    for (const { points, narrow } of denseLocal) carveAlongSpline2D(st, points, narrow ? narrowCarveOpts : carveOpts, rng);
 
     // Constrained to boundX/boundZ (dims/2 minus clipMargin), NOT out to
     // dims/2 itself — the old "+1 past dims/2" version reached straight into
@@ -869,23 +971,33 @@
     // Confirmed directly: with the old bounds, 100% of the maze's missing
     // walls sat exactly on this rect's own perimeter (row/col 1 and the
     // opposite edge), none in the interior — the corridor-separating walls
-    // this whole heal pass was built for were already fine.
+    // this whole heal pass was built for were already fine. minC/maxC/minR/
+    // maxR are tile indices (/ts converts the physical safe bound into how
+    // many tileSize-wide tiles fit inside it).
+    const ts = opts.tileSize || 1;
     const boundsRect = {
-      minC: Math.floor(-boundX), maxC: Math.ceil(boundX),
-      minR: Math.floor(-boundZ), maxR: Math.ceil(boundZ),
+      minC: Math.floor(-boundX / ts), maxC: Math.ceil(boundX / ts),
+      minR: Math.floor(-boundZ / ts), maxR: Math.ceil(boundZ / ts),
     };
     const claimed = snapClaimTiles(st, boundsRect, carveOpts);
 
-    // Guarantee the 3-wide entrance regardless of how the organic carve
-    // landed on the tile grid.
-    const entranceTiles = [-1, 0, 1].map(dx => [Math.floor(dx), Math.floor(entranceZ)]);
+    // Guarantee the entrance regardless of how the organic carve landed on
+    // the tile grid — 3 physical units wide at ts=1 (the original fixed
+    // 3-tile entrance), scaled to as many tiles as it takes to cover the
+    // same physical width at a finer tileSize, so the doorway's real-world
+    // size doesn't shrink just because the grid got finer.
+    const entranceTileCount = Math.max(3, Math.round(3 / ts));
+    const entranceColLo = -Math.floor(entranceTileCount / 2);
+    const entranceRow = Math.floor(entranceZ / ts);
+    const entranceTiles = Array.from({ length: entranceTileCount }, (_, i) => [entranceColLo + i, entranceRow]);
     for (const [c, r] of entranceTiles) { claimed.add(`${c},${r}`); carveTileColumn(st, c, r, carveOpts); }
 
-    // Reserve a 2x2 nest chamber at the tile farthest (by walk distance)
-    // from the entrance, and carve it in so it's real volume, not just a
-    // floor-tile flag with nothing behind it.
+    // Reserve a nest chamber (2x2 physical units at ts=1, scaled the same
+    // way as the entrance) at the tile farthest (by walk distance) from the
+    // entrance, and carve it in so it's real volume, not just a floor-tile
+    // flag with nothing behind it.
     const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    const startKey = entranceTiles[1].join(',');
+    const startKey = entranceTiles[Math.floor(entranceTiles.length / 2)].join(',');
     const dist = new Map([[startKey, 0]]);
     const queue = [startKey];
     let farKey = startKey, farDist = 0;
@@ -903,7 +1015,9 @@
       }
     }
     const [nfx, nfy] = farKey.split(',').map(Number);
-    const nestTiles = [[nfx, nfy], [nfx + 1, nfy], [nfx, nfy + 1], [nfx + 1, nfy + 1]];
+    const nestSpan = Math.max(2, Math.round(2 / ts));
+    const nestTiles = [];
+    for (let dr = 0; dr < nestSpan; dr++) for (let dc = 0; dc < nestSpan; dc++) nestTiles.push([nfx + dc, nfy + dr]);
     for (const [c, r] of nestTiles) { claimed.add(`${c},${r}`); carveTileColumn(st, c, r, carveOpts); }
 
     // Carving the entrance tiles themselves (above) only opens their own
@@ -913,8 +1027,9 @@
     // SDF surface sits right at the visible boundary. Carve a shallow
     // vestibule beyond it too (never added to `claimed`, so it's never
     // rendered) purely to push that real surface out past the clipped
-    // region, so the doorway reads as a genuine opening.
-    const VESTIBULE_DEPTH = 2;
+    // region, so the doorway reads as a genuine opening. 2 physical units
+    // deep at ts=1, scaled like the entrance/nest above.
+    const VESTIBULE_DEPTH = Math.max(2, Math.round(2 / ts));
     for (const [c, r] of entranceTiles) {
       for (let dr = 1; dr <= VESTIBULE_DEPTH; dr++) carveTileColumn(st, c, r + dr, carveOpts);
     }
@@ -929,13 +1044,23 @@
     // a claimed tile's edge into an unclaimed neighbor (see this
     // function's docblock) — run once, after every carve/claim/force step
     // above has finished, right before meshing.
-    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges);
+    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts);
 
-    const mesh = extractMesh(st, claimed, skipCapEdges);
+    const mesh = extractMesh(st, claimed, skipCapEdges, ts);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
-    // convention (see interior-scene-builder.js's panelCornersFor).
-    for (let i = 1; i < mesh.positions.length; i += 3) mesh.positions[i] += -floorY;
+    // convention (see interior-scene-builder.js's panelCornersFor). X/Z
+    // divide by ts to convert the mesh from physical carve-space (where a
+    // tile is ts units wide) into tile-index space (where every tile is
+    // exactly 1 unit wide, position == tile index + fraction) — the
+    // convention every consumer downstream (cavern-generator.js's shift,
+    // interior-scene-builder.js, game.js's col+0.5 placement) already
+    // assumes.
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      mesh.positions[i] /= ts;
+      mesh.positions[i + 1] += -floorY;
+      mesh.positions[i + 2] /= ts;
+    }
 
     return { claimed, entranceTiles, nestTile: [nfx, nfy], mesh };
   }

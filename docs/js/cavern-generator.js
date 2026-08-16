@@ -61,7 +61,12 @@
     // this gives every branch genuine room to land somewhere distinct.
     const entranceLength = Math.max(6, Math.round(branchCount * 0.6));
 
-    const result = window.CavernSculptor.carveMazeCavern({ branchCount, entranceLength }, rng);
+    // Half the tool's own default tile size (1) — same physical cave, but
+    // snapped to a twice-as-fine tile grid, so dens read as genuinely
+    // bigger maps (roughly 4x the tile count for the same footprint)
+    // without changing how large or branchy the actual carve is.
+    const tileSize = 0.5;
+    const result = window.CavernSculptor.carveMazeCavern({ branchCount, entranceLength, tileSize }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
