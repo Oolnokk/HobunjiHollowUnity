@@ -333,8 +333,8 @@
   // to keep consecutive cluster centers farther apart than any species'
   // aggroRangePx (a handful of tiles) for the next cluster's inhabitants to
   // stay oblivious until the player is actually close; and the taller
-  // walls (see carveMazeCavern's pathYOffset/probeYRadius) plus a narrower
-  // probe/brush radius
+  // walls (see carveMazeCavern's multi-level opts.levels sweep) plus a
+  // narrower probe/brush radius
   // on connector-only carves (see the caller) block the isometric camera's
   // sightline around each bend, hiding the next cluster's mesh/contents
   // until the player rounds it. Returns a flat list of
@@ -830,22 +830,22 @@
 
   // ── Top-level orchestration ─────────────────────────────────────────
   // The thin-slab top-down setup itself matches (HA)TunnelSculptorV1.html's
-  // own V5-baseline (see its applyModeDefaults) — earlier attempts
-  // reinterpreted this as a tall walkable room (a fixed room-height
-  // constant, a multi-level probe sweep to reach it, an artificial solid
-  // margin so dual contouring had a ceiling to cap against, then a
-  // post-process to strip that cap back out) and each layer of
-  // reinterpretation introduced its own new bug — a sealed ceiling and a
-  // walled-shut doorway among them. The tool's own approach avoids the
-  // ceiling problem entirely, by construction: the detection oval's Y
-  // reach (probeYRadius, derived below from sizeY) plus pathYOffset
-  // already reaches past sizeY's own half-height, so the single carve
-  // naturally punches through the slab's nominal top with nothing left to
-  // cap — there is no ceiling to strip because there's no protected rock
-  // left up there to form one from. Only floorOffset is protected (via
-  // floorY below), same as the tool's own floorHeightAt with
-  // floorVariation forced to 0 (flat, no undulation — the one deliberate
-  // v1 simplification kept from the earlier attempt).
+  // own V5-baseline (see its applyModeDefaults). An early attempt at a tall
+  // walkable room bolted on a fixed room-height constant, an artificial
+  // solid margin so dual contouring had a ceiling to cap against, and a
+  // post-process to strip that cap back out — each layer introduced its
+  // own new bug, a sealed ceiling and a walled-shut doorway among them.
+  // The current approach avoids the ceiling problem entirely, by
+  // construction, without any of that machinery: carveAlongSpline2D sweeps
+  // the (near-spherical, see probeYRadius below) detection probe at
+  // several overlapping heights (opts.levels) that as a group reach past
+  // sizeY's own half-height, so the carve naturally punches through the
+  // slab's nominal top with nothing left to cap — there is no ceiling to
+  // strip because there's no protected rock left up there to form one
+  // from. Only floorOffset is protected (via floorY below), same as the
+  // tool's own floorHeightAt with floorVariation forced to 0 (flat, no
+  // undulation — the one deliberate v1 simplification kept from the
+  // earlier attempt).
   //   - branchCount is computed per-den from the target tile count (see
   //     cavern-generator.js) rather than fixed, so dens actually vary in
   //     size — the tool's own default (16) is kept here only as the
@@ -862,24 +862,18 @@
     probeDigBursts: 4, probeMaxPasses: 120,
     faceThreshold: 10, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
     wallGridMargin: .05, wallGridClaim: .35,
-    // sizeY is the sculpt volume's total height (doubled from 1.5 — see
-    // carveMazeCavern's own comment on why that's what actually keeps
-    // walls tall once pathHeightFrac pushes the path up near the ceiling).
-    // pathYOffset and the wall-detection probe's Y-reach are not
-    // independent constants here — carveMazeCavern derives both directly
-    // from sizeY (probe Y reaches the volume's full height; the path sits
-    // pathHeightFrac of the way up from the volume's bottom face to its
-    // top face), so there's nothing to default for either — see
-    // carveMazeCavern's own docblock for the exact formulas.
+    // sizeY is the sculpt volume's total height. The wall-detection probe's
+    // Y-reach and the multi-level sweep that covers it are not independent
+    // constants here — carveMazeCavern derives both directly from sizeY
+    // (see its own docblock for the exact formulas), so there's nothing to
+    // default for either.
     sizeY: 3.0, floorOffset: 0, entranceLength: 3,
     tileSize: 1,
-    // How far up the volume's own height the probe travels — confirmed
-    // directly (headless field sampling) that .7 only barely opened the
-    // ceiling (field values right at ~0, i.e. a wafer-thin, inconsistent
-    // cap rather than genuinely open); .95 clears the domain's actual grid
-    // top by a wide, robust margin everywhere along a path instead of
-    // marginally at just a few points.
-    pathHeightFrac: .95,
+    // Near-spherical probe's Y semi-axis, as a multiplier of probeRadius
+    // (not an absolute value like the old sizeY/2 oval) — 1.3 reads as
+    // "almost a sphere" rather than a visibly stretched oval, per direct
+    // user feedback on the previous 3:1 version.
+    probeYStretch: 1.3,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -979,24 +973,35 @@
     const denseLocal = chainPaths.map(({ points, narrow }) => ({ points: points.map(clampPt), narrow }));
 
     // No ceilingY at all — see this function's docblock for why that's
-    // deliberate, not an oversight. The detection oval's Y reach is an
-    // absolute value — half the sculpt volume's own height (sizeY) — not a
-    // multiple of probeRadius, so X/Z stay narrow for a tight connector
-    // while Y still always reaches the volume's full extent (see
-    // findProbeIntrusions). pathYOffset is derived the same way:
-    // pathHeightFrac of the way up from the volume's bottom face to its
-    // top face, not a flat constant, so both track sizeY automatically if
-    // it ever changes. floorY is derived directly from the oval's own
-    // actual bottom (pathYOffset - probeYRadius) rather than a separate
-    // formula that could drift out of sync with wherever the probe really
-    // sits — the protected floor is always exactly as tight as the
-    // detection shape allows.
-    const probeYRadius = opts.sizeY / 2;
-    const pathYOffset = lerp(-probeYRadius, probeYRadius, opts.pathHeightFrac);
-    const floorY = pathYOffset - probeYRadius + opts.floorOffset;
+    // deliberate, not an oversight. Earlier versions reached this by
+    // stretching the detection shape into a tall oval (probeYRadius up to
+    // sizeY/2, a 3:1 ratio against probeRadius) — visually that reads as a
+    // stretched oval, not a room, which is exactly the feedback that
+    // motivated this rework. probeYRadius is now a modest multiplier of
+    // probeRadius (near-spherical, same shape family as the tool's own
+    // probe) and floor-to-open-ceiling coverage instead comes from
+    // sweeping that near-sphere at several overlapping heights — see
+    // carveAlongSpline2D's opts.levels loop, which already existed for
+    // exactly this but had only ever been given one entry. levelSpacing is
+    // kept under 2*probeYRadius so consecutive passes overlap and no thin
+    // unswept gap survives between them; the top level intentionally
+    // reaches past sizeY/2 (same margin logic the old single-oval version
+    // used) so there's still no protected rock left up there to cap into a
+    // ceiling. floorY is derived directly from the lowest level's own
+    // actual bottom rather than a separate formula that could drift out of
+    // sync with wherever the probe really sits.
+    const probeYRadius = opts.probeRadius * (opts.probeYStretch ?? 1.3);
+    const halfY = opts.sizeY / 2;
+    const lowLevel = -halfY + probeYRadius * 1.05;
+    const highLevel = halfY + probeYRadius * .6;
+    const levelSpacing = probeYRadius * 1.6;
+    const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
+    const levels = Array.from({ length: levelCount }, (_, i) =>
+      levelCount > 1 ? lerp(lowLevel, highLevel, i / (levelCount - 1)) : lowLevel);
+    const floorY = lowLevel - probeYRadius + opts.floorOffset;
     const carveOpts = Object.assign({}, opts, {
       floorY, ceilingY: null, probeYRadius,
-      levels: [pathYOffset],
+      levels,
     });
     // Connectors carve noticeably narrower than a cluster's own chaotic
     // branches — see buildClusterChain's docblock: a tight passage is what
