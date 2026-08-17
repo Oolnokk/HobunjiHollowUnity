@@ -266,6 +266,21 @@
       z: p0.z * b0 + p1.z * b1 + p2.z * b2 + p3.z * b3,
     };
   }
+  // Offsets a dense point list sideways in the XZ plane by `distance`,
+  // using each point's own local tangent (from its neighbors) rather than
+  // one fixed direction — needed for a bent/curved path, where "sideways"
+  // rotates along with the curve. Used to carve a connector as two
+  // parallel rails instead of inflating a single centerline probe (see
+  // buildClusterChain's docblock).
+  function offsetPathPerp(points, distance) {
+    return points.map((p, i) => {
+      const prev = points[Math.max(0, i - 1)], next = points[Math.min(points.length - 1, i + 1)];
+      const tx = next.x - prev.x, tz = next.z - prev.z;
+      const len = Math.hypot(tx, tz) || 1;
+      return { x: p.x + (-tz / len) * distance, y: p.y, z: p.z + (tx / len) * distance };
+    });
+  }
+
   function sampleSpline(points, samplesPerSeg) {
     if (points.length < 2) return points.slice();
     const pad = [points[0], ...points, points[points.length - 1]];
@@ -422,7 +437,21 @@
         mid,
         { x: nextAnchor.x, y: 0, z: nextAnchor.z },
       ];
-      out.push({ points: sampleSpline(connectorPts, 14), narrow: true });
+      // Carved as two parallel "rails" offset sideways from the centerline
+      // (each still narrow) rather than one centerline probe inflated
+      // wider — direct feedback + suggested approach: overlapping twin
+      // tubes read as a real corridor with a flatter, more consistent
+      // width across the middle, instead of one big circle that tapers
+      // toward the sides at the same rate it does toward the ceiling.
+      // railGap is kept well under the narrow probe's own radius so the
+      // two tubes' footprints overlap at the centerline — a gap at or
+      // past that radius would leave an un-carved solid rib splitting the
+      // passage into two disconnected tunnels instead of one wide one.
+      const connectorDense = sampleSpline(connectorPts, 14);
+      const narrowProbeR = opts.probeRadius * (opts.connectorProbeScale ?? .6);
+      const railGap = narrowProbeR * (opts.connectorRailGap ?? .55);
+      out.push({ points: offsetPathPerp(connectorDense, railGap), narrow: true });
+      out.push({ points: offsetPathPerp(connectorDense, -railGap), narrow: true });
 
       anchor = nextAnchor;
       incomingDir = dir;
@@ -905,11 +934,18 @@
     // sizeY — direct requests to move the path higher in the volume,
     // .2 then another .1 on top.
     pathYShiftFrac: .3,
-    // How much narrower a connector tunnel (the thin passage between
-    // chaotic clusters, see buildClusterChain) carves versus a cluster's
-    // own branches — see carveMazeCavern's own comment on why these grew
-    // from .5/.55.
-    connectorProbeScale: .75, connectorBrushScale: .8,
+    // How much narrower each individual connector rail (the thin twin
+    // passages between chaotic clusters, see buildClusterChain) carves
+    // versus a cluster's own branches. Brought back down from an earlier
+    // .75/.8 (a single wide centerline probe) now that width instead
+    // comes from two overlapping narrower rails spaced connectorRailGap
+    // apart — see buildClusterChain's own comment.
+    connectorProbeScale: .6, connectorBrushScale: .65,
+    // Sideways offset of each connector rail from the centerline, as a
+    // multiple of the connector probe's own (already narrow) radius. Kept
+    // well under 1 so the two rails' footprints overlap at the
+    // centerline instead of leaving an un-carved rib between them.
+    connectorRailGap: .55,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -1054,19 +1090,19 @@
       floorY, ceilingY: null, probeYRadius,
       levels,
     });
-    // Connectors carve narrower than a cluster's own chaotic branches —
-    // see buildClusterChain's docblock: a tighter passage is what hides
-    // the next cluster's contents around each bend (blocking the
-    // isometric camera's sightline — aggro range itself is handled by
+    // Each connector rail carves narrower than a cluster's own chaotic
+    // branches — see buildClusterChain's docblock: a tighter passage is
+    // what hides the next cluster's contents around each bend (blocking
+    // the isometric camera's sightline — aggro range itself is handled by
     // connector length, not narrowness, since creature aggro is pure
-    // straight-line distance). connectorProbeScale/connectorBrushScale
-    // (fractions of the normal probeRadius/brushRadius) were tightened
-    // enough by default to read as genuinely cramped to walk through —
-    // direct feedback — so both default wider now; still under 1 so
-    // connectors stay visibly narrower than a cluster interior.
+    // straight-line distance). Overall connector width now mainly comes
+    // from buildClusterChain's twin-rail spacing (connectorRailGap)
+    // rather than from these scales alone — see its own comment — so
+    // connectorProbeScale/connectorBrushScale sit lower than they would
+    // for a single centerline probe.
     const narrowCarveOpts = Object.assign({}, carveOpts, {
-      probeRadius: carveOpts.probeRadius * (opts.connectorProbeScale ?? .75),
-      brushRadius: carveOpts.brushRadius * (opts.connectorBrushScale ?? .8),
+      probeRadius: carveOpts.probeRadius * (opts.connectorProbeScale ?? .6),
+      brushRadius: carveOpts.brushRadius * (opts.connectorBrushScale ?? .65),
     });
 
     for (const { points, narrow } of denseLocal) carveAlongSpline2D(st, points, narrow ? narrowCarveOpts : carveOpts, rng);

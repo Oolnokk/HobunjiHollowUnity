@@ -101,9 +101,23 @@
     const positions = result.mesh.positions;
     for (let i = 0; i < positions.length; i += 3) { positions[i] += shiftX; positions[i + 2] += shiftY; }
 
+    // exitCol/exitRow used to be hardcoded to local (0,0)+shift — a leftover
+    // from before buildClusterChain moved the entrance off the origin (see
+    // carveMazeCavern's own entranceZ). That silently broke the "exact
+    // guaranteed-walkable spawn tile" path game.js's loadBuildingScene uses
+    // for cavern dens specifically (its _pendingEntrySpawnFromExit comment:
+    // the generic buildingSpawnFromExit heuristic "can land outside the
+    // organic floor blob") — exitCol/exitRow always being wrong (and, worse,
+    // never even reaching mapData — see synthesizeCavernMapData below) meant
+    // every den fell back to that generic heuristic, which could spawn the
+    // player overlapping solid rock at the entrance. The middle exitTiles
+    // entry is the same guaranteed-walkable tile carveMazeCavern itself
+    // already treats as "the" entrance (see its own startKey).
+    const [exitCol, exitRow] = exitTiles[Math.floor(exitTiles.length / 2)];
+
     const floorResult = {
       floor, cols, rows,
-      exitCol: 0 + shiftX, exitRow: 0 + shiftY,
+      exitCol, exitRow,
       exitTiles,
       nestCol: nfx + shiftX, nestRow: nfy + shiftY,
       mesh: { positions, indices: result.mesh.indices },
@@ -196,6 +210,16 @@
       exits: [{ id: 'den_exit', label: 'Back outside', tiles: exitTiles, targetMap: '', spawnCol: 0, spawnRow: 0 }],
       colliders: [], floor, furniture: [],
       wallStyle: 'cavern',
+      // The guaranteed-walkable middle entrance tile — game.js's
+      // loadBuildingScene reads mapData.exitCol/exitRow directly to place
+      // the player exactly here on entry instead of falling back to its
+      // generic buildingSpawnFromExit heuristic, which its own comment
+      // notes "can land outside the organic floor blob" for a cavern's
+      // non-rectangular shape. Forwarding these was missing entirely here
+      // (exitCol/exitRow existed on generateCavernFloor's own return value
+      // but never made it into this object), so every den silently used
+      // that fallback and could spawn the player overlapping solid rock.
+      exitCol, exitRow,
       mesh,
       oreRocks, creatureSpawns,
       // Den-Mother/nest placement — read by loadBuildingScene after the

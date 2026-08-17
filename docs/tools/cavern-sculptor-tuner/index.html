@@ -179,8 +179,9 @@ const FIELD_GROUPS = [
     ['entranceLength', 'Entrance length (unused by engine)', 1, 20, 1, 8],
   ] },
   { title: 'Connector tunnels', fields: [
-    ['connectorProbeScale', 'Connector probe width ×', .2, 1, .01, .75],
-    ['connectorBrushScale', 'Connector brush width ×', .2, 1, .01, .8],
+    ['connectorProbeScale', 'Rail probe width ×', .2, 1, .01, .6],
+    ['connectorBrushScale', 'Rail brush width ×', .2, 1, .01, .65],
+    ['connectorRailGap', 'Rail spacing (× rail probe radius)', 0, 1, .01, .55],
   ] },
 ];
 
@@ -204,7 +205,7 @@ const fieldGroupsEl = $('fieldGroups');
 }
 for (const group of FIELD_GROUPS) for (const [key] of group.fields) {
   const input = $('f_' + key), valEl = $('v_' + key);
-  input.addEventListener('input', () => { valEl.textContent = input.value; });
+  input.addEventListener('input', () => { valEl.textContent = input.value; updateProbeVizLive(); });
 }
 function collectOpts() {
   const opts = {};
@@ -305,8 +306,16 @@ $('probeVizChk').addEventListener('change', () => {
 function updateProbeVizScale(opts, result) {
   const pr = opts.probeRadius, pyr = result.probeYRadius;
   clusterProbeMesh.scale.set(pr, pyr, pr);
-  const cpr = pr * (opts.connectorProbeScale ?? .75);
+  const cpr = pr * (opts.connectorProbeScale ?? .6);
   connectorProbeMesh.scale.set(cpr, pyr, cpr);
+}
+// Live preview — probeYRadius is a cheap pure formula (matches
+// carveMazeCavern's own `probeRadius * probeYStretch` exactly), so the
+// probe shapes can track slider changes instantly without waiting for a
+// full (multi-second) regenerate.
+function updateProbeVizLive() {
+  const opts = collectOpts();
+  updateProbeVizScale(opts, { probeYRadius: opts.probeRadius * opts.probeYStretch });
 }
 
 // ── Custom orbit camera (mouse/touch drag to orbit, wheel to zoom) — no
@@ -555,6 +564,7 @@ function tick() {
 }
 
 resizeRenderer();
+updateProbeVizLive();
 regenerate();
 tick();
 </script>
