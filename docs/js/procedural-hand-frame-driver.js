@@ -17,10 +17,9 @@
 
   const pending = new Set(); // Avatars wait here until their caller inserts them under the real floor/body root.
   const managed = new Set(); // Rigs attached by this driver and synchronized to held tools.
-  const hookedMeshes = new WeakMap(); // Preserves pre-existing onBeforeRender callbacks while adding current-frame IK.
   let gameDeps = null; // Captured from the existing player-body bridge so gameplay uses the same inverse-hand rule.
   let pendingEditorRewrite = null; // Persists a clamped authored keyframe after the render that discovered the overreach.
-  let syncing = false; // Prevents nested onBeforeRender callbacks from solving the same rig recursively.
+  let syncing = false; // Prevents nested render callbacks from solving the same rig recursively.
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -92,6 +91,8 @@
     if (!rig) return false;
     avatarRoot.userData.proceduralArmRig = rig;
     record.rig = rig;
+    record.anatomy = anatomy;
+    record.syncSentinel = null;
     managed.add(record);
     return true;
   }
@@ -110,6 +111,8 @@
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
       rig: null,
+      anatomy: null,
+      syncSentinel: null,
     });
     return avatarRoot;
   };
@@ -121,7 +124,7 @@
     const bodyRoot = avatarRoot?.parent;
     if (!bodyRoot) return null;
     for (const child of bodyRoot.children || []) {
-      if (child === avatarRoot || child === record.rig?.group) continue;
+      if (child === avatarRoot || child === record.rig?.group || child === record.syncSentinel) continue;
       const hasAnchorSphere = (child.children || []).some(candidate => candidate?.isMesh && candidate.geometry?.type === 'SphereGeometry');
       if (!hasAnchorSphere) continue;
       const holder = (child.children || []).find(candidate => !candidate?.isMesh && candidate?.isObject3D);
@@ -244,20 +247,6 @@
     }
   }
 
-  function installToolRenderHooks(record, toolHolder) {
-    if (!record?.rig || !toolHolder?.traverse) return;
-    toolHolder.traverse(node => {
-      if (!node?.isMesh || hookedMeshes.has(node)) return;
-      const previous = typeof node.onBeforeRender === 'function' ? node.onBeforeRender : null;
-      const hook = function inverseHandBeforeToolRender(...args) {
-        syncRigToTool(record, toolHolder, { persistEditorPose: true });
-        previous?.apply(this, args);
-      };
-      hookedMeshes.set(node, previous);
-      node.onBeforeRender = hook;
-    });
-  }
-
   const originalInstallGameRuntime = hands.installGameRuntime?.bind(hands);
   if (originalInstallGameRuntime) {
     hands.installGameRuntime = function frameDrivenGameRuntime(deps) {
@@ -273,16 +262,53 @@
     return null;
   }
 
+  function disposeSyncSentinel(record) {
+    const sentinel = record?.syncSentinel;
+    if (!sentinel) return;
+    sentinel.parent?.remove?.(sentinel);
+    sentinel.geometry?.dispose?.();
+    sentinel.material?.dispose?.();
+    record.syncSentinel = null;
+  }
+
+  function ensureSyncSentinel(record) {
+    if (!record?.rig?.parent || record.syncSentinel) return;
+    const THREE = record.THREE;
+    const geometry = new THREE.BufferGeometry(); // Tiny non-visible triangle exists only to get a deterministic earliest onBeforeRender callback.
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+      0, 0, 0,
+      0.0001, 0, 0,
+      0, 0.0001, 0,
+    ], 3));
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false });
+    material.colorWrite = false;
+    const sentinel = new THREE.Mesh(geometry, material);
+    sentinel.name = `${record.name || 'avatar'}_hand_sync_sentinel`;
+    sentinel.frustumCulled = false;
+    sentinel.renderOrder = -100000; // Runs after the editor/game has updated portrait/tool transforms, but before opaque hand meshes are drawn.
+    sentinel.onBeforeRender = () => {
+      const toolHolder = currentToolHolder(record);
+      if (toolHolder) syncRigToTool(record, toolHolder, { persistEditorPose: true });
+      else record.rig?.useIdlePose?.();
+    };
+    record.rig.parent.add(sentinel);
+    record.syncSentinel = sentinel;
+  }
+
   function updateManagedRigs() {
     for (const record of [...managed]) {
       if (!record.avatarRoot?.userData || record.avatarRoot.userData.proceduralArmRig !== record.rig) {
+        disposeSyncSentinel(record);
         managed.delete(record);
         continue;
       }
+      ensureSyncSentinel(record);
       const toolHolder = currentToolHolder(record);
-      if (!toolHolder) continue;
-      installToolRenderHooks(record, toolHolder); // Current-frame correction runs immediately before the tool mesh draws.
-      syncRigToTool(record, toolHolder, { persistEditorPose: false }); // Keeps hands responsive even on frames where the tool has no renderable mesh yet.
+      if (toolHolder) {
+        syncRigToTool(record, toolHolder, { persistEditorPose: false }); // Keeps transforms responsive between renders and before the sentinel's exact-current-frame solve.
+      } else {
+        record.rig?.useIdlePose?.();
+      }
     }
   }
 
@@ -305,6 +331,10 @@
       for (const record of managed) {
         const toolHolder = currentToolHolder(record);
         if (toolHolder) results.push(syncRigToTool(record, toolHolder, { persistEditorPose: true }));
+        else {
+          record.rig?.useIdlePose?.();
+          results.push(null);
+        }
       }
       return results;
     },
@@ -314,6 +344,7 @@
         gender: record.gender,
         handFromTool: profiles.handTransformForSpecies?.(record.speciesId) || null,
         arm: record.rig?.getDebug?.() || null,
+        hasPreRenderSentinel: !!record.syncSentinel,
       }));
     },
   };
