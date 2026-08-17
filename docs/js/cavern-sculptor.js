@@ -878,7 +878,8 @@
   //     tool has no "entrance" concept to begin with).
   const DEFAULT_OPTS = {
     branchCount: 16, branchLength: 3.75, turnChaos: .42, loopChance: .18,
-    probeRadius: .5, brushRadius: .34, radiusChaos: .38, dirChaos: .58,
+    // Direct request: detector sphere's xz scale +30% (was .5).
+    probeRadius: .5 * 1.3, brushRadius: .34, radiusChaos: .38, dirChaos: .58,
     pickJitter: .48, hookLength: .24, hitsPerStep: 3,
     probeDigBursts: 4, probeMaxPasses: 120,
     faceThreshold: 10, refineRadius: 2.1, minCell: 1, baseCell: 4, gridN: 64,
@@ -894,12 +895,16 @@
     // (not an absolute value like the old sizeY/2 oval) — 1.8 still reads
     // as much closer to a sphere than the old 3:1 oval, while giving the
     // sweep enough per-pass reach to resolve a cleanly open ceiling (see
-    // carveMazeCavern's own comment on the top level's overshoot).
-    probeYStretch: 1.8,
+    // carveMazeCavern's own comment on the top level's overshoot). Divided
+    // by the same 1.3 probeRadius (xz scale) just grew by above, so the Y
+    // semi-axis itself (probeRadius * probeYStretch) holds steady at its
+    // prior absolute value — the xz-scale request was scoped to xz only.
+    probeYStretch: 1.8 / 1.3,
     // Shifts the whole multi-level sweep range (and therefore floorY,
     // which tracks the sweep's own lowest point) up by this fraction of
-    // sizeY — a direct request to move the path higher in the volume.
-    pathYShiftFrac: .2,
+    // sizeY — direct requests to move the path higher in the volume,
+    // .2 then another .1 on top.
+    pathYShiftFrac: .3,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
