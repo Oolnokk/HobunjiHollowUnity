@@ -1193,7 +1193,22 @@
       mesh.positions[i + 2] /= ts;
     }
 
-    return { claimed, entranceTiles, nestTile: [nfx, nfy], mesh };
+    // levels/probeYRadius/dims/domainTopY are exposed for introspection —
+    // e.g. docs/tools/cavern-sculptor-tuner, which renders this same
+    // function's real output and needs to show what the sweep actually
+    // computed — not internal debug state (no raw field/octree data is
+    // returned). Shifted into the same Y frame as mesh above (floor at
+    // y=0) so the numbers read directly against whatever the caller
+    // renders. domainTopY is the sculpt grid's own hard boundary (see
+    // createSculptState's domainHalf) — rock above it can never be solid
+    // by construction (see this function's docblock), so comparing the
+    // top of `levels` (plus probeYRadius) against domainTopY is how you
+    // tell whether the sweep actually reaches genuinely open air.
+    return {
+      claimed, entranceTiles, nestTile: [nfx, nfy], mesh,
+      levels: levels.map(l => l - floorY), probeYRadius, dims,
+      domainTopY: dims.y * .5 * 1.08 - floorY,
+    };
   }
 
   window.CavernSculptor = {

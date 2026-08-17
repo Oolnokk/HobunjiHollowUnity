@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>Cavern Sculptor Tuner — HobunjiHollow</title>
+<!--
+  Live tuning tool for docs/js/cavern-sculptor.js's carveMazeCavern — the
+  same den-carving engine the real game uses for animal dens (see
+  docs/js/cavern-generator.js's generateCavernFloor and game.js's
+  loadBuildingScene "wallStyle === 'cavern'" branch). Unlike the original
+  reference tool this was adapted from (docs/references/(HA)TunnelSculptorV1.html,
+  which has its own standalone copy of a similar algorithm), this tool
+  calls the actual shipped engine and the actual shipped mesh builder
+  (InteriorSceneBuilder.buildCarvedCavernMesh) with the actual in-game dark
+  cavern lighting — so what you see here is exactly what a den looks like
+  in the real game, not an approximation. Tweak sliders, hit Regenerate,
+  and use "Copy opts" to grab a JS object literal to hand to whoever's
+  editing cavern-sculptor.js's DEFAULT_OPTS (or pass as an override).
+-->
+<style>
+:root{--bg:#0b0f14;--panel:#121822;--panel2:#0f1520;--text:#e8eef7;--muted:#9fb0c8;--line:#253246;--acc:#6aa7ff;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+#app{display:flex;height:100vh}
+#sidebar{width:400px;max-width:60vw;min-width:320px;background:linear-gradient(180deg,var(--panel),var(--panel2));border-right:1px solid var(--line);display:flex;flex-direction:column}
+#sidebarHeader{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}
+#sidebarScroll{padding:10px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0}
+.card{border:1px solid var(--line);border-radius:12px;padding:10px;background:rgba(255,255,255,.035);margin-bottom:10px}
+.sectionTitle{font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text)}
+.fieldRow{margin-bottom:9px}
+.fieldRow label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-bottom:3px;gap:8px}
+.fieldRow label .val{color:var(--acc);font-variant-numeric:tabular-nums;flex-shrink:0}
+.fieldRow .rangeRow{display:flex;gap:6px;align-items:center}
+input[type=range]{flex:1;accent-color:var(--acc)}
+input[type=number]{width:64px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:7px;color:var(--text);padding:4px 6px;font-size:12px}
+input[type=text]{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:var(--text);padding:7px 9px;font-size:13px}
+button{background:rgba(106,167,255,.18);border:1px solid rgba(106,167,255,.35);color:var(--text);padding:8px 10px;border-radius:10px;font-weight:650;cursor:pointer;font-size:12.5px}
+button:hover{background:rgba(106,167,255,.28)}
+button:disabled{opacity:.5;cursor:default}
+button.secondary{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.13)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.checkRow{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin-top:6px}
+.help{font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:4px}
+#viewport{flex:1;position:relative;min-width:260px}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#statsPanel{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.13);border-radius:10px;padding:9px 12px;font-size:11.5px;line-height:1.7;color:var(--text);pointer-events:none;max-width:340px}
+#statsPanel div b{font-variant-numeric:tabular-nums}
+#viewButtons{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
+#viewButtons button{font-size:11px;padding:6px 9px}
+#statusBar{position:absolute;left:10px;top:10px;font-size:11.5px;color:var(--muted);background:rgba(0,0,0,.5);border-radius:8px;padding:5px 9px;display:none}
+#statusBar.busy{display:block;color:var(--warn)}
+#copyStatus{font-size:11px;color:var(--ok);margin-left:6px}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div id="sidebarHeader">
+      <div class="row">
+        <button id="genBtn">▶ Regenerate</button>
+        <button id="randomSeedBtn" class="secondary">🎲 Random seed</button>
+        <button id="resetBtn" class="secondary">↺ Reset defaults</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="seedInput" type="text" value="cavern-tuner" spellcheck="false">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="copyOptsBtn" class="secondary">📋 Copy opts as code</button>
+        <span id="copyStatus"></span>
+      </div>
+      <div class="checkRow"><input id="darkChk" type="checkbox" checked><label for="darkChk">Dark game lighting (uncheck for bright inspect light)</label></div>
+      <div class="checkRow"><input id="wireframeChk" type="checkbox"><label for="wireframeChk">Wireframe overlay</label></div>
+      <div class="checkRow"><input id="keepViewChk" type="checkbox"><label for="keepViewChk">Keep camera view on regenerate</label></div>
+    </div>
+    <div id="sidebarScroll">
+      <div id="fieldGroups"></div>
+      <div class="card">
+        <div class="sectionTitle">About this tool</div>
+        <div class="help">
+          Calls <code>CavernSculptor.carveMazeCavern(opts, rng)</code> — the real
+          engine at <code>docs/js/cavern-sculptor.js</code> — directly, and renders
+          the result with the real <code>InteriorSceneBuilder.buildCarvedCavernMesh</code>
+          and the real in-game dark-cavern lighting values (see game.js's
+          <code>loadBuildingScene</code>, <code>wallStyle === 'cavern'</code> branch).
+          This is the actual den render, not an approximation — tweak sliders,
+          hit Regenerate, and judge with your own eyes. "Copy opts as code" gives
+          you a JS object literal to hand off for editing
+          <code>cavern-sculptor.js</code>'s <code>DEFAULT_OPTS</code>.
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div id="viewport">
+    <div id="statusBar"></div>
+    <div id="viewButtons">
+      <button id="frameAllBtn" class="secondary">⊡ Frame all</button>
+      <button id="topViewBtn" class="secondary">⬇ Top view</button>
+      <button id="walkViewBtn" class="secondary">🚶 Inside corridor</button>
+    </div>
+    <div id="statsPanel"></div>
+  </div>
+</div>
+
+<!-- Same three.js build the main game (docs/index.html) loads — interior-scene-builder.js
+     requires window.THREE to already exist when IT loads, so this must come first. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/cavern-sculptor.js"></script>
+<script src="../../js/interior-scene-builder.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// ── Seeded RNG — same FNV-1a hash + mulberry32 as WildernessMapGenerator.makeRng,
+// so seed strings behave the way they do everywhere else in this codebase. ──
+function hashSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function makeRng(seedText) {
+  let state = hashSeed(seedText);
+  return function random() {
+    state += 0x6D2B79F5;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ── Field config — mirrors cavern-sculptor.js's own DEFAULT_OPTS, with
+// starting values matching what cavern-generator.js's generateCavernFloor
+// actually passes for a mid-sized den (branchCount~14, tileSize 0.5) rather
+// than the engine's own bare fallback defaults (16, 1) — so this tool opens
+// already showing a realistic in-game den. entranceLength is included for
+// completeness (cavern-generator.js does pass it) even though the engine
+// doesn't currently read it anywhere internally — see cavern-sculptor.js's
+// own comment on carveMazeCavern for why.
+const FIELD_GROUPS = [
+  { title: 'Maze shape', fields: [
+    ['branchCount', 'Branch count', 4, 48, 1, 14],
+    ['branchLength', 'Branch length', 1, 10, .05, 3.75],
+    ['turnChaos', 'Turn chaos', 0, 1, .01, .42],
+    ['loopChance', 'Loop chance', 0, 1, .01, .18],
+    ['pathPointCount', 'Cluster root points', 3, 20, 1, 7],
+  ] },
+  { title: 'Probe / carve', fields: [
+    ['probeRadius', 'Probe radius (detector xz)', .1, 2, .01, .65],
+    ['brushRadius', 'Brush radius (carve stamp)', .05, 1.5, .01, .34],
+    ['radiusChaos', 'Radius chaos', 0, 1, .01, .38],
+    ['dirChaos', 'Direction chaos', 0, 1, .01, .58],
+    ['pickJitter', 'Pick jitter', 0, 1, .01, .48],
+    ['hookLength', 'Hook length', 0, 1, .01, .24],
+    ['hitsPerStep', 'Hits per step', 1, 8, 1, 3],
+    ['probeDigBursts', 'Dig bursts', 1, 10, 1, 4],
+    ['probeMaxPasses', 'Max passes', 10, 400, 5, 120],
+  ] },
+  { title: 'Vertical sweep (path / ceiling)', fields: [
+    ['sizeY', 'Volume height (sizeY)', 1, 8, .1, 3.0],
+    ['probeYStretch', 'Probe Y stretch (× probeRadius)', .5, 3, .01, 1.8 / 1.3],
+    ['pathYShiftFrac', 'Path Y shift (frac of sizeY)', -.5, .5, .01, .3],
+    ['floorOffset', 'Floor offset', -2, 2, .05, 0],
+  ] },
+  { title: 'Mesh resolution', fields: [
+    ['faceThreshold', 'Face threshold', 0, 30, 1, 10],
+    ['refineRadius', 'Refine radius ×', .5, 5, .1, 2.1],
+    ['minCell', 'Min octree cell', 1, 4, 1, 1],
+    ['baseCell', 'Base octree cell', 1, 8, 1, 4],
+    ['gridN', 'Grid N (slow above ~96)', 16, 128, 8, 64],
+  ] },
+  { title: 'Tile grid', fields: [
+    ['tileSize', 'Tile size', .25, 2, .05, .5],
+    ['wallGridMargin', 'Wall grid margin', 0, .3, .01, .05],
+    ['wallGridClaim', 'Wall claim threshold', .05, .9, .01, .35],
+    ['entranceLength', 'Entrance length (unused by engine)', 1, 20, 1, 8],
+  ] },
+];
+
+// ── Build sidebar fields ─────────────────────────────────────────────────
+const fieldGroupsEl = $('fieldGroups');
+{
+  let html = '';
+  for (const group of FIELD_GROUPS) {
+    html += `<div class="card"><div class="sectionTitle">${escapeHtml(group.title)}</div>`;
+    for (const [key, label, min, max, step, def] of group.fields) {
+      html += `<div class="fieldRow">
+        <label for="f_${key}">${escapeHtml(label)} <span class="val" id="v_${key}">${def}</span></label>
+        <div class="rangeRow">
+          <input type="range" id="f_${key}" min="${min}" max="${max}" step="${step}" value="${def}" data-key="${key}">
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  fieldGroupsEl.innerHTML = html;
+}
+for (const group of FIELD_GROUPS) for (const [key] of group.fields) {
+  const input = $('f_' + key), valEl = $('v_' + key);
+  input.addEventListener('input', () => { valEl.textContent = input.value; });
+}
+function collectOpts() {
+  const opts = {};
+  for (const group of FIELD_GROUPS) for (const [key] of group.fields) opts[key] = parseFloat($('f_' + key).value);
+  return opts;
+}
+function resetDefaults() {
+  for (const group of FIELD_GROUPS) for (const [key, , , , , def] of group.fields) {
+    $('f_' + key).value = def;
+    $('v_' + key).textContent = def;
+  }
+}
+
+// ── Scene setup — matches game.js's loadBuildingScene dark-cavern branch
+// exactly (background, ambient/directional intensities, door light + floor
+// glow patch), so the "dark" mode here is not an approximation. ──────────
+const viewport = $('viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+viewport.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 500);
+
+const ambientLight = new THREE.AmbientLight(0xfff5e0, 0.15);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffeedd, 0.08);
+dirLight.position.set(5, 10, 5);
+scene.add(dirLight);
+const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
+scene.add(doorLight);
+const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
+const glowMesh = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
+glowMesh.rotation.x = -Math.PI / 2;
+scene.add(glowMesh);
+
+const LIGHT_DARK = { ambient: 0.15, dir: 0.08, bg: 0x2a1a0a };
+const LIGHT_BRIGHT = { ambient: 0.9, dir: 1.0, bg: 0x14100c };
+function applyLightingMode() {
+  const cfg = $('darkChk').checked ? LIGHT_DARK : LIGHT_BRIGHT;
+  ambientLight.intensity = cfg.ambient;
+  dirLight.intensity = cfg.dir;
+  scene.background = new THREE.Color(cfg.bg);
+}
+applyLightingMode();
+$('darkChk').addEventListener('change', applyLightingMode);
+$('wireframeChk').addEventListener('change', () => { if (cavernMesh) cavernMesh.material.wireframe = $('wireframeChk').checked; });
+
+let cavernMesh = null;
+let lastResult = null;
+
+// ── Custom orbit camera (mouse/touch drag to orbit, wheel to zoom) — no
+// external controls dependency, matches the "self-contained dev tool"
+// pattern the rest of docs/tools/ uses. ──────────────────────────────────
+let camTarget = { x: 0, y: 0.6, z: 0 };
+let camAzimuth = Math.PI * 0.25, camElevation = THREE.MathUtils.degToRad(35), camDistance = 10;
+function updateCamera() {
+  const ce = Math.cos(camElevation), se = Math.sin(camElevation);
+  const ca = Math.cos(camAzimuth), sa = Math.sin(camAzimuth);
+  camera.position.set(
+    camTarget.x + camDistance * ce * sa,
+    camTarget.y + camDistance * se,
+    camTarget.z + camDistance * ce * ca
+  );
+  camera.lookAt(camTarget.x, camTarget.y, camTarget.z);
+}
+function setCameraLookAt(eye, look) {
+  const dx = eye.x - look.x, dy = eye.y - look.y, dz = eye.z - look.z;
+  const dist = Math.max(0.05, Math.hypot(dx, dy, dz));
+  camTarget = { x: look.x, y: look.y, z: look.z };
+  camDistance = dist;
+  camElevation = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
+  const ce = Math.cos(camElevation) || 1e-4;
+  camAzimuth = Math.atan2(dx / (dist * ce), dz / (dist * ce));
+  updateCamera();
+}
+updateCamera();
+
+let dragging = false, lastPX = 0, lastPY = 0;
+renderer.domElement.addEventListener('pointerdown', e => { dragging = true; lastPX = e.clientX; lastPY = e.clientY; renderer.domElement.setPointerCapture(e.pointerId); });
+renderer.domElement.addEventListener('pointerup', () => { dragging = false; });
+renderer.domElement.addEventListener('pointercancel', () => { dragging = false; });
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastPX, dy = e.clientY - lastPY;
+  lastPX = e.clientX; lastPY = e.clientY;
+  camAzimuth -= dx * 0.007;
+  camElevation = Math.max(-1.5, Math.min(1.5, camElevation - dy * 0.007));
+  updateCamera();
+});
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  camDistance = Math.max(0.1, Math.min(300, camDistance * (1 + Math.sign(e.deltaY) * 0.12)));
+  updateCamera();
+}, { passive: false });
+
+function frameAll() {
+  if (!cavernMesh) return;
+  cavernMesh.geometry.computeBoundingSphere();
+  const bs = cavernMesh.geometry.boundingSphere;
+  camTarget = { x: bs.center.x, y: Math.max(0.3, bs.center.y), z: bs.center.z };
+  camDistance = Math.max(2, bs.radius * 2.2);
+  camAzimuth = Math.PI * 0.25; camElevation = THREE.MathUtils.degToRad(35);
+  updateCamera();
+}
+function topView() {
+  if (!cavernMesh) return;
+  cavernMesh.geometry.computeBoundingSphere();
+  const bs = cavernMesh.geometry.boundingSphere;
+  camTarget = { x: bs.center.x, y: 0, z: bs.center.z };
+  camDistance = Math.max(2, bs.radius * 2.4);
+  camAzimuth = 0; camElevation = THREE.MathUtils.degToRad(88);
+  updateCamera();
+}
+function walkCorridorView() {
+  if (!lastResult) return;
+  const floorSet = lastResult.claimed;
+  const exitSet = new Set(lastResult.entranceTiles.map(([c, r]) => `${c},${r}`));
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // Prefer a straight-through corridor tile (two open neighbors, directly
+  // opposite) so the view looks cleanly down a passage; a chaotic maze
+  // can easily have zero perfectly straight runs, so fall back to any
+  // tile with at least one open neighbor (a bend or dead-end) rather than
+  // silently giving up and reframing the whole den.
+  let best = null, fallback = null;
+  for (const key of floorSet) {
+    if (exitSet.has(key)) continue;
+    const [c, r] = key.split(',').map(Number);
+    const openDirs = DIRS.filter(([dx, dy]) => floorSet.has(`${c + dx},${r + dy}`));
+    if (!openDirs.length) continue;
+    if (!fallback) fallback = { c, r, dir: openDirs[0] };
+    if (openDirs.length === 2) {
+      const [[dx1, dy1], [dx2, dy2]] = openDirs;
+      if (dx1 === -dx2 && dy1 === -dy2) { best = { c, r, dir: [dx1, dy1] }; break; }
+    }
+  }
+  best = best || fallback;
+  if (!best) { frameAll(); return; }
+  const eye = { x: best.c + 0.5, y: 1.0, z: best.r + 0.5 };
+  const look = { x: eye.x + best.dir[0] * 3, y: 1.0, z: eye.z + best.dir[1] * 3 };
+  setCameraLookAt(eye, look);
+}
+$('frameAllBtn').addEventListener('click', frameAll);
+$('topViewBtn').addEventListener('click', topView);
+$('walkViewBtn').addEventListener('click', walkCorridorView);
+
+function resizeRenderer() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / (h || 1);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resizeRenderer);
+
+// ── Wall-coverage check — same boundary-edge heuristic used to regression-
+// test this engine during development: for every claimed floor tile edge
+// that borders an unclaimed neighbor, is there actually a near-vertical
+// wall triangle near that edge? Purely geometric, no engine internals
+// needed. ──────────────────────────────────────────────────────────────
+function computeMissingWallPct(result) {
+  const pos = result.mesh.positions, idx = result.mesh.indices;
+  const triCount = idx.length / 3;
+  const floorSet = result.claimed;
+  const exitKeySet = new Set(result.entranceTiles.map(([c, r]) => `${c},${r}`));
+  const wallTris = [];
+  for (let t = 0; t < triCount; t++) {
+    const ia = idx[t * 3] * 3, ib = idx[t * 3 + 1] * 3, ic = idx[t * 3 + 2] * 3;
+    const xs = [pos[ia], pos[ib], pos[ic]], ys = [pos[ia + 1], pos[ib + 1], pos[ic + 1]], zs = [pos[ia + 2], pos[ib + 2], pos[ic + 2]];
+    const yRange = Math.max(...ys) - Math.min(...ys);
+    if (yRange > 0.15) wallTris.push({ minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) });
+  }
+  function hasWallNear(x0, z0, x1, z1) {
+    const midX = (x0 + x1) / 2, midZ = (z0 + z1) / 2;
+    for (const w of wallTris) if (midX >= w.minX - 0.15 && midX <= w.maxX + 0.15 && midZ >= w.minZ - 0.15 && midZ <= w.maxZ + 0.15) return true;
+    return false;
+  }
+  let totalBoundaryEdges = 0, edgesMissingWall = 0;
+  for (const key of floorSet) {
+    if (exitKeySet.has(key)) continue;
+    const [c, r] = key.split(',').map(Number);
+    const neighbors = [[c - 1, r, c, r, c, r + 1], [c + 1, r, c + 1, r, c + 1, r + 1], [c, r - 1, c, r, c + 1, r], [c, r + 1, c, r + 1, c + 1, r + 1]];
+    for (const [nc, nr, x0, z0, x1, z1] of neighbors) {
+      const nKey = `${nc},${nr}`;
+      if (floorSet.has(nKey)) continue;
+      totalBoundaryEdges++;
+      if (!hasWallNear(x0, z0, x1, z1)) edgesMissingWall++;
+    }
+  }
+  return { totalBoundaryEdges, edgesMissingWall, pct: totalBoundaryEdges ? Math.round(1000 * edgesMissingWall / totalBoundaryEdges) / 10 : 0 };
+}
+
+function renderStats(result, genMs, wallCheck, seedText) {
+  const levels = result.levels;
+  const topLevel = Math.max(...levels);
+  const ceilingMargin = (topLevel + result.probeYRadius) - result.domainTopY;
+  const wallOk = wallCheck.edgesMissingWall === 0;
+  const ceilOk = ceilingMargin > 0.05;
+  $('statsPanel').innerHTML = `
+    <div>Seed: <b>${escapeHtml(seedText)}</b> &nbsp; Gen time: <b>${Math.round(genMs)} ms</b></div>
+    <div>Floor tiles: <b>${result.claimed.size}</b> &nbsp; Triangles: <b>${Math.round(result.mesh.indices.length / 3)}</b></div>
+    <div>Wall coverage: <b style="color:${wallOk ? 'var(--ok)' : 'var(--bad)'}">${wallCheck.edgesMissingWall}/${wallCheck.totalBoundaryEdges} missing (${wallCheck.pct}%)</b></div>
+    <div>Sweep levels (floor=0): <b>${levels.map(l => l.toFixed(2)).join(', ')}</b></div>
+    <div>Probe Y radius: <b>${result.probeYRadius.toFixed(3)}</b> &nbsp; Domain top Y: <b>${result.domainTopY.toFixed(2)}</b></div>
+    <div>Ceiling margin: <b style="color:${ceilOk ? 'var(--ok)' : 'var(--bad)'}">${ceilingMargin.toFixed(2)}</b> ${ceilOk ? '(open)' : '(risk of a capped ceiling)'}</div>
+    <div>Sculpt volume dims: <b>${result.dims.x.toFixed(1)} × ${result.dims.y.toFixed(1)} × ${result.dims.z.toFixed(1)}</b></div>
+  `;
+}
+
+let busy = false;
+function regenerate() {
+  if (busy) return;
+  busy = true;
+  $('genBtn').disabled = true;
+  const statusBar = $('statusBar');
+  statusBar.textContent = 'Generating…';
+  statusBar.classList.add('busy');
+  // rAF+setTimeout(0) lets the "Generating…" label actually paint before
+  // the synchronous carve blocks the main thread (same one-shot synchronous
+  // model the real game itself uses — see cavern-generator.js's docblock).
+  requestAnimationFrame(() => setTimeout(runGenerate, 0));
+}
+function runGenerate() {
+  try {
+    const opts = collectOpts();
+    const seedText = $('seedInput').value || 'cavern-tuner';
+    const rng = makeRng(seedText);
+    const t0 = performance.now();
+    const result = window.CavernSculptor.carveMazeCavern(opts, rng);
+    const genMs = performance.now() - t0;
+    lastResult = result;
+
+    if (cavernMesh) { scene.remove(cavernMesh); cavernMesh.geometry.dispose(); cavernMesh.material.dispose(); }
+    cavernMesh = InteriorSceneBuilder.buildCarvedCavernMesh(THREE, result.mesh);
+    cavernMesh.material.wireframe = $('wireframeChk').checked;
+    scene.add(cavernMesh);
+
+    let ex = 0, ez = 0;
+    for (const [c, r] of result.entranceTiles) { ex += c; ez += r; }
+    ex = ex / result.entranceTiles.length + 0.5;
+    ez = ez / result.entranceTiles.length + 0.5;
+    doorLight.position.set(ex, 1.6, ez + 0.6);
+    glowMesh.position.set(ex, 0.02, ez);
+
+    if (!$('keepViewChk').checked) frameAll();
+
+    const wallCheck = computeMissingWallPct(result);
+    renderStats(result, genMs, wallCheck, seedText);
+    $('statusBar').classList.remove('busy');
+    $('statusBar').textContent = '';
+  } catch (e) {
+    $('statusBar').textContent = 'Error: ' + (e && e.message || e);
+    console.error(e);
+  } finally {
+    busy = false;
+    $('genBtn').disabled = false;
+  }
+}
+$('genBtn').addEventListener('click', regenerate);
+$('randomSeedBtn').addEventListener('click', () => {
+  $('seedInput').value = 'seed-' + Math.random().toString(36).slice(2, 9);
+  regenerate();
+});
+$('resetBtn').addEventListener('click', () => { resetDefaults(); regenerate(); });
+$('copyOptsBtn').addEventListener('click', async () => {
+  const opts = collectOpts();
+  const lines = Object.entries(opts).map(([k, v]) => `  ${k}: ${v},`).join('\n');
+  const text = `{\n${lines}\n}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    $('copyStatus').textContent = 'Copied!';
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    $('copyStatus').textContent = 'Copied (fallback)';
+  }
+  setTimeout(() => { $('copyStatus').textContent = ''; }, 1800);
+});
+
+function tick() {
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+resizeRenderer();
+regenerate();
+tick();
+</script>
+</body>
+</html>
