@@ -1278,7 +1278,52 @@
     // a claimed tile's edge into an unclaimed neighbor (see this
     // function's docblock) — run once, after every carve/claim/force step
     // above has finished, right before meshing.
-    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts, carveOpts);
+    //   Direct design correction: a near-spherical probe swept along a
+    // path carves a continuously rounded tube by construction — floor
+    // curves into wall curves into ceiling with no flat plane anywhere,
+    // exactly like a real worm-carved tunnel. That's not a bug in the
+    // carve itself, but it means there's no reliable, human-legible
+    // "this is the wall" boundary for bGrid's tile-flat collision to line
+    // up against unless something explicitly draws one — the old heal
+    // depth (probe/brush-radius-derived, usually under 1.5 tiles) wasn't
+    // reliably deeper than the probe's own max reach (radiusChaos alone
+    // can push it past 1.2 tiles), so wide stretches of "wall" were
+    // really just wherever the tube's own gradual taper happened to
+    // finish. wallBufferTiles is a flat, guaranteed depth instead — 3
+    // tiles of definitely-pristine rock around the whole claimed shape,
+    // comfortably past anything the probe could have reached — so
+    // there's always a real, findable boundary for the next step
+    // (sharpenBoundaryFaces) to carve a deliberate face against.
+    const wallBufferTiles = 3;
+    const wallBufferDepth = Math.max(wallBufferTiles * ts, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin);
+    solidifyBoundaryWalls(st, claimed, wallBufferDepth, skipCapEdges, ts, carveOpts);
+
+    // Direct design: even with a reliably solid buffer beyond it, the
+    // actual floor-to-wall transition at a tile edge is still just
+    // "wherever carveTileColumn's own tight margin cut meets the healed
+    // pristine rock" — a real boundary now, but a bare, mechanically flat
+    // one with none of the rest of the tunnel's organic carved character.
+    // For every claimed tile that borders at least one unclaimed
+    // neighbor (the innermost ring against the buffer), place a narrow
+    // "rail" probe (same narrow scale as a connector rail — see
+    // narrowCarveOpts above) dead center on that tile and clear it
+    // exactly the way any other probe position gets cleared, at every
+    // height the maze's own sweep already uses (carveOpts.levels, not
+    // some new offset) — so the carved face reads as genuinely part of
+    // the same hand-carved tunnel instead of a seam where two different
+    // carving styles happen to meet. One pass per tile regardless of how
+    // many of its sides border the buffer (a corner tile doesn't need
+    // carving twice).
+    function sharpenBoundaryFaces(st, claimed, carveOpts, narrowCarveOpts, ts, rng) {
+      const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      for (const key of claimed) {
+        const [c, r] = key.split(',').map(Number);
+        if (!DIRS4.some(([dx, dy]) => !claimed.has(`${c + dx},${r + dy}`))) continue;
+        const cx = (c + .5) * ts, cz = (r + .5) * ts;
+        for (const y of carveOpts.levels) clearProbeAt(st, { x: cx, y, z: cz }, { x: 1, y: 0, z: 0 }, narrowCarveOpts, rng);
+      }
+    }
+    sharpenBoundaryFaces(st, claimed, carveOpts, narrowCarveOpts, ts, rng);
 
     let mesh = extractMesh(st, claimed, skipCapEdges, ts);
 
