@@ -8496,13 +8496,16 @@
         // the NPC's world model with its eyes shut forever (see
         // renderProfile's forceEyesOpen handling in portrait-utils.js).
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+        const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
+        headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         const avatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W;
         avatarGroup.position.set(0, avatarHeight / 2, 0);
@@ -11976,13 +11979,17 @@
         // happens to trigger a fresh bake.
         await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
+        const headCanvas = document.createElement('canvas'); // Used by the neck rig to locate the visible base head from its alpha centroid.
+        headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
+        if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const backCanvas = document.createElement('canvas');
         backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
         await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
         if (refreshGeneration !== playerAvatarRefreshGeneration) return;
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;

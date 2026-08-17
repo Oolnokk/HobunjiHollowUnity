@@ -10,6 +10,7 @@ const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 const game = read('docs/game.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');
 const pngAvatar = read('docs/js/png-plane-avatar.js');
+const portraitUtils = read('docs/js/portrait-utils.js');
 const bandit = read('docs/js/combat/combat-bandit.js');
 const editor = read('docs/tools/attack-animation-editor/index.html');
 const index = read('docs/index.html');
@@ -57,9 +58,14 @@ assert.match(pngAvatar, /const fraction = Number\.isFinite\(neckHeightFraction\)
 const sharedNeckRig = pngAvatar.slice(pngAvatar.indexOf('function buildSkinnedSinglePlaneAssembly'), pngAvatar.indexOf('function createSinglePlaneAssembly'));
 assert.match(sharedNeckRig, /y:\s*modelHeight \/ 2 - \(pivotPx\.y \/ pxH\) \* modelHeight/, 'shared neck pivot must use the plane-local coordinate used by the Multi-Avatar Animation Author');
 assert.doesNotMatch(sharedNeckRig, /neckLocal[\s\S]*- assemblyY/, 'shared neck pivot must not subtract the assembly placement twice');
-assert.match(pngAvatar, /geometry\.userData = \{ segmentsX, segmentsY, blendHeight, neckLocal:/, 'shared neck geometry must expose its proven author-tool rig measurements for diagnostics');
-assert.match(index, /png-plane-avatar\.js\?v=20260817b/, 'game bootstrap must invalidate the misplaced-pivot neck-rig cache');
-assert.match(editor, /png-plane-avatar\.js\?v=20260817b/, 'attack editor must invalidate the misplaced-pivot neck-rig cache');
+assert.match(portraitUtils, /onlyHeadSprite[\s\S]*fighter's undecorated base head only/, 'portrait renderer must support an undecorated base-head alpha mask');
+assert.match(pngAvatar, /function detectHeadRigPixels\([\s\S]*headMask\.centroidPx\.x[\s\S]*method: 'head-sprite-alpha-centroid'/, 'shared neck rig must derive its horizontal pivot from the base-head alpha centroid');
+assert.match(pngAvatar, /function buildSkinnedPlaneGeometry\([\s\S]*cellHasOpaquePixel[\s\S]*visibleCells/, 'shared neck geometry must fit its grid to opaque avatar cells');
+assert.match(pngAvatar, /opaqueBoundsPx:[\s\S]*visibleCellCount:/, 'shared neck geometry must expose alpha-fit diagnostics');
+assert.match(editor, /renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/, 'attack editor must render the head-only centroid mask');
+assert.strictEqual((game.match(/renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/g) || []).length, 2, 'player and walking NPC neck rigs must use head-only centroid masks');
+assert.match(index, /png-plane-avatar\.js\?v=20260817c/, 'game bootstrap must invalidate the alpha-fitted neck-rig cache');
+assert.match(editor, /png-plane-avatar\.js\?v=20260817c/, 'attack editor must invalidate the alpha-fitted neck-rig cache');
 assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
 
 for (const itemKey of ['crossbow', 'scatterbow']) {

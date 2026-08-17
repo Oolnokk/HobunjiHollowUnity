@@ -123,7 +123,7 @@ canvas{display:block;width:100%;height:100%}
     <div class="field" style="margin-top:4px">
       <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
     </div>
-    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. The vertex overlay marks every point with more than 1% head weight: cyan is a light blend and yellow is fully head-skinned. These are preview-only diagnostics and are not exported with the attack.</div>
+    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. The mesh is fitted to opaque avatar cells and its neck hinge is located from the base head sprite's alpha centroid. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. The vertex overlay marks every point with more than 1% head weight: cyan is a light blend and yellow is fully head-skinned. These are preview-only diagnostics and are not exported with the attack.</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -269,10 +269,10 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
-<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/portrait-utils.js?v=20260817d"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20260817b"></script>
+<script src="../../js/png-plane-avatar.js?v=20260817c"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -484,7 +484,10 @@ function applyPreviewNeckWeights() {
     if (headWeight > 0.99) fullWeight++;
   }
   weights.needsUpdate = true;
-  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · pivot y ${neckRig.neckLocal.y.toFixed(3)}`;
+  const centroid = neckRig.headCentroidPx; // Used in the mobile-visible diagnostic to verify the base-head alpha scan landed on the sprite.
+  const centroidSummary = centroid ? ` · head centroid ${centroid.x.toFixed(1)},${centroid.y.toFixed(1)} px` : '';
+  const visibleCellCount = Number(geometry.userData?.visibleCellCount) || 0; // Used to confirm alpha-mask fitting without requiring desktop developer tools.
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · ${visibleCellCount} opaque grid cells · pivot y ${neckRig.neckLocal.y.toFixed(3)}${centroidSummary}`;
   rebuildHeadSkinVertexOverlay();
   refreshPreviewDebug();
   return true;
@@ -493,7 +496,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: toggleable head skin-weight vertex overlay; attack exports remain unchanged.',
+    'Latest: mesh fitted to opaque avatar cells; neck located from the base-head alpha centroid.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
@@ -528,6 +531,9 @@ async function rebuildAvatar(speciesId, gender) {
   const frontCanvas = document.createElement('canvas');
   frontCanvas.width = size; frontCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+  const headCanvas = document.createElement('canvas'); // Used by the shared neck rig to place its pivot from the base head sprite's opaque-pixel centroid.
+  headCanvas.width = size; headCanvas.height = size;
+  await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
@@ -538,7 +544,7 @@ async function rebuildAvatar(speciesId, gender) {
   }
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
     backCanvas, profile, speciesId, gender, name: 'editor_preview_avatar',
-    modelWidth: MODEL_W, modelHeight: MODEL_W, neckRig: true,
+    modelWidth: MODEL_W, modelHeight: MODEL_W, neckRig: true, headCanvas,
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
