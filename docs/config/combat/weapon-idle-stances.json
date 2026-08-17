@@ -26,7 +26,7 @@
       "z": -0.01,
       "pitch": -155,
       "yaw": -79,
-      "bodyYaw": 2,
+      "bodyYaw": -15,
       "roll": -82
     },
     "lightWeapon": {
@@ -35,7 +35,7 @@
       "z": 0,
       "pitch": 20,
       "yaw": -70,
-      "bodyYaw": 0,
+      "bodyYaw": -40,
       "roll": -65
     }
   }
