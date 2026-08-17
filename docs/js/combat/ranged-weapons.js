@@ -8,30 +8,60 @@
   let playerAction = null;
   let lastEvent = 'idle';
 
+  // Shared by both loading weapons so crossbow and scatterbow use the exact
+  // authored Scatterbow Fire pose set supplied by the animation editor.
+  const AUTHORED_FIRE_POSE = {
+    neutral: { x: 0.23, y: 0.08, z: 0.14, pitch: 16, yaw: 65, bodyYaw: -52, roll: 11, scale: 1.77 },
+    windup:  { x: 0.34, y: 0.14, z: 0.11, pitch: -9, yaw: 86, bodyYaw: -76, roll: 12 },
+    strike:  { x: 0.33, y: 0.11, z: 0.12, pitch: -9, yaw: 84, bodyYaw: -109, roll: 9 },
+  };
+  // Shared by both loading weapons while empty/reloading. Both authored
+  // ranged stances use the same enlarged tool scale.
+  const AUTHORED_LOAD_POSE = {
+    neutral: { x: 0, y: 0.12, z: 0.18, pitch: -8, yaw: 0, bodyYaw: 0, roll: 0, scale: 1.77 },
+    windup:  { x: 0, y: -0.17, z: 0.09, pitch: 77, yaw: 0, bodyYaw: -10, roll: 0 },
+    strike:  { x: 0, y: 0.18, z: 0.08, pitch: -11, yaw: 0, bodyYaw: 7, roll: 0 },
+  };
+  // Used to give each weapon its own mutable pose objects when config
+  // overrides are merged at runtime.
+  function clonePoseSet(source) {
+    return {
+      neutral: { ...source.neutral },
+      windup: { ...source.windup },
+      strike: { ...source.strike },
+    };
+  }
+
+  // Used by runtime tuning overrides so changing one channel or phase does
+  // not erase the remaining authored channels in that action's pose set.
+  function mergePoseSet(base, incoming = {}) {
+    return {
+      neutral: { ...base.neutral, ...(incoming.neutral || {}) },
+      windup: { ...base.windup, ...(incoming.windup || {}) },
+      strike: { ...base.strike, ...(incoming.strike || {}) },
+    };
+  }
+
   const CONFIG = {
     crossbow: {
       label: 'Crossbow', projectileSprite: 'assets/toolsprites/arrow_long.png',
       projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720,
       rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 260,
-      reloadDurationS: 0.86, fireDurationS: 0.24, fireAtFrac: 0.16, fireHoldFrac: 0.28,
+      reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
+      fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
       staminaCost: 10,
-      pose: {
-        neutral: { x: 0.23, y: 0.11, z: 0.14, pitch: 4, yaw: 60, roll: 13, bodyYaw: -70, scale: 1 },
-        windup:  { x: 0, y: 0.10, z: -0.10, pitch: -18, yaw: 0, roll: 0, bodyYaw: -8 },
-        strike:  { x: 0, y: 0.15, z: 0.10, pitch: 12, yaw: 0, roll: 0, bodyYaw: 5 },
-      },
+      firePose: clonePoseSet(AUTHORED_FIRE_POSE),
+      loadPose: clonePoseSet(AUTHORED_LOAD_POSE),
     },
     scatterbow: {
       label: 'Scatterbow', projectileSprite: 'assets/toolsprites/arrow_short.png',
       projectileCount: 6, spreadDeg: 28, damage: 5, speedPxS: 650,
       rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 110,
-      reloadDurationS: 1.04, fireDurationS: 0.28, fireAtFrac: 0.90, fireHoldFrac: 0.91,
+      reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
+      fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
       staminaCost: 14,
-      pose: {
-        neutral: { x: 0.23, y: 0.11, z: 0.14, pitch: 4, yaw: 60, roll: 13, bodyYaw: -70, scale: 1 },
-        windup:  { x: 0, y: 0.08, z: -0.13, pitch: -20, yaw: 0, roll: 0, bodyYaw: -10 },
-        strike:  { x: 0, y: 0.18, z: 0.08, pitch: 16, yaw: 0, roll: 0, bodyYaw: 7 },
-      },
+      firePose: clonePoseSet(AUTHORED_FIRE_POSE),
+      loadPose: clonePoseSet(AUTHORED_LOAD_POSE),
     },
   };
 
@@ -41,11 +71,18 @@
     if (!config) return;
     for (const key of Object.keys(CONFIG)) {
       if (!config[key]) continue;
-      CONFIG[key] = { ...CONFIG[key], ...config[key], pose: { ...CONFIG[key].pose, ...(config[key].pose || {}) } };
+      const incoming = config[key]; // Used to merge tuning without discarding either authored action pose set.
+      CONFIG[key] = {
+        ...CONFIG[key],
+        ...incoming,
+        firePose: mergePoseSet(CONFIG[key].firePose, incoming.firePose),
+        loadPose: mergePoseSet(CONFIG[key].loadPose, incoming.loadPose),
+      };
     }
   }
 
   function defFor(itemKey) { return CONFIG[itemKey] || null; }
+  function poseForAction(def, kind) { return kind === 'load' ? def.loadPose : def.firePose; }
   function isLoaded(itemKey, owner = null) {
     if (owner) return owner._rangedLoaded !== false;
     if (!playerLoaded.has(itemKey)) playerLoaded.set(itemKey, true);
@@ -58,6 +95,42 @@
     deps?.setRangedLoadedVisual?.(itemKey, !!loaded, owner);
     if (!owner) deps?.refreshActionBar?.();
     lastEvent = `${owner ? owner.id : 'player'}:${itemKey}:${loaded ? 'loaded' : 'empty'}`;
+  }
+
+  function idlePose(itemKey, owner = null) {
+    const def = defFor(itemKey); // Used to select the loaded or empty neutral stance for players and bandits.
+    if (!def) return null;
+    return (isLoaded(itemKey, owner) ? def.firePose : def.loadPose)?.neutral || null;
+  }
+
+  // Interpolated by bandit load/fire visuals; scale stays on the action's
+  // neutral pose and is applied once to the holder instead of lerping.
+  const POSE_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw'];
+  function lerpPose(a, b, amount) {
+    const k = Math.max(0, Math.min(1, amount)); // Used to keep every authored channel inside its two endpoint poses.
+    const pose = {}; // Used as the complete interpolated transform returned to the bandit holder.
+    for (const key of POSE_CHANNELS) pose[key] = (a?.[key] ?? 0) + ((b?.[key] ?? 0) - (a?.[key] ?? 0)) * k;
+    return pose;
+  }
+
+  function poseAtAction(def, kind, progress) {
+    const poses = poseForAction(def, kind); // Used as the action-specific neutral/windup/strike source.
+    const t = Math.max(0, Math.min(1, progress)); // Used to safely evaluate the authored phase fractions.
+    const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire'); // Used to decouple action state from pose playback order.
+    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02); // Used as the authored windup arrival point.
+    const sf = kind === 'load' ? (def.reloadStrikeFrac ?? 0.56) : (def.fireAtFrac ?? 0.18); // Used as the authored strike arrival point.
+    const hf = kind === 'load' ? (def.reloadHoldFrac ?? sf) : (def.fireHoldFrac ?? sf); // Used as the end of the strike hold.
+    if (sequence === 'attack') {
+      if (t <= wf) return lerpPose(poses.neutral, poses.windup, t / Math.max(0.0001, wf));
+      if (t <= sf) return lerpPose(poses.windup, poses.strike, (t - wf) / Math.max(0.0001, sf - wf));
+    } else if (sequence === 'load') {
+      if (t <= wf) return lerpPose(poses.neutral, poses.windup, t / Math.max(0.0001, wf));
+      return lerpPose(poses.windup, poses.neutral, (t - wf) / Math.max(0.0001, 1 - wf));
+    } else if (t <= sf) {
+      return lerpPose(poses.neutral, poses.strike, t / Math.max(0.0001, sf));
+    }
+    if (t <= hf) return { ...poses.strike };
+    return lerpPose(poses.strike, poses.neutral, (t - hf) / Math.max(0.0001, 1 - hf));
   }
 
   function playerActionLabel(itemKey) {
@@ -74,12 +147,14 @@
     const kind = loaded ? 'fire' : 'load';
     if (kind === 'fire') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
     const durationS = kind === 'fire' ? def.fireDurationS : def.reloadDurationS;
+    const pose = poseForAction(def, kind); // Used by the player visual for this specific load/fire action.
     playerAction = { itemKey, def, kind, t: 0, durationS, fired: false };
     deps.triggerRangedWeaponVisual?.(durationS, {
-      sequence: kind, pose: def.pose,
-      windupFrac: kind === 'load' ? 0.55 : 0.02,
-      strikeFrac: kind === 'fire' ? def.fireAtFrac : 0.56,
-      holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : 0.57,
+      sequence: kind === 'fire' ? (def.fireSequence || 'fire') : (def.reloadSequence || 'attack'),
+      pose,
+      windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02),
+      strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
+      holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
     });
     lastEvent = `player:${itemKey}:${kind}-start`;
     deps.refreshActionBar?.();
@@ -304,15 +379,13 @@
     const action = c._rangedAction;
     const def = defFor(c.def.rangedWeaponKey);
     if (!def) return;
-    holder.scale.setScalar(Number.isFinite(Number(def.pose.neutral.scale)) ? Math.max(0.1, Number(def.pose.neutral.scale)) : 1);
-    let pose = def.pose.neutral;
+    const actionPose = action ? poseForAction(def, action.kind) : null; // Used for action-specific neutral/windup/strike playback.
+    const neutral = actionPose?.neutral || idlePose(c.def.rangedWeaponKey, c);
+    holder.scale.setScalar(Number.isFinite(Number(neutral?.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
+    let pose = neutral;
     if (action) {
       const t = Math.min(1, action.t / action.durationS);
-      const target = action.kind === 'load' ? def.pose.windup : def.pose.strike;
-      const peak = action.kind === 'load' ? 0.55 : def.fireAtFrac;
-      const k = t <= peak ? t / Math.max(0.001, peak) : (1 - t) / Math.max(0.001, 1 - peak);
-      pose = {};
-      for (const key of ['x','y','z','pitch','yaw','roll','bodyYaw']) pose[key] = def.pose.neutral[key] + (target[key] - def.pose.neutral[key]) * Math.max(0, Math.min(1, k));
+      pose = poseAtAction(def, action.kind, t);
     }
     const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
     const rx = Math.cos(vθ), rz = -Math.sin(vθ), fx = Math.sin(vθ), fz = Math.cos(vθ);
@@ -329,7 +402,7 @@
   window.RangedWeapons = {
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
-    cancelBanditAction, disposeOwner, playerLockRangePx,
+    cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
@@ -338,6 +411,7 @@
     get lastEvent() { return lastEvent; },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
+    idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({ lastEvent, activeProjectiles: projectiles.length, loaded: Object.fromEntries(playerLoaded) }),
   };
 })();

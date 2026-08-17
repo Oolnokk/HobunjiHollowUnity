@@ -553,7 +553,7 @@ const STYLE_NEUTRAL_POSE = {
   sweep:  { ...defaultPose(0, 0, 0.16, 0, 0, 0), scale: 1 },
   chop:   { ...defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), scale: 1 },
   drink:  { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
-  ranged: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 },
+  ranged: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 },
 };
 function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || { ...defaultPose(0, 0, 0, 0, 0, 0), scale: 1 }; }
 
@@ -771,14 +771,14 @@ const TOOL_PRESETS = [
   { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
     windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
     windupFrac: 0.16, strikeFrac: 0.28 },
-  { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'load', toolKey: 'crossbow', still: false,
-    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.55, strikeFrac: 0.56, durationS: 0.86 },
-  { id: 'crossbow_fire', label: 'Crossbow — Fire', name: 'Crossbow Fire', style: 'ranged', sequence: 'fire', toolKey: 'crossbowLoaded', still: false,
-    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.02, strikeFrac: 0.16, holdFrac: 0.28, durationS: 0.24 },
-  { id: 'scatterbow_load', label: 'Scatterbow — Load', name: 'Scatterbow Load', style: 'ranged', sequence: 'load', toolKey: 'scatterbow', still: false,
-    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.55, strikeFrac: 0.56, durationS: 1.04 },
-  { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'fire', toolKey: 'scatterbowLoaded', still: false,
-    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.02, strikeFrac: 0.90, holdFrac: 0.91, durationS: 0.28 },
+  { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'attack', toolKey: 'crossbow', still: false,
+    neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
+  { id: 'crossbow_fire', label: 'Crossbow — Fire', name: 'Crossbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'crossbowLoaded', still: false,
+    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
+  { id: 'scatterbow_load', label: 'Scatterbow — Load', name: 'Scatterbow Load', style: 'ranged', sequence: 'attack', toolKey: 'scatterbow', still: false,
+    neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
+  { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'scatterbowLoaded', still: false,
+    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
 function applyPreset(preset) {
@@ -955,7 +955,7 @@ $('statSlotSelect').innerHTML = ATTACK_SLOTS.map((s, i) => `<option value="${i}"
 // (name, anim, dirSign, pose, dmgTag, heavy, label, condKey, bonusText) is
 // either cosmetic/structural or owned by a different part of this tool
 // (the pose editor above already covers anim/pose).
-const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|reloadDurationS|fireDurationS|fireAtFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
+const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|reloadDurationS|reloadWindupFrac|reloadStrikeFrac|reloadHoldFrac|fireDurationS|fireWindupFrac|fireAtFrac|fireHoldFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
 
 function numericLeafFields(entry) {
   const out = [];

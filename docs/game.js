@@ -16751,7 +16751,9 @@
       let combatSwingStrikeFrac = 0.28;
       let combatSwingPower = 1;
       let combatSwingSequence = 'attack';
-      let combatSwingSequenceHoldFrac = 0.3;
+      // Used when a pose sequence authors its own normalized hold endpoint;
+      // null keeps ordinary melee swings on updateToolMesh's derived HF.
+      let combatSwingSequenceHoldFrac = null;
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
@@ -16925,14 +16927,15 @@
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
         combatSwingSequence = 'attack';
+        combatSwingSequenceHoldFrac = null;
         combatSwingAfflictionIds = opts.afflictionIds || [];
         combatSwingAfflictionMuls = opts.afflictions || {};
         setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
       }
 
-      // Loading weapons use the same three authored poses, but loading skips
-      // strike (neutral→windup→neutral) and firing skips windup
-      // (neutral→strike→neutral).
+      // Ranged actions supply separate load/fire pose sets and independently
+      // authored playback sequences. Current loading weapons use the full
+      // neutral→windup→strike→hold→neutral sequence for both actions.
       function triggerRangedWeaponVisual(durationS, opts = {}) {
         if (activeTool !== 'ranged') return;
         toolSwingDur = Math.max(0.05, durationS);
@@ -16946,7 +16949,7 @@
         combatSwingHoldS = 0;
         combatSwingHeld = false;
         combatSwingSequence = opts.sequence || 'fire';
-        combatSwingSequenceHoldFrac = opts.holdFrac ?? 0.3;
+        combatSwingSequenceHoldFrac = opts.holdFrac ?? null;
       }
 
       // Abilities whose final range/angle isn't known at trigger time
@@ -17566,7 +17569,7 @@
         thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
         sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
         chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2,   scale: 1 },
-        ranged: { x: 0.23, y: 0.11, z: 0.14, pitch: 4,     yaw: 60,  roll: 13,  bodyYaw: -70, scale: 1 },
+        ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
       };
 
       function updateToolMesh(dt) {
@@ -17687,12 +17690,13 @@
           toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
           const sign = combatSwingSign;
           const power = combatSwingPower;
+          const poseHoldFrac = combatSwingSequenceHoldFrac ?? HF; // Used to preserve authored ranged holds while melee keeps its derived hold.
           const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
           const chan = (ch, mirror = false) => {
             const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
             const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
             const n = neutral[ch] * (mirror ? sign : 1);
-            return sequencedPoseLerp(progress, WF, SF, combatSwingSequence === 'attack' ? HF : combatSwingSequenceHoldFrac, w, s, n);
+            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n);
           };
 
           const x = chan('x', true);
@@ -17720,7 +17724,8 @@
           );
 
         } else if (anim === 'ranged') {
-          const neutral = STYLE_NEUTRAL_POSE.ranged;
+          const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
+          const neutral = { ...STYLE_NEUTRAL_POSE.ranged, ...(rangedIdlePose || {}) };
           toolHolder.scale.setScalar(neutral.scale);
           const vθ = θ + THREE.MathUtils.degToRad(neutral.bodyYaw);
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -18005,7 +18010,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingSequence = 'attack'; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingSequence = 'attack'; combatSwingSequenceHoldFrac = null; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists

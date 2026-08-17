@@ -80,12 +80,14 @@
     "crossbow": {
       "projectileCount": 1, "spreadDeg": 0, "damage": 16, "speedPxS": 720,
       "rangeTiles": 9, "projectileRadiusPx": 7, "knockbackPxS": 260,
-      "reloadDurationS": 0.86, "fireDurationS": 0.24, "fireAtFrac": 0.16, "fireHoldFrac": 0.28, "staminaCost": 10
+      "reloadDurationS": 1.04, "reloadSequence": "attack", "reloadWindupFrac": 0.55, "reloadStrikeFrac": 0.56, "reloadHoldFrac": 0.692,
+      "fireDurationS": 1.04, "fireSequence": "attack", "fireWindupFrac": 0.05, "fireAtFrac": 0.08, "fireHoldFrac": 0.17, "staminaCost": 10
     },
     "scatterbow": {
       "projectileCount": 6, "spreadDeg": 28, "damage": 5, "speedPxS": 650,
       "rangeTiles": 6.5, "projectileRadiusPx": 4, "knockbackPxS": 110,
-      "reloadDurationS": 1.04, "fireDurationS": 0.28, "fireAtFrac": 0.9, "fireHoldFrac": 0.91, "staminaCost": 14
+      "reloadDurationS": 1.04, "reloadSequence": "attack", "reloadWindupFrac": 0.55, "reloadStrikeFrac": 0.56, "reloadHoldFrac": 0.692,
+      "fireDurationS": 1.04, "fireSequence": "attack", "fireWindupFrac": 0.05, "fireAtFrac": 0.08, "fireHoldFrac": 0.17, "staminaCost": 14
     }
   },
 
