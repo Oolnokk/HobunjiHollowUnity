@@ -896,6 +896,10 @@
     // sweep enough per-pass reach to resolve a cleanly open ceiling (see
     // carveMazeCavern's own comment on the top level's overshoot).
     probeYStretch: 1.8,
+    // Shifts the whole multi-level sweep range (and therefore floorY,
+    // which tracks the sweep's own lowest point) up by this fraction of
+    // sizeY — a direct request to move the path higher in the volume.
+    pathYShiftFrac: .2,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -1024,8 +1028,13 @@
     // using a taller probe generally) both widen that refined margin.
     const probeYRadius = opts.probeRadius * (opts.probeYStretch ?? 1.8);
     const halfY = opts.sizeY / 2;
-    const lowLevel = -halfY + probeYRadius * 1.05;
-    const highLevel = halfY + probeYRadius * 1.3;
+    // Direct request: move the path up — shifts the whole sweep range
+    // (and floorY along with it, since floorY tracks the sweep's own
+    // lowest point) by a fraction of sizeY rather than a flat constant,
+    // so it stays proportional if sizeY ever changes.
+    const pathYShift = opts.sizeY * (opts.pathYShiftFrac ?? .2);
+    const lowLevel = -halfY + probeYRadius * 1.05 + pathYShift;
+    const highLevel = halfY + probeYRadius * 1.3 + pathYShift;
     const levelSpacing = probeYRadius * 1.6;
     const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
     const levels = Array.from({ length: levelCount }, (_, i) =>
