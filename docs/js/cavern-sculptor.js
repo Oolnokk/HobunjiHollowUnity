@@ -603,6 +603,27 @@
         }
       }
     }
+    // The field write above is unconditionally correct at the finest grid
+    // resolution, but it doesn't refine the octree structure itself —
+    // adaptive refinement only ever fires from an actual carve stamp (see
+    // ensureLocalResolution inside carveSphere), so a coarse, un-refined
+    // leaf far from any stamp's own centerline can still span several
+    // tiles at once. If one of those tiles is a legitimate wall while
+    // this one is now open, that single coarse leaf straddles both and
+    // produces one large, imprecise dual-contour facet instead of a clean
+    // flat boundary — confirmed directly (mesh + top-down visual
+    // inspection) to be what actually produced "holes in the ceiling, but
+    // not full line of sight" inside wide cluster rooms: narrow
+    // connectors, carved via a dense single-file stamp sweep, never had
+    // the problem, only room interiors away from any stamp's own path
+    // did. Explicitly refining here — the same mechanism an actual stamp
+    // already relies on — at this tile's own center, at every height the
+    // maze's sweep uses, closes that gap for every claimed tile, not just
+    // ones lucky enough to sit directly under a stamp.
+    if (opts.adaptive !== false && opts.levels) {
+      const rr = Math.max(opts.probeRadius || 0, ts * .75);
+      for (const y of opts.levels) ensureLocalResolution(st, { x: cx, y, z: cz }, rr, opts);
+    }
   }
 
   // Claims every tile in boundsRect whose floor is open enough (nine-point
@@ -870,10 +891,11 @@
     sizeY: 3.0, floorOffset: 0, entranceLength: 3,
     tileSize: 1,
     // Near-spherical probe's Y semi-axis, as a multiplier of probeRadius
-    // (not an absolute value like the old sizeY/2 oval) — 1.3 reads as
-    // "almost a sphere" rather than a visibly stretched oval, per direct
-    // user feedback on the previous 3:1 version.
-    probeYStretch: 1.3,
+    // (not an absolute value like the old sizeY/2 oval) — 1.8 still reads
+    // as much closer to a sphere than the old 3:1 oval, while giving the
+    // sweep enough per-pass reach to resolve a cleanly open ceiling (see
+    // carveMazeCavern's own comment on the top level's overshoot).
+    probeYStretch: 1.8,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -984,16 +1006,26 @@
     // carveAlongSpline2D's opts.levels loop, which already existed for
     // exactly this but had only ever been given one entry. levelSpacing is
     // kept under 2*probeYRadius so consecutive passes overlap and no thin
-    // unswept gap survives between them; the top level intentionally
-    // reaches past sizeY/2 (same margin logic the old single-oval version
-    // used) so there's still no protected rock left up there to cap into a
-    // ceiling. floorY is derived directly from the lowest level's own
-    // actual bottom rather than a separate formula that could drift out of
-    // sync with wherever the probe really sits.
-    const probeYRadius = opts.probeRadius * (opts.probeYStretch ?? 1.3);
+    // unswept gap survives between them. floorY is derived directly from
+    // the lowest level's own actual bottom rather than a separate formula
+    // that could drift out of sync with wherever the probe really sits.
+    //   The top level's own overshoot past sizeY/2 has to be generous, not
+    // just technically sufficient — confirmed directly (in-game report):
+    // a modest overshoot left a patchy, partly-solid ceiling ("holes...
+    // but not full line of sight") rather than a genuinely open one, even
+    // though the field values right at the domain edge already tested as
+    // open. The likely cause is resolution, not field value: adaptive
+    // octree refinement (ensureLocalResolution) only fires from actual
+    // carve calls, so it only sharpens the mesh near where a probe center
+    // actually sat — a shallow top level barely reaching the domain edge
+    // refines a thin shell right at the boundary, and wide room interiors
+    // away from the exact path centerline can fall back to coarse,
+    // blocky corner sampling there. Reaching well past the edge (and
+    // using a taller probe generally) both widen that refined margin.
+    const probeYRadius = opts.probeRadius * (opts.probeYStretch ?? 1.8);
     const halfY = opts.sizeY / 2;
     const lowLevel = -halfY + probeYRadius * 1.05;
-    const highLevel = halfY + probeYRadius * .6;
+    const highLevel = halfY + probeYRadius * 1.3;
     const levelSpacing = probeYRadius * 1.6;
     const levelCount = Math.max(1, Math.ceil((highLevel - lowLevel) / levelSpacing) + 1);
     const levels = Array.from({ length: levelCount }, (_, i) =>
@@ -1033,6 +1065,38 @@
       minR: Math.floor(-boundZ / ts), maxR: Math.ceil(boundZ / ts),
     };
     const claimed = snapClaimTiles(st, boundsRect, carveOpts);
+
+    // Small pockets of un-carved rock can in principle survive fully
+    // enclosed by claimed floor — where two nearby branch curves' probe
+    // circles within a chaotic cluster didn't quite overlap, a tile can
+    // fall just under the 35% open-floor claim threshold and never get
+    // its own carveTileColumn pass. (This turned out not to be the cause
+    // of the "holes in the ceiling, not full line of sight" report — see
+    // carveTileColumn's own comment for the actual mechanism and fix —
+    // but it's still a real, if rarer, possible defect worth guarding
+    // against on its own merits.) A tile with every orthogonal neighbor
+    // already claimed can only be a pocket like this, never a real
+    // separating wall — a wall that actually separates two areas always
+    // borders unclaimed space on at least one side by definition — so
+    // absorbing it is safe. Iterate so a multi-tile pocket gets eaten from
+    // its (now-enclosed) edge inward each round.
+    const NBR4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let pass = 0; pass < 6; pass++) {
+      const fillKeys = [];
+      for (let r = boundsRect.minR; r <= boundsRect.maxR; r++) {
+        for (let c = boundsRect.minC; c <= boundsRect.maxC; c++) {
+          const key = `${c},${r}`;
+          if (claimed.has(key)) continue;
+          if (NBR4.every(([dx, dy]) => claimed.has(`${c + dx},${r + dy}`))) fillKeys.push(key);
+        }
+      }
+      if (!fillKeys.length) break;
+      for (const key of fillKeys) {
+        claimed.add(key);
+        const [c, r] = key.split(',').map(Number);
+        carveTileColumn(st, c, r, carveOpts);
+      }
+    }
 
     // Guarantee the entrance regardless of how the organic carve landed on
     // the tile grid — 3 physical units wide at ts=1 (the original fixed
