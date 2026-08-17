@@ -250,7 +250,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
         { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
-        { "id": "weaponSwitch", "label": "Switch to Weapon", "desktop": "Digit3", "controller": "Button11" },
+        { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "Digit3", "controller": "Button11" },
         { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
         { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },
         { "id": "toolPrev", "label": "Previous Tool", "desktop": "BracketLeft", "controller": null },
@@ -3673,6 +3673,8 @@ window.SCRATCHBONES_CONFIG = {
         "combatSfx": {
           "enabled": true,
           "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },
+          "rangedLoad": { "url": "assets/audio/sfx/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
+          "rangedFire": { "url": "assets/audio/sfx/sfx_shootarrow.m4a", "volume": 1.0, "pitchVarianceMul": 0.02 },
           "creatureClawHit": { "url": "assets/audio/sfx/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "weaponHitSharp": { "url": "assets/audio/sfx/sfx_weaponhit-sharp.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "weaponHitBlunt": { "url": "assets/audio/sfx/sfx_weaponhit-blunt.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
@@ -3884,47 +3886,6 @@ window.SCRATCHBONES_CONFIG = {
             "engh-sho": {
               "glb": "assets/models/feet/foot_feline.glb",
               "materialRoles": { "Mat 1": "body" }
-            }
-          }
-        },
-        "proceduralHands": {
-          "enabled": true,
-          "handHeightFraction": 0.12,
-          "boneColorHex": "#D8C7A3",
-          "keratinColorHex": "#44484D",
-          "handScale": {
-            "default": 1,
-            "kenkari": { "female": 1, "male": 1 },
-            "rakakoan": { "female": 1, "male": 1 },
-            "tletingan": { "male": 1, "female": 1 },
-            "engh-sho": { "female": 1, "male": 1 },
-            "mao-ao": { "female": 1, "male": 1 },
-            "mashtzarr": { "male": 1, "female": 1 }
-          },
-          "species": {
-            "mashtzarr": {
-              "glb": "assets/models/hands/hand_pachyderm.glb",
-              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "bone" }
-            },
-            "tletingan": {
-              "glb": "assets/models/hands/hand_sloth.glb",
-              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "bone" }
-            },
-            "mao-ao": {
-              "glb": "assets/models/hands/hand_feline.glb",
-              "materialRoles": { "MAT_None_7a4e2e": "body" }
-            },
-            "engh-sho": {
-              "glb": "assets/models/hands/hand_feline.glb",
-              "materialRoles": { "MAT_None_7a4e2e": "body" }
-            },
-            "kenkari": {
-              "glb": "assets/models/hands/hand_parrot.glb",
-              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "keratin" }
-            },
-            "rakakoan": {
-              "glb": "assets/models/hands/hand_parrot.glb",
-              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "keratin" }
             }
           }
         },

@@ -46,6 +46,19 @@
     "captain": [4, 7]
   },
 
+  "rangedWeaponChanceByRank": {
+    "_comment": "Bandits that pass this roll keep their normal melee weapon and also receive a ranged-slot weapon.",
+    "grunt": 0.3,
+    "lieutenant": 0.65,
+    "captain": 1.0
+  },
+
+  "rangedWeaponWeightsByRank": {
+    "grunt": { "crossbow": 4, "scatterbow": 1 },
+    "lieutenant": { "crossbow": 2, "scatterbow": 2 },
+    "captain": { "crossbow": 1, "scatterbow": 3 }
+  },
+
   "masteryBaseByRank": {
     "_comment": "Added to the current difficulty tier (see difficultyTiers below) and clamped to the tool mastery system's real 0-5 range (game.js MASTERY_XP_THRESHOLDS) to get a bandit's weapon mastery level.",
     "grunt": 0,

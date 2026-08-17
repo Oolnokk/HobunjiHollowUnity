@@ -751,6 +751,8 @@
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool));
+        const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Bandits share the same high-chance 0/8 special-ammo resource drop as wildlife.
+        if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
         // 100% of what they were wearing, on top of the rolled table.
         for (const item of banditWornClothingItems(c.rosterRecord)) {
           deps.getPackClothing().push(item);

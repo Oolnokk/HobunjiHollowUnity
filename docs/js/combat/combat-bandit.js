@@ -320,19 +320,9 @@
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
     }) || null;
-    const hands = window.ProceduralArmAnimation?.attach(THREE, legsPivot, {
-      speciesId: roster.appearance.speciesId,
-      gender: roster.appearance.gender,
-      bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
-      modelHeight,
-      handAttachX: portrait.userData?.handAttachX,
-      handAttachY: portrait.userData?.handAttachY,
-      armAttachments: portrait.userData?.armAttachments,
-      name: roster.name || 'bandit',
-    }) || null;
 
     return {
-      group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs, hands,
+      group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       modelWidth, modelHeight,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
@@ -342,7 +332,7 @@
       // -width/2,height/2 fallback.
       handAttachX: portrait.userData?.handAttachX,
       handAttachY: portrait.userData?.handAttachY,
-      dispose() { hands?.dispose(); legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+      dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
     };
   }
 
@@ -410,6 +400,12 @@
     return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
   }
 
+  function banditRangedWeaponFor(cfg, rank) {
+    const chance = Number(cfg?.rangedWeaponChanceByRank?.[rank] ?? 0);
+    if (deps.rnd() >= chance) return null;
+    return _banditWeightedPick(cfg?.rangedWeaponWeightsByRank?.[rank]) || 'crossbow';
+  }
+
   // A bandit's real ability loadout -- tap1 (Combo) and tap2 (Quick
   // Attack) are available to every rank (matching the player's own
   // always-on tap slots), while hold1/hold2 are gated by
@@ -434,6 +430,7 @@
     const tierMul = 1 + tier * Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0);
     const statMul = weaken * tierMul;
     const weapon = banditWeaponFor(cfg, rank, tier);
+    const rangedWeaponKey = banditRangedWeaponFor(cfg, rank);
     const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier;
     const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
     return {
@@ -450,6 +447,7 @@
       attackCooldownS: rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      rangedWeaponKey,
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
@@ -1224,6 +1222,8 @@
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     const def = c.def, loadout = def.banditAbilityLoadout;
     const towardAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
+    if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
     // Unconditional now (was only called from the engaged branch below,
@@ -1533,6 +1533,13 @@
   function updateBanditToolMesh(c) {
     const holder = c._banditToolHolder;
     if (!holder) return;
+    if (c._rangedMode) {
+      holder.visible = false;
+      window.RangedWeapons?.updateBanditVisual?.(c);
+      return;
+    }
+    holder.visible = true;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     const action = c._banditAction;
     if (!action) {
       if (performance.now() < (c._banditToolSettleUntil || 0)) {
@@ -1709,19 +1716,6 @@
         c.y / deps.TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
       );
     }
-
-    const hands = c.avatarRef?.hands; // Driven after the final player-shared attack pose has positioned this bandit's weapon.
-    if (hands && holder.parent) {
-      holder.updateWorldMatrix?.(true, false);
-      const worldGrip = holder.getWorldPosition(new THREE.Vector3());
-      const worldGripQuaternion = holder.getWorldQuaternion(new THREE.Quaternion());
-      const reach = hands.followWorldTarget(worldGrip, worldGripQuaternion);
-      if (reach?.clamped) {
-        const adjustedInScene = reach.target.clone(); // Converted back because the standalone holder is scene-local.
-        holder.parent.worldToLocal(adjustedInScene);
-        holder.position.copy(adjustedInScene);
-      }
-    }
   }
 
   // Mirrors refreshPlayerAvatar's own playerToolBaseX/Y exactly: prefers
@@ -1768,6 +1762,8 @@
     targetScene.add(avatarRef.group);
     const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
+    const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
+    if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
 
     const groundShadow = deps.makeCharacterGroundShadow('bandit_ground_shadow');
     const shadowRadii = deps.creatureGroundShadowRadii(def);
@@ -1796,6 +1792,8 @@
       isBandit: true, banditRank: rank, banditTier: tier, banditMastery: mastery,
       banditWeaponMeshAttached: !!banditToolHolder,
       _banditToolHolder: banditToolHolder,
+      _banditRangedToolHolder: banditRangedToolHolder,
+      _rangedLoaded: true, _rangedMode: false, _rangedAction: null, _rangedCooldownT: 0,
       // Idle/approach rest pose matches the weapon's own natural swing
       // style (see banditNaturalSwing) until an ability fire overwrites
       // these with its own (see fireBanditComboStep/fireBanditQuickAttack
@@ -1819,6 +1817,7 @@
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
+    if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }
 

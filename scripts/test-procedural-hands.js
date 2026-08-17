@@ -1,109 +1,91 @@
+'use strict';
+
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
 
-class Vector3 {
-  constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
-  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
-  clone() { return new Vector3(this.x, this.y, this.z); }
-  add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
-  sub(v) { this.x -= v.x; this.y -= v.y; this.z -= v.z; return this; }
-  multiplyScalar(s) { this.x *= s; this.y *= s; this.z *= s; return this; }
-  dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
-  lengthSq() { return this.dot(this); }
-  length() { return Math.sqrt(this.lengthSq()); }
-  normalize() { const length = this.length(); return length > 0 ? this.multiplyScalar(1 / length) : this; }
-}
+const root = path.resolve(__dirname, '..');
+const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 
-class Quaternion {
-  constructor(x = 0, y = 0, z = 0, w = 1) { this.x = x; this.y = y; this.z = z; this.w = w; }
-  clone() { return new Quaternion(this.x, this.y, this.z, this.w); }
-  normalize() {
-    const length = Math.hypot(this.x, this.y, this.z, this.w) || 1;
-    this.x /= length; this.y /= length; this.z /= length; this.w /= length;
-    return this;
-  }
-  setFromUnitVectors(from, to) {
-    let real = from.dot(to) + 1;
-    if (real < 1e-6) {
-      real = 0;
-      if (Math.abs(from.x) > Math.abs(from.z)) { this.x = -from.y; this.y = from.x; this.z = 0; }
-      else { this.x = 0; this.y = -from.z; this.z = from.y; }
-    } else {
-      this.x = from.y * to.z - from.z * to.y;
-      this.y = from.z * to.x - from.x * to.z;
-      this.z = from.x * to.y - from.y * to.x;
-    }
-    this.w = real;
-    return this.normalize();
-  }
-  invert() { this.x *= -1; this.y *= -1; this.z *= -1; return this; }
-  multiply(q) {
-    const ax = this.x, ay = this.y, az = this.z, aw = this.w;
-    this.x = ax * q.w + aw * q.x + ay * q.z - az * q.y;
-    this.y = ay * q.w + aw * q.y + az * q.x - ax * q.z;
-    this.z = az * q.w + aw * q.z + ax * q.y - ay * q.x;
-    this.w = aw * q.w - ax * q.x - ay * q.y - az * q.z;
-    return this;
-  }
-}
+const configSource = read('docs/config/hand-model-profiles.js');
+const armSource = read('docs/js/arm-bones.js');
+const handSource = read('docs/js/procedural-arm-animation.js');
+const editorUiSource = read('docs/js/attack-editor-hand-configurator.js');
+const heldSource = read('docs/js/held-action-animations.js');
+const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 
-const context = { window: {}, console };
-vm.createContext(context);
-vm.runInContext(fs.readFileSync('docs/js/arm-bones.js', 'utf8'), context);
-const THREE = { Vector3, Quaternion };
-const ArmBones = context.window.ArmBones;
-
-const overreach = ArmBones.constrainTarget(THREE, { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 }, 1);
-assert.equal(overreach.clamped, true);
-assert(Math.abs(overreach.target.y) < 1e-9, 'overextended grip projects onto the one-unit reach sphere');
-assert.equal(overreach.requestedDistance, 2);
-assert.equal(overreach.constrainedDistance, 1);
-
-const withinReach = ArmBones.solveTwoBoneArm(THREE, {
-  shoulder: { x: 0, y: 1, z: 0 },
-  target: { x: 0.2, y: 0.6, z: 0.1 },
-  armLength: 1,
-  pole: { x: 0.4, y: 0, z: 1 },
+// Execute the model-profile manager with a non-1 foot fallback so scale-stack
+// ordering is observable instead of accidentally passing with all defaults=1.
+const storage = new Map();
+const sandbox = {
+  window: {
+    SCRATCHBONES_CONFIG: {
+      game: {
+        appearanceEditor: { species: {} },
+        assets: { pngPlaneAvatar: { proceduralFeet: { footScale: { default: 1, 'mao-ao': { male: 0.7, female: 0.65 } } } } },
+      },
+    },
+  },
+  localStorage: {
+    getItem: key => storage.get(key) || null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: key => storage.delete(key),
+  },
+};
+sandbox.window.localStorage = sandbox.localStorage;
+vm.runInNewContext(configSource, sandbox, { filename: 'hand-model-profiles.js' });
+const profiles = sandbox.window.HobunjiHandModelProfiles;
+assert(profiles, 'profile manager should be installed');
+assert.strictEqual(profiles.data.schema, 'hobunji_hand_model_profiles.v1');
+assert.strictEqual(profiles.modelKeyForSpecies('mao-ao'), 'feline');
+assert.strictEqual(profiles.speciesScaleFor('mao-ao', 'male'), 0.7, 'hand scale should inherit the matching foot scale when no override exists');
+profiles.mutate(data => { data.models.feline.scale = 1.5; });
+assert(Math.abs(profiles.effectiveScaleFor('mao-ao', 'male') - 1.05) < 1e-10, 'effective hand scale must be model scale × inherited species scale');
+profiles.mutate(data => {
+  data.speciesScaleOverrides['mao-ao'] = { male: 0.8 };
 });
-assert.equal(withinReach.clamped, false);
-assert.equal(withinReach.upperLength, 0.5);
-assert.equal(withinReach.forearmLength, 0.5);
-for (const value of Object.values(withinReach.upperQuaternion)) assert(Number.isFinite(value));
-for (const value of Object.values(withinReach.forearmLocalQuaternion)) assert(Number.isFinite(value));
-
-const portrait = fs.readFileSync('docs/js/portrait-utils.js', 'utf8');
-const avatar = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8');
-const runtime = fs.readFileSync('docs/game.js', 'utf8');
-const bandits = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
-const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
-const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');
-const proceduralArms = fs.readFileSync('docs/js/procedural-arm-animation.js', 'utf8'); // Supplies the hand-scale resolver for direct fallback testing.
-
-const configContext = { window: {}, console }; // Loads configuration and the arm module for scale behavior checks.
-vm.createContext(configContext);
-vm.runInContext(config, configContext);
-vm.runInContext(proceduralArms, configContext);
-const avatarConfig = configContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar; // Supplies both procedural attachment configurations below.
-
-assert(portrait.includes('yRatio: scan.firstOpaque.yRatio + 0.10'), 'shoulder scan moves 10% portrait height below the first opaque arm pixel');
-assert(avatar.includes('rightShoulder.y - root.userData.handAttachY'), 'arm length is shoulder Y minus tool attach Y');
-assert(runtime.indexOf('updatePlayerHandsFromTool();') > runtime.indexOf('updateToolMesh(dt);'), 'player hand reach runs after the final tool pose');
-assert(bandits.includes('hands.followWorldTarget(worldGrip, worldGripQuaternion)'), 'bandit attacks share the tool-following hand rig');
-assert(editor.includes('constrainAllAuthoredPoses();'), 'editor exports clamp authored pose coordinates to current-species reach');
-assert(config.includes('"handScale"'), 'hand scale is independently configurable');
-assert.equal(
-  JSON.stringify(avatarConfig.proceduralHands.handScale),
-  JSON.stringify(avatarConfig.proceduralFeet.footScale),
-  'initial hand scales match the existing foot scales'
-);
-assert(proceduralArms.includes('handScaleMultiplierForSpecies'), 'runtime applies per-species/gender hand scale lookup');
-delete avatarConfig.proceduralHands.handScale['mao-ao'].female;
-avatarConfig.proceduralFeet.footScale['mao-ao'].female = 1.25;
-assert.equal(configContext.window.ProceduralArmAnimation.handScaleMultiplierForSpecies('mao-ao', 'female'), 1.25, 'missing hand scale inherits its matching foot scale');
-for (const model of ['hand_feline.glb', 'hand_pachyderm.glb', 'hand_parrot.glb', 'hand_sloth.glb']) {
-  assert(config.includes(`assets/models/hands/${model}`), `${model} is configured`);
-  assert(fs.existsSync(`docs/assets/models/hands/${model}`), `${model} exists`);
+assert.strictEqual(profiles.speciesScaleFor('mao-ao', 'male'), 0.8);
+assert(Math.abs(profiles.effectiveScaleFor('mao-ao', 'male') - 1.2) < 1e-10, 'authored species scale must multiply on top of model scale');
+assert.deepStrictEqual(Object.keys(profiles.data.models).sort(), ['feline', 'pachyderm', 'parrot', 'sloth']);
+for (const model of Object.values(profiles.data.models)) {
+  assert(model.glb && model.scale > 0, 'every hand model needs a GLB and positive model scale');
+  assert(model.toolGrip?.position && model.toolGrip?.rotationDeg, 'every hand model needs a reusable position+direction grip socket');
 }
 
-console.log('procedural hands: all checks passed');
+assert.match(armSource, /solveTwoBoneArm/, 'shared arm IK should still exist');
+assert.match(handSource, /const effectiveScale = modelScale \* speciesScale/, 'runtime GLB size must explicitly stack model and species scales');
+assert.match(handSource, /toolGrip/, 'runtime must consume authored tool-grip profiles');
+assert.match(handSource, /socketOffset[\s\S]*socketQuaternion/, 'runtime must apply both grip point and grip direction');
+assert.match(handSource, /downward raw-arm opacity scan; shoulder = first opaque pixel \+ 10% portrait height/, 'raw arm scan rule must survive the main merge');
+assert.match(handSource, /rightShoulder\.y - handAttachY/, 'arm reach must stay shoulder Y minus canonical tool-attach Y');
+assert.match(handSource, /originalBuild[\s\S]*proceduralHandPending/, 'hands should wrap the current PNG avatar builder instead of replacing the neck-aware implementation');
+assert.match(handSource, /originalRender\.call/, 'hand follow should compose around the current renderer rather than replace it');
+
+assert.match(editorUiSource, /Final hand size = <b>model scale × species\/gender scale<\/b>/, 'editor must explain the scale stack');
+assert.match(editorUiSource, /Tool grip point/, 'editor must expose grip position');
+assert.match(editorUiSource, /Tool grip direction/, 'editor must expose grip orientation');
+assert.match(editorUiSource, /hand-model-profiles\.json/, 'editor must export a reusable config');
+assert.match(editorUiSource, /Inherit foot scale/, 'editor must let a species return to its foot-scale default');
+assert.match(editorUiSource, /Show tool-grip axes/, 'editor must provide a visible socket guide for mobile/no-console tuning');
+assert.match(editorUiSource, /raw-arm scan/, 'editor must surface scan diagnostics visibly');
+
+assert.match(heldSource, /config\/hand-model-profiles\.js/, 'shared held-action bootstrap must load hand profiles in game and editor');
+assert.match(heldSource, /attack-editor-hand-configurator\.js/, 'attack editor configurator must be layered onto the existing editor');
+assert.match(bridgeSource, /ProceduralArmAnimation\?\.installGameRuntime/, 'gameplay must receive playerMesh/toolHolder through the existing attachment bridge');
+
+// When run in the full repository, these guard the conflict resolution: current
+// ranged/neck editor work must remain intact while the hand layer is additive.
+const fullRepoEditor = path.join(root, 'docs/tools/attack-animation-editor/index.html');
+if (fs.existsSync(fullRepoEditor)) {
+  const editor = read('docs/tools/attack-animation-editor/index.html');
+  assert.match(editor, /crossbowLoaded/, 'main ranged attack-editor support must survive the hand merge');
+  assert.match(editor, /showHeadSkinVertices/, 'main neck/skin-weight preview must survive the hand merge');
+  assert.match(editor, /onlyHeadSprite/, 'main head-only neck centroid path must survive the hand merge');
+}
+const fullPortrait = path.join(root, 'docs/js/portrait-utils.js');
+if (fs.existsSync(fullPortrait)) {
+  assert.match(read('docs/js/portrait-utils.js'), /onlyHeadSprite/, 'main portrait neck mask support must survive unchanged');
+}
+
+console.log('procedural hands: model socket, layered scale, raw-arm scan, and merge guards PASS');

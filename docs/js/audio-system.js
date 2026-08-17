@@ -276,10 +276,9 @@
       * Math.max(0, Number(audioCfg.sfxVolume) || 1) * Math.max(0, volumeScale);
     if (volume <= 0.002) return;
     const snd = new Audio(cfgEntry.url);
-    snd.volume = Math.min(1, volume);
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
-    snd.play().catch(() => {});
+    playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
   }
 
   function objectSfxConfig() { return gameAudioConfig().objectSfx || {}; }
@@ -312,7 +311,7 @@
   // playHeavyFilteredClip uses for a heavy landing thud, minus the
   // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
   // is unavailable or gainBoost isn't set.
-  function playObjectAudioElement(snd, volume, gainBoost) {
+  function playSfxAudioElement(snd, volume, gainBoost) {
     if (!(gainBoost > 1)) {
       snd.volume = Math.min(1, volume);
       snd.play().catch(() => {});
@@ -359,10 +358,10 @@
         deps.markAudioUrlFailed(cfgEntry.url, 'object sfx load failed');
         const fallback = new Audio(pickPlaceholder());
         fallback.playbackRate = rate;
-        playObjectAudioElement(fallback, volume, gainBoost);
+        playSfxAudioElement(fallback, volume, gainBoost);
       }, { once: true });
     }
-    playObjectAudioElement(snd, volume, gainBoost);
+    playSfxAudioElement(snd, volume, gainBoost);
   }
 
   // Distance falloff for a creature-originated combat sound (bark/claw

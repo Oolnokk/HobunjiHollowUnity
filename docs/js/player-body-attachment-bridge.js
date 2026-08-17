@@ -11,7 +11,7 @@
   if (!composer || window.__playerBodyAttachmentBridgeInstalled) return;
   window.__playerBodyAttachmentBridgeInstalled = true;
 
-  let gameDeps = null;
+  let gameDeps = null; // Captures the game's dependency bag for tool/body attachment providers below.
 
   function chainFutureSetter(name, beforeSet) {
     const desc = Object.getOwnPropertyDescriptor(window, name);
@@ -30,9 +30,10 @@
 
   function patchDevSpawner(api) {
     if (!api?.init || api.__playerBodyAttachmentInitHooked) return;
-    const originalInit = api.init.bind(api);
+    const originalInit = api.init.bind(api); // Preserves DevSpawner's own dependency initialization after this bridge records it.
     api.init = function playerBodyAttachmentAwareInit(injectedDeps) {
       gameDeps = injectedDeps;
+      window.ProceduralArmAnimation?.installGameRuntime?.(injectedDeps); // Gives the hand layer the existing playerMesh/toolHolder refs without editing game.js.
       return originalInit(injectedDeps);
     };
     api.__playerBodyAttachmentInitHooked = true;
@@ -58,9 +59,11 @@
 
   window.PlayerBodyAttachmentBridge = {
     getDebug() {
+      const handDebug = window.ProceduralArmAnimation?.getActiveDebug?.().find(entry => entry?.speciesId) || null; // Surfaces hand runtime state through the existing mobile-accessible bridge diagnostics.
       return {
         hasGameDeps: !!gameDeps,
         hasToolHolder: !!gameDeps?.toolHolder,
+        proceduralHands: handDebug,
         activeShoulderPets: (window.Combat?.deps?.companionObjects
           ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
               companion?.health > 0

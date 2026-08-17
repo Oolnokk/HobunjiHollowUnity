@@ -15,6 +15,7 @@
     window.Combat?.applyFlurryConfig?.(config.flurry);
     window.Combat?.applyCounterShieldConfig?.(config.counterShield);
     window.Combat?.animalAttacks?.applyConfig?.(config.creatureAttacks);
+    window.RangedWeapons?.applyConfig?.(config.rangedWeapons);
     window.dispatchEvent(new CustomEvent('hobunji-attack-values-loaded', { detail: config }));
     return config;
   }).catch(() => null);
