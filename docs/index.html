@@ -111,6 +111,9 @@
   <script src="js/combat/combat-charged-breaker.js?v=20260712d"></script>
   <script src="js/combat/combat-flurry.js?v=20260712d"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20260712d"></script>
+  <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
+       projectiles. Loads before bandits so their dual loadouts can call it. -->
+  <script src="js/combat/ranged-weapons.js?v=20260816a"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -1533,11 +1536,9 @@
     </div>
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
-      <!-- Weapon quick-switch: tap once to drop everything and go straight to
-           the weapon; tap again to return to whatever tool/item was active
-           before. This is the only way into the weapon tool slot now — it's
-           no longer one of the regular tool-select options. -->
-      <button id="btnWeaponSwitch" class="abt" aria-label="Quick-switch to weapon">
+      <!-- Combat quick-switch: enters melee from a normal tool, then swaps
+           directly between the dedicated melee and ranged slots. -->
+      <button id="btnWeaponSwitch" class="abt" aria-label="Swap melee and ranged weapons">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
       </button>
       <!-- Call/dismiss mount: same outer ring as tool/item dials and the
@@ -1755,7 +1756,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260816b"></script>
+  <script src="game.js?v=20260816c"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

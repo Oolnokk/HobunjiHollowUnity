@@ -61,6 +61,7 @@
     // below animates -- hide it now rather than leaving it floating in
     // place, disconnected from the corpse, once the fall starts.
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
+    if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     const awayAngle = fromX !== undefined ? Math.atan2(c.y - fromY, c.x - fromX) : (c.facing || 0);
     const rest = _findRestTile(c, awayAngle);

@@ -101,6 +101,7 @@ canvas{display:block;width:100%;height:100%}
         <option value="sweep" selected>sweep</option>
         <option value="toss">toss</option>
         <option value="drink">drink</option>
+        <option value="ranged">ranged</option>
       </select>
     </div>
     <div class="field"><label>Tool / held sprite (visual reference)</label><select id="toolSpriteSelect"></select></div>
@@ -134,7 +135,14 @@ canvas{display:block;width:100%;height:100%}
   </div>
 
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
-    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → hold → return</span></div>
+    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">attack / load / fire sequence</span></div>
+    <div class="field"><label>Playback sequence</label>
+      <select id="playbackSequence">
+        <option value="attack">Attack: Neutral → Windup → Strike → Neutral</option>
+        <option value="load">Load: Neutral → Windup → Neutral</option>
+        <option value="fire">Fire: Neutral → Strike → Neutral</option>
+      </select>
+    </div>
     <div class="field">
       <label>Windup ends at <span id="windupFracVal">16%</span> of swing</label>
       <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
@@ -150,7 +158,7 @@ canvas{display:block;width:100%;height:100%}
     <div class="field"><label>Preview duration (seconds)</label>
       <input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5">
     </div>
-    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → hold% holds at Strike unchanged. hold% → 100% lerps Strike→Neutral (the return).</div>
+    <div class="help">Attack uses all three poses. Load intentionally skips Strike. Fire intentionally skips Windup, reaches Strike abruptly at strike%, optionally holds, then returns to Neutral.</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -469,6 +477,10 @@ const TOOL_SPRITE_DEFS = {
   fishingspear: { label: 'Fishing Spear (sweep)', sprite: '../../assets/toolsprites/harpoon_fishingspear.png',animStyle: 'sweep'  },
   fishingmace:  { label: 'Fishing Mace (sweep)',  sprite: '../../assets/toolsprites/harpoon_fishingmace.png', animStyle: 'sweep'  },
   bottle:       { label: 'Wine bottle (drink)',    sprite: '../../assets/objectsprites/bottle_wine.png',       animStyle: 'drink', scale: 0.5, flip: true },
+  crossbow:     { label: 'Crossbow (unloaded)',    sprite: '../../assets/toolsprites/ranged_crossbow.png',      animStyle: 'ranged' },
+  crossbowLoaded:{ label: 'Crossbow (loaded)',     sprite: '../../assets/toolsprites/ranged_crossbow_loaded.png',animStyle: 'ranged' },
+  scatterbow:   { label: 'Scatterbow (unloaded)',  sprite: '../../assets/toolsprites/ranged_scatterbow.png',    animStyle: 'ranged' },
+  scatterbowLoaded:{ label: 'Scatterbow (loaded)', sprite: '../../assets/toolsprites/ranged_scatterbow_loaded.png',animStyle: 'ranged' },
 };
 const toolTexLoader = new THREE.TextureLoader();
 let toolPlaneMesh = null;
@@ -539,12 +551,14 @@ const STYLE_NEUTRAL_POSE = {
   sweep:  defaultPose(0, 0, 0.16, 0, 0, 0),
   chop:   defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
   drink:  defaultPose(0, 0, 0, 10.31, 0, 0),
+  ranged: defaultPose(0, 0.12, 0.18, -8, 0, 0),
 };
 function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || defaultPose(0, 0, 0, 0, 0, 0); }
 
 let anim = {
   name: 'New Attack',
   style: 'sweep',
+  sequence: 'attack',
   windupFrac: 0.16,
   strikeFrac: 0.55,
   holdFrac: 0.68,
@@ -604,6 +618,11 @@ syncPosePanelFromState('strike');
 
 $('animName').addEventListener('input', () => { anim.name = $('animName').value; refreshJsonView(); });
 $('animStyle').addEventListener('change', () => { anim.style = $('animStyle').value; refreshJsonView(); });
+$('playbackSequence').addEventListener('change', () => {
+  anim.sequence = $('playbackSequence').value;
+  updateTimelineSegments();
+  refreshJsonView();
+});
 
 function clampFracs() {
   if (anim.windupFrac >= anim.strikeFrac) anim.strikeFrac = Math.min(0.98, anim.windupFrac + 0.01);
@@ -740,6 +759,14 @@ const TOOL_PRESETS = [
   { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
     windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
     windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'load', toolKey: 'crossbow', still: false,
+    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.55, strikeFrac: 0.56, durationS: 0.86 },
+  { id: 'crossbow_fire', label: 'Crossbow — Fire', name: 'Crossbow Fire', style: 'ranged', sequence: 'fire', toolKey: 'crossbowLoaded', still: false,
+    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.02, strikeFrac: 0.16, holdFrac: 0.28, durationS: 0.24 },
+  { id: 'scatterbow_load', label: 'Scatterbow — Load', name: 'Scatterbow Load', style: 'ranged', sequence: 'load', toolKey: 'scatterbow', still: false,
+    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.55, strikeFrac: 0.56, durationS: 1.04 },
+  { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'fire', toolKey: 'scatterbowLoaded', still: false,
+    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.02, strikeFrac: 0.18, holdFrac: 0.30, durationS: 0.28 },
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
 function applyPreset(preset) {
@@ -761,8 +788,10 @@ function applyPreset(preset) {
     $('durationS').value = anim.durationS;
   }
   anim.style = preset.style;
+  anim.sequence = preset.sequence || 'attack';
   clampFracs();
   $('animStyle').value = anim.style;
+  $('playbackSequence').value = anim.sequence;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
   $('holdFrac').value = anim.holdFrac;
@@ -813,6 +842,15 @@ function lerpPose(a, b, k) {
 function poseAt(t) {
   const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
   const neutral = anim.poses.neutral;
+  if (anim.sequence === 'load') {
+    if (t <= wf) return { pose: lerpPose(neutral, anim.poses.windup, t / Math.max(0.0001, wf)), phase: 'load windup' };
+    return { pose: lerpPose(anim.poses.windup, neutral, (t - wf) / Math.max(0.0001, 1 - wf)), phase: 'load return' };
+  }
+  if (anim.sequence === 'fire') {
+    if (t <= sf) return { pose: lerpPose(neutral, anim.poses.strike, t / Math.max(0.0001, sf)), phase: 'fire' };
+    if (t <= hf) return { pose: { ...anim.poses.strike }, phase: 'recoil hold' };
+    return { pose: lerpPose(anim.poses.strike, neutral, (t - hf) / Math.max(0.0001, 1 - hf)), phase: 'fire return' };
+  }
   if (t <= wf) {
     const k = wf > 0 ? t / wf : 1;
     return { pose: lerpPose(neutral, anim.poses.windup, k), phase: 'windup' };
@@ -863,6 +901,8 @@ const ATTACK_SLOTS = [
   { path: ['chargedBreaker'], label: 'Charged Breaker' },
   { path: ['flurry'], label: 'Accelerating Flurry' },
   { path: ['counterShield'], label: 'Counter Shield' },
+  { path: ['rangedWeapons', 'crossbow'], label: 'Ranged: Crossbow' },
+  { path: ['rangedWeapons', 'scatterbow'], label: 'Ranged: Scatterbow' },
 ];
 
 let attackValuesConfig = null;
@@ -897,7 +937,7 @@ $('statSlotSelect').innerHTML = ATTACK_SLOTS.map((s, i) => `<option value="${i}"
 // (name, anim, dirSign, pose, dmgTag, heavy, label, condKey, bonusText) is
 // either cosmetic/structural or owned by a different part of this tool
 // (the pose editor above already covers anim/pose).
-const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
+const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|reloadDurationS|fireDurationS|fireAtFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
 
 function numericLeafFields(entry) {
   const out = [];
@@ -1027,6 +1067,20 @@ loadAttackValues().then(renderStatFields);
 // ── Timeline visualization (windup/strike/hold/return phase structure) ───
 function updateTimelineSegments() {
   const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
+  if (anim.sequence === 'load') {
+    $('segWindup').style.width = `${wf * 100}%`; $('segWindup').textContent = 'load';
+    $('segStrike').style.width = '0%'; $('segHold').style.width = '0%';
+    $('segReturn').style.width = `${(1 - wf) * 100}%`; $('segReturn').textContent = 'return';
+    return;
+  }
+  if (anim.sequence === 'fire') {
+    $('segWindup').style.width = '0%';
+    $('segStrike').style.width = `${sf * 100}%`; $('segStrike').textContent = 'fire';
+    $('segHold').style.width = `${(hf - sf) * 100}%`;
+    $('segReturn').style.width = `${(1 - hf) * 100}%`; $('segReturn').textContent = 'return';
+    return;
+  }
+  $('segWindup').textContent = 'windup'; $('segStrike').textContent = 'strike'; $('segReturn').textContent = 'return';
   $('segWindup').style.width = `${wf * 100}%`;
   $('segStrike').style.width = `${(sf - wf) * 100}%`;
   $('segHold').style.width = `${(hf - sf) * 100}%`;
@@ -1113,6 +1167,7 @@ function safeNum(v, fallback) { const n = Number(v); return Number.isFinite(n) ?
 function loadAnimObject(data) {
   anim.name = data.name || anim.name;
   anim.style = data.style || anim.style;
+  anim.sequence = ['attack', 'load', 'fire'].includes(data.sequence) ? data.sequence : 'attack';
   anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
   anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
   // Older exports predate the hold phase — fall back to holdFrac === strikeFrac
@@ -1130,6 +1185,7 @@ function loadAnimObject(data) {
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   $('animName').value = anim.name;
   $('animStyle').value = anim.style;
+  $('playbackSequence').value = anim.sequence;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
   $('holdFrac').value = anim.holdFrac;

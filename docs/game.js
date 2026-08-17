@@ -643,6 +643,7 @@
         pick:    ['mine'],
         harpoon: ['fish'],
         weapon:  ['cut', 'slash'],
+        ranged:  ['shoot'],
       };
 
       const actionLabels = {
@@ -659,6 +660,7 @@
         mine:       ['⛏️', 'Mine'],
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
+        shoot:      ['🏹', 'Fire / Load'],
       };
 
       const tileStyles = {
@@ -1442,6 +1444,8 @@
         fishingmace:  { label: 'Fishing Mace',  icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingmace.png',  slots: ['harpoon', 'weapon'],        animStyle: 'sweep', spinning: true, dmgType: 'blunt'  },
         fishingspear: { label: 'Fishing Spear', icon: '🎣', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['harpoon', 'weapon'],        animStyle: 'thrust', spinning: false, dmgType: 'sharp' },
         pickshovel:   { label: 'Pick-Shovel',   icon: '⛏️', sprite: 'assets/toolsprites/shovel_pickshovel.png',    slots: ['shovel', 'pick', 'weapon'], animStyle: 'thrust', dmgType: 'blunt' },
+        crossbow:     { label: 'Crossbow',      icon: '🏹', sprite: 'assets/toolsprites/ranged_crossbow.png', loadedSprite: 'assets/toolsprites/ranged_crossbow_loaded.png', slots: ['ranged'], animStyle: 'ranged', rangedType: 'crossbow' },
+        scatterbow:   { label: 'Scatterbow',    icon: '🏹', sprite: 'assets/toolsprites/ranged_scatterbow.png', loadedSprite: 'assets/toolsprites/ranged_scatterbow_loaded.png', slots: ['ranged'], animStyle: 'ranged', rangedType: 'scatterbow' },
         // Decorative only (no `slots`, so it's never equippable/craftable —
         // see the TOOL_ITEM_DEFS.forEach ITEM_DEFS-registration loop below,
         // which only fires for entries with a metalKey). Held by Foroji at
@@ -1813,6 +1817,8 @@
         if (tool === 'axe' && (action === 'chop' || action === 'hack')) style = 'chop';
         else if (tool === 'weapon' && (action === 'cut' || action === 'slash')) {
           style = def.animStyle === 'thrust' ? 'jab' : def.animStyle === 'chop' ? 'chop' : 'sweep';
+        } else if (tool === 'ranged' && action === 'shoot') {
+          style = 'plain';
         } else if (tool === 'harpoon' && action === 'fish') {
           style = 'plain';
         }
@@ -1831,6 +1837,7 @@
         pick:    null,
         harpoon: null,
         weapon:  null,
+        ranged:  null,
         whistle: null,
       };
 
@@ -1842,7 +1849,7 @@
           // flat 1.0 metalDmgMultiplier — mid-hierarchy strength with no
           // room to grow into) — a fresh character now genuinely starts at
           // the bottom of the smithing ladder (see toolMetalMultiplier).
-          tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
+          tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, crossbow: true, scatterbow: true },
           clothing: { hat: null, hood: null, torso: null, overwear: null },
           clothingItems: [],
           charms: [],
@@ -3861,6 +3868,11 @@
           c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
           c._banditToolHolder = null;
         }
+        if (c._banditRangedToolHolder) {
+          (c.scene || scene).remove(c._banditRangedToolHolder);
+          c._banditRangedToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+          c._banditRangedToolHolder = null;
+        }
         if (c._banditTrailMesh) {
           (c.scene || scene).remove(c._banditTrailMesh);
           c._banditTrailMesh.geometry.dispose();
@@ -4063,7 +4075,7 @@
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
       }
@@ -4187,11 +4199,15 @@
       // selected AND actually has a weapon equipped in it — every caller
       // gets this for free instead of some checking activeTool alone.
       function findAutoTarget() {
-        if (activeTool !== 'weapon' || !equipmentSlots.weapon) {
+        const meleeActive = activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeActive && !rangedActive) {
           manualAutoTarget = null;
           return null;
         }
-        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = rangedActive
+          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
+          : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         if (manualAutoTarget) {
           if (manualAutoTarget.health > 0 && manualAutoTarget.areaId === currentArea &&
               Math.hypot(manualAutoTarget.x - player.x, manualAutoTarget.y - player.y) <= maxDist) {
@@ -4231,9 +4247,13 @@
       // weapon tool slot selected.
       const SWAP_TARGET_HALF_CONE_RAD = Math.PI / 2;
       function swapAutoTarget(aimAngle) {
-        if (activeTool !== 'weapon' || !equipmentSlots.weapon) return false;
+        const meleeActive = activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const rangedActive = activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeActive && !rangedActive) return false;
         const current = findAutoTarget();
-        const maxDist = TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
+        const maxDist = rangedActive
+          ? window.RangedWeapons?.playerLockRangePx?.(equipmentSlots.ranged) || TILE * 7
+          : TILE * (Number(combatConfig().autoTargetRangeTiles) || 0);
         let best = null, bestDist = Infinity;
         for (const c of hostileObjects) {
           if (c.health <= 0 || c.areaId !== currentArea || c === current) continue;
@@ -6688,7 +6708,7 @@
           dirX = player.inputX;
           dirY = player.inputY;
         } else {
-          const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+          const weaponEngaged = (activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged);
           const target = weaponEngaged ? findAutoTarget() : null;
           const aimAngle = target
             ? Math.atan2(target.y - player.y, target.x - player.x)
@@ -11178,6 +11198,8 @@
         fishingmace:  { icon: '🎣', label: 'Fishing Mace',  cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A weighted fishing mace for spearfishing. Fits in the harpoon or weapon slot.' },
         fishingspear: { icon: '🎣', label: 'Fishing Spear', cat: 'tool', sellPrice: 0, tags: ['Tool', 'Harpoon', 'Weapon'],         desc: 'A slender fishing spear. Fits in the harpoon or weapon slot.' },
         pickshovel:   { icon: '⛏️', label: 'Pick-Shovel',   cat: 'tool', sellPrice: 0, tags: ['Tool', 'Shovel', 'Pick', 'Weapon'],  desc: 'A combination pick-shovel for digging. Fits in the shovel, pick, or weapon slot.' },
+        crossbow:     { icon: '🏹', label: 'Crossbow',      cat: 'tool', sellPrice: 0, tags: ['Tool', 'Ranged Weapon'], desc: 'A loading crossbow. Fires one long bolt and fits in the ranged slot.' },
+        scatterbow:   { icon: '🏹', label: 'Scatterbow',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Ranged Weapon'], desc: 'A loading scatterbow. Fires a cone of short bolts and fits in the ranged slot.' },
 
         // ── Uumkao'ii Dew ────────────────────────────────────────────
         // Dug up from a persistent ground pile (see UUMKAOII_DEW_COOLDOWN_DAYS/
@@ -11616,7 +11638,7 @@
         const keys = getInventoryStackKeys(invActiveCat);
         const visibleSlotCount = Math.max(INVENTORY_EMPTY_SLOT_FLOOR, Math.ceil(Math.max(keys.length, 1) / 7) * 7);
 
-        const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W' };
+        const _slotAbbr = { hoe:'H', shovel:'Sh', axe:'Ax', pick:'Pk', harpoon:'Hp', weapon:'W', ranged:'R' };
         keys.forEach(key => {
           const def   = ITEM_DEFS[key];
           const count = inventory[key] || 0;
@@ -12211,11 +12233,6 @@
       let activeTool = 'shovel';
       let activeAction = 'dig';
       let heldMode = 'tool'; // 'tool' | 'item'
-      // Snapshot of { heldMode, tool, itemIndex } taken when the weapon
-      // quick-switch engages; null when not engaged. 'weapon' is no longer
-      // one of the regular tool-select options (see WHEEL_SLOTS below) —
-      // this snapshot/restore toggle is the only way in and out of it.
-      let weaponQuickSwitchSaved = null;
       let lastTime = performance.now();
       let simAccumulator = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
@@ -12619,10 +12636,10 @@
         // ── Facing ────────────────────────────────────────────
         // Auto-targeting only engages while an actual weapon item is
         // equipped in the weapon slot (not just the slot being active).
-        const weaponEngaged = activeTool === 'weapon' && !!equipmentSlots.weapon;
+        const weaponEngaged = (activeTool === 'weapon' && !!equipmentSlots.weapon) || (activeTool === 'ranged' && !!equipmentSlots.ranged);
         const autoTarget = weaponEngaged ? findAutoTarget() : null;
         btnSwapTarget?.classList.toggle('abt-hidden', !weaponEngaged);
-        btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon');
+        btnWeaponSwitch?.classList.toggle('active', activeTool === 'weapon' || activeTool === 'ranged');
 
         // Auto-aim lock takes absolute priority over mouse-look/right-stick
         // look while it's engaged, so neither can interrupt or steal facing
@@ -12846,6 +12863,7 @@
           if (action === 'smooth') return [TileType.TILLED, TileType.RAISED, TileType.PADDY].includes(tile.type) && !tile.crop;
         }
         if (tool === 'weapon') return true; // combat hits are cone-based, not tile-gated
+        if (tool === 'ranged') return true; // projectile targeting is world-space, not tile-gated
         if (tool === 'harpoon' && action === 'fish') {
           return tile.type === TileType.RIVER || tile.type === TileType.STREAM;
         }
@@ -13839,6 +13857,11 @@
         if (activeTool === 'weapon') {
           const slot = activeAction === toolActions.weapon[0] ? 1 : activeAction === toolActions.weapon[1] ? 2 : null;
           if (slot && window.Combat?.input) { window.Combat.input.fireTap(slot); return; }
+        }
+        if (activeTool === 'ranged' && activeAction === 'shoot') {
+          if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
+          window.RangedWeapons?.startPlayerAction?.(equipmentSlots.ranged);
+          return;
         }
 
         // Digging a brand-new trench or filling an existing one in requires a
@@ -16737,6 +16760,8 @@
       let combatSwingWindupFrac = 0.16;
       let combatSwingStrikeFrac = 0.28;
       let combatSwingPower = 1;
+      let combatSwingSequence = 'attack';
+      let combatSwingSequenceHoldFrac = 0.3;
       // True while a charge-and-release ability's windup is being held —
       // see triggerWeaponHoldVisual()/releaseWeaponSwingHold() below.
       let combatSwingHeld = false;
@@ -16909,9 +16934,29 @@
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
         combatSwingHeld = false;
+        combatSwingSequence = 'attack';
         combatSwingAfflictionIds = opts.afflictionIds || [];
         combatSwingAfflictionMuls = opts.afflictions || {};
         setCombatSwingCone(opts.coneRangePx, opts.coneHalfConeRad, opts.coneAngle);
+      }
+
+      // Loading weapons use the same three authored poses, but loading skips
+      // strike (neutral→windup→neutral) and firing skips windup
+      // (neutral→strike→neutral).
+      function triggerRangedWeaponVisual(durationS, opts = {}) {
+        if (activeTool !== 'ranged') return;
+        toolSwingDur = Math.max(0.05, durationS);
+        toolSwingT = toolSwingDur;
+        combatSwingAnim = 'ranged';
+        combatSwingPose = opts.pose || null;
+        combatSwingSign = 1;
+        combatSwingPower = 1;
+        combatSwingWindupFrac = opts.windupFrac ?? 0.55;
+        combatSwingStrikeFrac = opts.strikeFrac ?? 0.18;
+        combatSwingHoldS = 0;
+        combatSwingHeld = false;
+        combatSwingSequence = opts.sequence || 'fire';
+        combatSwingSequenceHoldFrac = opts.holdFrac ?? 0.3;
       }
 
       // Abilities whose final range/angle isn't known at trigger time
@@ -17036,6 +17081,7 @@
       // Preload tool sprite textures; capture pixel dimensions on load and rebuild meshes
       const _toolTexLoader = new THREE.TextureLoader();
       const toolTextures = {};
+      const loadedToolTextures = {};
       for (const [key, def] of Object.entries(TOOL_ITEM_DEFS)) {
         const tex = _toolTexLoader.load(def.sprite, (t) => {
           const img = t.image;
@@ -17054,6 +17100,15 @@
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
         toolTextures[key] = tex;
+        if (def.loadedSprite) {
+          const loadedTex = _toolTexLoader.load(def.loadedSprite, () => {
+            rebuildToolMeshes();
+            setRangedLoadedVisual(key, window.RangedWeapons?.isLoaded?.(key) !== false);
+          });
+          loadedTex.magFilter = THREE.NearestFilter;
+          loadedTex.minFilter = THREE.NearestFilter;
+          loadedToolTextures[key] = loadedTex;
+        }
       }
 
       // Swaps a crafted tool's in-hand mesh texture to its current metal/
@@ -17112,6 +17167,18 @@
         return g;
       }
 
+      function setToolMeshLoadedState(mesh, itemKey, loaded) {
+        const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane;
+        if (!plane) return;
+        plane.material.map = loaded && loadedToolTextures[itemKey] ? loadedToolTextures[itemKey] : toolTextures[itemKey];
+        plane.material.needsUpdate = true;
+      }
+
+      function setRangedLoadedVisual(itemKey, loaded, owner = null) {
+        const mesh = owner ? owner._banditRangedToolHolder?.children?.[0] : toolMeshMap.ranged;
+        setToolMeshLoadedState(mesh, itemKey, loaded);
+      }
+
       // ── Kurraya hold assembly + reactive twitch ─────────────────────
       // Lives in js/kurraya-instrument.js (window.KurrayaInstrument) —
       // ported directly from the reference mockup's authored two-plane
@@ -17144,6 +17211,7 @@
           // pick-shovel equipped in both the shovel and pick slots at once
           // still reads as two distinct tools at rest, not just mid-swing.
           toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: slot === 'pick' }) : null;
+          if (slot === 'ranged' && itemKey) setToolMeshLoadedState(toolMeshMap[slot], itemKey, window.RangedWeapons?.isLoaded?.(itemKey) !== false);
         }
         // machete alias → weapon mesh for legacy code paths
         if (!toolMeshMap.machete) toolMeshMap.machete = toolMeshMap.weapon;
@@ -17486,6 +17554,19 @@
         return strikeV + (neutralV - strikeV) * ((progress - hf) / (1.0 - hf));
       }
 
+      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0) {
+        if (combatSwingSequence === 'load') {
+          if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
+          return windupV + (neutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
+        }
+        if (combatSwingSequence === 'fire') {
+          if (progress <= sf) return neutralV + (strikeV - neutralV) * (progress / Math.max(0.0001, sf));
+          if (progress <= hf) return strikeV;
+          return strikeV + (neutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
+        }
+        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV);
+      }
+
       // Each tool style's natural at-rest pose (degrees for angle channels) —
       // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
       // (docs/tools/attack-animation-editor/index.html). Used as the fallback
@@ -17495,6 +17576,7 @@
         thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0 },
         sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0 },
         chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2 },
+        ranged: { x: 0,    y: 0.12, z: 0.18, pitch: -8,    yaw: 0,   roll: 0,   bodyYaw: 0 },
       };
 
       function updateToolMesh(dt) {
@@ -17616,7 +17698,7 @@
             const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
             const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
             const n = neutral[ch] * (mirror ? sign : 1);
-            return fourPhaseLerp(progress, WF, SF, HF, w, s, n);
+            return sequencedPoseLerp(progress, WF, SF, combatSwingSequence === 'attack' ? HF : combatSwingSequenceHoldFrac, w, s, n);
           };
 
           const x = chan('x', true);
@@ -17641,6 +17723,21 @@
             playerMesh.position.x + vRX * (playerToolBaseX + x) + vFX * z,
             playerMesh.position.y + playerToolBaseY + y,
             playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z
+          );
+
+        } else if (anim === 'ranged') {
+          const neutral = STYLE_NEUTRAL_POSE.ranged;
+          const vθ = θ;
+          const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ);
+          const vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
+          playerMesh.rotation.y = vθ;
+          _qFac.setFromAxisAngle(_tUp, vθ);
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
+          toolHolder.quaternion.copy(_qFac).multiply(_qAnim);
+          toolHolder.position.set(
+            playerMesh.position.x + vRX * (playerToolBaseX + neutral.x) + vFX * neutral.z,
+            playerMesh.position.y + playerToolBaseY + neutral.y,
+            playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
 
         } else if (anim === 'thrust') {
@@ -17911,7 +18008,7 @@
           firePendingAction();
         }
         if (fishThrowActive && toolSwingT <= 0) fishThrowActive = false;
-        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
+        if (combatSwingAnim && toolSwingT <= 0) { combatSwingAnim = null; combatSwingPose = null; combatSwingHoldS = 0; combatSwingSequence = 'attack'; combatSwingAfflictionIds = []; combatSwingAfflictionMuls = {}; combatSwingCone = null; }
       }
 
       // Initialize mesh map after toolHolder exists
@@ -19509,6 +19606,7 @@
           window.Combat?.update(dt);
           updateReticleMesh();
         }
+        window.RangedWeapons?.update(dt);
         // Must run after updateToolMesh: attack/tool poses can rotate the
         // player's body after updatePlayerMesh, and the attached pet needs
         // that final transform in the same frame.
@@ -19864,17 +19962,14 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
-        // Picking a tool through any of the normal paths (arc, digit keys,
-        // scroll) while the weapon quick-switch is engaged cancels its
-        // "return to X" memory — there's nothing sensible left to return to.
-        if (tool !== 'weapon') weaponQuickSwitchSaved = null;
+        if (activeTool === 'ranged' && tool !== 'ranged') window.RangedWeapons?.cancelPlayerAction?.();
         activeTool = tool;
         const actions = toolActions[tool];
         if (!actions.includes(activeAction)) activeAction = actions[0];
         const equipped = equipmentSlots[tool];
         const def = TOOL_ITEM_DEFS[equipped];
-        const fallbackIcon = { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️' }[tool] || '🔧';
-        const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', machete:'Weapon' }[tool] || tool;
+        const fallbackIcon = { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️' }[tool] || '🔧';
+        const label = def?.label || { shovel:'Shovel', hoe:'Hoe', axe:'Axe', pick:'Pick', harpoon:'Harpoon', weapon:'Weapon', ranged:'Ranged Weapon', machete:'Weapon' }[tool] || tool;
         toolBtnIcon.innerHTML  = toolSelectIconHTML(def, fallbackIcon, '0.85em');
         toolBtnLabel.textContent = label;
         toolPickBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
@@ -19900,34 +19995,19 @@
       // in/out state.
       function refreshWeaponSwitchBtn() {
         if (!btnWeaponSwitchIcon) return;
-        const def = TOOL_ITEM_DEFS[equipmentSlots.weapon];
-        btnWeaponSwitchIcon.innerHTML = toolSelectIconHTML(def, '🗡️', '0.85em');
+        const showRanged = activeTool !== 'ranged';
+        const def = TOOL_ITEM_DEFS[showRanged ? equipmentSlots.ranged : equipmentSlots.weapon];
+        btnWeaponSwitchIcon.innerHTML = toolSelectIconHTML(def, showRanged ? '🏹' : '🗡️', '0.85em');
+        btnWeaponSwitch?.setAttribute('aria-label', showRanged ? 'Switch to ranged weapon' : 'Switch to melee weapon');
       }
 
-      // Press once: snapshot whatever tool/item is currently active and jump
-      // straight to the weapon slot. Press again: restore that snapshot.
-      // This is the only path that sets activeTool to 'weapon' now — it's
-      // been removed from WHEEL_SLOTS (the regular tool-select cycle).
+      // One combat toggle: melee↔ranged. From a farming tool or held item the
+      // first press enters melee, preserving the existing binding.
       function toggleQuickWeaponSwitch() {
-        if (weaponQuickSwitchSaved) {
-          const saved = weaponQuickSwitchSaved;
-          weaponQuickSwitchSaved = null;
-          // Restore the underlying tool slot first (icon/mesh/actions), then
-          // re-enter item mode on top of it if that's what was active.
-          setActiveTool(saved.tool);
-          if (saved.heldMode === 'item') {
-            heldMode = 'item';
-            activeItemIndex = saved.itemIndex;
-            refreshItemScroll();
-            refreshActionBar();
-          } else {
-            heldMode = 'tool';
-          }
-        } else {
-          weaponQuickSwitchSaved = { heldMode, tool: activeTool, itemIndex: activeItemIndex };
-          heldMode = 'tool';
-          setActiveTool('weapon');
-        }
+        heldMode = 'tool';
+        if (activeTool === 'weapon') setActiveTool('ranged');
+        else if (activeTool === 'ranged') setActiveTool('weapon');
+        else setActiveTool('weapon');
       }
 
       function setActiveAction(action) {
@@ -19939,9 +20019,8 @@
       // ── Tool wheel (radial picker) ─────────────────────────
       const toolWheelOverlay = document.getElementById('toolWheelOverlay');
       const toolWheelEl      = document.getElementById('toolWheel');
-      // 'weapon' deliberately excluded — it's reachable only via the
-      // dedicated weapon quick-switch (toggleQuickWeaponSwitch), not the
-      // regular tool-select cycle.
+      // Both combat slots are deliberately excluded — the dedicated combat
+      // toggle swaps weapon↔ranged without putting either in the farm-tool cycle.
       const WHEEL_SLOTS  = ['shovel', 'hoe', 'axe', 'pick', 'harpoon'];
       const WHEEL_RADIUS = 72; // px — distance from center to each spoke button
 
@@ -20871,6 +20950,7 @@
         if (action === 'mine')  return 'Mine';
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
         if (action === 'fish') return 'Fish';
+        if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
         if (action.startsWith('place_')) return 'Place';
         if (action.startsWith('obj_process_')) return 'Process';
         return action;
@@ -21040,7 +21120,7 @@
       function toolEmoji(tool) {
         const equipped = equipmentSlots[tool];
         if (equipped && TOOL_ITEM_DEFS[equipped]) return TOOL_ITEM_DEFS[equipped].icon;
-        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
+        return { shovel:'⛏️', hoe:'🪓', axe:'🪓', pick:'⛏️', harpoon:'🎣', weapon:'🗡️', ranged:'🏹', machete:'🗡️', seeds:'🌱' }[tool] || '❔';
       }
 
       function nextRainText() {
@@ -21073,7 +21153,7 @@
         const equipped = equipmentSlots[tool];
         const def = equipped ? TOOL_ITEM_DEFS[equipped] : null;
         if (def) return `${def.icon} ${def.label}`;
-        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
+        return { shovel:'⛏️ Shovel', hoe:'🪓 Hoe', axe:'🪓 Axe', pick:'⛏️ Pick', harpoon:'🎣 Harpoon', weapon:'🗡️ Weapon', ranged:'🏹 Ranged Weapon', machete:'🗡️ Weapon', seeds:'🌱 Seeds' }[tool] || tool;
       }
 
       function seededRandom(seed) {
@@ -21241,6 +21321,7 @@
         else if (gearInventory?.tools?.pickshovel)       equipmentSlots.shovel = 'pickshovel';
         if (gearInventory?.tools?.hatchet_nativeCopper)  equipmentSlots.weapon = 'hatchet_nativeCopper';
         else if (gearInventory?.tools?.hatchet)          equipmentSlots.weapon = 'hatchet';
+        if (gearInventory?.tools?.crossbow)               equipmentSlots.ranged = 'crossbow';
         if (gearInventory?.whistles?.length)  equipmentSlots.whistle = gearInventory.whistles[0].id;
         rebuildToolMeshes();
         refreshWeaponSwitchBtn();
@@ -22432,6 +22513,37 @@
           activeAction = toolActions.weapon[slotIndex - 1];
           useActiveAction();
         },
+      });
+
+      window.RangedWeapons?.init({
+        player,
+        playerRadius: PLAYER_RADIUS,
+        TILE,
+        hostileObjects,
+        getCurrentArea: () => currentArea,
+        getActiveScene,
+        getPlayerAimAngle: () => {
+          const target = findAutoTarget();
+          return target ? Math.atan2(target.y - player.y, target.x - player.x) : player.angle;
+        },
+        worldSurfaceY: (x, y) => {
+          const grid = getActiveGrid();
+          const col = clamp(Math.floor(x / TILE), 0, getActiveCols() - 1);
+          const row = clamp(Math.floor(y / TILE), 0, getActiveRows() - 1);
+          return grid[row]?.[col] ? tileSurfaceYInArea(grid[row][col], currentArea) : 0;
+        },
+        canOccupyAt,
+        damageCreature,
+        damagePlayer,
+        angleDiff,
+        cameraRelativeCreaturePerps,
+        creaturePerpDeadRad: window.PerpRotation.CREATURE_PERP_DEAD_RAD,
+        heldObjectRenderOrder: HELD_OBJECT_RENDER_ORDER,
+        triggerRangedWeaponVisual,
+        setRangedLoadedVisual,
+        refreshActionBar,
+        moveCreatureToward,
+        awardRangedMastery: (itemKey) => awardToolMasteryXp(itemKey, MASTERY_XP_PER_COMBAT_HIT),
       });
 
       window.Mounts?.init({
@@ -23718,6 +23830,10 @@
           ? playerData.gearInventory
           : makeDefaultGear();
         if (!gearInventory.tools)    gearInventory.tools    = {};
+        // Existing characters receive the first two ranged weapons so the
+        // new slot is immediately testable without invalidating old saves.
+        gearInventory.tools.crossbow ??= true;
+        gearInventory.tools.scatterbow ??= true;
         if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null };
         if (!gearInventory.charms)   gearInventory.charms   = [];
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
@@ -23777,6 +23893,7 @@
         else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
         if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
         else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
+        if (gearInventory.tools.crossbow)               equipmentSlots.ranged = equipmentSlots.ranged || 'crossbow';
         if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local
