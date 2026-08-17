@@ -131,7 +131,7 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
       </div>
       <div class="field">
         <label for="angleInput">Planar angle tolerance °</label>
-        <input id="angleInput" type="number" min="0" max="45" step="0.1" value="0.5">
+        <input id="angleInput" type="number" min="0" max="45" step="0.001" value="0.5">
       </div>
       <p class="hint">The reducer is deliberately conservative: the angle is the maximum difference between triangle face normals, measured in degrees. Connected patches must still pass the coplanar boundary checks; ridges, bends, raised centers, material groups, and morph geometry are left alone.</p>
     </div>
