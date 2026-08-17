@@ -905,6 +905,11 @@
     // sizeY — direct requests to move the path higher in the volume,
     // .2 then another .1 on top.
     pathYShiftFrac: .3,
+    // How much narrower a connector tunnel (the thin passage between
+    // chaotic clusters, see buildClusterChain) carves versus a cluster's
+    // own branches — see carveMazeCavern's own comment on why these grew
+    // from .5/.55.
+    connectorProbeScale: .75, connectorBrushScale: .8,
   };
 
   // Grows a branching maze from a fixed 3-wide entrance (tiles [-1,0],
@@ -1049,14 +1054,19 @@
       floorY, ceilingY: null, probeYRadius,
       levels,
     });
-    // Connectors carve noticeably narrower than a cluster's own chaotic
-    // branches — see buildClusterChain's docblock: a tight passage is what
-    // actually hides the next cluster's contents around each bend and
-    // keeps its inhabitants out of aggro range until the player commits to
-    // walking through.
+    // Connectors carve narrower than a cluster's own chaotic branches —
+    // see buildClusterChain's docblock: a tighter passage is what hides
+    // the next cluster's contents around each bend (blocking the
+    // isometric camera's sightline — aggro range itself is handled by
+    // connector length, not narrowness, since creature aggro is pure
+    // straight-line distance). connectorProbeScale/connectorBrushScale
+    // (fractions of the normal probeRadius/brushRadius) were tightened
+    // enough by default to read as genuinely cramped to walk through —
+    // direct feedback — so both default wider now; still under 1 so
+    // connectors stay visibly narrower than a cluster interior.
     const narrowCarveOpts = Object.assign({}, carveOpts, {
-      probeRadius: carveOpts.probeRadius * .5,
-      brushRadius: carveOpts.brushRadius * .55,
+      probeRadius: carveOpts.probeRadius * (opts.connectorProbeScale ?? .75),
+      brushRadius: carveOpts.brushRadius * (opts.connectorBrushScale ?? .8),
     });
 
     for (const { points, narrow } of denseLocal) carveAlongSpline2D(st, points, narrow ? narrowCarveOpts : carveOpts, rng);
