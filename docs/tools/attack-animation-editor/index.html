@@ -186,7 +186,7 @@ canvas{display:block;width:100%;height:100%}
       <div id="panelStrike" data-phase="strike"></div>
       <button id="scrubStrikeBtn" class="secondary">⏵ Scrub to Strike</button>
     </div>
-    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
+    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool) • tool scale: uniformly sizes the held sprite for the entire animation and is authored on Neutral only</div>
   </div>
 
   <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
@@ -362,7 +362,7 @@ async function rebuildAvatar(speciesId, gender) {
   }
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
     backCanvas, profile, speciesId, gender, name: 'editor_preview_avatar',
-    modelWidth: MODEL_W, modelHeight: MODEL_W,
+    modelWidth: MODEL_W, modelHeight: MODEL_W, neckRig: true,
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
@@ -538,6 +538,8 @@ setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap
 // in the hand for a proper chop, instead of needing a pre-rotated sprite as a
 // workaround. Neutral (rest), windup, and strike are all authored poses —
 // anim.poses.neutral is the idle stance the swing eases out of and back into.
+// Neutral may also author a uniform `scale`; it sizes the held tool for the
+// whole animation rather than becoming another interpolated motion channel.
 // Mirroring across the character's midline negates x, yaw, roll, and bodyYaw
 // (all left/right-handed) and leaves y, z, pitch untouched (symmetric about
 // the midline).
@@ -547,13 +549,13 @@ function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y
 // predates neutral being authorable) — matches what updateToolMesh() in
 // game.js shows when the tool isn't mid-swing.
 const STYLE_NEUTRAL_POSE = {
-  thrust: defaultPose(0, 0, 0, 10.31, 0, 0),
-  sweep:  defaultPose(0, 0, 0.16, 0, 0, 0),
-  chop:   defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
-  drink:  defaultPose(0, 0, 0, 10.31, 0, 0),
-  ranged: defaultPose(0, 0.12, 0.18, -8, 0, 0),
+  thrust: { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
+  sweep:  { ...defaultPose(0, 0, 0.16, 0, 0, 0), scale: 1 },
+  chop:   { ...defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), scale: 1 },
+  drink:  { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
+  ranged: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 },
 };
-function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || defaultPose(0, 0, 0, 0, 0, 0); }
+function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || { ...defaultPose(0, 0, 0, 0, 0, 0), scale: 1 }; }
 
 let anim = {
   name: 'New Attack',
@@ -578,11 +580,17 @@ const FIELD_DEFS = [
   { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
   { key: 'roll', label: 'Tool Roll°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Body Yaw° (character turn)', min: -180, max: 180, step: 1, angle: true },
+  { key: 'scale', label: 'Tool scale (uniform)', min: 0.1, max: 3, step: 0.01, angle: false, neutralOnly: true },
 ];
+
+function poseFieldDefs(phase) {
+  return FIELD_DEFS.filter(f => !f.neutralOnly || phase === 'neutral');
+}
 
 function buildPosePanel(phase) {
   const panel = $('panel' + phase[0].toUpperCase() + phase.slice(1));
-  panel.innerHTML = FIELD_DEFS.map(f => `
+  const fields = poseFieldDefs(phase);
+  panel.innerHTML = fields.map(f => `
     <div class="field">
       <label>${f.label}</label>
       <div class="fieldRow">
@@ -590,7 +598,7 @@ function buildPosePanel(phase) {
         <span class="val" id="${phase}_${f.key}_val"></span>
       </div>
     </div>`).join('');
-  for (const f of FIELD_DEFS) {
+  for (const f of fields) {
     const el = $(`${phase}_${f.key}`);
     el.addEventListener('input', () => {
       const v = Number(el.value);
@@ -606,8 +614,8 @@ buildPosePanel('windup');
 buildPosePanel('strike');
 
 function syncPosePanelFromState(phase) {
-  for (const f of FIELD_DEFS) {
-    const v = anim.poses[phase][f.key];
+  for (const f of poseFieldDefs(phase)) {
+    const v = safeNum(anim.poses[phase][f.key], f.key === 'scale' ? 1 : 0);
     $(`${phase}_${f.key}`).value = v;
     $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
   }
@@ -677,7 +685,11 @@ $('durationS').addEventListener('input', () => {
 // midline, sending the weapon to the wrong place. Negating toolBase.x too
 // makes the combined transform a true x-mirror (verified algebraically: world
 // x flips sign, world z is preserved).
-function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0)); }
+function flipPose(p) {
+  const flipped = defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0));
+  if (p.scale != null) flipped.scale = p.scale;
+  return flipped;
+}
 $('flipBtn').onclick = () => {
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
@@ -760,13 +772,13 @@ const TOOL_PRESETS = [
     windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'load', toolKey: 'crossbow', still: false,
-    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.55, strikeFrac: 0.56, durationS: 0.86 },
+    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.55, strikeFrac: 0.56, durationS: 0.86 },
   { id: 'crossbow_fire', label: 'Crossbow — Fire', name: 'Crossbow Fire', style: 'ranged', sequence: 'fire', toolKey: 'crossbowLoaded', still: false,
-    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.02, strikeFrac: 0.16, holdFrac: 0.28, durationS: 0.24 },
+    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.10, -0.10, -18, 0, -8), strike: defaultPose(0, 0.15, 0.10, 12, 0, 5), windupFrac: 0.02, strikeFrac: 0.16, holdFrac: 0.28, durationS: 0.24 },
   { id: 'scatterbow_load', label: 'Scatterbow — Load', name: 'Scatterbow Load', style: 'ranged', sequence: 'load', toolKey: 'scatterbow', still: false,
-    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.55, strikeFrac: 0.56, durationS: 1.04 },
+    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.55, strikeFrac: 0.56, durationS: 1.04 },
   { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'fire', toolKey: 'scatterbowLoaded', still: false,
-    neutral: defaultPose(0, 0.12, 0.18, -8, 0, 0), windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.02, strikeFrac: 0.18, holdFrac: 0.30, durationS: 0.28 },
+    neutral: { ...defaultPose(0.23, 0.11, 0.14, 4, 60, -70, 13), scale: 1 }, windup: defaultPose(0, 0.08, -0.13, -20, 0, -10), strike: defaultPose(0, 0.18, 0.08, 16, 0, 7), windupFrac: 0.02, strikeFrac: 0.90, holdFrac: 0.91, durationS: 0.28 },
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
 function applyPreset(preset) {
@@ -774,7 +786,7 @@ function applyPreset(preset) {
     anim.name = preset.name;
     $('animName').value = anim.name;
   }
-  anim.poses.neutral = { ...(preset.neutral || neutralPoseFor(preset.style)) };
+  anim.poses.neutral = { ...neutralPoseFor(preset.style), ...(preset.neutral || {}) };
   anim.poses.windup = { ...preset.windup };
   anim.poses.strike = { ...preset.strike };
   anim.windupFrac = preset.windupFrac;
@@ -869,6 +881,12 @@ function applyPoseToRig(pose) {
   // toolBase/toolHolder are children of rig, so this automatically carries the tool
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
   rig.rotation.y = THREE.MathUtils.degToRad(pose.bodyYaw || 0);
+  // Head yaw is runtime behavior, not attack-animation data. The editor
+  // mirrors the game by automatically countering the authored bodyYaw so
+  // the preview head keeps facing the fixed forward/aim direction.
+  const neckJoint = avatarModel?.userData?.neckRig?.neckJoint;
+  if (neckJoint) neckJoint.rotation.y = -rig.rotation.y;
+  toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
   toolHolder.position.set(pose.x, pose.y, pose.z);
   // Composed in the same order as game.js's pose-driven combat branch
   // (qYaw * qPitch * qRoll — equivalent to a THREE.Euler 'YXZ' triple), so the
@@ -1130,6 +1148,7 @@ function exportAnimObject() {
     kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
     style: anim.style,
+    sequence: anim.sequence,
     windupFrac: anim.windupFrac,
     strikeFrac: anim.strikeFrac,
     holdFrac: anim.holdFrac,
@@ -1167,7 +1186,8 @@ function safeNum(v, fallback) { const n = Number(v); return Number.isFinite(n) ?
 function loadAnimObject(data) {
   anim.name = data.name || anim.name;
   anim.style = data.style || anim.style;
-  anim.sequence = ['attack', 'load', 'fire'].includes(data.sequence) ? data.sequence : 'attack';
+  const inferredSequence = /\bload\b/i.test(data.name || '') ? 'load' : /\bfire\b/i.test(data.name || '') ? 'fire' : 'attack';
+  anim.sequence = ['attack', 'load', 'fire'].includes(data.sequence) ? data.sequence : inferredSequence;
   anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
   anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
   // Older exports predate the hold phase — fall back to holdFrac === strikeFrac
@@ -1180,7 +1200,7 @@ function loadAnimObject(data) {
   // this style's implicit rest pose, per channel, so they still load cleanly.
   const styleNeutral = neutralPoseFor(anim.style);
   const n = data.poses?.neutral || {}, w = data.poses?.windup || {}, s = data.poses?.strike || {};
-  anim.poses.neutral = defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll));
+  anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   $('animName').value = anim.name;

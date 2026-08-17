@@ -35,6 +35,14 @@ assert.match(editor, /value="load">Load: Neutral → Windup → Neutral/, 'edito
 assert.match(editor, /value="fire">Fire: Neutral → Strike → Neutral/, 'editor must expose firing playback');
 assert.match(editor, /Crossbow — Load/, 'editor must include crossbow load preset');
 assert.match(editor, /Scatterbow — Fire/, 'editor must include scatterbow fire preset');
+assert.match(editor, /Tool scale \(uniform\)/, 'editor must expose neutral tool scale');
+assert.match(editor, /neutralOnly:\s*true/, 'tool scale must only be authored on the neutral pose');
+assert.match(game, /toolHolder\.scale\.setScalar\(Number\.isFinite\(Number\(neutral\.scale\)\)/, 'runtime must apply authored neutral tool scale');
+assert.match(game, /function updatePlayerHeadAim\(\)/, 'runtime must own global player head aim tracking');
+assert.match(game, /angleDiff\(targetWorldYaw, playerMesh\.rotation\.y\)/, 'head aim must counter the rendered body yaw');
+assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
+assert.strictEqual(combatConfig.rangedWeapons.scatterbow.fireAtFrac, 0.9, 'scatterbow must use the supplied late recoil/fire timing');
+assert.strictEqual(combatConfig.rangedWeapons.scatterbow.fireHoldFrac, 0.91, 'scatterbow must preserve the supplied recoil hold timing');
 
 assert.strictEqual(gangConfig.rangedWeaponChanceByRank.captain, 1, 'captains must always retain a ranged option');
 assert.match(bandit, /weaponKey:\s*weapon\.weaponKey,[\s\S]*rangedWeaponKey/, 'bandits must retain both melee and ranged weapon keys');

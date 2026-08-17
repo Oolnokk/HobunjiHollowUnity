@@ -13,10 +13,10 @@
       label: 'Crossbow', projectileSprite: 'assets/toolsprites/arrow_long.png',
       projectileCount: 1, spreadDeg: 0, damage: 16, speedPxS: 720,
       rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 260,
-      reloadDurationS: 0.86, fireDurationS: 0.24, fireAtFrac: 0.16,
+      reloadDurationS: 0.86, fireDurationS: 0.24, fireAtFrac: 0.16, fireHoldFrac: 0.28,
       staminaCost: 10,
       pose: {
-        neutral: { x: 0, y: 0.12, z: 0.18, pitch: -8, yaw: 0, roll: 0, bodyYaw: 0 },
+        neutral: { x: 0.23, y: 0.11, z: 0.14, pitch: 4, yaw: 60, roll: 13, bodyYaw: -70, scale: 1 },
         windup:  { x: 0, y: 0.10, z: -0.10, pitch: -18, yaw: 0, roll: 0, bodyYaw: -8 },
         strike:  { x: 0, y: 0.15, z: 0.10, pitch: 12, yaw: 0, roll: 0, bodyYaw: 5 },
       },
@@ -25,10 +25,10 @@
       label: 'Scatterbow', projectileSprite: 'assets/toolsprites/arrow_short.png',
       projectileCount: 6, spreadDeg: 28, damage: 5, speedPxS: 650,
       rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 110,
-      reloadDurationS: 1.04, fireDurationS: 0.28, fireAtFrac: 0.18,
+      reloadDurationS: 1.04, fireDurationS: 0.28, fireAtFrac: 0.90, fireHoldFrac: 0.91,
       staminaCost: 14,
       pose: {
-        neutral: { x: 0, y: 0.12, z: 0.18, pitch: -8, yaw: 0, roll: 0, bodyYaw: 0 },
+        neutral: { x: 0.23, y: 0.11, z: 0.14, pitch: 4, yaw: 60, roll: 13, bodyYaw: -70, scale: 1 },
         windup:  { x: 0, y: 0.08, z: -0.13, pitch: -20, yaw: 0, roll: 0, bodyYaw: -10 },
         strike:  { x: 0, y: 0.18, z: 0.08, pitch: 16, yaw: 0, roll: 0, bodyYaw: 7 },
       },
@@ -79,7 +79,7 @@
       sequence: kind, pose: def.pose,
       windupFrac: kind === 'load' ? 0.55 : 0.02,
       strikeFrac: kind === 'fire' ? def.fireAtFrac : 0.56,
-      holdFrac: kind === 'fire' ? Math.min(0.72, def.fireAtFrac + 0.12) : 0.57,
+      holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : 0.57,
     });
     lastEvent = `player:${itemKey}:${kind}-start`;
     deps.refreshActionBar?.();
@@ -303,6 +303,8 @@
     const θ = c.facing || c._rangedAimAngle || 0;
     const action = c._rangedAction;
     const def = defFor(c.def.rangedWeaponKey);
+    if (!def) return;
+    holder.scale.setScalar(Number.isFinite(Number(def.pose.neutral.scale)) ? Math.max(0.1, Number(def.pose.neutral.scale)) : 1);
     let pose = def.pose.neutral;
     if (action) {
       const t = Math.min(1, action.t / action.durationS);

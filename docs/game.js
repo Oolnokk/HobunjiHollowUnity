@@ -3399,7 +3399,6 @@
       }
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
       const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
-      const SEATED_HEAD_MAX_YAW_DEG = 70; // realistic head-turn-without-body-turning range; look straight ahead past this instead of holding at the clamp (see updateSitInteraction)
 
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
@@ -3497,30 +3496,8 @@
           if (Math.abs(iy) > 0.001) {
             cameraAngleOffsetDeg = clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
           }
-          // Head-turn (not the whole body) toward wherever the camera has
-          // orbited to, using the same neck-bone mechanism the animation-
-          // author tool/NPC dialogue staging use (see
-          // faceNpcDialogueParticipants) — lets you inspect your own
-          // character's face as you swing the camera around without the
-          // body itself rotating. playerMesh.rotation.y = activeCameraAzimuthRad()
-          // is exactly the sprite orientation that faces the camera (both
-          // are the same THREE.js Y-rotation convention — the plane's local
-          // +Z, after that rotation, points from the character straight at
-          // the camera), so the residual against the body's own CURRENT
-          // rotation (whatever the dead zone has it holding at right now)
-          // is exactly how far the head alone needs to turn. Only within a
-          // realistic range — past it, look straight ahead (0) rather than
-          // holding at the clamp like the NPC dialogue case, so an extreme
-          // camera angle just shows the back of a naturally forward-facing
-          // head instead of a craned neck.
-          if (playerNeckJoint) {
-            const residual = angleDiff(activeCameraAzimuthRad(), playerMesh.rotation.y);
-            const maxYawRad = SEATED_HEAD_MAX_YAW_DEG * Math.PI / 180;
-            playerNeckJoint.rotation.y = Math.abs(residual) <= maxYawRad ? residual : 0;
-          }
           return;
         }
-        if (playerNeckJoint) playerNeckJoint.rotation.y = 0;
         s.t = Math.min(1, s.t + dt / SIT_TRANSITION_S);
         const e = s.t;
         const [fromX, fromY, fromAngle, toX, toY, toAngle] = s.phase === 'in'
@@ -3540,6 +3517,19 @@
             sitInteraction = null;
           }
         }
+      }
+
+      // Keep the head's WORLD yaw on the player's actual look/aim direction,
+      // independently of the body/avatar plane. The plane can lag behind aim
+      // because of its camera-facing dead zone, and combat poses can add their
+      // own bodyYaw flourish; this local neck residual counters both. Seated
+      // free-look treats the orbited camera direction as the aim target.
+      function updatePlayerHeadAim() {
+        if (!playerNeckJoint || cutscenePreviewActive) return;
+        const targetWorldYaw = sitInteraction?.phase === 'active'
+          ? activeCameraAzimuthRad()
+          : -player.angle + Math.PI / 2;
+        playerNeckJoint.rotation.y = angleDiff(targetWorldYaw, playerMesh.rotation.y);
       }
 
       // Interactable used by both getInteriorInteractableAt (interior scene)
@@ -6868,7 +6858,7 @@
       // (null if no neck pivot could be detected for the player's current
       // portrait) — same mechanism the animation-author tool/NPC dialogue
       // staging uses (see faceNpcDialogueParticipants), driven here for the
-      // seated look-around head-turn instead (see updateSitInteraction).
+      // player aim tracking (see updatePlayerHeadAim).
       let playerNeckJoint = null;
       // Shoulder-pet hat xray (ported from the animation-author tool's
       // setShoulderPetHatXrayV1521/buildLazyHatOverlayV1521) — see
@@ -17573,10 +17563,10 @@
       // neutral for the pose-driven combat branch below when a step's own
       // pose.neutral doesn't specify a channel.
       const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0 },
-        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0 },
-        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2 },
-        ranged: { x: 0,    y: 0.12, z: 0.18, pitch: -8,    yaw: 0,   roll: 0,   bodyYaw: 0 },
+        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
+        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
+        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2,   scale: 1 },
+        ranged: { x: 0.23, y: 0.11, z: 0.14, pitch: 4,     yaw: 60,  roll: 13,  bodyYaw: -70, scale: 1 },
       };
 
       function updateToolMesh(dt) {
@@ -17597,6 +17587,9 @@
         heldItemHolder.visible = false;
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
+        // Never inherit a previous tool/weapon's authored neutral scale.
+        // Pose-driven actions override this below from pose.neutral.scale.
+        toolHolder.scale.setScalar(1);
 
         // Use logical facing for game-logic vectors; sweep will additively rotate the body.
         const θ      = playerFacing;
@@ -17691,6 +17684,7 @@
           const pose = combatSwingPose;
           const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
           const neutral = { ...styleNeutral, ...(pose.neutral || {}) };
+          toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
           const sign = combatSwingSign;
           const power = combatSwingPower;
           const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
@@ -17727,13 +17721,16 @@
 
         } else if (anim === 'ranged') {
           const neutral = STYLE_NEUTRAL_POSE.ranged;
-          const vθ = θ;
+          toolHolder.scale.setScalar(neutral.scale);
+          const vθ = θ + THREE.MathUtils.degToRad(neutral.bodyYaw);
           const vRX = Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX = Math.sin(vθ), vFZ = Math.cos(vθ);
           playerMesh.rotation.y = vθ;
           _qFac.setFromAxisAngle(_tUp, vθ);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
-          toolHolder.quaternion.copy(_qFac).multiply(_qAnim);
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
+          toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
           toolHolder.position.set(
             playerMesh.position.x + vRX * (playerToolBaseX + neutral.x) + vFX * neutral.z,
             playerMesh.position.y + playerToolBaseY + neutral.y,
@@ -19607,9 +19604,7 @@
           updateReticleMesh();
         }
         window.RangedWeapons?.update(dt);
-        // Must run after updateToolMesh: attack/tool poses can rotate the
-        // player's body after updatePlayerMesh, and the attached pet needs
-        // that final transform in the same frame.
+        updatePlayerHeadAim(); // Must follow updateToolMesh's final bodyYaw.
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
