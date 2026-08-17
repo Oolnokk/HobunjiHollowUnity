@@ -33,6 +33,7 @@
     new URL('config/hand-model-profiles.js?v=20260817a', docsBase).href,
     new URL('js/arm-bones.js?v=20260817b', docsBase).href,
     new URL('js/procedural-arm-animation.js?v=20260817c', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20260817a', docsBase).href,
   ];
   if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
