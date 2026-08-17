@@ -48,6 +48,7 @@
       <div class="help" style="margin-bottom:6px">Pitch / yaw / roll rotate the hand from the tool attach orientation. The tool itself is not rotated to satisfy these values.</div>
       <div id="handFromToolRotationFields"></div>
     </div>
+    <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Live inverse-hand preview ready.</div>
     <div class="help" id="handInverseReachHelp" style="padding:7px;border:1px solid rgba(52,211,153,.22);border-radius:8px;margin-bottom:8px">
       Tool pose is authoritative while reachable. If this hand target exceeds the current species' arm length, the tool's X/Y/Z are pulled inward only as far as needed. Paused Neutral/Windup/Strike keyframes are rewritten to the corrected coordinates, and the same clamp runs live in-game.
     </div>
@@ -101,15 +102,33 @@
     }
   }
 
+  function syncPreview() {
+    const results = global.ProceduralHandFrameDriver?.syncNow?.() || [];
+    const live = results.find(Boolean) || null;
+    const status = $('handInverseLiveStatus');
+    if (status) {
+      status.textContent = live?.clamped
+        ? `Live preview: arm reach clamp active · tool translated ${live.clampDeltaWorld?.length?.().toFixed?.(3) ?? ''}`
+        : 'Live preview: hand transform applied directly from the tool attach point.';
+    }
+    return results;
+  }
+
   function mutateTransform(mutator) {
     const key = profileSelect.value;
-    profiles.mutate(data => {
-      const model = data.models?.[key];
-      if (!model) return;
-      ensureTransform(model);
-      mutator(model.handFromTool);
-    });
-    global.ProceduralHandFrameDriver?.syncNow?.();
+    const model = profiles.data.models?.[key];
+    if (!model) return;
+    ensureTransform(model);
+    // handFromTool is a live IK offset, not a model-asset change. Mutate the
+    // existing profile object in place so slider motion does NOT trigger the
+    // profile subscriber that rebuilds/reloads both GLB hands on every tick.
+    mutator(model.handFromTool);
+    global.HOBUNJI_HAND_MODEL_PROFILES = profiles.data;
+    syncPreview();
+    // The editor's animation loop reapplies the authored tool pose each frame;
+    // run once more after that frame boundary so the hand visibly follows the
+    // newest slider value even while playback is running.
+    requestAnimationFrame(syncPreview);
   }
 
   function bindPair(range, number, onValue) {
@@ -134,7 +153,7 @@
     });
   }
 
-  profileSelect.addEventListener('change', syncFields);
+  profileSelect.addEventListener('change', () => { syncFields(); syncPreview(); });
   profiles.subscribe?.(() => syncFields());
 
   // When a pose slider is edited, ask the shared driver to resolve the current
@@ -143,10 +162,11 @@
   for (const phase of ['neutral', 'windup', 'strike']) {
     for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
       $(`${phase}_${key}`)?.addEventListener('input', () => {
-        requestAnimationFrame(() => global.ProceduralHandFrameDriver?.syncNow?.());
+        requestAnimationFrame(syncPreview);
       });
     }
   }
 
   syncFields();
+  syncPreview();
 })(window);
