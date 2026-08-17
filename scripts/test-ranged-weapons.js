@@ -20,7 +20,7 @@ const gangConfig = JSON.parse(read('docs/config/bandits/bandit-gang-config.json'
 const scratchbonesConfig = read('docs/config/scratchbones-config.js');
 
 assert.match(index, /js\/combat\/ranged-weapons\.js/, 'runtime must load the ranged module');
-assert.match(game, /ranged:\s*\['shoot'\]/, 'ranged slot must expose its own action');
+assert.match(game, /ranged:\s*\['shoot', 'ammo_select'\]/, 'ranged slot must expose fire and ammo-selection actions');
 assert.match(game, /ranged:\s*null/, 'equipment must own a dedicated ranged slot');
 assert.match(game, /activeTool === 'weapon'\) setActiveTool\('ranged'\)/, 'combat toggle must swap melee to ranged');
 assert.match(game, /activeTool === 'ranged'\) setActiveTool\('weapon'\)/, 'combat toggle must swap ranged to melee');
@@ -50,15 +50,26 @@ assert.match(ranged, /playRangedActionSfx\(action\.itemKey, 'fire'\)[\s\S]*spawn
 assert.match(ranged, /PROJECTILE_PERP_DEAD_DEG\s*=\s*15/, 'projectile PNGs must use dedicated 15-degree rotation windows');
 assert.match(ranged, /const deadRad = PROJECTILE_PERP_DEAD_RAD/, 'projectile rotation must not inherit the wider animal deadzone');
 assert.match(ranged, /function projectileTrailColors\([\s\S]*ResourceRings\?\.AFFLICTION_COLORS[\s\S]*ResourceRings\?\.neonizeColor/, 'projectile trails must reuse the melee/resource-ring affliction palette');
-assert.match(ranged, /function projectileAfflictionBonuses\([\s\S]*team === 'player'\) return \{\};[\s\S]*afflictionBonusesForTag/, 'enemy arrows must reuse their real tag affliction while unconfigured player arrows stay progression-neutral');
+assert.match(ranged, /function projectileAfflictionBonuses\([\s\S]*team === 'player'\)[\s\S]*ammoPayload\?\.afflictionBonuses[\s\S]*afflictionBonusesForTag/, 'player arrows must use their ammo loadout while enemy arrows retain their tag affliction');
 assert.match(ranged, /function createProjectileTrails\([\s\S]*vertexColors:\s*true[\s\S]*THREE\.AdditiveBlending/, 'projectiles must create additive vertex-colored comet ribbons');
 assert.match(ranged, /afflictionBonuses:\s*p\.afflictionBonuses/, 'projectile impact and trail colors must describe the same afflictions');
 assert.match(ranged, /snapshot:\s*\(\) => \(\{[\s\S]*projectileDeadzoneDeg:[\s\S]*activeTrailMeshes:/, 'mobile ranged debug snapshot must report deadzone and comet-trail state');
 assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must summarize the latest change in the visible mobile debug log');
 assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
-assert.match(index, /ranged-weapons\.js\?v=20260817d/, 'game bootstrap must invalidate the projectile trail/deadzone cache');
+assert.match(index, /ranged-weapons\.js\?v=20260817e/, 'game bootstrap must invalidate the ranged mastery/ammo cache');
 assert.match(index, /scratchbones-config\.js\?v=20260817e/, 'game bootstrap must invalidate the mobile-safe ranged audio mix');
-assert.match(index, /game\.js\?v=20260817c/, 'game bootstrap must invalidate the ranged visible-debug wiring cache');
+assert.match(index, /game\.js\?v=20260817d/, 'game bootstrap must invalidate the ranged loadout/input wiring cache');
+
+assert.match(ranged, /SPECIAL_AMMO_MAX\s*=\s*8/, 'special ammo must use the shared 0/8 cap');
+assert.match(ranged, /SPECIAL_AMMO_LOOT_CHANCE\s*=\s*0\.72/, 'all enemy corpses must have a high special-ammo drop chance');
+assert.match(ranged, /BASIC_AMMO_EFFECTS[\s\S]*knockbackMul:\s*0\.25/, 'basic ranks must offer afflictions or a stacking knockback boost');
+assert.match(ranged, /shrapnelUntil[\s\S]*bleedingHealth[\s\S]*woundedStamina/, 'Shrapnel must turn the target’s movement into both requested afflictions');
+assert.match(ranged, /disorientUntil[\s\S]*movementDirectionMultiplier/, 'Concussive must expose a three-second reversed-movement debuff');
+assert.match(game, /footingDamageMultiplier[\s\S]*Math\.max\(0, footingOverride\)/, 'damage routing must support explicit zero Footing damage for normal ranged hits');
+assert.match(ranged, /footingDamageMultiplier:\s*2\.25/, 'Concussive ammo must explicitly opt into high Footing damage');
+assert.match(game, /activeTool === 'ranged'[\s\S]*_desktopSelectionArc\?\.openAmmo/, 'holding ranged Action 2 must open the ammo selection arch');
+assert.match(editor, /heavy_weapon_idle[\s\S]*light_weapon_idle/, 'attack editor must expose the two runtime Heavy/Light weapon stances');
+assert.match(editor, /neutralWeight[\s\S]*toolPlane\.rotation\.z = anim\.style === 'sweep'/, 'attack editor weapon orientation must derive from the previewed animation and runtime Neutral correction');
 
 assert.match(editor, /value="load">Load: Neutral → Windup → Neutral/, 'editor must expose loading playback');
 assert.match(editor, /value="fire">Fire: Neutral → Strike → Neutral/, 'editor must expose firing playback');

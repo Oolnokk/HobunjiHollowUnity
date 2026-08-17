@@ -643,7 +643,7 @@
         pick:    ['mine'],
         harpoon: ['fish'],
         weapon:  ['cut', 'slash'],
-        ranged:  ['shoot'],
+        ranged:  ['shoot', 'ammo_select'],
       };
 
       const actionLabels = {
@@ -658,6 +658,7 @@
         chop:       ['🪓', 'Chop'],
         hack:       ['💢', 'Hack'],
         mine:       ['⛏️', 'Mine'],
+        ammo_select:['🏹', 'Ammo'],
         harvest:    ['🧺', 'Harvest'],
         fish:       ['🎣', 'Fish'],
         shoot:      ['🏹', 'Fire / Load'],
@@ -824,9 +825,10 @@
         const multipliers = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger?.damageTypeMultipliers?.[dmgOpts?.tag] || {};
         const healthMultiplier = Number(multipliers.healthDamage ?? 1);
         const footingMultiplier = Number(multipliers.footingDamage ?? 1);
+        const footingOverride = Number(dmgOpts?.footingDamageMultiplier); // Ranged projectiles pass 0 by default; selected ammo can explicitly opt back in.
         return {
           health: amount * healthMultiplier,
-          footing: amount * footingMultiplier,
+          footing: amount * footingMultiplier * (Number.isFinite(footingOverride) ? Math.max(0, footingOverride) : 1),
         };
       }
 
@@ -1863,6 +1865,11 @@
           // abilities' 5 upgrade levels can be chosen — see
           // combat-progression.js.
           toolMastery: {},
+          // Shared 0/8 resource spent once per special-ammo volley; weapon-
+          // specific rank picks and active ammo live beside it below.
+          specialAmmo: 0,
+          rangedAmmoLoadouts: {},
+          unlockedSpecialAmmo: ['shrapnel', 'concussive'],
           // toolPlating[itemKey] = { mode: 'cosmetic'|'resistant', metalKey } —
           // Sloomi/Kzubug's cosmetic plating service (see setToolPlating).
           toolPlating: {},
@@ -3984,6 +3991,8 @@
               if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
               parts.push((meatStars ? starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
             });
+            const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
+            if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
             corpseObjects.delete(c);
             despawnCreature(c);
             return {
@@ -4353,7 +4362,8 @@
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
-        const nx = dx / dist, ny = dy / dist;
+        const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
+        const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
         const baseSpeed = speed * devGlobalSpeedMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
@@ -12546,6 +12556,9 @@
           }
         }
 
+        // Disorient reverses the player's locomotion input. Aim remains a
+        // separate concern and continues to use the game's usual aim rules.
+        if (window.RangedWeapons?.movementDirectionMultiplier?.(player) === -1) { ix = -ix; iy = -iy; }
         let inputLen = Math.hypot(ix, iy);
 
         // Keyboard is digital, joystick is analog. Normalize keyboard to full speed,
@@ -13858,6 +13871,11 @@
         if (activeTool === 'ranged' && activeAction === 'shoot') {
           if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
           window.RangedWeapons?.startPlayerAction?.(equipmentSlots.ranged);
+          return;
+        }
+        if (activeTool === 'ranged' && activeAction === 'ammo_select') {
+          if (!equipmentSlots.ranged) { showToast('No ranged weapon equipped.', false); return; }
+          window.RangedWeapons?.cycleAmmo?.(equipmentSlots.ranged, 1);
           return;
         }
 
@@ -20099,6 +20117,7 @@
         const mobileControls = window.SCRATCHBONES_CONFIG?.game?.mobileControls || {};
         const configuredSafeMarginPx = Number(mobileControls.safeMarginPx);
         const SAFE_M = Number.isFinite(configuredSafeMarginPx) ? configuredSafeMarginPx : 0;
+        const actionArchRadiusClamp = mobileControls.actionArch?.radiusClamp || {};
         const outerArchRadiusClamp = mobileControls.outerArch?.radiusClamp || {};
 
         function _clampedVmin({ minPx, vmin, maxPx }) {
@@ -20115,8 +20134,12 @@
           const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
           return Number.isFinite(colPx) && colPx > 0 ? colPx * 10 : _clampedVmin(outerArchRadiusClamp);
         }
-        function _arcPt(deg) {
-          const r = _outerR(), a = deg * Math.PI / 180;
+        function _innerR() {
+          const colPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--col'));
+          return Number.isFinite(colPx) && colPx > 0 ? colPx * 7.6 : _clampedVmin(actionArchRadiusClamp);
+        }
+        function _arcPt(deg, radius = _outerR()) {
+          const r = radius, a = deg * Math.PI / 180;
           return { x: window.innerWidth  + Math.cos(a) * r - SAFE_M,
                    y: window.innerHeight - Math.sin(a) * r - SAFE_M };
         }
@@ -20136,8 +20159,8 @@
           if (_itemBtn) _itemBtn.style.visibility = '';
         }
 
-        function _mkSlot(deg, icon, label, extra) {
-          const pt = _arcPt(deg);
+        function _mkSlot(deg, icon, label, extra, radius = _outerR()) {
+          const pt = _arcPt(deg, radius);
           const el = document.createElement('div');
           el.className = 'arc-slot' + (extra ? ' ' + extra : '');
           el.style.cssText = `position:fixed;left:${pt.x}px;top:${pt.y}px;z-index:201;pointer-events:none;`;
@@ -20171,6 +20194,26 @@
             const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
             _arcSlots.push({ angle: deg, el, data: slot });
             if (activeTool === slot) _arcActive = i;
+          });
+        }
+
+        function _openAmmoArc() {
+          _clearArc(); _arcOpen = 'ammo';
+          if (_itemBtn) _itemBtn.style.visibility = 'hidden';
+          toolBtn.style.visibility = 'hidden';
+          _arcBd = document.createElement('div');
+          _arcBd.className = 'arc-backdrop';
+          document.body.appendChild(_arcBd);
+          const choices = window.RangedWeapons?.ammoChoices?.(equipmentSlots.ranged) || [];
+          const activeAmmo = window.RangedWeapons?.activeAmmoId?.(equipmentSlots.ranged) || 'basic';
+          const n = choices.length, step = n > 1 ? (ARC_S - ARC_E) / (n - 1) : 0;
+          choices.forEach((choice, i) => {
+            const deg = ARC_S - i * step;
+            const label = choice.available ? choice.label : `${choice.label} · 0/8`;
+            const extra = `${choice.id === activeAmmo ? 'arc-active ' : ''}${choice.available ? '' : 'blocked'}`.trim();
+            const el = _mkSlot(deg, choice.icon, label, extra, _innerR());
+            _arcSlots.push({ angle: deg, el, data: { ...choice, type: 'ammo' } });
+            if (choice.id === activeAmmo) _arcActive = i;
           });
         }
 
@@ -20277,6 +20320,8 @@
             heldMode = 'item';
             activeItemIndex = slot.data.index;
             refreshItemScroll(); refreshActionBar();
+          } else if (_arcOpen === 'ammo' && slot?.data.available) {
+            window.RangedWeapons?.setActiveAmmo?.(equipmentSlots.ranged, slot.data.id);
           }
           _clearArc();
         }
@@ -20284,6 +20329,7 @@
         window._desktopSelectionArc = {
           openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
           openItem() { if (_arcOpen !== 'item') _openItemArc(); },
+          openAmmo() { if (_arcOpen !== 'ammo') _openAmmoArc(); },
           scrollTool(dir) {
             if (_arcOpen !== 'tool') _openToolArc();
             const idx = WHEEL_SLOTS.indexOf(activeTool);
@@ -20310,6 +20356,17 @@
               if (active) _arcActive = i;
             });
           },
+          scrollAmmo(dir) {
+            if (_arcOpen !== 'ammo') _openAmmoArc();
+            const active = window.RangedWeapons?.cycleAmmo?.(equipmentSlots.ranged, dir);
+            _arcSlots.forEach((slot, i) => {
+              const selected = slot.data.id === active;
+              slot.el.classList.toggle('arc-active', selected);
+              if (selected) _arcActive = i;
+            });
+          },
+          movePointer(x, y) { _arcMove(x, y); },
+          commit() { _arcUp(); },
           close() { _clearArc(); }
         };
 
@@ -20725,6 +20782,7 @@
             let _drag = false, _rtimer = null, _socket = null;
             let _chargeFiredOnPress = false;
             let _pressSlot = null; // 1 or 2 while a weapon tool-action button is mid-press
+            let _ammoHoldTimer = null, _ammoArcOpen = false; // Ranged Action 2 tap cycles; a sustained press opens the ammo selector.
             const DRAG_THRESH = 10;
             // Legacy behavior: holding+dragging an action button like a stick used to
             // keep re-firing the action every 120ms for as long as it stayed pushed off
@@ -20787,6 +20845,14 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              if (activeTool === 'ranged' && act === 'ammo_select') {
+                _ammoArcOpen = false;
+                _ammoHoldTimer = setTimeout(() => {
+                  if (_ptId === null) return;
+                  _ammoArcOpen = true;
+                  window._desktopSelectionArc?.openAmmo();
+                }, desktopTapWindowMs());
+              }
               _chargeFiredOnPress = Boolean(act && !el.classList.contains('abt-hidden') && wouldStartCharge(activeTool, act));
               if (_chargeFiredOnPress) {
                 activeAction = act;
@@ -20807,6 +20873,10 @@
               const nx = dist > 0.5 ? dx / dist * r : 0;
               const ny = dist > 0.5 ? dy / dist * r : 0;
               el.style.transform = `translate(calc(50% + ${nx}px), calc(50% + ${ny}px))`;
+              if (activeTool === 'ranged' && el.dataset.action === 'ammo_select') {
+                if (_ammoArcOpen) window._desktopSelectionArc?.movePointer(ev.clientX, ev.clientY);
+                return;
+              }
               // With a weapon equipped, action buttons are tap/hold only — dragging
               // must never act like a directional stick, otherwise a thumb wobbling
               // mid-hold reads as an aim-drag, cancels the pending hold ability, and
@@ -20841,18 +20911,22 @@
               if (ev.pointerId !== _ptId) return;
               _ptId = null;
               actionHeldDown = false;
+              if (_ammoHoldTimer) { clearTimeout(_ammoHoldTimer); _ammoHoldTimer = null; }
               if (_rtimer) { clearInterval(_rtimer); _rtimer = null; }
               _stack.classList.remove('drag-active');
               if (_socket) { _socket.remove(); _socket = null; }
               el.style.transition = 'transform 0.14s ease-out';
               el.style.transform  = 'translate(50%, 50%)';
               setTimeout(() => { el.style.transition = ''; el.style.transform = ''; }, 150);
-              if (!_drag && !_chargeFiredOnPress) {
+              if (_ammoArcOpen) {
+                window._desktopSelectionArc?.commit();
+              } else if (!_drag && !_chargeFiredOnPress) {
                 if (_pressSlot) window.Combat.input.pressEnd(_pressSlot);
                 else _abtFire();
               }
               _drag = false;
               _chargeFiredOnPress = false;
+              _ammoArcOpen = false;
               _pressSlot = null;
             }
 
@@ -20958,6 +21032,7 @@
         if (action === 'harvest') return tile.cropReady ? '✓ Harvest' : 'Growing';
         if (action === 'fish') return 'Fish';
         if (action === 'shoot') return window.RangedWeapons?.playerActionLabel?.(equipmentSlots.ranged) || 'Fire';
+        if (action === 'ammo_select') return window.RangedWeapons?.ammoActionLabel?.(equipmentSlots.ranged) || 'Basic Ammo';
         if (action.startsWith('place_')) return 'Place';
         if (action.startsWith('obj_process_')) return 'Process';
         return action;
@@ -21480,7 +21555,8 @@
         const state = desktopHoldKeys[key];
         if (!state || !state.down) return;
         state.held = true;
-        if (state.arc === 'item') window._desktopSelectionArc?.openItem();
+        if (state.arc === 'item' && activeTool === 'ranged') window._desktopSelectionArc?.openAmmo();
+        else if (state.arc === 'item') window._desktopSelectionArc?.openItem();
         else window._desktopSelectionArc?.openTool();
       }
       function startDesktopHoldKey(key, event) {
@@ -21694,7 +21770,28 @@
         if (activeTool !== 'weapon' || !window.Combat?.input) return 0;
         return actionId === 'action1' ? 1 : 2;
       }
+      const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the inner ammo arch.
       function runInputAction(actionId, phase = 'press') {
+        if (actionId === 'action2' && activeTool === 'ranged') {
+          if (phase === 'release') {
+            if (!rangedAmmoAction2Press.down) return;
+            rangedAmmoAction2Press.down = false;
+            if (rangedAmmoAction2Press.timer) { clearTimeout(rangedAmmoAction2Press.timer); rangedAmmoAction2Press.timer = null; }
+            if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.commit();
+            else window.RangedWeapons?.cycleAmmo?.(equipmentSlots.ranged, 1);
+            rangedAmmoAction2Press.held = false;
+            return;
+          }
+          if (rangedAmmoAction2Press.down) return;
+          rangedAmmoAction2Press.down = true;
+          rangedAmmoAction2Press.held = false;
+          rangedAmmoAction2Press.timer = setTimeout(() => {
+            if (!rangedAmmoAction2Press.down) return;
+            rangedAmmoAction2Press.held = true;
+            window._desktopSelectionArc?.openAmmo();
+          }, desktopTapWindowMs());
+          return;
+        }
         if (phase === 'release') {
           if (actionId === 'action1') actionHeldDown = false;
           const releaseSlot = weaponActionSlot(actionId);
@@ -21768,6 +21865,13 @@
         if (controllerLookActive) {
           controllerLookAngle = Math.atan2(ry, rx);
           targetAimAngle = controllerLookAngle;
+        }
+        if (rangedAmmoAction2Press.held && Math.hypot(rx, ry) >= INPUT_DEFAULTS.axisPressThreshold) {
+          const now = performance.now();
+          if (now - rangedAmmoAction2Press.lastScrollAt >= 220) {
+            rangedAmmoAction2Press.lastScrollAt = now;
+            window._desktopSelectionArc?.scrollAmmo((Math.abs(rx) >= Math.abs(ry) ? rx : ry) >= 0 ? 1 : -1);
+          }
         }
         const down = new Set();
         pad.buttons.forEach((button, index) => { if (button?.pressed) down.add(`Button${index}`); });
@@ -21976,7 +22080,8 @@
         if (isDesktop && desktopHoldKeys.q.down) {
           e.preventDefault();
           openDesktopHoldArc('q');
-          window._desktopSelectionArc?.scrollItem(-dir);
+          if (activeTool === 'ranged') window._desktopSelectionArc?.scrollAmmo(-dir);
+          else window._desktopSelectionArc?.scrollItem(-dir);
           return true;
         }
         if (isDesktop && desktopHoldKeys.e.down) {
@@ -22113,6 +22218,7 @@
             else if (e.button === 2) { window.Combat.input.pressStart(2); }
             return;
           }
+          if (activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'press'); return; }
           if (e.button === 0) {
             actionHeldDown = true;
             useActiveAction();
@@ -22130,12 +22236,14 @@
           else if (e.button === 2) { window.Combat.input.pressEnd(2); }
           return;
         }
+        if (activeTool === 'ranged' && e.button === 2) { runInputAction('action2', 'release'); return; }
         if (e.button === 0) actionHeldDown = false;
       });
 
       // Mouse-look: raycast cursor onto ground plane to get world position
       if (isDesktop) {
         threeContainer.addEventListener('mousemove', (e) => {
+          if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           if (furniturePlacementArmedKey || furnitureMoveArmedId) return;
           // While the Pixel Probe is armed, mouse movement should only ever
           // move the cursor toward the target pixel — not rotate the camera
@@ -22551,6 +22659,13 @@
         refreshActionBar,
         moveCreatureToward,
         awardRangedMastery: (itemKey) => awardToolMasteryXp(itemKey, MASTERY_XP_PER_COMBAT_HIT),
+        toolMasteryLevel,
+        devBumpToolMasteryLevel,
+        getGearInventory: () => gearInventory,
+        saveGearInventory,
+        getEquippedRangedKey: () => equipmentSlots.ranged,
+        showToast,
+        random: () => window.GameRandom?.random?.() ?? Math.random(),
         debugLog, // Lets the ranged module report its latest testable behavior in the on-screen mobile debug panel.
       });
 
@@ -23849,6 +23964,10 @@
         }
         if (!gearInventory.toolMastery || typeof gearInventory.toolMastery !== 'object') gearInventory.toolMastery = {};
         if (typeof gearInventory.motesOfProwess !== 'number') gearInventory.motesOfProwess = 0;
+        gearInventory.specialAmmo = Math.max(0, Math.min(8, Math.floor(Number(gearInventory.specialAmmo) || 0)));
+        if (!gearInventory.rangedAmmoLoadouts || typeof gearInventory.rangedAmmoLoadouts !== 'object') gearInventory.rangedAmmoLoadouts = {};
+        if (!Array.isArray(gearInventory.unlockedSpecialAmmo)) gearInventory.unlockedSpecialAmmo = [];
+        for (const ammoId of ['shrapnel', 'concussive']) if (!gearInventory.unlockedSpecialAmmo.includes(ammoId)) gearInventory.unlockedSpecialAmmo.push(ammoId);
         window.EquipmentPanel.ensureGearClothingCollection();
         window.DyeSystem.ensureCollection();
 

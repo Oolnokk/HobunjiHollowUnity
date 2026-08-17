@@ -110,10 +110,10 @@
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260712d"></script>
   <script src="js/combat/combat-flurry.js?v=20260712d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260712d"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/combat/ranged-weapons.js?v=20260817d"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260817e"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -1756,7 +1756,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260817c"></script>
+  <script src="game.js?v=20260817d"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

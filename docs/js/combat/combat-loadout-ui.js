@@ -26,6 +26,82 @@
   // persisted; purely local UI state.
   let expandedFor = null;
 
+  function renderRangedLoadout(pane) {
+    const ranged = window.RangedWeapons;
+    const itemKey = ranged?.equippedRangedKey?.();
+    if (!ranged || !itemKey) return;
+    const view = ranged.getLoadoutView(itemKey);
+    const weaponLabel = ranged.config?.[itemKey]?.label || itemKey;
+
+    const title = document.createElement('div');
+    title.className = 'settings-section-title ranged-loadout-title';
+    title.textContent = 'Ranged Weapon Loadout';
+    pane.appendChild(title);
+
+    const note = document.createElement('div');
+    note.className = 'loadout-slot-combo-note';
+    note.style.marginBottom = '8px';
+    note.textContent = `${weaponLabel} — Mastery ${view.mastery}/5 · Special Ammo ${view.specialAmmo}/${view.specialAmmoMax}`;
+    pane.appendChild(note);
+
+    if (window.Combat.deps?.isDevMode?.()) {
+      const row = document.createElement('div');
+      row.className = 'ranged-loadout-dev-row';
+      const masteryBtn = document.createElement('button');
+      masteryBtn.type = 'button'; masteryBtn.className = 'ii-btn'; masteryBtn.textContent = '[Dev] +1 Ranged Mastery';
+      masteryBtn.addEventListener('click', () => { ranged.devBumpMastery(itemKey); render(); });
+      const ammoBtn = document.createElement('button');
+      ammoBtn.type = 'button'; ammoBtn.className = 'ii-btn'; ammoBtn.textContent = '[Dev] +1 Special Ammo';
+      ammoBtn.addEventListener('click', () => { ranged.grantSpecialAmmo(1); render(); });
+      row.append(masteryBtn, ammoBtn);
+      pane.appendChild(row);
+    }
+
+    for (const rank of [1, 2, 3, 4, 5]) {
+      const isBasic = rank % 2 === 1;
+      const card = document.createElement('div');
+      card.className = 'loadout-slot ranged-rank-card' + (view.mastery < rank ? ' ranged-rank-locked' : '');
+      const label = document.createElement('div');
+      label.className = 'settings-label';
+      const name = document.createElement('div');
+      name.className = 'settings-name';
+      name.textContent = `Rank ${rank}: ${isBasic ? `Basic Ammo Effect ${(rank + 1) / 2}` : `Special Ammo Slot ${rank / 2}`}`;
+      const desc = document.createElement('div');
+      desc.className = 'settings-desc';
+      desc.textContent = view.mastery < rank
+        ? `Unlocks at ${weaponLabel} Mastery ${rank}.`
+        : isBasic ? 'Free choice; repeated effects stack.' : 'Free unlocked ammo choice; one shared charge is spent per volley.';
+      label.append(name, desc);
+      card.appendChild(label);
+
+      const select = document.createElement('select');
+      select.className = 'settings-select ranged-loadout-select';
+      select.disabled = view.mastery < rank;
+      if (isBasic) {
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = 'Choose an effect';
+        select.appendChild(empty);
+        for (const effect of ranged.BASIC_AMMO_EFFECTS) {
+          const option = document.createElement('option');
+          option.value = effect.id; option.textContent = effect.label; option.title = effect.desc;
+          if (view.loadout.basicEffects[rank] === effect.id) option.selected = true;
+          select.appendChild(option);
+        }
+        select.addEventListener('change', () => { if (select.value) ranged.setBasicEffect(itemKey, rank, select.value); render(); });
+      } else {
+        for (const ammo of Object.values(ranged.SPECIAL_AMMO_TYPES).filter(entry => view.unlockedSpecialAmmo.includes(entry.id))) {
+          const option = document.createElement('option');
+          option.value = ammo.id; option.textContent = `${ammo.icon} ${ammo.label}`; option.title = ammo.desc;
+          if (view.loadout.specialSlots[rank] === ammo.id) option.selected = true;
+          select.appendChild(option);
+        }
+        select.addEventListener('change', () => { ranged.setSpecialSlot(itemKey, rank, select.value); render(); });
+      }
+      card.appendChild(select);
+      pane.appendChild(card);
+    }
+  }
+
   function renderLevelPicker(container, toolKey, abilityId) {
     const weaponType = window.Combat.deps?.weaponDamageTypeForTool?.(toolKey) || 'sharp';
     const tree = window.CombatProgression.getTree(abilityId, weaponType);
@@ -203,11 +279,13 @@
 
       pane.appendChild(card);
     }
+    renderRangedLoadout(pane);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     render();
     const tab = document.querySelector('.mp-tab[data-mpanel="loadout"]');
     if (tab) tab.addEventListener('click', () => { expandedFor = null; render(); });
+    document.addEventListener('hobunji-ranged-ammo-change', render);
   });
 })();

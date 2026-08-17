@@ -1799,6 +1799,11 @@
     .loadout-option-btn:hover { background: rgba(255,255,255,0.1); }
     .loadout-option-name { font-size: 11px; color: var(--accent); }
     .loadout-option-desc { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    .ranged-loadout-title { margin-top: 18px; }
+    .ranged-rank-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, 42%); align-items: center; gap: 10px; }
+    .ranged-rank-locked { opacity: 0.52; }
+    .ranged-loadout-select { width: 100%; min-width: 0; }
+    .ranged-loadout-dev-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 
     /* ── Inventory pane ─────────────────────────────────────────
        Uses the same locked 16:9 grid math as gameplay controls.

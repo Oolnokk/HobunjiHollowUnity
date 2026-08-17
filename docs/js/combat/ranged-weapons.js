@@ -14,6 +14,35 @@
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
+  const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
+  const SPECIAL_AMMO_LOOT_CHANCE = 0.72; // High per-corpse chance requested for creatures and bandits.
+  const SHRAPNEL_DURATION_MS = 5000; // Movement-powered Shrapnel debuff lifetime.
+  const DISORIENT_DURATION_MS = 3000; // Concussive reversed-movement debuff lifetime.
+
+  const BASIC_AMMO_EFFECTS = Object.freeze([
+    { id: 'bleedingHealth', label: 'Bleeding Health', desc: 'Each bolt applies a small amount of Bleeding Health.', afflictionId: 'bleedingHealth' },
+    { id: 'woundedStamina', label: 'Wounded Stamina', desc: 'Each bolt applies a small amount of Wounded Stamina.', afflictionId: 'woundedStamina' },
+    { id: 'congealedHealth', label: 'Congealed Health', desc: 'Each bolt applies a small amount of Congealed Health.', afflictionId: 'congealedHealth' },
+    { id: 'infectedStamina', label: 'Infected Stamina', desc: 'Each bolt applies a small amount of Infected Stamina.', afflictionId: 'infectedStamina' },
+    { id: 'windedStamina', label: 'Winded Stamina', desc: 'Each bolt applies a small amount of Winded Stamina.', afflictionId: 'windedStamina' },
+    { id: 'bruisedHealth', label: 'Bruised Health', desc: 'Each bolt applies a small amount of Bruised Health.', afflictionId: 'bruisedHealth' },
+    { id: 'shatteredStamina', label: 'Shattered Stamina', desc: 'Each bolt applies a small amount of Shattered Stamina.', afflictionId: 'shatteredStamina' },
+    { id: 'poisonedHealth', label: 'Poisoned Health', desc: 'Each bolt applies a small amount of Poisoned Health.', afflictionId: 'poisonedHealth' },
+    { id: 'knockback', label: 'Knockback Boost', desc: 'Bolts deal 25% more knockback.', knockbackMul: 0.25 },
+  ]);
+  const SPECIAL_AMMO_TYPES = Object.freeze({
+    shrapnel: Object.freeze({
+      id: 'shrapnel', label: 'Shrapnel Ammo', icon: '🩸',
+      desc: 'For 5 seconds, the target’s own movement adds heavy Bleeding Health and Wounded Stamina.',
+      trailColors: [{ id: 'bleedingHealth' }, { id: 'woundedStamina' }],
+    }),
+    concussive: Object.freeze({
+      id: 'concussive', label: 'Concussive Ammo', icon: '💥',
+      desc: 'High knockback and Footing damage, plus 3 seconds of reversed movement.',
+      knockbackMul: 2.5, footingDamageMultiplier: 2.25,
+      trailColors: [{ id: 'disorient', color: 0x55ddff }, { id: 'footing', color: 0xffd45a }],
+    }),
+  });
 
   // Shared by both loading weapons so crossbow and scatterbow use the exact
   // authored Scatterbow Fire pose set supplied by the animation editor.
@@ -74,7 +103,150 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
-    deps.debugLog?.('Ranged update: full-volume mobile-safe firing audio, 15-degree projectile sprite windows, and affliction comet trails.');
+    ensureAmmoState();
+    deps.debugLog?.('Ranged update: mastery loadouts, basic/special ammo arch, Shrapnel/Concussive debuffs, corpse ammo loot, zero default ranged Footing, and corrected editor sprite basis.');
+  }
+
+  function gear() { return deps?.getGearInventory?.() || null; }
+  function ensureAmmoState() {
+    const g = gear();
+    if (!g) return null;
+    g.specialAmmo = Math.max(0, Math.min(SPECIAL_AMMO_MAX, Math.floor(Number(g.specialAmmo) || 0)));
+    if (!g.rangedAmmoLoadouts || typeof g.rangedAmmoLoadouts !== 'object') g.rangedAmmoLoadouts = {};
+    if (!Array.isArray(g.unlockedSpecialAmmo)) g.unlockedSpecialAmmo = [];
+    for (const id of Object.keys(SPECIAL_AMMO_TYPES)) if (!g.unlockedSpecialAmmo.includes(id)) g.unlockedSpecialAmmo.push(id);
+    return g;
+  }
+
+  function defaultAmmoLoadout() {
+    return { basicEffects: { 1: null, 3: null, 5: null }, specialSlots: { 2: 'shrapnel', 4: 'concussive' }, activeAmmo: 'basic' };
+  }
+
+  function ammoLoadout(itemKey) {
+    const g = ensureAmmoState();
+    if (!g || !itemKey) return defaultAmmoLoadout();
+    const current = g.rangedAmmoLoadouts[itemKey];
+    if (!current || typeof current !== 'object') g.rangedAmmoLoadouts[itemKey] = defaultAmmoLoadout();
+    const out = g.rangedAmmoLoadouts[itemKey];
+    out.basicEffects = { 1: null, 3: null, 5: null, ...(out.basicEffects || {}) };
+    out.specialSlots = { 2: 'shrapnel', 4: 'concussive', ...(out.specialSlots || {}) };
+    if (typeof out.activeAmmo !== 'string') out.activeAmmo = 'basic';
+    return out;
+  }
+
+  function rangedMastery(itemKey) { return Math.max(0, Math.min(5, Number(deps?.toolMasteryLevel?.(itemKey)) || 0)); }
+  function notifyAmmoChanged() {
+    deps?.saveGearInventory?.();
+    deps?.refreshActionBar?.();
+    document.dispatchEvent(new CustomEvent('hobunji-ranged-ammo-change'));
+  }
+
+  function setBasicEffect(itemKey, rank, effectId) {
+    if (![1, 3, 5].includes(Number(rank)) || rangedMastery(itemKey) < Number(rank)) return false;
+    if (!BASIC_AMMO_EFFECTS.some(effect => effect.id === effectId)) return false;
+    ammoLoadout(itemKey).basicEffects[rank] = effectId;
+    notifyAmmoChanged();
+    return true;
+  }
+
+  function setSpecialSlot(itemKey, rank, ammoId) {
+    if (![2, 4].includes(Number(rank)) || rangedMastery(itemKey) < Number(rank)) return false;
+    const g = ensureAmmoState();
+    if (!SPECIAL_AMMO_TYPES[ammoId] || !g?.unlockedSpecialAmmo.includes(ammoId)) return false;
+    ammoLoadout(itemKey).specialSlots[rank] = ammoId;
+    notifyAmmoChanged();
+    return true;
+  }
+
+  function specialAmmoCount() { return ensureAmmoState()?.specialAmmo || 0; }
+  function grantSpecialAmmo(amount = 1, announce = false) {
+    const g = ensureAmmoState();
+    if (!g) return 0;
+    const before = g.specialAmmo;
+    g.specialAmmo = Math.min(SPECIAL_AMMO_MAX, before + Math.max(0, Math.floor(Number(amount) || 0)));
+    const gained = g.specialAmmo - before;
+    if (gained) {
+      notifyAmmoChanged();
+      if (announce) deps?.showToast?.(`Found ${gained} Special Ammo (${g.specialAmmo}/${SPECIAL_AMMO_MAX}).`, true);
+    }
+    return gained;
+  }
+
+  function rollSpecialAmmoLoot() {
+    if (specialAmmoCount() >= SPECIAL_AMMO_MAX || (deps?.random?.() ?? Math.random()) >= SPECIAL_AMMO_LOOT_CHANCE) return 0;
+    return grantSpecialAmmo(1, false);
+  }
+
+  function ammoChoices(itemKey = deps?.getEquippedRangedKey?.()) {
+    const loadout = ammoLoadout(itemKey);
+    const mastery = rangedMastery(itemKey);
+    const choices = [{ id: 'basic', label: 'Basic Ammo', icon: '🏹', available: true }];
+    const seen = new Set();
+    for (const rank of [2, 4]) {
+      const ammoId = loadout.specialSlots[rank];
+      if (mastery < rank || !SPECIAL_AMMO_TYPES[ammoId] || seen.has(ammoId)) continue;
+      seen.add(ammoId);
+      const def = SPECIAL_AMMO_TYPES[ammoId];
+      choices.push({ id: ammoId, label: def.label, icon: def.icon, available: specialAmmoCount() > 0 });
+    }
+    return choices;
+  }
+
+  function activeAmmoId(itemKey = deps?.getEquippedRangedKey?.()) {
+    const selected = ammoLoadout(itemKey).activeAmmo;
+    const choice = ammoChoices(itemKey).find(entry => entry.id === selected && entry.available);
+    return choice?.id || 'basic';
+  }
+
+  function setActiveAmmo(itemKey, ammoId) {
+    const choice = ammoChoices(itemKey).find(entry => entry.id === ammoId && entry.available);
+    if (!choice) return false;
+    ammoLoadout(itemKey).activeAmmo = choice.id;
+    notifyAmmoChanged();
+    lastEvent = `player:${itemKey}:ammo-${choice.id}`;
+    return true;
+  }
+
+  function cycleAmmo(itemKey = deps?.getEquippedRangedKey?.(), direction = 1) {
+    const available = ammoChoices(itemKey).filter(entry => entry.available);
+    if (!available.length) return 'basic';
+    const index = Math.max(0, available.findIndex(entry => entry.id === activeAmmoId(itemKey)));
+    const next = available[(index + Math.sign(direction || 1) + available.length) % available.length];
+    setActiveAmmo(itemKey, next.id);
+    return next.id;
+  }
+
+  function ammoActionLabel(itemKey = deps?.getEquippedRangedKey?.()) {
+    const choice = ammoChoices(itemKey).find(entry => entry.id === activeAmmoId(itemKey));
+    return `${choice?.label || 'Basic Ammo'}${choice?.id === 'basic' ? '' : ` (${specialAmmoCount()}/${SPECIAL_AMMO_MAX})`}`;
+  }
+
+  function playerAmmoPayload(itemKey) {
+    const loadout = ammoLoadout(itemKey);
+    const ammoId = activeAmmoId(itemKey);
+    if (ammoId !== 'basic') {
+      const special = SPECIAL_AMMO_TYPES[ammoId];
+      return { ammoId, specialAmmoId: ammoId, afflictionBonuses: {}, knockbackMul: special.knockbackMul || 1, footingDamageMultiplier: special.footingDamageMultiplier || 0, trailColors: special.trailColors };
+    }
+    const afflictionBonuses = {};
+    let knockbackMul = 1;
+    const mastery = rangedMastery(itemKey);
+    for (const rank of [1, 3, 5]) {
+      if (mastery < rank) continue;
+      const effect = BASIC_AMMO_EFFECTS.find(entry => entry.id === loadout.basicEffects[rank]);
+      if (effect?.afflictionId) afflictionBonuses[effect.afflictionId] = (afflictionBonuses[effect.afflictionId] || 0) + 0.15;
+      knockbackMul += effect?.knockbackMul || 0;
+    }
+    return { ammoId: 'basic', afflictionBonuses, knockbackMul, footingDamageMultiplier: 0 };
+  }
+
+  function consumeSpecialAmmo(payload) {
+    if (!payload?.specialAmmoId) return;
+    const g = ensureAmmoState();
+    if (!g || g.specialAmmo <= 0) return;
+    g.specialAmmo -= 1;
+    if (g.specialAmmo <= 0) ammoLoadout(deps?.getEquippedRangedKey?.()).activeAmmo = 'basic';
+    notifyAmmoChanged();
   }
 
   function applyConfig(config) {
@@ -211,7 +383,9 @@
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
       const angle = deps.getPlayerAimAngle();
-      spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player);
+      const ammoPayload = playerAmmoPayload(action.itemKey); // Resolved once so a scatter volley consumes one resource and every pellet shares its selected ammo.
+      spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload);
+      consumeSpecialAmmo(ammoPayload);
     }
     if (action.t < action.durationS) return;
     if (action.kind === 'load') setLoaded(action.itemKey, true);
@@ -248,22 +422,25 @@
     return root;
   }
 
-  // Player ranged weapons do not currently have their own progression tree,
-  // so they remain affliction-free unless a weapon config explicitly supplies
-  // afflictionBonuses. Enemy arrows reuse the same sharp-tag baseline as the
-  // bandit's melee attacks, keeping damage, resource rings, and trail color in
-  // agreement instead of applying a visual-only color.
-  function projectileAfflictionBonuses(def, team) {
+  // Enemy arrows retain their sharp baseline. Player payloads come from the
+  // equipped ranged weapon's mastery loadout and are resolved once per volley.
+  function projectileAfflictionBonuses(def, team, ammoPayload) {
+    if (team === 'player') return { ...(ammoPayload?.afflictionBonuses || {}) };
     const configured = def.afflictionBonuses; // Used by future ammunition/weapon definitions to declare their exact status payload.
     if (configured && typeof configured === 'object') return { ...configured };
-    if (team === 'player') return {};
     return { ...(window.ResourceSystem?.afflictionBonusesForTag?.(def.damageType || 'sharp') || {}) };
   }
 
   // Reuses the resource-ring/melee-trail palette verbatim. An affliction-free
   // projectile still receives a white comet, matching the melee cone trail's
   // plain-hit fallback rather than disappearing entirely.
-  function projectileTrailColors(afflictionBonuses) {
+  function projectileTrailColors(afflictionBonuses, overrides) {
+    if (Array.isArray(overrides) && overrides.length) {
+      return overrides.slice(0, PROJECTILE_TRAIL_MAX_LANES).map(entry => {
+        const raw = entry.color ?? window.ResourceRings?.AFFLICTION_COLORS?.[entry.id] ?? 0xffffff;
+        return { id: entry.id, color: window.ResourceRings?.neonizeColor?.(raw) ?? raw };
+      });
+    }
     const ids = Object.keys(afflictionBonuses || {}).filter(id => Number(afflictionBonuses[id]) > 0); // Used as both the visual lane list and mobile debug payload.
     if (!ids.length) return [{ id: 'plain', color: 0xffffff }];
     return ids.slice(0, PROJECTILE_TRAIL_MAX_LANES).map(id => {
@@ -337,13 +514,13 @@
     }
   }
 
-  function spawnProjectile(itemKey, x, y, angle, team, owner) {
+  function spawnProjectile(itemKey, x, y, angle, team, owner, ammoPayload = null) {
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
     const mesh = createProjectileMesh(def, def.projectileRadiusPx);
-    const afflictionBonuses = projectileAfflictionBonuses(def, team); // Passed to both impact damage and comet color selection.
-    const trailColors = projectileTrailColors(afflictionBonuses); // Used to build one readable ribbon lane per applied affliction.
+    const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload); // Passed to both impact damage and comet color selection.
+    const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors); // Special ammo can author non-affliction palette lanes such as Disorient/Footing.
     const surfaceY = deps.worldSurfaceY(x, y);
     mesh.position.set(x / deps.TILE, surfaceY + 0.55, y / deps.TILE);
     scene.add(mesh);
@@ -354,6 +531,10 @@
       angle, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
       afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
+      ammoId: ammoPayload?.ammoId || 'enemy',
+      specialAmmoId: ammoPayload?.specialAmmoId || null,
+      knockbackMul: Number(ammoPayload?.knockbackMul) || 1,
+      footingDamageMultiplier: Number(ammoPayload?.footingDamageMultiplier) || 0,
       trailPoints: [{ x: x / deps.TILE, y: surfaceY + 0.54, z: y / deps.TILE }], // Seeds the comet at the muzzle so it appears on the first moving frame.
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
@@ -362,7 +543,7 @@
     return p;
   }
 
-  function spawnVolley(itemKey, x, y, angle, team, owner) {
+  function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null) {
     const def = defFor(itemKey);
     if (!def) return [];
     const count = Math.max(1, Math.round(def.projectileCount));
@@ -370,7 +551,7 @@
     const made = [];
     for (let i = 0; i < count; i++) {
       const u = count === 1 ? 0.5 : i / (count - 1);
-      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner));
+      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload));
     }
     lastEvent = `${team}:${itemKey}:volley-${count}`;
     return made;
@@ -384,13 +565,59 @@
     return (px - qx) ** 2 + (py - qy) ** 2;
   }
 
+  function applySpecialAmmoDebuff(entity, ammoId) {
+    if (!entity || !ammoId) return;
+    const now = performance.now();
+    if (!entity._rangedAmmoDebuffs) entity._rangedAmmoDebuffs = {};
+    if (ammoId === 'shrapnel') {
+      entity._rangedAmmoDebuffs.shrapnelUntil = Math.max(entity._rangedAmmoDebuffs.shrapnelUntil || 0, now + SHRAPNEL_DURATION_MS);
+      entity._rangedAmmoDebuffs.shrapnelX = entity.x;
+      entity._rangedAmmoDebuffs.shrapnelY = entity.y;
+    } else if (ammoId === 'concussive') {
+      entity._rangedAmmoDebuffs.disorientUntil = Math.max(entity._rangedAmmoDebuffs.disorientUntil || 0, now + DISORIENT_DURATION_MS);
+    }
+  }
+
+  function movementDirectionMultiplier(entity) {
+    return entity?._rangedAmmoDebuffs?.disorientUntil > performance.now() ? -1 : 1;
+  }
+
+  function updateEntityAmmoDebuffs(entity) {
+    const state = entity?._rangedAmmoDebuffs;
+    if (!state) return;
+    const now = performance.now();
+    if (state.shrapnelUntil > now) {
+      const lastX = Number.isFinite(state.shrapnelX) ? state.shrapnelX : entity.x;
+      const lastY = Number.isFinite(state.shrapnelY) ? state.shrapnelY : entity.y;
+      const movedTiles = Math.hypot(entity.x - lastX, entity.y - lastY) / Math.max(1, deps.TILE); // Converts only this frame's travel into the self-inflicted status amount.
+      if (movedTiles > 0 && !(entity.knockbackT > 0)) {
+        window.ResourceSystem?.addAffliction?.(entity, 'bleedingHealth', movedTiles * 5);
+        window.ResourceSystem?.addAffliction?.(entity, 'woundedStamina', movedTiles * 4);
+      }
+      state.shrapnelX = entity.x;
+      state.shrapnelY = entity.y;
+    } else {
+      delete state.shrapnelUntil;
+      delete state.shrapnelX;
+      delete state.shrapnelY;
+    }
+    if (!(state.disorientUntil > now)) delete state.disorientUntil;
+    if (!Object.keys(state).length) delete entity._rangedAmmoDebuffs;
+  }
+
+  function updateAmmoDebuffs() {
+    updateEntityAmmoDebuffs(deps.player);
+    for (const entity of deps.hostileObjects) updateEntityAmmoDebuffs(entity);
+  }
+
   function projectileHit(p) {
     if (p.team === 'player') {
       for (const c of deps.hostileObjects) {
         if (c.health <= 0 || c.areaId && c.areaId !== p.areaId) continue;
         const hitRadius = p.def.projectileRadiusPx + Math.max(18, (c.def?.modelWidth || 0.6) * deps.TILE * 0.4);
         if (pointSegmentDistanceSq(c.x, c.y, p.prevX, p.prevY, p.x, p.y) > hitRadius ** 2) continue;
-        deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses });
+        deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+        applySpecialAmmoDebuff(c, p.specialAmmoId);
         deps.awardRangedMastery?.(p.itemKey);
         return true;
       }
@@ -399,7 +626,8 @@
     const player = deps.player;
     const hitRadius = p.def.projectileRadiusPx + deps.playerRadius;
     if (pointSegmentDistanceSq(player.x, player.y, p.prevX, p.prevY, p.x, p.y) <= hitRadius ** 2) {
-      deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses });
+      deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS * p.knockbackMul, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      applySpecialAmmoDebuff(player, p.specialAmmoId);
       return true;
     }
     return false;
@@ -535,17 +763,24 @@
   function cancelBanditAction(c) { if (c) { c._rangedAction = null; c._rangedMode = false; } }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
-  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); }
+  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); }
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
+    ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
+    setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
+    movementDirectionMultiplier,
+    equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
+    devBumpMastery: itemKey => deps?.devBumpToolMasteryLevel?.(itemKey),
+    getLoadoutView: itemKey => ({ itemKey, mastery: rangedMastery(itemKey), loadout: JSON.parse(JSON.stringify(ammoLoadout(itemKey))), unlockedSpecialAmmo: [...(ensureAmmoState()?.unlockedSpecialAmmo || [])], specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX }),
+    BASIC_AMMO_EFFECTS, SPECIAL_AMMO_TYPES,
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
@@ -553,8 +788,11 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Mobile-safe full-volume fire cue; 15-degree projectile sprite deadzone; affliction-colored comet trails.',
+      latestChange: 'Ranged mastery loadout ranks; basic/special ammo switching; Shrapnel movement bleed; Concussive Footing/Disorient; shared 0/8 corpse loot; ranged Footing disabled by default; editor runtime orientation parity.',
       lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
+      equippedRanged: deps?.getEquippedRangedKey?.() || null,
+      activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
+      playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
       activeProjectiles: projectiles.length,
       activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
       loaded: Object.fromEntries(playerLoaded),

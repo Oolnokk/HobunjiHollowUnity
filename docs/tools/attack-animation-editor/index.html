@@ -689,9 +689,9 @@ function buildToolPlaneMesh(toolKey) {
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
       plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
-      if (def.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
       const g = new THREE.Group();
       g.add(plane);
+      g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
       // Mirror the sprite itself (not just its position/rotation) when the
       // pose has been flipped across the midline, so asymmetric tools (e.g.
       // an axe head) stay on the correct side instead of appearing reversed.
@@ -920,6 +920,16 @@ const TOOL_PRESETS = [
     strikeFrac: window.HeldActionAnimations.drink.strikeFrac,
     holdFrac: window.HeldActionAnimations.drink.holdFrac,
   }] : []),
+  // Exact weapon-slot Neutral stances from weapon-idle-stances.json. These
+  // are distinct from the same sprites' ordinary farming-tool rests.
+  { id: 'heavy_weapon_idle', label: 'Heavy Weapon — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
+    neutral: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+    windup: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), strike: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'light_weapon_idle', label: 'Light Weapon — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
+    neutral: defaultPose(0.04, 0, 0, 20, -70, 0, -65),
+    windup: defaultPose(0.04, 0, 0, 20, -70, 0, -65), strike: defaultPose(0.04, 0, 0, 20, -70, 0, -65),
+    windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
@@ -966,6 +976,23 @@ const TOOL_PRESETS = [
     neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
+// Keep the two weapon-slot stance cards sourced from the same committed JSON
+// the live WeaponToolStances runtime reads. The literals above are only the
+// local-file/fetch-failure fallback, matching that runtime module's pattern.
+fetch('../../config/combat/weapon-idle-stances.json')
+  .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+  .then(config => {
+    for (const [presetId, stanceId] of [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]) {
+      const preset = TOOL_PRESETS.find(entry => entry.id === presetId);
+      const pose = config?.stances?.[stanceId];
+      if (!preset || !pose) continue;
+      preset.neutral = { ...pose };
+      preset.windup = { ...pose };
+      preset.strike = { ...pose };
+    }
+    logDebug('Loaded Heavy/Light weapon stances from weapon-idle-stances.json');
+  })
+  .catch(error => logDebug(`Weapon stance config fetch failed (${error.message}) — using bundled fallbacks.`));
 function applyPreset(preset) {
   if (preset.name) {
     anim.name = preset.name;
@@ -1072,6 +1099,20 @@ function applyPoseToRig(pose) {
   const neckJoint = avatarModel?.userData?.neckRig?.neckJoint;
   if (neckJoint) neckJoint.rotation.y = -rig.rotation.y * neckPreviewStrength;
   toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
+  const toolPlane = toolPlaneMesh?.userData?.toolPlane;
+  if (toolPlane) {
+    // Runtime derives the -90° sweep basis from the active animation, then
+    // weapon-tool-stances fades that basis out at Neutral for every weapon-
+    // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
+    // their attack transitions no longer appear 90° off in this editor.
+    const weaponSlotSprite = ['hatchet', 'pickshovel', 'bronzehoe', 'fishingspear', 'fishingmace'].includes(currentToolKey);
+    let neutralWeight = 0;
+    if (weaponSlotSprite && anim.style === 'sweep') {
+      if (previewT <= anim.windupFrac) neutralWeight = anim.windupFrac > 0.000001 ? 1 - previewT / anim.windupFrac : 0;
+      else if (previewT > anim.holdFrac) neutralWeight = Math.max(0, Math.min(1, (previewT - anim.holdFrac) / Math.max(0.000001, 1 - anim.holdFrac)));
+    }
+    toolPlane.rotation.z = anim.style === 'sweep' ? -Math.PI / 2 + Math.PI / 2 * neutralWeight : 0;
+  }
   toolHolder.position.set(pose.x, pose.y, pose.z);
   // Composed in the same order as game.js's pose-driven combat branch
   // (qYaw * qPitch * qRoll — equivalent to a THREE.Euler 'YXZ' triple), so the
