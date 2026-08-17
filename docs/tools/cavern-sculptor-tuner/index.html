@@ -74,6 +74,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
       <div class="checkRow"><input id="keepViewChk" type="checkbox"><label for="keepViewChk">Keep camera view on regenerate</label></div>
       <div class="checkRow"><input id="tileOverlayChk" type="checkbox"><label for="tileOverlayChk">Walkable tile overlay (green = floor)</label></div>
       <div class="checkRow"><input id="collisionOverlayChk" type="checkbox"><label for="collisionOverlayChk">Colliding tile overlay (red = solid)</label></div>
+      <div class="checkRow"><input id="gridLinesChk" type="checkbox"><label for="gridLinesChk">Tile grid lines</label></div>
+      <div class="checkRow"><input id="wallClipOverlayChk" type="checkbox"><label for="wallClipOverlayChk">Wall-clip overlay (yellow = auto-fixed, orange = flagged)</label></div>
       <div class="checkRow"><input id="probeVizChk" type="checkbox"><label for="probeVizChk">Probe shape visualizer (follows camera target)</label></div>
     </div>
     <div id="sidebarScroll">
@@ -331,6 +333,72 @@ function rebuildCollisionOverlay(result) {
 }
 $('collisionOverlayChk').addEventListener('change', () => { if (collisionOverlayMesh) collisionOverlayMesh.visible = $('collisionOverlayChk').checked; });
 
+// ── Tile grid lines — the fill overlays above are flat painted regions
+// with no seam between adjacent tiles; this draws each tile's own 4
+// edges as line segments so individual tiles are actually visible, not
+// just "floor" as one undifferentiated blob. ─────────────────────────────
+let gridLinesMesh = null;
+function rebuildGridLines(result) {
+  if (gridLinesMesh) { scene.remove(gridLinesMesh); gridLinesMesh.geometry.dispose(); gridLinesMesh.material.dispose(); gridLinesMesh = null; }
+  const claimed = result.claimed;
+  const solidRing = new Set();
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const key of claimed) {
+    const [c, r] = key.split(',').map(Number);
+    for (const [dx, dy] of DIRS) { const nk = `${c + dx},${r + dy}`; if (!claimed.has(nk)) solidRing.add(nk); }
+  }
+  const positions = [];
+  const y = 0.07; // above both fill overlays (0.05/0.06) so lines always read on top of them
+  for (const key of new Set([...claimed, ...solidRing])) {
+    const [c, r] = key.split(',').map(Number);
+    const x0 = c, x1 = c + 1, z0 = r, z1 = r + 1;
+    positions.push(x0, y, z0, x1, y, z0, x1, y, z0, x1, y, z1, x1, y, z1, x0, y, z1, x0, y, z1, x0, y, z0);
+  }
+  if (!positions.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false, depthTest: false });
+  gridLinesMesh = new THREE.LineSegments(geo, mat);
+  gridLinesMesh.renderOrder = 1000;
+  gridLinesMesh.visible = $('gridLinesChk').checked;
+  scene.add(gridLinesMesh);
+}
+$('gridLinesChk').addEventListener('change', () => { if (gridLinesMesh) gridLinesMesh.visible = $('gridLinesChk').checked; });
+
+// ── Wall-clip diagnostic overlay — visualizes exactly what
+// detectWallClipTiles (cavern-sculptor.js) found: tiles whose rendered
+// mesh had wall geometry clipped into their own floor rect. Yellow =
+// auto-corrected (the engine already pushed that wall out a ring, so
+// this is just showing where it acted); orange = flagged but left alone
+// (>=50% of the tile's own area was wall — likely a mis-claimed tile,
+// not a simple bump, so the engine didn't guess a fix). ─────────────────
+let wallClipOverlayMesh = null;
+function rebuildWallClipOverlay(result) {
+  if (wallClipOverlayMesh) { scene.remove(wallClipOverlayMesh); wallClipOverlayMesh.geometry.dispose(); wallClipOverlayMesh.material.dispose(); wallClipOverlayMesh = null; }
+  const positions = [], colors = [], indices = [];
+  let vi = 0;
+  const y = 0.08;
+  const addTile = (c, r, color) => {
+    positions.push(c, y, r, c + 1, y, r, c + 1, y, r + 1, c, y, r + 1);
+    for (let i = 0; i < 4; i++) colors.push(color[0], color[1], color[2]);
+    indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    vi += 4;
+  };
+  for (const [c, r] of (result.wallClipMinorTiles || [])) addTile(c, r, [0.95, 0.85, 0.2]);
+  for (const [c, r] of (result.wallClipMajorTiles || [])) addTile(c, r, [0.95, 0.55, 0.15]);
+  if (!positions.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+  wallClipOverlayMesh = new THREE.Mesh(geo, mat);
+  wallClipOverlayMesh.renderOrder = 998;
+  wallClipOverlayMesh.visible = $('wallClipOverlayChk').checked;
+  scene.add(wallClipOverlayMesh);
+}
+$('wallClipOverlayChk').addEventListener('change', () => { if (wallClipOverlayMesh) wallClipOverlayMesh.visible = $('wallClipOverlayChk').checked; });
+
 // ── Probe shape visualizer — two wireframe ellipsoids (unit sphere scaled
 // per-axis) showing the actual detection-probe shape at its actual size:
 // the normal cluster probe (probeRadius xz, the engine's real computed
@@ -515,6 +583,7 @@ function renderStats(result, genMs, wallCheck, seedText) {
     <div>Probe Y radius: <b>${result.probeYRadius.toFixed(3)}</b> &nbsp; Domain top Y: <b>${result.domainTopY.toFixed(2)}</b></div>
     <div>Ceiling margin: <b style="color:${ceilOk ? 'var(--ok)' : 'var(--bad)'}">${ceilingMargin.toFixed(2)}</b> ${ceilOk ? '(open)' : '(risk of a capped ceiling)'}</div>
     <div>Sculpt volume dims: <b>${result.dims.x.toFixed(1)} × ${result.dims.y.toFixed(1)} × ${result.dims.z.toFixed(1)}</b></div>
+    <div>Wall-clip tiles: <b style="color:var(--warn)">${(result.wallClipMinorTiles || []).length} auto-fixed</b>, <b style="color:${(result.wallClipMajorTiles || []).length ? 'var(--bad)' : 'var(--ok)'}">${(result.wallClipMajorTiles || []).length} flagged</b></div>
   `;
 }
 
@@ -548,6 +617,8 @@ function runGenerate() {
 
     rebuildTileOverlay(result);
     rebuildCollisionOverlay(result);
+    rebuildGridLines(result);
+    rebuildWallClipOverlay(result);
     updateProbeVizScale(opts, result);
 
     let ex = 0, ez = 0;

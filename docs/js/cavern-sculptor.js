@@ -896,6 +896,45 @@
     return clipAndStitch(st, positions, indices, keepTiles, skipCapEdges, tileSize);
   }
 
+  // ── Wall-clipping detection ─────────────────────────────────────────
+  // clipAndStitch clips every triangle strictly by which tile rectangle(s)
+  // it geometrically overlaps in XZ — it has no notion of "this is a wall
+  // surface, not a floor" at all. A near-vertical wall triangle whose real
+  // 3D shape mostly belongs to a neighboring (unclaimed) tile can still
+  // have a sliver of its XZ footprint dip into a claimed tile's own
+  // rectangle — that sliver gets clipped and rendered as if it were part
+  // of that floor tile, i.e. visible rock poking into a tile the player
+  // can walk anywhere on (bGrid marks the whole tile ROCK or GRASS, never
+  // partial) — confirmed report: it reads as an enterable-looking bump
+  // that's actually in the way, since collision is tile-flat but the mesh
+  // isn't. Buckets every "wall-like" triangle (tall Y-range — the same
+  // >0.15 threshold this file's own wall-coverage regression check uses)
+  // in the mesh by which claimed tile's rect its centroid falls in, and
+  // accumulates both its XZ area and its area-weighted offset from that
+  // tile's own center — the offset's dominant axis/sign is which
+  // neighbor direction the intrusion is actually coming from.
+  function detectWallClipTiles(mesh, claimed, ts) {
+    const buckets = new Map();
+    const pos = mesh.positions, idx = mesh.indices;
+    for (let t = 0; t < idx.length; t += 3) {
+      const ia = idx[t] * 3, ib = idx[t + 1] * 3, ic = idx[t + 2] * 3;
+      const ay = pos[ia + 1], by = pos[ib + 1], cy = pos[ic + 1];
+      if (Math.max(ay, by, cy) - Math.min(ay, by, cy) <= 0.15) continue; // not wall-like
+      const ax = pos[ia], az = pos[ia + 2], bx = pos[ib], bz = pos[ib + 2], cx = pos[ic], cz = pos[ic + 2];
+      const centX = (ax + bx + cx) / 3, centZ = (az + bz + cz) / 3;
+      const key = `${Math.floor(centX / ts)},${Math.floor(centZ / ts)}`;
+      if (!claimed.has(key)) continue; // only floor tiles matter here — wall poking into wall is fine
+      const area = Math.abs((bx - ax) * (cz - az) - (cx - ax) * (bz - az)) * .5;
+      const [c, r] = key.split(',').map(Number);
+      let b = buckets.get(key);
+      if (!b) { b = { area: 0, wDx: 0, wDz: 0 }; buckets.set(key, b); }
+      b.area += area;
+      b.wDx += (centX - (c + .5) * ts) * area;
+      b.wDz += (centZ - (r + .5) * ts) * area;
+    }
+    return buckets;
+  }
+
   // ── Top-level orchestration ─────────────────────────────────────────
   // The thin-slab top-down setup itself matches (HA)TunnelSculptorV1.html's
   // own V5-baseline (see its applyModeDefaults). An early attempt at a tall
@@ -1241,7 +1280,37 @@
     // above has finished, right before meshing.
     solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts, carveOpts);
 
-    const mesh = extractMesh(st, claimed, skipCapEdges, ts);
+    let mesh = extractMesh(st, claimed, skipCapEdges, ts);
+
+    // Detect wall geometry clipped into a floor tile's own rect (see
+    // detectWallClipTiles' docblock) and correct the common case: for any
+    // tile where the intrusion is a genuine minority of its own XZ area
+    // (<50% — past that it's not "a bump poking in", the tile itself is
+    // mostly wall and was probably mis-claimed, a different problem this
+    // pass shouldn't guess at fixing), render one extra ring of tile
+    // outward on the intrusion's own dominant side. That tile was never
+    // added to `claimed` — bGrid still marks it solid, nothing about
+    // collision changes — only the mesh's own render/clip boundary grows
+    // there, so the wall surface (and stitchBoundaryCaps' seal) moves out
+    // to its far edge instead of sitting right against the floor tile
+    // it was bleeding into.
+    const tileArea = ts * ts;
+    const clipBuckets = detectWallClipTiles(mesh, claimed, ts);
+    const wallClipMinorTiles = [], wallClipMajorTiles = [];
+    const renderTiles = new Set(claimed);
+    for (const [key, b] of clipBuckets) {
+      const frac = b.area / tileArea;
+      if (frac < .02) continue; // negligible sliver, not worth acting on
+      const [c, r] = key.split(',').map(Number);
+      if (frac >= .5) { wallClipMajorTiles.push([c, r]); continue; }
+      wallClipMinorTiles.push([c, r]);
+      const dir = Math.abs(b.wDx) >= Math.abs(b.wDz)
+        ? [b.wDx > 0 ? 1 : -1, 0]
+        : [0, b.wDz > 0 ? 1 : -1];
+      const nk = `${c + dir[0]},${r + dir[1]}`;
+      if (!claimed.has(nk)) renderTiles.add(nk);
+    }
+    if (renderTiles.size > claimed.size) mesh = extractMesh(st, renderTiles, skipCapEdges, ts);
 
     // Shift Y so the floor sits at y=0 — the game's floor-referenced
     // convention (see interior-scene-builder.js's panelCornersFor). X/Z
@@ -1272,6 +1341,13 @@
       claimed, entranceTiles, nestTile: [nfx, nfy], mesh,
       levels: levels.map(l => l - floorY), probeYRadius, dims,
       domainTopY: dims.y * .5 * 1.08 - floorY,
+      // wallClipMinorTiles were auto-corrected (see the extraction above);
+      // wallClipMajorTiles were only flagged, since a >=50% intrusion
+      // usually means the tile itself was mis-claimed rather than having
+      // a mere bump poking into it — not something this pass should guess
+      // how to fix. Both in the same local tile-index space as
+      // entranceTiles/nestTile.
+      wallClipMinorTiles, wallClipMajorTiles,
     };
   }
 
