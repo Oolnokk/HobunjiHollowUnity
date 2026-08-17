@@ -22551,6 +22551,7 @@
         refreshActionBar,
         moveCreatureToward,
         awardRangedMastery: (itemKey) => awardToolMasteryXp(itemKey, MASTERY_XP_PER_COMBAT_HIT),
+        debugLog, // Lets the ranged module report its latest testable behavior in the on-screen mobile debug panel.
       });
 
       window.Mounts?.init({

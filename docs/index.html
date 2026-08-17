@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260817d"></script>
+  <script src="config/scratchbones-config.js?v=20260817e"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
   <link rel="stylesheet" href="style.css?v=20260815a">
@@ -113,7 +113,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20260712d"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/combat/ranged-weapons.js?v=20260817c"></script>
+  <script src="js/combat/ranged-weapons.js?v=20260817d"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -1756,7 +1756,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260817b"></script>
+  <script src="game.js?v=20260817c"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

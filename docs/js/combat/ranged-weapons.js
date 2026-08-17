@@ -10,6 +10,10 @@
   let lastAudioEvent = 'idle'; // Exposed through __rangedDebug so mobile testing can confirm cue type and chorus layer count.
   const SCATTERBOW_LOAD_CHORUS_MS = [0, 55, 110]; // Used by playRangedActionSfx() to layer the scatterbow's multiple loading mechanisms.
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
+  const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
+  const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
+  const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
+  const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
 
   // Shared by both loading weapons so crossbow and scatterbow use the exact
   // authored Scatterbow Fire pose set supplied by the animation editor.
@@ -68,7 +72,10 @@
     },
   };
 
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    deps.debugLog?.('Ranged update: full-volume mobile-safe firing audio, 15-degree projectile sprite windows, and affliction comet trails.');
+  }
 
   function applyConfig(config) {
     if (!config) return;
@@ -153,7 +160,7 @@
     const delays = itemKey === 'scatterbow'
       ? (kind === 'load' ? SCATTERBOW_LOAD_CHORUS_MS : SCATTERBOW_FIRE_CHORUS_MS)
       : [0]; // Used to keep an ordinary crossbow mechanically singular.
-    const layerVolumeScale = itemKey === 'scatterbow' ? (kind === 'load' ? 0.55 : 0.52) : 1; // Used to keep layered scatterbow cues balanced against one amplified crossbow cue.
+    const layerVolumeScale = itemKey === 'scatterbow' ? (kind === 'load' ? 0.55 : 0.52) : 1; // Used to keep layered scatterbow cues balanced against one full-volume crossbow cue.
     lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:${kind}:${delays.length}-layer`;
     delays.forEach((delayMs, index) => {
       const playLayer = () => {
@@ -241,11 +248,102 @@
     return root;
   }
 
+  // Player ranged weapons do not currently have their own progression tree,
+  // so they remain affliction-free unless a weapon config explicitly supplies
+  // afflictionBonuses. Enemy arrows reuse the same sharp-tag baseline as the
+  // bandit's melee attacks, keeping damage, resource rings, and trail color in
+  // agreement instead of applying a visual-only color.
+  function projectileAfflictionBonuses(def, team) {
+    const configured = def.afflictionBonuses; // Used by future ammunition/weapon definitions to declare their exact status payload.
+    if (configured && typeof configured === 'object') return { ...configured };
+    if (team === 'player') return {};
+    return { ...(window.ResourceSystem?.afflictionBonusesForTag?.(def.damageType || 'sharp') || {}) };
+  }
+
+  // Reuses the resource-ring/melee-trail palette verbatim. An affliction-free
+  // projectile still receives a white comet, matching the melee cone trail's
+  // plain-hit fallback rather than disappearing entirely.
+  function projectileTrailColors(afflictionBonuses) {
+    const ids = Object.keys(afflictionBonuses || {}).filter(id => Number(afflictionBonuses[id]) > 0); // Used as both the visual lane list and mobile debug payload.
+    if (!ids.length) return [{ id: 'plain', color: 0xffffff }];
+    return ids.slice(0, PROJECTILE_TRAIL_MAX_LANES).map(id => {
+      const raw = window.ResourceRings?.AFFLICTION_COLORS?.[id]; // Used to stay synchronized with resource rings and melee trails.
+      const color = raw == null ? 0xffffff : (window.ResourceRings?.neonizeColor?.(raw) ?? raw); // Stored on the lane for its additive vertex gradient.
+      return { id, color };
+    });
+  }
+
+  function createProjectileTrails(scene, colorEntries, radiusPx) {
+    const trailWidth = Math.max(0.012, radiusPx / deps.TILE * 0.32); // Used as the head width and spacing scale for this projectile's ribbons.
+    return colorEntries.map((entry, laneIndex) => {
+      const geometry = new THREE.BufferGeometry(); // Preallocated once and updated in place while this projectile flies.
+      const positions = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3); // Holds left/right ribbon edges for every path sample.
+      const colors = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3); // Holds the tail-to-head brightness gradient in the affliction hue.
+      const indices = []; // Connects consecutive left/right pairs into the ribbon triangles.
+      for (let i = 0; i < PROJECTILE_TRAIL_MAX_POINTS - 1; i++) {
+        const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+        indices.push(a, b, c, b, d, c);
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geometry.setIndex(indices);
+      geometry.setDrawRange(0, 0);
+      const material = new THREE.MeshBasicMaterial({
+        transparent: true, opacity: 0.86, depthWrite: false, vertexColors: true,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      }); // Additive unlit material matches the existing melee trail treatment.
+      const mesh = new THREE.Mesh(geometry, material); // Lives in world space so the tail stays behind as the projectile advances.
+      mesh.name = `projectileCometTrail:${entry.id}`;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = (deps.heldObjectRenderOrder || 1.5) - 0.01;
+      scene.add(mesh);
+      return { mesh, color: new THREE.Color(entry.color), id: entry.id, laneIndex, laneCount: colorEntries.length, trailWidth };
+    });
+  }
+
+  function updateProjectileTrails(p) {
+    const point = { x: p.x / deps.TILE, y: p.mesh.position.y - 0.01, z: p.y / deps.TILE }; // Appended in world space to form the visible comet path.
+    const prior = p.trailPoints[p.trailPoints.length - 1]; // Used to suppress duplicate samples while a projectile is stationary/spawning.
+    if (!prior || Math.hypot(point.x - prior.x, point.z - prior.z) > 0.01) p.trailPoints.push(point);
+    while (p.trailPoints.length > PROJECTILE_TRAIL_MAX_POINTS) p.trailPoints.shift();
+    const count = p.trailPoints.length; // Controls the active portion of each preallocated ribbon.
+    if (count < 2) return;
+
+    for (const lane of p.trailMeshes) {
+      const positionAttr = lane.mesh.geometry.attributes.position; // Updated with the current sampled flight path.
+      const colorAttr = lane.mesh.geometry.attributes.color; // Updated with a dim-tail/bright-head comet gradient.
+      const laneOffset = (lane.laneIndex - (lane.laneCount - 1) / 2) * lane.trailWidth * 1.45; // Separates simultaneous affliction colors without widening one ribbon.
+      for (let i = 0; i < count; i++) {
+        const sample = p.trailPoints[i]; // Supplies this ribbon cross-section's world position.
+        const before = p.trailPoints[Math.max(0, i - 1)]; // Supplies a stable tangent at the projectile head.
+        const after = p.trailPoints[Math.min(count - 1, i + 1)]; // Supplies a stable tangent at the projectile tail.
+        const dx = after.x - before.x, dz = after.z - before.z;
+        const length = Math.hypot(dx, dz) || 1; // Normalizes the path-perpendicular vector safely.
+        const px = -dz / length, pz = dx / length;
+        const u = i / Math.max(1, count - 1); // Drives the narrow/dim tail into the wider/brighter projectile head.
+        const halfWidth = lane.trailWidth * (0.18 + u * 0.82);
+        const centerX = sample.x + px * laneOffset, centerZ = sample.z + pz * laneOffset;
+        const vertex = i * 2;
+        positionAttr.setXYZ(vertex, centerX - px * halfWidth, sample.y, centerZ - pz * halfWidth);
+        positionAttr.setXYZ(vertex + 1, centerX + px * halfWidth, sample.y, centerZ + pz * halfWidth);
+        const intensity = 0.05 + 0.95 * u * u; // Keeps the tail colored but makes its projectile-adjacent core read brightest.
+        colorAttr.setXYZ(vertex, lane.color.r * intensity, lane.color.g * intensity, lane.color.b * intensity);
+        colorAttr.setXYZ(vertex + 1, lane.color.r * intensity, lane.color.g * intensity, lane.color.b * intensity);
+      }
+      positionAttr.needsUpdate = true;
+      colorAttr.needsUpdate = true;
+      lane.mesh.geometry.setDrawRange(0, (count - 1) * 6);
+      lane.mesh.visible = true;
+    }
+  }
+
   function spawnProjectile(itemKey, x, y, angle, team, owner) {
     const def = defFor(itemKey);
     if (!def) return null;
     const scene = deps.getActiveScene();
     const mesh = createProjectileMesh(def, def.projectileRadiusPx);
+    const afflictionBonuses = projectileAfflictionBonuses(def, team); // Passed to both impact damage and comet color selection.
+    const trailColors = projectileTrailColors(afflictionBonuses); // Used to build one readable ribbon lane per applied affliction.
     const surfaceY = deps.worldSurfaceY(x, y);
     mesh.position.set(x / deps.TILE, surfaceY + 0.55, y / deps.TILE);
     scene.add(mesh);
@@ -255,6 +353,9 @@
       vx: Math.cos(angle) * def.speedPxS, vy: Math.sin(angle) * def.speedPxS,
       angle, distancePx: 0, maxDistancePx: def.rangeTiles * deps.TILE,
       areaId: deps.getCurrentArea(), pngRot: -angle + Math.PI / 2, perpState: {}, dead: false,
+      afflictionBonuses, trailAfflictionIds: trailColors.map(entry => entry.id),
+      trailPoints: [{ x: x / deps.TILE, y: surfaceY + 0.54, z: y / deps.TILE }], // Seeds the comet at the muzzle so it appears on the first moving frame.
+      trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     p.visual.rotation.y = p.pngRot;
     projectiles.push(p);
@@ -289,7 +390,7 @@
         if (c.health <= 0 || c.areaId && c.areaId !== p.areaId) continue;
         const hitRadius = p.def.projectileRadiusPx + Math.max(18, (c.def?.modelWidth || 0.6) * deps.TILE * 0.4);
         if (pointSegmentDistanceSq(c.x, c.y, p.prevX, p.prevY, p.x, p.y) > hitRadius ** 2) continue;
-        deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS, { tag: 'sharp', ranged: true });
+        deps.damageCreature(c, p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses });
         deps.awardRangedMastery?.(p.itemKey);
         return true;
       }
@@ -298,7 +399,7 @@
     const player = deps.player;
     const hitRadius = p.def.projectileRadiusPx + deps.playerRadius;
     if (pointSegmentDistanceSq(player.x, player.y, p.prevX, p.prevY, p.x, p.y) <= hitRadius ** 2) {
-      deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS, { tag: 'sharp', ranged: true });
+      deps.damagePlayer(p.def.damage, p.prevX, p.prevY, p.def.knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses });
       return true;
     }
     return false;
@@ -309,7 +410,7 @@
     // root sphere's vx/vy and trajectory angle are never changed here.
     const rawTargetRotY = -p.angle + Math.PI / 2;
     const perps = deps.cameraRelativeCreaturePerps();
-    const deadRad = deps.creaturePerpDeadRad;
+    const deadRad = PROJECTILE_PERP_DEAD_RAD; // Dedicated 15-degree window; player and animal portrait tuning remains unchanged.
     const mode = window.PerpRotation?.CREATURE_PLANE_ROT_MODE;
     if (mode === 'snap') {
       const result = window.PerpRotation.creatureSnapSwayTarget(p.perpState, rawTargetRotY, perps, deadRad, dt, true);
@@ -334,6 +435,11 @@
       child.material?.map?.dispose?.();
       child.material?.dispose?.();
     });
+    for (const lane of p.trailMeshes || []) {
+      lane.mesh.parent?.remove(lane.mesh);
+      lane.mesh.geometry?.dispose?.();
+      lane.mesh.material?.dispose?.();
+    }
   }
 
   function updateProjectiles(dt) {
@@ -351,6 +457,7 @@
       p.mesh.position.z = p.y / deps.TILE;
       p.mesh.position.y = deps.worldSurfaceY(p.x, p.y) + 0.55;
       updateProjectileVisual(p, dt);
+      updateProjectileTrails(p);
     }
     for (let i = projectiles.length - 1; i >= 0; i--) if (projectiles[i].dead) projectiles.splice(i, 1);
   }
@@ -438,13 +545,19 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
-    snapshot: () => ({ lastEvent, lastAudioEvent, activeProjectiles: projectiles.length, loaded: Object.fromEntries(playerLoaded) }),
+    snapshot: () => ({
+      latestChange: 'Mobile-safe full-volume fire cue; 15-degree projectile sprite deadzone; affliction-colored comet trails.',
+      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG,
+      activeProjectiles: projectiles.length,
+      activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
+      loaded: Object.fromEntries(playerLoaded),
+    }),
   };
 })();

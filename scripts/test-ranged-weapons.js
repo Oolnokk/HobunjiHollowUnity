@@ -39,14 +39,26 @@ assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_shootarrow.m4
 assert.match(scratchbonesConfig, /"rangedLoad":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_loading_mechanism\.m4a"/, 'combat audio config must register the ranged loading cue');
 assert.match(scratchbonesConfig, /"rangedFire":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_shootarrow\.m4a"/, 'combat audio config must register the ranged firing cue');
 assert.match(scratchbonesConfig, /"rangedLoad":[^\n]*"volume":\s*0\.42/, 'loading mechanism cue must use the quieter mix');
-assert.match(scratchbonesConfig, /"rangedFire":[^\n]*"volume":\s*0\.95,[^\n]*"gainBoost":\s*1\.6/, 'arrow cue must use Web Audio amplification beyond the element volume ceiling');
+assert.match(scratchbonesConfig, /"rangedFire":[^\n]*"volume":\s*1\.0/, 'arrow cue must use full mobile-safe media-element volume');
+assert.doesNotMatch(scratchbonesConfig.match(/"rangedFire":[^\n]*/)?.[0] || '', /gainBoost/, 'delayed arrow playback must not depend on a suspendable AudioContext gain path');
 assert.match(audioSystem, /function playOneShotSfx\([\s\S]*playSfxAudioElement\(snd, volume, Number\(cfgEntry\.gainBoost\) \|\| 1\)/, 'combat one-shots must honor optional gain boost');
 assert.match(ranged, /SCATTERBOW_LOAD_CHORUS_MS\s*=\s*\[0, 55, 110\]/, 'scatterbow loading must use a delayed mechanism chorus');
 assert.match(ranged, /SCATTERBOW_FIRE_CHORUS_MS\s*=\s*\[0, 28, 56, 84, 112, 140\]/, 'scatterbow firing must stagger one sound per projectile');
 assert.match(ranged, /const layerVolumeScale = itemKey === 'scatterbow' \? \(kind === 'load' \? 0\.55 : 0\.52\) : 1/, 'scatterbow chorus layers must be normalized after cue rebalancing');
 assert.match(ranged, /if \(kind === 'load'\) playRangedActionSfx\(itemKey, 'load'\)/, 'player loading must trigger its cue at animation start');
 assert.match(ranged, /playRangedActionSfx\(action\.itemKey, 'fire'\)[\s\S]*spawnVolley/, 'player firing cue must align with projectile release');
-assert.match(ranged, /snapshot:\s*\(\) => \(\{ lastEvent, lastAudioEvent, activeProjectiles:/, 'mobile ranged debug snapshot must report the last audio cue and layer count');
+assert.match(ranged, /PROJECTILE_PERP_DEAD_DEG\s*=\s*15/, 'projectile PNGs must use dedicated 15-degree rotation windows');
+assert.match(ranged, /const deadRad = PROJECTILE_PERP_DEAD_RAD/, 'projectile rotation must not inherit the wider animal deadzone');
+assert.match(ranged, /function projectileTrailColors\([\s\S]*ResourceRings\?\.AFFLICTION_COLORS[\s\S]*ResourceRings\?\.neonizeColor/, 'projectile trails must reuse the melee/resource-ring affliction palette');
+assert.match(ranged, /function projectileAfflictionBonuses\([\s\S]*team === 'player'\) return \{\};[\s\S]*afflictionBonusesForTag/, 'enemy arrows must reuse their real tag affliction while unconfigured player arrows stay progression-neutral');
+assert.match(ranged, /function createProjectileTrails\([\s\S]*vertexColors:\s*true[\s\S]*THREE\.AdditiveBlending/, 'projectiles must create additive vertex-colored comet ribbons');
+assert.match(ranged, /afflictionBonuses:\s*p\.afflictionBonuses/, 'projectile impact and trail colors must describe the same afflictions');
+assert.match(ranged, /snapshot:\s*\(\) => \(\{[\s\S]*projectileDeadzoneDeg:[\s\S]*activeTrailMeshes:/, 'mobile ranged debug snapshot must report deadzone and comet-trail state');
+assert.match(ranged, /deps\.debugLog\?\.\('Ranged update:/, 'ranged startup must summarize the latest change in the visible mobile debug log');
+assert.match(game, /awardRangedMastery:[\s\S]*debugLog,\s*\/\/ Lets the ranged module report/, 'game bootstrap must supply the visible debug logger to the ranged module');
+assert.match(index, /ranged-weapons\.js\?v=20260817d/, 'game bootstrap must invalidate the projectile trail/deadzone cache');
+assert.match(index, /scratchbones-config\.js\?v=20260817e/, 'game bootstrap must invalidate the mobile-safe ranged audio mix');
+assert.match(index, /game\.js\?v=20260817c/, 'game bootstrap must invalidate the ranged visible-debug wiring cache');
 
 assert.match(editor, /value="load">Load: Neutral → Windup → Neutral/, 'editor must expose loading playback');
 assert.match(editor, /value="fire">Fire: Neutral → Strike → Neutral/, 'editor must expose firing playback');
