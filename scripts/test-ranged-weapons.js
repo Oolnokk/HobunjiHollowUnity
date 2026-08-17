@@ -16,6 +16,7 @@ const editor = read('docs/tools/attack-animation-editor/index.html');
 const index = read('docs/index.html');
 const combatConfig = JSON.parse(read('docs/config/combat/attack-values.json'));
 const gangConfig = JSON.parse(read('docs/config/bandits/bandit-gang-config.json'));
+const scratchbonesConfig = read('docs/config/scratchbones-config.js');
 
 assert.match(index, /js\/combat\/ranged-weapons\.js/, 'runtime must load the ranged module');
 assert.match(game, /ranged:\s*\['shoot'\]/, 'ranged slot must expose its own action');
@@ -32,6 +33,15 @@ assert.match(ranged, /SphereGeometry/, 'projectile collision body must be a sphe
 assert.match(ranged, /visible:\s*false/, 'projectile collider must remain hidden');
 assert.match(ranged, /creatureSnapSwayTarget/, 'projectile PNG must reuse animal snap/deadzone rotation');
 assert.match(ranged, /root sphere's vx\/vy and trajectory angle are never changed/, 'visual deadzone must not steer the projectile');
+assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_loading_mechanism.m4a')), 'loading mechanism recording must be present');
+assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_shootarrow.m4a')), 'arrow firing recording must be present');
+assert.match(scratchbonesConfig, /"rangedLoad":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_loading_mechanism\.m4a"/, 'combat audio config must register the ranged loading cue');
+assert.match(scratchbonesConfig, /"rangedFire":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_shootarrow\.m4a"/, 'combat audio config must register the ranged firing cue');
+assert.match(ranged, /SCATTERBOW_LOAD_CHORUS_MS\s*=\s*\[0, 55, 110\]/, 'scatterbow loading must use a delayed mechanism chorus');
+assert.match(ranged, /SCATTERBOW_FIRE_CHORUS_MS\s*=\s*\[0, 28, 56, 84, 112, 140\]/, 'scatterbow firing must stagger one sound per projectile');
+assert.match(ranged, /if \(kind === 'load'\) playRangedActionSfx\(itemKey, 'load'\)/, 'player loading must trigger its cue at animation start');
+assert.match(ranged, /playRangedActionSfx\(action\.itemKey, 'fire'\)[\s\S]*spawnVolley/, 'player firing cue must align with projectile release');
+assert.match(ranged, /snapshot:\s*\(\) => \(\{ lastEvent, lastAudioEvent, activeProjectiles:/, 'mobile ranged debug snapshot must report the last audio cue and layer count');
 
 assert.match(editor, /value="load">Load: Neutral → Windup → Neutral/, 'editor must expose loading playback');
 assert.match(editor, /value="fire">Fire: Neutral → Strike → Neutral/, 'editor must expose firing playback');
@@ -62,10 +72,11 @@ assert.match(portraitUtils, /onlyHeadSprite[\s\S]*fighter's undecorated base hea
 assert.match(pngAvatar, /function detectHeadRigPixels\([\s\S]*headMask\.centroidPx\.x[\s\S]*method: 'head-sprite-alpha-centroid'/, 'shared neck rig must derive its horizontal pivot from the base-head alpha centroid');
 assert.match(pngAvatar, /function buildSkinnedPlaneGeometry\([\s\S]*cellHasOpaquePixel[\s\S]*visibleCells/, 'shared neck geometry must fit its grid to opaque avatar cells');
 assert.match(pngAvatar, /opaqueBoundsPx:[\s\S]*visibleCellCount:/, 'shared neck geometry must expose alpha-fit diagnostics');
+assert.match(sharedNeckRig, /frontMaterial\.skinning = true;[\s\S]*backMaterial\.skinning = true;/, 'r128 portrait materials must explicitly compile their skinning shader path');
 assert.match(editor, /renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/, 'attack editor must render the head-only centroid mask');
 assert.strictEqual((game.match(/renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/g) || []).length, 2, 'player and walking NPC neck rigs must use head-only centroid masks');
-assert.match(index, /png-plane-avatar\.js\?v=20260817c/, 'game bootstrap must invalidate the alpha-fitted neck-rig cache');
-assert.match(editor, /png-plane-avatar\.js\?v=20260817c/, 'attack editor must invalidate the alpha-fitted neck-rig cache');
+assert.match(index, /png-plane-avatar\.js\?v=20260817d/, 'game bootstrap must invalidate the r128 skin-shader cache');
+assert.match(editor, /png-plane-avatar\.js\?v=20260817d/, 'attack editor must invalidate the r128 skin-shader cache');
 assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
 
 for (const itemKey of ['crossbow', 'scatterbow']) {

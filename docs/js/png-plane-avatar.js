@@ -472,6 +472,13 @@
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
     const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
+    // The game and Attack Animation Editor still use Three.js r128, where
+    // SkinnedMesh alone does not enable USE_SKINNING in the material shader.
+    // The CPU probe path always applies bones, which is why its dots moved
+    // while the portrait stayed rigid. r165 infers this from isSkinnedMesh;
+    // retaining the explicit flag is harmless there and keeps both paths live.
+    frontMaterial.skinning = true;
+    backMaterial.skinning = true;
 
     const torsoBone = new THREE.Bone();
     torsoBone.name = `${config.name}_torso_bone`;

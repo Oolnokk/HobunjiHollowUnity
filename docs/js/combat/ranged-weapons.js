@@ -7,6 +7,9 @@
   const playerLoaded = new Map();
   let playerAction = null;
   let lastEvent = 'idle';
+  let lastAudioEvent = 'idle'; // Exposed through __rangedDebug so mobile testing can confirm cue type and chorus layer count.
+  const SCATTERBOW_LOAD_CHORUS_MS = [0, 55, 110]; // Used by playRangedActionSfx() to layer the scatterbow's multiple loading mechanisms.
+  const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
 
   // Shared by both loading weapons so crossbow and scatterbow use the exact
   // authored Scatterbow Fire pose set supplied by the animation editor.
@@ -140,6 +143,28 @@
     return isLoaded(itemKey) ? `Fire ${def.label}` : `Load ${def.label}`;
   }
 
+  // Crossbows play one cue. Scatterbows layer the corresponding cue with a
+  // short delay and subtle pitch spread so the six-shot volley reads as a
+  // chorus rather than six perfectly phase-aligned copies of one recording.
+  function playRangedActionSfx(itemKey, kind, owner = null) {
+    const audio = window.AudioSystem; // Used to route player cues through global SFX volume and bandit cues through existing distance falloff.
+    const cfgEntry = audio?.combatSfxConfig?.()[kind === 'load' ? 'rangedLoad' : 'rangedFire']; // Used as the shared recording/config for this action phase.
+    if (!cfgEntry) return;
+    const delays = itemKey === 'scatterbow'
+      ? (kind === 'load' ? SCATTERBOW_LOAD_CHORUS_MS : SCATTERBOW_FIRE_CHORUS_MS)
+      : [0]; // Used to keep an ordinary crossbow mechanically singular.
+    lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:${kind}:${delays.length}-layer`;
+    delays.forEach((delayMs, index) => {
+      const playLayer = () => {
+        const pitch = itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1; // Used to keep delayed layers distinct without changing the source's identity.
+        if (owner) audio.playCreatureSfxAt?.(owner, cfgEntry, pitch);
+        else audio.playOneShotSfx?.(cfgEntry, 1, pitch);
+      };
+      if (delayMs > 0) setTimeout(playLayer, delayMs);
+      else playLayer();
+    });
+  }
+
   function startPlayerAction(itemKey) {
     const def = defFor(itemKey);
     if (!def || playerAction) return false;
@@ -156,6 +181,7 @@
       strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
       holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
     });
+    if (kind === 'load') playRangedActionSfx(itemKey, 'load');
     lastEvent = `player:${itemKey}:${kind}-start`;
     deps.refreshActionBar?.();
     return true;
@@ -173,6 +199,7 @@
     if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * action.def.fireAtFrac) {
       action.fired = true;
       setLoaded(action.itemKey, false);
+      playRangedActionSfx(action.itemKey, 'fire');
       const angle = deps.getPlayerAimAngle();
       spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player);
     }
@@ -332,6 +359,7 @@
     c._rangedMode = true;
     c._rangedAction = { kind, t: 0, durationS: kind === 'fire' ? def.fireDurationS : def.reloadDurationS, fired: false };
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
     lastEvent = `${c.id}:${itemKey}:${kind}-start`;
   }
 
@@ -347,6 +375,7 @@
       if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * def.fireAtFrac) {
         action.fired = true;
         setLoaded(itemKey, false, c);
+        playRangedActionSfx(itemKey, 'fire', c);
         spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c);
       }
       if (action.t >= action.durationS) {
@@ -409,9 +438,10 @@
     get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, x: p.x, y: p.y, vx: p.vx, vy: p.vy, distancePx: p.distancePx })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
     get lastEvent() { return lastEvent; },
+    get lastAudioEvent() { return lastAudioEvent; },
     setPlayerLoaded: (itemKey, loaded) => setLoaded(itemKey, loaded),
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
-    snapshot: () => ({ lastEvent, activeProjectiles: projectiles.length, loaded: Object.fromEntries(playerLoaded) }),
+    snapshot: () => ({ lastEvent, lastAudioEvent, activeProjectiles: projectiles.length, loaded: Object.fromEntries(playerLoaded) }),
   };
 })();
