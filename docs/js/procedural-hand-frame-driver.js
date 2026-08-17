@@ -1,11 +1,11 @@
 // Compatibility frame driver for procedural hands.
 //
-// Three.js r128 installs WebGLRenderer.render on each renderer instance rather
-// than WebGLRenderer.prototype. The original hand bootstrap tried to use a
-// prototype render hook, so pending avatar rigs were never promoted into live
-// hand rigs in the editor (and their tool-follow pass never ran). This small
-// adapter keeps the shared hand implementation untouched while driving its
-// public attach/follow API once per animation frame.
+// The right hand is inverse-animated from the held tool. Each hand model authors
+// a direct handFromTool transform (hand root relative to the tool attach frame).
+// The tool pose stays authoritative while the requested hand target is reachable.
+// If it exceeds the species' arm length, IK clamps the hand to the reach sphere
+// and the tool is translated inward by that exact delta. The same rule is used
+// by gameplay and the Attack Animation Editor.
 (function (global) {
   'use strict';
 
@@ -15,9 +15,12 @@
   if (!hands?.attach || !profiles || !avatarApi?.buildSinglePlaneAvatarModel) return;
   if (avatarApi.buildSinglePlaneAvatarModel.__hobunjiHandFrameDriverWrapped) return;
 
-  const pending = new Set(); // Avatars wait here until their caller has inserted them under the real floor/body root.
-  const managed = new Set(); // Rigs attached by this driver and updated before the page's normal render callback.
-  let gameDeps = null; // Captured from the existing player-body bridge so gameplay gets the same tool-follow behavior.
+  const pending = new Set(); // Avatars wait here until their caller inserts them under the real floor/body root.
+  const managed = new Set(); // Rigs attached by this driver and synchronized to held tools.
+  const hookedMeshes = new WeakMap(); // Preserves pre-existing onBeforeRender callbacks while adding current-frame IK.
+  let gameDeps = null; // Captured from the existing player-body bridge so gameplay uses the same inverse-hand rule.
+  let pendingEditorRewrite = null; // Persists a clamped authored keyframe after the render that discovered the overreach.
+  let syncing = false; // Prevents nested onBeforeRender callbacks from solving the same rig recursively.
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -88,7 +91,8 @@
     });
     if (!rig) return false;
     avatarRoot.userData.proceduralArmRig = rig;
-    managed.add({ avatarRoot, rig });
+    record.rig = rig;
+    managed.add(record);
     return true;
   }
 
@@ -105,6 +109,7 @@
       gender: identity.gender,
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
+      rig: null,
     });
     return avatarRoot;
   };
@@ -125,19 +130,132 @@
     return null;
   }
 
-  function followRigToTool(rig, toolHolder) {
-    if (!rig || !toolHolder?.visible || !toolHolder.parent) {
-      rig?.useIdlePose?.();
-      return;
+  function transformForRecord(record) {
+    const raw = profiles.handTransformForSpecies?.(record.speciesId)
+      || profiles.modelForSpecies?.(record.speciesId)?.handFromTool
+      || {};
+    const p = raw.position || {};
+    const r = raw.rotationDeg || {};
+    const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
+    const effectiveScale = Number(profiles.effectiveScaleFor?.(record.speciesId, record.gender)) || 1;
+    const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * effectiveScale;
+    return {
+      position: {
+        x: (Number(p.x) || 0) * unit,
+        y: (Number(p.y) || 0) * unit,
+        z: (Number(p.z) || 0) * unit,
+      },
+      rotationDeg: {
+        pitch: Number(r.pitch) || 0,
+        yaw: Number(r.yaw) || 0,
+        roll: Number(r.roll) || 0,
+      },
+    };
+  }
+
+  function editorPhaseAtKeyframe() {
+    if (!/\/tools\/attack-animation-editor\//.test(location.pathname)) return null;
+    const playButton = document.getElementById('playPauseBtn');
+    if (!playButton || !/Play/i.test(playButton.textContent || '')) return null; // Only rewrite authored data while preview is paused.
+    const scrub = Number(document.getElementById('scrub')?.value);
+    const windup = Number(document.getElementById('windupFrac')?.value);
+    const strike = Number(document.getElementById('strikeFrac')?.value);
+    const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 0.0015;
+    if (near(scrub, 0)) return 'neutral';
+    if (near(scrub, windup)) return 'windup';
+    if (near(scrub, strike)) return 'strike';
+    return null;
+  }
+
+  function queueEditorPoseRewrite(localPosition) {
+    const phase = editorPhaseAtKeyframe();
+    if (!phase || !localPosition) return;
+    pendingEditorRewrite = {
+      phase,
+      x: localPosition.x,
+      y: localPosition.y,
+      z: localPosition.z,
+    };
+  }
+
+  function applyPendingEditorRewrite() {
+    const rewrite = pendingEditorRewrite;
+    pendingEditorRewrite = null;
+    if (!rewrite) return;
+    // Dispatch through the editor's own range inputs so its module-scoped anim
+    // object, labels and JSON export all receive exactly the same clamped pose.
+    for (const axis of ['x', 'y', 'z']) {
+      const input = document.getElementById(`${rewrite.phase}_${axis}`);
+      if (!input) continue;
+      const next = Number(rewrite[axis]);
+      if (!Number.isFinite(next) || Math.abs(Number(input.value) - next) < 0.0005) continue;
+      input.value = String(Math.max(Number(input.min), Math.min(Number(input.max), next)));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    toolHolder.parent.updateWorldMatrix?.(true, true);
-    const worldPosition = toolHolder.getWorldPosition(new toolHolder.position.constructor());
-    const worldQuaternion = toolHolder.getWorldQuaternion(new toolHolder.quaternion.constructor());
-    const result = rig.followWorldTarget?.(worldPosition, worldQuaternion);
-    if (!result?.clamped) return;
-    const adjustedLocal = result.target.clone();
-    toolHolder.parent.worldToLocal(adjustedLocal);
-    toolHolder.position.copy(adjustedLocal);
+  }
+
+  function syncRigToTool(record, toolHolder, options = {}) {
+    const rig = record?.rig;
+    if (!rig || !toolHolder?.visible || !toolHolder.parent || syncing) {
+      if (!toolHolder?.visible) rig?.useIdlePose?.();
+      return null;
+    }
+    syncing = true;
+    try {
+      toolHolder.parent.updateWorldMatrix?.(true, true);
+      toolHolder.updateWorldMatrix?.(true, true);
+      const Vector3 = toolHolder.position.constructor;
+      const Quaternion = toolHolder.quaternion.constructor;
+      const toolWorldPosition = toolHolder.getWorldPosition(new Vector3());
+      const toolWorldQuaternion = toolHolder.getWorldQuaternion(new Quaternion());
+      const authored = transformForRecord(record);
+      const handOffset = new Vector3(authored.position.x, authored.position.y, authored.position.z).applyQuaternion(toolWorldQuaternion);
+      const desiredHandWorld = toolWorldPosition.clone().add(handOffset);
+      const offsetQuaternion = new Quaternion().setFromEuler(new record.THREE.Euler(
+        record.THREE.MathUtils.degToRad(authored.rotationDeg.pitch),
+        record.THREE.MathUtils.degToRad(authored.rotationDeg.yaw),
+        record.THREE.MathUtils.degToRad(authored.rotationDeg.roll),
+        'YXZ',
+      ));
+      const desiredHandQuaternion = toolWorldQuaternion.clone().multiply(offsetQuaternion);
+      const result = rig.followWorldTarget?.(desiredHandWorld, desiredHandQuaternion);
+      if (!result?.clamped) return { clamped: false, desiredHandWorld, toolWorldPosition };
+
+      // Preserve the tool's authored rotation and the hand-from-tool offset.
+      // Translating the tool by the hand clamp delta moves both frames together,
+      // making the final hand root land exactly on the reachable IK target.
+      const clampDeltaWorld = result.target.clone().sub(desiredHandWorld);
+      const adjustedToolWorld = toolWorldPosition.clone().add(clampDeltaWorld);
+      const adjustedLocal = adjustedToolWorld.clone();
+      toolHolder.parent.worldToLocal(adjustedLocal);
+      toolHolder.position.copy(adjustedLocal);
+      toolHolder.updateMatrixWorld?.(true);
+      rig.group?.updateMatrixWorld?.(true);
+      if (options.persistEditorPose) queueEditorPoseRewrite(adjustedLocal);
+      return {
+        clamped: true,
+        desiredHandWorld,
+        constrainedHandWorld: result.target.clone(),
+        clampDeltaWorld,
+        adjustedToolLocal: adjustedLocal.clone(),
+      };
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function installToolRenderHooks(record, toolHolder) {
+    if (!record?.rig || !toolHolder?.traverse) return;
+    toolHolder.traverse(node => {
+      if (!node?.isMesh || hookedMeshes.has(node)) return;
+      const previous = typeof node.onBeforeRender === 'function' ? node.onBeforeRender : null;
+      const hook = function inverseHandBeforeToolRender(...args) {
+        syncRigToTool(record, toolHolder, { persistEditorPose: true });
+        previous?.apply(this, args);
+      };
+      hookedMeshes.set(node, previous);
+      node.onBeforeRender = hook;
+    });
   }
 
   const originalInstallGameRuntime = hands.installGameRuntime?.bind(hands);
@@ -148,22 +266,28 @@
     };
   }
 
-  function updateManagedRigs() {
+  function currentToolHolder(record) {
     const editor = /\/tools\/attack-animation-editor\//.test(location.pathname);
+    if (editor) return findEditorToolHolder(record);
+    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
+    return null;
+  }
+
+  function updateManagedRigs() {
     for (const record of [...managed]) {
       if (!record.avatarRoot?.userData || record.avatarRoot.userData.proceduralArmRig !== record.rig) {
         managed.delete(record);
         continue;
       }
-      if (editor) {
-        followRigToTool(record.rig, findEditorToolHolder(record));
-      } else if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) {
-        followRigToTool(record.rig, gameDeps.toolHolder);
-      }
+      const toolHolder = currentToolHolder(record);
+      if (!toolHolder) continue;
+      installToolRenderHooks(record, toolHolder); // Current-frame correction runs immediately before the tool mesh draws.
+      syncRigToTool(record, toolHolder, { persistEditorPose: false }); // Keeps hands responsive even on frames where the tool has no renderable mesh yet.
     }
   }
 
   function frame() {
+    applyPendingEditorRewrite();
     for (const record of [...pending]) {
       if (!record.avatarRoot?.userData) {
         pending.delete(record);
@@ -174,6 +298,25 @@
     updateManagedRigs();
     global.requestAnimationFrame(frame);
   }
+
+  global.ProceduralHandFrameDriver = {
+    syncNow() {
+      const results = [];
+      for (const record of managed) {
+        const toolHolder = currentToolHolder(record);
+        if (toolHolder) results.push(syncRigToTool(record, toolHolder, { persistEditorPose: true }));
+      }
+      return results;
+    },
+    getDebug() {
+      return [...managed].map(record => ({
+        speciesId: record.speciesId,
+        gender: record.gender,
+        handFromTool: profiles.handTransformForSpecies?.(record.speciesId) || null,
+        arm: record.rig?.getDebug?.() || null,
+      }));
+    },
+  };
 
   global.requestAnimationFrame(frame);
 })(window);
