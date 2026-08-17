@@ -568,7 +568,7 @@
   // solid strip just inside every unclaimed tile that borders a claimed
   // one — skipCapEdges (the entrance's doorway/vestibule) is excluded, or
   // this would silently re-seal the one opening that's supposed to exist.
-  function solidifyBoundaryWalls(st, claimed, depth, skipCapEdges, tileSize) {
+  function solidifyBoundaryWalls(st, claimed, depth, skipCapEdges, tileSize, refineOpts) {
     const ts = tileSize || 1;
     const hx = st.dims.x * .5, hy = st.dims.y * .5, hz = st.dims.z * .5;
     const pristineAt = (x, y, z) => Math.min(hx - Math.abs(x), hy - Math.abs(y), hz - Math.abs(z));
@@ -602,6 +602,24 @@
               if (pristine > st.field[id]) st.field[id] = pristine; // only ever restore, never carve
             }
           }
+        }
+        // The heal above is unconditionally correct at the finest grid
+        // resolution, same as carveTileColumn's own field write — but,
+        // same as there, it doesn't refine the octree structure. A coarse
+        // leaf straddling this edge has to blend the tile-column's sharp,
+        // blocky "wall pushed to exactly here" cut against the organic
+        // spline carve's own much softer, jittery gradient just past it —
+        // the mismatch is what actually produces a wall surface that
+        // wobbles/bumps across the true boundary instead of hugging it,
+        // reading as rock poking into the floor's own walkable space (or
+        // receding into it) rather than a clean flush wall. Refining
+        // along the edge at every height the sweep uses — the same
+        // mechanism carveTileColumn already relies on for its own tile —
+        // closes that gap here too.
+        if (refineOpts && refineOpts.adaptive !== false && refineOpts.levels) {
+          const ecx = (e.x0 + e.x1) * .5, ecz = (e.z0 + e.z1) * .5;
+          const rr = Math.max(depth, ts * .6);
+          for (const y of refineOpts.levels) ensureLocalResolution(st, { x: ecx, y, z: ecz }, rr, refineOpts);
         }
       }
     }
@@ -1221,7 +1239,7 @@
     // a claimed tile's edge into an unclaimed neighbor (see this
     // function's docblock) — run once, after every carve/claim/force step
     // above has finished, right before meshing.
-    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts);
+    solidifyBoundaryWalls(st, claimed, Math.max(opts.brushRadius, opts.probeRadius) + opts.wallGridMargin, skipCapEdges, ts, carveOpts);
 
     const mesh = extractMesh(st, claimed, skipCapEdges, ts);
 

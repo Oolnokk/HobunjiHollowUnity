@@ -73,6 +73,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
       <div class="checkRow"><input id="wireframeChk" type="checkbox"><label for="wireframeChk">Wireframe overlay</label></div>
       <div class="checkRow"><input id="keepViewChk" type="checkbox"><label for="keepViewChk">Keep camera view on regenerate</label></div>
       <div class="checkRow"><input id="tileOverlayChk" type="checkbox"><label for="tileOverlayChk">Walkable tile overlay (green = floor)</label></div>
+      <div class="checkRow"><input id="collisionOverlayChk" type="checkbox"><label for="collisionOverlayChk">Colliding tile overlay (red = solid)</label></div>
       <div class="checkRow"><input id="probeVizChk" type="checkbox"><label for="probeVizChk">Probe shape visualizer (follows camera target)</label></div>
     </div>
     <div id="sidebarScroll">
@@ -287,6 +288,48 @@ function rebuildTileOverlay(result) {
   scene.add(tileOverlayMesh);
 }
 $('tileOverlayChk').addEventListener('change', () => { if (tileOverlayMesh) tileOverlayMesh.visible = $('tileOverlayChk').checked; });
+
+// ── Colliding tile overlay — every tile bordering a claimed (floor) tile
+// that ISN'T itself claimed, i.e. the actual solid-by-default ring
+// bGrid's collision defaults to at game-load time (see game.js's
+// hobunji_building_interior.v1 branch: every non-floor tile starts ROCK).
+// Only the immediate ring, not an unbounded exterior, both because that's
+// the only bit that's actually load-bearing (a player only ever presses
+// up against the tiles right next to the floor) and because "every tile
+// not claimed" is an infinite set in this tool's unshifted local space. ──
+let collisionOverlayMesh = null;
+function rebuildCollisionOverlay(result) {
+  if (collisionOverlayMesh) { scene.remove(collisionOverlayMesh); collisionOverlayMesh.geometry.dispose(); collisionOverlayMesh.material.dispose(); collisionOverlayMesh = null; }
+  const claimed = result.claimed;
+  const solidRing = new Set();
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const key of claimed) {
+    const [c, r] = key.split(',').map(Number);
+    for (const [dx, dy] of DIRS) {
+      const nk = `${c + dx},${r + dy}`;
+      if (!claimed.has(nk)) solidRing.add(nk);
+    }
+  }
+  const positions = [], indices = [];
+  let vi = 0;
+  const y = 0.06; // just above the walkable overlay's own y=0.05, so both read cleanly if toggled on together
+  for (const key of solidRing) {
+    const [c, r] = key.split(',').map(Number);
+    positions.push(c, y, r, c + 1, y, r, c + 1, y, r + 1, c, y, r + 1);
+    indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    vi += 4;
+  }
+  if (!positions.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.45, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+  collisionOverlayMesh = new THREE.Mesh(geo, mat);
+  collisionOverlayMesh.renderOrder = 999;
+  collisionOverlayMesh.visible = $('collisionOverlayChk').checked;
+  scene.add(collisionOverlayMesh);
+}
+$('collisionOverlayChk').addEventListener('change', () => { if (collisionOverlayMesh) collisionOverlayMesh.visible = $('collisionOverlayChk').checked; });
 
 // ── Probe shape visualizer — two wireframe ellipsoids (unit sphere scaled
 // per-axis) showing the actual detection-probe shape at its actual size:
@@ -504,6 +547,7 @@ function runGenerate() {
     scene.add(cavernMesh);
 
     rebuildTileOverlay(result);
+    rebuildCollisionOverlay(result);
     updateProbeVizScale(opts, result);
 
     let ex = 0, ez = 0;
