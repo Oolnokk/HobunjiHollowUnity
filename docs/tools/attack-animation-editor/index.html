@@ -120,7 +120,10 @@ canvas{display:block;width:100%;height:100%}
       <label>Neck weight radius <span id="neckRadiusVal">6.5% height</span></label>
       <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.065">
     </div>
-    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. These are preview-only diagnostics and are not exported with the attack.</div>
+    <div class="field" style="margin-top:4px">
+      <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
+    </div>
+    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. The vertex overlay marks every point with more than 1% head weight: cyan is a light blend and yellow is fully head-skinned. These are preview-only diagnostics and are not exported with the attack.</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -339,6 +342,9 @@ let avatarModel = null;
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
 let neckPreviewRadiusFrac = 0.065; // Used by applyPreviewNeckWeights() as the neck blend radius relative to avatar height.
 let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
+let headSkinVertexOverlay = null; // Used to dispose and replace the optional head-weight marker cloud when the avatar or radius changes.
+let headSkinVertexCount = 0; // Used by refreshPreviewDebug() so mobile users can confirm that the overlay found weighted vertices.
+const headSkinVertexScratch = new THREE.Vector3(); // Reused while updating marker positions from the live skeleton each frame.
 let _cosmeticsReady = null;
 function ensureCosmetics() {
   if (!_cosmeticsReady) {
@@ -359,6 +365,97 @@ function buildDefaultAvatarExport(speciesId, gender) {
 function smoothstep01(value) {
   const t = Math.max(0, Math.min(1, Number(value) || 0));
   return t * t * (3 - 2 * t);
+}
+
+function disposeHeadSkinVertexOverlay() {
+  if (!headSkinVertexOverlay) return;
+  headSkinVertexOverlay.parent?.remove(headSkinVertexOverlay);
+  headSkinVertexOverlay.geometry?.dispose();
+  headSkinVertexOverlay.material?.dispose();
+  headSkinVertexOverlay = null;
+  headSkinVertexCount = 0;
+}
+
+// Builds one marker per unique plane vertex with a nonzero head-bone weight.
+// The shared rig duplicates triangle and back-face vertices, so the position
+// key keeps the diagnostic readable while retaining a source index that can
+// be transformed by the actual live skeleton in updateHeadSkinVertexOverlay().
+function rebuildHeadSkinVertexOverlay() {
+  disposeHeadSkinVertexOverlay();
+  if (!$('showHeadSkinVertices').checked) return;
+  const skinnedPlane = avatarModel?.userData?.neckRig?.skinnedPlane;
+  const positions = skinnedPlane?.geometry?.getAttribute?.('position');
+  const weights = skinnedPlane?.geometry?.getAttribute?.('skinWeight');
+  if (!skinnedPlane || !positions || !weights) return;
+
+  const uniqueVertices = new Map(); // Maps a plane-local position to one original geometry index and its head weight.
+  for (let index = 0; index < positions.count; index++) {
+    const headWeight = weights.getY(index);
+    if (headWeight <= 0.01) continue;
+    const key = `${positions.getX(index).toFixed(5)}|${positions.getY(index).toFixed(5)}|${positions.getZ(index).toFixed(5)}`;
+    if (!uniqueVertices.has(key)) uniqueVertices.set(key, { index, headWeight });
+  }
+
+  const markerPositions = new Float32Array(uniqueVertices.size * 3);
+  const markerColors = new Float32Array(uniqueVertices.size * 3);
+  const sourceIndices = [];
+  const lightBlendColor = new THREE.Color(0x35d9ff); // Cyan identifies vertices only lightly influenced by the head bone.
+  const fullHeadColor = new THREE.Color(0xffe066); // Yellow identifies vertices fully controlled by the head bone.
+  let markerIndex = 0;
+  for (const vertex of uniqueVertices.values()) {
+    sourceIndices.push(vertex.index);
+    markerPositions[markerIndex * 3] = positions.getX(vertex.index);
+    markerPositions[markerIndex * 3 + 1] = positions.getY(vertex.index);
+    markerPositions[markerIndex * 3 + 2] = positions.getZ(vertex.index) + 0.012;
+    const color = lightBlendColor.clone().lerp(fullHeadColor, vertex.headWeight);
+    markerColors[markerIndex * 3] = color.r;
+    markerColors[markerIndex * 3 + 1] = color.g;
+    markerColors[markerIndex * 3 + 2] = color.b;
+    markerIndex++;
+  }
+
+  const markerGeometry = new THREE.BufferGeometry();
+  markerGeometry.setAttribute('position', new THREE.BufferAttribute(markerPositions, 3));
+  markerGeometry.setAttribute('color', new THREE.BufferAttribute(markerColors, 3));
+  const markerMaterial = new THREE.PointsMaterial({
+    size: 0.026,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.96,
+    depthTest: false,
+  });
+  headSkinVertexOverlay = new THREE.Points(markerGeometry, markerMaterial);
+  headSkinVertexOverlay.name = 'head_skin_vertex_overlay';
+  headSkinVertexOverlay.userData.sourceIndices = sourceIndices;
+  headSkinVertexOverlay.frustumCulled = false;
+  headSkinVertexOverlay.renderOrder = 1000;
+  skinnedPlane.add(headSkinVertexOverlay);
+  headSkinVertexCount = sourceIndices.length;
+  updateHeadSkinVertexOverlay();
+}
+
+// THREE.Points does not skin itself, so copy each selected source vertex's
+// current bone-transformed position into the marker cloud before rendering.
+function updateHeadSkinVertexOverlay() {
+  const overlay = headSkinVertexOverlay;
+  const skinnedPlane = avatarModel?.userData?.neckRig?.skinnedPlane;
+  const markerPositions = overlay?.geometry?.getAttribute?.('position');
+  const sourceIndices = overlay?.userData?.sourceIndices;
+  if (!overlay || !skinnedPlane || !markerPositions || !sourceIndices) return;
+  skinnedPlane.updateMatrixWorld(true);
+  skinnedPlane.skeleton?.update();
+  const transformVertex = typeof skinnedPlane.boneTransform === 'function'
+    ? skinnedPlane.boneTransform.bind(skinnedPlane)
+    : typeof skinnedPlane.applyBoneTransform === 'function'
+      ? skinnedPlane.applyBoneTransform.bind(skinnedPlane)
+      : null;
+  if (!transformVertex) return;
+  for (let markerIndex = 0; markerIndex < sourceIndices.length; markerIndex++) {
+    transformVertex(sourceIndices[markerIndex], headSkinVertexScratch);
+    markerPositions.setXYZ(markerIndex, headSkinVertexScratch.x, headSkinVertexScratch.y, headSkinVertexScratch.z + 0.012);
+  }
+  markerPositions.needsUpdate = true;
 }
 
 // Rewrites only the preview mesh's two skin-weight channels. The default
@@ -388,6 +485,7 @@ function applyPreviewNeckWeights() {
   }
   weights.needsUpdate = true;
   neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · pivot y ${neckRig.neckLocal.y.toFixed(3)}`;
+  rebuildHeadSkinVertexOverlay();
   refreshPreviewDebug();
   return true;
 }
@@ -395,8 +493,9 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: preview-only neck strength/radius controls; attack exports remain unchanged.',
+    'Latest: toggleable head skin-weight vertex overlay; attack exports remain unchanged.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
+    `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
   ].join('\n'));
 }
@@ -413,6 +512,11 @@ $('neckStrength').addEventListener('input', syncNeckPreviewControls);
 $('neckRadius').addEventListener('input', syncNeckPreviewControls);
 $('neckStrength').addEventListener('change', () => logDebug(`Neck preview strength: ${Math.round(neckPreviewStrength * 100)}%`));
 $('neckRadius').addEventListener('change', () => logDebug(`Neck preview weight radius: ${(neckPreviewRadiusFrac * 100).toFixed(1)}% of avatar height`));
+$('showHeadSkinVertices').addEventListener('change', () => {
+  rebuildHeadSkinVertexOverlay();
+  refreshPreviewDebug();
+  logDebug(`Head-skinned vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} markers` : 'hidden'}`);
+});
 syncNeckPreviewControls();
 
 async function rebuildAvatar(speciesId, gender) {
@@ -428,6 +532,7 @@ async function rebuildAvatar(speciesId, gender) {
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
   if (avatarModel) {
+    disposeHeadSkinVertexOverlay();
     rig.remove(avatarModel);
     window.PNGPlaneAvatar.disposeAvatarModel(avatarModel);
   }
@@ -1315,6 +1420,7 @@ function animate() {
   }
   const { pose, phase } = poseAt(previewT);
   applyPoseToRig(pose);
+  updateHeadSkinVertexOverlay();
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
