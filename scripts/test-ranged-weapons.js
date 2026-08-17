@@ -50,7 +50,12 @@ assert.match(game, /function updatePlayerHeadAim\(\)/, 'runtime must own global 
 assert.match(game, /angleDiff\(targetWorldYaw, playerMesh\.rotation\.y\)/, 'head aim must counter the rendered body yaw');
 assert.match(pngAvatar, /top \+ totalHeight \* fraction/, 'neck pivot must be measured from the avatar top rather than its feet');
 assert.match(pngAvatar, /const fraction = Number\.isFinite\(neckHeightFraction\) \? neckHeightFraction : 0\.13/, 'neck weighting must default to the head-only region');
-assert.match(index, /png-plane-avatar\.js\?v=20260817a/, 'game bootstrap must invalidate the pre-fix whole-plane neck-rig cache');
+const sharedNeckRig = pngAvatar.slice(pngAvatar.indexOf('function buildSkinnedSinglePlaneAssembly'), pngAvatar.indexOf('function createSinglePlaneAssembly'));
+assert.match(sharedNeckRig, /y:\s*modelHeight \/ 2 - \(pivotPx\.y \/ pxH\) \* modelHeight/, 'shared neck pivot must use the plane-local coordinate used by the Multi-Avatar Animation Author');
+assert.doesNotMatch(sharedNeckRig, /neckLocal[\s\S]*- assemblyY/, 'shared neck pivot must not subtract the assembly placement twice');
+assert.match(pngAvatar, /geometry\.userData = \{ segmentsX, segmentsY, blendHeight, neckLocal:/, 'shared neck geometry must expose its proven author-tool rig measurements for diagnostics');
+assert.match(index, /png-plane-avatar\.js\?v=20260817b/, 'game bootstrap must invalidate the misplaced-pivot neck-rig cache');
+assert.match(editor, /png-plane-avatar\.js\?v=20260817b/, 'attack editor must invalidate the misplaced-pivot neck-rig cache');
 assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
 
 for (const itemKey of ['crossbow', 'scatterbow']) {

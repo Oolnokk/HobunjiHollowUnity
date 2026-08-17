@@ -269,7 +269,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/png-plane-avatar.js?v=20260817b"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -387,7 +387,7 @@ function applyPreviewNeckWeights() {
     if (headWeight > 0.99) fullWeight++;
   }
   weights.needsUpdate = true;
-  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full`;
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · pivot y ${neckRig.neckLocal.y.toFixed(3)}`;
   refreshPreviewDebug();
   return true;
 }

@@ -359,6 +359,7 @@
     geometry.addGroup(frontVertexCount, cursor - frontVertexCount, 1);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
+    geometry.userData = { segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal } };
     source.dispose();
     return geometry;
   }
@@ -372,11 +373,15 @@
   function buildSkinnedSinglePlaneAssembly(THREE, config) {
     const pivotPx = detectNeckPivotPx(config.sourceCanvas, config.alphaThreshold);
     if (!pivotPx) return null;
-    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY } = config;
+    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures } = config;
     const pxW = config.sourceCanvas.width, pxH = config.sourceCanvas.height;
+    // Keep the pivot in the skinned plane's own coordinates, matching the
+    // working Multi-Avatar Animation Author rig. The assembly group applies
+    // assemblyY later to both mesh and bone; subtracting it here a second
+    // time pushed high-placement species' neck bones deep into their torsos.
     const neckLocal = {
       x: -modelWidth / 2 + (pivotPx.x / pxW) * modelWidth,
-      y: (modelHeight / 2 - (pivotPx.y / pxH) * modelHeight) - assemblyY,
+      y: modelHeight / 2 - (pivotPx.y / pxH) * modelHeight,
       z: 0,
     };
     const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal);
