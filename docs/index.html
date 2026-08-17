@@ -16,7 +16,7 @@
   <script src="debug.js?v=20260712d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20260804b"></script>
-  <script src="config/scratchbones-config.js?v=20260811b"></script>
+  <script src="config/scratchbones-config.js?v=20260817e"></script>
   <script src="config/colors/config.js?v=20260728c"></script>
   <script src="config/attachment-rig-profiles.js?v=20260803a"></script>
   <link rel="stylesheet" href="style.css?v=20260815a">
@@ -29,10 +29,10 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20260728c"></script>
+  <script src="js/portrait-utils.js?v=20260817d"></script>
   <script src="js/portrait-breathing.js?v=20260729a"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20260712d"></script>
-  <script src="js/png-plane-avatar.js?v=20260712d"></script>
+  <script src="js/png-plane-avatar.js?v=20260817e"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20260811b"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
@@ -112,7 +112,10 @@
   <script src="js/combat/combat-blink-dodge.js?v=20260712d"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20260712d"></script>
   <script src="js/combat/combat-flurry.js?v=20260712d"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20260712d"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20260817a"></script>
+  <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
+       projectiles. Loads before bandits so their dual loadouts can call it. -->
+  <script src="js/combat/ranged-weapons.js?v=20260817e"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -1535,11 +1538,9 @@
     </div>
     <!-- Outer arch anchor (tool dial + item dial) — same corner as action arch -->
     <div id="toolSelect">
-      <!-- Weapon quick-switch: tap once to drop everything and go straight to
-           the weapon; tap again to return to whatever tool/item was active
-           before. This is the only way into the weapon tool slot now — it's
-           no longer one of the regular tool-select options. -->
-      <button id="btnWeaponSwitch" class="abt" aria-label="Quick-switch to weapon">
+      <!-- Combat quick-switch: enters melee from a normal tool, then swaps
+           directly between the dedicated melee and ranged slots. -->
+      <button id="btnWeaponSwitch" class="abt" aria-label="Swap melee and ranged weapons">
         <span class="abt-icon" id="btnWeaponSwitchIcon">🗡️</span>
       </button>
       <!-- Call/dismiss mount: same outer ring as tool/item dials and the
@@ -1674,7 +1675,7 @@
   <script src="js/mount-system.js?v=20260816b"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20260806a"></script>
+  <script src="js/audio-system.js?v=20260817b"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -1757,7 +1758,7 @@
       } catch (e) { console.warn('[cutscene preview] boot handoff failed', e); }
     })();
   </script>
-  <script src="game.js?v=20260816c"></script>
+  <script src="game.js?v=20260817d"></script>
   <script>
     // Inventory Gear / Pack sub-tab toggle
     (function () {

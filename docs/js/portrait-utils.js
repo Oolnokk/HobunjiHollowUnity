@@ -994,6 +994,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const bodyColors = profile.bodyColors || {};
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
+  const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
   const breathingPhaseOffset = Number(renderOptions?.breathingPhaseOffsetMs) || 0;
@@ -1318,6 +1319,19 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
   };
+
+  // Neck-rig construction needs the base head's real opaque-pixel centroid,
+  // uncontaminated by torso, hair, hats, or other cosmetics. Keep this inside
+  // the canonical renderer so it uses the exact same tint and portrait preset
+  // as the composite world-avatar canvas.
+  if (onlyHeadSprite) {
+    if (headUrl) {
+      const image = imgMap.get(headUrl);
+      if (image) drawLayerWithEmote(image, getPortraitXformPreset('B'), tintA, 1, headUrl);
+    }
+    if (_needsScale) ctx.restore();
+    return;
+  }
 
   if (renderBehindView) {
     const _behindDraw = {

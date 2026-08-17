@@ -250,7 +250,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
         { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
-        { "id": "weaponSwitch", "label": "Switch to Weapon", "desktop": "Digit3", "controller": "Button11" },
+        { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "Digit3", "controller": "Button11" },
         { "id": "itemPrev", "label": "Previous Item", "desktop": "Comma", "controller": null },
         { "id": "itemNext", "label": "Next Item", "desktop": "Period", "controller": null },
         { "id": "toolPrev", "label": "Previous Tool", "desktop": "BracketLeft", "controller": null },
@@ -3673,6 +3673,8 @@ window.SCRATCHBONES_CONFIG = {
         "combatSfx": {
           "enabled": true,
           "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },
+          "rangedLoad": { "url": "assets/audio/sfx/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
+          "rangedFire": { "url": "assets/audio/sfx/sfx_shootarrow.m4a", "volume": 1.0, "pitchVarianceMul": 0.02 },
           "creatureClawHit": { "url": "assets/audio/sfx/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "weaponHitSharp": { "url": "assets/audio/sfx/sfx_weaponhit-sharp.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "weaponHitBlunt": { "url": "assets/audio/sfx/sfx_weaponhit-blunt.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },

@@ -231,6 +231,48 @@
     return scanOpaqueVerticalBounds(makeVariantCanvas(image), alphaThreshold);
   }
 
+  // Reads a canvas into an alpha mask with full bounds and centroid data.
+  // buildSkinnedPlaneGeometry() uses the same mask to omit empty grid cells,
+  // so the expensive pixel read happens only once when an avatar is rebuilt.
+  function scanOpaquePixelMask(canvas, alphaThreshold, additionalCanvas) {
+    const width = canvas?.width, height = canvas?.height;
+    if (!canvas || !width || !height) return null;
+    const threshold = alphaThreshold ?? 12;
+    let data;
+    try {
+      data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+      if (additionalCanvas?.getContext && additionalCanvas.width === width && additionalCanvas.height === height) {
+        const additionalData = additionalCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+        const unionData = new Uint8ClampedArray(data); // Used below so rear-only opaque pixels survive front-mask cell culling.
+        for (let offset = 3; offset < unionData.length; offset += 4) unionData[offset] = Math.max(unionData[offset], additionalData[offset]);
+        data = unionData;
+      }
+    }
+    catch (error) { return null; }
+    const rowCounts = new Uint32Array(height);
+    let top = height, bottom = -1, left = width, right = -1;
+    let weightedX = 0, weightedY = 0, totalAlpha = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha <= threshold) continue;
+        rowCounts[y]++;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+        weightedX += x * alpha;
+        weightedY += y * alpha;
+        totalAlpha += alpha;
+      }
+    }
+    if (bottom < 0 || totalAlpha <= 0) return null;
+    return {
+      width, height, data, rowCounts, top, bottom, left, right, alphaThreshold: threshold,
+      centroidPx: { x: weightedX / totalAlpha, y: weightedY / totalAlpha },
+    };
+  }
+
   // Finds the neck pivot pixel for a head-turn bone: the horizontal centroid
   // (alpha-weighted, so a slightly off-center head silhouette still gets an
   // accurate hinge point) of the lowest coherent run of opaque pixels — i.e.
@@ -289,77 +331,116 @@
     return { x: totalWeight ? weightedX / totalWeight : w / 2, y: neckY + .5 };
   }
 
+  // The optional head-only canvas is rendered from the fighter's base head
+  // sprite. Its alpha centroid locates the actual visible head rather than
+  // guessing from the full square portrait canvas; its coherent bottom edge
+  // remains the physically useful rotation hinge at the neck.
+  function detectHeadRigPixels(headCanvas, avatarCanvas, alphaThreshold) {
+    const headMask = scanOpaquePixelMask(headCanvas, alphaThreshold);
+    if (!headMask) {
+      const fallbackPivot = detectNeckPivotPx(avatarCanvas, alphaThreshold);
+      return fallbackPivot ? { pivotPx: fallbackPivot, centroidPx: { ...fallbackPivot }, boundsPx: null, method: 'full-avatar-fallback' } : null;
+    }
+    const minimumRowPixels = Math.max(2, Math.round(headMask.width * .012));
+    let coherentBottom = headMask.bottom;
+    while (coherentBottom > headMask.top && headMask.rowCounts[coherentBottom] < minimumRowPixels) coherentBottom--;
+    return {
+      pivotPx: { x: headMask.centroidPx.x, y: coherentBottom + .5 },
+      centroidPx: { ...headMask.centroidPx },
+      boundsPx: { top: headMask.top, bottom: coherentBottom, left: headMask.left, right: headMask.right },
+      method: 'head-sprite-alpha-centroid',
+    };
+  }
+
   function smoothstep01(value) {
     const t = Math.max(0, Math.min(1, Number(value) || 0));
     return t * t * (3 - 2 * t);
   }
 
   // Builds a two-sided front+back plane as one THREE.SkinnedMesh instead of
-  // two rigid Mesh objects, with per-vertex skin weights blended (via a
-  // smoothstep band, no visible hinge) between a root bone and a neck bone
-  // seated at `neckLocal`. Ported from docs/tools/animation-author/index.html's
-  // buildTwoSidedSkinnedPlaneGeometry — same geometry/weighting approach, so a
-  // rig built here plays back neckRotationDeg keyframes authored by that tool.
+  // two rigid Mesh objects. The regular grid is fitted to the avatar alpha
+  // bounds and cells containing no opaque pixels are omitted, concentrating
+  // the available vertices on the visible portrait instead of empty canvas.
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
-    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .065);
-    const source = new THREE.PlaneGeometry(modelWidth, modelHeight, segmentsX, segmentsY).toNonIndexed();
-    const sourcePosition = source.getAttribute('position');
-    const sourceUv = source.getAttribute('uv');
-    const verticesPerFace = sourcePosition.count;
-    const totalVertices = verticesPerFace * 2;
-    const positions = new Float32Array(totalVertices * 3);
-    const normals = new Float32Array(totalVertices * 3);
-    const uvs = new Float32Array(totalVertices * 2);
-    const skinIndices = new Uint16Array(totalVertices * 4);
-    const skinWeights = new Float32Array(totalVertices * 4);
-    let cursor = 0;
+    // A broad 30%-of-height falloff suits the painted cutout style better
+    // than a narrow neck hinge: shoulders and upper torso share a diminishing
+    // amount of head rotation instead of stopping abruptly at one rigid seam.
+    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
+    const mask = options.opaqueMask;
+    const left = mask?.left ?? 0, right = mask?.right ?? ((mask?.width || 1) - 1);
+    const top = mask?.top ?? 0, bottom = mask?.bottom ?? ((mask?.height || 1) - 1);
+    const pixelWidth = Math.max(1, mask?.width || 1), pixelHeight = Math.max(1, mask?.height || 1);
+    const cropWidthPx = Math.max(1, right - left + 1), cropHeightPx = Math.max(1, bottom - top + 1);
+    const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
-    const appendVertex = (sourceIndex, normalZ) => {
-      const x = sourcePosition.getX(sourceIndex);
-      const y = sourcePosition.getY(sourceIndex);
-      const z = sourcePosition.getZ(sourceIndex);
-      positions[cursor * 3] = x;
-      positions[cursor * 3 + 1] = y;
-      positions[cursor * 3 + 2] = z;
-      normals[cursor * 3] = 0;
-      normals[cursor * 3 + 1] = 0;
-      normals[cursor * 3 + 2] = normalZ;
-      uvs[cursor * 2] = sourceUv.getX(sourceIndex);
-      uvs[cursor * 2 + 1] = sourceUv.getY(sourceIndex);
+    const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
+    const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
+    const appendVertex = (pixelX, pixelY, normalZ) => {
+      const x = toModelX(pixelX);
+      const y = toModelY(pixelY);
+      positions.push(x, y, 0);
+      normals.push(0, 0, normalZ);
+      uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
       const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-      skinIndices[cursor * 4] = 0;
-      skinIndices[cursor * 4 + 1] = 1;
-      skinWeights[cursor * 4] = 1 - headWeight;
-      skinWeights[cursor * 4 + 1] = headWeight;
-      cursor++;
+      skinIndices.push(0, 1, 0, 0);
+      skinWeights.push(1 - headWeight, headWeight, 0, 0);
     };
 
-    for (let index = 0; index < verticesPerFace; index += 3) {
-      appendVertex(index, 1);
-      appendVertex(index + 1, 1);
-      appendVertex(index + 2, 1);
+    const cellHasOpaquePixel = (column, row) => {
+      if (!mask?.data) return true;
+      const x0 = Math.max(0, Math.floor(left + column / segmentsX * cropWidthPx));
+      const x1 = Math.min(pixelWidth - 1, Math.ceil(left + (column + 1) / segmentsX * cropWidthPx));
+      const y0 = Math.max(0, Math.floor(top + row / segmentsY * cropHeightPx));
+      const y1 = Math.min(pixelHeight - 1, Math.ceil(top + (row + 1) / segmentsY * cropHeightPx));
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          if (mask.data[(y * pixelWidth + x) * 4 + 3] > mask.alphaThreshold) return true;
+        }
+      }
+      return false;
+    };
+
+    const visibleCells = [];
+    for (let row = 0; row < segmentsY; row++) {
+      for (let column = 0; column < segmentsX; column++) {
+        if (cellHasOpaquePixel(column, row)) visibleCells.push({ column, row });
+      }
     }
-    const frontVertexCount = cursor;
-    for (let index = 0; index < verticesPerFace; index += 3) {
-      appendVertex(index + 2, -1);
-      appendVertex(index + 1, -1);
-      appendVertex(index, -1);
+
+    const appendCell = ({ column, row }, normalZ) => {
+      const x0 = left + column / segmentsX * cropWidthPx;
+      const x1 = left + (column + 1) / segmentsX * cropWidthPx;
+      const y0 = top + row / segmentsY * cropHeightPx;
+      const y1 = top + (row + 1) / segmentsY * cropHeightPx;
+      const front = [[x0, y1], [x1, y1], [x0, y0], [x1, y1], [x1, y0], [x0, y0]];
+      const vertices = normalZ > 0 ? front : [...front].reverse();
+      for (const [pixelX, pixelY] of vertices) appendVertex(pixelX, pixelY, normalZ);
+    };
+    for (const cell of visibleCells) appendCell(cell, 1);
+    const frontVertexCount = positions.length / 3;
+    for (const cell of visibleCells) appendCell(cell, -1);
+
+    if (!frontVertexCount) {
+      return null;
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.name = 'npc_avatar_skinned_plane_geometry';
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
     geometry.addGroup(0, frontVertexCount, 0);
-    geometry.addGroup(frontVertexCount, cursor - frontVertexCount, 1);
+    geometry.addGroup(frontVertexCount, frontVertexCount, 1);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
-    source.dispose();
+    geometry.userData = {
+      segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal },
+      opaqueBoundsPx: { left, right, top, bottom }, visibleCellCount: visibleCells.length,
+    };
     return geometry;
   }
 
@@ -370,18 +451,37 @@
   // could be detected (e.g. an unreadable/tainted canvas) — callers should
   // fall back to the plain rigid assembly in that case.
   function buildSkinnedSinglePlaneAssembly(THREE, config) {
-    const pivotPx = detectNeckPivotPx(config.sourceCanvas, config.alphaThreshold);
-    if (!pivotPx) return null;
-    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY } = config;
+    const detectedHead = detectHeadRigPixels(config.headCanvas, config.sourceCanvas, config.alphaThreshold);
+    const opaqueMask = scanOpaquePixelMask(config.sourceCanvas, config.alphaThreshold, config.backCanvas);
+    if (!detectedHead || !opaqueMask) return null;
+    const { pivotPx, centroidPx: headCentroidPx } = detectedHead;
+    const { planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures } = config;
     const pxW = config.sourceCanvas.width, pxH = config.sourceCanvas.height;
+    // Keep the pivot in the skinned plane's own coordinates, matching the
+    // working Multi-Avatar Animation Author rig. The assembly group applies
+    // assemblyY later to both mesh and bone; subtracting it here a second
+    // time pushed high-placement species' neck bones deep into their torsos.
     const neckLocal = {
       x: -modelWidth / 2 + (pivotPx.x / pxW) * modelWidth,
-      y: (modelHeight / 2 - (pivotPx.y / pxH) * modelHeight) - assemblyY,
+      y: modelHeight / 2 - (pivotPx.y / pxH) * modelHeight,
       z: 0,
     };
-    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal);
+    const headCentroidLocal = {
+      x: -modelWidth / 2 + (headCentroidPx.x / pxW) * modelWidth,
+      y: modelHeight / 2 - (headCentroidPx.y / pxH) * modelHeight,
+      z: 0,
+    };
+    const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { opaqueMask });
+    if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
     const backMaterial = makeSpriteMaterial(THREE, textures.backForOriginal, 'npc_avatar_skinned_back_material');
+    // The game and Attack Animation Editor still use Three.js r128, where
+    // SkinnedMesh alone does not enable USE_SKINNING in the material shader.
+    // The CPU probe path always applies bones, which is why its dots moved
+    // while the portrait stayed rigid. r165 infers this from isSkinnedMesh;
+    // retaining the explicit flag is harmless there and keeps both paths live.
+    frontMaterial.skinning = true;
+    backMaterial.skinning = true;
 
     const torsoBone = new THREE.Bone();
     torsoBone.name = `${config.name}_torso_bone`;
@@ -402,7 +502,11 @@
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
-    return { group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx };
+    return {
+      group, neckJoint, torsoBone, skinnedPlane, skeleton, neckLocal, pivotPx,
+      headCentroidPx, headCentroidLocal, headBoundsPx: detectedHead.boundsPx,
+      detectionMethod: detectedHead.method, opaqueBoundsPx: geometry.userData.opaqueBoundsPx,
+    };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -520,7 +624,8 @@
     const skinnedRig = options.neckRig === true
       ? buildSkinnedSinglePlaneAssembly(THREE, {
           planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY,
-          sourceCanvas, alphaThreshold: options.neckAlphaThreshold,
+          sourceCanvas, backCanvas: options.backCanvas || options.backImage || null,
+          headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
           name: `${root.name}_skinned_plane_assembly`,
         })
       : null;
@@ -533,7 +638,13 @@
     });
     assembly.position.y = assemblyY;
     root.userData.neckRig = skinnedRig
-      ? { available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal, pivotPx: skinnedRig.pivotPx }
+      ? {
+          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone,
+          skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
+          pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
+          headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,
+          detectionMethod: skinnedRig.detectionMethod, opaqueBoundsPx: skinnedRig.opaqueBoundsPx,
+        }
       : { available: false };
     root.userData.portraitVerticalPlacementRatio = placementRatio;
     root.userData.portraitScaleMultiplier = scaleMultiplier;

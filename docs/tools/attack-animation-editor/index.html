@@ -101,6 +101,7 @@ canvas{display:block;width:100%;height:100%}
         <option value="sweep" selected>sweep</option>
         <option value="toss">toss</option>
         <option value="drink">drink</option>
+        <option value="ranged">ranged</option>
       </select>
     </div>
     <div class="field"><label>Tool / held sprite (visual reference)</label><select id="toolSpriteSelect"></select></div>
@@ -111,7 +112,18 @@ canvas{display:block;width:100%;height:100%}
     <div class="sectionTitle"><b>Avatar</b><span class="sectionTag">species / height</span></div>
     <div class="field"><label>Species</label><select id="avatarSpecies"></select></div>
     <div class="field"><label>Gender</label><select id="avatarGender"></select></div>
-    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height, so weapon poses can be checked against different builds.</div>
+    <div class="field">
+      <label>Neck turn strength <span id="neckStrengthVal">100%</span></label>
+      <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
+    </div>
+    <div class="field">
+      <label>Neck weight radius <span id="neckRadiusVal">30.0% height</span></label>
+      <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.30">
+    </div>
+    <div class="field" style="margin-top:4px">
+      <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
+    </div>
+    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. The mesh is fitted to opaque avatar cells and its neck hinge is located from the base head sprite's alpha centroid. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. The vertex overlay marks every point with more than 1% head weight: cyan is a light blend and yellow is fully head-skinned. These are preview-only diagnostics and are not exported with the attack.</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -134,7 +146,14 @@ canvas{display:block;width:100%;height:100%}
   </div>
 
   <div class="card section" style="--sec:#fbbf24;--secBg:rgba(251,191,36,.10)">
-    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">windup → strike → hold → return</span></div>
+    <div class="sectionTitle"><b>Timing</b><span class="sectionTag">attack / load / fire sequence</span></div>
+    <div class="field"><label>Playback sequence</label>
+      <select id="playbackSequence">
+        <option value="attack">Attack: Neutral → Windup → Strike → Neutral</option>
+        <option value="load">Load: Neutral → Windup → Neutral</option>
+        <option value="fire">Fire: Neutral → Strike → Neutral</option>
+      </select>
+    </div>
     <div class="field">
       <label>Windup ends at <span id="windupFracVal">16%</span> of swing</label>
       <input id="windupFrac" type="range" min="0.02" max="0.9" step="0.01" value="0.16">
@@ -150,7 +169,7 @@ canvas{display:block;width:100%;height:100%}
     <div class="field"><label>Preview duration (seconds)</label>
       <input id="durationS" type="number" min="0.05" max="3" step="0.05" value="0.5">
     </div>
-    <div class="help">0 → windup% lerps Neutral→Windup. windup% → strike% lerps Windup→Strike. strike% → hold% holds at Strike unchanged. hold% → 100% lerps Strike→Neutral (the return).</div>
+    <div class="help">Attack uses all three poses. Load intentionally skips Strike. Fire intentionally skips Windup, reaches Strike abruptly at strike%, optionally holds, then returns to Neutral.</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -178,7 +197,7 @@ canvas{display:block;width:100%;height:100%}
       <div id="panelStrike" data-phase="strike"></div>
       <button id="scrubStrikeBtn" class="secondary">⏵ Scrub to Strike</button>
     </div>
-    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool)</div>
+    <div class="help">x: side reach (+ = character's right) • y: height • z: forward reach (+ = away from body) • pitch: tip up/down • yaw: tool's own spin • roll: tool's own twist around its forward axis (e.g. rotating an axe/hoe head for a proper chop) • body yaw: turns the whole character (sweep-style swings turn the body, not the tool) • tool scale: uniformly sizes the held sprite for the entire animation and is authored on Neutral only</div>
   </div>
 
   <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
@@ -249,11 +268,11 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js"></script>
-<script src="../../config/scratchbones-config.js"></script>
-<script src="../../js/portrait-utils.js"></script>
+<script src="../../config/scratchbones-config.js?v=20260817d"></script>
+<script src="../../js/portrait-utils.js?v=20260817d"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/png-plane-avatar.js?v=20260817e"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -320,6 +339,12 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let avatarModel = null;
+let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
+let neckPreviewRadiusFrac = 0.30; // Used by applyPreviewNeckWeights() as the broad default shoulder-to-head blend relative to avatar height.
+let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
+let headSkinVertexOverlay = null; // Used to dispose and replace the optional head-weight marker cloud when the avatar or radius changes.
+let headSkinVertexCount = 0; // Used by refreshPreviewDebug() so mobile users can confirm that the overlay found weighted vertices.
+const headSkinVertexScratch = new THREE.Vector3(); // Reused while updating marker positions from the live skeleton each frame.
 let _cosmeticsReady = null;
 function ensureCosmetics() {
   if (!_cosmeticsReady) {
@@ -336,6 +361,169 @@ function buildDefaultAvatarExport(speciesId, gender) {
     appliedDyes: {},
   };
 }
+
+function smoothstep01(value) {
+  const t = Math.max(0, Math.min(1, Number(value) || 0));
+  return t * t * (3 - 2 * t);
+}
+
+function disposeHeadSkinVertexOverlay() {
+  if (!headSkinVertexOverlay) return;
+  headSkinVertexOverlay.parent?.remove(headSkinVertexOverlay);
+  headSkinVertexOverlay.geometry?.dispose();
+  headSkinVertexOverlay.material?.dispose();
+  headSkinVertexOverlay = null;
+  headSkinVertexCount = 0;
+}
+
+// Builds one marker per unique plane vertex with a nonzero head-bone weight.
+// The shared rig duplicates triangle and back-face vertices, so the position
+// key keeps the diagnostic readable while retaining a source index that can
+// be transformed by the actual live skeleton in updateHeadSkinVertexOverlay().
+function rebuildHeadSkinVertexOverlay() {
+  disposeHeadSkinVertexOverlay();
+  if (!$('showHeadSkinVertices').checked) return;
+  const skinnedPlane = avatarModel?.userData?.neckRig?.skinnedPlane;
+  const positions = skinnedPlane?.geometry?.getAttribute?.('position');
+  const weights = skinnedPlane?.geometry?.getAttribute?.('skinWeight');
+  if (!skinnedPlane || !positions || !weights) return;
+
+  const uniqueVertices = new Map(); // Maps a plane-local position to one original geometry index and its head weight.
+  for (let index = 0; index < positions.count; index++) {
+    const headWeight = weights.getY(index);
+    if (headWeight <= 0.01) continue;
+    const key = `${positions.getX(index).toFixed(5)}|${positions.getY(index).toFixed(5)}|${positions.getZ(index).toFixed(5)}`;
+    if (!uniqueVertices.has(key)) uniqueVertices.set(key, { index, headWeight });
+  }
+
+  const markerPositions = new Float32Array(uniqueVertices.size * 3);
+  const markerColors = new Float32Array(uniqueVertices.size * 3);
+  const sourceIndices = [];
+  const lightBlendColor = new THREE.Color(0x35d9ff); // Cyan identifies vertices only lightly influenced by the head bone.
+  const fullHeadColor = new THREE.Color(0xffe066); // Yellow identifies vertices fully controlled by the head bone.
+  let markerIndex = 0;
+  for (const vertex of uniqueVertices.values()) {
+    sourceIndices.push(vertex.index);
+    markerPositions[markerIndex * 3] = positions.getX(vertex.index);
+    markerPositions[markerIndex * 3 + 1] = positions.getY(vertex.index);
+    markerPositions[markerIndex * 3 + 2] = positions.getZ(vertex.index) + 0.012;
+    const color = lightBlendColor.clone().lerp(fullHeadColor, vertex.headWeight);
+    markerColors[markerIndex * 3] = color.r;
+    markerColors[markerIndex * 3 + 1] = color.g;
+    markerColors[markerIndex * 3 + 2] = color.b;
+    markerIndex++;
+  }
+
+  const markerGeometry = new THREE.BufferGeometry();
+  markerGeometry.setAttribute('position', new THREE.BufferAttribute(markerPositions, 3));
+  markerGeometry.setAttribute('color', new THREE.BufferAttribute(markerColors, 3));
+  const markerMaterial = new THREE.PointsMaterial({
+    size: 0.026,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.96,
+    depthTest: false,
+  });
+  headSkinVertexOverlay = new THREE.Points(markerGeometry, markerMaterial);
+  headSkinVertexOverlay.name = 'head_skin_vertex_overlay';
+  headSkinVertexOverlay.userData.sourceIndices = sourceIndices;
+  headSkinVertexOverlay.frustumCulled = false;
+  headSkinVertexOverlay.renderOrder = 1000;
+  skinnedPlane.add(headSkinVertexOverlay);
+  headSkinVertexCount = sourceIndices.length;
+  updateHeadSkinVertexOverlay();
+}
+
+// THREE.Points does not skin itself, so copy each selected source vertex's
+// current bone-transformed position into the marker cloud before rendering.
+function updateHeadSkinVertexOverlay() {
+  const overlay = headSkinVertexOverlay;
+  const skinnedPlane = avatarModel?.userData?.neckRig?.skinnedPlane;
+  const markerPositions = overlay?.geometry?.getAttribute?.('position');
+  const sourceIndices = overlay?.userData?.sourceIndices;
+  if (!overlay || !skinnedPlane || !markerPositions || !sourceIndices) return;
+  skinnedPlane.updateMatrixWorld(true);
+  skinnedPlane.skeleton?.update();
+  const transformVertex = typeof skinnedPlane.boneTransform === 'function'
+    ? skinnedPlane.boneTransform.bind(skinnedPlane)
+    : typeof skinnedPlane.applyBoneTransform === 'function'
+      ? skinnedPlane.applyBoneTransform.bind(skinnedPlane)
+      : null;
+  if (!transformVertex) return;
+  for (let markerIndex = 0; markerIndex < sourceIndices.length; markerIndex++) {
+    transformVertex(sourceIndices[markerIndex], headSkinVertexScratch);
+    markerPositions.setXYZ(markerIndex, headSkinVertexScratch.x, headSkinVertexScratch.y, headSkinVertexScratch.z + 0.012);
+  }
+  markerPositions.needsUpdate = true;
+}
+
+// Rewrites only the preview mesh's two skin-weight channels. The default
+// radius reproduces png-plane-avatar.js's 30%-of-height full-body falloff;
+// changing it is diagnostic and never touches exported animation data.
+function applyPreviewNeckWeights() {
+  const neckRig = avatarModel?.userData?.neckRig; // Used to reach the current avatar's skinned preview plane and detected pivot.
+  const geometry = neckRig?.skinnedPlane?.geometry;
+  const positions = geometry?.getAttribute?.('position');
+  const weights = geometry?.getAttribute?.('skinWeight');
+  const modelHeight = Number(avatarModel?.userData?.portraitModelHeight) || MODEL_W; // Used to keep the radius visually consistent across species sizes.
+  if (!neckRig?.available || !positions || !weights || !neckRig.neckLocal) {
+    neckWeightSummary = 'neck rig unavailable';
+    refreshPreviewDebug();
+    return false;
+  }
+
+  const radius = Math.max(modelHeight * 0.01, modelHeight * neckPreviewRadiusFrac); // Used as the vertical root-to-head weight transition band.
+  let influenced = 0;
+  let fullWeight = 0;
+  for (let index = 0; index < positions.count; index++) {
+    const y = positions.getY(index);
+    const headWeight = smoothstep01((y - (neckRig.neckLocal.y - radius * 0.55)) / radius);
+    weights.setXYZW(index, 1 - headWeight, headWeight, 0, 0);
+    if (headWeight > 0.01) influenced++;
+    if (headWeight > 0.99) fullWeight++;
+  }
+  weights.needsUpdate = true;
+  const centroid = neckRig.headCentroidPx; // Used in the mobile-visible diagnostic to verify the base-head alpha scan landed on the sprite.
+  const centroidSummary = centroid ? ` · head centroid ${centroid.x.toFixed(1)},${centroid.y.toFixed(1)} px` : '';
+  const visibleCellCount = Number(geometry.userData?.visibleCellCount) || 0; // Used to confirm alpha-mask fitting without requiring desktop developer tools.
+  const materials = Array.isArray(neckRig.skinnedPlane.material) ? neckRig.skinnedPlane.material : [neckRig.skinnedPlane.material]; // Used to expose the r128 skin-shader flag in the visible diagnostic.
+  const skinShaderSummary = `${materials.filter(material => material?.skinning === true).length}/${materials.length} skin shaders`;
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · ${visibleCellCount} opaque grid cells · ${skinShaderSummary} · pivot y ${neckRig.neckLocal.y.toFixed(3)}${centroidSummary}`;
+  rebuildHeadSkinVertexOverlay();
+  refreshPreviewDebug();
+  return true;
+}
+
+function refreshPreviewDebug() {
+  setDebug([
+    'Hobunji Attack Animation Editor',
+    'Latest: neck deformation now defaults to a broad 30%-height shoulder/body falloff at 100% strength.',
+    `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
+    `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
+    'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
+  ].join('\n'));
+}
+
+function syncNeckPreviewControls() {
+  neckPreviewStrength = Math.max(0, Math.min(2, Number($('neckStrength').value) || 0));
+  neckPreviewRadiusFrac = Math.max(0.01, Math.min(0.30, Number($('neckRadius').value) || 0.30));
+  $('neckStrengthVal').textContent = `${Math.round(neckPreviewStrength * 100)}%`;
+  $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(1)}% height`;
+  applyPreviewNeckWeights();
+}
+
+$('neckStrength').addEventListener('input', syncNeckPreviewControls);
+$('neckRadius').addEventListener('input', syncNeckPreviewControls);
+$('neckStrength').addEventListener('change', () => logDebug(`Neck preview strength: ${Math.round(neckPreviewStrength * 100)}%`));
+$('neckRadius').addEventListener('change', () => logDebug(`Neck preview weight radius: ${(neckPreviewRadiusFrac * 100).toFixed(1)}% of avatar height`));
+$('showHeadSkinVertices').addEventListener('change', () => {
+  rebuildHeadSkinVertexOverlay();
+  refreshPreviewDebug();
+  logDebug(`Head-skinned vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} markers` : 'hidden'}`);
+});
+syncNeckPreviewControls();
+
 async function rebuildAvatar(speciesId, gender) {
   await ensureCosmetics();
   const npcExport = buildDefaultAvatarExport(speciesId, gender);
@@ -345,16 +533,20 @@ async function rebuildAvatar(speciesId, gender) {
   const frontCanvas = document.createElement('canvas');
   frontCanvas.width = size; frontCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+  const headCanvas = document.createElement('canvas'); // Used by the shared neck rig to place its pivot from the base head sprite's opaque-pixel centroid.
+  headCanvas.width = size; headCanvas.height = size;
+  await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { onlyHeadSprite: true, forceEyesOpen: true });
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
   if (avatarModel) {
+    disposeHeadSkinVertexOverlay();
     rig.remove(avatarModel);
     window.PNGPlaneAvatar.disposeAvatarModel(avatarModel);
   }
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
     backCanvas, profile, speciesId, gender, name: 'editor_preview_avatar',
-    modelWidth: MODEL_W, modelHeight: MODEL_W,
+    modelWidth: MODEL_W, modelHeight: MODEL_W, neckRig: true, headCanvas,
   });
   const h = avatarModel.userData.portraitModelHeight || MODEL_W;
   const w = avatarModel.userData.portraitModelWidth || MODEL_W;
@@ -365,6 +557,7 @@ async function rebuildAvatar(speciesId, gender) {
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
   rig.add(avatarModel);
+  applyPreviewNeckWeights();
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
 }
@@ -469,6 +662,10 @@ const TOOL_SPRITE_DEFS = {
   fishingspear: { label: 'Fishing Spear (sweep)', sprite: '../../assets/toolsprites/harpoon_fishingspear.png',animStyle: 'sweep'  },
   fishingmace:  { label: 'Fishing Mace (sweep)',  sprite: '../../assets/toolsprites/harpoon_fishingmace.png', animStyle: 'sweep'  },
   bottle:       { label: 'Wine bottle (drink)',    sprite: '../../assets/objectsprites/bottle_wine.png',       animStyle: 'drink', scale: 0.5, flip: true },
+  crossbow:     { label: 'Crossbow (unloaded)',    sprite: '../../assets/toolsprites/ranged_crossbow.png',      animStyle: 'ranged' },
+  crossbowLoaded:{ label: 'Crossbow (loaded)',     sprite: '../../assets/toolsprites/ranged_crossbow_loaded.png',animStyle: 'ranged' },
+  scatterbow:   { label: 'Scatterbow (unloaded)',  sprite: '../../assets/toolsprites/ranged_scatterbow.png',    animStyle: 'ranged' },
+  scatterbowLoaded:{ label: 'Scatterbow (loaded)', sprite: '../../assets/toolsprites/ranged_scatterbow_loaded.png',animStyle: 'ranged' },
 };
 const toolTexLoader = new THREE.TextureLoader();
 let toolPlaneMesh = null;
@@ -492,9 +689,9 @@ function buildToolPlaneMesh(toolKey) {
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
       const plane = new THREE.Mesh(geo, mat);
       plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
-      if (def.animStyle === 'sweep') plane.rotation.z = -Math.PI / 2;
       const g = new THREE.Group();
       g.add(plane);
+      g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
       // Mirror the sprite itself (not just its position/rotation) when the
       // pose has been flipped across the midline, so asymmetric tools (e.g.
       // an axe head) stay on the correct side instead of appearing reversed.
@@ -526,6 +723,8 @@ setToolSprite($('toolSpriteSelect').value).catch(e => logDebug('Tool sprite swap
 // in the hand for a proper chop, instead of needing a pre-rotated sprite as a
 // workaround. Neutral (rest), windup, and strike are all authored poses —
 // anim.poses.neutral is the idle stance the swing eases out of and back into.
+// Neutral may also author a uniform `scale`; it sizes the held tool for the
+// whole animation rather than becoming another interpolated motion channel.
 // Mirroring across the character's midline negates x, yaw, roll, and bodyYaw
 // (all left/right-handed) and leaves y, z, pitch untouched (symmetric about
 // the midline).
@@ -535,16 +734,18 @@ function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y
 // predates neutral being authorable) — matches what updateToolMesh() in
 // game.js shows when the tool isn't mid-swing.
 const STYLE_NEUTRAL_POSE = {
-  thrust: defaultPose(0, 0, 0, 10.31, 0, 0),
-  sweep:  defaultPose(0, 0, 0.16, 0, 0, 0),
-  chop:   defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
-  drink:  defaultPose(0, 0, 0, 10.31, 0, 0),
+  thrust: { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
+  sweep:  { ...defaultPose(0, 0, 0.16, 0, 0, 0), scale: 1 },
+  chop:   { ...defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), scale: 1 },
+  drink:  { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
+  ranged: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 },
 };
-function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || defaultPose(0, 0, 0, 0, 0, 0); }
+function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || { ...defaultPose(0, 0, 0, 0, 0, 0), scale: 1 }; }
 
 let anim = {
   name: 'New Attack',
   style: 'sweep',
+  sequence: 'attack',
   windupFrac: 0.16,
   strikeFrac: 0.55,
   holdFrac: 0.68,
@@ -564,11 +765,17 @@ const FIELD_DEFS = [
   { key: 'yaw', label: 'Tool Yaw°', min: -180, max: 180, step: 1, angle: true },
   { key: 'roll', label: 'Tool Roll°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Body Yaw° (character turn)', min: -180, max: 180, step: 1, angle: true },
+  { key: 'scale', label: 'Tool scale (uniform)', min: 0.1, max: 3, step: 0.01, angle: false, neutralOnly: true },
 ];
+
+function poseFieldDefs(phase) {
+  return FIELD_DEFS.filter(f => !f.neutralOnly || phase === 'neutral');
+}
 
 function buildPosePanel(phase) {
   const panel = $('panel' + phase[0].toUpperCase() + phase.slice(1));
-  panel.innerHTML = FIELD_DEFS.map(f => `
+  const fields = poseFieldDefs(phase);
+  panel.innerHTML = fields.map(f => `
     <div class="field">
       <label>${f.label}</label>
       <div class="fieldRow">
@@ -576,7 +783,7 @@ function buildPosePanel(phase) {
         <span class="val" id="${phase}_${f.key}_val"></span>
       </div>
     </div>`).join('');
-  for (const f of FIELD_DEFS) {
+  for (const f of fields) {
     const el = $(`${phase}_${f.key}`);
     el.addEventListener('input', () => {
       const v = Number(el.value);
@@ -592,8 +799,8 @@ buildPosePanel('windup');
 buildPosePanel('strike');
 
 function syncPosePanelFromState(phase) {
-  for (const f of FIELD_DEFS) {
-    const v = anim.poses[phase][f.key];
+  for (const f of poseFieldDefs(phase)) {
+    const v = safeNum(anim.poses[phase][f.key], f.key === 'scale' ? 1 : 0);
     $(`${phase}_${f.key}`).value = v;
     $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
   }
@@ -604,6 +811,11 @@ syncPosePanelFromState('strike');
 
 $('animName').addEventListener('input', () => { anim.name = $('animName').value; refreshJsonView(); });
 $('animStyle').addEventListener('change', () => { anim.style = $('animStyle').value; refreshJsonView(); });
+$('playbackSequence').addEventListener('change', () => {
+  anim.sequence = $('playbackSequence').value;
+  updateTimelineSegments();
+  refreshJsonView();
+});
 
 function clampFracs() {
   if (anim.windupFrac >= anim.strikeFrac) anim.strikeFrac = Math.min(0.98, anim.windupFrac + 0.01);
@@ -658,7 +870,11 @@ $('durationS').addEventListener('input', () => {
 // midline, sending the weapon to the wrong place. Negating toolBase.x too
 // makes the combined transform a true x-mirror (verified algebraically: world
 // x flips sign, world z is preserved).
-function flipPose(p) { return defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0)); }
+function flipPose(p) {
+  const flipped = defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0));
+  if (p.scale != null) flipped.scale = p.scale;
+  return flipped;
+}
 $('flipBtn').onclick = () => {
   anim.poses.neutral = flipPose(anim.poses.neutral);
   anim.poses.windup = flipPose(anim.poses.windup);
@@ -704,6 +920,16 @@ const TOOL_PRESETS = [
     strikeFrac: window.HeldActionAnimations.drink.strikeFrac,
     holdFrac: window.HeldActionAnimations.drink.holdFrac,
   }] : []),
+  // Exact weapon-slot Neutral stances from weapon-idle-stances.json. These
+  // are distinct from the same sprites' ordinary farming-tool rests.
+  { id: 'heavy_weapon_idle', label: 'Heavy Weapon — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
+    neutral: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+    windup: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), strike: defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82),
+    windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'light_weapon_idle', label: 'Light Weapon — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
+    neutral: defaultPose(0.04, 0, 0, 20, -70, 0, -65),
+    windup: defaultPose(0.04, 0, 0, 20, -70, 0, -65), strike: defaultPose(0.04, 0, 0, 20, -70, 0, -65),
+    windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'hatchet_idle', label: 'Hatchet — Idle (still)', style: 'sweep', toolKey: 'hatchet', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
@@ -740,14 +966,39 @@ const TOOL_PRESETS = [
   { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
     windup: defaultPose(0, 0, 0.16, 0, 0, -126.05), strike: defaultPose(0, 0, 0.16, 0, 0, 121.49),
     windupFrac: 0.16, strikeFrac: 0.28 },
+  { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'attack', toolKey: 'crossbow', still: false,
+    neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
+  { id: 'crossbow_fire', label: 'Crossbow — Fire', name: 'Crossbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'crossbowLoaded', still: false,
+    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
+  { id: 'scatterbow_load', label: 'Scatterbow — Load', name: 'Scatterbow Load', style: 'ranged', sequence: 'attack', toolKey: 'scatterbow', still: false,
+    neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
+  { id: 'scatterbow_fire', label: 'Scatterbow — Fire', name: 'Scatterbow Fire', style: 'ranged', sequence: 'attack', toolKey: 'scatterbowLoaded', still: false,
+    neutral: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 }, windup: defaultPose(0.34, 0.14, 0.11, -9, 86, -76, 12), strike: defaultPose(0.33, 0.11, 0.12, -9, 84, -109, 9), windupFrac: 0.05, strikeFrac: 0.08, holdFrac: 0.17, durationS: 1.04 },
 ];
 $('presetSelect').innerHTML = TOOL_PRESETS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
+// Keep the two weapon-slot stance cards sourced from the same committed JSON
+// the live WeaponToolStances runtime reads. The literals above are only the
+// local-file/fetch-failure fallback, matching that runtime module's pattern.
+fetch('../../config/combat/weapon-idle-stances.json')
+  .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+  .then(config => {
+    for (const [presetId, stanceId] of [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]) {
+      const preset = TOOL_PRESETS.find(entry => entry.id === presetId);
+      const pose = config?.stances?.[stanceId];
+      if (!preset || !pose) continue;
+      preset.neutral = { ...pose };
+      preset.windup = { ...pose };
+      preset.strike = { ...pose };
+    }
+    logDebug('Loaded Heavy/Light weapon stances from weapon-idle-stances.json');
+  })
+  .catch(error => logDebug(`Weapon stance config fetch failed (${error.message}) — using bundled fallbacks.`));
 function applyPreset(preset) {
   if (preset.name) {
     anim.name = preset.name;
     $('animName').value = anim.name;
   }
-  anim.poses.neutral = { ...(preset.neutral || neutralPoseFor(preset.style)) };
+  anim.poses.neutral = { ...neutralPoseFor(preset.style), ...(preset.neutral || {}) };
   anim.poses.windup = { ...preset.windup };
   anim.poses.strike = { ...preset.strike };
   anim.windupFrac = preset.windupFrac;
@@ -761,8 +1012,10 @@ function applyPreset(preset) {
     $('durationS').value = anim.durationS;
   }
   anim.style = preset.style;
+  anim.sequence = preset.sequence || 'attack';
   clampFracs();
   $('animStyle').value = anim.style;
+  $('playbackSequence').value = anim.sequence;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
   $('holdFrac').value = anim.holdFrac;
@@ -813,6 +1066,15 @@ function lerpPose(a, b, k) {
 function poseAt(t) {
   const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
   const neutral = anim.poses.neutral;
+  if (anim.sequence === 'load') {
+    if (t <= wf) return { pose: lerpPose(neutral, anim.poses.windup, t / Math.max(0.0001, wf)), phase: 'load windup' };
+    return { pose: lerpPose(anim.poses.windup, neutral, (t - wf) / Math.max(0.0001, 1 - wf)), phase: 'load return' };
+  }
+  if (anim.sequence === 'fire') {
+    if (t <= sf) return { pose: lerpPose(neutral, anim.poses.strike, t / Math.max(0.0001, sf)), phase: 'fire' };
+    if (t <= hf) return { pose: { ...anim.poses.strike }, phase: 'recoil hold' };
+    return { pose: lerpPose(anim.poses.strike, neutral, (t - hf) / Math.max(0.0001, 1 - hf)), phase: 'fire return' };
+  }
   if (t <= wf) {
     const k = wf > 0 ? t / wf : 1;
     return { pose: lerpPose(neutral, anim.poses.windup, k), phase: 'windup' };
@@ -831,6 +1093,26 @@ function applyPoseToRig(pose) {
   // toolBase/toolHolder are children of rig, so this automatically carries the tool
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
   rig.rotation.y = THREE.MathUtils.degToRad(pose.bodyYaw || 0);
+  // Head yaw is runtime behavior, not attack-animation data. The editor
+  // mirrors the game by automatically countering the authored bodyYaw so
+  // the preview head keeps facing the fixed forward/aim direction.
+  const neckJoint = avatarModel?.userData?.neckRig?.neckJoint;
+  if (neckJoint) neckJoint.rotation.y = -rig.rotation.y * neckPreviewStrength;
+  toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
+  const toolPlane = toolPlaneMesh?.userData?.toolPlane;
+  if (toolPlane) {
+    // Runtime derives the -90° sweep basis from the active animation, then
+    // weapon-tool-stances fades that basis out at Neutral for every weapon-
+    // slot-capable shape. Reproduce both layers so Heavy/Light Neutral and
+    // their attack transitions no longer appear 90° off in this editor.
+    const weaponSlotSprite = ['hatchet', 'pickshovel', 'bronzehoe', 'fishingspear', 'fishingmace'].includes(currentToolKey);
+    let neutralWeight = 0;
+    if (weaponSlotSprite && anim.style === 'sweep') {
+      if (previewT <= anim.windupFrac) neutralWeight = anim.windupFrac > 0.000001 ? 1 - previewT / anim.windupFrac : 0;
+      else if (previewT > anim.holdFrac) neutralWeight = Math.max(0, Math.min(1, (previewT - anim.holdFrac) / Math.max(0.000001, 1 - anim.holdFrac)));
+    }
+    toolPlane.rotation.z = anim.style === 'sweep' ? -Math.PI / 2 + Math.PI / 2 * neutralWeight : 0;
+  }
   toolHolder.position.set(pose.x, pose.y, pose.z);
   // Composed in the same order as game.js's pose-driven combat branch
   // (qYaw * qPitch * qRoll — equivalent to a THREE.Euler 'YXZ' triple), so the
@@ -863,6 +1145,8 @@ const ATTACK_SLOTS = [
   { path: ['chargedBreaker'], label: 'Charged Breaker' },
   { path: ['flurry'], label: 'Accelerating Flurry' },
   { path: ['counterShield'], label: 'Counter Shield' },
+  { path: ['rangedWeapons', 'crossbow'], label: 'Ranged: Crossbow' },
+  { path: ['rangedWeapons', 'scatterbow'], label: 'Ranged: Scatterbow' },
 ];
 
 let attackValuesConfig = null;
@@ -897,7 +1181,7 @@ $('statSlotSelect').innerHTML = ATTACK_SLOTS.map((s, i) => `<option value="${i}"
 // (name, anim, dirSign, pose, dmgTag, heavy, label, condKey, bonusText) is
 // either cosmetic/structural or owned by a different part of this tool
 // (the pose editor above already covers anim/pose).
-const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
+const STAT_FIELD_ALLOW = /^(damage|damageMul|halfConeDeg|HALF_CONE_DEG.*|rangeMul|rangeTiles|RANGE_MUL.*|knockbackMul|knockbackPxS|KNOCKBACK_MUL.*|COUNTER_.*|staminaCost|CHARGE_DRAIN_PER_S|COST_.*|MIN_.*|MAX_.*|DRAIN_PER_S|windupS|strikeS|returnS|WINDUP_S|STRIKE_S|holdS|HOLD_S|reloadDurationS|reloadWindupFrac|reloadStrikeFrac|reloadHoldFrac|fireDurationS|fireWindupFrac|fireAtFrac|fireHoldFrac|projectileCount|projectileRadiusPx|speedPxS|spreadDeg|lungeMul|LUNGE_.*|power|POWER|trailHalfWidthTiles|trailFarTiles|trailMaxAgeSeconds|FIRST_STRIKE_DELAY_S|NEXT_STRIKE_.*|SIDE_OFFSET_DEG|MOVE_SPEED_MUL_.*)$/;
 
 function numericLeafFields(entry) {
   const out = [];
@@ -1027,6 +1311,20 @@ loadAttackValues().then(renderStatFields);
 // ── Timeline visualization (windup/strike/hold/return phase structure) ───
 function updateTimelineSegments() {
   const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
+  if (anim.sequence === 'load') {
+    $('segWindup').style.width = `${wf * 100}%`; $('segWindup').textContent = 'load';
+    $('segStrike').style.width = '0%'; $('segHold').style.width = '0%';
+    $('segReturn').style.width = `${(1 - wf) * 100}%`; $('segReturn').textContent = 'return';
+    return;
+  }
+  if (anim.sequence === 'fire') {
+    $('segWindup').style.width = '0%';
+    $('segStrike').style.width = `${sf * 100}%`; $('segStrike').textContent = 'fire';
+    $('segHold').style.width = `${(hf - sf) * 100}%`;
+    $('segReturn').style.width = `${(1 - hf) * 100}%`; $('segReturn').textContent = 'return';
+    return;
+  }
+  $('segWindup').textContent = 'windup'; $('segStrike').textContent = 'strike'; $('segReturn').textContent = 'return';
   $('segWindup').style.width = `${wf * 100}%`;
   $('segStrike').style.width = `${(sf - wf) * 100}%`;
   $('segHold').style.width = `${(hf - sf) * 100}%`;
@@ -1076,6 +1374,7 @@ function exportAnimObject() {
     kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
     style: anim.style,
+    sequence: anim.sequence,
     windupFrac: anim.windupFrac,
     strikeFrac: anim.strikeFrac,
     holdFrac: anim.holdFrac,
@@ -1113,6 +1412,8 @@ function safeNum(v, fallback) { const n = Number(v); return Number.isFinite(n) ?
 function loadAnimObject(data) {
   anim.name = data.name || anim.name;
   anim.style = data.style || anim.style;
+  const inferredSequence = /\bload\b/i.test(data.name || '') ? 'load' : /\bfire\b/i.test(data.name || '') ? 'fire' : 'attack';
+  anim.sequence = ['attack', 'load', 'fire'].includes(data.sequence) ? data.sequence : inferredSequence;
   anim.windupFrac = safeNum(data.windupFrac, anim.windupFrac);
   anim.strikeFrac = safeNum(data.strikeFrac, anim.strikeFrac);
   // Older exports predate the hold phase — fall back to holdFrac === strikeFrac
@@ -1125,11 +1426,12 @@ function loadAnimObject(data) {
   // this style's implicit rest pose, per channel, so they still load cleanly.
   const styleNeutral = neutralPoseFor(anim.style);
   const n = data.poses?.neutral || {}, w = data.poses?.windup || {}, s = data.poses?.strike || {};
-  anim.poses.neutral = defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll));
+  anim.poses.neutral = { ...defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll)), scale: Math.max(0.1, safeNum(n.scale, styleNeutral.scale ?? 1)) };
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   $('animName').value = anim.name;
   $('animStyle').value = anim.style;
+  $('playbackSequence').value = anim.sequence;
   $('windupFrac').value = anim.windupFrac;
   $('strikeFrac').value = anim.strikeFrac;
   $('holdFrac').value = anim.holdFrac;
@@ -1167,6 +1469,7 @@ function animate() {
   }
   const { pose, phase } = poseAt(previewT);
   applyPoseToRig(pose);
+  updateHeadSkinVertexOverlay();
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
@@ -1178,7 +1481,7 @@ $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
 $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
 $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
 refreshJsonView();
-setDebug('Hobunji Attack Animation Editor\nNeutral, Windup, and Strike are all authored poses.\nPlayback auto-lerps Neutral→Windup→Strike→(hold)→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
+refreshPreviewDebug();
 logDebug('Attack Animation Editor ready');
 </script>
 <script>

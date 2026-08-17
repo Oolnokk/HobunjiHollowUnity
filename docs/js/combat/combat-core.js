@@ -64,7 +64,7 @@
   function fireStagedStrike(action) {
     if (action.strikeFired) return;
     action.strikeFired = true;
-    deps?.playWeaponSlashSfx?.(action.data?.sfxPitch);
+    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch);
     if (action.onStrike) action.onStrike(action);
   }
 
