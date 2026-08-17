@@ -320,9 +320,19 @@
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
     }) || null;
+    const hands = window.ProceduralArmAnimation?.attach(THREE, legsPivot, {
+      speciesId: roster.appearance.speciesId,
+      gender: roster.appearance.gender,
+      bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
+      modelHeight,
+      handAttachX: portrait.userData?.handAttachX,
+      handAttachY: portrait.userData?.handAttachY,
+      armAttachments: portrait.userData?.armAttachments,
+      name: roster.name || 'bandit',
+    }) || null;
 
     return {
-      group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
+      group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs, hands,
       modelWidth, modelHeight,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
@@ -332,7 +342,7 @@
       // -width/2,height/2 fallback.
       handAttachX: portrait.userData?.handAttachX,
       handAttachY: portrait.userData?.handAttachY,
-      dispose() { legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
+      dispose() { hands?.dispose(); legs?.dispose(); window.PNGPlaneAvatar.disposeAvatarModel?.(group); },
     };
   }
 
@@ -1698,6 +1708,19 @@
         feetY + base.y,
         c.y / deps.TILE + vRZ * (base.x + lateral) + vFZ * jabOff,
       );
+    }
+
+    const hands = c.avatarRef?.hands; // Driven after the final player-shared attack pose has positioned this bandit's weapon.
+    if (hands && holder.parent) {
+      holder.updateWorldMatrix?.(true, false);
+      const worldGrip = holder.getWorldPosition(new THREE.Vector3());
+      const worldGripQuaternion = holder.getWorldQuaternion(new THREE.Quaternion());
+      const reach = hands.followWorldTarget(worldGrip, worldGripQuaternion);
+      if (reach?.clamped) {
+        const adjustedInScene = reach.target.clone(); // Converted back because the standalone holder is scene-local.
+        holder.parent.worldToLocal(adjustedInScene);
+        holder.position.copy(adjustedInScene);
+      }
     }
   }
 

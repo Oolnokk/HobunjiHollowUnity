@@ -563,6 +563,35 @@
     // those three terms gives modelHeight*(0.5 + placementRatio - r/pxH).
     const handAttachRowY = vBounds ? vBounds.bottom : Math.round(placementRatio * pxH);
     root.userData.handAttachY = modelHeight * (0.5 + placementRatio - handAttachRowY / pxH);
+    // Convert portrait-utils.js's raw-arm scans into this floor-anchored
+    // avatar-local frame. Arm length intentionally follows the authored rule:
+    // shoulder Y minus the existing canonical tool-attach Y, rather than the
+    // diagonal shoulder-to-hand distance visible in the painted sprite.
+    const armScan = sourceCanvas.hobunjiArmAttachmentScan || null;
+    const portraitPointToLocal = (point) => point ? {
+      x: -modelWidth / 2 + Number(point.xRatio) * modelWidth,
+      y: modelHeight * (0.5 + placementRatio - Number(point.yRatio)),
+      z: anchorZ,
+    } : null;
+    const fallbackArmLength = modelHeight * 0.32; // Used only when a raw arm sprite could not be read.
+    const rightShoulder = portraitPointToLocal(armScan?.right?.shoulder)
+      || { x: root.userData.handAttachX, y: root.userData.handAttachY + fallbackArmLength, z: anchorZ };
+    const leftShoulder = portraitPointToLocal(armScan?.left?.shoulder)
+      || { x: -root.userData.handAttachX, y: root.userData.handAttachY + fallbackArmLength, z: anchorZ };
+    const leftHand = portraitPointToLocal(armScan?.left?.hand)
+      || { x: -root.userData.handAttachX, y: root.userData.handAttachY, z: anchorZ };
+    const resolvedArmLength = Math.max(modelHeight * 0.05, rightShoulder.y - root.userData.handAttachY);
+    root.userData.armAttachments = {
+      left: { shoulder: leftShoulder, idleHand: leftHand, armLength: resolvedArmLength },
+      right: {
+        shoulder: rightShoulder,
+        idleHand: { x: root.userData.handAttachX, y: root.userData.handAttachY, z: anchorZ },
+        armLength: resolvedArmLength,
+      },
+      scanSucceeded: !!(armScan?.left && armScan?.right),
+      rule: armScan?.rule || 'fallback shoulder directly above tool attach',
+      source: armScan,
+    };
     root.add(assembly);
     root.userData.sourceCanvas = sourceCanvas;
     root.userData.backCanvas = options.backCanvas || options.backImage || null;

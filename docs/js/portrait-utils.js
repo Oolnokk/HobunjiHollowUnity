@@ -610,6 +610,67 @@ function drawPortraitLayer(ctx, img, xform, tint, sourceKey) {
   ctx.restore();
 }
 
+// Finds the first/last opaque row of one raw arm sprite and converts the
+// alpha-weighted center of that row into normalized portrait coordinates.
+// This deliberately scans the anatomy layer before hair/clothing/head layers
+// are composited, so those unrelated pixels can never move an arm joint.
+function scanArmLayerAttachment(img, xform, alphaThreshold = 8) {
+  if (!img?.naturalWidth || !img?.naturalHeight) return null;
+  const scratch = document.createElement('canvas'); // Used only to read this raw arm sprite's alpha channel.
+  scratch.width = img.naturalWidth;
+  scratch.height = img.naturalHeight;
+  const scratchCtx = scratch.getContext('2d', { willReadFrequently: true });
+  scratchCtx.drawImage(img, 0, 0);
+  let pixels;
+  try {
+    pixels = scratchCtx.getImageData(0, 0, scratch.width, scratch.height).data;
+  } catch (_) {
+    return null;
+  }
+  const rowCenter = (y) => {
+    let alphaSum = 0;
+    let weightedX = 0;
+    const rowOffset = y * scratch.width * 4;
+    for (let x = 0; x < scratch.width; x += 1) {
+      const alpha = pixels[rowOffset + x * 4 + 3];
+      if (alpha <= alphaThreshold) continue;
+      alphaSum += alpha;
+      weightedX += (x + 0.5) * alpha;
+    }
+    return alphaSum > 0 ? weightedX / alphaSum : null;
+  };
+  let topY = null, topX = null, bottomY = null, bottomX = null;
+  for (let y = 0; y < scratch.height; y += 1) {
+    const x = rowCenter(y);
+    if (x == null) continue;
+    topY = y + 0.5;
+    topX = x;
+    break;
+  }
+  for (let y = scratch.height - 1; y >= 0; y -= 1) {
+    const x = rowCenter(y);
+    if (x == null) continue;
+    bottomY = y + 0.5;
+    bottomX = x;
+    break;
+  }
+  if (topY == null || bottomY == null) return null;
+  const { ax, ay, sx, sy } = xform;
+  const layerH = PORTRAIT_L * sy;
+  const layerW = (img.naturalWidth / img.naturalHeight) * PORTRAIT_L * sx;
+  const layerCenterX = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
+  const layerCenterY = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
+  const toPortraitPoint = (sourceX, sourceY) => ({
+    xRatio: (layerCenterX - layerW / 2 + sourceX / img.naturalWidth * layerW) / PORTRAIT_CW,
+    yRatio: (layerCenterY - layerH / 2 + sourceY / img.naturalHeight * layerH) / PORTRAIT_CH,
+  });
+  return {
+    firstOpaque: toPortraitPoint(topX, topY),
+    lastOpaque: toPortraitPoint(bottomX, bottomY),
+    sourcePixels: { first: { x: topX, y: topY }, last: { x: bottomX, y: bottomY } },
+  };
+}
+
 // ── Mesh-deformation warp helpers ─────────────────────────
 // Adapted from docs/tools/mesh-deformation-author/index.html.
 // Renders one triangle of a mesh-deformed image using an affine
@@ -1266,6 +1327,35 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       sx: layer?.sx ?? 1,
       sy: layer?.sy ?? 1,
     };
+
+  // Arm anatomy metadata travels with the rendered canvas into
+  // PNGPlaneAvatar. The shoulder is the first opaque arm pixel found by a
+  // downward scan, moved 10% of the full portrait height downward exactly as
+  // the runtime rig rule specifies. lastOpaque is retained for the idle left
+  // hand target; the weapon-holding right hand continues to use the game's
+  // canonical scanned tool attach point.
+  const scanArmSide = (entries) => {
+    for (const { layer } of entries) {
+      const image = imgMap.get(layer.url); // Used to scan the uncomposited anatomy sprite.
+      const scan = scanArmLayerAttachment(image, resolveXform(layer), 8);
+      if (!scan) continue;
+      return {
+        shoulder: {
+          xRatio: scan.firstOpaque.xRatio,
+          yRatio: scan.firstOpaque.yRatio + 0.10,
+        },
+        hand: scan.lastOpaque,
+        sourcePixels: scan.sourcePixels,
+        sourceUrl: layer.url,
+      };
+    }
+    return null;
+  };
+  canvas.hobunjiArmAttachmentScan = {
+    left: scanArmSide(baseLeftArmLayers),
+    right: scanArmSide(baseRightArmLayers),
+    rule: 'downward raw-arm opacity scan; shoulder = first opaque pixel + 10% portrait height',
+  };
 
   // Pre-compute emote overlay deformation for this portrait (null when no emote is active).
   const emoteDeformedPts = breathingComposer?.getOverlayOnlyPoints(nowMs, seatId) ?? null;

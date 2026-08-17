@@ -111,6 +111,8 @@ canvas{display:block;width:100%;height:100%}
     <div class="sectionTitle"><b>Avatar</b><span class="sectionTag">species / height</span></div>
     <div class="field"><label>Species</label><select id="avatarSpecies"></select></div>
     <div class="field"><label>Gender</label><select id="avatarGender"></select></div>
+    <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showArmBones" style="width:auto;margin-right:6px">Show invisible arm bones</label></div>
+    <div class="help" id="armReachStatus">Hand rig loading…</div>
     <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height, so weapon poses can be checked against different builds.</div>
   </div>
 
@@ -249,16 +251,19 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js"></script>
-<script src="../../config/scratchbones-config.js"></script>
-<script src="../../js/portrait-utils.js"></script>
+<script src="../../config/scratchbones-config.js?v=20260817a"></script>
+<script src="../../js/portrait-utils.js?v=20260817a"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js"></script>
+<script src="../../js/png-plane-avatar.js?v=20260817a"></script>
+<script src="../../js/arm-bones.js?v=20260817a"></script>
+<script src="../../js/procedural-arm-animation.js?v=20260817a"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const $ = id => document.getElementById(id);
 const logLines = [];
@@ -320,6 +325,11 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let avatarModel = null;
+let armRig = null; // Current species' 3D hands and invisible fixed-length arm chains.
+const handGlbLoader = new GLTFLoader();
+function loadHandGlbScene(path) {
+  return new Promise((resolve, reject) => handGlbLoader.load(path, gltf => resolve(gltf.scene), undefined, reject));
+}
 let _cosmeticsReady = null;
 function ensureCosmetics() {
   if (!_cosmeticsReady) {
@@ -352,6 +362,8 @@ async function rebuildAvatar(speciesId, gender) {
     rig.remove(avatarModel);
     window.PNGPlaneAvatar.disposeAvatarModel(avatarModel);
   }
+  armRig?.dispose();
+  armRig = null;
   avatarModel = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, frontCanvas, {
     backCanvas, profile, speciesId, gender, name: 'editor_preview_avatar',
     modelWidth: MODEL_W, modelHeight: MODEL_W,
@@ -366,7 +378,24 @@ async function rebuildAvatar(speciesId, gender) {
   avatarModel.position.y = h / 2;
   rig.add(avatarModel);
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  armRig = window.ProceduralArmAnimation?.attach(THREE, rig, {
+    speciesId,
+    gender,
+    bodyColors: profile.bodyColors,
+    modelHeight: h,
+    handAttachX: avatarModel.userData.handAttachX,
+    handAttachY: avatarModel.userData.handAttachY,
+    armAttachments: avatarModel.userData.armAttachments,
+    assetBase: '../../assets/',
+    loadGlbScene: loadHandGlbScene,
+    name: 'attack_editor',
+  }) || null;
+  window.ProceduralArmAnimation?.setShowBones($('showArmBones').checked);
+  const armDebug = armRig?.getDebug?.();
+  $('armReachStatus').textContent = armDebug
+    ? `Arm length ${armDebug.armLength.toFixed(3)} • shoulder scan ${armDebug.scanSucceeded ? 'OK' : 'fallback'} • right hand follows tool grip`
+    : 'Hand rig unavailable';
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}, arm ${armDebug?.armLength?.toFixed(3) || 'n/a'}${toolMirrored ? ', mirrored' : ''})`);
 }
 
 const SPECIES_LIST = [
@@ -397,6 +426,10 @@ $('avatarSpecies').addEventListener('change', () => {
 });
 $('avatarGender').addEventListener('change', () => {
   rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+});
+$('showArmBones').addEventListener('change', () => {
+  window.ProceduralArmAnimation?.setShowBones($('showArmBones').checked);
+  armRig?.useIdlePose(); // Refreshes both left and right guide visibility immediately.
 });
 rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
@@ -432,6 +465,8 @@ transformControls.addEventListener('objectChange', () => {
   p.pitch = THREE.MathUtils.radToDeg(e.x);
   p.yaw = THREE.MathUtils.radToDeg(e.y);
   p.roll = THREE.MathUtils.radToDeg(e.z);
+  constrainPoseCoordinates(p);
+  toolHolder.position.set(p.x, p.y, p.z);
   syncPosePanelFromState(gizmoPhase);
   refreshJsonView();
 });
@@ -581,7 +616,9 @@ function buildPosePanel(phase) {
     el.addEventListener('input', () => {
       const v = Number(el.value);
       anim.poses[phase][f.key] = v;
+      if (!f.angle) constrainPoseCoordinates(anim.poses[phase]);
       $(`${phase}_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+      if (!f.angle) syncPosePanelFromState(phase);
       scrubToPhase(phase);
       refreshJsonView();
     });
@@ -839,6 +876,52 @@ function applyPoseToRig(pose) {
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
+  if (armRig) {
+    const requestedGrip = new THREE.Vector3(
+      toolBase.position.x + toolHolder.position.x,
+      toolBase.position.y + toolHolder.position.y,
+      toolBase.position.z + toolHolder.position.z,
+    );
+    const reach = armRig.followLocalTarget(requestedGrip, toolHolder.quaternion);
+    if (reach?.clamped) {
+      toolHolder.position.set(
+        reach.target.x - toolBase.position.x,
+        reach.target.y - toolBase.position.y,
+        reach.target.z - toolBase.position.z,
+      );
+    }
+    const debug = armRig.getDebug();
+    $('armReachStatus').textContent = `Arm length ${debug.armLength.toFixed(3)} • reach ${debug.requestedDistance.toFixed(3)}${debug.clamped ? ' → CLAMPED to ' + debug.constrainedDistance.toFixed(3) : ' • within reach'} • shoulder scan ${debug.scanSucceeded ? 'OK' : 'fallback'}`;
+  }
+}
+
+function constrainPoseCoordinates(pose) {
+  const debug = armRig?.getDebug?.();
+  if (!debug || !window.ArmBones) return false;
+  const requestedGrip = new THREE.Vector3(
+    toolBase.position.x + (Number(pose.x) || 0),
+    toolBase.position.y + (Number(pose.y) || 0),
+    toolBase.position.z + (Number(pose.z) || 0),
+  );
+  const constrained = window.ArmBones.constrainTarget(THREE, {
+    x: debug.shoulder[0], y: debug.shoulder[1], z: debug.shoulder[2],
+  }, requestedGrip, debug.armLength);
+  if (!constrained.clamped) return false;
+  pose.x = constrained.target.x - toolBase.position.x;
+  pose.y = constrained.target.y - toolBase.position.y;
+  pose.z = constrained.target.z - toolBase.position.z;
+  return true;
+}
+
+function constrainAllAuthoredPoses() {
+  if (!armRig || !anim?.poses) return 0;
+  let adjusted = 0;
+  for (const phase of ['neutral', 'windup', 'strike']) {
+    if (constrainPoseCoordinates(anim.poses[phase])) adjusted += 1;
+    syncPosePanelFromState(phase);
+  }
+  if (adjusted) logDebug(`Arm reach adjusted ${adjusted} authored pose${adjusted === 1 ? '' : 's'} for the current species`);
+  return adjusted;
 }
 
 // ── Combat stats (docs/config/combat/attack-values.json) + hitbox preview ──
@@ -1071,6 +1154,7 @@ function refreshJsonView() {
   $('jsonView').value = JSON.stringify(exportAnimObject(), null, 2);
 }
 function exportAnimObject() {
+  constrainAllAuthoredPoses();
   return {
     version: 1,
     kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
@@ -1128,6 +1212,7 @@ function loadAnimObject(data) {
   anim.poses.neutral = defaultPose(safeNum(n.x, styleNeutral.x), safeNum(n.y, styleNeutral.y), safeNum(n.z, styleNeutral.z), safeNum(n.pitch, styleNeutral.pitch), safeNum(n.yaw, styleNeutral.yaw), safeNum(n.bodyYaw, styleNeutral.bodyYaw), safeNum(n.roll, styleNeutral.roll));
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
+  constrainAllAuthoredPoses();
   $('animName').value = anim.name;
   $('animStyle').value = anim.style;
   $('windupFrac').value = anim.windupFrac;

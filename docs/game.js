@@ -6850,6 +6850,7 @@
       // driven each frame from updatePlayerMesh. See
       // docs/js/procedural-leg-animation.js.
       let playerLegs = null;
+      let playerHands = null; // Rebuilt with the avatar and driven after updateToolMesh each frame.
       // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
       // (null if no neck pivot could be detected for the player's current
       // portrait) — same mechanism the animation-author tool/NPC dialogue
@@ -8540,6 +8541,16 @@
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
         }) || null;
+        const hands = window.ProceduralArmAnimation?.attach(THREE, root, {
+          speciesId: appearance.speciesId,
+          gender: appearance.gender,
+          bodyColors: profile?.bodyColors || appearance.bodyColors,
+          modelHeight: avatarHeight,
+          handAttachX: avatarGroup.userData?.handAttachX,
+          handAttachY: avatarGroup.userData?.handAttachY,
+          armAttachments: avatarGroup.userData?.armAttachments,
+          name: rec?.id || rec?.name || 'npc',
+        }) || null;
 
         const walker = {
           root, rec, profile, avatarGroup, avatarHeight, alcoholPoseGroup, groundShadow,
@@ -8549,7 +8560,7 @@
           // portrait) — see faceNpcDialogueParticipants for the one place
           // this is driven today.
           neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
-          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
+          legs, hands, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
@@ -12043,6 +12054,17 @@
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
           name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+        }) || null;
+        playerHands?.dispose();
+        playerHands = window.ProceduralArmAnimation?.attach(THREE, playerMesh, {
+          speciesId: _playerData?.appearance?.speciesId,
+          gender: _playerData?.appearance?.gender,
+          bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
+          modelHeight: avatarHeight,
+          handAttachX: avatarGroup.userData?.handAttachX,
+          handAttachY: avatarGroup.userData?.handAttachY,
+          armAttachments: avatarGroup.userData?.armAttachments,
+          name: 'player',
         }) || null;
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
         // playback.js) writes directly into this same legs handle — re-attach
@@ -17458,6 +17480,7 @@
           drinkProgress: _heldDrinkAnimDuration > 0 ? 1 - _heldDrinkAnimT / _heldDrinkAnimDuration : 0,
           characterActionLocks: window.CharacterActionLocks?.getDebug?.() || [],
           npcDrinkInteractions: window.NpcDrinkInteraction?.getDebug?.() || [],
+          proceduralHands: playerHands?.getDebug?.() || null,
           actionArch,
         };
       }
@@ -17471,6 +17494,24 @@
       const _qToolYaw = new THREE.Quaternion();  // tool's own local yaw twist (thrust)
       const _qRoll    = new THREE.Quaternion();  // tool's own local roll twist (pose-driven only)
       const _swAxis   = new THREE.Vector3();     // chop/tilt axis (player right in world)
+      const _handToolWorldPosition = new THREE.Vector3(); // Reused by the per-frame tool-to-hand reach bridge.
+      const _handToolWorldQuaternion = new THREE.Quaternion();
+
+      function updatePlayerHandsFromTool() {
+        if (!playerHands) return;
+        if (!toolHolder.visible || !toolHolder.parent) {
+          playerHands.useIdlePose();
+          return;
+        }
+        toolHolder.updateWorldMatrix?.(true, false);
+        toolHolder.getWorldPosition(_handToolWorldPosition);
+        toolHolder.getWorldQuaternion(_handToolWorldQuaternion);
+        const result = playerHands.followWorldTarget(_handToolWorldPosition, _handToolWorldQuaternion);
+        if (!result?.clamped) return;
+        const adjustedInToolParent = result.target.clone(); // Converted back because toolHolder itself is scene-local, not world-local.
+        toolHolder.parent.worldToLocal(adjustedInToolParent);
+        toolHolder.position.copy(adjustedInToolParent);
+      }
 
       // Resolve anim style for the active tool from equipped item or fallback
       const _animStyleFallbackLogged = new Set();
@@ -19525,6 +19566,7 @@
         // player's body after updatePlayerMesh, and the attached pet needs
         // that final transform in the same frame.
         updateShoulderPetMeshPin();
+        updatePlayerHandsFromTool(); // Follows and reach-clamps the final grip pose.
         if (currentArea === 'farm') {
           window.WaterSystem.updateWaterMeshes();
           updateCropMeshes();

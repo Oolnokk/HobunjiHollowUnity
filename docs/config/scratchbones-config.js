@@ -3887,6 +3887,38 @@ window.SCRATCHBONES_CONFIG = {
             }
           }
         },
+        "proceduralHands": {
+          "enabled": true,
+          "handHeightFraction": 0.12,
+          "boneColorHex": "#D8C7A3",
+          "keratinColorHex": "#44484D",
+          "species": {
+            "mashtzarr": {
+              "glb": "assets/models/hands/hand_pachyderm.glb",
+              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "bone" }
+            },
+            "tletingan": {
+              "glb": "assets/models/hands/hand_sloth.glb",
+              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "bone" }
+            },
+            "mao-ao": {
+              "glb": "assets/models/hands/hand_feline.glb",
+              "materialRoles": { "MAT_None_7a4e2e": "body" }
+            },
+            "engh-sho": {
+              "glb": "assets/models/hands/hand_feline.glb",
+              "materialRoles": { "MAT_None_7a4e2e": "body" }
+            },
+            "kenkari": {
+              "glb": "assets/models/hands/hand_parrot.glb",
+              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "keratin" }
+            },
+            "rakakoan": {
+              "glb": "assets/models/hands/hand_parrot.glb",
+              "materialRoles": { "MAT_None_7a4e2e": "body", "MAT_EyeSurface_0c0c0c": "keratin" }
+            }
+          }
+        },
         "behindView": {
           "headUrls": {
             "mao-ao": {
