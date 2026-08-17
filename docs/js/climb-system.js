@@ -19,6 +19,7 @@
   // movement code.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
+  const climbSafetyDebug = { lastBlockReason: null, lastBlockRideState: 'none', lastBlockAt: 0 }; // Used by Pixel Probe to expose rejected mounted-climb attempts on mobile.
 
   const CLIMB_MAX_WALL_TILES = 4;
   function getClimbTarget() {
@@ -52,6 +53,15 @@
   const CLIMB_HOP_PAUSE_S  = 0.26;
   const CLIMB_HOP_BOUNCE_UNITS = 0.4;
   function startClimb(climb) {
+    const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
+    if (mountRideState !== 'none') {
+      climbSafetyDebug.lastBlockReason = 'mounted';
+      climbSafetyDebug.lastBlockRideState = mountRideState;
+      climbSafetyDebug.lastBlockAt = Date.now();
+      deps.showToast?.('Dismount before climbing.', false);
+      window.__farmLog?.(`[climb] blocked while mount rideState=${mountRideState}`, 'wildlife');
+      return false;
+    }
     const player = deps.player;
     const currentArea = deps.getCurrentArea();
     const grid = deps.getActiveGrid();
@@ -77,6 +87,9 @@
     // -1 so updateClimb's hopIndex-change check always fires for hop 0
     // (the very first stagger) instead of only from hop 1 onward.
     player._climbLastHopIndex = -1;
+    climbSafetyDebug.lastBlockReason = null;
+    climbSafetyDebug.lastBlockRideState = 'none';
+    return true;
   }
 
   function updateClimb(dt) {
@@ -119,5 +132,12 @@
     getClimbTarget,
     startClimb,
     updateClimb,
+    get debug() {
+      return {
+        playerClimbing: !!deps?.player?.climbing,
+        mountRideState: deps?.getMountRideState?.() || 'none',
+        ...climbSafetyDebug,
+      };
+    },
   };
 })();

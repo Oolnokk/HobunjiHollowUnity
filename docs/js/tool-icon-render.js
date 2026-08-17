@@ -227,3 +227,23 @@
 
   window.ToolIconRender = { getIconHTML, warm, registerCanvasSource, invalidate };
 })();
+
+// This file already loads synchronously before game.js. Use that existing
+// bootstrap point to load the decoupled held-object/world-layer policy without
+// adding another render concern back into game.js or index.html.
+(() => {
+  'use strict';
+  if (window.HeldObjectRenderOrder?.installed) return;
+  const src = 'js/held-object-render-order.js?v=20260815a';
+  if (document.readyState === 'loading' && document.currentScript) {
+    document.write(`<script data-hobunji-held-render-order="1" src="${src}"><\/script>`);
+    return;
+  }
+  if (document.querySelector('script[data-hobunji-held-render-order]')) return;
+  const script = document.createElement('script');
+  script.dataset.hobunjiHeldRenderOrder = '1';
+  script.src = src;
+  script.async = false;
+  script.onerror = () => window.__farmLog?.('[held-layer] render-order module failed to load', 'error');
+  document.head.appendChild(script);
+})();

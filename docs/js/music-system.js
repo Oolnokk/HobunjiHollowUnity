@@ -51,6 +51,15 @@
     return window.SCRATCHBONES_CONFIG?.game?.debug?.trace?.audio !== false;
   }
 
+  // Peek-only version of audioDebug's own throttle check (doesn't record a
+  // call), so a call site that runs every frame can skip building its whole
+  // message string (and whatever values it interpolates) on the ~99% of
+  // frames where audioDebug would just throttle-discard it anyway.
+  function _audioDebugDue(key, throttleMs) {
+    const last = _audioDebugLast.has(key) ? _audioDebugLast.get(key) : -Infinity;
+    return performance.now() - last >= throttleMs;
+  }
+
   function audioTrace(message, key = message, throttleMs = 2000, category = 'audio') {
     if (!audioTraceEnabled()) return;
     audioDebug(message, key, throttleMs, category);
@@ -687,7 +696,12 @@
 
     const idx = _audioCueIndexes.get(_ambientCueState.indexId);
     const cues = idx?.ambient_cues || [];
-    audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
+    // updateAmbientCues runs every frame; skip building this trace string
+    // (and the Math.round/negation work in it) on the frames it would just
+    // get throttle-discarded on anyway.
+    if (audioTraceEnabled() && _audioDebugDue('ambient-state-' + currentArea, 5000)) {
+      audioTrace('ambient state area=' + currentArea + ' mode=' + _ambientCueState.mode + ' index=' + (_ambientCueState.indexId || 'none') + ' cues=' + cues.length + ' bgmActive=' + !!_ambientCueState.currentBgm + ' cueActive=' + !!_ambientCueState.currentCue + ' nextInMs=' + Math.max(0, Math.round((_ambientCueState.nextAt || 0) - performance.now())), 'ambient-state-' + currentArea, 5000);
+    }
     if (_ambientCueState.currentCue && !_ambientCueState.currentCue.ended) return;
     if (_ambientCueState.currentCue?.ended) _ambientCueState.currentCue = null;
 
@@ -853,7 +867,11 @@
     const exterior = currentArea === 'farm' || currentArea === 'town' || deps._isZoneArea(currentArea);
     const rainy = deps.calendar.isRaining;
     const night = isNightTime();
-    audioTrace('bgs resolve area=' + currentArea + ' exterior=' + exterior + ' rainy=' + rainy + ' night=' + night + ' rainStrength=' + (deps.calendar.rainStrength || 0), 'bgs-resolve-' + currentArea, 5000);
+    // updateExteriorBgs runs every frame; same throttle-peek as the ambient
+    // trace above, to skip the string build on the common no-log frames.
+    if (audioTraceEnabled() && _audioDebugDue('bgs-resolve-' + currentArea, 5000)) {
+      audioTrace('bgs resolve area=' + currentArea + ' exterior=' + exterior + ' rainy=' + rainy + ' night=' + night + ' rainStrength=' + (deps.calendar.rainStrength || 0), 'bgs-resolve-' + currentArea, 5000);
+    }
     setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
     setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night && !rainy ? (bgs.nightbugsVolume ?? 0.34) : 0);
     const wind01 = exterior ? Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3)) : 0;
@@ -974,7 +992,17 @@
   // healthy-looking playback state (no errors, paused=false) can still be
   // inaudible if the context is stuck suspended or the gain never reached
   // its ramped target. Called once per gameLoop tick from game.js.
+  // Called every frame, but each of the three audioDebug() calls below only
+  // actually logs once per 5000ms (see audioDebug's internal throttle) — the
+  // rest of the time this function used to build all three message strings
+  // (plus audioConditionWorld() and friends) purely to hand them to a call
+  // that immediately discards them. Gate the whole body behind the same
+  // window so that work only happens right before it's actually used.
+  let _lastDiagTickRun = -Infinity;
   function logAudioTickDiagnostics() {
+    const now = performance.now();
+    if (now - _lastDiagTickRun < 5000) return;
+    _lastDiagTickRun = now;
     audioDebug('audio tick active area=' + deps.getCurrentArea() + ' paused=' + deps.getPaused() + ' gameStarted=' + deps.getGameStarted(), 'audio-tick-' + deps.getCurrentArea(), 5000);
     const activeSnd = _ambientCueState.currentBgm || _ambientCueState.currentCue;
     const gainNode = activeSnd ? _musicGainNodes.get(activeSnd) : null;

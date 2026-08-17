@@ -37,6 +37,8 @@
       const spTile    = document.getElementById('spTile');
       const spWater   = document.getElementById('spWater');
       const spGold    = document.getElementById('spGold');
+      const spItem    = document.getElementById('spItem');
+      const spItemDiv = document.getElementById('spItemDiv');
 
       // Menu
       const menuBtn        = document.getElementById('menuBtn');
@@ -71,6 +73,9 @@
       const itemIcon   = document.getElementById('itemIcon');
       const itemName   = document.getElementById('itemName');
       const itemCount  = document.getElementById('itemCount');
+      const itemBtnEl  = document.getElementById('itemBtn');
+      const isPrevIconEl = document.getElementById('isPrevIcon');
+      const isNextIconEl = document.getElementById('isNextIcon');
 
 
       // ── Split layout fit ──────────────────────────────────────────
@@ -536,9 +541,11 @@
       // walkers, and bandits: WALK is the amplitude right as a character
       // starts moving, RUN is the amplitude at full effort (current speed at
       // that character's own max) — each call site lerps between the two by
-      // its own effort ratio rather than using a flat distance.
-      const MOVE_BOB_WALK_AMP = 0.015;
-      const MOVE_BOB_RUN_AMP  = 0.03;
+      // its own effort ratio rather than using a flat distance. Kept subtle
+      // so the procedural feet carry the gait without making the whole body
+      // visibly bounce at ordinary walking speed.
+      const MOVE_BOB_WALK_AMP = 0.0075;
+      const MOVE_BOB_RUN_AMP  = 0.015;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
       const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
@@ -578,38 +585,16 @@
 
       // ── Water simulation constants ──
       // Water is a float depth (0..MAX_WATER) sitting above the tile floor.
-      // Floor Z: RAISED=+1, GRASS/TILLED/PADDY/WEEDS=0, TRENCH=-1, ROCK/SHRUB=solid(no water)
-      // Water surface = floorZ + water depth.
+      // MAX_WATER/RAIN_RATE stay here (rather than moving into
+      // js/water-system.js with the rest of the sim) because other game.js
+      // code beyond the water sim itself reads them: the HUD precip/depth
+      // readouts, the day-one farm pond init, crop water-fitness, and
+      // AudioSystem's splash-sound threshold. Threaded into WaterSystem via
+      // its init(deps) call below. The rest of the sim's tuning constants
+      // (absorption/evaporation/flow rates, siltation, edge tracking) now
+      // live in js/water-system.js, private to that module.
       const MAX_WATER    = 3.0;  // max depth in "units"
       const RAIN_RATE    = 0.018; // depth added per sim tick during rain (×rainStrength)
-      const ABSORB_RATE  = {     // depth drained per tick by soil absorption
-        [TileType.GRASS]:  0.012,  // doubled — grass roots drink efficiently
-        [TileType.WEEDS]:  0.008,
-        [TileType.TILLED]: 0.018,  // broken soil drains fastest (no root binding)
-        [TileType.RAISED]: 0.025,  // elevated — gravity-drains quickly
-        [TileType.PADDY]:  0.003,  // sealed low bowl, retains water
-        [TileType.TRENCH]: 0.000,  // sealed clay — no absorption, only flow
-        [TileType.ROCK]:   0,
-        [TileType.SHRUB]:  0,
-        [TileType.PATH]:   0.006, // hard-packed surface drains slowly
-      };
-      const EVAP_RATE    = 0.002;  // evapotranspiration — drains all tiles slowly even when dry
-      const FLOW_RATE         = 0.45;  // fraction of head difference transferred per tick
-      const TRENCH_FLOW_BONUS = 3.0;   // trenches pull water from neighbours faster (scaled by tile.depth)
-      // West/east edges seep water in from the surrounding far terrain (instead of
-      // only the south edge draining out) so a player can't starve the whole
-      // irrigation system just by damming the north-south channel — the far
-      // terrain still gets in from the sides. Fraction of the gap to the far
-      // terrain's level closed per tick.
-      const SIDE_INFLOW_RATE  = 0.06;
-      // How fast the far terrain immediately south of the map (the decorative
-      // border terrain) tracks the south-edge tile's water level, per column.
-      // Low = the gap a player digs at the south edge visibly continues into
-      // the far terrain rather than snapping dry/wet instantly.
-      const FAR_SOUTH_TRACK_RATE = 0.2;
-      // Rain gradually silts trenches back in — depth drains while raining and the
-      // trench reverts to grass once fully filled. Redigging (single tap) restores depth to 1.
-      const TRENCH_SILT_RATE  = 0.0006;  // depth lost per sim tick, per unit rain strength
 
       // ── Game data ──
       // Regional seasons (Stormtide/Deadgrass/Longpour/Coldmuck) also moved
@@ -694,16 +679,8 @@
       // playFootstepSfx, playObjectSfx, playWeaponHitSfx, etc.) now live in
       // js/audio-system.js (window.AudioSystem).
 
-      // Helper: floor Z for a tile type. Trenches shallow out toward 0 as they silt up.
-      function floorZ(type, depth = 1) {
-        if (type === TileType.RAISED) return  1;
-        if (type === TileType.TRENCH) return -clamp(depth, 0, 1);
-        return 0;  // ROCK, SHRUB, and all normal tiles sit at Z=0
-      }
-      // Max water a tile can hold — trenches scale down with depth as they silt in.
-      function tileWaterCapacity(tile) {
-        return tile.type === TileType.TRENCH ? MAX_WATER * clamp(tile.depth ?? 1, 0, 1) : MAX_WATER;
-      }
+      // floorZ/tileWaterCapacity (water-sim-only helpers) now live in
+      // js/water-system.js, private to that module.
       // Whether a tile blocks water entirely (solid column)
       function isSolid(type) {
         return type === TileType.ROCK || type === TileType.SHRUB;
@@ -2985,7 +2962,7 @@
           if (tile.type === TileType.TRENCH) tile.depth = 1;
           tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
-          markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
+          markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
         } else if (farmEditBrushType === 'crop') {
           if (tile.type === TileType.ROCK || tile.type === TileType.SHRUB) tile.type = TileType.TILLED;
           if (tile.type !== TileType.TILLED && tile.type !== TileType.GRASS && tile.type !== TileType.RAISED) tile.type = TileType.TILLED;
@@ -3021,7 +2998,7 @@
           }
           tile.type = TileType.GRASS; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
           if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
-          markTileDirty(col, row); recomputeWater(false); saveFarmLayout();
+          markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
         }
       }
 
@@ -3730,13 +3707,16 @@
       // creaturePlaneGroundOffset), or a Set of pending callbacks while
       // the very first scan of that species' idle sprite is still loading.
       const _creatureGroundAnchorCache = new Map();
+      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
 
       // Scans a species' idle sprite (cached per URL, so only the first
       // creature of each species actually pays for it) for how far down its
-      // real opaque pixels extend. All these sprites are nominally
+      // fully opaque pixels extend. All these sprites are nominally
       // 1375×600, but if the art itself doesn't reach the canvas's bottom
       // edge (transparent padding), anchoring on the raw rectangle leaves
       // the visible creature hovering above the ground/its own shadow.
+      // Using alpha 255 deliberately ignores antialiased fringe pixels that
+      // would otherwise make the apparent foot line vary with faint padding.
       function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
         const cached = _creatureGroundAnchorCache.get(spriteUrl);
         if (typeof cached === 'number') { onReady(cached); return; }
@@ -3749,7 +3729,7 @@
         };
         const img = new Image();
         img.onload = () => {
-          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img);
+          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD);
           finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
         };
         img.onerror = () => finish(1);
@@ -6811,10 +6791,22 @@
       const _vbHealthFill  = document.getElementById('vbHealthFill');
       const _vbStaminaFill = document.getElementById('vbStaminaFill');
       const _vbFootingFill = document.getElementById('vbFootingFill');
+      // Rounded so idle frames (no regen/damage delta, sub-1% drift) don't
+      // rewrite the same style.width value every frame.
+      let _vbLastHealthPct = -1, _vbLastStaminaPct = -1, _vbLastFootingPct = -1;
       function refreshVitalsHud() {
-        if (_vbHealthFill)  _vbHealthFill.style.width  = `${Math.max(0, Math.min(100, player.health  / player.maxHealth  * 100))}%`;
-        if (_vbStaminaFill) _vbStaminaFill.style.width = `${Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100))}%`;
-        if (_vbFootingFill && player.maxFooting) _vbFootingFill.style.width = `${Math.max(0, Math.min(100, player.footing / player.maxFooting * 100))}%`;
+        if (_vbHealthFill) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.health / player.maxHealth * 100)));
+          if (pct !== _vbLastHealthPct) { _vbLastHealthPct = pct; _vbHealthFill.style.width = `${pct}%`; }
+        }
+        if (_vbStaminaFill) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.stamina / player.maxStamina * 100)));
+          if (pct !== _vbLastStaminaPct) { _vbLastStaminaPct = pct; _vbStaminaFill.style.width = `${pct}%`; }
+        }
+        if (_vbFootingFill && player.maxFooting) {
+          const pct = Math.round(Math.max(0, Math.min(100, player.footing / player.maxFooting * 100)));
+          if (pct !== _vbLastFootingPct) { _vbLastFootingPct = pct; _vbFootingFill.style.width = `${pct}%`; }
+        }
       }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
@@ -10545,7 +10537,7 @@
             flowX: fx, flowZ: fz,
           };
         });
-        const townRiverMesh = _buildMergedWaterMesh(townScene, riverSurfaceCells, {
+        const townRiverMesh = window.WaterSystem.buildMergedWaterMesh(townScene, riverSurfaceCells, {
           name: 'town_merged_river_water', statKey: 'town rivers',
         });
         _townRiverWaterMeshes = townRiverMesh ? [townRiverMesh] : [];
@@ -11595,9 +11587,8 @@
         });
       }
 
-      function getActiveInventoryItem() {
+      function getActiveInventoryItem(stacks = getInventoryStackItems()) {
         // Used by planting, shipping-box quick deposit, HUD, and item scroll.
-        const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         if (activeItemIndex >= stacks.length) activeItemIndex = 0;
         if (activeItemIndex < 0) activeItemIndex = stacks.length - 1;
@@ -12066,22 +12057,28 @@
       // js/whistle-equip.js — call via window.WhistleEquip.build().
 
       let activeItemIndex = 0;
-      // Declared before createInitialGrid() because recomputeWater() (called
-      // inside createInitialGrid) sets these — they must not be in TDZ.
-      let _waterSimDirty = true;
-      let _flowingTrenchTiles = [];
-      // The town's average water level (0..1), refreshed every time the town's
-      // water sim ticks. The farm's far terrain (and its west/east edge inflow)
-      // tracks this, so the town's own water state shows up out past the farm's
-      // playable edges. Town itself has no "upstream" grid to draw from, so its
-      // own far terrain/edge inflow tracks its own average instead (see
-      // recomputeWater's farLevel computation).
-      let _townWaterLevel = 0.5;
-      // Per-column water level (0..1) of the far terrain immediately south of
-      // the farm's playable grid — tracks each column's south-edge tile so a
-      // player-made gap in the water reaching the bottom row continues into
-      // the far terrain beyond the map instead of stopping dead at the seam.
-      let farSouthLevel = new Float32Array(COLS).fill(0.5);
+
+      // window.WaterSystem.init(deps) must run before createInitialGrid()
+      // just below — that call rolls day-one water levels via
+      // WaterSystem.recomputeWater() synchronously, so deps has to be ready
+      // first (unlike WeatherFX, whose init() can wait until much later —
+      // see js/water-system.js's header comment for why every binding here
+      // is threaded as a getter rather than read once, right up to the
+      // still-null-at-this-point `scene`/`townScene`/SLAB_H/WATER_UNIT/etc).
+      window.WaterSystem.init({
+        calendar, TileType, ROWS, COLS, MAX_WATER, RAIN_RATE,
+        clamp, debugLog, isSolid, markTileDirty, tileSurfaceY, _markTerrainEdgeId,
+        getGrid: () => grid,
+        getTownGrid: () => townGrid,
+        getTownZone: () => _townZone,
+        getTownSouthLevel: () => townSouthLevel,
+        getZoneWaterMeshes: () => _zoneWaterMeshes,
+        getScene: () => scene,
+        getTownScene: () => townScene,
+        getSlabH: () => SLAB_H,
+        getWaterUnit: () => WATER_UNIT,
+        getNormalTop: () => NORMAL_TOP,
+      });
       let grid = createInitialGrid();
       // Apply any saved farm layout (tile overrides only; object positions applied after initWorldObjects)
       { const _savedLayout = loadFarmLayout(); if (_savedLayout) applyFarmLayoutToGrid(_savedLayout); }
@@ -12231,7 +12228,6 @@
       let weaponQuickSwitchSaved = null;
       let lastTime = performance.now();
       let simAccumulator = 0;
-      let waterFlowPhase = 0;
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
       let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
@@ -12352,7 +12348,7 @@
         // calendar.day, day 1's roll is the same for every player on every
         // load, which is why the game once appeared to always start clear
         // regardless of the intended "raining on day one" state.
-        recomputeWater(false, nextGrid);
+        window.WaterSystem.recomputeWater(false, nextGrid);
         return nextGrid;
       }
 
@@ -13988,7 +13984,7 @@
         // The farm tile-mesh/water systems below are farm-grid specific; off
         // the farm (town, zones) col/row index into a different grid entirely.
         if (currentArea === 'farm') {
-          recomputeWater(false);
+          window.WaterSystem.recomputeWater(false);
           // dig/fill/raise/till/smooth/plant/harvest/place_* all land here —
           // previously none of them ever called saveFarmLayout() (only the
           // farm editor's brush path did), so any terraforming or planting
@@ -15548,42 +15544,11 @@
         }
       `;
 
-      // The PNG tiles across world X/Z and scrolls as one continuous surface,
-      // like the shared rain-plane texture. Per-vertex depth and flow retain
-      // simulation tint/detail without returning to one material per tile.
-      const mergedWaterMaterial = window.MergedWaterRenderer.createMaterial(THREE, {
-        textureUrl: 'assets/textures/wibbly_surface.png',
-        opacity: 0.8,
-        log: debugLog,
-      });
-
-      function _disposeMergedWaterMesh(sceneObj, mesh, statKey) {
-        if (!mesh) return null;
-        if (sceneObj?.remove) sceneObj.remove(mesh);
-        mesh.geometry.dispose();
-        window.MergedWaterRenderer.clearStats(statKey);
-        return null;
-      }
-
-      function _buildMergedWaterMesh(sceneObj, cells, options) {
-        if (!sceneObj?.add) {
-          debugLog(`[water-render] deferred ${options?.name || options?.statKey || 'merged water'} until its scene exists`, 'warn');
-          return null;
-        }
-        const mesh = window.MergedWaterRenderer.createMesh(THREE, mergedWaterMaterial, cells, {
-          joinThreshold: SLAB_H * 0.55,
-          yOffset: 0.015,
-          log: debugLog,
-          ...options,
-        });
-        if (!mesh) return null;
-        sceneObj.add(mesh);
-        _markTerrainEdgeId(mesh, 'water');
-        return mesh;
-      }
-
-      // Global water time — updated in gameLoop
-      let waterTime = 0;
+      // Merged water mesh material/builder (mergedWaterMaterial,
+      // _disposeMergedWaterMesh, _buildMergedWaterMesh) and the global
+      // water-time accumulator now live in js/water-system.js — call the
+      // farm/town river-building paths below via
+      // window.WaterSystem.buildMergedWaterMesh().
       const reticleMat = new THREE.MeshBasicMaterial({
         color: 0xf9e28a, wireframe: true, transparent: true, opacity: 0.85,
       });
@@ -16608,29 +16573,14 @@
       // ── Mesh stores ───────────────────────────────────────────────
       // Tile meshes are indexed by row*COLS+col. Water is intentionally not:
       // the simulation remains tile-based, but every wet tile contributes its
-      // four height-aware vertices to one world-UV merged surface mesh.
+      // four height-aware vertices to one world-UV merged surface mesh (the
+      // farm/town dynamic water meshes and far-terrain south aprons now live
+      // as private state in js/water-system.js).
       const tileMeshes  = new Array(ROWS * COLS).fill(null);
-      let farmWaterMesh = null; // Rebuilt by updateWaterMeshes() after each farm simulation tick.
 
-      // ── Town water (ditches fill with rain just like farm trenches) ────
-      // Town tiles are keyed "col,row" (the town grid is independently sized
-      // and isn't laid out in the farm's flat row*COLS+col mesh arrays).
-      let townWaterMesh = null; // Rebuilt by updateTownWaterMeshes() after each town simulation tick.
-      let _townWaterSimDirty = true;
-      let _townFlowingTrenchTiles = [];
       // Static river/stream water-surface meshes built once in buildTownScene
       // (not part of the rain-fed water sim — rivers always flow).
       let _townRiverWaterMeshes = [];
-
-      // ── Far-terrain south apron (gap continuation) ─────────────────
-      // Shallow decorative puddle strip just past the map's south edge,
-      // keyed "col,depthRow". Its per-column depth tracks farSouthLevel /
-      // townSouthLevel, so a player-made dry gap at the bottom row visibly
-      // keeps going out into the far terrain instead of stopping at the seam.
-      const FAR_APRON_ROWS = 2;      // how many tile-rows of apron beyond the seam
-      const FAR_APRON_FALLOFF = 0.55; // depth multiplier per extra apron row out
-      let farmFarAquiferMesh = null; // Used by the farm's south-edge continuation renderer.
-      let townFarAquiferMesh = null; // Used by the town's south-edge continuation renderer.
 
       // ── Player root (Group — avatar plane attached after onboarding) ─
       const playerMesh = new THREE.Group();
@@ -17040,7 +16990,7 @@
         spawnActionParticles(col, row, action, result.ok !== false);
         debugLog(`${result.ok ? 'ok' : 'blocked'} ${action} @ c${col},r${row}: ${result.message}`);
         if (currentArea === 'farm') {
-          recomputeWater(false);
+          window.WaterSystem.recomputeWater(false);
           // See the matching branch in firePendingAction — a completed dig/
           // fill charge (new trench, fill-in) needs the same saveFarmLayout()
           // fix, or it's just as silently lost as a single-tap action.
@@ -18622,8 +18572,7 @@
       }
 
       function buildTileMeshes() {
-        farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
-        _waterSimDirty = true;
+        window.WaterSystem.resetFarmWaterMesh();
         for (let row = 0; row < ROWS; row++) {
           for (let col = 0; col < COLS; col++) {
             const i = row * COLS + col;
@@ -18648,126 +18597,10 @@
         _rebuildFarmBillboards();
       }
 
-      // ── Update merged water surfaces each frame ────────────────────
-      // The simulation remains a per-tile grid. This collector translates its
-      // current state into one batch of height/depth/flow vertices only when a
-      // sim tick marks the area dirty; the render fast path merely advances the
-      // shared texture uniform.
-      function _collectDynamicWaterCells(targetGrid, rows, cols, skipPermanentWater) {
-        const cells = []; // Used by _buildMergedWaterMesh for one simulation snapshot.
-        const flowingTrenches = []; // Used by WeatherFX's trench particle emitter.
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const tile = targetGrid[row][col];
-            if (isSolid(tile.type) || tile.water < 0.003
-                || (skipPermanentWater && (tile.type === TileType.RIVER || tile.type === TileType.STREAM))) {
-              tile._wCached = false;
-              continue;
-            }
-
-            if (tile.type === TileType.TRENCH && tile.flow) flowingTrenches.push({ col, row });
-            const depthFrac = tile.water / MAX_WATER;
-            const surfaceA = tileSurfaceY(tile.type) + tile.water * WATER_UNIT;
-            let fx = 0, fz = 0;
-            for (const { dc, dr, ax, az } of [
-              { dc: 0, dr: 1, ax: 0, az: 1 },
-              { dc: 0, dr: -1, ax: 0, az: -1 },
-              { dc: 1, dr: 0, ax: 1, az: 0 },
-              { dc: -1, dr: 0, ax: -1, az: 0 },
-            ]) {
-              const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
-              const neighbor = targetGrid[nr][nc];
-              if (isSolid(neighbor.type)) continue;
-              const surfaceB = tileSurfaceY(neighbor.type) + neighbor.water * WATER_UNIT;
-              const head = surfaceA - surfaceB;
-              if (head > 0.01) { fx += ax * head; fz += az * head; }
-            }
-            const flowLength = Math.hypot(fx, fz);
-            const flowX = flowLength > 0.001 ? fx / flowLength : 0;
-            const flowZ = flowLength > 0.001 ? fz / flowLength : 0;
-            tile._wCached = true;
-            tile._wSurfA = surfaceA;
-            tile._wDepth = depthFrac;
-            tile._wFlowNX = flowX;
-            tile._wFlowNZ = flowZ;
-            cells.push({ col, row, surfaceY: surfaceA, depth: depthFrac, flowX, flowZ });
-          }
-        }
-        return { cells, flowingTrenches };
-      }
-
-      // The shallow decorative puddle apron is also one merged draw call. Its
-      // World-space UVs keep the tiled PNG continuous across the playable-grid
-      // seam without making a separate texture instance for the apron.
-      function _buildFarAquiferApron(cols, seamRow, southLevel, sceneObj, statKey) {
-        const cells = []; // Used by the shared merged-water geometry builder below.
-        for (let col = 0; col < cols; col++) {
-          const level = southLevel[col];
-          for (let d = 0; d < FAR_APRON_ROWS; d++) {
-            const depthFrac = level * Math.pow(FAR_APRON_FALLOFF, d);
-            if (depthFrac < 0.02) continue;
-            const surfaceA = NORMAL_TOP + depthFrac * WATER_UNIT;
-            cells.push({ col, row: seamRow + d, surfaceY: surfaceA, depth: depthFrac, flowX: 0, flowZ: 1 });
-          }
-        }
-        return _buildMergedWaterMesh(sceneObj, cells, {
-          name: statKey.replace(/\s+/g, '_') + '_mesh', statKey,
-        });
-      }
-
-      function updateWaterMeshes() {
-        waterTime += 0.016; // ~60fps accumulation; matches visual speed regardless of frame rate
-
-        if (_waterSimDirty) {
-          _waterSimDirty = false;
-          const snapshot = _collectDynamicWaterCells(grid, ROWS, COLS, false);
-          _flowingTrenchTiles = snapshot.flowingTrenches;
-          farmWaterMesh = _disposeMergedWaterMesh(scene, farmWaterMesh, 'farm dynamic');
-          farmWaterMesh = _buildMergedWaterMesh(scene, snapshot.cells, {
-            name: 'farm_merged_dynamic_water', statKey: 'farm dynamic',
-          });
-          farmFarAquiferMesh = _disposeMergedWaterMesh(scene, farmFarAquiferMesh, 'farm south apron');
-          farmFarAquiferMesh = _buildFarAquiferApron(COLS, ROWS, farSouthLevel, scene, 'farm south apron');
-        }
-        mergedWaterMaterial.uniforms.uTime.value = waterTime;
-      }
-
-      // Same as updateWaterMeshes() but for the town's ditch (TRENCH) tiles,
-      // so town weather can fill them with water exactly like farm trenches.
-      function updateTownWaterMeshes() {
-        waterTime += 0.016;
-        if (!townScene) return;
-        const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-
-        if (_townWaterSimDirty) {
-          _townWaterSimDirty = false;
-          const snapshot = _collectDynamicWaterCells(townGrid, TROWS, TCOLS, true);
-          _townFlowingTrenchTiles = snapshot.flowingTrenches;
-          townWaterMesh = _disposeMergedWaterMesh(townScene, townWaterMesh, 'town dynamic');
-          townWaterMesh = _buildMergedWaterMesh(townScene, snapshot.cells, {
-            name: 'town_merged_dynamic_water', statKey: 'town dynamic',
-          });
-          townFarAquiferMesh = _disposeMergedWaterMesh(townScene, townFarAquiferMesh, 'town south apron');
-          townFarAquiferMesh = _buildFarAquiferApron(TCOLS, TROWS, townSouthLevel, townScene, 'town south apron');
-        }
-        mergedWaterMaterial.uniforms.uTime.value = waterTime;
-      }
-
-      // Animates a zone's waterfall curtain mesh(es) (see
-      // buildWaterfallCurtainMeshes) — there's no per-tile dynamic water sim
-      // here like updateTownWaterMeshes/updateWaterMeshes, just the uTime
-      // uniform driving the shader's scroll/ripple, so this is a thin loop.
-      function updateZoneWaterMeshes(mapId) {
-        waterTime += 0.016;
-        const meshes = _zoneWaterMeshes.get(mapId);
-        if (!meshes) return;
-        for (const wm of meshes) {
-          if (wm.material === mergedWaterMaterial) continue;
-          if (wm.material.uniforms?.uTime) wm.material.uniforms.uTime.value = waterTime;
-        }
-        mergedWaterMaterial.uniforms.uTime.value = waterTime;
-      }
+      // Merged-water-surface collection/rendering (_collectDynamicWaterCells,
+      // _buildFarAquiferApron, updateWaterMeshes, updateTownWaterMeshes,
+      // updateZoneWaterMeshes) now lives in js/water-system.js — called from
+      // gameLoop via window.WaterSystem.*.
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
@@ -18830,6 +18663,12 @@
         playerMesh.position.x += (wx - playerMesh.position.x) * 0.25;
         playerMesh.position.z += (wz - playerMesh.position.z) * 0.25;
         playerMesh.position.y += (targetY - playerMesh.position.y) * 0.18;
+        // updateMountRide has already written the carrier's final smoothed
+        // mesh transform this frame. In steady riding, use that exact render
+        // position so rider and mount cannot trail each other through two
+        // independent lerps. Mounting/dismounting states intentionally keep
+        // the transition positioning above.
+        window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
         playerGroundShadow.position.set(playerMesh.position.x, standY + characterGroundShadowSurfaceOffset(), playerMesh.position.z);
         // Ground-projected Health/Stamina ring HUD — replaces the flat
         // vitals bar (see #vitalsBar in style.css). Sits just above the
@@ -19597,7 +19436,6 @@
           if (sceneTransDir === 0) checkTransitionSpots();
 
           if (currentArea === 'farm' || currentArea === 'town') {
-            waterFlowPhase = (waterFlowPhase + dt * 3.2) % 1;
             window.WeatherFX.updateWaterParticles(dt);
             window.WeatherFX.updateRipples(dt);
             window.WeatherFX.updateLightningFlash(dt);
@@ -19613,11 +19451,11 @@
           if (simAccumulator >= 0.125 && (currentArea === 'farm' || currentArea === 'town')) {
             simAccumulator -= 0.125;
             if (currentArea === 'farm') {
-              recomputeWater(false);
+              window.WaterSystem.recomputeWater(false);
               tickWorldObjects();
             } else {
               const TCOLS = _townZone?.cols || 60, TROWS = _townZone?.rows || 50;
-              recomputeWater(false, townGrid, TROWS, TCOLS);
+              window.WaterSystem.recomputeWater(false, townGrid, TROWS, TCOLS);
             }
             window.WeatherFX.spawnRipples();
           }
@@ -19666,11 +19504,11 @@
         // its speaker toward the intended target for the rendered frame.
         ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
-          updateTownWaterMeshes();
+          window.WaterSystem.updateTownWaterMeshes();
           updateTownThreeLighting();
         }
         if (_isZoneArea(currentArea)) {
-          updateZoneWaterMeshes(currentArea);
+          window.WaterSystem.updateZoneWaterMeshes(currentArea);
         }
         // Tools and held bag items render and animate in every playable map.
         // Ordinary interiors still omit combat/reticle updates below; this
@@ -19688,7 +19526,7 @@
         // that final transform in the same frame.
         updateShoulderPetMeshPin();
         if (currentArea === 'farm') {
-          updateWaterMeshes();
+          window.WaterSystem.updateWaterMeshes();
           updateCropMeshes();
           window.FarmAnimals.updateAnimalMeshes(dt);
           updateThreeLighting();
@@ -20010,189 +19848,8 @@
         return waterMul * ditchMul;
       }
 
-      // Average water fraction (0..1) across a grid's non-solid tiles — used
-      // as the "how wet is this place overall" reading the far terrain and
-      // edge inflow track. Rivers/streams are included at their pinned
-      // MAX_WATER, same as any other tile, since they're real wet ground.
-      function avgGridWaterLevel(targetGrid, rows, cols) {
-        let sum = 0, n = 0;
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            if (isSolid(t.type)) continue;
-            sum += t.water / MAX_WATER;
-            n++;
-          }
-        }
-        return n ? sum / n : 0;
-      }
-
-      // ═══════════════════════════════════════════════════════════════
-      //  WATER SIMULATION
-      //  Model: each tile has a float `water` = depth above its floor.
-      //  Floor Z: RAISED=+1, normal=0, TRENCH=-1, ROCK/SHRUB=solid (no flow).
-      //  Water surface = floorZ(type) + water.
-      //  Each sim tick (called from gameLoop ~every 0.7s):
-      //    1. Rain adds depth to every non-solid tile.
-      //    2. Soil absorption drains a small amount.
-      //    3. Cross-tile flow: water moves from high-surface to low-surface
-      //       neighbours, south-biased, half-difference per tick.
-      //       Trenches pull with TRENCH_FLOW_BONUS multiplier.
-      //    4. Overflow: any water above MAX_WATER is shed to neighbours.
-      //  Edges: south is a runoff outlet (always was); west/east instead seep
-      //  water IN from the surrounding far terrain, so damming the north-south
-      //  channel alone can't cut off the whole map (see SIDE_INFLOW_RATE).
-      //  The farm's far terrain tracks the town's overall water level; the
-      //  town (having no upstream grid of its own) tracks its own average.
-      //  Whatever water actually reaches each south-edge column also drives
-      //  that column's far-terrain level just past the map's south edge, so a
-      //  player-made dry gap at the bottom row continues out into the far
-      //  terrain instead of stopping dead at the seam (farSouthLevel/townSouthLevel).
-      // ═══════════════════════════════════════════════════════════════
-
-      function recomputeWater(decayOnly, targetGrid = grid, rows = ROWS, cols = COLS) {
-        const str = calendar.rainStrength || 1;
-        const isRaining = calendar.isRaining && !decayOnly;
-        const isTown = targetGrid === townGrid;
-
-        // The far terrain's level for this grid's edges: the town tracks its
-        // own average (it has nothing upstream of it); the farm tracks the
-        // town's last-known average, so the town's water shows up beyond the
-        // farm's edges too. Read before Pass 1 mutates anything, one tick of
-        // lag is imperceptible at this sim's ~0.7s cadence.
-        const farLevel = isTown ? avgGridWaterLevel(targetGrid, rows, cols) : _townWaterLevel;
-        if (isTown) _townWaterLevel = farLevel;
-
-        // Pass 1: rain + absorption + evaporation + edge exchange
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            if (isSolid(t.type)) continue;
-            t.flow = false;
-
-            // Rivers/streams are a permanent water body, not part of the
-            // irrigation sim — always full, never absorbed/evaporated/drained.
-            if (t.type === TileType.RIVER || t.type === TileType.STREAM) {
-              t.water = MAX_WATER;
-              continue;
-            }
-
-            if (isRaining) {
-              const rainMul = t.type === TileType.TRENCH ? 2.0
-                            : t.type === TileType.PADDY  ? 1.4 : 1.0;
-              t.water += RAIN_RATE * str * rainMul;
-
-              // Rain gradually silts trenches back in; once fully silted the
-              // trench reverts to plain grass (single-tap dig restores depth to 1).
-              if (t.type === TileType.TRENCH) {
-                t.depth = Math.max(0, (t.depth ?? 1) - TRENCH_SILT_RATE * str);
-                if (t.depth <= 0) {
-                  t.type = TileType.GRASS; t.depth = 0;
-                  // This mutates tile.type outside any of the normal
-                  // dig/fill/action paths, which are the only places that
-                  // otherwise call markTileDirty — without it, the trench's
-                  // dirt-pit mesh and grass billboards for this tile never
-                  // get rebuilt to match the new type, leaving a stale pit
-                  // mesh sitting under (or grass tufts sprouting through) a
-                  // tile the data now says is plain grass.
-                  if (!isTown) markTileDirty(col, row);
-                }
-              }
-            }
-
-            // Soil absorption
-            const absorb = ABSORB_RATE[t.type] ?? 0.012;
-            t.water = Math.max(0, t.water - absorb);
-
-            // Evapotranspiration — slow background loss on all tiles
-            t.water = Math.max(0, t.water - EVAP_RATE);
-
-            // South-edge runoff — bottom 2 rows drain aggressively (gravity outlet)
-            if (row >= rows - 2) {
-              const runoffRate = row === rows - 1 ? 0.08 : 0.03;
-              t.water = Math.max(0, t.water - runoffRate);
-            }
-
-            // West/east edge inflow — the far terrain seeps water into the
-            // side columns toward its own level, entering the map from the
-            // sides instead of only ever draining out the south.
-            if (col === 0 || col === cols - 1) {
-              const target = farLevel * MAX_WATER;
-              if (t.water < target) t.water += (target - t.water) * SIDE_INFLOW_RATE;
-            }
-
-            t.water = Math.min(tileWaterCapacity(t), t.water);
-          }
-        }
-
-        // Pass 2: cross-tile flow — process south→north for southward bias
-        const dirs = [
-          { dc:  0, dr:  1 },  // south
-          { dc:  1, dr:  0 },  // east
-          { dc: -1, dr:  0 },  // west
-          { dc:  0, dr: -1 },  // north
-        ];
-
-        for (let row = rows - 1; row >= 0; row--) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            // Rivers/streams donate no water to neighbours — contained body, no spillover.
-            if (isSolid(t.type) || t.water <= 0 || t.type === TileType.RIVER || t.type === TileType.STREAM) continue;
-
-            let surfA = floorZ(t.type, t.depth) + t.water;
-
-            for (const { dc, dr } of dirs) {
-              const nc = col + dc, nr = row + dr;
-              if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
-              const n = targetGrid[nr][nc];
-              if (isSolid(n.type)) continue;
-
-              const surfB = floorZ(n.type, n.depth) + n.water;
-              const head  = surfA - surfB;
-              if (head <= 0.001) continue;
-
-              // A silted-in (shallow) trench pulls water less eagerly than a fresh one.
-              const bonus = (n.type === TileType.TRENCH) ? TRENCH_FLOW_BONUS * Math.max(0.15, n.depth ?? 1) : 1.0;
-              let transfer = Math.min(head * FLOW_RATE * bonus * 0.5, t.water);
-              transfer = Math.min(transfer, tileWaterCapacity(n) - n.water);
-              if (transfer <= 0) continue;
-
-              t.water -= transfer;
-              n.water += transfer;
-              surfA = floorZ(t.type, t.depth) + t.water; // update after transfer
-              if (n.type === TileType.TRENCH) n.flow = true;
-              if (t.type === TileType.TRENCH) t.flow = true;
-              // Don't break — allow multiple transfers per tick for faster spread
-            }
-          }
-        }
-
-        // Pass 3: clamp
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const t = targetGrid[row][col];
-            t.water = clamp(t.water, 0, tileWaterCapacity(t));
-          }
-        }
-
-        // Pass 4: far-terrain gap continuation — each column's south-edge
-        // tile (post-flow, so it reflects any upstream damming) eases the
-        // matching far-terrain column level toward it. A player who blocks
-        // water from reaching that column's bottom row drives its far-terrain
-        // level toward 0 too, so the dry gap keeps going past the map edge.
-        {
-          const southLevel = isTown ? townSouthLevel : farSouthLevel;
-          const southRow = targetGrid[rows - 1];
-          for (let col = 0; col < cols; col++) {
-            const edgeFrac = clamp(southRow[col].water / MAX_WATER, 0, 1);
-            southLevel[col] += (edgeFrac - southLevel[col]) * FAR_SOUTH_TRACK_RATE;
-          }
-        }
-
-        // Signal the matching mesh updater to do a full refresh this frame.
-        if (isTown) _townWaterSimDirty = true;
-        else _waterSimDirty = true;
-      }
+      // The water simulation itself (avgGridWaterLevel/recomputeWater) now
+      // lives in js/water-system.js — call via window.WaterSystem.*.
 
       function trenchNeighbors(col, row) {
         // Used by water routing: south is first to preserve the visible north-to-south bias.
@@ -20799,9 +20456,14 @@
           return btnsSpot;
         }
 
-        // Zone: a climbable cliff face straight ahead takes priority over tool use.
-        if (_isZoneArea(currentArea) && !player.climbing && window.ClimbSystem.getClimbTarget()) {
-          return [{ icon: '🧗', label: 'Climb', action: 'climb', style: 'primary', allowed: true }];
+        // Zone: a climbable cliff face straight ahead takes priority over
+        // tool use. Keep the target visible while riding, but disable it so
+        // mobile clearly communicates that the rider must dismount instead
+        // of letting the mount and scripted climb fight over player.x/y.
+        const climbTarget = _isZoneArea(currentArea) && !player.climbing ? window.ClimbSystem.getClimbTarget() : null; // Used to avoid resolving the same cliff geometry twice for label/availability.
+        if (climbTarget) {
+          const climbAllowed = (window.Mounts?.rideState ?? 'none') === 'none'; // Used to make every summon/mount/dismount phase mutually exclusive with climbing.
+          return [{ icon: '🧗', label: climbAllowed ? 'Climb' : 'Dismount to Climb', action: 'climb', style: 'primary', allowed: climbAllowed }];
         }
 
         const tile    = getActiveGrid()[reticle.row][reticle.col];
@@ -20901,7 +20563,7 @@
       // Track last state to avoid rebuilding the stack every frame
       let _lastBarKey = '';
 
-      function refreshActionBar() {
+      function refreshActionBar(stacks = getInventoryStackItems()) {
         window.DevSpawner.refreshEditorButtonVisibility();
         window.FurniturePlacer?.refreshVisibility();
         const reticle = getReticleTile();
@@ -20916,7 +20578,7 @@
         const nearbyNpcShopKey = nearbyNpcWalker && isGeneralStoreNpcOnDuty(nearbyNpcWalker) ? generalStoreAction()
           : nearbyNpcWalker && isCarpenterNpcOnDuty(nearbyNpcWalker) ? carpenterAction() : 'none';
         // Consumable counts must invalidate the cached action after the last item is used.
-        const selectedItem = getActiveInventoryItem();
+        const selectedItem = getActiveInventoryItem(stacks);
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
@@ -21227,18 +20889,20 @@
       }
 
       // ── Item scroll ────────────────────────────────────────
-      function refreshItemScroll() {
-        const stacks = getInventoryStackItems();
+      let _lastItemScrollKey = null;
+      function refreshItemScroll(stacks = getInventoryStackItems()) {
         const n = stacks.length;
-        const iBtnEl = document.getElementById('itemBtn');
+        const iBtnEl = itemBtnEl;
         if (n === 0) {
+          if (_lastItemScrollKey === 'empty') return;
+          _lastItemScrollKey = 'empty';
           itemIcon.textContent  = '□';
           itemName.textContent  = 'EMPTY';
           itemCount.textContent = '×0';
           itemCount.className   = 'is-count empty';
           if (iBtnEl) iBtnEl.textContent = '□';
-          const prevEl = document.getElementById('isPrevIcon');
-          const nextEl = document.getElementById('isNextIcon');
+          const prevEl = isPrevIconEl;
+          const nextEl = isNextIconEl;
           clearItemSpriteIcon(itemIcon);
           clearItemSpriteIcon(iBtnEl);
           if (prevEl) prevEl.textContent = '□';
@@ -21253,6 +20917,9 @@
         const prev = stacks[(activeItemIndex - 1 + n) % n];
         const next = stacks[(activeItemIndex + 1) % n];
         const count = inventory[curr.key] || 0;
+        const key = `${curr.key}:${count}:${prev.key}:${next.key}`;
+        if (key === _lastItemScrollKey) return;
+        _lastItemScrollKey = key;
         // Current item
         itemIcon.textContent  = curr.icon;
         itemName.textContent  = curr.label;
@@ -21262,8 +20929,8 @@
         itemCount.textContent = `×${count}`;
         itemCount.className   = 'is-count' + (count === 0 ? ' empty' : '');
         // Peek icons (prev/next previews)
-        const prevEl = document.getElementById('isPrevIcon');
-        const nextEl = document.getElementById('isNextIcon');
+        const prevEl = isPrevIconEl;
+        const nextEl = isNextIconEl;
         if (prevEl) {
           prevEl.textContent = prev.icon;
           applyItemSpriteIcon(prevEl, ITEM_DEFS[prev.key], prev.key);
@@ -21284,12 +20951,21 @@
         refreshActionBar();
       });
 
+      // Status-pill fields only actually change a few times a (real) second
+      // at most (season/weather/day/gold on world-state events, time once a
+      // simulated minute, tool/tile/water on reticle or equip changes) —
+      // updateHud runs every frame, so each field caches its last-written
+      // string/color and skips the DOM write (and, for spTile/spWater,
+      // the string-building) when nothing changed.
+      const _hud = { season: null, weather: null, time: null, day: null, tool: null, tile: null, waterText: null, waterColor: null, gold: null, item: null };
+
       function updateHud() {
         const season = window.CalendarSystem.currentSeason();
         const clock  = formatClock(window.CalendarSystem.getHour());
 
         // Season (changes slowly)
-        spSeason.textContent = season.emoji + ' ' + season.name;
+        const seasonText = season.emoji + ' ' + season.name;
+        if (seasonText !== _hud.season) { _hud.season = seasonText; spSeason.textContent = seasonText; }
 
         // Current weather + precipitation rate
         let weatherText, precipText;
@@ -21308,43 +20984,60 @@
           weatherText = calendar.weather === 'clear' ? '☀️ Clear' : '🌤️ Dry';
           precipText  = '⬇️ none';
         }
-        spWeather.textContent = weatherText + ' ' + precipText;
+        const weatherFull = weatherText + ' ' + precipText;
+        if (weatherFull !== _hud.weather) { _hud.weather = weatherFull; spWeather.textContent = weatherFull; }
 
-        spTime.textContent = clock;
-        if (spDay) spDay.textContent = window.CalendarSystem.formatCalendarDate();
-        spTool.textContent = toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (clock !== _hud.time) { _hud.time = clock; spTime.textContent = clock; }
+        if (spDay) {
+          const dayText = window.CalendarSystem.formatCalendarDate();
+          if (dayText !== _hud.day) { _hud.day = dayText; spDay.textContent = dayText; }
+        }
+        const toolText = toolEmoji(activeTool) + ' ' + actionName(activeAction);
+        if (toolText !== _hud.tool) { _hud.tool = toolText; spTool.textContent = toolText; }
 
         // Reticle tile info
         const reticle  = getReticleTile();
         const tile     = getActiveTileAt(reticle.col, reticle.row);
         const tStyle   = tileStyles[tile.type] || tileStyles.grass;
         const cropStr  = tile.crop ? ` · ${tile.crop}${tile.cropReady ? ' ✓' : ''}` : '';
-        spTile.textContent = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        const tileText = (currentArea === 'interior' ? '🏠 ' : '') + tStyle.label + cropStr;
+        if (tileText !== _hud.tile) { _hud.tile = tileText; spTile.textContent = tileText; }
 
         const waterPct = Math.round((tile.water / MAX_WATER) * 100);
         const depthStr = tile.water > 0.01 ? `${waterPct}%` : 'dry';
-        spWater.textContent  = '💧 ' + depthStr;
-        spWater.style.color  = waterPct > 80 ? '#4488ff'
-                             : waterPct > 40 ? '#6ec6f0'
-                             : waterPct > 10 ? '#aaddee' : '#888';
-        if (spGold) spGold.textContent = '💰 ' + inventory.gold + 'g';
+        const waterText = '💧 ' + depthStr;
+        if (waterText !== _hud.waterText) { _hud.waterText = waterText; spWater.textContent = waterText; }
+        const waterColor = waterPct > 80 ? '#4488ff'
+                          : waterPct > 40 ? '#6ec6f0'
+                          : waterPct > 10 ? '#aaddee' : '#888';
+        if (waterColor !== _hud.waterColor) { _hud.waterColor = waterColor; spWater.style.color = waterColor; }
+        if (spGold) {
+          const goldText = '💰 ' + inventory.gold + 'g';
+          if (goldText !== _hud.gold) { _hud.gold = goldText; spGold.textContent = goldText; }
+        }
+
+        // Computed once and threaded through below instead of letting
+        // refreshItemScroll/refreshActionBar (and the desktop item pill)
+        // each re-filter-and-sort the whole inventory from scratch — this
+        // runs every frame, and inventory contents don't change nearly
+        // that often.
+        const stacks = getInventoryStackItems();
 
         // Desktop: show active item in status pill (item scroll is hidden)
         if (isDesktop) {
-          const item = getActiveInventoryItem();
-          const spItem = document.getElementById('spItem');
-          const spItemDiv = document.getElementById('spItemDiv');
+          const item = getActiveInventoryItem(stacks);
           if (spItem && item) {
             spItem.style.display = '';
             spItemDiv.style.display = '';
-            spItem.textContent = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            const itemText = '[Tab] ' + item.icon + ' ' + item.label + ' ×' + (inventory[item.key] || 0);
+            if (itemText !== _hud.item) { _hud.item = itemText; spItem.textContent = itemText; }
           }
         }
 
-        refreshItemScroll();
+        refreshItemScroll(stacks);
         // refreshActionBar is called after actions and on tool/item change;
         // the dirty-key check makes it cheap to call here too for reticle updates
-        refreshActionBar();
+        refreshActionBar(stacks);
         if (menuOpen) {
           // Keep wallet display live while menu is open
           const wd = document.getElementById('invWalletDisplay');
@@ -23028,6 +22721,12 @@
         esc,
       });
 
+      // Cache for the WeatherFX deps.getFurnitureLightSources() call below —
+      // declared here (game.js scope) rather than inside the deps object
+      // literal, since that object's own methods don't close over each
+      // other's sibling keys the way a plain local variable does.
+      let _furnitureLightScanCache = { scene: null, objs: null, lastScan: 0 };
+
       window.WeatherFX?.init({
         calendar,
         seededRandom,
@@ -23049,23 +22748,38 @@
         getThreeRect: () => _threeRect,
         _isBuildingArea,
         getActiveGrid, getActiveCols, getActiveRows,
-        getFlowingTrenchTiles: () => _flowingTrenchTiles,
-        getTownFlowingTrenchTiles: () => _townFlowingTrenchTiles,
+        getFlowingTrenchTiles: () => window.WaterSystem.getFlowingTrenchTiles(),
+        getTownFlowingTrenchTiles: () => window.WaterSystem.getTownFlowingTrenchTiles(),
         threeContainer,
         getCamX: () => camX,
         getCamY: () => camY,
         // Used by WeatherFX's player lantern mask to follow the avatar's
         // smoothed world elevation instead of projecting from flat Y=0.
         getPlayerWorldY: () => playerMesh.position.y,
-        // Lighting is sampled at 10 Hz, so collecting the active scene's
-        // tagged furniture lights here stays cheap and avoids stale coords.
+        // Lighting is sampled at 10 Hz, but a full scene.traverse() every one
+        // of those ticks still visits every node in the active scene (not
+        // just the lights) to find the handful tagged furnitureLightMask —
+        // real, avoidable cost in a decor-dense area (a lot of furniture/
+        // NPCs/terrain chunks, e.g. the inn) since it scales with total
+        // scene size, not light count. Re-scanning is still cheap and
+        // correctness matters more than shaving cost further, so this only
+        // throttles the traversal itself down to 2s (light *positions* are
+        // re-read fresh from world matrices every call regardless — only
+        // which objects count as sources is cached) rather than trying to
+        // track furniture add/remove sites to invalidate it precisely.
         getFurnitureLightSources: () => {
-          const sources = [];
+          const cache = _furnitureLightScanCache;
+          const scene = getActiveScene();
+          const now = performance.now();
+          if (cache.scene !== scene || now - cache.lastScan >= 2000) {
+            const objs = [];
+            scene?.traverse(obj => { if (obj.isPointLight && obj.userData?.furnitureLightMask) objs.push(obj); });
+            cache.scene = scene; cache.objs = objs; cache.lastScan = now;
+          }
           const worldPosition = new THREE.Vector3();
-          getActiveScene()?.traverse(obj => {
-            if (!obj.isPointLight || !obj.userData?.furnitureLightMask) return;
+          return (cache.objs || []).map(obj => {
             obj.getWorldPosition(worldPosition);
-            sources.push({
+            return {
               x: worldPosition.x,
               y: worldPosition.y,
               z: worldPosition.z,
@@ -23076,9 +22790,8 @@
                 g: Math.round(obj.color.g * 255),
                 b: Math.round(obj.color.b * 255),
               },
-            });
+            };
           });
-          return sources;
         },
         applySeasonalGrassAppearance,
         RAIN_PITY_DAYS,
@@ -23391,7 +23104,7 @@
         markTerrainEdgeId: _markTerrainEdgeId,
         terrainCategoryFor: _terrainCategoryFor,
         waterVertShader, waterFragShader,
-        buildMergedWaterMesh: _buildMergedWaterMesh,
+        buildMergedWaterMesh: window.WaterSystem.buildMergedWaterMesh,
       });
 
       window.ZoneDenTotemFeatures?.init({
@@ -23463,6 +23176,8 @@
         isSolid,
         tileSurfaceYInArea,
         clamp,
+        getMountRideState: () => window.Mounts?.rideState ?? 'none',
+        showToast,
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },
         setLastMoveAngle: (v) => { lastMoveAngle = v; },
@@ -23717,7 +23432,7 @@
         loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
         markTileDirty,
         openMenu,
-        recomputeWater,
+        recomputeWater: window.WaterSystem.recomputeWater,
         saveFarmLayout,
         saveMemberWorldData,
         scene,
@@ -23744,7 +23459,7 @@
         loadHousePieceFaceTexture: window.TownZoneBuildings.loadHousePieceFaceTexture,
         markTileDirty,
         openMenu,
-        recomputeWater,
+        recomputeWater: window.WaterSystem.recomputeWater,
         getGrid: () => grid,
         saveFarmLayout,
         saveMemberWorldData,
@@ -23983,7 +23698,7 @@
           } catch (e) { console.error('starter bed seed:', e); }
         }
         window.FarmAnimals.respawnWorldLivestock(); // after furniture, so occupancy checks see final tile state
-        recomputeWater(false);
+        window.WaterSystem.recomputeWater(false);
 
         // Non-gear inventory (resources) and pack clothing are world-scoped
         // per character — they stay behind in this world's member record
