@@ -38,6 +38,12 @@ assert.match(editor, /Crossbow — Load/, 'editor must include crossbow load pre
 assert.match(editor, /Scatterbow — Fire/, 'editor must include scatterbow fire preset');
 assert.match(editor, /Tool scale \(uniform\)/, 'editor must expose neutral tool scale');
 assert.match(editor, /neutralOnly:\s*true/, 'tool scale must only be authored on the neutral pose');
+assert.match(editor, /id="neckStrength"[^>]*min="0"[^>]*max="2"[^>]*value="1"/, 'editor must expose a safe preview-only neck strength slider');
+assert.match(editor, /id="neckRadius"[^>]*min="0\.01"[^>]*max="0\.30"[^>]*value="0\.065"/, 'editor must expose the current 6.5% neck blend as an adjustable radius');
+assert.match(editor, /function applyPreviewNeckWeights\(\)[\s\S]*weights\.setXYZW\(index, 1 - headWeight, headWeight, 0, 0\)/, 'neck radius preview must update only the root/head skin weights');
+assert.match(editor, /neckJoint\.rotation\.y = -rig\.rotation\.y \* neckPreviewStrength/, 'neck strength preview must scale the automatic body-yaw counter-turn');
+const exportFunction = editor.slice(editor.indexOf('function exportAnimObject()'), editor.indexOf("$('exportBtn').onclick"));
+assert.doesNotMatch(exportFunction, /neckPreview|neckStrength|neckRadius/, 'preview neck tuning must not leak into attack exports');
 assert.match(game, /toolHolder\.scale\.setScalar\(Number\.isFinite\(Number\(neutral\.scale\)\)/, 'runtime must apply authored neutral tool scale');
 assert.match(game, /playerIdlePose\?\.\(equipmentSlots\.ranged\)/, 'runtime must select the loaded or empty ranged neutral pose');
 assert.match(game, /function updatePlayerHeadAim\(\)/, 'runtime must own global player head aim tracking');

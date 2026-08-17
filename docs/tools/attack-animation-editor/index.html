@@ -112,7 +112,15 @@ canvas{display:block;width:100%;height:100%}
     <div class="sectionTitle"><b>Avatar</b><span class="sectionTag">species / height</span></div>
     <div class="field"><label>Species</label><select id="avatarSpecies"></select></div>
     <div class="field"><label>Gender</label><select id="avatarGender"></select></div>
-    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height, so weapon poses can be checked against different builds.</div>
+    <div class="field">
+      <label>Neck turn strength <span id="neckStrengthVal">100%</span></label>
+      <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
+    </div>
+    <div class="field">
+      <label>Neck weight radius <span id="neckRadiusVal">6.5% height</span></label>
+      <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.065">
+    </div>
+    <div class="help">Swaps the preview body for a PNG plane avatar at that species' actual in-game height. Neck strength scales the automatic body-yaw counter-turn; radius controls how softly the head weights blend into the torso. These are preview-only diagnostics and are not exported with the attack.</div>
   </div>
 
   <div class="card section" style="--sec:#34d399;--secBg:rgba(52,211,153,.10)">
@@ -328,6 +336,9 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let avatarModel = null;
+let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
+let neckPreviewRadiusFrac = 0.065; // Used by applyPreviewNeckWeights() as the neck blend radius relative to avatar height.
+let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
 let _cosmeticsReady = null;
 function ensureCosmetics() {
   if (!_cosmeticsReady) {
@@ -344,6 +355,66 @@ function buildDefaultAvatarExport(speciesId, gender) {
     appliedDyes: {},
   };
 }
+
+function smoothstep01(value) {
+  const t = Math.max(0, Math.min(1, Number(value) || 0));
+  return t * t * (3 - 2 * t);
+}
+
+// Rewrites only the preview mesh's two skin-weight channels. The default
+// radius reproduces png-plane-avatar.js's existing 6.5%-of-height blend;
+// changing it is diagnostic and never touches exported animation data.
+function applyPreviewNeckWeights() {
+  const neckRig = avatarModel?.userData?.neckRig; // Used to reach the current avatar's skinned preview plane and detected pivot.
+  const geometry = neckRig?.skinnedPlane?.geometry;
+  const positions = geometry?.getAttribute?.('position');
+  const weights = geometry?.getAttribute?.('skinWeight');
+  const modelHeight = Number(avatarModel?.userData?.portraitModelHeight) || MODEL_W; // Used to keep the radius visually consistent across species sizes.
+  if (!neckRig?.available || !positions || !weights || !neckRig.neckLocal) {
+    neckWeightSummary = 'neck rig unavailable';
+    refreshPreviewDebug();
+    return false;
+  }
+
+  const radius = Math.max(modelHeight * 0.01, modelHeight * neckPreviewRadiusFrac); // Used as the vertical root-to-head weight transition band.
+  let influenced = 0;
+  let fullWeight = 0;
+  for (let index = 0; index < positions.count; index++) {
+    const y = positions.getY(index);
+    const headWeight = smoothstep01((y - (neckRig.neckLocal.y - radius * 0.55)) / radius);
+    weights.setXYZW(index, 1 - headWeight, headWeight, 0, 0);
+    if (headWeight > 0.01) influenced++;
+    if (headWeight > 0.99) fullWeight++;
+  }
+  weights.needsUpdate = true;
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full`;
+  refreshPreviewDebug();
+  return true;
+}
+
+function refreshPreviewDebug() {
+  setDebug([
+    'Hobunji Attack Animation Editor',
+    'Latest: preview-only neck strength/radius controls; attack exports remain unchanged.',
+    `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
+    'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
+  ].join('\n'));
+}
+
+function syncNeckPreviewControls() {
+  neckPreviewStrength = Math.max(0, Math.min(2, Number($('neckStrength').value) || 0));
+  neckPreviewRadiusFrac = Math.max(0.01, Math.min(0.30, Number($('neckRadius').value) || 0.065));
+  $('neckStrengthVal').textContent = `${Math.round(neckPreviewStrength * 100)}%`;
+  $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(1)}% height`;
+  applyPreviewNeckWeights();
+}
+
+$('neckStrength').addEventListener('input', syncNeckPreviewControls);
+$('neckRadius').addEventListener('input', syncNeckPreviewControls);
+$('neckStrength').addEventListener('change', () => logDebug(`Neck preview strength: ${Math.round(neckPreviewStrength * 100)}%`));
+$('neckRadius').addEventListener('change', () => logDebug(`Neck preview weight radius: ${(neckPreviewRadiusFrac * 100).toFixed(1)}% of avatar height`));
+syncNeckPreviewControls();
+
 async function rebuildAvatar(speciesId, gender) {
   await ensureCosmetics();
   const npcExport = buildDefaultAvatarExport(speciesId, gender);
@@ -373,6 +444,7 @@ async function rebuildAvatar(speciesId, gender) {
   const baseAttachY = avatarModel.userData.handAttachY ?? (h / 2);
   avatarModel.position.y = h / 2;
   rig.add(avatarModel);
+  applyPreviewNeckWeights();
   toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
 }
@@ -885,7 +957,7 @@ function applyPoseToRig(pose) {
   // mirrors the game by automatically countering the authored bodyYaw so
   // the preview head keeps facing the fixed forward/aim direction.
   const neckJoint = avatarModel?.userData?.neckRig?.neckJoint;
-  if (neckJoint) neckJoint.rotation.y = -rig.rotation.y;
+  if (neckJoint) neckJoint.rotation.y = -rig.rotation.y * neckPreviewStrength;
   toolHolder.scale.setScalar(safeNum(anim.poses.neutral.scale, 1));
   toolHolder.position.set(pose.x, pose.y, pose.z);
   // Composed in the same order as game.js's pose-driven combat branch
@@ -1254,7 +1326,7 @@ $('windupFracVal').textContent = `${Math.round(anim.windupFrac * 100)}%`;
 $('strikeFracVal').textContent = `${Math.round(anim.strikeFrac * 100)}%`;
 $('holdFracVal').textContent = `${Math.round(anim.holdFrac * 100)}%`;
 refreshJsonView();
-setDebug('Hobunji Attack Animation Editor\nNeutral, Windup, and Strike are all authored poses.\nPlayback auto-lerps Neutral→Windup→Strike→(hold)→Neutral on loop.\nDrag the scrub bar to inspect any single frame.');
+refreshPreviewDebug();
 logDebug('Attack Animation Editor ready');
 </script>
 <script>
