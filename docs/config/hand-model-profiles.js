@@ -1,7 +1,23 @@
-// Reusable hand-model socket profiles shared by gameplay and the Attack Animation Editor.
+// Reusable hand-model profiles shared by gameplay and the Attack Animation Editor.
 // Model scale corrects the imported GLB itself. Species/gender scale is applied on top.
+// handFromTool is the inverse-animation transform: where the hand root should sit and
+// point relative to the held tool's attach frame. The tool remains authoritative unless
+// that requested hand target exceeds arm reach, at which point runtime/editor pull the
+// tool pose inward by exactly the IK clamp delta.
 (function (global) {
   'use strict';
+
+  const IDENTITY_TRANSFORM = Object.freeze({
+    position: Object.freeze({ x: 0, y: 0, z: 0 }),
+    rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
+  });
+
+  function identityTransform() {
+    return {
+      position: { ...IDENTITY_TRANSFORM.position },
+      rotationDeg: { ...IDENTITY_TRANSFORM.rotationDeg },
+    };
+  }
 
   const DEFAULT_DATA = {
     schema: 'hobunji_hand_model_profiles.v1',
@@ -11,25 +27,30 @@
       pachyderm: {
         glb: 'assets/models/hands/hand_pachyderm.glb',
         scale: 1,
-        toolGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        handFromTool: identityTransform(),
+        // Legacy no-op retained so older code/config readers do not break.
+        toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
       sloth: {
         glb: 'assets/models/hands/hand_sloth.glb',
         scale: 1,
-        toolGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        handFromTool: identityTransform(),
+        toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
       feline: {
         glb: 'assets/models/hands/hand_feline.glb',
         scale: 1,
-        toolGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        handFromTool: identityTransform(),
+        toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
       },
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
         scale: 1,
-        toolGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        handFromTool: identityTransform(),
+        toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
       },
     },
@@ -47,8 +68,63 @@
 
   const LOCAL_KEY = 'hobunji.handModelProfiles.v1';
   const clone = value => JSON.parse(JSON.stringify(value));
-  let data = clone(DEFAULT_DATA); // Mutable editor/runtime copy; exported rather than mutating DEFAULT_DATA.
-  const listeners = new Set(); // Used by live hand rigs/editor controls to refresh after a profile edit.
+
+  function numberOrZero(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function normalizeTransform(raw) {
+    return {
+      position: {
+        x: numberOrZero(raw?.position?.x),
+        y: numberOrZero(raw?.position?.y),
+        z: numberOrZero(raw?.position?.z),
+      },
+      rotationDeg: {
+        pitch: numberOrZero(raw?.rotationDeg?.pitch),
+        yaw: numberOrZero(raw?.rotationDeg?.yaw),
+        roll: numberOrZero(raw?.rotationDeg?.roll),
+      },
+    };
+  }
+
+  function normalizeData(raw) {
+    const next = clone(raw || DEFAULT_DATA);
+    next.models = next.models || {};
+    for (const model of Object.values(next.models)) {
+      if (!model || typeof model !== 'object') continue;
+      // Older drafts authored a tool socket on the hand. Migrate that into the
+      // direct hand-from-tool convention. Position/rotation negation is exact for
+      // identity/single-axis drafts and a safe visual approximation for any old
+      // multi-axis draft; all current source defaults were identity.
+      if (!model.handFromTool) {
+        const legacy = normalizeTransform(model.toolGrip);
+        model.handFromTool = {
+          position: {
+            x: -legacy.position.x,
+            y: -legacy.position.y,
+            z: -legacy.position.z,
+          },
+          rotationDeg: {
+            pitch: -legacy.rotationDeg.pitch,
+            yaw: -legacy.rotationDeg.yaw,
+            roll: -legacy.rotationDeg.roll,
+          },
+        };
+      } else {
+        model.handFromTool = normalizeTransform(model.handFromTool);
+      }
+      // ProceduralArmAnimation's legacy model-socket path still reads toolGrip.
+      // Keep it identity so the arm endpoint is the actual hand root; the shared
+      // frame driver now applies handFromTool before solving IK.
+      model.toolGrip = identityTransform();
+    }
+    return next;
+  }
+
+  let data = normalizeData(DEFAULT_DATA); // Mutable editor/runtime copy; exported rather than mutating DEFAULT_DATA.
+  const listeners = new Set(); // Used by live hand rigs/editor controls to refresh after profile edits.
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -70,6 +146,9 @@
   function modelForSpecies(speciesId) {
     const key = modelKeyForSpecies(speciesId);
     return key ? data.models?.[key] || null : null;
+  }
+  function handTransformForSpecies(speciesId) {
+    return normalizeTransform(modelForSpecies(speciesId)?.handFromTool);
   }
   function footScaleFor(speciesId, gender) {
     const table = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale || {};
@@ -107,13 +186,15 @@
   function notify() { for (const fn of listeners) { try { fn(data); } catch (_) {} } }
   function replace(next) {
     if (!next || next.schema !== DEFAULT_DATA.schema) throw new Error(`Expected ${DEFAULT_DATA.schema}`);
-    data = clone(next);
+    data = normalizeData(next);
     global.HOBUNJI_HAND_MODEL_PROFILES = data; // Keeps the legacy/global data alias synchronized after imports or resets.
     notify();
     return data;
   }
   function mutate(mutator) {
     mutator(data);
+    data = normalizeData(data); // Enforces direct hand-from-tool semantics after every editor mutation.
+    global.HOBUNJI_HAND_MODEL_PROFILES = data;
     notify();
     return data;
   }
@@ -131,7 +212,7 @@
   global.HobunjiHandModelProfiles = {
     schema: DEFAULT_DATA.schema,
     get data() { return data; },
-    get defaultData() { return clone(DEFAULT_DATA); },
+    get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: () => clone(data),
     replace,
     mutate,
@@ -141,6 +222,7 @@
     subscribe,
     modelKeyForSpecies,
     modelForSpecies,
+    handTransformForSpecies,
     speciesScaleFor,
     footScaleFor,
     modelScaleFor,
