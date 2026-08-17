@@ -216,9 +216,12 @@
     const appearance = deps.getPlayerData()?.appearance || {};
     const sitInteraction = deps.getSitInteraction();
     const lines = [];
+    const localSeatY = Number(sitInteraction?.seatWorldY) || 0; // Used to distinguish authored floor-relative height in mobile diagnostics.
+    const surfaceSeatY = Number(sitInteraction?.seatSurfaceY) || 0; // Used to show the plateau/ramp contribution under the seat.
+    const absoluteSeatY = Number(sitInteraction?.seatAbsoluteWorldY) || localSeatY + surfaceSeatY; // Used to verify the camera's world-space target height.
     lines.push('=== Seated Leg Pose Readout (compare field-for-field against the furniture-avatar-author tool: load this furniture key in Avatar mode, add a seated avatar with this species/gender, read its Bones/Runtime diagnostics) ===');
     lines.push(`Species/gender: ${appearance.speciesId || '?'} / ${appearance.gender || '?'}   Furniture: "${sitInteraction?.furnitureKey || '?'}"`);
-    lines.push(`Seat anchor: height=${(Number(sitInteraction?.seatWorldY) || 0).toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
+    lines.push(`Seat anchor: localHeight=${localSeatY.toFixed(5)} surfaceY=${surfaceSeatY.toFixed(5)} absoluteY=${absoluteSeatY.toFixed(5)} tiltDeg{x,z}=(${(sitInteraction?.seatNormalDeg?.x ?? 0)},${(sitInteraction?.seatNormalDeg?.z ?? 0)}) footprintHalfDepth=${(Number(sitInteraction?.seatFootprintHalfDepth) || 0).toFixed(4)}`);
     for (const side of ['left', 'right']) {
       const leg = debug[side];
       if (!leg) { lines.push(`${side}: (not yet solved this frame)`); continue; }
@@ -600,7 +603,7 @@
       if (cameraSolve) {
         const hit = cameraSolve.directHitDistance == null ? 'none' : cameraSolve.directHitDistance.toFixed(3);
         lines.push('');
-        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg`);
+        lines.push(`Seated camera solve: ideal=${cameraSolve.idealDistance.toFixed(3)} directWallHit=${hit} desired=${cameraSolve.desiredDistance.toFixed(3)} actual=${cameraSolve.solvedDistance.toFixed(3)} sideSlide=${cameraSolve.sideOffsetDeg}deg targetY=${Number(cameraSolve.targetY || 0).toFixed(3)} floorY=${Number(cameraSolve.floorY || 0).toFixed(3)}`);
       }
       const seatedLines = _pixelProbeSeatedLegReadoutLines();
       if (seatedLines) { lines.push(''); lines.push(...seatedLines); }

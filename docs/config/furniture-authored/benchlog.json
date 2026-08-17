@@ -1,0 +1,113 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "benchlog",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 2,
+    "d": 1
+  },
+  "parts": [
+    {
+      "id": "part_msutm02q_kznbl",
+      "kind": "box",
+      "name": "Benchlog Invisible Seat Proxy",
+      "transform": {
+        "x": 0.0104,
+        "y": 0.2496,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.9765,
+        "sy": 0.428,
+        "sz": 0.6711
+      },
+      "color": "#65e6ff",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "custom",
+      "materialTexture": null,
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 0,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "foliageSeatProxy": true
+    }
+  ],
+  "seatAnchors": [
+    {
+      "position": {
+        "x": -0.483725,
+        "y": 0.4856,
+        "z": 0
+      },
+      "rotationDeg": {
+        "x": -5,
+        "y": 0,
+        "z": 0
+      },
+      "normalOffset": 0.01
+    },
+    {
+      "position": {
+        "x": 0.504525,
+        "y": 0.4856,
+        "z": 0
+      },
+      "rotationDeg": {
+        "x": -5,
+        "y": 0,
+        "z": 0
+      },
+      "normalOffset": 0.01
+    }
+  ],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "foliageFurniture": {
+    "version": 3,
+    "sourcePath": "docs/config/foliage-authored/benchlog.json",
+    "sourceSha": "f2ab4492d5ed49a0ceb72db4062dccfaaa37b962",
+    "generatorPath": "docs/references/(HA)FoliageGeneratorV27.html",
+    "assetType": "Log",
+    "seed": "tree-1",
+    "transform": {
+      "x": 0,
+      "y": 0.2123,
+      "z": -0.3856,
+      "rx": 90.212,
+      "ry": 0,
+      "rz": -1.554,
+      "sx": 0.9316,
+      "sy": 1,
+      "sz": 1
+    },
+    "proxyPartId": "part_msutm02q_kznbl",
+    "proxyHiddenInRuntime": true,
+    "seatCount": 2,
+    "note": "Foliage geometry is generated from sourcePath; the authored box is an invisible seating/collision proxy. Seat anchors use editable per-anchor normal offsets.",
+    "defaultSeatNormalOffset": 0.01
+  }
+}

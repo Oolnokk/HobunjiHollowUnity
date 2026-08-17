@@ -44,7 +44,7 @@
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20260811a"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
-  <script src="js/leg-bones.js?v=20260801a"></script>
+  <script src="js/leg-bones.js?v=20260816a"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/procedural-leg-animation.js?v=20260801c"></script>
   <!-- Livestock genetics & breeding (fur-color math, pattern layers, Size
@@ -66,7 +66,9 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/terrain-preview.js?v=20260712d"></script>
-  <script src="js/wilderness-map-generator.js?v=20260712d"></script>
+  <script src="js/wilderness-map-generator.js?v=20260816a"></script>
+  <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
+  <script src="js/foliage-furniture-runtime.js?v=20260816a"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
@@ -1683,7 +1685,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20260816b"></script>
+  <script src="js/pixel-probe.js?v=20260816c"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -1718,7 +1720,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20260815a"></script>
+  <script src="js/npc-pathfinding.js?v=20260816a"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
        game.js's own synchronous boot check reads it. Consumed once (the

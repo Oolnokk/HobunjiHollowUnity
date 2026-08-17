@@ -4985,6 +4985,9 @@
       const isStump = dims.w === 1 && dims.h === 1;
       addObject({
         type: isStump ? 'stump' : 'fallenLog',
+        furnitureKey: isStump ? 'chairstump' : 'benchlog',
+        foliageFurniture: true,
+        foliageFurnitureVersion: 1,
         x: spot.x,
         y: spot.y,
         w: dims.w,
@@ -5013,7 +5016,7 @@
   // pre-scale (copse-placement) space — the later 2x density pass
   // (GENERATION_TILE_SCALE) doubles every coordinate, and each tree object
   // now keeps a fixed 1x1 *final*-tile footprint regardless of scale (see
-  // scaleGeneratedObject's SINGLE_TILE_FOOTPRINT_OBJECT_TYPES — a tree used
+  // scaleGeneratedObject's FIXED_FINAL_FOOTPRINT_OBJECT_TYPES — a tree used
   // to inherit the generic scale x scale block instead, which meant every
   // single copse placement rendered as 4 separate full-size trees stacked
   // within 1-2 world units of each other; that's what "1 trunk = 1 tile" is
@@ -6556,16 +6559,15 @@
   // other scale*scale-1 tiles fall back to their base terrain (grass) and
   // stay free for other flora, matching the "empty just means no tree"
   // spacing rule these objects otherwise honor.
-  const SINGLE_TILE_FOOTPRINT_OBJECT_TYPES = new Set(['copse', 'bush', 'fruitBush', 'mushroomPatch', 'beehive']);
+  const FIXED_FINAL_FOOTPRINT_OBJECT_TYPES = new Set(['copse', 'bush', 'fruitBush', 'mushroomPatch', 'beehive', 'stump', 'fallenLog']);
 
   function scaleGeneratedObject(object, scale) {
     const output = clonePlain(object);
     output.x = scalePointCoordinate(object.x, scale);
     output.y = scalePointCoordinate(object.y, scale);
-    const keepUnitFootprint = SINGLE_TILE_FOOTPRINT_OBJECT_TYPES.has(object.type)
-      && (object.w || 1) === 1 && (object.h || 1) === 1;
-    output.w = keepUnitFootprint ? 1 : Math.max(1, scaleScalar(object.w || 1, scale, 0));
-    output.h = keepUnitFootprint ? 1 : Math.max(1, scaleScalar(object.h || 1, scale, 0));
+    const keepAuthoredFootprint = FIXED_FINAL_FOOTPRINT_OBJECT_TYPES.has(object.type);
+    output.w = keepAuthoredFootprint ? Math.max(1, object.w || 1) : Math.max(1, scaleScalar(object.w || 1, scale, 0));
+    output.h = keepAuthoredFootprint ? Math.max(1, object.h || 1) : Math.max(1, scaleScalar(object.h || 1, scale, 0));
     if (object.pathAnchor) output.pathAnchor = scaleMapPoint(object.pathAnchor, scale);
     if (object.escapeAnchor) output.escapeAnchor = scaleMapPoint(object.escapeAnchor, scale);
     if (object.mouthAnchor) output.mouthAnchor = scaleMapPoint(object.mouthAnchor, scale);
@@ -8226,6 +8228,30 @@
     const workspace = buildHobunjiMapExport();
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.warnings = map.warnings.slice();
+    // Stumps/logs are generated in the normal object pass but rendered at
+    // runtime from authored furniture definitions. Export their exact final
+    // placements directly so the game never has to infer them from generic
+    // tile overlays or rewrite this generator after it loads.
+    workspace.wildernessFoliageFurniture = (map.objects || [])
+      .filter(object => object.type === 'stump' || object.type === 'fallenLog')
+      .map(object => {
+        const footprintW = object.type === 'stump' ? 1 : (object.h > object.w ? 1 : 2);
+        const footprintD = object.type === 'stump' ? 1 : (object.h > object.w ? 2 : 1);
+        const sourceTile = tileAt(object.x, object.y);
+        return {
+          id: object.id,
+          sourceObjectType: object.type,
+          furnitureKey: object.type === 'stump' ? 'chairstump' : 'benchlog',
+          col: object.x,
+          row: object.y,
+          footprintW,
+          footprintD,
+          centerX: object.x + footprintW / 2,
+          centerZ: object.y + footprintD / 2,
+          yawDeg: object.type === 'fallenLog' && footprintD > footprintW ? 90 : 0,
+          elevTier: sourceTile?.elevation || 0,
+        };
+      });
     // Raw animal-den footprints (root-map tile coords, already tile-density-
     // scaled — see scaleGeneratedTileDensity/scaleGeneratedObject above),
     // exposed separately from buildHobunjiMapExport()'s tile stream because
