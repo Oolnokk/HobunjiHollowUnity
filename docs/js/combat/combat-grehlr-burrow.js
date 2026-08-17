@@ -56,21 +56,46 @@
     return key === 'grehlr' || key === 'grehlr-den-mother' || label === 'Grehlr' || label === 'Grehlr Den-Mother';
   }
 
-  function isPlayerTarget(target, deps) {
-    const players = deps.players || (deps.player ? [deps.player] : []); // Used to recognize player targets when the game exposes one or several players.
-    return players.includes(target);
+  function targetKindFor(creature, target, deps) {
+    const players = deps.players || (deps.player ? [deps.player] : []); // Used to match the same explicit player references the working pounce attack gathers.
+    if (target === deps.player || players.includes(target) || target?.isPlayer === true) return 'player';
+
+    const looksLikeCreature = !!(target?.def || target?.creatureKey || target?.isCompanion || target?.isBandit); // Used to recognize companion/hostile targets without relying on areaId alone.
+    if (looksLikeCreature) return 'creature';
+
+    // Hostile creature AI aims its named attack at the player. Some runtime
+    // target adapters are position/resource proxies rather than the exact
+    // object stored in deps.players, so object identity is not a safe final
+    // test. A companion attacks creatures; a hostile's otherwise-untyped
+    // target is therefore the player, matching the shared pounce behavior.
+    return creature.isCompanion ? 'creature' : 'player';
   }
 
-  function targetIsValid(creature, target, deps) {
-    const alive = !!target && !(target.health <= 0); // Used to reject dead/despawned targets before tracking or resolving the bite.
-    return alive && (isPlayerTarget(target, deps) || target.areaId === creature.areaId);
+  function targetStatus(creature, state) {
+    const target = state.target; // Used as the attack's original target throughout burrow tracking and eruption resolution.
+    if (!target) return { valid: false, reason: 'missing target' };
+    if (!Number.isFinite(target.x) || !Number.isFinite(target.y)) return { valid: false, reason: 'missing position' };
+    if (Number.isFinite(target.health) && target.health <= 0) return { valid: false, reason: 'dead' };
+    if (state.targetKind === 'player') return { valid: true, reason: 'player' };
+
+    // Creature targets still need to be in the Grehlr's area. Missing area
+    // metadata is treated as valid instead of manufacturing a false miss;
+    // the attack was already explicitly aimed at this object by the AI.
+    const hasBothAreas = target.areaId != null && creature.areaId != null; // Used to avoid rejecting valid ad-hoc creature targets that omit area metadata.
+    if (hasBothAreas && target.areaId !== creature.areaId) return { valid: false, reason: 'different area' };
+    return { valid: true, reason: 'creature' };
   }
 
   function ensureDirtAssets() {
     const THREE = window.THREE; // Used to lazily build low-poly dirt particle rendering assets.
     if (!THREE) return null;
-    if (!dirtGeometry) dirtGeometry = new THREE.IcosahedronGeometry(0.11, 0);
-    if (!dirtMaterial) dirtMaterial = new THREE.MeshStandardMaterial({ color: 0x654127, roughness: 1, metalness: 0 });
+    // A tetrahedron is the minimum closed 3D polyhedron: exactly four
+    // triangles. The previous detail-0 icosahedron used 20 triangles per
+    // clod, five times as many faces with no useful silhouette gain at this
+    // particle size. Random scale/rotation in spawnDirt keeps four-face clods
+    // from looking cloned.
+    if (!dirtGeometry) dirtGeometry = new THREE.TetrahedronGeometry(0.11, 0);
+    if (!dirtMaterial) dirtMaterial = new THREE.MeshStandardMaterial({ color: 0x654127, roughness: 1, metalness: 0, flatShading: true });
     return THREE;
   }
 
@@ -214,7 +239,7 @@
 
   function moveBurrowTowardTarget(creature, state, deps, dt) {
     const target = state.target; // Used as the moving underground pursuit target before the telegraph locks.
-    if (!targetIsValid(creature, target, deps)) return;
+    if (!targetStatus(creature, state).valid) return;
 
     const dx = target.x - creature.x; // Used to aim underground travel on X.
     const dy = target.y - creature.y; // Used to aim underground travel on Y.
@@ -240,9 +265,10 @@
 
   function beginTelegraph(creature, state, deps) {
     const target = state.target; // Used to lock the dirt warning circle where the target is when the random burrow interval ends.
-    const validTarget = targetIsValid(creature, target, deps); // Used to fall back to the Grehlr's current location if its target vanished.
-    state.centerX = validTarget ? target.x : creature.x;
-    state.centerY = validTarget ? target.y : creature.y;
+    const status = targetStatus(creature, state); // Used to fall back to the Grehlr's current location only when the original target is genuinely unusable.
+    state.centerX = status.valid ? target.x : creature.x;
+    state.centerY = status.valid ? target.y : creature.y;
+    state.lastTargetStatus = status;
     state.stage = 'telegraph';
     state.t = 0;
     state.telegraphEmitCarry = 0;
@@ -268,9 +294,12 @@
 
   function resolveBite(creature, state, deps) {
     const target = state.target; // Used as the only actor the fixed telegraph can punish.
-    const validTarget = targetIsValid(creature, target, deps); // Used to avoid hitting a dead/despawned/area-changed target.
-    const distance = validTarget ? Math.hypot(target.x - state.centerX, target.y - state.centerY) : Infinity; // Used to decide whether the target escaped the warning circle.
-    state.hit = validTarget && distance <= state.telegraphRadiusPx;
+    const status = targetStatus(creature, state); // Used to reject only genuinely unusable targets instead of failing player identity/area checks.
+    const distance = status.valid ? Math.hypot(target.x - state.centerX, target.y - state.centerY) : Infinity; // Used to decide whether the target escaped the warning circle.
+    state.lastTargetStatus = status;
+    state.lastDistancePx = distance;
+    state.hit = status.valid && distance <= state.telegraphRadiusPx;
+    state.damageAttempted = false;
 
     if (state.hit) {
       const biteAngle = distance > 1 ? Math.atan2(target.y - state.centerY, target.x - state.centerX) : creature.facing; // Used to give knockback a stable outward direction at/near circle center.
@@ -281,8 +310,9 @@
       const damage = creature.def.attackDamage * tuning.DAMAGE_MULTIPLIER; // Used as the heavy emergence bite health/footing pressure.
       const damageOptions = { tag: damageTag, afflictionBonuses }; // Used to route affliction and damage-type footing behavior through existing combat code.
 
-      if (isPlayerTarget(target, deps)) deps.damagePlayer?.(damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
+      if (state.targetKind === 'player') deps.damagePlayer?.(damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
       else deps.damageCreature?.(target, damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
+      state.damageAttempted = true;
       deps.playCreatureClawHit?.(creature);
     }
 
@@ -317,8 +347,15 @@
           ? tuning.DIVE_S
           : tuning.EMERGE_S; // Used to calculate the current phase countdown.
     const remaining = Math.max(0, phaseDuration - state.t); // Used as the displayed seconds until the next attack phase.
-    const result = state.exhaustionApplied ? ` | ${state.hit ? 'HIT' : 'MISS'}` : ''; // Used to preserve the last resolution result during emergence.
-    element.textContent = `Grehlr Burrow: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.dirtParticles.length}\nfooting ${Math.round(creature.footing ?? 0)}/${Math.round(creature.maxFooting ?? 0)} | stamina ${Math.round(creature.stamina ?? 0)}/${Math.round(creature.maxStamina ?? 0)}${result}`;
+    const status = targetStatus(creature, state); // Used to show why a target is or is not eligible without requiring desktop devtools.
+    const distancePx = status.valid && Number.isFinite(state.centerX) && Number.isFinite(state.centerY)
+      ? Math.hypot(state.target.x - state.centerX, state.target.y - state.centerY)
+      : Infinity; // Used to show whether the target is physically inside the fixed warning circle right now.
+    const radiusPx = state.telegraphRadiusPx || 0; // Used as the debug comparison radius for the eruption circle.
+    const inside = status.valid && radiusPx > 0 && distancePx <= radiusPx; // Used as the live mobile-visible hit eligibility indicator.
+    const distanceText = Number.isFinite(distancePx) ? `${Math.round(distancePx)}/${Math.round(radiusPx)}px` : `--/${Math.round(radiusPx)}px`; // Used as compact circle-distance diagnostics.
+    const result = state.exhaustionApplied ? ` | ${state.hit ? 'HIT' : 'MISS'}${state.damageAttempted ? ' DAMAGE SENT' : ''}` : ''; // Used to preserve the last resolution result during emergence.
+    element.textContent = `Grehlr Burrow: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.dirtParticles.length}\ntarget ${state.targetKind || '?'} ${status.valid ? 'valid' : status.reason} | ${inside ? 'INSIDE' : 'OUTSIDE'} ${distanceText}\nfooting ${Math.round(creature.footing ?? 0)}/${Math.round(creature.maxFooting ?? 0)} | stamina ${Math.round(creature.stamina ?? 0)}/${Math.round(creature.maxStamina ?? 0)}${result}`;
   }
 
   function start(creature, state, context, deps) {
@@ -329,6 +366,7 @@
     state.stage = 'dive';
     state.t = 0;
     state.target = context?.target || null;
+    state.targetKind = targetKindFor(creature, state.target, deps); // Used to keep the player-vs-creature damage route stable for the whole multi-second attack.
     state.burrowDurationS = tuning.BURROW_MIN_S + gameplayRandom() * randomSpan;
     state.collideRadiusPx = deps.TILE * 0.32;
     state.telegraphRadiusPx = radiusTiles * deps.TILE;
@@ -337,6 +375,9 @@
     state.telegraphEmitCarry = 0;
     state.exhaustionApplied = false;
     state.hit = false;
+    state.damageAttempted = false;
+    state.lastTargetStatus = targetStatus(creature, state);
+    state.lastDistancePx = Infinity;
 
     if (state.target) creature.facing = Math.atan2(state.target.y - creature.y, state.target.x - creature.x);
     creature.scaleY = 1;
