@@ -78,12 +78,29 @@ const runtime = fs.readFileSync('docs/game.js', 'utf8');
 const bandits = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8');
 const config = fs.readFileSync('docs/config/scratchbones-config.js', 'utf8');
+const proceduralArms = fs.readFileSync('docs/js/procedural-arm-animation.js', 'utf8'); // Supplies the hand-scale resolver for direct fallback testing.
+
+const configContext = { window: {}, console }; // Loads configuration and the arm module for scale behavior checks.
+vm.createContext(configContext);
+vm.runInContext(config, configContext);
+vm.runInContext(proceduralArms, configContext);
+const avatarConfig = configContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar; // Supplies both procedural attachment configurations below.
 
 assert(portrait.includes('yRatio: scan.firstOpaque.yRatio + 0.10'), 'shoulder scan moves 10% portrait height below the first opaque arm pixel');
 assert(avatar.includes('rightShoulder.y - root.userData.handAttachY'), 'arm length is shoulder Y minus tool attach Y');
 assert(runtime.indexOf('updatePlayerHandsFromTool();') > runtime.indexOf('updateToolMesh(dt);'), 'player hand reach runs after the final tool pose');
 assert(bandits.includes('hands.followWorldTarget(worldGrip, worldGripQuaternion)'), 'bandit attacks share the tool-following hand rig');
 assert(editor.includes('constrainAllAuthoredPoses();'), 'editor exports clamp authored pose coordinates to current-species reach');
+assert(config.includes('"handScale"'), 'hand scale is independently configurable');
+assert.equal(
+  JSON.stringify(avatarConfig.proceduralHands.handScale),
+  JSON.stringify(avatarConfig.proceduralFeet.footScale),
+  'initial hand scales match the existing foot scales'
+);
+assert(proceduralArms.includes('handScaleMultiplierForSpecies'), 'runtime applies per-species/gender hand scale lookup');
+delete avatarConfig.proceduralHands.handScale['mao-ao'].female;
+avatarConfig.proceduralFeet.footScale['mao-ao'].female = 1.25;
+assert.equal(configContext.window.ProceduralArmAnimation.handScaleMultiplierForSpecies('mao-ao', 'female'), 1.25, 'missing hand scale inherits its matching foot scale');
 for (const model of ['hand_feline.glb', 'hand_pachyderm.glb', 'hand_parrot.glb', 'hand_sloth.glb']) {
   assert(config.includes(`assets/models/hands/${model}`), `${model} is configured`);
   assert(fs.existsSync(`docs/assets/models/hands/${model}`), `${model} exists`);

@@ -251,13 +251,13 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js"></script>
-<script src="../../config/scratchbones-config.js?v=20260817a"></script>
+<script src="../../config/scratchbones-config.js?v=20260817b"></script>
 <script src="../../js/portrait-utils.js?v=20260817a"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/png-plane-avatar.js?v=20260817a"></script>
 <script src="../../js/arm-bones.js?v=20260817a"></script>
-<script src="../../js/procedural-arm-animation.js?v=20260817a"></script>
+<script src="../../js/procedural-arm-animation.js?v=20260817b"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -393,7 +393,7 @@ async function rebuildAvatar(speciesId, gender) {
   window.ProceduralArmAnimation?.setShowBones($('showArmBones').checked);
   const armDebug = armRig?.getDebug?.();
   $('armReachStatus').textContent = armDebug
-    ? `Arm length ${armDebug.armLength.toFixed(3)} • shoulder scan ${armDebug.scanSucceeded ? 'OK' : 'fallback'} • right hand follows tool grip`
+    ? `Hand scale ${armDebug.handScale.toFixed(2)}× • arm length ${armDebug.armLength.toFixed(3)} • shoulder scan ${armDebug.scanSucceeded ? 'OK' : 'fallback'} • right hand follows tool grip`
     : 'Hand rig unavailable';
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}, arm ${armDebug?.armLength?.toFixed(3) || 'n/a'}${toolMirrored ? ', mirrored' : ''})`);
 }
@@ -891,7 +891,7 @@ function applyPoseToRig(pose) {
       );
     }
     const debug = armRig.getDebug();
-    $('armReachStatus').textContent = `Arm length ${debug.armLength.toFixed(3)} • reach ${debug.requestedDistance.toFixed(3)}${debug.clamped ? ' → CLAMPED to ' + debug.constrainedDistance.toFixed(3) : ' • within reach'} • shoulder scan ${debug.scanSucceeded ? 'OK' : 'fallback'}`;
+    $('armReachStatus').textContent = `Hand scale ${debug.handScale.toFixed(2)}× • arm length ${debug.armLength.toFixed(3)} • reach ${debug.requestedDistance.toFixed(3)}${debug.clamped ? ' → CLAMPED to ' + debug.constrainedDistance.toFixed(3) : ' • within reach'} • shoulder scan ${debug.scanSucceeded ? 'OK' : 'fallback'}`;
   }
 }
 

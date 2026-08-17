@@ -35,6 +35,39 @@
     return null;
   }
 
+  // Per-species/gender hand-size multiplier (proceduralHands.handScale in
+  // scratchbones-config.js), matching the procedural-feet lookup pattern.
+  // Missing hand values inherit the corresponding foot scale so the two
+  // systems keep the same defaults until a hand-specific value is authored.
+  function handScaleMultiplierForSpecies(speciesId, gender) {
+    const handTable = cfg().handScale || {}; // Supplies independently configurable hand-size overrides.
+    const footTable = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale || {}; // Supplies the initial/fallback species scale.
+
+    function lookupSpecies(table) {
+      const seen = new Set(); // Prevents malformed parent-species cycles during scale lookup.
+      let current = normalizeKey(speciesId); // Walks the selected species and its configured parents.
+      while (current && !seen.has(current)) {
+        const entry = table[current]; // Supplies a gender-specific scale for this point in the species chain.
+        if (entry && Object.prototype.hasOwnProperty.call(entry, gender)) {
+          const value = Number(entry[gender]); // Converts authored JSON values into a usable multiplier.
+          if (Number.isFinite(value) && value > 0) return value;
+        }
+        seen.add(current);
+        current = parentSpecies(current);
+      }
+      return null;
+    }
+
+    const handSpeciesValue = lookupSpecies(handTable); // Gives an authored hand override first priority.
+    if (handSpeciesValue != null) return handSpeciesValue;
+    const footSpeciesValue = lookupSpecies(footTable); // Preserves the matching foot scale when no hand override exists.
+    if (footSpeciesValue != null) return footSpeciesValue;
+    const handDefault = Number(handTable.default); // Supplies the hand-wide fallback for an unlisted species.
+    if (Number.isFinite(handDefault) && handDefault > 0) return handDefault;
+    const footDefault = Number(footTable.default); // Preserves the foot-wide fallback if hand defaults are omitted.
+    return Number.isFinite(footDefault) && footDefault > 0 ? footDefault : 1;
+  }
+
   function resolveAssetPath(path, assetBase) {
     if (!assetBase || !String(path).startsWith('assets/')) return path;
     return String(assetBase).replace(/\/?$/, '/') + String(path).slice('assets/'.length);
@@ -163,7 +196,8 @@
     if (!speciesId) return null;
     const gender = normalizeGender(options.gender);
     const modelHeight = Number(options.modelHeight) || 0.9;
-    const targetHeight = modelHeight * (Number(cfg().handHeightFraction) || 0.12);
+    const handScale = handScaleMultiplierForSpecies(speciesId, gender); // Scales both GLB and fallback hands for this species/gender.
+    const targetHeight = modelHeight * (Number(cfg().handHeightFraction) || 0.12) * handScale;
     const anatomy = options.armAttachments || {};
     const fallbackLength = modelHeight * 0.32;
     const root = new THREE.Group();
@@ -350,6 +384,7 @@
         requestedDistance: state.lastRequestedDistance,
         constrainedDistance: state.lastConstrainedDistance,
         clamped: state.rightClamped,
+        handScale,
         glb: handConfig?.glb || null,
       }),
     };
@@ -357,6 +392,7 @@
 
   window.ProceduralArmAnimation = {
     attach,
+    handScaleMultiplierForSpecies,
     setShowBones: visible => { showArmBoneGuides = !!visible; },
     get showBones() { return showArmBoneGuides; },
   };
