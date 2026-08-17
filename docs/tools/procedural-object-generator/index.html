@@ -130,10 +130,10 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
         <label class="check"><input id="simplifyInput" type="checkbox" checked> Reduce coplanar patches after generation</label>
       </div>
       <div class="field">
-        <label for="toleranceInput">Planar tolerance</label>
-        <input id="toleranceInput" type="number" min="0" step="0.000001" value="0.00001">
+        <label for="angleInput">Planar angle tolerance °</label>
+        <input id="angleInput" type="number" min="0" max="45" step="0.1" value="0.5">
       </div>
-      <p class="hint">The reducer is deliberately conservative: it rewires only a single connected, convex patch whose triangles are coplanar within tolerance. Ridges, bends, raised centers, material groups, and morph geometry are left alone.</p>
+      <p class="hint">The reducer is deliberately conservative: the angle is the maximum difference between triangle face normals, measured in degrees. Connected patches must still pass the coplanar boundary checks; ridges, bends, raised centers, material groups, and morph geometry are left alone.</p>
     </div>
 
     <div class="section">
@@ -184,6 +184,7 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
     heftroot: (seed, settings) => FoliageGenerator.buildHeftrootMesh(settings.growth01, seed, 0),
   };
   const CROP_TYPES = new Set(['needlegrain', 'heftroot']); // Controls when the growth setting is visible/serialized.
+  const DEFAULT_PLANAR_ANGLE_DEG = 0.5; // Default degree threshold used by the planar reducer UI and saved recipes.
   const scene = new THREE.Scene(); // Owns the preview-only generated object and lighting.
   const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 1000); // Preview camera refit after each generation.
   const renderer = new THREE.WebGLRenderer({ canvas: $('viewport'), antialias: true, alpha: true }); // Renders the preview canvas.
@@ -233,7 +234,7 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
       rotationYDeg: clampNumber($('yawInput').value, -360000, 360000, 0),
       offsetY: clampNumber($('offsetYInput').value, -1000, 1000, 0),
       simplifyPlanar: $('simplifyInput').checked,
-      planarTolerance: clampNumber($('toleranceInput').value, 0, 1, ProceduralPlanarReducer.DEFAULT_TOLERANCE),
+      planarAngleDeg: clampNumber($('angleInput').value, 0, 45, DEFAULT_PLANAR_ANGLE_DEG),
     };
     if (CROP_TYPES.has($('typeSelect').value)) {
       settings.growth01 = clampNumber($('growthInput').value, 0, 1, 1);
@@ -258,12 +259,22 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
     $('growthField').hidden = !CROP_TYPES.has($('typeSelect').value);
   }
 
+  function legacyToleranceToAngleDeg(tolerance) {
+    const legacyTolerance = clampNumber(tolerance, 0, 1, ProceduralPlanarReducer.DEFAULT_TOLERANCE); // Legacy raw tolerance converted for older saved recipes.
+    const legacyNormalTolerance = Math.max(1e-12, legacyTolerance * 4);
+    const cosine = Math.max(-1, Math.min(1, 1 - legacyNormalTolerance));
+    return THREE.MathUtils.radToDeg(Math.acos(cosine));
+  }
+
   function applySettingsToControls(settings = {}) {
     $('scaleInput').value = clampNumber(settings.scale, 0.01, 100, 1);
     $('yawInput').value = clampNumber(settings.rotationYDeg, -360000, 360000, 0);
     $('offsetYInput').value = clampNumber(settings.offsetY, -1000, 1000, 0);
     $('simplifyInput').checked = settings.simplifyPlanar !== false;
-    $('toleranceInput').value = clampNumber(settings.planarTolerance, 0, 1, ProceduralPlanarReducer.DEFAULT_TOLERANCE);
+    const angleFallback = settings.planarTolerance === undefined
+      ? DEFAULT_PLANAR_ANGLE_DEG
+      : legacyToleranceToAngleDeg(settings.planarTolerance); // Keeps pre-degree JSON recipes compatible.
+    $('angleInput').value = clampNumber(settings.planarAngleDeg, 0, 45, angleFallback);
     $('growthInput').value = clampNumber(settings.growth01, 0, 1, 1);
   }
 
@@ -372,8 +383,11 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
 
       lastReduction = null;
       if (payload.settings.simplifyPlanar) {
+        const angleRad = THREE.MathUtils.degToRad(payload.settings.planarAngleDeg); // Degree UI converted to reducer's dot-product normal threshold.
+        const normalTolerance = 1 - Math.cos(angleRad);
         lastReduction = ProceduralPlanarReducer.reduceThreeObject(object, {
-          tolerance: payload.settings.planarTolerance,
+          tolerance: ProceduralPlanarReducer.DEFAULT_TOLERANCE,
+          normalTolerance,
         });
       }
 
@@ -536,7 +550,7 @@ header .subtitle{color:var(--muted);font-size:11px;margin-top:2px}
     updateGrowthVisibility();
     syncJsonEditor();
   });
-  for (const id of ['seedInput', 'scaleInput', 'yawInput', 'offsetYInput', 'growthInput', 'toleranceInput']) {
+  for (const id of ['seedInput', 'scaleInput', 'yawInput', 'offsetYInput', 'growthInput', 'angleInput']) {
     $(id).addEventListener('input', syncJsonEditor);
   }
   $('simplifyInput').addEventListener('change', syncJsonEditor);
