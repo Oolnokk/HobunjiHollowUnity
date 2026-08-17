@@ -2564,6 +2564,7 @@
       }
 
       function furnitureBlocksMovementAt(area, x, z) {
+        if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
           const dx = x - h.cx, dz = z - h.cz;
@@ -3429,6 +3430,8 @@
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
         const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
+        const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
+        const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
@@ -3437,13 +3440,15 @@
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
           seatWorldY: seat.y,
+          seatSurfaceY,
+          seatAbsoluteWorldY,
           seatNormalDeg: seat.normalDeg,
           seatFootprintHalfDepth: seat.footprintHalfDepth,
           seatAnchorZ: seat.anchorZ,
           prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
         activeCameraMode = 'seated';
-        activeCameraTarget = { position: new THREE.Vector3(seat.x, seat.y + 0.15, seat.z) };
+        activeCameraTarget = { position: new THREE.Vector3(seat.x, seatAbsoluteWorldY + 0.15, seat.z) };
         // Start looking at the seated character's BACK rather than whatever
         // the 'seated' mode's base azimuth happens to be (which has no
         // relationship to which way the character is actually facing).
@@ -6399,6 +6404,7 @@
               dens: workspace.animalDens || [],
               rootTotems: workspace.rootTotems || [],
               foliagePatches: workspace.foliagePatches || [],
+              wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
               ambushStations: workspace.ambushStations || [],
               localeInstances,
             });
@@ -7570,6 +7576,7 @@
         _zoneScenes.set(mapId, info);
         window.TownZoneBuildings.spawnZoneBuildings(mapId);
         window.TownZoneBuildings.spawnZoneDecorFurniture(mapId);
+        window.FoliageFurnitureRuntime?.spawnForMap(mapId);
         // Any NPC whose schedule targeted this zone before its (expensive,
         // built-on-first-visit) scene existed was left parked in _pendingZoneAdd
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
@@ -10124,6 +10131,7 @@
         for (const d of (zoneData?.dens || [])) markOccupied(d.x, d.y, d.w || 1, d.h || 1);
         for (const d of (zoneData?.decor || [])) markOccupied(d.col, d.row, 1, 1);
         for (const f of (zoneData?.furniture || [])) markOccupied(f.col, f.row, 1, 1);
+        for (const f of (zoneData?.wildernessFoliageFurniture || [])) markOccupied(f.col, f.row, f.footprintW || 1, f.footprintD || 1);
         // Lets a second scatter system (wild berries) avoid the tiles another
         // one (reagents) already claimed for the same day — see
         // scatterBerriesForZone.
@@ -10182,6 +10190,7 @@
       // wilderness terrain. Only disposes geometries; tileMats/houseWallBuilder
       // materials are shared across every map and must outlive this.
       function _disposeZoneScene(mapId) {
+        window.FoliageFurnitureRuntime?.disposeMap(mapId);
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
           if (o.geometry) o.geometry.dispose();
@@ -11017,7 +11026,8 @@
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
         if (_isZoneArea(currentArea)) {
-          return _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
+          return window.FoliageFurnitureRuntime?.objectAt(currentArea, col, row)
+              || _zoneReagentObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneBerryObjects.get(currentArea)?.get(col + ',' + row)
               || _zoneTreasureObjects.get(currentArea)?.get(col + ',' + row)
               || null;
@@ -14916,6 +14926,8 @@
               desiredDistance: desiredSafeDist,
               solvedDistance: safeDist,
               sideOffsetDeg: chosenSideOffsetDeg,
+              targetY: camTargetY,
+              floorY: _playerGroundY(),
             };
           } else {
             _seatedOcclusionDistance = null;
@@ -22196,6 +22208,7 @@
         get sitState() { return sitInteraction; },
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
+        foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
         worldObjectAt: getWorldObjectAt,
         farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
@@ -23038,6 +23051,18 @@
         markFurnitureEdgeId: _markFurnitureEdgeId,
         NORMAL_TOP,
         PLATEAU_UNIT,
+      });
+
+      window.FoliageFurnitureRuntime?.init({
+        zoneLayouts: _zoneLayouts,
+        zoneScenes: _zoneScenes,
+        zoneDecorFurnitureGroups: _zoneDecorFurnitureGroups,
+        markOutline: _markOutline,
+        markFurnitureEdgeId: _markFurnitureEdgeId,
+        NORMAL_TOP,
+        PLATEAU_UNIT,
+        sit: beginSitInteraction,
+        debugLog,
       });
 
       window.WildlifeSpawn?.init({
