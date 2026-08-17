@@ -364,7 +364,10 @@
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
-    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .065);
+    // A broad 30%-of-height falloff suits the painted cutout style better
+    // than a narrow neck hinge: shoulders and upper torso share a diminishing
+    // amount of head rotation instead of stopping abruptly at one rigid seam.
+    const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .30);
     const mask = options.opaqueMask;
     const left = mask?.left ?? 0, right = mask?.right ?? ((mask?.width || 1) - 1);
     const top = mask?.top ?? 0, bottom = mask?.bottom ?? ((mask?.height || 1) - 1);

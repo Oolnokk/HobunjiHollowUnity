@@ -3673,8 +3673,8 @@ window.SCRATCHBONES_CONFIG = {
         "combatSfx": {
           "enabled": true,
           "weaponSlash": { "url": "assets/audio/sfx/sfx_slash-basic.wav", "volume": 0.85, "pitchVarianceMul": 0.06 },
-          "rangedLoad": { "url": "assets/audio/sfx/sfx_loading_mechanism.m4a", "volume": 0.82, "pitchVarianceMul": 0.025 },
-          "rangedFire": { "url": "assets/audio/sfx/sfx_shootarrow.m4a", "volume": 0.9, "pitchVarianceMul": 0.02 },
+          "rangedLoad": { "url": "assets/audio/sfx/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
+          "rangedFire": { "url": "assets/audio/sfx/sfx_shootarrow.m4a", "volume": 0.95, "gainBoost": 1.6, "pitchVarianceMul": 0.02 },
           "creatureClawHit": { "url": "assets/audio/sfx/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "weaponHitSharp": { "url": "assets/audio/sfx/sfx_weaponhit-sharp.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },
           "weaponHitBlunt": { "url": "assets/audio/sfx/sfx_weaponhit-blunt.mp3", "volume": 0.9, "pitchVarianceMul": 0.06 },

@@ -11,6 +11,7 @@ const game = read('docs/game.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');
 const pngAvatar = read('docs/js/png-plane-avatar.js');
 const portraitUtils = read('docs/js/portrait-utils.js');
+const audioSystem = read('docs/js/audio-system.js');
 const bandit = read('docs/js/combat/combat-bandit.js');
 const editor = read('docs/tools/attack-animation-editor/index.html');
 const index = read('docs/index.html');
@@ -37,8 +38,12 @@ assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_loading_mecha
 assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/sfx_shootarrow.m4a')), 'arrow firing recording must be present');
 assert.match(scratchbonesConfig, /"rangedLoad":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_loading_mechanism\.m4a"/, 'combat audio config must register the ranged loading cue');
 assert.match(scratchbonesConfig, /"rangedFire":\s*\{\s*"url":\s*"assets\/audio\/sfx\/sfx_shootarrow\.m4a"/, 'combat audio config must register the ranged firing cue');
+assert.match(scratchbonesConfig, /"rangedLoad":[^\n]*"volume":\s*0\.42/, 'loading mechanism cue must use the quieter mix');
+assert.match(scratchbonesConfig, /"rangedFire":[^\n]*"volume":\s*0\.95,[^\n]*"gainBoost":\s*1\.6/, 'arrow cue must use Web Audio amplification beyond the element volume ceiling');
+assert.match(audioSystem, /function playOneShotSfx\([\s\S]*playSfxAudioElement\(snd, volume, Number\(cfgEntry\.gainBoost\) \|\| 1\)/, 'combat one-shots must honor optional gain boost');
 assert.match(ranged, /SCATTERBOW_LOAD_CHORUS_MS\s*=\s*\[0, 55, 110\]/, 'scatterbow loading must use a delayed mechanism chorus');
 assert.match(ranged, /SCATTERBOW_FIRE_CHORUS_MS\s*=\s*\[0, 28, 56, 84, 112, 140\]/, 'scatterbow firing must stagger one sound per projectile');
+assert.match(ranged, /const layerVolumeScale = itemKey === 'scatterbow' \? \(kind === 'load' \? 0\.55 : 0\.52\) : 1/, 'scatterbow chorus layers must be normalized after cue rebalancing');
 assert.match(ranged, /if \(kind === 'load'\) playRangedActionSfx\(itemKey, 'load'\)/, 'player loading must trigger its cue at animation start');
 assert.match(ranged, /playRangedActionSfx\(action\.itemKey, 'fire'\)[\s\S]*spawnVolley/, 'player firing cue must align with projectile release');
 assert.match(ranged, /snapshot:\s*\(\) => \(\{ lastEvent, lastAudioEvent, activeProjectiles:/, 'mobile ranged debug snapshot must report the last audio cue and layer count');
@@ -50,7 +55,7 @@ assert.match(editor, /Scatterbow — Fire/, 'editor must include scatterbow fire
 assert.match(editor, /Tool scale \(uniform\)/, 'editor must expose neutral tool scale');
 assert.match(editor, /neutralOnly:\s*true/, 'tool scale must only be authored on the neutral pose');
 assert.match(editor, /id="neckStrength"[^>]*min="0"[^>]*max="2"[^>]*value="1"/, 'editor must expose a safe preview-only neck strength slider');
-assert.match(editor, /id="neckRadius"[^>]*min="0\.01"[^>]*max="0\.30"[^>]*value="0\.065"/, 'editor must expose the current 6.5% neck blend as an adjustable radius');
+assert.match(editor, /id="neckRadius"[^>]*min="0\.01"[^>]*max="0\.30"[^>]*value="0\.30"/, 'editor must default to the selected broad 30% neck blend');
 assert.match(editor, /function applyPreviewNeckWeights\(\)[\s\S]*weights\.setXYZW\(index, 1 - headWeight, headWeight, 0, 0\)/, 'neck radius preview must update only the root/head skin weights');
 assert.match(editor, /neckJoint\.rotation\.y = -rig\.rotation\.y \* neckPreviewStrength/, 'neck strength preview must scale the automatic body-yaw counter-turn');
 assert.match(editor, /id="showHeadSkinVertices"/, 'editor must expose a head-skinned vertex overlay toggle');
@@ -72,11 +77,12 @@ assert.match(portraitUtils, /onlyHeadSprite[\s\S]*fighter's undecorated base hea
 assert.match(pngAvatar, /function detectHeadRigPixels\([\s\S]*headMask\.centroidPx\.x[\s\S]*method: 'head-sprite-alpha-centroid'/, 'shared neck rig must derive its horizontal pivot from the base-head alpha centroid');
 assert.match(pngAvatar, /function buildSkinnedPlaneGeometry\([\s\S]*cellHasOpaquePixel[\s\S]*visibleCells/, 'shared neck geometry must fit its grid to opaque avatar cells');
 assert.match(pngAvatar, /opaqueBoundsPx:[\s\S]*visibleCellCount:/, 'shared neck geometry must expose alpha-fit diagnostics');
+assert.match(pngAvatar, /Number\(options\.blendHeight\) \|\| modelHeight \* \.30/, 'shared player and NPC rigs must use the selected broad deformation falloff by default');
 assert.match(sharedNeckRig, /frontMaterial\.skinning = true;[\s\S]*backMaterial\.skinning = true;/, 'r128 portrait materials must explicitly compile their skinning shader path');
 assert.match(editor, /renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/, 'attack editor must render the head-only centroid mask');
 assert.strictEqual((game.match(/renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/g) || []).length, 2, 'player and walking NPC neck rigs must use head-only centroid masks');
-assert.match(index, /png-plane-avatar\.js\?v=20260817d/, 'game bootstrap must invalidate the r128 skin-shader cache');
-assert.match(editor, /png-plane-avatar\.js\?v=20260817d/, 'attack editor must invalidate the r128 skin-shader cache');
+assert.match(index, /png-plane-avatar\.js\?v=20260817e/, 'game bootstrap must invalidate the broad-deformation cache');
+assert.match(editor, /png-plane-avatar\.js\?v=20260817e/, 'attack editor must invalidate the broad-deformation cache');
 assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
 
 for (const itemKey of ['crossbow', 'scatterbow']) {

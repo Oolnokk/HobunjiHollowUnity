@@ -117,8 +117,8 @@ canvas{display:block;width:100%;height:100%}
       <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
     </div>
     <div class="field">
-      <label>Neck weight radius <span id="neckRadiusVal">6.5% height</span></label>
-      <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.065">
+      <label>Neck weight radius <span id="neckRadiusVal">30.0% height</span></label>
+      <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.30">
     </div>
     <div class="field" style="margin-top:4px">
       <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
@@ -268,11 +268,11 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js"></script>
-<script src="../../config/scratchbones-config.js?v=20260817c"></script>
+<script src="../../config/scratchbones-config.js?v=20260817d"></script>
 <script src="../../js/portrait-utils.js?v=20260817d"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20260817d"></script>
+<script src="../../js/png-plane-avatar.js?v=20260817e"></script>
 <script src="../../js/held-action-animations.js?v=20260811b"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -340,7 +340,7 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let avatarModel = null;
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
-let neckPreviewRadiusFrac = 0.065; // Used by applyPreviewNeckWeights() as the neck blend radius relative to avatar height.
+let neckPreviewRadiusFrac = 0.30; // Used by applyPreviewNeckWeights() as the broad default shoulder-to-head blend relative to avatar height.
 let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
 let headSkinVertexOverlay = null; // Used to dispose and replace the optional head-weight marker cloud when the avatar or radius changes.
 let headSkinVertexCount = 0; // Used by refreshPreviewDebug() so mobile users can confirm that the overlay found weighted vertices.
@@ -459,7 +459,7 @@ function updateHeadSkinVertexOverlay() {
 }
 
 // Rewrites only the preview mesh's two skin-weight channels. The default
-// radius reproduces png-plane-avatar.js's existing 6.5%-of-height blend;
+// radius reproduces png-plane-avatar.js's 30%-of-height full-body falloff;
 // changing it is diagnostic and never touches exported animation data.
 function applyPreviewNeckWeights() {
   const neckRig = avatarModel?.userData?.neckRig; // Used to reach the current avatar's skinned preview plane and detected pivot.
@@ -498,7 +498,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: r128 portrait materials now compile with skeletal skinning; alpha-fitted head mesh retained.',
+    'Latest: neck deformation now defaults to a broad 30%-height shoulder/body falloff at 100% strength.',
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     'Playback auto-lerps Neutral→Windup→Strike→(hold)→Neutral. Drag the scrub bar to inspect a frame.',
@@ -507,7 +507,7 @@ function refreshPreviewDebug() {
 
 function syncNeckPreviewControls() {
   neckPreviewStrength = Math.max(0, Math.min(2, Number($('neckStrength').value) || 0));
-  neckPreviewRadiusFrac = Math.max(0.01, Math.min(0.30, Number($('neckRadius').value) || 0.065));
+  neckPreviewRadiusFrac = Math.max(0.01, Math.min(0.30, Number($('neckRadius').value) || 0.30));
   $('neckStrengthVal').textContent = `${Math.round(neckPreviewStrength * 100)}%`;
   $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(1)}% height`;
   applyPreviewNeckWeights();

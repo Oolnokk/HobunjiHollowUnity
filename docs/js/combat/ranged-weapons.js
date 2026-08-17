@@ -153,12 +153,15 @@
     const delays = itemKey === 'scatterbow'
       ? (kind === 'load' ? SCATTERBOW_LOAD_CHORUS_MS : SCATTERBOW_FIRE_CHORUS_MS)
       : [0]; // Used to keep an ordinary crossbow mechanically singular.
+    const layerVolumeScale = itemKey === 'scatterbow' ? (kind === 'load' ? 0.55 : 0.52) : 1; // Used to keep layered scatterbow cues balanced against one amplified crossbow cue.
     lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:${kind}:${delays.length}-layer`;
     delays.forEach((delayMs, index) => {
       const playLayer = () => {
         const pitch = itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1; // Used to keep delayed layers distinct without changing the source's identity.
-        if (owner) audio.playCreatureSfxAt?.(owner, cfgEntry, pitch);
-        else audio.playOneShotSfx?.(cfgEntry, 1, pitch);
+        if (owner) {
+          const spatialCfg = { ...cfgEntry, volume: (Number(cfgEntry.volume) || 0.8) * layerVolumeScale }; // Used because playCreatureSfxAt applies its own distance scale internally.
+          audio.playCreatureSfxAt?.(owner, spatialCfg, pitch);
+        } else audio.playOneShotSfx?.(cfgEntry, layerVolumeScale, pitch);
       };
       if (delayMs > 0) setTimeout(playLayer, delayMs);
       else playLayer();
