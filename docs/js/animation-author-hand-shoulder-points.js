@@ -7,7 +7,7 @@
   if (!/\/tools\/animation-author\//.test(location.pathname) || global.__hobunjiShoulderPointAuthorInstalled) return;
   global.__hobunjiShoulderPointAuthorInstalled = true;
 
-  const CONFIG_SRC = '../../config/hand-shoulder-points.js?v=20260818a';
+  const CONFIG_SRC = '../../config/hand-shoulder-points.js?v=20260818b';
   let selectedSide = 'right';
   let ui = null;
 
@@ -53,6 +53,7 @@
     const wrap = canvas?.closest('.portraitCanvasWrap');
     if (!canvas || !wrap) return;
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+    const authorVisible = document.getElementById('hobunjiHandShoulderAuthor')?.offsetParent != null;
     for (const side of ['left', 'right']) {
       let dot = marker(side);
       if (!dot) {
@@ -69,8 +70,8 @@
       }
       const point = pointFor(side);
       const authored = global.HobunjiHandShoulderPoints?.isAuthored(point);
-      dot.style.display = authored ? 'block' : 'none';
-      if (authored) {
+      dot.style.display = authorVisible && authored ? 'block' : 'none';
+      if (authorVisible && authored) {
         dot.style.left = `${point.x / 2}%`;
         dot.style.top = `${point.y / 2}%`;
       }
@@ -174,6 +175,9 @@
 
     const frontCanvas = document.getElementById('frontCanvas');
     frontCanvas?.addEventListener('pointerdown', event => {
+      // The portrait remains visible in several author modes. Shoulder placement is
+      // only armed while this Attachment Rig Coordinates panel is actually visible.
+      if (!panel.isConnected || panel.offsetParent == null) return;
       const identity = selectedIdentity();
       if (!identity) return;
       const rect = frontCanvas.getBoundingClientRect();
@@ -185,6 +189,7 @@
 
     document.getElementById('npcList')?.addEventListener('click', () => setTimeout(syncUi, 0));
     new MutationObserver(syncUi).observe(document.getElementById('selectedMeta') || document.body, { childList: true, subtree: true, characterData: true });
+    new MutationObserver(updateMarkers).observe(host, { attributes: true, attributeFilter: ['class','style'] });
     global.addEventListener('resize', updateMarkers);
     syncUi();
   }
