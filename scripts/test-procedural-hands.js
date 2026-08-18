@@ -67,7 +67,10 @@ const maoTransform = JSON.stringify({
 });
 for (const [key, model] of Object.entries(profiles.data.models)) {
   assert.strictEqual(JSON.stringify(model.handFromTool), maoTransform, `${key} must use the Mao'ao tool-relative hand setup`);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(model, 'shoulderAim'), false, `${key} must not retain model-level shoulder aim settings`);
 }
+assert.doesNotMatch(configSource, /shoulderAimForSpecies|shoulderAimDefaults|DEFAULT_SHOULDER_AIM/, 'shoulder axis settings must no longer live in species/model profiles');
+assert.match(configSource, /delete model\.shoulderAim/, 'legacy local hand profiles must strip obsolete model-level shoulderAim data');
 
 // Shoulder point defaults are deliberately unauthored 0,0 for every current species/gender.
 const shoulderSandbox = { window: {}, localStorage: sandbox.localStorage };
@@ -145,7 +148,11 @@ assert.match(shoulderPoseRuntimeSource, /function weightsAt/, 'pose runtime must
 assert.match(shoulderPoseRuntimeSource, /secondaryGripActive/, 'pose runtime must distinguish a gripping vs idle left hand');
 assert.match(shoulderPoseRuntimeSource, /side === 'left'.*!secondaryGripActive/s, 'ungripped left hand must use idle shoulder behavior during active animation');
 assert.match(shoulderPoseRuntimeSource, /__rangedDebug\?\.playerAction/, 'ranged load/fire must use their real action timeline');
-assert.match(shoulderPoseRuntimeSource, /combatNeutralWeight/, 'melee pitch influence must follow the exact neutral lerp weight');
+assert.match(shoulderPoseRuntimeSource, /combatNeutralWeight/, 'committed melee defaults must follow the exact neutral lerp weight');
+assert.match(shoulderPoseRuntimeSource, /__weaponToolStanceVisualHooks/, 'runtime must wait until the melee visual wrapper exists before capturing raw authored pose metadata');
+assert.match(shoulderPoseRuntimeSource, /triggerWeaponSwingVisual/, 'runtime must preserve custom per-pose melee shoulderAim metadata before numeric pose normalization');
+assert.match(shoulderPoseRuntimeSource, /hasAuthoredPoseAim\(rawPose\)/, 'custom authored melee shoulder boxes must override the default animation profile');
+assert.match(shoulderPoseRuntimeSource, /hasAuthoredPoseAim\(configuredPose\)/, 'configured ranged pose shoulder boxes must override the default animation profile');
 
 for (const key of ['melee:thrust','melee:chop','melee:sweep','ranged:crossbow:load','ranged:crossbow:fire','ranged:scatterbow:load','ranged:scatterbow:fire','held:drink']) {
   assert(shoulderPoseProfilesSource.includes(`'${key}'`), `${key} must have its own authored shoulder pose profile`);
@@ -179,6 +186,7 @@ assert.match(animationAuthorShoulderSource, /maaRigLibrarySection/, 'shoulder au
 assert.match(animationAuthorShoulderSource, /frontCanvas/, 'manual shoulder placement must use the existing front portrait');
 assert.match(animationAuthorShoulderSource, /Set 0,0 fallback/, 'each side must have an explicit automatic-fallback reset');
 assert.match(animationAuthorShoulderSource, /200×200 portrait coordinates/, 'author UI must explain the coordinate basis');
+assert.match(animationAuthorShoulderSource, /panel\.offsetParent == null/, 'portrait clicks must only place shoulders while Attachment Rig Coordinates is visible');
 assert.match(npcPreviewSource, /animation-author-hand-shoulder-points\.js/, 'Animation Author runtime must load the shoulder companion panel');
 
 assert.match(materialRoleSource, /MAT_None_7a4e2e: 'keratin'/, 'parrot first export material must be flipped to keratin');
