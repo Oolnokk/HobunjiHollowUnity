@@ -84,6 +84,7 @@ for (let i = 0; i < fullTrees.length; i++) {
     if (dx < 1e-6 || dz < 1e-6) assert(Math.max(dx, dz) >= 1 - 1e-6, 'full-height centers must retain the one-world-unit base spacing');
   }
 }
+assert(denseLayout.length > fullTrees.length * 2, 'gap fillers should make the authored wall substantially denser than the base tree lattice');
 
 const syntheticWorkspace = {
   maps: [{
