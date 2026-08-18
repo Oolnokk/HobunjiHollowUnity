@@ -28,7 +28,7 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
-    new URL('config/hand-model-profiles.js?v=20260818b', docsBase).href,
+    new URL('config/hand-model-profiles.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
@@ -45,6 +45,7 @@
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/weapon-png-scale.js?v=20260818a', docsBase).href);
   }
 
   function loadSequentially(urls) {
