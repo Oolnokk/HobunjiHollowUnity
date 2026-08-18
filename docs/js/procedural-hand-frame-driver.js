@@ -1,22 +1,22 @@
-// Compatibility frame driver for procedural hands.
+// Direct tool-to-hand frame driver.
 //
-// The right hand is inverse-animated from the held tool. Each hand model supplies
-// a fine handFromTool transform and the shared grip-mode layer adds the current
-// palm orientation. Tool pose is authoritative while reachable. If the requested
-// hand target exceeds the constrained arm reach, the tool is translated only for
-// that solve/render; the authored/base tool pose is never rewritten.
+// No arm solver participates. The right hand follows the toolHolder's authored
+// primary grip frame directly. If the active tool has an enabled secondary grip
+// in hand-tool-grips.js, the left hand follows that frame; otherwise it remains
+// at its avatar idle attachment. The tool is never translated or rotated by hands.
 (function (global) {
   'use strict';
 
-  const hands = global.ProceduralArmAnimation;
+  const hands = global.ProceduralHandAttachments;
   const profiles = global.HobunjiHandModelProfiles;
+  const toolGrips = global.HobunjiHandToolGrips;
   const avatarApi = global.PNGPlaneAvatar;
-  if (!hands?.attach || !profiles || !avatarApi?.buildSinglePlaneAvatarModel) return;
-  if (avatarApi.buildSinglePlaneAvatarModel.__hobunjiHandFrameDriverWrapped) return;
+  if (!hands?.attach || !profiles || !toolGrips || !avatarApi?.buildSinglePlaneAvatarModel) return;
+  if (avatarApi.buildSinglePlaneAvatarModel.__hobunjiDirectHandDriverWrapped) return;
 
   const pending = new Set();
   const managed = new Set();
-  let gameDeps = null;
+  let gameDeps = hands.gameDeps || null;
   let syncing = false;
 
   function normalizeKey(value) {
@@ -36,49 +36,9 @@
     };
   }
 
-  function portraitPointToLocal(point, modelWidth, modelHeight, placementRatio, anchorZ) {
-    if (!point || !Number.isFinite(Number(point.xRatio)) || !Number.isFinite(Number(point.yRatio))) return null;
-    return {
-      x: -modelWidth / 2 + Number(point.xRatio) * modelWidth,
-      y: modelHeight * (0.5 + placementRatio - Number(point.yRatio)),
-      z: anchorZ,
-    };
-  }
-
-  function armAttachmentsFromCanvas(sourceCanvas, avatarRoot) {
-    const modelWidth = Number(avatarRoot?.userData?.portraitModelWidth) || 0.9;
-    const modelHeight = Number(avatarRoot?.userData?.portraitModelHeight) || 0.9;
-    const placementRatio = Number(avatarRoot?.userData?.portraitVerticalPlacementRatio) || 0.5;
-    const handAttachX = Number(avatarRoot?.userData?.handAttachX) || -modelWidth / 2;
-    const handAttachY = Number(avatarRoot?.userData?.handAttachY) || modelHeight * 0.45;
-    const anchorZ = 0;
-    const scan = sourceCanvas?.hobunjiArmAttachmentScan || null;
-    const fallbackLength = modelHeight * 0.32;
-    const rightShoulder = portraitPointToLocal(scan?.right?.shoulder, modelWidth, modelHeight, placementRatio, anchorZ)
-      || { x: handAttachX, y: handAttachY + fallbackLength, z: anchorZ };
-    const leftShoulder = portraitPointToLocal(scan?.left?.shoulder, modelWidth, modelHeight, placementRatio, anchorZ)
-      || { x: -handAttachX, y: handAttachY + fallbackLength, z: anchorZ };
-    const leftHand = portraitPointToLocal(scan?.left?.hand, modelWidth, modelHeight, placementRatio, anchorZ)
-      || { x: -handAttachX, y: handAttachY, z: anchorZ };
-    const armLength = Math.max(modelHeight * 0.05, rightShoulder.y - handAttachY);
-    return {
-      left: { shoulder: leftShoulder, idleHand: leftHand, armLength },
-      right: { shoulder: rightShoulder, idleHand: { x: handAttachX, y: handAttachY, z: anchorZ }, armLength },
-      scanSucceeded: !!(scan?.left && scan?.right),
-      rule: scan?.rule || 'fallback shoulder directly above tool attach',
-      source: scan,
-    };
-  }
-
-  function newClampState() {
-    return { parent: null, baseLocal: null, adjustedLocal: null, active: false };
-  }
-
   function attachPending(record) {
     const avatarRoot = record.avatarRoot;
-    if (!avatarRoot?.parent || avatarRoot.userData?.proceduralArmRig) return !!avatarRoot?.userData?.proceduralArmRig;
-    const anatomy = armAttachmentsFromCanvas(record.sourceCanvas, avatarRoot);
-    avatarRoot.userData.armAttachments = anatomy;
+    if (!avatarRoot?.parent || avatarRoot.userData?.proceduralHandRig) return !!avatarRoot?.userData?.proceduralHandRig;
     const rig = hands.attach(record.THREE, avatarRoot.parent, {
       speciesId: record.speciesId,
       gender: record.gender,
@@ -86,22 +46,18 @@
       modelHeight: avatarRoot.userData?.portraitModelHeight,
       handAttachX: avatarRoot.userData?.handAttachX,
       handAttachY: avatarRoot.userData?.handAttachY,
-      armAttachments: anatomy,
       avatarRoot,
       name: record.name || avatarRoot.name || 'avatar',
     });
     if (!rig) return false;
-    avatarRoot.userData.proceduralArmRig = rig;
+    avatarRoot.userData.proceduralHandRig = rig;
     record.rig = rig;
-    record.anatomy = anatomy;
-    record.syncSentinel = null;
-    record.clampState = newClampState();
     managed.add(record);
     return true;
   }
 
   const originalBuild = avatarApi.buildSinglePlaneAvatarModel;
-  const wrappedBuild = function frameDrivenHandAvatarBuild(THREE, sourceCanvas, options = {}) {
+  const wrappedBuild = function directHandAvatarBuild(THREE, sourceCanvas, options = {}) {
     const avatarRoot = originalBuild.call(this, THREE, sourceCanvas, options);
     const identity = identityFor(options);
     if (!avatarRoot || !identity.speciesId || !profiles.modelKeyForSpecies(identity.speciesId)) return avatarRoot;
@@ -114,21 +70,36 @@
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
       rig: null,
-      anatomy: null,
       syncSentinel: null,
-      clampState: newClampState(),
+      lastToolKey: null,
+      secondaryActive: false,
     });
     return avatarRoot;
   };
-  wrappedBuild.__hobunjiHandFrameDriverWrapped = true;
+  wrappedBuild.__hobunjiDirectHandDriverWrapped = true;
   avatarApi.buildSinglePlaneAvatarModel = wrappedBuild;
 
+  if (avatarApi.disposeAvatarModel && !avatarApi.disposeAvatarModel.__hobunjiDirectHandsWrapped) {
+    const originalDispose = avatarApi.disposeAvatarModel.bind(avatarApi);
+    avatarApi.disposeAvatarModel = function directHandAvatarDispose(avatarRoot) {
+      for (const record of [...pending]) if (record.avatarRoot === avatarRoot) pending.delete(record);
+      for (const record of [...managed]) {
+        if (record.avatarRoot !== avatarRoot) continue;
+        disposeSyncSentinel(record);
+        record.rig?.dispose?.();
+        managed.delete(record);
+      }
+      if (avatarRoot?.userData) avatarRoot.userData.proceduralHandRig = null;
+      return originalDispose(avatarRoot);
+    };
+    avatarApi.disposeAvatarModel.__hobunjiDirectHandsWrapped = true;
+  }
+
   function findEditorToolHolder(record) {
-    const avatarRoot = record?.avatarRoot;
-    const bodyRoot = avatarRoot?.parent;
+    const bodyRoot = record?.avatarRoot?.parent;
     if (!bodyRoot) return null;
     for (const child of bodyRoot.children || []) {
-      if (child === avatarRoot || child === record.rig?.group || child === record.syncSentinel) continue;
+      if (child === record.avatarRoot || child === record.rig?.group || child === record.syncSentinel) continue;
       const hasAnchorSphere = (child.children || []).some(candidate => candidate?.isMesh && candidate.geometry?.type === 'SphereGeometry');
       if (!hasAnchorSphere) continue;
       const holder = (child.children || []).find(candidate => !candidate?.isMesh && candidate?.isObject3D);
@@ -137,7 +108,21 @@
     return null;
   }
 
-  function transformForRecord(record) {
+  function currentToolKey() {
+    if (/\/tools\/attack-animation-editor\//.test(location.pathname)) {
+      return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
+    }
+    const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
+    return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
+  }
+
+  function currentToolHolder(record) {
+    if (/\/tools\/attack-animation-editor\//.test(location.pathname)) return findEditorToolHolder(record);
+    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
+    return null;
+  }
+
+  function handTransformForRecord(record) {
     const raw = profiles.handTransformForSpecies?.(record.speciesId)
       || profiles.modelForSpecies?.(record.speciesId)?.handFromTool
       || {};
@@ -160,102 +145,80 @@
     };
   }
 
-  function clearClampState(record) {
-    record.clampState = newClampState();
+  function quaternionFromDeg(record, rotation = {}) {
+    return new record.THREE.Quaternion().setFromEuler(new record.THREE.Euler(
+      record.THREE.MathUtils.degToRad(Number(rotation.pitch) || 0),
+      record.THREE.MathUtils.degToRad(Number(rotation.yaw) || 0),
+      record.THREE.MathUtils.degToRad(Number(rotation.roll) || 0),
+      'YXZ',
+    ));
   }
 
-  function restorePreviousClampIfStillApplied(record, toolHolder) {
-    const state = record.clampState || newClampState();
-    if (!state.active || !state.baseLocal || !state.adjustedLocal || state.parent !== toolHolder.parent) {
-      clearClampState(record);
-      return false;
-    }
+  function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
+    const Vector3 = toolHolder.position.constructor;
+    const Quaternion = toolHolder.quaternion.constructor;
+    toolHolder.updateWorldMatrix?.(true, true);
 
-    // If an animation/tool system has already authored a new local pose since the
-    // previous solve, do not subtract the old correction from that new pose. Only
-    // restore when the holder is still exactly where our last clamp left it.
-    const toleranceSq = 1e-8;
-    if (toolHolder.position.distanceToSquared(state.adjustedLocal) <= toleranceSq) {
-      toolHolder.position.copy(state.baseLocal);
-      toolHolder.updateMatrix?.();
-      toolHolder.updateMatrixWorld?.(true);
-      clearClampState(record);
-      return true;
+    let position;
+    let quaternion = toolHolder.getWorldQuaternion(new Quaternion());
+    if (secondaryGrip) {
+      const p = secondaryGrip.position || {};
+      position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
+      toolHolder.localToWorld(position); // Includes any tool-holder scale as well as rotation/translation.
+      quaternion.multiply(quaternionFromDeg(record, secondaryGrip.rotationDeg || {}));
+    } else {
+      position = toolHolder.getWorldPosition(new Vector3());
     }
+    return { position, quaternion };
+  }
 
-    clearClampState(record);
-    return false;
+  function handWorldFromSocket(record, socketFrame) {
+    const Vector3 = socketFrame.position.constructor;
+    const authored = handTransformForRecord(record);
+    const offset = new Vector3(authored.position.x, authored.position.y, authored.position.z)
+      .applyQuaternion(socketFrame.quaternion);
+    return {
+      position: socketFrame.position.clone().add(offset),
+      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromDeg(record, authored.rotationDeg)),
+      authored,
+    };
   }
 
   function syncRigToTool(record, toolHolder) {
-    const rig = record?.rig;
-    if (!rig || !toolHolder?.parent || syncing) return null;
+    if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
-      restorePreviousClampIfStillApplied(record, toolHolder);
-      rig.useIdlePose?.();
-      return null;
+      record.rig.useIdlePose?.();
+      record.secondaryActive = false;
+      record.lastToolKey = null;
+      return { direct: true, toolVisible: false, secondaryActive: false };
     }
 
     syncing = true;
     try {
-      restorePreviousClampIfStillApplied(record, toolHolder);
-      toolHolder.parent.updateWorldMatrix?.(true, true);
-      toolHolder.updateWorldMatrix?.(true, true);
+      const toolKey = currentToolKey();
+      const primary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder));
+      record.rig.placeHandWorld?.('right', primary.position, primary.quaternion);
 
-      const Vector3 = toolHolder.position.constructor;
-      const Quaternion = toolHolder.quaternion.constructor;
-      const baseLocal = toolHolder.position.clone();
-      const toolWorldPosition = toolHolder.getWorldPosition(new Vector3());
-      const toolWorldQuaternion = toolHolder.getWorldQuaternion(new Quaternion());
-      const authored = transformForRecord(record);
-      const handOffset = new Vector3(authored.position.x, authored.position.y, authored.position.z).applyQuaternion(toolWorldQuaternion);
-      const desiredHandWorld = toolWorldPosition.clone().add(handOffset);
-      const offsetQuaternion = new Quaternion().setFromEuler(new record.THREE.Euler(
-        record.THREE.MathUtils.degToRad(authored.rotationDeg.pitch),
-        record.THREE.MathUtils.degToRad(authored.rotationDeg.yaw),
-        record.THREE.MathUtils.degToRad(authored.rotationDeg.roll),
-        'YXZ',
-      ));
-      const desiredHandQuaternion = toolWorldQuaternion.clone().multiply(offsetQuaternion);
-      const result = rig.followWorldTarget?.(desiredHandWorld, desiredHandQuaternion);
-
-      if (!result?.clamped) {
-        clearClampState(record);
-        return {
-          clamped: false,
-          desiredHandWorld,
-          toolWorldPosition,
-          gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
-        };
+      const secondaryGrip = toolGrips.secondaryGripForTool(toolKey);
+      if (secondaryGrip) {
+        const secondary = handWorldFromSocket(record, toolSocketWorld(record, toolHolder, secondaryGrip));
+        record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion);
+        record.secondaryActive = true;
+      } else {
+        record.rig.setSideIdle?.('left');
+        record.secondaryActive = false;
       }
-
-      // The clamp is a derived visual/runtime correction, never authored data.
-      // Store the untouched local pose so a later solve can return to it when arm
-      // length, species, grip mode or hand offset changes.
-      const clampDeltaWorld = result.target.clone().sub(desiredHandWorld);
-      const adjustedToolWorld = toolWorldPosition.clone().add(clampDeltaWorld);
-      const adjustedLocal = adjustedToolWorld.clone();
-      toolHolder.parent.worldToLocal(adjustedLocal);
-      toolHolder.position.copy(adjustedLocal);
-      toolHolder.updateMatrix?.();
-      toolHolder.updateMatrixWorld?.(true);
-      rig.group?.updateMatrixWorld?.(true);
-      record.clampState = {
-        parent: toolHolder.parent,
-        baseLocal,
-        adjustedLocal: adjustedLocal.clone(),
-        active: true,
-      };
+      record.lastToolKey = toolKey || null;
 
       return {
-        clamped: true,
-        desiredHandWorld,
-        constrainedHandWorld: result.target.clone(),
-        clampDeltaWorld,
-        adjustedToolLocal: adjustedLocal.clone(),
-        baseToolLocal: baseLocal.clone(),
-        constraint: result.constraint || 'reach-limit',
+        direct: true,
+        clamped: false,
+        noArmIK: true,
+        toolKey: toolKey || null,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
+        secondaryActive: record.secondaryActive,
+        secondaryGrip: secondaryGrip ? JSON.parse(JSON.stringify(secondaryGrip)) : null,
+        authoredHandTransform: primary.authored,
       };
     } finally {
       syncing = false;
@@ -264,17 +227,10 @@
 
   const originalInstallGameRuntime = hands.installGameRuntime?.bind(hands);
   if (originalInstallGameRuntime) {
-    hands.installGameRuntime = function frameDrivenGameRuntime(deps) {
+    hands.installGameRuntime = function directHandGameRuntime(deps) {
       gameDeps = deps || null;
       return originalInstallGameRuntime(deps);
     };
-  }
-
-  function currentToolHolder(record) {
-    const editor = /\/tools\/attack-animation-editor\//.test(location.pathname);
-    if (editor) return findEditorToolHolder(record);
-    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
-    return null;
   }
 
   function disposeSyncSentinel(record) {
@@ -298,12 +254,12 @@
     const material = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false });
     material.colorWrite = false;
     const sentinel = new THREE.Mesh(geometry, material);
-    sentinel.name = `${record.name || 'avatar'}_hand_sync_sentinel`;
+    sentinel.name = `${record.name || 'avatar'}_direct_hand_sync`;
     sentinel.frustumCulled = false;
     sentinel.renderOrder = -100000;
     sentinel.onBeforeRender = () => {
-      const toolHolder = currentToolHolder(record);
-      if (toolHolder) syncRigToTool(record, toolHolder);
+      const holder = currentToolHolder(record);
+      if (holder) syncRigToTool(record, holder);
       else record.rig?.useIdlePose?.();
     };
     record.rig.parent.add(sentinel);
@@ -312,14 +268,14 @@
 
   function updateManagedRigs() {
     for (const record of [...managed]) {
-      if (!record.avatarRoot?.userData || record.avatarRoot.userData.proceduralArmRig !== record.rig) {
+      if (!record.avatarRoot?.userData || record.avatarRoot.userData.proceduralHandRig !== record.rig) {
         disposeSyncSentinel(record);
         managed.delete(record);
         continue;
       }
       ensureSyncSentinel(record);
-      const toolHolder = currentToolHolder(record);
-      if (toolHolder) syncRigToTool(record, toolHolder);
+      const holder = currentToolHolder(record);
+      if (holder) syncRigToTool(record, holder);
       else record.rig?.useIdlePose?.();
     }
   }
@@ -330,7 +286,7 @@
         pending.delete(record);
         continue;
       }
-      if (record.avatarRoot.userData.proceduralArmRig || attachPending(record)) pending.delete(record);
+      if (record.avatarRoot.userData.proceduralHandRig || attachPending(record)) pending.delete(record);
     }
     updateManagedRigs();
     global.requestAnimationFrame(frame);
@@ -340,11 +296,11 @@
     syncNow() {
       const results = [];
       for (const record of managed) {
-        const toolHolder = currentToolHolder(record);
-        if (toolHolder) results.push(syncRigToTool(record, toolHolder));
+        const holder = currentToolHolder(record);
+        if (holder) results.push(syncRigToTool(record, holder));
         else {
           record.rig?.useIdlePose?.();
-          results.push(null);
+          results.push({ direct: true, toolVisible: false, secondaryActive: false });
         }
       }
       return results;
@@ -353,17 +309,18 @@
       return [...managed].map(record => ({
         speciesId: record.speciesId,
         gender: record.gender,
+        mode: 'direct-tool-attachments',
+        noArmIK: true,
+        toolKey: record.lastToolKey,
+        secondaryActive: record.secondaryActive,
         handFromTool: profiles.handTransformForSpecies?.(record.speciesId) || null,
-        gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
-        arm: record.rig?.getDebug?.() || null,
-        clamp: record.clampState?.active ? {
-          baseLocal: record.clampState.baseLocal?.toArray?.() || null,
-          adjustedLocal: record.clampState.adjustedLocal?.toArray?.() || null,
-        } : null,
+        secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey) || null,
+        hand: record.rig?.getDebug?.() || null,
         hasPreRenderSentinel: !!record.syncSentinel,
       }));
     },
   };
 
+  toolGrips.subscribe?.(() => global.ProceduralHandFrameDriver?.syncNow?.());
   global.requestAnimationFrame(frame);
 })(window);
