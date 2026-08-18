@@ -1,10 +1,12 @@
-// Quick-attack bonus-ready reticle — renders a popup-style tracking sprite
-// over the current auto-target's body whenever the equipped Quick Attack
-// would receive its conditional bonus.
+// Quick-attack bonus-ready cues — renders both a popup-style tracking
+// reticle over the current auto-target's body and a persistent vertical
+// Tankan "Hahai!" callout whenever the equipped Quick Attack would receive
+// its conditional bonus.
 //
-// The reticle deliberately uses WorldPopupText.avatarCentroidWorld() so it
-// shares the same live portrait/body anchor as combat popup text instead of
-// coupling the cue to the target's ground resource ring.
+// Both cues deliberately use WorldPopupText's live portrait/body anchoring,
+// and readiness comes from Combat.getQuickAttackConditions() — the exact
+// evaluator used by the attack itself — so presentation cannot drift from
+// gameplay condition logic.
 (() => {
   'use strict';
 
@@ -29,22 +31,9 @@
     return definition ? { attackId, definition } : null;
   }
 
-  // Mirrors combat-quickattacks.js:getConditions so the visual cue and the
-  // actual bonus branch agree on the same target-state thresholds.
   function getConditions(deps, target) {
-    if (!deps?.player || !target) return { enemyStriking: false, exhausted: false, behind: false, lowHealth: false };
-    const toPlayerX = deps.player.x - target.x;
-    const toPlayerY = deps.player.y - target.y;
-    const dist = Math.max(0.001, Math.hypot(toPlayerX, toPlayerY));
-    const forwardX = Math.cos(target.facing || 0);
-    const forwardY = Math.sin(target.facing || 0);
-    const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
-    return {
-      enemyStriking: target.telegraphState === 'strike',
-      exhausted: !!target.exhaustion?.active || target.stamina <= target.maxStamina * 0.20,
-      behind: behindDot < -0.35,
-      lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
-    };
+    const evaluator = window.Combat.getQuickAttackConditions || window.Combat.quickAttackData?.getConditions; // Shared source used by the attack itself.
+    return evaluator?.(deps, target) || { enemyStriking: false, exhausted: false, behind: false, lowHealth: false };
   }
 
   function targetRoot(target) {
@@ -62,12 +51,12 @@
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
     const target = deps?.findAutoTarget?.() || null; // Used to follow the same auto-target evaluated by the actual Quick Attack.
-    const root = targetRoot(target); // Used to anchor the popup sprite to the target's live avatar.
+    const root = targetRoot(target); // Used to anchor both readiness cues to the target's live avatar.
     if (!deps || !equipped || !target || target.health <= 0 || !root) {
       return { deps, target, root, equipped, ready: false, conditions: null };
     }
-    const conditions = getConditions(deps, target); // Used to test the equipped technique's configured condKey.
-    const ready = !!conditions[equipped.definition.condKey]; // Used to show the reticle only when the bonus branch would be selected.
+    const conditions = getConditions(deps, target); // Exact combat evaluator, including modular animal strike stages such as Pounce's leap.
+    const ready = !!conditions[equipped.definition.condKey]; // Used to keep both cues visible for the complete time this condition remains true.
     return { deps, target, root, equipped, ready, conditions };
   }
 
@@ -207,13 +196,22 @@
     reticle.sprite.parent?.remove?.(reticle.sprite);
   }
 
+  function syncConditionCallout(state) {
+    const scene = state.ready && state.root ? targetScene(state.target, state.root) : null; // Used to share the target's active scene with the popup system.
+    window.WorldPopupText.setConditionCallout?.(state.root, state.ready, {
+      text: 'Hahai!',
+      scene,
+    });
+  }
+
   function syncReadyTarget(nowMs = performance.now()) {
-    const state = getReadyState(); // Evaluated once per animation frame, matching the previous cue's performance guard.
+    const state = getReadyState(); // Evaluated once per animation frame and shared by both cues.
     if (lastTarget !== state.target && reticle) detachReticle();
     lastTarget = state.target;
 
     if (state.ready) attachReticle(state, nowMs);
     else detachReticle();
+    syncConditionCallout(state);
 
     updateDebugBadge(state);
     return state;
@@ -255,8 +253,10 @@
       `Target: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
       `Bonus ready: ${state.ready ? 'YES' : 'no'}`,
       `Condition: ${state.equipped?.definition?.condKey || '-'}`,
+      `Generic telegraph: ${state.target?.telegraphState || '-'}`,
+      `Animal attack: ${state.target?._animalAttack?.id || '-'} / ${state.target?._animalAttack?.state?.stage || '-'}`,
       `Popup root: ${state.root ? 'yes' : 'no'}`,
-      'Cue: wobbling four-corner reticle',
+      'Cues: wobbling reticle + persistent vertical Tankan Hahai!',
     ].join('\n');
   }
 
