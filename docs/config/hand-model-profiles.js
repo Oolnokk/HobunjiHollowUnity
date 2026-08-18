@@ -5,6 +5,8 @@
 // Per-model mirrorX remains configurable so an asset authored in the opposite basis
 // can opt out without changing every other hand model. Tool grip origin is 0,0,0.
 // handFromTool is the model-specific fine alignment relative to the selected grip mode.
+// Shoulder-compass axes are intentionally NOT stored here: they belong to animation
+// poses and are authored/exported by the Attack Animation Editor.
 (function (global) {
   'use strict';
 
@@ -14,7 +16,6 @@
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
   });
-  const DEFAULT_SHOULDER_AIM = Object.freeze({ pitch: false, yaw: false, roll: true });
   // Canonical alignment authored on Mao'ao and intentionally reused for every
   // species/model. Species still choose their own GLB and anatomy scale; only the
   // tool-relative hand setup is shared. Kenkari/Rakako'an use the opposite source-X
@@ -38,19 +39,6 @@
     };
   }
 
-  function shoulderAimDefaults() {
-    return { ...DEFAULT_SHOULDER_AIM };
-  }
-
-  function normalizeShoulderAim(raw) {
-    return {
-      pitch: raw?.pitch === true,
-      yaw: raw?.yaw === true,
-      // Missing legacy values inherit the requested roll-to-shoulder behavior.
-      roll: raw?.roll !== false,
-    };
-  }
-
   const DEFAULT_DATA = {
     schema: 'hobunji_hand_model_profiles.v1',
     alignmentPreset: SHARED_ALIGNMENT_PRESET,
@@ -71,7 +59,6 @@
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
         handFromTool: maoAoHandTransform(),
-        shoulderAim: shoulderAimDefaults(),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
@@ -81,7 +68,6 @@
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
         handFromTool: maoAoHandTransform(),
-        shoulderAim: shoulderAimDefaults(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
@@ -90,7 +76,6 @@
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
         handFromTool: maoAoHandTransform(),
-        shoulderAim: shoulderAimDefaults(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
       },
@@ -100,7 +85,6 @@
         // Kenkari/Rakako'an use the Mao'ao setup with the source handedness flipped.
         mirrorX: false,
         handFromTool: maoAoHandTransform(),
-        shoulderAim: shoulderAimDefaults(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
       },
@@ -170,7 +154,9 @@
         // false remains a valid per-model override for a GLB authored as a right hand.
         model.mirrorX = model.mirrorX !== false;
       }
-      model.shoulderAim = normalizeShoulderAim(model.shoulderAim);
+      // Older hand-profile drafts may still contain model.shoulderAim. It is now
+      // deliberately discarded because shoulder-axis choices belong to poses.
+      delete model.shoulderAim;
       // Older drafts authored a tool socket on the hand. Migrate that into the
       // direct hand-from-tool convention only when no explicit direct transform exists.
       if (!model.handFromTool) {
@@ -223,9 +209,6 @@
   }
   function handTransformForSpecies(speciesId) {
     return normalizeTransform(modelForSpecies(speciesId)?.handFromTool);
-  }
-  function shoulderAimForSpecies(speciesId) {
-    return normalizeShoulderAim(modelForSpecies(speciesId)?.shoulderAim);
   }
   function footScaleFor(speciesId, gender) {
     const table = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale || {};
@@ -300,7 +283,6 @@
     modelKeyForSpecies,
     modelForSpecies,
     handTransformForSpecies,
-    shoulderAimForSpecies,
     speciesScaleFor,
     footScaleFor,
     modelScaleFor,
