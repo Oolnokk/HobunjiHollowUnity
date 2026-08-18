@@ -98,6 +98,7 @@
     ]);
     if (!maskImage || armImages.every(image => !image)) return null;
 
+    // Build the exact arm-only coverage first. Torso/overwear never enter this canvas.
     const intersection = document.createElement('canvas');
     intersection.width = sourceCanvas.width;
     intersection.height = sourceCanvas.height;
@@ -107,6 +108,7 @@
       if (image) drawLogicalImage(ictx, image, xformFor(armLayers[index]), intersection);
     }
 
+    // Keep only the pixels where that arm coverage intersects the higher cloud.
     const maskXform = xformFor(maskLayer);
     const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
     maskXform.ax += Number.isFinite(configuredOffset) ? configuredOffset : DEFAULT_AX_OFFSET;
@@ -115,6 +117,9 @@
     drawLogicalImage(ictx, maskImage, maskXform, intersection);
     ictx.restore();
 
+    // Three.js alphaMap samples the texture's green channel. White preserves the
+    // finished portrait; transparent/black pixels from destination-out remove only
+    // the higher-cloud/arm intersection.
     const alphaCanvas = document.createElement('canvas');
     alphaCanvas.width = sourceCanvas.width;
     alphaCanvas.height = sourceCanvas.height;
@@ -130,15 +135,13 @@
   const originalRenderToCanvas = previewApi.renderProfileToCanvas.bind(previewApi);
   const wrappedRenderToCanvas = async function armCloudAlphaRenderToCanvas(canvas, profile, renderOptions = {}) {
     const rendered = await originalRenderToCanvas(canvas, profile, renderOptions);
+    // Head-only and behind-view canvases are auxiliary inputs to the shared neck/
+    // back-face rig. Only the canonical front portrait owns this alphaMap.
     if (rendered && renderOptions?.onlyHeadSprite !== true && renderOptions?.portraitView !== 'behind' && renderOptions?.view !== 'behind') {
       try {
-        // portrait-arm-compass.js already punches the higher cloud directly out of
-        // each separated arm canvas. Do NOT also apply the old whole-portrait alpha
-        // map or it would cut holes in the torso now visible beneath those arms.
-        canvas.hobunjiArmCloudAlphaMap = canvas.hobunjiArmCompass
-          ? null
-          : await buildArmCloudAlphaMap(canvas, profile);
+        canvas.hobunjiArmCloudAlphaMap = await buildArmCloudAlphaMap(canvas, profile);
       } catch (error) {
+        // A decorative cloud mask must never be capable of rejecting avatar construction.
         canvas.hobunjiArmCloudAlphaMap = null;
         console.warn('[arm-cloud-mask] alpha-map build skipped:', error);
       }
