@@ -1,42 +1,17 @@
-// Gives procedural hands a medial neutral wrist basis.
+// Gives non-tool/idle procedural hands a medial neutral wrist basis.
 //
-// The authored source GLBs are front/back-facing hands. Mirroring creates the
-// left/right pair, but handedness alone does not rotate either palm toward the
-// character centerline. Add a shared +90deg body-local yaw to tool-following
-// hand transforms, and keep the non-tool/idle hand on that same medial basis.
+// Handedness/mirroring creates a left/right pair, but does not by itself turn
+// idle palms toward the character centerline. Keep that anatomical default on
+// idle/non-tool hands only. Tool-following hands must remain entirely governed
+// by gripMode + the explicitly authored handFromTool transform, with no hidden
+// +90deg rotation underneath the editor sliders.
 (function (global) {
   'use strict';
 
-  const profiles = global.HobunjiHandModelProfiles;
   const hands = global.ProceduralArmAnimation;
-  if (!profiles || !hands?.attach) return;
-  if (hands.attach.__hobunjiMedialWristsWrapped) return;
+  if (!hands?.attach || hands.attach.__hobunjiMedialWristsWrapped) return;
 
   const MEDIAL_YAW_DEG = 90;
-
-  // Grip modes already wrap handTransformForSpecies. Layer the wrist basis on
-  // top so model fine-alignment and palm-parallel/perpendicular remain additive.
-  const originalHandTransformForSpecies = profiles.handTransformForSpecies?.bind(profiles);
-  if (originalHandTransformForSpecies && !profiles.__hobunjiMedialWristTransformWrapped) {
-    profiles.handTransformForSpecies = function medialHandTransformForSpecies(speciesId) {
-      const transform = originalHandTransformForSpecies(speciesId) || {};
-      const position = transform.position || {};
-      const rotation = transform.rotationDeg || {};
-      return {
-        position: {
-          x: Number(position.x) || 0,
-          y: Number(position.y) || 0,
-          z: Number(position.z) || 0,
-        },
-        rotationDeg: {
-          pitch: Number(rotation.pitch) || 0,
-          yaw: (Number(rotation.yaw) || 0) + MEDIAL_YAW_DEG,
-          roll: Number(rotation.roll) || 0,
-        },
-      };
-    };
-    Object.defineProperty(profiles, '__hobunjiMedialWristTransformWrapped', { value: true, configurable: true });
-  }
 
   function applyMedialWorldBasis(THREE, rig, sides) {
     if (!THREE || !rig?.group?.getObjectByName) return;
@@ -72,8 +47,8 @@
     const applyLeft = () => applyMedialWorldBasis(THREE, rig, ['left']);
     const applyBoth = () => applyMedialWorldBasis(THREE, rig, ['left', 'right']);
 
-    // Left is normally not driven by the held tool, so keep it medial while the
-    // right hand follows grip modes through the frame driver.
+    // During tool use, right-hand orientation is authored explicitly. Left is
+    // still an idle/free hand, so keep only that side medial.
     const originalFollowWorldTarget = rig.followWorldTarget?.bind(rig);
     if (originalFollowWorldTarget) {
       rig.followWorldTarget = function medialWristWorldTarget(...args) {
@@ -110,8 +85,6 @@
       };
     }
 
-    // The first GLB refresh starts during attach(), before wrappers above exist.
-    // Reapply on the next frame so the initial non-tool hand also starts medial.
     global.requestAnimationFrame?.(applyLeft);
     return rig;
   };
@@ -119,5 +92,8 @@
   wrappedAttach.__hobunjiMedialWristsWrapped = true;
   hands.attach = wrappedAttach;
 
-  global.HobunjiHandMedialWristBasis = Object.freeze({ yawDeg: MEDIAL_YAW_DEG });
+  global.HobunjiHandMedialWristBasis = Object.freeze({
+    yawDeg: MEDIAL_YAW_DEG,
+    appliesToToolDrivenRightHand: false,
+  });
 })(window);
