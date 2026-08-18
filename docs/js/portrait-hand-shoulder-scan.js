@@ -1,11 +1,9 @@
-// Calculates shoulder targets from the raw portrait arm sprites without changing
-// or animating those sprites. The first opaque arm row is found, then the shoulder
-// row is 10% of the full portrait height farther down. The alpha centroid on that
-// row is stored on the rendered canvas for the direct 3D hand compass system.
+// Calculates shoulder targets from the raw portrait arm sprites without wrapping or
+// changing the portrait renderer. Consumers ask for a scan after the avatar profile
+// already exists. The first opaque arm row is found, then the shoulder row is 10%
+// of the full portrait height farther down; the alpha centroid on that row is used.
 (function (global) {
   'use strict';
-
-  if (typeof global.renderPortraitProfile !== 'function' || global.renderPortraitProfile.__hobunjiHandShoulderScanWrapped) return;
 
   const SHOULDER_DROP_FRAC = 0.10;
   const ARM_RE = /arm[lr]/i;
@@ -13,13 +11,14 @@
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
   const imageCache = new Map();
+  const scanCache = new Map();
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
 
   function resolvedFighterFor(profile) {
-    // Attack Editor may intentionally render a no-arm fighter clone while retaining
-    // the real source fighter here so shoulder compass targets remain available.
-    const fighter = profile?.__hobunjiShoulderSourceFighter || profile?.fighter || null;
+    const explicitlyPreserved = profile?.__hobunjiShoulderSourceFighter;
+    if (explicitlyPreserved) return explicitlyPreserved;
+    const fighter = profile?.fighter || null;
     if (!fighter) return null;
     const fighters = global.getPortraitFighters?.() || [];
     return fighters.find(candidate => candidate?.id === fighter.id)
@@ -131,55 +130,55 @@
     return shoulder ? { ...shoulder, firstOpaqueRow } : null;
   }
 
-  async function scanProfileShoulders(canvas, profile) {
+  function cacheKey(profile, width, height) {
     const fighter = resolvedFighterFor(profile);
-    const armLayers = (fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
-      .filter(layer => ARM_RE.test(String(layer?.id || '')) && layer?.url);
-    if (!canvas?.width || !canvas?.height || !armLayers.length) return null;
-    const sides = {};
-    for (const layer of armLayers) {
-      const lowerId = String(layer.id || '').toLowerCase();
-      const side = lowerId.includes('arml') ? 'left' : lowerId.includes('armr') ? 'right' : null;
-      if (!side) continue;
-      const image = await loadImage(layer.url);
-      if (!image) continue;
-      const scratch = document.createElement('canvas');
-      scratch.width = canvas.width;
-      scratch.height = canvas.height;
-      drawArmCoverage(scratch, image, layer);
-      const shoulder = scanShoulder(scratch);
-      if (shoulder) sides[side] = { ...shoulder, layerId: layer.id, layerUrl: layer.url };
-    }
-    return Object.keys(sides).length ? {
-      mode: 'raw-arm-shoulder-scan',
-      shoulderDropFraction: SHOULDER_DROP_FRAC,
-      width: canvas.width,
-      height: canvas.height,
-      sides,
-    } : null;
+    const layers = (fighter?.bodyLayers || [])
+      .filter(layer => ARM_RE.test(String(layer?.id || '')) && layer?.url)
+      .map(layer => `${layer.id}:${layer.url}:${JSON.stringify(xformFor(layer))}`)
+      .join('|');
+    return `${width}x${height}|${layers}`;
   }
 
-  const originalRenderPortrait = global.renderPortraitProfile;
-  const wrappedRender = async function handShoulderScanRender(canvas, profile, renderOptions = {}) {
-    const result = await originalRenderPortrait.call(this, canvas, profile, renderOptions);
-    const auxiliary = renderOptions?.onlyHeadSprite === true
-      || renderOptions?.portraitView === 'behind'
-      || renderOptions?.view === 'behind';
-    if (!auxiliary && canvas?.width && canvas?.height) {
-      try { canvas.hobunjiHandShoulders = await scanProfileShoulders(canvas, profile); }
-      catch (error) {
-        canvas.hobunjiHandShoulders = null;
-        console.warn('[hand-shoulder-scan] scan skipped:', error);
+  async function scanProfile(profile, width = 256, height = 256) {
+    const fighter = resolvedFighterFor(profile);
+    const armLayers = (fighter?.bodyLayers || [])
+      .filter(layer => ARM_RE.test(String(layer?.id || '')) && layer?.url);
+    const w = Math.max(1, Math.round(Number(width) || 256));
+    const h = Math.max(1, Math.round(Number(height) || 256));
+    if (!fighter || !armLayers.length) return null;
+
+    const key = cacheKey(profile, w, h);
+    if (scanCache.has(key)) return scanCache.get(key);
+    const promise = (async () => {
+      const sides = {};
+      for (const layer of armLayers) {
+        const lowerId = String(layer.id || '').toLowerCase();
+        const side = lowerId.includes('arml') ? 'left' : lowerId.includes('armr') ? 'right' : null;
+        if (!side) continue;
+        const image = await loadImage(layer.url);
+        if (!image) continue;
+        const scratch = document.createElement('canvas');
+        scratch.width = w;
+        scratch.height = h;
+        drawArmCoverage(scratch, image, layer);
+        const shoulder = scanShoulder(scratch);
+        if (shoulder) sides[side] = { ...shoulder, layerId: layer.id, layerUrl: layer.url };
       }
-    }
-    return result;
-  };
-  wrappedRender.__hobunjiHandShoulderScanWrapped = true;
-  global.renderPortraitProfile = wrappedRender;
-  if (global.renderProfile === originalRenderPortrait) global.renderProfile = wrappedRender;
+      return Object.keys(sides).length ? {
+        mode: 'raw-arm-shoulder-scan',
+        shoulderDropFraction: SHOULDER_DROP_FRAC,
+        width: w,
+        height: h,
+        sides,
+      } : null;
+    })();
+    scanCache.set(key, promise);
+    return promise;
+  }
 
   global.PortraitHandShoulderScan = Object.freeze({
     mode: 'raw-arm-shoulder-scan',
     shoulderDropFraction: SHOULDER_DROP_FRAC,
+    scanProfile,
   });
 })(window);
