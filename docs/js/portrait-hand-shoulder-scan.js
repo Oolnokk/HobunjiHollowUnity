@@ -1,15 +1,19 @@
-// Calculates shoulder targets from the raw portrait arm sprites without wrapping or
-// changing the portrait renderer. Consumers ask for a scan after the avatar profile
-// already exists. The first opaque arm row is found, then the shoulder row is 10%
-// of the full portrait height farther down; the alpha centroid on that row is used.
+// Calculates fallback shoulder targets from raw portrait arm sprites without changing
+// the portrait renderer. Manual shoulder points are resolved separately by the hand
+// runtime; this module is only used when a side is authored as 0,0.
+//
+// Fallback algorithm:
+//  1. Find the largest connected mass of opaque pixels and crop to its bounds.
+//  2. Keep the top third of that main mass and recalculate opaque bounds there.
+//  3. Use the center of those recropped bounds as the shoulder target.
 (function (global) {
   'use strict';
 
-  const SHOULDER_DROP_FRAC = 0.10;
   const ARM_RE = /arm[lr]/i;
   const LOGICAL_W = 200;
   const LOGICAL_H = 200;
   const LAYER_SIZE = 80;
+  const ALPHA_THRESHOLD = 8;
   const imageCache = new Map();
   const scanCache = new Map();
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
@@ -80,30 +84,80 @@
     );
   }
 
-  function centroidOnRow(data, width, height, row, threshold) {
-    const y = Math.max(0, Math.min(height - 1, Math.round(row)));
-    let weightedX = 0;
-    let totalAlpha = 0;
-    for (let x = 0; x < width; x++) {
-      const alpha = data[(y * width + x) * 4 + 3];
-      if (alpha <= threshold) continue;
-      weightedX += x * alpha;
-      totalAlpha += alpha;
-    }
-    return totalAlpha > 0 ? { x: weightedX / totalAlpha, y } : null;
+  function alphaAt(data, width, x, y) {
+    return data[(y * width + x) * 4 + 3];
   }
 
-  function nearestOpaqueCentroid(data, width, height, row, threshold) {
-    const start = Math.max(0, Math.min(height - 1, Math.round(row)));
-    for (let radius = 0; radius < height; radius++) {
-      const candidates = radius ? [start - radius, start + radius] : [start];
-      for (const candidate of candidates) {
-        if (candidate < 0 || candidate >= height) continue;
-        const hit = centroidOnRow(data, width, height, candidate, threshold);
-        if (hit) return hit;
+  // Eight-neighbour connected components make isolated accessory flecks or tiny
+  // anti-aliased islands unable to pull the detected shoulder away from the arm.
+  function largestOpaqueComponent(data, width, height, threshold = ALPHA_THRESHOLD) {
+    const visited = new Uint8Array(width * height);
+    let best = null;
+    const neighbors = [
+      [-1,-1], [0,-1], [1,-1],
+      [-1, 0],          [1, 0],
+      [-1, 1], [0, 1], [1, 1],
+    ];
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const start = y * width + x;
+        if (visited[start] || alphaAt(data, width, x, y) <= threshold) continue;
+        visited[start] = 1;
+        const queueX = [x];
+        const queueY = [y];
+        let head = 0;
+        let count = 0;
+        let alphaSum = 0;
+        let minX = x, maxX = x, minY = y, maxY = y;
+        const pixels = [];
+
+        while (head < queueX.length) {
+          const px = queueX[head];
+          const py = queueY[head++];
+          const alpha = alphaAt(data, width, px, py);
+          count++;
+          alphaSum += alpha;
+          pixels.push(py * width + px);
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
+
+          for (const [dx, dy] of neighbors) {
+            const nx = px + dx, ny = py + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const index = ny * width + nx;
+            if (visited[index] || alphaAt(data, width, nx, ny) <= threshold) continue;
+            visited[index] = 1;
+            queueX.push(nx);
+            queueY.push(ny);
+          }
+        }
+
+        const score = count * 256 + alphaSum / 255;
+        if (!best || score > best.score) best = { score, count, alphaSum, minX, maxX, minY, maxY, pixels };
       }
     }
-    return null;
+    return best;
+  }
+
+  function recropTopThird(component, width) {
+    if (!component?.pixels?.length) return null;
+    const massHeight = component.maxY - component.minY + 1;
+    const topThirdBottom = component.minY + Math.max(1, Math.ceil(massHeight / 3)) - 1;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, count = 0;
+    for (const index of component.pixels) {
+      const y = Math.floor(index / width);
+      if (y < component.minY || y > topThirdBottom) continue;
+      const x = index - y * width;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      count++;
+    }
+    return count ? { minX, maxX, minY, maxY, count, topThirdBottom } : null;
   }
 
   function scanShoulder(canvas) {
@@ -113,21 +167,20 @@
     let data;
     try { data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data; }
     catch (_) { return null; }
-    const threshold = 8;
-    let firstOpaqueRow = -1;
-    for (let y = 0; y < height && firstOpaqueRow < 0; y++) {
-      for (let x = 0; x < width; x++) {
-        if (data[(y * width + x) * 4 + 3] > threshold) {
-          firstOpaqueRow = y;
-          break;
-        }
-      }
-    }
-    if (firstOpaqueRow < 0) return null;
-    const desiredRow = firstOpaqueRow + height * SHOULDER_DROP_FRAC;
-    const shoulder = nearestOpaqueCentroid(data, width, height, desiredRow, threshold)
-      || nearestOpaqueCentroid(data, width, height, firstOpaqueRow, threshold);
-    return shoulder ? { ...shoulder, firstOpaqueRow } : null;
+
+    const mainMass = largestOpaqueComponent(data, width, height);
+    if (!mainMass) return null;
+    const topThird = recropTopThird(mainMass, width);
+    const bounds = topThird || mainMass;
+    return {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+      detection: 'main-mass-top-third-center',
+      mainMassBounds: { minX: mainMass.minX, maxX: mainMass.maxX, minY: mainMass.minY, maxY: mainMass.maxY },
+      topThirdBounds: topThird ? { minX: topThird.minX, maxX: topThird.maxX, minY: topThird.minY, maxY: topThird.maxY } : null,
+      mainMassPixels: mainMass.count,
+      topThirdPixels: topThird?.count || 0,
+    };
   }
 
   function cacheKey(profile, width, height) {
@@ -165,8 +218,7 @@
         if (shoulder) sides[side] = { ...shoulder, layerId: layer.id, layerUrl: layer.url };
       }
       return Object.keys(sides).length ? {
-        mode: 'raw-arm-shoulder-scan',
-        shoulderDropFraction: SHOULDER_DROP_FRAC,
+        mode: 'raw-arm-main-mass-top-third',
         width: w,
         height: h,
         sides,
@@ -177,8 +229,8 @@
   }
 
   global.PortraitHandShoulderScan = Object.freeze({
-    mode: 'raw-arm-shoulder-scan',
-    shoulderDropFraction: SHOULDER_DROP_FRAC,
+    mode: 'raw-arm-main-mass-top-third',
     scanProfile,
+    scanShoulderCanvas: scanShoulder,
   });
 })(window);
