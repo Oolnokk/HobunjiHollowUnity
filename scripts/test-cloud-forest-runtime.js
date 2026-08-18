@@ -17,13 +17,16 @@ function makeWorkspace() {
   for (let r = 10; r < 16; r++) for (let c = 8; c <= 10; c++) tiles[`${c},${r}`].type = 'path';
 
   // One north boundary plateau group that should lose cliff semantics but keep
-  // its own footprint identity. Inland group is tier 2.
+  // its own footprint identity. The two rows immediately inside it model the
+  // generated distant-boundary apron; the first real inland group is tier 2.
   for (let c = 0; c < cols; c++) {
     tiles[`${c},0`].plateau = 'north_wall';
     tiles[`${c},0`].borderEscarpment = true;
     tiles[`${c},0`].generatedBorderEscarpment = true;
     tiles[`${c},0`].borderEscarpmentSide = 'north';
     if (tiles[`${c},0`].type !== 'path') tiles[`${c},0`].type = 'rock';
+    tiles[`${c},1`].distantBoundaryLandscape = true;
+    tiles[`${c},2`].distantBoundaryLandscape = true;
     tiles[`${c},3`].plateau = 'inland_high';
   }
 
@@ -73,7 +76,7 @@ assert.equal(workspace.maps[1].elevation, 2, 'matching boundary submap should no
 const layoutA = V2.buildForestLayout(40, 18, 20, 3, () => 5);
 const layoutB = V2.buildForestLayout(40, 18, 20, 3, () => 5);
 assert.deepStrictEqual(layoutA, layoutB, 'background forest scatter should be deterministic');
-assert(layoutA.length > 20 && layoutA.length < 90, `expected generated-forest-like density, got ${layoutA.length}`);
+assert(layoutA.length > 40 && layoutA.length < 125, `expected generated-forest-like density, got ${layoutA.length}`);
 assert(layoutA.every(e => e.scale >= 0.92 && e.scale <= 1.08), 'all scenery trees should remain normal full-height variants');
 assert(layoutA.every(e => Math.abs(e.x - 20) >= 3 - 0.2), 'tree jitter must not materially invade the road clearance');
 assert(layoutA.every(e => Math.abs(e.y - 5.02) < 1e-6), 'tree bases should follow the supplied hillside height');
