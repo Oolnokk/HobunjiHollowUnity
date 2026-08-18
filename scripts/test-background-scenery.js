@@ -60,6 +60,14 @@ attachments = Core.collectBoundaryAttachments(town);
 assert.equal(attachments.find(a => a.id === 'river:stream:start').edge, 'west', 'corner edge override must win');
 delete town.backgroundScenery;
 
+assert.equal(Core.WILDERNESS_PROFILES.map_southern_cloud_forest.side, 'north');
+const cloudGrid = Array.from({ length: 8 }, () => Array.from({ length: 20 }, () => ({ type: 'grass', elevTier: 1 })));
+for (let c = 3; c <= 4; c++) cloudGrid[0][c].type = 'path';
+for (let c = 11; c <= 15; c++) cloudGrid[0][c].type = 'path';
+const cloudEntrance = Core.findEdgePathRun(cloudGrid, 20, 8, 'north');
+assert.equal(cloudEntrance.widthCells, 5, 'wilderness scenery should select the widest generated north-edge path run');
+assert.equal(cloudEntrance.center, 13.5, 'wilderness scenery should center itself on the generated entrance, not a hardcoded column');
+
 const scene = { items: [], add(obj) { this.items.push(obj); }, remove() {} };
 window.BorderTerrain.init({
   getTownScene: () => scene,
@@ -78,4 +86,4 @@ window.BorderTerrain.init({
 });
 window.BorderTerrain.buildTownBorderTerrain();
 assert(scene.items.length >= 8, `expected terrain, cliff, route and water meshes; got ${scene.items.length}`);
-console.log(`PASS background scenery: ${attachments.length} attachments; ${scene.items.length} generated scene meshes.`);
+console.log(`PASS background scenery: ${attachments.length} attachments; ${scene.items.length} generated scene meshes; cloud entrance ${cloudEntrance.widthCells} tiles at ${cloudEntrance.center}.`);
