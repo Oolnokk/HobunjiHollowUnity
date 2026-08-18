@@ -1,8 +1,7 @@
 // Direct inverse-hand authoring overlay for the Attack Animation Editor.
 // The existing hand configurator still owns GLB selection, scale, imports and
 // species overrides. This adapter replaces the old "tool socket on hand" UI with
-// a direct hand-root transform relative to the tool attach frame, matching live
-// runtime behavior and the arm-length pose clamp.
+// a direct hand-root transform relative to the tool attach frame.
 (function (global) {
   'use strict';
 
@@ -23,10 +22,10 @@
 
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
-    topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. The right hand is inverse-animated from the tool: author the hand root directly relative to the tool attach frame below.';
+    topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. Grip mode + the values below are the complete tool-relative transform; idle medial wrist facing is not hidden underneath these sliders.';
   }
   const tag = card.querySelector('.sectionTag');
-  if (tag) tag.textContent = 'hand ← tool + species scale';
+  if (tag) tag.textContent = 'hand ← tool + grip mode';
 
   const guideCheckbox = $('handShowGripGuide');
   const guideField = guideCheckbox?.closest('.field');
@@ -40,17 +39,17 @@
   wrapper.innerHTML = `
     <div class="poseGroup" id="handFromToolPositionGroup">
       <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Hand position relative to tool attach</div>
-      <div class="help" style="margin-bottom:6px">Direct inverse-animation offset. Values are normalized hand-height units and scale with the final model/species hand size.</div>
+      <div class="help" style="margin-bottom:6px">Direct inverse-animation offset in tool-local axes. Values are normalized hand-height units and scale with the final model/species hand size.</div>
       <div id="handFromToolPositionFields"></div>
     </div>
     <div class="poseGroup" id="handFromToolRotationGroup">
       <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand direction relative to tool attach</div>
-      <div class="help" style="margin-bottom:6px">Pitch / yaw / roll rotate the hand from the tool attach orientation. The tool itself is not rotated to satisfy these values.</div>
+      <div class="help" style="margin-bottom:6px">Pitch / yaw / roll rotate the hand from the selected grip mode. The forearm follows the resulting hand orientation.</div>
       <div id="handFromToolRotationFields"></div>
     </div>
     <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Live inverse-hand preview ready.</div>
     <div class="help" id="handInverseReachHelp" style="padding:7px;border:1px solid rgba(52,211,153,.22);border-radius:8px;margin-bottom:8px">
-      Tool pose is authoritative while reachable. If this hand target exceeds the current species' arm length, the tool's X/Y/Z are pulled inward only as far as needed. Paused Neutral/Windup/Strike keyframes are rewritten to the corrected coordinates, and the same clamp runs live in-game.
+      Tool pose is authoritative while reachable. Reach starts at 120% of the scanned arm and grows further if the painted arm would extend below the elbow. Overreach correction is transient: it never rewrites Neutral/Windup/Strike XYZ, so changing the hand offset, species, grip mode or arm length restores the original authored tool pose.
     </div>
   `;
   while (wrapper.firstChild) card.insertBefore(wrapper.firstChild, guideField || $('handEffectiveStatus'));
@@ -102,14 +101,27 @@
     }
   }
 
+  function shortTransform(transform) {
+    const p = transform?.position || {};
+    const r = transform?.rotationDeg || {};
+    return `P ${['x','y','z'].map(k => (Number(p[k]) || 0).toFixed(2)).join('/')} · R ${['pitch','yaw','roll'].map(k => Math.round(Number(r[k]) || 0)).join('/')}`;
+  }
+
   function syncPreview() {
     const results = global.ProceduralHandFrameDriver?.syncNow?.() || [];
     const live = results.find(Boolean) || null;
+    const debug = global.ProceduralHandFrameDriver?.getDebug?.() || [];
+    const d = debug[0] || null;
     const status = $('handInverseLiveStatus');
     if (status) {
-      status.textContent = live?.clamped
-        ? `Live preview: arm reach clamp active · tool translated ${live.clampDeltaWorld?.length?.().toFixed?.(3) ?? ''}`
-        : 'Live preview: hand transform applied directly from the tool attach point.';
+      const authored = currentModel()?.handFromTool || null;
+      const gripMode = global.HobunjiHandGripModes?.currentModeKey?.() || '-';
+      const reach = d?.arm?.expandedArmReach?.right?.final;
+      const baseReach = d?.arm?.expandedArmReach?.right?.base;
+      const weighted = d?.arm?.portraitBicepSkinning?.weightedVertices;
+      const clamp = live?.clamped ? `CLAMP ${live.clampDeltaWorld?.length?.().toFixed?.(3) ?? '?'}` : 'reachable';
+      status.textContent = `mode=${gripMode} · authored ${shortTransform(authored)} · effective ${shortTransform(d?.handFromTool)} · ${clamp} · reach ${Number(baseReach || 0).toFixed(3)}→${Number(reach || 0).toFixed(3)} · bicep verts ${weighted ?? 0} · forearm=${d?.arm?.forearmOrientationOwner || '-'}`;
+      status.style.color = live?.clamped ? '#fbbf24' : '';
     }
     return results;
   }
@@ -125,9 +137,6 @@
     mutator(model.handFromTool);
     global.HOBUNJI_HAND_MODEL_PROFILES = profiles.data;
     syncPreview();
-    // The editor's animation loop reapplies the authored tool pose each frame;
-    // run once more after that frame boundary so the hand visibly follows the
-    // newest slider value even while playback is running.
     requestAnimationFrame(syncPreview);
   }
 
@@ -156,17 +165,13 @@
   profileSelect.addEventListener('change', () => { syncFields(); syncPreview(); });
   profiles.subscribe?.(() => syncFields());
 
-  // When a pose slider is edited, ask the shared driver to resolve the current
-  // hand target after the editor applies that pose on the next animation frame.
-  // Any overreach is then written back through the editor's own X/Y/Z inputs.
   for (const phase of ['neutral', 'windup', 'strike']) {
     for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) {
-      $(`${phase}_${key}`)?.addEventListener('input', () => {
-        requestAnimationFrame(syncPreview);
-      });
+      $(`${phase}_${key}`)?.addEventListener('input', () => requestAnimationFrame(syncPreview));
     }
   }
 
+  setInterval(syncPreview, 500);
   syncFields();
   syncPreview();
 })(window);
