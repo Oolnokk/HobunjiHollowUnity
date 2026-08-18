@@ -14,9 +14,10 @@
   if (typeof originalRender !== 'function' || typeof originalDraw !== 'function' || typeof originalDrawWarped !== 'function') return;
   if (originalRender.__hobunjiArmCloudMaskWrapped) return;
 
-  const contextConfig = new WeakMap(); // Per-render context avoids cross-talk when multiple NPC portraits render concurrently.
-  const scratchByContext = new WeakMap(); // Reuses one full-size temporary arm canvas per destination portrait canvas.
-  const maskImageCache = new Map(); // Species currently share the same cloud asset, but keep the adapter generic.
+  const contextConfig = new WeakMap();
+  const scratchByContext = new WeakMap();
+  const maskImageCache = new Map();
+  const warnedWarpFallbacks = new Set();
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
 
@@ -54,22 +55,31 @@
     };
   }
 
-  function renderConfig(profile) {
+  function resolvedFighterFor(profile) {
     const fighter = profile?.fighter || null;
-    const maskLayer = fighter?.opacityMaskLayer || null;
+    if (!fighter) return null;
+    const fighters = global.getPortraitFighters?.() || [];
+    return fighters.find(candidate => candidate?.id === fighter.id)
+      || (fighter.headUrl ? fighters.find(candidate => candidate?.headUrl === fighter.headUrl) : null)
+      || fighter;
+  }
+
+  function renderConfig(profile) {
+    const fighter = resolvedFighterFor(profile);
+    const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
     if (!maskLayer?.url) return null;
-    const armUrls = new Set((fighter?.bodyLayers || [])
+    const armUrls = new Set((fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
       .filter(layer => /arm[lr]/i.test(String(layer?.id || '')))
       .map(layer => String(layer?.url || ''))
       .filter(Boolean));
     if (!armUrls.size) return null;
     const base = normalizedXform(maskLayer);
     const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
-    const axOffset = Number.isFinite(configuredOffset) ? configuredOffset : 0.12; // ~9.6 logical pixels / 4.8% portrait height with the standard 80/200 canvas scale.
+    const axOffset = Number.isFinite(configuredOffset) ? configuredOffset : 0.12;
     return {
       armUrls,
       maskPath: maskLayer.url,
-      maskXform: { ...base, ax: base.ax + axOffset }, // Positive ax moves the cloud upward in portrait-utils' coordinate convention.
+      maskXform: { ...base, ax: base.ax + axOffset },
     };
   }
 
@@ -88,11 +98,6 @@
   }
 
   function applyMask(ctx, image, xform) {
-    if (typeof global.applyPortraitOpacityMask === 'function') {
-      global.applyPortraitOpacityMask(ctx, image, xform);
-      return;
-    }
-    // Fallback mirrors portrait-utils' standard 200x200 / 80-unit portrait math.
     const logicalW = 200, logicalH = 200, layerSize = 80;
     const h = layerSize * xform.sy;
     const w = (image.naturalWidth / Math.max(1, image.naturalHeight)) * layerSize * xform.sx;
@@ -106,11 +111,12 @@
 
   function shouldMaskArm(ctx, sourceKey) {
     const cfg = contextConfig.get(ctx);
-    return cfg && cfg.armUrls.has(String(sourceKey || '')) && cfg.maskImage;
+    return !!(cfg && cfg.armUrls.has(String(sourceKey || '')) && cfg.maskImage);
   }
 
   function drawArmIsolated(ctx, drawFn) {
     const cfg = contextConfig.get(ctx);
+    if (!cfg) return drawFn(ctx);
     const scratch = scratchFor(ctx);
     const sctx = scratch.ctx;
     sctx.save();
@@ -128,7 +134,7 @@
     applyMask(sctx, cfg.maskImage, cfg.maskXform);
 
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Temporary canvas is already rasterized at destination resolution; avoid scaling it a second time.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.filter = 'none';
@@ -145,14 +151,27 @@
     if (!shouldMaskArm(ctx, sourceKey)) {
       return originalDrawWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey);
     }
-    return drawArmIsolated(ctx, offCtx => originalDrawWarped(
-      offCtx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey,
-    ));
+    try {
+      return drawArmIsolated(ctx, offCtx => originalDrawWarped(
+        offCtx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey,
+      ));
+    } catch (error) {
+      // Portrait animation data can briefly expose an incomplete deformation grid
+      // while a profile/animation is being rebuilt. The ordinary renderer used to
+      // survive because the next frame replaced it; the isolated arm pass must not
+      // turn that transient state into a rejected avatar build. Draw the exact same
+      // tinted arm without warp for this one frame and still apply the arm-only mask.
+      const warningKey = `${speciesId || 'unknown'}:${gender || 'unknown'}:${sourceKey || 'arm'}`;
+      if (!warnedWarpFallbacks.has(warningKey)) {
+        warnedWarpFallbacks.add(warningKey);
+        console.warn('[arm-cloud-mask] incomplete portrait deformation grid; using unwarped arm fallback', {
+          speciesId, gender, sourceKey, message: error?.message || String(error),
+        });
+      }
+      return drawArmIsolated(ctx, offCtx => originalDraw(offCtx, img, xform, tint, sourceKey));
+    }
   };
 
-  // Classic-script function declarations are global object bindings. Replacing
-  // these properties therefore changes the helpers renderProfile resolves too,
-  // while keeping the original helpers available for the isolated offscreen draw.
   global.drawPortraitLayer = wrappedDraw;
   global.drawPortraitLayerWarped = wrappedDrawWarped;
 
