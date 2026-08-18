@@ -70,8 +70,9 @@ for (const removed of [
   'procedural-hand-arm-length.js',
 ]) assert(!bootstrap.includes(removed), `${removed} must stay out of the direct-hand bootstrap`);
 
-assert(ranged.includes("strikeFrac: 0.08") && ranged.includes("fireAtFrac: 0.08"), 'crossbow fire event must coincide with strike stage');
-assert(ranged.includes("playRangedActionSfx(def, 'fire'"), 'ranged fire SFX must be emitted by the strike/fire event, not by hit resolution');
+assert(ranged.includes('fireAtFrac: 0.08'), 'crossbow strike/fire stage must remain at 8% of the attack');
+assert(ranged.includes("strikeFrac: kind === 'fire' ? def.fireAtFrac"), 'visual strike stage must use the exact fireAtFrac value');
+assert(ranged.includes("playRangedActionSfx(action.itemKey, 'fire')"), 'fire SFX must be emitted at the same fire/strike event, not hit resolution');
 assert(crossbowTrim.includes('TRIM_START_S = 0.10'), 'crossbow clip must skip its leading dead air');
 assert(crossbowTrim.includes('combatSfx?.rangedFire'), 'audio trim must read the real combat SFX config path');
 assert(crossbowTrim.includes("key !== 'rangedFire'"), 'audio trim must be scoped to ranged fire only');
