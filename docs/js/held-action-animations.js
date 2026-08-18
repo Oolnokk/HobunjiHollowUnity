@@ -22,8 +22,9 @@
 
   window.HeldActionAnimations = Object.freeze({ drink });
 
-  // Shared direct-hand bootstrap. Hands now attach to tool socket frames only;
-  // arm bones/IK/shoulder tracking/reach clamps are intentionally absent.
+  // Shared direct-hand bootstrap. There are still no arm bones/IK/reach clamps:
+  // portrait-arm-compass.js only separates each painted arm into a rigid 2D sprite
+  // which the hand runtime rotates about its scanned shoulder toward the 3D hand.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
@@ -33,7 +34,8 @@
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
+    new URL('js/portrait-arm-compass.js?v=20260818a', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20260818e', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260818d', docsBase).href,
   ];
   if (isAttackEditor) {
