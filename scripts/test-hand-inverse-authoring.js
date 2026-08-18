@@ -1,99 +1,78 @@
 'use strict';
 const fs = require('fs');
 
-function read(path) {
-  return fs.readFileSync(path, 'utf8');
-}
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
+function read(path) { return fs.readFileSync(path, 'utf8'); }
+function assert(condition, message) { if (!condition) throw new Error(message); }
 
 const config = read('docs/config/hand-model-profiles.js');
+const attachments = read('docs/js/procedural-hand-attachments.js');
 const driver = read('docs/js/procedural-hand-frame-driver.js');
+const toolGrips = read('docs/js/hand-tool-grips.js');
 const editor = read('docs/js/attack-editor-hand-inverse-configurator.js');
+const directEditor = read('docs/js/attack-editor-hand-direct-attachments.js');
 const gripModes = read('docs/js/hand-grip-modes.js');
-const gripEditor = read('docs/js/attack-editor-hand-grip-mode.js');
-const medialWrists = read('docs/js/procedural-hand-medial-wrists.js');
-const shoulders = read('docs/js/procedural-hand-portrait-shoulders.js');
-const biceps = read('docs/js/procedural-arm-portrait-biceps.js');
-const armLength = read('docs/js/procedural-hand-arm-length.js');
-const forearmFollow = read('docs/js/procedural-hand-forearm-follow.js');
 const materialRoles = read('docs/js/procedural-hand-foot-material-roles.js');
-const armMask = read('docs/js/portrait-arm-cloud-mask.js');
-const armBones = read('docs/js/arm-bones.js');
 const bootstrap = read('docs/js/held-action-animations.js');
+const crossbowTrim = read('docs/js/crossbow-strike-audio-trim.js');
+const ranged = read('docs/js/combat/ranged-weapons.js');
 
-assert(config.includes('handFromTool'), 'hand model config must author handFromTool');
-assert(config.includes("handedness: 'left'"), 'source basis must document left-hand authored GLBs');
-assert(config.includes('model.toolGrip = identityTransform()'), 'legacy toolGrip must be neutralized to avoid double transforms');
-assert(driver.includes('desiredHandWorld = toolWorldPosition.clone().add(handOffset)'), 'runtime must derive the hand target from the tool frame');
-assert(driver.includes('clampDeltaWorld = result.target.clone().sub(desiredHandWorld)'), 'runtime must clamp based on the requested hand target');
-assert(driver.includes('baseLocal = toolHolder.position.clone()'), 'reach clamp must preserve the unclamped tool pose');
-assert(driver.includes('restorePreviousClampIfStillApplied'), 'reach clamp must be reversible when conditions change');
-assert(!driver.includes('queueEditorPoseRewrite'), 'reach clamp must not rewrite authored editor keyframes');
-assert(driver.includes('renderOrder = -100000'), 'current-frame hand solve must run before opaque hand meshes render');
-assert(editor.includes('Hand position relative to tool attach'), 'editor must expose direct hand-from-tool position controls');
-assert(editor.includes('existing profile object in place'), 'inverse-hand sliders must not reload GLB profiles on every tick');
-assert(editor.includes('idle medial wrist facing is not hidden underneath these sliders'), 'editor must state that tool transforms contain no hidden medial yaw');
-assert(editor.includes('effective') && editor.includes('bicep verts'), 'editor must expose live transform/reach/bicep diagnostics');
+assert(config.includes('handFromTool'), 'hand model config must keep direct handFromTool authoring');
+assert(config.includes("handedness: 'left'"), 'source basis must keep the authored left-hand convention');
+assert(config.includes('model.toolGrip = identityTransform()'), 'legacy model toolGrip must stay neutral to avoid double transforms');
 
-assert(gripModes.includes("'palm-parallel'"), 'shared grip modes must include palm-parallel');
-assert(gripModes.includes("'palm-perpendicular'"), 'shared grip modes must include palm-perpendicular');
-assert(gripModes.includes('pickshovel') && gripModes.includes("return 'palm-perpendicular'"), 'pick shovel must default to perpendicular grip');
-assert(gripModes.includes('PALM_CLEARANCE'), 'default grips must offset the palm from a zero-origin handle');
-assert(gripModes.includes('multiplyQuat(modeQ, fineQ)'), 'grip mode and fine hand rotation must compose as quaternions, not Euler addition');
-assert(gripModes.includes('eulerYXZFromQuat'), 'composed hand rotation must convert back to the frame driver YXZ convention');
-assert(gripEditor.includes('handGripModeSelect'), 'attack editor must expose grip modes as a dropdown');
+assert(attachments.includes('NO arm skeleton, IK, shoulder tracking, elbow, reach clamp'), 'direct attachment runtime must explicitly reject arm IK ownership');
+assert(attachments.includes('authoredOriginPreserved = true'), 'GLB authored origin must be preserved');
+assert(!attachments.includes('clone.position.sub(center)'), 'hand GLBs must never be bounding-box recentered');
+assert(attachments.includes('side: THREE.DoubleSide'), 'hand materials must remain double-sided');
+assert(attachments.includes("side === 'right'"), 'runtime must build distinct left/right mirror signs');
+assert(!attachments.includes('solveTwoBoneArm'), 'direct attachment runtime must not solve arm bones');
 
-assert(medialWrists.includes('MEDIAL_YAW_DEG = 90'), 'idle wrists must rotate ninety degrees from front/back into a medial basis');
-assert(medialWrists.includes("applyMedialWorldBasis(THREE, rig, ['left', 'right'])"), 'idle pose must turn both palms toward the character centerline');
-assert(!medialWrists.includes('profiles.handTransformForSpecies ='), 'tool-following transform must not receive a hidden medial rotation');
-assert(medialWrists.includes('appliesToToolDrivenRightHand: false'), 'medial basis must explicitly stay off the tool-driven right hand');
+assert(driver.includes("placeHandWorld?.('right'"), 'right hand must attach directly to the primary tool socket');
+assert(driver.includes('secondaryGripForTool(toolKey)'), 'driver must resolve optional secondary tool grip');
+assert(driver.includes("placeHandWorld?.('left'"), 'enabled secondary grip must drive the left hand');
+assert(driver.includes("setSideIdle?.('left')"), 'left hand must return to idle when no secondary grip is enabled');
+assert(driver.includes('noArmIK: true'), 'driver debug must visibly report no arm IK');
+assert(!driver.includes('clampDeltaWorld'), 'hands must never move the tool through a reach clamp');
+assert(!driver.includes('adjustedTool'), 'hands must never author an adjusted tool pose');
 
-assert(armLength.includes('BASE_MULTIPLIER = 1.20'), 'all procedural arm lengths must start twenty percent longer');
-assert(armLength.includes('spriteUpperArmDepth * 2'), 'arm reach must grow until the midpoint elbow clears the lowest raw arm pixel');
-assert(armLength.includes('spriteRequiredArmLength'), 'expanded reach must expose sprite-driven diagnostics');
+assert(toolGrips.includes('hatchet:'), 'hatchet must have a secondary-grip definition');
+assert(toolGrips.includes('hoe:'), 'hoe must have a secondary-grip definition');
+assert((toolGrips.match(/enabled: true/g) || []).length >= 2, 'hatchet and hoe secondary grips must default enabled');
+assert(toolGrips.includes('secondaryGripForTool'), 'tool grip config must expose a reusable secondary socket lookup');
 
-assert(forearmFollow.includes("forearmOrientationOwner: 'hand-pose'"), 'tool-driven hand pose must own forearm orientation');
-assert(forearmFollow.includes('const elbow = targetLocal.clone().addScaledVector'), 'hand orientation must place the elbow from the forearm direction');
-assert(forearmFollow.includes('shoulderToElbow'), 'upper arm must simply connect shoulder to the hand-defined elbow');
+assert(directEditor.includes('Optional second hand grip'), 'Attack Editor must expose secondary grip authoring');
+assert(directEditor.includes("$('handShowArmBones')?.closest('.field')?.remove()"), 'Attack Editor must strip the old arm-bone toggle');
+assert(directEditor.includes("$('handInverseReachHelp')?.remove()"), 'Attack Editor must strip reach-limit help');
+assert(directEditor.includes('handSecondaryGripEnabled'), 'Attack Editor must provide a secondary grip enable toggle');
+assert(directEditor.includes('NO ARM IK'), 'Attack Editor must visibly report the simplified attachment model');
+assert(editor.includes('Hand position relative to tool attach'), 'existing fine hand-from-tool authoring must remain available');
 
-assert(biceps.includes('BICEP_WEIGHT = 0.94'), 'painted arm vertices must be strongly bicep weighted');
-assert(biceps.includes('forearmWeight: 0'), 'painted arm vertices must have zero forearm influence');
-assert(biceps.includes("[...oldSkeleton.bones, left.bone, right.bone]"), 'portrait skeleton must contain real bicep bones');
-assert(biceps.includes('oldSkeleton.boneInverses.map'), 'adding biceps must preserve existing torso/neck inverse bind matrices');
-assert(biceps.includes('[...oldInverses, leftInverse, rightInverse]'), 'only new bicep inverse binds should be appended');
-assert(biceps.includes('BEFORE') && biceps.includes('inverse'), 'bicep bones must be placed in idle pose before inverse bind calculation');
+assert(gripModes.includes("'palm-parallel'"), 'palm-parallel grip mode must remain');
+assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');
+assert(gripModes.includes('multiplyQuat(modeQ, fineQ)'), 'grip mode and fine transform must compose as quaternions');
 
-assert(materialRoles.includes("pachyderm: 'mashtzarr'"), 'pachyderm hands must reuse mashtzarr foot material slots');
-assert(materialRoles.includes("sloth: 'tletingan'"), 'sloth hands must reuse tletingan foot material slots');
-assert(materialRoles.includes("feline: 'mao-ao'"), 'feline hands must reuse feline foot material slots');
-assert(materialRoles.includes('...footRoles'), 'hand material role mapping must copy the configured foot role table');
-assert(materialRoles.includes("MAT_None_7a4e2e: 'bone'"), 'pachyderm/sloth hand slot-1 export alias must inherit the foot bone role');
-assert(materialRoles.includes("MAT_EyeSurface_0c0c0c: 'body'"), 'pachyderm/sloth hand slot-2 export alias must inherit the foot body role');
+assert(materialRoles.includes("pachyderm: 'mashtzarr'"), 'pachyderm hand materials must inherit foot slot roles');
+assert(materialRoles.includes("sloth: 'tletingan'"), 'sloth hand materials must inherit foot slot roles');
+assert(materialRoles.includes("feline: 'mao-ao'"), 'feline hand materials must inherit foot slot roles');
 
-assert(armBones.includes('DEFAULT_MIN_ELBOW_DEG'), 'arm IK must constrain elbow folding');
-assert(armBones.includes('DEFAULT_MAX_ELBOW_DEG'), 'arm IK must constrain elbow hyperextension');
-assert(armBones.includes("constraint: requestedDistance > maxReach ? 'reach-limit' : 'elbow-fold-limit'"), 'arm IK must report which joint constraint clamped the target');
-
-assert(shoulders.includes('skinnedPlane.boneTransform') || shoulders.includes('skinnedPlane.applyBoneTransform'), 'shoulders must sample live skinned portrait vertices');
-assert(shoulders.includes('binding.deltaLocal.copy(deformedParent).sub(restParent)'), 'shoulders must inherit portrait deformation delta including Z');
-assert(shoulders.includes('shiftedTarget = worldTarget.clone().sub(deltaWorld)'), 'IK reach must be solved from the dynamically moved shoulder');
-assert(shoulders.includes('dynamicShoulders'), 'dynamic shoulder XYZ must be exposed in debug state');
-
-assert(armMask.includes('hobunjiArmCloudAlphaMap'), 'arm cloud mask must build an isolated alpha map');
-assert(armMask.includes("filter(layer => /arm[lr]/i.test"), 'higher cloud mask must select only fighter arm body layers');
-assert(armMask.includes("globalCompositeOperation = 'destination-in'"), 'arm-only coverage must intersect raw arms with the higher cloud mask');
-
-for (const script of [
-  'procedural-hand-foot-material-roles.js',
+for (const wanted of [
+  'hand-tool-grips.js',
+  'procedural-hand-attachments.js',
+  'procedural-hand-frame-driver.js',
+  'attack-editor-hand-direct-attachments.js',
+]) assert(bootstrap.includes(wanted), `${wanted} must be loaded by the hand bootstrap`);
+for (const removed of [
+  'arm-bones.js',
+  'procedural-arm-animation.js',
+  'procedural-hand-portrait-shoulders.js',
   'procedural-arm-portrait-biceps.js',
   'procedural-hand-forearm-follow.js',
   'procedural-hand-arm-length.js',
-]) assert(bootstrap.includes(script), `${script} must be parser-loaded before the frame driver`);
-assert(bootstrap.includes('procedural-hand-medial-wrists.js'), 'idle medial wrist basis must load before the frame driver');
-assert(bootstrap.includes('procedural-hand-portrait-shoulders.js'), 'portrait shoulder tracker must load before the frame driver attaches rigs');
-assert(bootstrap.includes('attack-editor-hand-inverse-configurator.js'), 'editor inverse-hand authoring adapter must be parser-loaded');
-assert(bootstrap.includes('attack-editor-hand-grip-mode.js'), 'editor grip-mode dropdown must be parser-loaded');
+]) assert(!bootstrap.includes(removed), `${removed} must stay out of the direct-hand bootstrap`);
 
-console.log('procedural hands: expanded reach + hand-driven forearm + bicep skinning + foot material roles + quaternion transforms PASS');
+assert(ranged.includes("strikeFrac: 0.08") && ranged.includes("fireAtFrac: 0.08"), 'crossbow fire event must coincide with strike stage');
+assert(ranged.includes("playRangedActionSfx(def, 'fire'"), 'ranged fire SFX must be emitted by the strike/fire event, not by hit resolution');
+assert(crossbowTrim.includes('TRIM_START_S = 0.10'), 'crossbow clip must skip its leading dead air');
+assert(crossbowTrim.includes("key !== 'rangedFire'"), 'audio trim must be scoped to ranged fire only');
+
+console.log('direct hands: primary/secondary sockets, authored GLB origins, no arm IK, and strike-timed crossbow audio PASS');
