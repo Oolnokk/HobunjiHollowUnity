@@ -85,6 +85,105 @@
     const idx=[];for(let cj=0;cj<CH;cj++)for(let ci=0;ci<CW;ci++){if(isPlayable(ci,cj))continue;const[v00,v10,v01,v11]=cv4(ci,cj);idx.push(v00,v01,v11,v00,v11,v10);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(new THREE.BufferAttribute(idx.length>65535?new Uint32Array(idx):new Uint16Array(idx),1));geo.computeVertexNormals();const mesh=new THREE.Mesh(geo,deps.resolveTileMat(mapId,deps.TileType.GRASS));mesh.receiveShadow=true;zScene.add(mesh);
     const cliffMat=deps.resolveCliffMat(mapId);function elevStoneSkin(gjMin,gjMax,giMin,giMax){const skinPos=[],skinUv=[],idxArr=[];let vi=0;for(let gj=gjMin;gj<gjMax;gj++)for(let gi=giMin;gi<giMax;gi++){const y00=Y[gj*GW+gi],y10=Y[gj*GW+gi+1],y01=Y[(gj+1)*GW+gi],y11=Y[(gj+1)*GW+gi+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz<=0.194)continue;const x0=(gi-BV)*0.5,x1=x0+0.5,z0=(gj-BV)*0.5,z1=z0+0.5;skinPos.push(x0,y00,z0,x1,y10,z0,x0,y01,z1,x1,y11,z1);skinUv.push(x0,z0,x1,z0,x0,z1,x1,z1);idxArr.push(vi,vi+2,vi+3,vi,vi+3,vi+1);vi+=4;}if(!skinPos.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(skinPos,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(skinUv,2));g.setIndex(new THREE.BufferAttribute(idxArr.length>65535?new Uint32Array(idxArr):new Uint16Array(idxArr),1));g.computeVertexNormals();zScene.add(new THREE.Mesh(g,cliffMat));}
     elevStoneSkin(0,BV,0,GW-1);elevStoneSkin(GH-1-BV,GH-1,0,GW-1);elevStoneSkin(BV,GH-1-BV,0,BV);elevStoneSkin(BV,GH-1-BV,GW-1-BV,GW-1);
+
+    const authoredProfile=WILDERNESS_SCENERY_PROFILES[mapId];
+    if(authoredProfile) buildAuthoredWildernessScenery(zScene,zcols,zrows,mapId,zoneBaseElev,zGrid,authoredProfile);
+  }
+
+  // ── Authored scenery profiles for procedural wilderness maps ─────────────
+  // These live outside the generated playable grid. The map itself can reroll,
+  // but the profile is authored and attaches itself to the generated edge
+  // entrance (currently by scanning the edge PATH run), so Tothal Shift can
+  // move the entrance without breaking the scenery composition.
+  const WILDERNESS_SCENERY_PROFILES=Object.freeze({
+    map_southern_cloud_forest:Object.freeze({
+      side:'north', depthTiles:18, riseWorld:5.0, pathMinWidth:3.25,
+      pathClearance:1.15, noiseAmp:0.08, bakeChunkWidth:50,
+      treeScaleMin:0.92, treeScaleMax:1.08,
+      treeRows:Object.freeze([
+        Object.freeze({out:2.8,spacing:4.5,offset:0.4}),
+        Object.freeze({out:7.7,spacing:4.9,offset:2.25}),
+        Object.freeze({out:13.2,spacing:5.35,offset:1.1}),
+      ]),
+    }),
+  });
+
+  function bgFindEdgePathRun(zGrid,zcols,zrows,side){
+    if(!zGrid||!zcols||!zrows)return null;
+    const isPath=(c,r)=>{const t=String(zGrid?.[r]?.[c]?.type||'').toLowerCase();return t==='path';};
+    const horizontal=side==='north'||side==='south',fixed=side==='north'?0:side==='south'?zrows-1:side==='west'?0:zcols-1,limit=horizontal?zcols:zrows,runs=[];
+    let start=-1;
+    for(let a=0;a<=limit;a++){
+      const hit=a<limit&&(horizontal?isPath(a,fixed):isPath(fixed,a));
+      if(hit&&start<0)start=a;
+      if(!hit&&start>=0){runs.push({start,end:a-1,widthCells:a-start});start=-1;}
+    }
+    if(!runs.length)return null;
+    const centerAxis=limit*0.5;
+    runs.sort((a,b)=>b.widthCells-a.widthCells||Math.abs((a.start+a.end+1)*0.5-centerAxis)-Math.abs((b.start+b.end+1)*0.5-centerAxis));
+    const best=runs[0];
+    return{side,minAxis:best.start,maxAxis:best.end,widthCells:best.widthCells,center:(best.start+best.end+1)*0.5};
+  }
+
+  function bgSceneryHash01(a,b,salt=0){let h=(2166136261^(Math.round(a*8)*374761393)^(Math.round(b*8)*668265263)^(salt*2246822519))>>>0;h=Math.imul(h^(h>>>13),1274126177)>>>0;return(h>>>0)/4294967296;}
+  function bgSmooth01(t){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);}
+
+  function buildAuthoredWildernessScenery(scene,zcols,zrows,mapId,zoneBaseElev,zGrid,profile){
+    if(!scene||!profile||profile.side!=='north'||!zGrid)return;
+    scene.userData=scene.userData||{};
+    const stamp=`${mapId}:north-authored-v1`;
+    if(scene.userData.backgroundSceneryStamp===stamp)return;
+    scene.userData.backgroundSceneryStamp=stamp;
+
+    const run=bgFindEdgePathRun(zGrid,zcols,zrows,'north');
+    const pathCenter=run?.center??zcols*0.5;
+    const pathWidth=Math.max(profile.pathMinWidth,run?.widthCells||0);
+    const depth=profile.depthTiles;
+    const rawEdgeY=(x)=>{const c=Math.max(0,Math.min(zcols-1,Math.floor(x))),tier=Number(zGrid?.[0]?.[c]?.elevTier);return Number.isFinite(tier)?deps.NORMAL_TOP+tier*deps.PLATEAU_UNIT:deps.NORMAL_TOP+zoneBaseElev;};
+    const smoothEdgeY=(x)=>{const c=Math.max(0,Math.min(zcols-1,Math.floor(x)));let total=0,wtotal=0;for(let d=-3;d<=3;d++){const cc=Math.max(0,Math.min(zcols-1,c+d)),tier=Number(zGrid?.[0]?.[cc]?.elevTier),w=4-Math.abs(d);total+=(Number.isFinite(tier)?deps.NORMAL_TOP+tier*deps.PLATEAU_UNIT:deps.NORMAL_TOP+zoneBaseElev)*w;wtotal+=w;}return total/Math.max(1,wtotal);};
+    const heightAt=(x,z)=>{const out=Math.max(0,Math.min(depth,-z)),seamBlend=bgSmooth01(out/3),edge=rawEdgeY(x)*(1-seamBlend)+smoothEdgeY(x)*seamBlend,t=out/depth,rise=profile.riseWorld*(0.78*t+0.22*t*t),noise=(bgSceneryHash01(x,out,911)*2-1)*profile.noiseAmp*bgSmooth01(out/2);return edge+rise+noise;};
+
+    // A new grass sheet replaces the visible north-edge drop with one continuous
+    // gentle uphill surface. It sits a hair above the generic border terrain so
+    // the old procedural skirt remains an invisible fallback underneath it.
+    const step=0.5,xCount=Math.round(zcols/step)+1,zCount=Math.round(depth/step)+1,positions=new Float32Array(xCount*zCount*3),uvs=new Float32Array(xCount*zCount*2),indices=[];
+    for(let rz=0;rz<zCount;rz++)for(let cx=0;cx<xCount;cx++){const x=Math.min(zcols,cx*step),z=-Math.min(depth,rz*step),k=rz*xCount+cx,y=heightAt(x,z)+0.015;positions[k*3]=x;positions[k*3+1]=y;positions[k*3+2]=z;uvs[k*2]=x;uvs[k*2+1]=z;}
+    for(let rz=0;rz<zCount-1;rz++)for(let cx=0;cx<xCount-1;cx++){const v00=rz*xCount+cx,v10=v00+1,v01=(rz+1)*xCount+cx,v11=v01+1;indices.push(v00,v11,v01,v00,v10,v11);}
+    const slopeGeo=new THREE.BufferGeometry();slopeGeo.setAttribute('position',new THREE.BufferAttribute(positions,3));slopeGeo.setAttribute('uv',new THREE.BufferAttribute(uvs,2));slopeGeo.setIndex(new THREE.BufferAttribute(positions.length/3>65535?new Uint32Array(indices):new Uint16Array(indices),1));slopeGeo.computeVertexNormals();
+    const slope=new THREE.Mesh(slopeGeo,deps.resolveTileMat(mapId,deps.TileType.GRASS));slope.name='AuthoredCloudForestNorthIncline';slope.receiveShadow=true;slope.renderOrder=1;slope.userData.backgroundScenery=true;scene.add(slope);
+
+    // Continue the generated entrance road visibly through the scenery. The
+    // forest cut is based on this same run, so the road remains centered even
+    // when the proc-gen entrance moves after a Tothal Shift.
+    const half=pathWidth*0.5,pathVerts=[],pathUvs=[],pathIdx=[];
+    for(let i=0;i<zCount;i++){const z=-Math.min(depth,i*step),lx=Math.max(0,pathCenter-half),rx=Math.min(zcols,pathCenter+half),v=i*2;pathVerts.push(lx,heightAt(lx,z)+0.045,z,rx,heightAt(rx,z)+0.045,z);pathUvs.push(0,-z,pathWidth,-z);if(i){pathIdx.push(v-2,v+1,v,v-2,v-1,v+1);}}
+    if(pathVerts.length>=12){const pathGeo=new THREE.BufferGeometry();pathGeo.setAttribute('position',new THREE.Float32BufferAttribute(pathVerts,3));pathGeo.setAttribute('uv',new THREE.Float32BufferAttribute(pathUvs,2));pathGeo.setIndex(pathIdx);pathGeo.computeVertexNormals();let pathMat=null;try{pathMat=deps.resolveTileMat(mapId,deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});const pathMesh=new THREE.Mesh(pathGeo,pathMat);pathMesh.name='AuthoredCloudForestTownPath';pathMesh.renderOrder=3;pathMesh.receiveShadow=true;pathMesh.userData.backgroundScenery=true;scene.add(pathMesh);}
+
+    // Tree positions are authored as a few staggered rows rather than generated
+    // from the wilderness seed. The only dynamic cut is the entrance corridor.
+    // Each row uses real cached Shadewood variants, then the resulting geometry
+    // is baked by material into ~50-tile-wide chunks for low draw-call/object
+    // overhead while retaining useful frustum-culling granularity.
+    const entries=[],clearHalf=half+profile.pathClearance;
+    for(let rowIndex=0;rowIndex<profile.treeRows.length;rowIndex++){
+      const row=profile.treeRows[rowIndex];
+      for(let x=-2+row.offset;x<=zcols+2;x+=row.spacing){const jx=(bgSceneryHash01(x,row.out,1301+rowIndex)*2-1)*0.62,jz=(bgSceneryHash01(x,row.out,2301+rowIndex)*2-1)*0.48,px=x+jx;if(Math.abs(px-pathCenter)<clearHalf)continue;const pz=-row.out+jz,scale=profile.treeScaleMin+(profile.treeScaleMax-profile.treeScaleMin)*bgSceneryHash01(x,row.out,3301+rowIndex),yaw=(bgSceneryHash01(x,row.out,4301+rowIndex)-0.5)*0.7;entries.push({x:px,y:heightAt(px,pz)+0.02,z:pz,scale,yaw,seedA:Math.round(px*17)+rowIndex*401,seedB:Math.round(row.out*29)+rowIndex*887});}
+    }
+    bakeShadewoodWall(scene,entries,profile.bakeChunkWidth);
+    scene.userData.authoredCloudForestScenery={pathCenter,pathWidth,treeCount:entries.length,baked:true};
+  }
+
+  function bakeShadewoodWall(scene,entries,chunkWidth){
+    const FG=window.FoliageGenerator;if(!FG?.buildShadewoodMesh||!entries.length)return;
+    const chunks=new Map();
+    for(const e of entries){const key=Math.floor(e.x/Math.max(8,chunkWidth));if(!chunks.has(key))chunks.set(key,[]);chunks.get(key).push(e);}
+    let chunkOrdinal=0;
+    for(const chunkEntries of chunks.values()){
+      const buckets=new Map();
+      for(const e of chunkEntries){const tree=FG.buildShadewoodMesh(e.seedA,e.seedB);if(!tree)continue;tree.position.set(e.x,e.y,e.z);tree.rotation.y+=e.yaw;tree.scale.multiplyScalar(e.scale);tree.updateMatrixWorld(true);tree.traverse(o=>{if(!o?.isMesh||!o.geometry||!o.material)return;const material=Array.isArray(o.material)?o.material[0]:o.material;if(!material)return;const g=o.geometry.clone();g.applyMatrix4(o.matrixWorld);if(!g.getAttribute('normal'))g.computeVertexNormals();const pa=g.getAttribute('position'),na=g.getAttribute('normal'),ua=g.getAttribute('uv');if(!pa){g.dispose();return;}let b=buckets.get(material);if(!b){b={positions:[],normals:[],uvs:[],indices:[],hasUv:false};buckets.set(material,b);}const base=b.positions.length/3;for(let i=0;i<pa.array.length;i++)b.positions.push(pa.array[i]);if(na){for(let i=0;i<na.array.length;i++)b.normals.push(na.array[i]);}else{for(let i=0;i<pa.count*3;i++)b.normals.push(0);}if(ua){b.hasUv=true;for(let i=0;i<ua.count;i++){b.uvs.push(ua.getX(i),ua.getY(i));}}else{for(let i=0;i<pa.count;i++)b.uvs.push(0,0);}if(g.index){const arr=g.index.array;for(let i=0;i<arr.length;i++)b.indices.push(base+arr[i]);}else{for(let i=0;i<pa.count;i++)b.indices.push(base+i);}g.dispose();});}
+      let materialOrdinal=0;
+      for(const[material,b]of buckets){if(!b.positions.length)continue;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(b.positions,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(b.normals,3));if(b.hasUv)g.setAttribute('uv',new THREE.Float32BufferAttribute(b.uvs,2));const vCount=b.positions.length/3;g.setIndex(new THREE.BufferAttribute(vCount>65535?new Uint32Array(b.indices):new Uint16Array(b.indices),1));g.computeBoundingSphere();const mesh=new THREE.Mesh(g,material);mesh.name=`AuthoredCloudForestShadewoodWall_${chunkOrdinal}_${materialOrdinal++}`;mesh.castShadow=false;mesh.receiveShadow=true;mesh.frustumCulled=true;mesh.userData.backgroundScenery=true;mesh.userData.bakedForestWall=true;scene.add(mesh);}chunkOrdinal++;
+    }
   }
 
   // ── Shared background-scenery attachment contract ────────────────────────
@@ -236,7 +335,7 @@
   function bgDistToPolyline(px,pz,pts){let best=Infinity;for(let i=0;i<pts.length-1;i++)best=Math.min(best,bgDistToSegment(px,pz,pts[i],pts[i+1]));return best;}
   function bgDensify(pts,step=0.5){if(pts.length<2)return pts.slice();const out=[pts[0].slice()];for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1],dx=b[0]-a[0],dz=b[1]-a[1],n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/step));for(let j=1;j<=n;j++){const t=j/n;out.push([a[0]+dx*t,a[1]+dz*t]);}}return out;}
   function bgOutwardDistance(c,p){const n=bgEdgeNormal(c.settings.edge),s=c.points[0];return Math.max(0,(p[0]-s[0])*n[0]+(p[1]-s[1])*n[1]);}
-  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments};
+  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,PATH_DEFAULTS:BG_PATH_DEFAULTS,WILDERNESS_PROFILES:WILDERNESS_SCENERY_PROFILES,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments,findEdgePathRun:bgFindEdgePathRun};
 
   // Scenery paths use the same WallBuilder paving recipe/tint/brick transform
   // settings as the normal path-brick renderer in game.js. The attachment hook
