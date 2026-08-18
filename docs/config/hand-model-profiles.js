@@ -9,6 +9,7 @@
   'use strict';
 
   const DEFAULT_MODEL_SCALE = 2;
+  const SHARED_ALIGNMENT_PRESET = 'mao-ao-shared-v1';
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
@@ -38,6 +39,7 @@
 
   const DEFAULT_DATA = {
     schema: 'hobunji_hand_model_profiles.v1',
+    alignmentPreset: SHARED_ALIGNMENT_PRESET,
     handHeightFraction: 0.12,
     sourceBasis: {
       handedness: 'left',
@@ -122,6 +124,8 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    const migrateToSharedMaoAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
+    next.alignmentPreset = SHARED_ALIGNMENT_PRESET;
     next.sourceBasis = {
       ...clone(DEFAULT_DATA.sourceBasis),
       ...(next.sourceBasis || {}),
@@ -134,16 +138,22 @@
       toolGripOrigin: { x: 0, y: 0, z: 0 },
     };
     next.models = next.models || {};
-    for (const model of Object.values(next.models)) {
+    for (const [modelKey, model] of Object.entries(next.models)) {
       if (!model || typeof model !== 'object') continue;
       const modelScale = Number(model.scale);
       if (!Number.isFinite(modelScale) || modelScale <= 0) model.scale = DEFAULT_MODEL_SCALE;
-      // New/missing values inherit the corrected left-source convention. Explicit
-      // false remains a valid per-model override for a GLB authored as a right hand.
-      model.mirrorX = model.mirrorX !== false;
+      // Existing local/exported drafts from before this shared setup migrate once.
+      // After the marker is present, editor changes remain freely editable.
+      if (migrateToSharedMaoAlignment) {
+        model.handFromTool = maoAoHandTransform();
+        model.mirrorX = modelKey === 'parrot' ? false : true;
+      } else {
+        // New/missing values inherit the corrected left-source convention. Explicit
+        // false remains a valid per-model override for a GLB authored as a right hand.
+        model.mirrorX = model.mirrorX !== false;
+      }
       // Older drafts authored a tool socket on the hand. Migrate that into the
-      // direct hand-from-tool convention. Position/rotation negation is exact for
-      // identity/single-axis drafts and a safe visual approximation for old drafts.
+      // direct hand-from-tool convention only when no explicit direct transform exists.
       if (!model.handFromTool) {
         const legacy = normalizeTransform(model.toolGrip);
         model.handFromTool = {
@@ -161,9 +171,8 @@
       } else {
         model.handFromTool = normalizeTransform(model.handFromTool);
       }
-      // ProceduralArmAnimation's legacy model-socket path still reads toolGrip.
-      // Keep it identity so the arm endpoint is the actual hand root; the shared
-      // frame driver/grip-mode layer applies handFromTool before solving IK.
+      // Legacy socket readers may still inspect toolGrip. Keep it identity so the
+      // direct hand endpoint is the actual hand root; handFromTool owns alignment.
       model.toolGrip = identityTransform();
     }
     return next;
