@@ -16,6 +16,16 @@
   let territorialSpecies = new Set(DEFAULT_SPECIES); // Used to identify wild actors whose player encounter is warning-first instead of predator/prey aggro.
   let deps = null; // Captured from WildlifeSpawn.init and used by the per-frame territorial pre-pass.
   let patchedApi = null; // Stores the intercepted WildlifeSpawn API once its later script assigns window.WildlifeSpawn.
+  const BEHAVIOR_STEP_S = 0.1; // Territorial perception/escalation only needs a 10 Hz logic tick; game.js still aims/moves active chase states every rendered frame.
+  const DEBUG_STEP_S = 0.5; // Mobile diagnostics are human-readable state, not simulation, so 2 Hz avoids DOM churn on the global wildlife hot path.
+  const ROSTER_STEP_S = 0.25; // Rebuilds the small territorial-only candidate list at 4 Hz instead of scanning every hostile on every logic tick.
+  let behaviorAccumS = 0; // Accumulates render-frame dt until the next territorial logic step.
+  let debugAccumS = 0; // Accumulates render-frame dt until the next optional debug refresh.
+  let rosterAccumS = ROSTER_STEP_S; // Starts due so the first update immediately discovers territorial animals already in the area.
+  let rosterArea = null; // Tracks which area the cached territorial candidate list belongs to.
+  const territorialRoster = []; // Reused candidate array containing only live territorial creatures in the current area.
+  let debugElement = null; // Cached debug card so ordinary frames never query the DOM for it.
+  let lastDebugText = ''; // Avoids assigning textContent when the visible diagnostic text has not changed.
 
   function random01() {
     const random = window.GameRandom?.random; // Used for gameplay-adjacent warning cadence without introducing a separate random source.
@@ -142,8 +152,8 @@
     if (distanceToPlayer > tuning.REARM_CLEAR_TILES * deps.TILE) state.rearmBlocked = false;
   }
 
-  function updateCreature(creature, dt, player) {
-    if (!isTerritorial(creature) || creature.health <= 0 || creature.areaId !== deps.getCurrentArea()) return;
+  function updateCreature(creature, dt, player, currentArea) {
+    if (!isTerritorial(creature) || creature.health <= 0 || creature.areaId !== currentArea) return;
     const state = ensureState(creature); // Used to drive this individual's warning-first encounter state.
     const dx = player.x - creature.x, dy = player.y - creature.y; // Used for current player proximity without changing game.js's own nearest-player math.
     const distance = Math.hypot(dx, dy); // Used for warning, proximity escalation, fight leash, and rearm hysteresis.
@@ -205,25 +215,26 @@
   }
 
   function ensureDebugElement() {
-    const pane = document.getElementById('devWildlifePane'); // Used as the existing mobile-visible wildlife debug panel host.
+    if (debugElement?.isConnected) return debugElement;
+    const pane = document.getElementById('devWildlifePane'); // Queried only on the throttled debug tick, never every render frame.
     if (!pane) return null;
-    let element = document.getElementById('territorialWildlifeDebug'); // Used to reuse one compact multi-animal status card.
-    if (!element) {
-      element = document.createElement('div');
-      element.id = 'territorialWildlifeDebug';
-      element.className = 'small';
-      element.style.cssText = 'margin:6px 0;padding:6px;border:1px solid currentColor;border-radius:6px;white-space:pre-line;';
-      pane.prepend(element);
+    debugElement = document.getElementById('territorialWildlifeDebug'); // Reuses the existing card after UI rebuilds.
+    if (!debugElement) {
+      debugElement = document.createElement('div');
+      debugElement.id = 'territorialWildlifeDebug';
+      debugElement.className = 'small';
+      debugElement.style.cssText = 'margin:6px 0;padding:6px;border:1px solid currentColor;border-radius:6px;white-space:pre-line;';
+      pane.prepend(debugElement);
     }
-    return element;
+    return debugElement;
   }
 
-  function updateDebug() {
-    const element = ensureDebugElement(); // Used to expose warning/fight/leash state on mobile without devtools.
+  function updateDebug(currentArea) {
+    const element = ensureDebugElement(); // Exposes warning/fight/leash state on mobile at a deliberately low diagnostic cadence.
     if (!element || !deps?.hostileObjects || !deps?.player) return;
-    const rows = []; // Used as a compact snapshot of the nearest active territorial creatures.
-    for (const creature of deps.hostileObjects) {
-      if (!isTerritorial(creature) || creature.health <= 0 || creature.areaId !== deps.getCurrentArea()) continue;
+    const rows = []; // Allocated only twice per second instead of once per rendered frame.
+    for (const creature of territorialRoster) {
+      if (creature.health <= 0 || creature.areaId !== currentArea) continue;
       const state = creature._territorialBehavior;
       const distanceTiles = Math.hypot(deps.player.x - creature.x, deps.player.y - creature.y) / deps.TILE; // Used to diagnose warning/proximity/leash thresholds directly.
       rows.push({
@@ -232,13 +243,41 @@
       });
     }
     rows.sort((a, b) => a.distanceTiles - b.distanceTiles);
-    element.textContent = `Territorial Wildlife\n${rows.length ? rows.slice(0, 6).map(row => row.text).join('\n') : 'none in current area'}`;
+    const nextText = `Territorial Wildlife\n${rows.length ? rows.slice(0, 6).map(row => row.text).join('\n') : 'none in current area'}`; // Built only on the 2 Hz debug tick.
+    if (nextText !== lastDebugText) {
+      element.textContent = nextText;
+      lastDebugText = nextText;
+    }
+  }
+
+  function refreshTerritorialRoster(currentArea) {
+    territorialRoster.length = 0;
+    for (const creature of deps.hostileObjects) {
+      if (isTerritorial(creature) && creature.health > 0 && creature.areaId === currentArea) territorialRoster.push(creature);
+    }
+    rosterArea = currentArea;
+    rosterAccumS = 0;
   }
 
   function updateTerritorial(dt) {
     if (!deps?.hostileObjects || !deps.player || !deps.getCurrentArea || !deps.TILE) return;
-    for (const creature of deps.hostileObjects) updateCreature(creature, dt, deps.player);
-    updateDebug();
+    behaviorAccumS += dt;
+    debugAccumS += dt;
+    rosterAccumS += dt;
+    if (behaviorAccumS < BEHAVIOR_STEP_S && debugAccumS < DEBUG_STEP_S && rosterAccumS < ROSTER_STEP_S) return; // Near-zero idle-frame cost: three adds + one branch.
+
+    const currentArea = deps.getCurrentArea(); // Resolved once per throttled tick, never once per creature.
+    if (rosterArea !== currentArea || rosterAccumS >= ROSTER_STEP_S) refreshTerritorialRoster(currentArea);
+
+    if (behaviorAccumS >= BEHAVIOR_STEP_S) {
+      const stepDt = Math.min(0.25, behaviorAccumS); // Carries elapsed time forward while preventing a giant catch-up step after a pause.
+      behaviorAccumS = 0;
+      for (const creature of territorialRoster) updateCreature(creature, stepDt, deps.player, currentArea);
+    }
+    if (debugAccumS >= DEBUG_STEP_S) {
+      debugAccumS = 0;
+      updateDebug(currentArea);
+    }
   }
 
   function applyConfig(config) {
