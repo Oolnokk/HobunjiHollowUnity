@@ -209,7 +209,7 @@
     const parts = { plane, geometry, material, texture, canvas, ctx, width: aspect * totalHeight, height: totalHeight };
     drawConditionCallout(parts, text);
     ensureTankanFont().then(loaded => {
-      if (loaded && !parts.material.disposed) drawConditionCallout(parts, text); // Redraw once the real Tankan glyphs are available instead of leaving an early fallback rasterized into the texture.
+      if (loaded && parts.plane.parent) drawConditionCallout(parts, text); // Redraw once the real Tankan glyphs are available, but only while this persistent event is still alive.
     });
     return parts;
   }
