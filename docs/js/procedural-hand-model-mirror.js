@@ -1,7 +1,7 @@
-// Applies an optional per-model source-X mirror to procedural hand GLBs.
-// The imported asset is treated as the right-hand source. The ordinary left-side
-// mirror is then applied with the opposite sign, so toggling this option swaps the
-// source handedness without changing authored tool offsets or rotations.
+// Applies the per-model source-X mirror convention to procedural hand GLBs.
+// Authored assets are treated as LEFT-hand sources by default: left uses the
+// source transform and right is mirrored across local X. Setting mirrorX=false
+// opts a particular model back into the opposite/source-right convention.
 (function (global) {
   'use strict';
 
@@ -21,7 +21,8 @@
     const left = rig.group.getObjectByName('left_hand_socket');
 
     // Normalize from magnitude so repeated profile refreshes/toggle changes never
-    // accumulate sign flips. Right is the source orientation; left is its opposite.
+    // accumulate sign flips. mirrorX=true means source-left: left stays source,
+    // right gets the X reflection. false reverses that convention for one GLB.
     if (right?.scale) right.scale.x = Math.abs(right.scale.x || 1) * (mirrored ? -1 : 1);
     if (left?.scale) left.scale.x = Math.abs(left.scale.x || 1) * (mirrored ? 1 : -1);
 
@@ -34,13 +35,13 @@
     const rig = originalAttach(THREE, parent, options);
     if (!rig) return rig;
 
-    applyMirror(rig); // Covers the immediate fallback hand.
+    applyMirror(rig);
 
     const originalRefresh = rig.refreshModelProfile?.bind(rig);
     if (originalRefresh) {
       rig.refreshModelProfile = async function modelMirrorAwareRefresh(...args) {
         const result = await originalRefresh(...args);
-        applyMirror(rig); // Covers every asynchronously installed GLB/profile change.
+        applyMirror(rig);
         return result;
       };
       // attach() begins one async load before wrappers can observe it. Start one
