@@ -10,7 +10,7 @@
   let stopped = false;
 
   function rangedFireConfig() {
-    return global.SCRATCHBONES_CONFIG?.game?.audio?.combat?.rangedFire || null;
+    return global.SCRATCHBONES_CONFIG?.game?.audio?.combatSfx?.rangedFire || null;
   }
 
   function install() {
