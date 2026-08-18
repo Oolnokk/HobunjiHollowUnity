@@ -35,6 +35,7 @@
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/procedural-arm-animation.js?v=20260817c', docsBase).href,
     new URL('js/procedural-hand-double-side.js?v=20260817a', docsBase).href,
+    new URL('js/procedural-hand-model-mirror.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-portrait-shoulders.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260817b', docsBase).href,
     new URL('js/procedural-hand-frame-driver-owner.js?v=20260817a', docsBase).href,
@@ -42,6 +43,7 @@
   if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260817b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
   }
 
   function loadSequentially(urls) {
