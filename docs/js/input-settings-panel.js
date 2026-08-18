@@ -9,6 +9,24 @@
   // configures what those handlers look up.
   let deps = null;
   const ACTION_BUTTON_IDS = new Set(['action1', 'action2', 'action3', 'action4', 'action5']); // Used to give the five visible gameplay buttons player-facing names in Settings.
+  const RUNTIME_HELPER_SCRIPTS = [ // Loaded here because this panel is a stable late bootstrap after Combat/THREE and before the player can meaningfully interact with Settings.
+    'js/combat/quick-attack-bonus-indicator.js',
+    'js/fullscreen-toggle.js',
+  ];
+
+  function ensureRuntimeHelpers() {
+    for (const src of RUNTIME_HELPER_SCRIPTS) {
+      if (document.querySelector(`script[data-hobunji-runtime-helper="${src}"]`)) continue;
+      const script = document.createElement('script'); // Used to attach each small runtime affordance without adding another dependency to the monolithic game loop.
+      script.src = src;
+      script.async = false;
+      script.dataset.hobunjiRuntimeHelper = src;
+      script.addEventListener('error', () => console.error(`Failed to load runtime helper: ${src}`));
+      document.head.appendChild(script);
+    }
+  }
+
+  ensureRuntimeHelpers();
 
   function init(injectedDeps) { deps = injectedDeps; }
 
