@@ -209,12 +209,19 @@
     const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameAt) / 1000));
     lastFrameAt = nowMs;
 
-    if (!shouldSuspendDynamicScan() && nowMs >= nextScanAt) {
+    if (shouldSuspendDynamicScan()) {
+      // Keep the current zoom untouched while another system owns camera
+      // framing. Reset the scan deadline so combat context is re-evaluated
+      // immediately on the first gameplay frame after returning.
+      influencingHostiles = 0;
+      nextScanAt = 0;
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    if (nowMs >= nextScanAt) {
       targetZoom = solveTargetZoom();
       nextScanAt = nowMs + SCAN_INTERVAL_MS;
-    } else if (shouldSuspendDynamicScan()) {
-      influencingHostiles = 0;
-      targetZoom = REST_ZOOM;
     }
 
     const alpha = 1 - Math.exp(-RESPONSE_PER_SECOND * dt); // Exponential lerp gives the same feel at 30, 60, or 120 Hz.
