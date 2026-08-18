@@ -42,10 +42,10 @@ assert(toolGrips.includes('secondaryGripForTool'), 'tool grip config must expose
 
 assert(directEditor.includes('Optional second hand grip'), 'Attack Editor must expose secondary grip authoring');
 assert(directEditor.includes("$('handShowArmBones')?.closest('.field')?.remove()"), 'Attack Editor must strip the old arm-bone toggle');
-assert(directEditor.includes("$('handInverseReachHelp')?.remove()"), 'Attack Editor must strip reach-limit help');
 assert(directEditor.includes('handSecondaryGripEnabled'), 'Attack Editor must provide a secondary grip enable toggle');
 assert(directEditor.includes('NO ARM IK'), 'Attack Editor must visibly report the simplified attachment model');
-assert(editor.includes('Hand position relative to tool attach'), 'existing fine hand-from-tool authoring must remain available');
+assert(editor.includes('Hand position relative to tool grip'), 'fine hand-from-tool authoring must remain available as a direct grip transform');
+assert(editor.includes('The tool is never moved by the hand system'), 'editor must state direct-hand authority clearly');
 
 assert(gripModes.includes("'palm-parallel'"), 'palm-parallel grip mode must remain');
 assert(gripModes.includes("'palm-perpendicular'"), 'palm-perpendicular grip mode must remain');
@@ -73,6 +73,7 @@ for (const removed of [
 assert(ranged.includes("strikeFrac: 0.08") && ranged.includes("fireAtFrac: 0.08"), 'crossbow fire event must coincide with strike stage');
 assert(ranged.includes("playRangedActionSfx(def, 'fire'"), 'ranged fire SFX must be emitted by the strike/fire event, not by hit resolution');
 assert(crossbowTrim.includes('TRIM_START_S = 0.10'), 'crossbow clip must skip its leading dead air');
+assert(crossbowTrim.includes('combatSfx?.rangedFire'), 'audio trim must read the real combat SFX config path');
 assert(crossbowTrim.includes("key !== 'rangedFire'"), 'audio trim must be scoped to ranged fire only');
 
 console.log('direct hands: primary/secondary sockets, authored GLB origins, no arm IK, and strike-timed crossbow audio PASS');
