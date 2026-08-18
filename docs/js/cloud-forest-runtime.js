@@ -11,7 +11,7 @@
   const SHOULDER_RISE = 0.35;
   const STEEP_RISE = 15.0;
   const TREE_LATTICE_WORLD = 2;
-  const TREE_KEEP_PROBABILITY = 0.5625; // 25% thinning, then 25% variety conversion.
+  const TREE_KEEP_PROBABILITY = 0.5625; // 2-world source lattice × 75% thinning survivor × 75% non-variety survivor.
   const TREE_SCALE_MIN = 0.92;
   const TREE_SCALE_MAX = 1.08;
   const PATH_CLEARANCE = 1.15;
