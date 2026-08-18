@@ -6,8 +6,7 @@
 (function (global) {
   'use strict';
 
-  const previewApi = global.NpcAvatarPreview;
-  if (!previewApi?.renderProfileToCanvas || previewApi.renderProfileToCanvas.__hobunjiArmCompassWrapped) return;
+  if (typeof global.renderPortraitProfile !== 'function' || global.renderPortraitProfile.__hobunjiArmCompassWrapped) return;
 
   const SHOULDER_DROP_FRAC = 0.10;
   const ARM_ID_RE = /^arm([lr])$/i;
@@ -154,7 +153,7 @@
     return anchors ? { canvas, ...anchors, layerId: layer.id, layerUrl: layer.url } : null;
   }
 
-  const originalRender = previewApi.renderProfileToCanvas.bind(previewApi);
+  const originalRender = global.renderPortraitProfile.bind(global);
   const wrappedRender = async function armCompassRender(canvas, profile, renderOptions = {}) {
     const auxiliary = renderOptions?.onlyHeadSprite === true
       || renderOptions?.portraitView === 'behind'
@@ -171,7 +170,8 @@
 
     // Render the normal portrait with the raw arms removed so rotated arm planes do
     // not sit on top of a baked neutral ghost. All torso/head/cosmetic drawing stays
-    // owned by the canonical renderer.
+    // owned by the canonical renderer. Hooking renderPortraitProfile itself covers
+    // live player/NPC rendering as well as NpcAvatarPreview and the Attack Editor.
     const baseFighter = { ...fighter, bodyLayers: bodyLayers.filter(layer => !ARM_ID_RE.test(String(layer?.id || ''))) };
     const baseProfile = { ...profile, fighter: baseFighter };
     const rendered = await originalRender(canvas, baseProfile, renderOptions);
@@ -183,7 +183,7 @@
       return [side, await buildArmCanvas(canvas.width, canvas.height, profile, fighter, layer)];
     }));
     const sides = {};
-    for (const [side, data] of entries) if (data) sides[side] = data;
+    for (const [side, armData] of entries) if (armData) sides[side] = armData;
     canvas.hobunjiArmCompass = Object.keys(sides).length ? {
       mode: '2d-compass-arms',
       shoulderDropFraction: SHOULDER_DROP_FRAC,
@@ -195,6 +195,6 @@
   };
 
   wrappedRender.__hobunjiArmCompassWrapped = true;
-  previewApi.renderProfileToCanvas = wrappedRender;
+  global.renderPortraitProfile = wrappedRender;
   global.PortraitArmCompass = Object.freeze({ mode: '2d-compass-arms', shoulderDropFraction: SHOULDER_DROP_FRAC });
 })(window);
