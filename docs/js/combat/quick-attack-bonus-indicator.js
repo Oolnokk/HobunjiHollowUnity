@@ -19,6 +19,7 @@
   const DEBUG_QUERY_KEY = 'debugQuickBonus'; // Used by the mobile-friendly URL debug readout (?debugQuickBonus=1).
 
   let lastTarget = null; // Used to remove an alert immediately when auto-targeting moves to another enemy.
+  let lastReady = false; // Used by the resource-ring wrapper without re-running target search for every fighter.
   let debugBadge = null; // Used only when the optional mobile URL debug readout is enabled.
   let glyphTexture = null; // Shared by all three exclamation-mark materials; resource-ring rebuilds do not dispose texture maps.
   let glyphCanvas = null; // Retained so the custom font can redraw once document.fonts reports it loaded.
@@ -29,8 +30,8 @@
     return definition ? { attackId, definition } : null;
   }
 
-  // Mirrors combat-quickattacks.js:getConditions exactly. Keeping this pure
-  // also gives the optional debug API a deterministic condition inspector.
+  // Mirrors combat-quickattacks.js:getConditions exactly so the visual cue
+  // and the actual bonus branch agree on the same target-state thresholds.
   function getConditions(deps, target) {
     if (!deps?.player || !target) return { enemyStriking: false, exhausted: false, behind: false, lowHealth: false };
     const toPlayerX = deps.player.x - target.x;
@@ -66,8 +67,6 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `210px "${GLYPH_FONT}"`;
-    // A dark outline keeps the punctuation readable over pale terrain while
-    // the bright fill remains visible over night/dark terrain.
     ctx.lineJoin = 'round';
     ctx.lineWidth = 15;
     ctx.strokeStyle = '#111111';
@@ -88,7 +87,8 @@
     glyphTexture.magFilter = THREE.LinearFilter;
     glyphTexture.generateMipmaps = false;
     if ('colorSpace' in glyphTexture && THREE.SRGBColorSpace) glyphTexture.colorSpace = THREE.SRGBColorSpace;
-    document.fonts?.load?.(`210px "${GLYPH_FONT}"`).then(redrawGlyphTexture).catch(() => {});
+    const fontLoad = document.fonts?.load?.(`210px "${GLYPH_FONT}"`); // Used to refresh the canvas after the custom game font finishes loading.
+    fontLoad?.then(redrawGlyphTexture).catch(() => {});
     return glyphTexture;
   }
 
@@ -101,7 +101,6 @@
     const geometry = new THREE.PlaneGeometry(radius * 0.34, radius * 0.72); // Used to keep each punctuation mark legible without touching the ring arcs.
     const material = new THREE.MeshBasicMaterial({
       map: ensureGlyphTexture(),
-      color: 0xffffff,
       transparent: true,
       opacity: 1,
       side: THREE.DoubleSide,
@@ -143,8 +142,7 @@
   }
 
   function removeIndicator(entity) {
-    const ringHud = entity?._ringHud;
-    const indicator = findIndicator(ringHud);
+    const indicator = findIndicator(entity?._ringHud);
     if (indicator) disposeIndicator(indicator);
   }
 
@@ -165,26 +163,27 @@
     }
   }
 
+  function ensureVisibleIndicator(entity, nowMs) {
+    const ringHud = entity?._ringHud;
+    if (!ringHud) return;
+    let indicator = findIndicator(ringHud);
+    if (!indicator) {
+      indicator = buildIndicator(DEFAULT_RING_RADIUS);
+      ringHud.add(indicator);
+    }
+    ringHud.visible = true;
+    animateIndicator(indicator, indicator.userData.quickBonusRadius || DEFAULT_RING_RADIUS, nowMs);
+  }
+
   function syncReadyTarget(nowMs = performance.now()) {
-    const state = getReadyState(); // Used by both rendering and the optional on-screen debug readout.
+    const state = getReadyState(); // Evaluated once per animation frame, not once per resource ring/enemy.
     if (lastTarget && lastTarget !== state.target) removeIndicator(lastTarget);
     lastTarget = state.target;
+    lastReady = state.ready;
 
-    if (state.target?._ringHud) {
-      const ringHud = state.target._ringHud;
-      let indicator = findIndicator(ringHud);
-      if (!state.ready) {
-        if (indicator) disposeIndicator(indicator);
-      } else {
-        if (!indicator) {
-          indicator = buildIndicator(DEFAULT_RING_RADIUS);
-          ringHud.add(indicator);
-        }
-        // A homeostatic enemy normally hides its entire resource ring. The
-        // bonus-ready alert is itself a reason for this HUD root to be visible.
-        ringHud.visible = true;
-        animateIndicator(indicator, indicator.userData.quickBonusRadius || DEFAULT_RING_RADIUS, nowMs);
-      }
+    if (state.target) {
+      if (state.ready) ensureVisibleIndicator(state.target, nowMs);
+      else removeIndicator(state.target);
     }
 
     updateDebugBadge(state);
@@ -196,15 +195,15 @@
     requestAnimationFrame(frame);
   }
 
-  // If callers resolve ResourceRings.updateRingHud dynamically, this wrapper
-  // guarantees the alert runs after the ring's own homeostasis visibility
-  // decision. The RAF loop above remains a fallback for callers that cached
-  // the original function before this late-loaded module initialized.
+  // Resource rings can rebuild their children when a rounded resource value
+  // changes. Reassert only the already-computed target state after that rebuild;
+  // do NOT call findAutoTarget here because updateRingHud may run once per enemy.
   const baseUpdateRingHud = window.ResourceRings.updateRingHud; // Used to preserve the existing resource-ring renderer unchanged beneath the alert layer.
   if (typeof baseUpdateRingHud === 'function' && !baseUpdateRingHud.__quickBonusWrapped) {
-    const wrappedUpdateRingHud = function (...args) { // Used to reassert the alert after any resource-ring rebuild in the same frame.
+    const wrappedUpdateRingHud = function (...args) { // Used to restore the alert if this target's ring rebuilt since the once-per-frame condition check.
       const result = baseUpdateRingHud.apply(this, args);
-      syncReadyTarget(performance.now());
+      const entity = args[0]; // Used to avoid touching unrelated fighter rings in this lightweight post-pass.
+      if (lastReady && entity === lastTarget) ensureVisibleIndicator(entity, performance.now());
       return result;
     };
     wrappedUpdateRingHud.__quickBonusWrapped = true;
