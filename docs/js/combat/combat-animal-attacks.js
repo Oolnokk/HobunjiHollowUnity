@@ -17,6 +17,8 @@
 
   function register(id, def) { ATTACKS[id] = def; }
 
+  // ctx: { target } — the creature/player object this attack was aimed at
+  // when triggered (player for a hostile, nearest hostile for a companion).
   function start(c, id, ctx) {
     const def = ATTACKS[id];
     if (!def) return false;
@@ -65,6 +67,20 @@
   window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, cancel };
 
   // ── Pounce ──────────────────────────────────────────────────────────
+  //
+  // windup: locked in place, crouches by lerping scaleY down (bottom-edge
+  // anchored — see updateCreatureMesh) toward POUNCE_CROUCH_SCALE_Y.
+  // uncrouch: a quick lerp of scaleY back to 1 before the leap actually
+  // starts ("lerp back to normal scale then zip forward").
+  // leap: zips forward at fixed speed along the angle locked in at trigger
+  // time — direction can't change once committed, so a player who's moved
+  // out of the line by the time the leap starts simply isn't hit. A cone
+  // collider anchored just ahead of the creature ("the head") sweeps along
+  // with it every frame; the first living target (the original target, or
+  // anything else that happens to be in the way) it catches takes damage and
+  // knockback and ends the leap on the spot. If nothing's caught, the leap
+  // keeps going — well past the original target's distance — until it
+  // collides with solid terrain or the map edge.
   let POUNCE_WINDUP_S = 0.5;
   let POUNCE_UNCROUCH_S = 0.1;
   let POUNCE_CROUCH_SCALE_Y = 0.55;
@@ -82,6 +98,11 @@
     return Math.max(0, totalPounceCost - genericCost);
   }
 
+  // Every other living thing the leap's cone could plausibly catch: the
+  // creature's intended target plus anyone on the "other side" who might
+  // wander into the cone by accident. Hostiles can accidentally clip a
+  // companion; companions can accidentally clip any hostile (not just the
+  // one they were chasing).
   function gatherTargets(c, deps) {
     const out = [];
     if (c.isCompanion) {
@@ -89,6 +110,10 @@
         if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
       }
     } else {
+      // deps.players is the full player list (see game.js's `players` array)
+      // — falls back to just deps.player for any older/ad-hoc deps object
+      // that doesn't set it. A hostile's leap/charge can clip whichever of
+      // them it actually catches in its cone, not only the local player.
       for (const p of deps.players || [deps.player]) out.push({ isPlayer: true, ref: p });
       for (const comp of deps.companionObjects) {
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
@@ -100,6 +125,9 @@
   function pounceStart(c, state, ctx, deps) {
     state.stage = 'windup';
     state.t = 0;
+    // Direction locks the instant the pounce is triggered — nothing during
+    // windup/uncrouch/leap re-aims it, which is what makes the leap
+    // genuinely dodgeable.
     state.angle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
     state.targets = gatherTargets(c, deps);
     state.rangePx = c.def.attackRangePx;
@@ -128,6 +156,8 @@
         c.scaleY = 1;
         state.stage = 'leap';
         state.t = 0;
+        // Lock the sprite onto a single non-idle (mid-stride) frame for the
+        // whole leap instead of letting the default run-cycle keep ticking.
         if (c.def.sprites) {
           const frameUrl = c.def.sprites.run[0];
           const genotypeKind = deps.genotypeKindFor ? deps.genotypeKindFor(c) : null;
@@ -138,10 +168,11 @@
       return true;
     }
 
+    // stage === 'leap'
     const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
     const stepPx = POUNCE_LEAP_SPEED_PX_S * dt;
     const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false;
+    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false; // collided; stop in place
 
     c.x = nx;
     c.y = ny;
@@ -159,7 +190,7 @@
       if (target.isPlayer) deps.damagePlayer(state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       else deps.damageCreature(ref, state.damage, headX, headY, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
       deps.playCreatureClawHit?.(c);
-      return false;
+      return false; // hit landed; stop in place
     }
     return true;
   }
