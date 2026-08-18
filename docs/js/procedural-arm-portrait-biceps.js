@@ -136,9 +136,16 @@
     updateBoneTransform(THREE, left, rig, skinnedPlane, torsoBone);
     updateBoneTransform(THREE, right, rig, skinnedPlane, torsoBone);
 
-    // Create a fresh skeleton so Three r128 resizes boneMatrices correctly;
-    // pushing into oldSkeleton.bones would leave its typed bone-matrix buffer short.
-    const skeleton = new THREE.Skeleton([...oldSkeleton.bones, left.bone, right.bone]);
+    // Create a fresh skeleton so Three r128 resizes boneMatrices correctly. Keep
+    // the existing torso/neck inverse binds byte-for-byte equivalent, and only
+    // calculate inverses for the two newly-added bicep bones.
+    const oldInverses = oldSkeleton.boneInverses.map(matrix => matrix.clone());
+    const leftInverse = left.bone.matrixWorld.clone().invert();
+    const rightInverse = right.bone.matrixWorld.clone().invert();
+    const skeleton = new THREE.Skeleton(
+      [...oldSkeleton.bones, left.bone, right.bone],
+      [...oldInverses, leftInverse, rightInverse],
+    );
     skinnedPlane.bind(skeleton, skinnedPlane.bindMatrix.clone());
     const leftIndex = skeleton.bones.indexOf(left.bone);
     const rightIndex = skeleton.bones.indexOf(right.bone);
