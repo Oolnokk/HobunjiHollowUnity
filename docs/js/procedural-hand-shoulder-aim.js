@@ -1,47 +1,31 @@
 // Hand-only shoulder compass. The painted arms remain untouched.
 //
-// The raw arm PNG scan supplies a shoulder target for each side. After the normal
-// authored/tool hand transform is applied, this layer computes the minimal rotation
-// that would point the GLB's local +Y/top (assumed wrist end) from the hand back to
-// the shoulder. Pitch, yaw and roll can then independently adopt their component
-// from that fully aimed orientation. Disabled axes keep the authored value.
+// Shoulder targets are scanned asynchronously from the raw arm PNGs *after* normal
+// avatar construction. A failed or delayed scan therefore cannot break portrait or
+// avatar rebuilding. Local +Y/top is treated as the wrist end. Pitch, yaw and roll
+// independently adopt components from the fully shoulder-pointing orientation.
 (function (global) {
   'use strict';
 
   const hands = global.ProceduralHandAttachments;
   const profiles = global.HobunjiHandModelProfiles;
+  const shoulderScanner = global.PortraitHandShoulderScan;
   if (!hands?.attach || !profiles || hands.attach.__hobunjiShoulderAimWrapped) return;
 
   const originalAttach = hands.attach.bind(hands);
 
   function installShoulderAim(THREE, rig, options = {}) {
     const avatarRoot = options.avatarRoot || rig?.avatarRoot || null;
-    const sourceCanvas = avatarRoot?.userData?.sourceCanvas || null;
-    const scan = sourceCanvas?.hobunjiHandShoulders || null;
-    if (!avatarRoot || !scan?.sides) return rig;
-
-    const parent = rig.parent || avatarRoot.parent;
-    if (!parent) return rig;
+    const parent = rig?.parent || avatarRoot?.parent || null;
+    if (!avatarRoot || !parent) return rig;
 
     const modelWidth = Number(avatarRoot.userData?.portraitModelWidth) || Number(options.modelHeight) || 0.9;
     const modelHeight = Number(avatarRoot.userData?.portraitModelHeight) || Number(options.modelHeight) || 0.9;
     const placementRatio = Number(avatarRoot.userData?.portraitVerticalPlacementRatio);
     const assemblyY = ((Number.isFinite(placementRatio) ? placementRatio : 0.5) - 0.5) * modelHeight;
-    const canvasWidth = Number(scan.width) || sourceCanvas.width || 1;
-    const canvasHeight = Number(scan.height) || sourceCanvas.height || 1;
+    const sourceCanvas = options.sourceCanvas || avatarRoot.userData?.sourceCanvas || null;
 
     const shoulderAvatar = {};
-    for (const side of ['left', 'right']) {
-      const point = scan.sides?.[side];
-      if (!point) continue;
-      shoulderAvatar[side] = new THREE.Vector3(
-        -modelWidth / 2 + (Number(point.x) || 0) / canvasWidth * modelWidth,
-        assemblyY + modelHeight / 2 - (Number(point.y) || 0) / canvasHeight * modelHeight,
-        0,
-      );
-    }
-    if (!Object.keys(shoulderAvatar).length) return rig;
-
     const localTop = new THREE.Vector3(0, 1, 0);
     const shoulderWorld = new THREE.Vector3();
     const shoulderParent = new THREE.Vector3();
@@ -53,6 +37,9 @@
     const aimedEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const outputEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const debugBySide = { left: null, right: null };
+    let scanState = shoulderScanner?.scanProfile ? 'pending' : 'unavailable';
+    let scanError = null;
+    let disposed = false;
 
     function socketFor(side) {
       return rig.group?.getObjectByName?.(`${side}_hand_socket`) || null;
@@ -62,6 +49,26 @@
       return profiles.shoulderAimForSpecies?.(rig.speciesId)
         || profiles.modelForSpecies?.(rig.speciesId)?.shoulderAim
         || { pitch: false, yaw: false, roll: true };
+    }
+
+    function installScan(scan) {
+      for (const key of Object.keys(shoulderAvatar)) delete shoulderAvatar[key];
+      if (!scan?.sides) {
+        scanState = 'no-shoulders';
+        return;
+      }
+      const canvasWidth = Math.max(1, Number(scan.width) || Number(sourceCanvas?.width) || 256);
+      const canvasHeight = Math.max(1, Number(scan.height) || Number(sourceCanvas?.height) || 256);
+      for (const side of ['left', 'right']) {
+        const point = scan.sides?.[side];
+        if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) continue;
+        shoulderAvatar[side] = new THREE.Vector3(
+          -modelWidth / 2 + Number(point.x) / canvasWidth * modelWidth,
+          assemblyY + modelHeight / 2 - Number(point.y) / canvasHeight * modelHeight,
+          0,
+        );
+      }
+      scanState = Object.keys(shoulderAvatar).length ? 'ready' : 'no-shoulders';
     }
 
     function shoulderInParent(side) {
@@ -77,23 +84,27 @@
     }
 
     function aimSide(side) {
+      if (disposed) return false;
       const socket = socketFor(side);
       const shoulder = shoulderInParent(side);
-      if (!socket || !shoulder) return false;
+      if (!socket || !shoulder) {
+        debugBySide[side] = { enabled: { ...settings() }, applied: false, reason: scanState };
+        return false;
+      }
+
       const enabled = settings();
       if (!enabled.pitch && !enabled.yaw && !enabled.roll) {
-        debugBySide[side] = { enabled: { ...enabled }, applied: false };
+        debugBySide[side] = { enabled: { ...enabled }, applied: false, reason: 'all-axes-off' };
         return false;
       }
 
       targetDirection.copy(shoulder).sub(socket.position);
-      if (targetDirection.lengthSq() < 1e-10) return false;
+      if (targetDirection.lengthSq() < 1e-10) {
+        debugBySide[side] = { enabled: { ...enabled }, applied: false, reason: 'hand-at-shoulder' };
+        return false;
+      }
       targetDirection.normalize();
 
-      // Build the smallest quaternion correction that maps the hand GLB's current
-      // local +Y/top direction onto the shoulder direction. This gives one coherent
-      // fully-aimed target orientation; selective axis toggles then take only the
-      // requested Euler channels from it rather than accumulating corrections.
       currentTop.copy(localTop).applyQuaternion(socket.quaternion).normalize();
       deltaQuaternion.setFromUnitVectors(currentTop, targetDirection);
       aimedQuaternion.copy(deltaQuaternion).multiply(socket.quaternion);
@@ -133,6 +144,31 @@
       return true;
     }
 
+    function aimAll() {
+      aimSide('left');
+      aimSide('right');
+    }
+
+    if (shoulderScanner?.scanProfile && options.profile) {
+      const scanWidth = Number(sourceCanvas?.width) || 256;
+      const scanHeight = Number(sourceCanvas?.height) || 256;
+      Promise.resolve(shoulderScanner.scanProfile(options.profile, scanWidth, scanHeight))
+        .then(scan => {
+          if (disposed) return;
+          installScan(scan);
+          aimAll();
+          global.ProceduralHandFrameDriver?.syncNow?.();
+        })
+        .catch(error => {
+          if (disposed) return;
+          scanState = 'error';
+          scanError = error?.message || String(error);
+          console.warn('[hand-shoulder-aim] shoulder scan skipped:', error);
+        });
+    } else if (!options.profile) {
+      scanState = 'no-profile';
+    }
+
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
       rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion) {
@@ -155,11 +191,16 @@
     if (originalUseIdlePose) {
       rig.useIdlePose = function shoulderAimUseIdlePose() {
         const result = originalUseIdlePose();
-        aimSide('left');
-        aimSide('right');
+        aimAll();
         return result;
       };
     }
+
+    const originalDispose = rig.dispose?.bind(rig);
+    rig.dispose = function shoulderAimDispose() {
+      disposed = true;
+      return originalDispose?.();
+    };
 
     const originalDebug = rig.getDebug?.bind(rig);
     rig.getDebug = function shoulderAimDebug() {
@@ -168,13 +209,13 @@
         shoulderCompass: {
           mode: 'hand-only-axis-selective',
           localTopAxis: '+Y',
+          scanState,
+          scanError,
           sides: debugBySide,
         },
       };
     };
 
-    aimSide('left');
-    aimSide('right');
     return rig;
   }
 
