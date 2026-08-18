@@ -9,19 +9,26 @@
 // range) while the actual strike still hits every creature in the swing's
 // cone, matching combat-combo.js's hit-resolution precedent.
 //
-// "enemyStriking" (Opportunist Jab's bonus) needs a per-creature windup/
-// strike telegraph flag that doesn't exist yet — hostile attacks currently
-// land instantly (see game.js's updateHostiles). It's checked here against
-// c.telegraphState === 'strike' so it starts working for free once that
-// flag is introduced without any rework to this file.
+// "enemyStriking" (Opportunist Jab's bonus) recognizes both the generic
+// enemy telegraph's strike stage and named modular animal attacks that expose
+// a committed strike window through Combat.animalAttacks.isStriking(). That
+// keeps Pounce's leap and future named attacks on the same condition path.
 (() => {
   "use strict";
   if (!window.Combat?.abilities) { console.error('combat-quickattacks.js requires combat-core.js + combat-loadout.js to load first'); return; }
 
   function now() { return performance.now() / 1000; }
 
+  function enemyIsStriking(target) {
+    if (!target) return false;
+    if (target.telegraphState === 'strike') return true;
+    return !!window.Combat.animalAttacks?.isStriking?.(target);
+  }
+
   // Mirrors the sandbox's getQuickConditions(), evaluated against the
-  // player's current auto-target rather than a fixed dummy.
+  // player's current auto-target rather than a fixed dummy. This is exported
+  // below so attack execution and every readiness cue use exactly one source
+  // of truth instead of duplicating state thresholds in UI code.
   function getConditions(deps, target) {
     if (!target) return { enemyStriking: false, exhausted: false, behind: false, lowHealth: false };
     const toPlayerX = deps.player.x - target.x;
@@ -31,7 +38,7 @@
     const forwardY = Math.sin(target.facing || 0);
     const behindDot = forwardX * (toPlayerX / dist) + forwardY * (toPlayerY / dist);
     return {
-      enemyStriking: target.telegraphState === 'strike',
+      enemyStriking: enemyIsStriking(target),
       // True Exhausted (see resource-system.js's spendStamina) always
       // counts, even if a Winded-Stamina-reduced effective max makes the
       // plain 20%-of-max fallback threshold look full.
@@ -40,6 +47,7 @@
       lowHealth: target.health > 0 && target.health <= target.maxHealth * 0.30,
     };
   }
+  window.Combat.getQuickAttackConditions = getConditions;
 
   // Each technique's numbers live in TECHNIQUES as plain data (base values,
   // a single condition key it swaps to `bonus` values under, and its own
@@ -186,8 +194,8 @@
   // check (player exhausted/behind/low-health from the bandit's point of
   // view) and get the exact same damage/range/knockback numbers a player
   // jab would. opportunistJab is excluded from the bandit pool — its bonus
-  // depends on telegraphState, which only creatures have, not the player.
-  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S };
+  // depends on enemy strike-state data, which only creatures expose today.
+  window.Combat.quickAttackData = { TECHNIQUES, WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions };
 
   // Applies docs/config/combat/attack-values.json's `quickAttacks` section —
   // see combat-combo.js's applyComboConfig for the general pattern. TECHNIQUES
@@ -213,6 +221,6 @@
     if (cfg.HOLD_S != null) HOLD_S = cfg.HOLD_S;
     if (cfg.RANGE_SCALE != null) RANGE_SCALE = cfg.RANGE_SCALE;
     if (cfg.LUNGE_TILE_MUL != null) LUNGE_TILE_MUL = cfg.LUNGE_TILE_MUL;
-    Object.assign(window.Combat.quickAttackData, { WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S });
+    Object.assign(window.Combat.quickAttackData, { WINDUP_S, STRIKE_S, RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions });
   };
 })();

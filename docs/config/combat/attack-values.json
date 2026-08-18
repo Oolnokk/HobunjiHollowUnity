@@ -68,7 +68,8 @@
   "creatureAttacks": {
     "pounce": {
       "WINDUP_S": 0.5, "UNCROUCH_S": 0.1, "CROUCH_SCALE_Y": 0.55,
-      "LEAP_SPEED_PX_S": 480, "KNOCKBACK_PX_S": 640
+      "LEAP_SPEED_PX_S": 480, "KNOCKBACK_PX_S": 640,
+      "STAMINA_COST_MAX_FRACTION": 0.4, "STAMINA_COST_MIN": 18
     },
     "guardCharge": {
       "DURATION_S": 0.12, "KNOCKBACK_PX_S": 900,
