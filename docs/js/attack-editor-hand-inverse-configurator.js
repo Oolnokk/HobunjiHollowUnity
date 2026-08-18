@@ -1,12 +1,12 @@
-// Direct inverse-hand authoring overlay for the Attack Animation Editor.
-// The existing hand configurator still owns GLB selection, scale, imports and
-// species overrides. This adapter replaces the old "tool socket on hand" UI with
-// a direct hand-root transform relative to the tool attach frame.
+// Direct hand-from-tool authoring overlay for the Attack Animation Editor.
+// Model/scale/import controls remain in attack-editor-hand-configurator.js; this
+// layer authors the complete hand transform from a tool grip socket. No arm IK,
+// reach clamp, elbow, forearm, or hidden wrist correction participates.
 (function (global) {
   'use strict';
 
   const profiles = global.HobunjiHandModelProfiles;
-  const hands = global.ProceduralArmAnimation;
+  const hands = global.ProceduralHandAttachments || global.ProceduralArmAnimation;
   if (!profiles || !hands || !document.getElementById('handProfileSelect')) return;
   if (document.getElementById('handFromToolPositionFields')) return;
 
@@ -15,17 +15,17 @@
   const card = profileSelect.closest('.card');
   if (!card) return;
 
-  // Hide the superseded socket-centric controls; their values are normalized to
-  // identity by hand-model-profiles.js so they cannot double-transform the model.
+  // Hide the superseded model-local tool socket controls. hand-model-profiles.js
+  // normalizes legacy toolGrip to identity so only handFromTool affects placement.
   $('handGripPositionFields')?.closest('.poseGroup')?.style.setProperty('display', 'none');
   $('handGripRotationFields')?.closest('.poseGroup')?.style.setProperty('display', 'none');
 
   const topHelp = card.querySelector('.sectionTitle')?.nextElementSibling;
   if (topHelp?.classList.contains('help')) {
-    topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. Grip mode + the values below are the complete tool-relative transform; idle medial wrist facing is not hidden underneath these sliders.';
+    topHelp.innerHTML = 'Final hand size = <b>model scale × species/gender scale</b>. Grip mode + the values below are the complete transform from the tool grip socket to the hand. The tool is never moved by the hand system.';
   }
   const tag = card.querySelector('.sectionTag');
-  if (tag) tag.textContent = 'hand ← tool + grip mode';
+  if (tag) tag.textContent = 'hand ← tool socket';
 
   const guideCheckbox = $('handShowGripGuide');
   const guideField = guideCheckbox?.closest('.field');
@@ -38,19 +38,16 @@
   const wrapper = document.createElement('div');
   wrapper.innerHTML = `
     <div class="poseGroup" id="handFromToolPositionGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Hand position relative to tool attach</div>
-      <div class="help" style="margin-bottom:6px">Direct inverse-animation offset in tool-local axes. Values are normalized hand-height units and scale with the final model/species hand size.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#34d399"></span>Hand position relative to tool grip</div>
+      <div class="help" style="margin-bottom:6px">Tool-local X/Y/Z offset from the primary or secondary grip frame. Values are normalized hand-height units and scale with the final hand size.</div>
       <div id="handFromToolPositionFields"></div>
     </div>
     <div class="poseGroup" id="handFromToolRotationGroup">
-      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand direction relative to tool attach</div>
-      <div class="help" style="margin-bottom:6px">Pitch / yaw / roll rotate the hand from the selected grip mode. The forearm follows the resulting hand orientation.</div>
+      <div class="poseGroupHead"><span class="dot" style="background:#fbbf24"></span>Hand direction relative to tool grip</div>
+      <div class="help" style="margin-bottom:6px">Pitch / yaw / roll are composed with the selected grip mode and then applied directly to the hand.</div>
       <div id="handFromToolRotationFields"></div>
     </div>
-    <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Live inverse-hand preview ready.</div>
-    <div class="help" id="handInverseReachHelp" style="padding:7px;border:1px solid rgba(52,211,153,.22);border-radius:8px;margin-bottom:8px">
-      Tool pose is authoritative while reachable. Reach starts at 120% of the scanned arm and grows further if the painted arm would extend below the elbow. Overreach correction is transient: it never rewrites Neutral/Windup/Strike XYZ, so changing the hand offset, species, grip mode or arm length restores the original authored tool pose.
-    </div>
+    <div class="help" id="handInverseLiveStatus" style="padding:7px;border:1px solid rgba(34,211,238,.22);border-radius:8px;margin-bottom:8px">Direct hand attachment preview ready.</div>
   `;
   while (wrapper.firstChild) card.insertBefore(wrapper.firstChild, guideField || $('handEffectiveStatus'));
 
@@ -116,12 +113,9 @@
     if (status) {
       const authored = currentModel()?.handFromTool || null;
       const gripMode = global.HobunjiHandGripModes?.currentModeKey?.() || '-';
-      const reach = d?.arm?.expandedArmReach?.right?.final;
-      const baseReach = d?.arm?.expandedArmReach?.right?.base;
-      const weighted = d?.arm?.portraitBicepSkinning?.weightedVertices;
-      const clamp = live?.clamped ? `CLAMP ${live.clampDeltaWorld?.length?.().toFixed?.(3) ?? '?'}` : 'reachable';
-      status.textContent = `mode=${gripMode} · authored ${shortTransform(authored)} · effective ${shortTransform(d?.handFromTool)} · ${clamp} · reach ${Number(baseReach || 0).toFixed(3)}→${Number(reach || 0).toFixed(3)} · bicep verts ${weighted ?? 0} · forearm=${d?.arm?.forearmOrientationOwner || '-'}`;
-      status.style.color = live?.clamped ? '#fbbf24' : '';
+      const second = live?.secondaryActive ? `${live.toolKey || d?.toolKey || 'tool'} secondary` : 'idle';
+      status.textContent = `mode=${gripMode} · authored ${shortTransform(authored)} · effective ${shortTransform(d?.handFromTool)} · right=primary grip · left=${second} · DIRECT / NO ARM IK`;
+      status.style.color = '';
     }
     return results;
   }
@@ -131,9 +125,8 @@
     const model = profiles.data.models?.[key];
     if (!model) return;
     ensureTransform(model);
-    // handFromTool is a live IK offset, not a model-asset change. Mutate the
-    // existing profile object in place so slider motion does NOT trigger the
-    // profile subscriber that rebuilds/reloads both GLB hands on every tick.
+    // This is a socket transform, not an asset reload. Mutate in place so slider
+    // movement does not rebuild both GLBs; the frame driver reads it immediately.
     mutator(model.handFromTool);
     global.HOBUNJI_HAND_MODEL_PROFILES = profiles.data;
     syncPreview();
