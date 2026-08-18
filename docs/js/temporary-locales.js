@@ -279,5 +279,5 @@
 // ordering without making the large index or generator files carry the patch.
 if (typeof document !== 'undefined' && document.currentScript) {
   const cloudRuntimeSrc = new URL('cloud-forest-runtime.js', document.currentScript.src).href;
-  document.write('<script src="' + cloudRuntimeSrc + '"><\\/script>');
+  document.write('<script src="' + cloudRuntimeSrc + '"></' + 'script>');
 }
