@@ -32,13 +32,13 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
-    new URL('config/hand-model-profiles.js?v=20260818d', docsBase).href,
+    new URL('config/hand-model-profiles.js?v=20260818e', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
-    new URL('js/hand-shoulder-pose-runtime.js?v=20260818b', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20260818c', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
