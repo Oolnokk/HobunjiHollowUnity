@@ -33,6 +33,10 @@
     };
   }
 
+  function hasAuthoredPoseAim(raw = {}) {
+    return ['neutral','windup','strike'].some(phase => raw?.[phase]?.shoulderAim && typeof raw[phase].shoulderAim === 'object');
+  }
+
   function weightsAt(progress, timing = {}, poseSet = {}, sequence = 'attack') {
     const t = clamp01(progress);
     const wf = clamp01(timing.windupFrac ?? timing.wf ?? 0.16);
@@ -81,7 +85,10 @@
     };
     const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
     const key = `ranged:${action.itemKey}:${kind}`;
-    const authored = global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {};
+    const configuredPose = kind === 'load' ? def.loadPose : def.firePose;
+    const authored = hasAuthoredPoseAim(configuredPose)
+      ? configuredPose
+      : (global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {});
     return applyLeftIdleRule(side, action.itemKey, weightsAt(progress, timing, authored, sequence));
   }
 
@@ -127,6 +134,7 @@
     active: ACTIVE,
     normalize,
     normalizePoseSet,
+    hasAuthoredPoseAim,
     lerp,
     weightsAt,
     currentWeights,
