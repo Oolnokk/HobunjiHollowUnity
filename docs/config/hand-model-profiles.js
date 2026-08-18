@@ -1,11 +1,10 @@
 // Reusable hand-model profiles shared by gameplay and the Attack Animation Editor.
 // Model scale corrects the imported GLB itself. Species/gender scale is applied on top.
-// Source-hand orientation is profile-controlled: mirrorX flips the imported GLB across
-// local X before the ordinary left/right side mirror is applied. Tool grip remains 0,0,0.
-// handFromTool is the inverse-animation transform: where the hand root should sit and
-// point relative to the held tool's attach frame. The tool remains authoritative unless
-// that requested hand target exceeds arm reach, at which point runtime/editor pull the
-// tool pose inward by exactly the IK clamp delta.
+// Source-hand convention: authored GLBs are LEFT hands by default — palm away from
+// camera, fingers down, thumb left. The runtime right hand is the local-X mirror.
+// Per-model mirrorX remains configurable so an asset authored in the opposite basis
+// can opt out without changing every other hand model. Tool grip origin is 0,0,0.
+// handFromTool is the model-specific fine alignment relative to the selected grip mode.
 (function (global) {
   'use strict';
 
@@ -26,10 +25,12 @@
     schema: 'hobunji_hand_model_profiles.v1',
     handHeightFraction: 0.12,
     sourceBasis: {
-      handedness: 'per-model-mirrorX',
+      handedness: 'left',
+      rightHandTransform: 'mirror-x',
       mirrorAxis: 'x',
-      palmBackFacesCamera: true,
+      palmFaces: 'away-from-camera',
       fingersPoint: 'down',
+      thumbPoints: 'left',
       toolGripOrigin: { x: 0, y: 0, z: 0 },
     },
     colors: { bone: '#D8C7A3', keratin: '#44484D' },
@@ -37,7 +38,7 @@
       pachyderm: {
         glb: 'assets/models/hands/hand_pachyderm.glb',
         scale: DEFAULT_MODEL_SCALE,
-        mirrorX: false,
+        mirrorX: true,
         handFromTool: identityTransform(),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
@@ -46,7 +47,7 @@
       sloth: {
         glb: 'assets/models/hands/hand_sloth.glb',
         scale: DEFAULT_MODEL_SCALE,
-        mirrorX: false,
+        mirrorX: true,
         handFromTool: identityTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
@@ -54,7 +55,7 @@
       feline: {
         glb: 'assets/models/hands/hand_feline.glb',
         scale: DEFAULT_MODEL_SCALE,
-        mirrorX: false,
+        mirrorX: true,
         handFromTool: identityTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
@@ -62,7 +63,7 @@
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
         scale: DEFAULT_MODEL_SCALE,
-        mirrorX: false,
+        mirrorX: true,
         handFromTool: identityTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
@@ -105,20 +106,28 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
-    next.sourceBasis = next.sourceBasis || clone(DEFAULT_DATA.sourceBasis);
-    next.sourceBasis.handedness = 'per-model-mirrorX';
-    next.sourceBasis.mirrorAxis = 'x';
-    delete next.sourceBasis.thumbPoints;
+    next.sourceBasis = {
+      ...clone(DEFAULT_DATA.sourceBasis),
+      ...(next.sourceBasis || {}),
+      handedness: 'left',
+      rightHandTransform: 'mirror-x',
+      mirrorAxis: 'x',
+      palmFaces: 'away-from-camera',
+      fingersPoint: 'down',
+      thumbPoints: 'left',
+      toolGripOrigin: { x: 0, y: 0, z: 0 },
+    };
     next.models = next.models || {};
     for (const model of Object.values(next.models)) {
       if (!model || typeof model !== 'object') continue;
       const modelScale = Number(model.scale);
       if (!Number.isFinite(modelScale) || modelScale <= 0) model.scale = DEFAULT_MODEL_SCALE;
-      model.mirrorX = model.mirrorX === true;
+      // New/missing values inherit the corrected left-source convention. Explicit
+      // false remains a valid per-model override for a GLB authored as a right hand.
+      model.mirrorX = model.mirrorX !== false;
       // Older drafts authored a tool socket on the hand. Migrate that into the
       // direct hand-from-tool convention. Position/rotation negation is exact for
-      // identity/single-axis drafts and a safe visual approximation for any old
-      // multi-axis draft; all current source defaults were identity.
+      // identity/single-axis drafts and a safe visual approximation for old drafts.
       if (!model.handFromTool) {
         const legacy = normalizeTransform(model.toolGrip);
         model.handFromTool = {
@@ -138,7 +147,7 @@
       }
       // ProceduralArmAnimation's legacy model-socket path still reads toolGrip.
       // Keep it identity so the arm endpoint is the actual hand root; the shared
-      // frame driver now applies handFromTool before solving IK.
+      // frame driver/grip-mode layer applies handFromTool before solving IK.
       model.toolGrip = identityTransform();
     }
     return next;
@@ -155,7 +164,7 @@
     return normalizeKey(global.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[species]?.parentSpecies);
   }
   function modelKeyForSpecies(speciesId) {
-    const seen = new Set(); // Prevents malformed parent-species cycles while resolving model inheritance.
+    const seen = new Set();
     let current = normalizeKey(speciesId);
     while (current && !seen.has(current)) {
       if (data.speciesModels?.[current]) return data.speciesModels[current];
@@ -174,7 +183,7 @@
   function footScaleFor(speciesId, gender) {
     const table = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale || {};
     const g = normalizeGender(gender);
-    const seen = new Set(); // Prevents malformed parent-species cycles during foot-scale fallback.
+    const seen = new Set();
     let current = normalizeKey(speciesId);
     while (current && !seen.has(current)) {
       const value = Number(table[current]?.[g]);
@@ -187,7 +196,7 @@
   }
   function speciesScaleFor(speciesId, gender) {
     const g = normalizeGender(gender);
-    const seen = new Set(); // Prevents malformed parent-species cycles during authored hand-scale lookup.
+    const seen = new Set();
     let current = normalizeKey(speciesId);
     while (current && !seen.has(current)) {
       const value = Number(data.speciesScaleOverrides?.[current]?.[g]);
@@ -208,13 +217,13 @@
   function replace(next) {
     if (!next || next.schema !== DEFAULT_DATA.schema) throw new Error(`Expected ${DEFAULT_DATA.schema}`);
     data = normalizeData(next);
-    global.HOBUNJI_HAND_MODEL_PROFILES = data; // Keeps the legacy/global data alias synchronized after imports or resets.
+    global.HOBUNJI_HAND_MODEL_PROFILES = data;
     notify();
     return data;
   }
   function mutate(mutator) {
     mutator(data);
-    data = normalizeData(data); // Enforces direct hand-from-tool semantics after every editor mutation.
+    data = normalizeData(data);
     global.HOBUNJI_HAND_MODEL_PROFILES = data;
     notify();
     return data;
