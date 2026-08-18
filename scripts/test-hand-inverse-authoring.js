@@ -13,6 +13,7 @@ const driver = read('docs/js/procedural-hand-frame-driver.js');
 const editor = read('docs/js/attack-editor-hand-inverse-configurator.js');
 const gripModes = read('docs/js/hand-grip-modes.js');
 const gripEditor = read('docs/js/attack-editor-hand-grip-mode.js');
+const medialWrists = read('docs/js/procedural-hand-medial-wrists.js');
 const shoulders = read('docs/js/procedural-hand-portrait-shoulders.js');
 const armMask = read('docs/js/portrait-arm-cloud-mask.js');
 const armBones = read('docs/js/arm-bones.js');
@@ -37,6 +38,10 @@ assert(gripModes.includes('pickshovel') && gripModes.includes("return 'palm-perp
 assert(gripModes.includes('PALM_CLEARANCE'), 'default grips must offset the palm from a zero-origin handle');
 assert(gripEditor.includes('handGripModeSelect'), 'attack editor must expose grip modes as a dropdown');
 
+assert(medialWrists.includes('MEDIAL_YAW_DEG = 90'), 'default wrists must rotate ninety degrees from front/back into a medial basis');
+assert(medialWrists.includes("applyMedialWorldBasis(THREE, rig, ['left', 'right'])"), 'idle pose must turn both palms toward the character centerline');
+assert(medialWrists.includes("yaw: (Number(rotation.yaw) || 0) + MEDIAL_YAW_DEG"), 'tool-following grip transforms must inherit the medial wrist basis');
+
 assert(armBones.includes('DEFAULT_MIN_ELBOW_DEG'), 'arm IK must constrain elbow folding');
 assert(armBones.includes('DEFAULT_MAX_ELBOW_DEG'), 'arm IK must constrain elbow hyperextension');
 assert(armBones.includes("constraint: requestedDistance > maxReach ? 'reach-limit' : 'elbow-fold-limit'"), 'arm IK must report which joint constraint clamped the target');
@@ -51,8 +56,9 @@ assert(armMask.includes("filter(layer => /arm[lr]/i.test"), 'higher cloud mask m
 assert(armMask.includes("globalCompositeOperation = 'destination-in'"), 'arm-only coverage must intersect raw arms with the higher cloud mask');
 
 assert(bootstrap.includes('hand-grip-modes.js'), 'shared grip modes must load before the frame driver');
+assert(bootstrap.includes('procedural-hand-medial-wrists.js'), 'medial wrist basis must load before the frame driver attaches rigs');
 assert(bootstrap.includes('procedural-hand-portrait-shoulders.js'), 'portrait shoulder tracker must load before the frame driver attaches rigs');
 assert(bootstrap.includes('attack-editor-hand-inverse-configurator.js'), 'editor inverse-hand authoring adapter must be parser-loaded');
 assert(bootstrap.includes('attack-editor-hand-grip-mode.js'), 'editor grip-mode dropdown must be parser-loaded');
 
-console.log('procedural hands: grip modes + reversible reach + constrained elbows + dynamic shoulders PASS');
+console.log('procedural hands: grip modes + medial wrists + reversible reach + constrained elbows + dynamic shoulders PASS');
