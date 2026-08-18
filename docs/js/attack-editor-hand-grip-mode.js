@@ -86,8 +86,6 @@
 
   select.addEventListener('change', () => applyMode(select.value, true));
   toolSelect?.addEventListener('change', () => {
-    // Changing the referenced tool starts from its normal grip convention. The
-    // dropdown remains fully manual afterward for attacks/stances that differ.
     manualChoice = false;
     chooseDefaultForTool();
   });
@@ -96,14 +94,14 @@
     if (!manualChoice && gripModes.modes[key]) select.value = key;
   });
 
-  // Core export builds directly from its private animation object rather than
-  // jsonView, so handle the export button in capture phase and add the one extra
-  // serializable field to the already-rendered core JSON. Copy JSON needs no
-  // special handler because it already copies jsonView.value.
+  // Read jsonView through its public property here rather than bypassing it with
+  // HTMLTextAreaElement.prototype. Later editor extensions (per-pose shoulder aim)
+  // wrap the same property, so this lets all independently-authored fields compose
+  // into one export instead of the first capture handler silently dropping them.
   exportBtn?.addEventListener('click', event => {
-    if (!jsonView || !textareaValue?.get) return;
+    if (!jsonView) return;
     let obj;
-    try { obj = JSON.parse(textareaValue.get.call(jsonView)); }
+    try { obj = JSON.parse(jsonView.value); }
     catch (_) { return; }
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
     obj.gripMode = select.value || gripModes.currentModeKey();
@@ -117,8 +115,6 @@
     setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
   }, true);
 
-  // Restore the mode when loading an animation exported with this field. The
-  // editor's own loader still owns every other field.
   loadFile?.addEventListener('change', async () => {
     const file = loadFile.files?.[0];
     if (!file) return;
