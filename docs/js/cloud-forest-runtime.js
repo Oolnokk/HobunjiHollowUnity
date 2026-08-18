@@ -315,7 +315,7 @@
       const index = scene.items.indexOf(object);
       if (index >= 0) scene.items.splice(index, 1);
     }
-    if (object.userData?.ownedBackgroundGeometry) object.geometry?.dispose?.();
+    if (object.userData?.ownedBackgroundGeometry || object.userData?.bakedForestWall || object.userData?.denseForestWall) object.geometry?.dispose?.();
   }
 
   function replaceNorthGenericBorder(scene, added, slope, zcols, heightAt) {
