@@ -22,10 +22,16 @@
   function start(c, id, ctx) {
     const def = ATTACKS[id];
     if (!def) return false;
+    const deps = window.Combat.deps;
+    // game.js pays each species' generic attackStaminaCost immediately before
+    // calling start(). Named attacks can top that payment up here without
+    // making the generic bite/Guard Charge share their larger specialty cost.
+    const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
+    if (additionalStaminaCost > 0) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id);
     const state = {};
-    def.start(c, state, ctx, window.Combat.deps);
-    c._animalAttack = { def, state };
-    window.Combat.deps?.playCreatureBark?.(c);
+    def.start(c, state, ctx, deps);
+    c._animalAttack = { id, def, state };
+    deps?.playCreatureBark?.(c);
     return true;
   }
 
@@ -42,6 +48,14 @@
 
   function isBusy(c) { return !!c._animalAttack; }
 
+  // Quick Attack condition checks use this instead of guessing at private
+  // named-attack stage strings. Each attack can declare exactly which part
+  // is its committed/strike window; Pounce's is the whole leap.
+  function isStriking(c) {
+    const aa = c?._animalAttack;
+    return !!(aa?.def?.isStriking?.(aa.state, c));
+  }
+
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
@@ -50,7 +64,7 @@
     c.scaleY = 1;
   }
 
-  window.Combat.animalAttacks = { register, start, update, isBusy, cancel };
+  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, cancel };
 
   // ── Pounce ──────────────────────────────────────────────────────────
   //
@@ -72,8 +86,17 @@
   let POUNCE_CROUCH_SCALE_Y = 0.55;
   let POUNCE_LEAP_SPEED_PX_S = 480;
   let POUNCE_KNOCKBACK_PX_S = 640;
+  let POUNCE_STAMINA_COST_MAX_FRACTION = 0.4; // Pounce total cost scales with the creature's own stamina pool.
+  let POUNCE_STAMINA_COST_MIN = 18; // Keeps ordinary 30–40 Stamina animals meaningfully above their old 12–14 generic attack cost.
 
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function pounceAdditionalStaminaCost(c) {
+    const maxStamina = Math.max(0, Number(c?.maxStamina) || 0);
+    const genericCost = Math.max(0, Number(c?.def?.attackStaminaCost) || 0); // Already paid by game.js before animalAttacks.start().
+    const totalPounceCost = Math.max(POUNCE_STAMINA_COST_MIN, maxStamina * POUNCE_STAMINA_COST_MAX_FRACTION);
+    return Math.max(0, totalPounceCost - genericCost);
+  }
 
   // Every other living thing the leap's cone could plausibly catch: the
   // creature's intended target plus anyone on the "other side" who might
@@ -200,7 +223,14 @@
     c.scaleY = 1;
   }
 
-  register('pounce', { start: pounceStart, update: pounceUpdate, cancel: pounceCancel });
+  register('pounce', {
+    label: 'Pounce',
+    start: pounceStart,
+    update: pounceUpdate,
+    cancel: pounceCancel,
+    additionalStaminaCost: pounceAdditionalStaminaCost,
+    isStriking: state => state?.stage === 'leap',
+  });
 
   // ── Guard Charge ────────────────────────────────────────────────────
   //
@@ -293,6 +323,8 @@
       if (p.CROUCH_SCALE_Y != null) POUNCE_CROUCH_SCALE_Y = p.CROUCH_SCALE_Y;
       if (p.LEAP_SPEED_PX_S != null) POUNCE_LEAP_SPEED_PX_S = p.LEAP_SPEED_PX_S;
       if (p.KNOCKBACK_PX_S != null) POUNCE_KNOCKBACK_PX_S = p.KNOCKBACK_PX_S;
+      if (p.STAMINA_COST_MAX_FRACTION != null) POUNCE_STAMINA_COST_MAX_FRACTION = Math.max(0, Number(p.STAMINA_COST_MAX_FRACTION) || 0);
+      if (p.STAMINA_COST_MIN != null) POUNCE_STAMINA_COST_MIN = Math.max(0, Number(p.STAMINA_COST_MIN) || 0);
     }
     const g = cfg.guardCharge;
     if (g) {
