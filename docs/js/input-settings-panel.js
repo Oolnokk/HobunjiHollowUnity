@@ -9,7 +9,7 @@
   // configures what those handlers look up.
   let deps = null;
   const ACTION_BUTTON_IDS = new Set(['action1', 'action2', 'action3', 'action4', 'action5']); // Used to give the five visible gameplay buttons player-facing names in Settings.
-  const RUNTIME_HELPER_SCRIPTS = [ // Loaded here because this panel is a stable late bootstrap after Combat/THREE and before the player can meaningfully interact with Settings.
+  const RUNTIME_HELPER_SCRIPTS = [ // Loaded only after game.js reaches this panel's init(), so helper requests cannot race core boot scripts such as water-system.js.
     'js/combat/quick-attack-bonus-indicator.js',
     'js/fullscreen-toggle.js',
     'js/mobile-combat-zoom.js',
@@ -27,9 +27,14 @@
     }
   }
 
-  ensureRuntimeHelpers();
-
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // This init is called by game.js only after its core dependency/bootstrap
+    // pass succeeds. Starting optional helper fetches here preserves the
+    // parser-serialized startup path and prevents helpers from running against
+    // half-initialized game closures if an earlier boot dependency fails.
+    ensureRuntimeHelpers();
+  }
 
   function actionDisplayLabel(action) {
     if (!action?.id || !ACTION_BUTTON_IDS.has(action.id)) return action?.label || action?.id || '';
