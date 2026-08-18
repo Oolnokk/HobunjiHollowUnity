@@ -105,6 +105,15 @@
     return true;
   }
 
+  function downloadJson(filename, text) {
+    const blob = new Blob([text], { type: 'application/json' });
+    const anchor = document.createElement('a');
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = filename;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+  }
+
   function makePanel(host) {
     const panel = document.createElement('div');
     panel.id = 'hobunjiHandShoulderAuthor';
@@ -135,6 +144,7 @@
         </div>
       </div>
       <div class="row" style="margin-top:8px">
+        <button type="button" id="hobunjiShoulderDownloadJson" class="secondary">Download shoulder JSON</button>
         <button type="button" id="hobunjiShoulderCopyJson" class="secondary">Copy shoulder JSON</button>
         <button type="button" id="hobunjiShoulderResetAll" class="secondary">Reset all shoulders to 0,0</button>
       </div>
@@ -165,6 +175,10 @@
     panel.querySelector('#hobunjiShoulderResetAll').onclick = () => {
       global.HobunjiHandShoulderPoints.clearLocal();
       syncUi();
+    };
+    panel.querySelector('#hobunjiShoulderDownloadJson').onclick = () => {
+      downloadJson('hand-shoulder-points.json', global.HobunjiHandShoulderPoints.serialize());
+      ui.status.textContent = 'Downloaded hand-shoulder-points.json.';
     };
     panel.querySelector('#hobunjiShoulderCopyJson').onclick = async () => {
       try {
