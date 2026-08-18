@@ -37,8 +37,8 @@
       MAT_None_7a4e2e: 'body',
     },
     parrot: {
-      MAT_None_7a4e2e: 'body',
-      MAT_EyeSurface_0c0c0c: 'keratin',
+      MAT_None_7a4e2e: 'keratin',
+      MAT_EyeSurface_0c0c0c: 'body',
     },
   };
 
@@ -55,14 +55,14 @@
     }
 
     // Kenkari-family feet are procedural rather than GLB-backed, so there is no
-    // foot GLB table to inherit. Keep both the generic slot aliases and the known
-    // parrot hand-export aliases on their existing body/keratin roles.
+    // foot GLB table to inherit. Their two parrot-hand slots are intentionally
+    // flipped here: slot 1/None uses keratin, slot 2/EyeSurface uses body.
     const parrot = data.models?.parrot;
     if (parrot) {
       parrot.materialRoles = {
         ...(parrot.materialRoles || {}),
-        'Mat 1': 'body',
-        'Mat 2': 'keratin',
+        'Mat 1': 'keratin',
+        'Mat 2': 'body',
         ...handExportAliases.parrot,
       };
     }
