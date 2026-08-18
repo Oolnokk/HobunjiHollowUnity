@@ -14,38 +14,43 @@
     strikeFrac: 0.62,
     holdFrac: 0.78,
     poses: {
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 },
-      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0 },
-      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 },
+      // Neutral is an idle endpoint: Pitch + Roll aim to the shoulder.
+      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { pitch: true, yaw: false, roll: true } },
+      // Active endpoints deliberately retain Roll-only shoulder alignment.
+      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
+      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
     },
   };
 
   window.HeldActionAnimations = Object.freeze({ drink });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
-  // rotating arm sprites. Raw arm PNGs are scanned only after normal avatar build
-  // to calculate shoulder targets; selected hand rotation channels may aim there.
+  // rotating arm sprites. Shoulder coordinates are either manually authored in
+  // Animation Author or resolved by the raw-arm main-mass fallback. Per-pose axis
+  // weights then blend smoothly with the same pose timeline as the held item.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
     new URL('config/hand-model-profiles.js?v=20260818d', docsBase).href,
+    new URL('config/hand-shoulder-points.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20260818a', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
-    new URL('js/portrait-hand-shoulder-scan.js?v=20260818b', docsBase).href,
+    new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260818b', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260818e', docsBase).href,
   ];
   if (isAttackEditor) {
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260817b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818c', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
