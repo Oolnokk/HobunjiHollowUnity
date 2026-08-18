@@ -23,8 +23,8 @@
   window.HeldActionAnimations = Object.freeze({ drink });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
-  // rotating arm sprites. Raw arm PNGs are read only to calculate shoulder targets;
-  // procedural-hand-shoulder-aim.js optionally aims selected hand rotation channels.
+  // rotating arm sprites. Raw arm PNGs are scanned only after normal avatar build
+  // to calculate shoulder targets; selected hand rotation channels may aim there.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
@@ -34,10 +34,10 @@
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
-    new URL('js/portrait-hand-shoulder-scan.js?v=20260818a', docsBase).href,
+    new URL('js/portrait-hand-shoulder-scan.js?v=20260818b', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20260818d', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260818b', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20260818e', docsBase).href,
   ];
   if (isAttackEditor) {
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
@@ -45,7 +45,7 @@
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260817b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818b', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
