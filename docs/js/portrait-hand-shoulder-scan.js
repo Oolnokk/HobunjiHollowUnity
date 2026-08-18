@@ -17,7 +17,9 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
 
   function resolvedFighterFor(profile) {
-    const fighter = profile?.fighter || null;
+    // Attack Editor may intentionally render a no-arm fighter clone while retaining
+    // the real source fighter here so shoulder compass targets remain available.
+    const fighter = profile?.__hobunjiShoulderSourceFighter || profile?.fighter || null;
     if (!fighter) return null;
     const fighters = global.getPortraitFighters?.() || [];
     return fighters.find(candidate => candidate?.id === fighter.id)
