@@ -47,6 +47,10 @@
     new URL('js/procedural-hand-frame-driver.js?v=20260818e', docsBase).href,
   ];
   if (isAttackEditor) {
+    // The editor starts its first avatar rebuild immediately after these parser-time
+    // scripts. Repair the shared NpcAvatarPreview dependency before any hand/editor
+    // adapters run so a missed/cached helper request cannot strand the preview.
+    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
