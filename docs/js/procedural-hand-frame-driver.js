@@ -43,6 +43,8 @@
       speciesId: record.speciesId,
       gender: record.gender,
       bodyColors: record.bodyColors,
+      profile: record.profile,
+      sourceCanvas: record.sourceCanvas,
       modelHeight: avatarRoot.userData?.portraitModelHeight,
       handAttachX: avatarRoot.userData?.handAttachX,
       handAttachY: avatarRoot.userData?.handAttachY,
@@ -65,6 +67,7 @@
       THREE,
       avatarRoot,
       sourceCanvas,
+      profile: options.profile || null,
       speciesId: identity.speciesId,
       gender: identity.gender,
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
@@ -164,7 +167,7 @@
     if (secondaryGrip) {
       const p = secondaryGrip.position || {};
       position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
-      toolHolder.localToWorld(position); // Includes any tool-holder scale as well as rotation/translation.
+      toolHolder.localToWorld(position);
       quaternion.multiply(quaternionFromDeg(record, secondaryGrip.rotationDeg || {}));
     } else {
       position = toolHolder.getWorldPosition(new Vector3());
