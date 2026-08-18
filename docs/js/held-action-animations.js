@@ -44,6 +44,7 @@
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260818a', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
+    handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
   }
 
   function loadSequentially(urls) {
