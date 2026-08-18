@@ -4,6 +4,8 @@ const Trees = require('../docs/js/tree-asset-library.js');
 
 assert.equal(Trees.SCHEMA, 'hobunji_tree_assets.v1');
 assert.equal(Trees.BASE_PATH, 'assets/models/trees/');
+assert.equal(Trees.MODE_KEY, 'hobunji_tree_asset_mode_v1');
+assert.deepStrictEqual(Trees.MODES, ['baked', 'procedural']);
 assert.equal(Trees.ASSETS.length, 6, 'exactly six baked full-size tree variants are expected');
 
 const expected = [
@@ -33,6 +35,8 @@ assert.deepStrictEqual(index.assets.map(x => x.builder), [
   'buildShadewoodMesh','buildShadewoodMesh','buildShadewoodMesh',
 ]);
 
+Trees.setMode('procedural');
+assert.equal(Trees.getMode(), 'procedural', 'tree source mode should switch to procedural without needing GLTFLoader');
 const proceduralPine = [{id:'p0'},{id:'p1'},{id:'p2'}];
 const proceduralShade = [{id:'s0'},{id:'s1'},{id:'s2'}];
 const foliage = {
@@ -40,7 +44,8 @@ const foliage = {
   getShadewoodVariant: i => proceduralShade[((i % 3) + 3) % 3],
 };
 assert.equal(Trees.install(foliage), true, 'adapter should install against the two existing variant getters');
-assert.strictEqual(foliage.getCrownedPineVariant(1), proceduralPine[1], 'without GLBs, procedural pine fallback must remain intact');
-assert.strictEqual(foliage.getShadewoodVariant(2), proceduralShade[2], 'without GLBs, procedural shadewood fallback must remain intact');
+assert.strictEqual(foliage.getCrownedPineVariant(1), proceduralPine[1], 'procedural mode must preserve original pine getter');
+assert.strictEqual(foliage.getShadewoodVariant(2), proceduralShade[2], 'procedural mode must preserve original shadewood getter');
+assert.equal(Trees.status().mode, 'procedural');
 
-console.log(`PASS tree assets: ${Trees.ASSETS.length} stable GLB names, manifest/index parity, modulo lookup, and procedural fallback.`);
+console.log(`PASS tree assets: ${Trees.ASSETS.length} stable GLB names, mode toggle contract, manifest parity, and procedural getter preservation.`);
