@@ -12,6 +12,7 @@
   const RUNTIME_HELPER_SCRIPTS = [ // Loaded here because this panel is a stable late bootstrap after Combat/THREE and before the player can meaningfully interact with Settings.
     'js/combat/quick-attack-bonus-indicator.js',
     'js/fullscreen-toggle.js',
+    'js/mobile-combat-zoom.js',
   ];
 
   function ensureRuntimeHelpers() {
