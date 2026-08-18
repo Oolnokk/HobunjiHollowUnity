@@ -39,8 +39,6 @@
 
   function normalizeSettings(value) {
     const normalized = merge(DEFAULTS, value);
-    // Migrates settings saved by the first editor, when both modes shared
-    // one placement object. Float+ intentionally keeps its centroid X=0.
     if (value?.placement) {
       normalized.floatPlus.worldHeight = value.placement.worldHeight ?? normalized.floatPlus.worldHeight;
       normalized.floatPlus.yOffsetPercent = value.placement.yOffsetPercent ?? normalized.floatPlus.yOffsetPercent;
@@ -194,7 +192,7 @@
     const geometry = new THREE.PlaneGeometry(aspect, 1);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(geometry, material);
-    const totalHeight = layout.worldHeight * Math.max(2.7, chars.length * 0.82); // Keeps each stacked glyph close to one normal reward-list row in apparent size.
+    const totalHeight = layout.worldHeight * Math.max(2.7, chars.length * 0.82); // Each stacked glyph reads at roughly the same scale as one centered reward-list row.
     plane.scale.setScalar(totalHeight);
     plane.renderOrder = 1201;
     plane.frustumCulled = false;
@@ -202,7 +200,7 @@
     const parts = { plane, geometry, material, texture, canvas, ctx, width: aspect * totalHeight, height: totalHeight };
     drawConditionCallout(parts, text);
     ensureTankanFont().then(loaded => {
-      if (loaded && parts.plane.parent) drawConditionCallout(parts, text); // Redraw once the real Tankan glyphs are available, but only while this persistent event is still alive.
+      if (loaded && parts.plane.parent) drawConditionCallout(parts, text);
     });
     return parts;
   }
@@ -404,7 +402,7 @@
     }
     const cfg = state.settings.centeredFiveRow;
     const center = metrics.center.clone();
-    const mirroredListOffset = Math.abs(metrics.width * cfg.xOffsetPercent / 100) + event.width * 0.5; // Mirrors the regular reward list onto the opposite screen side of the character.
+    const mirroredListOffset = Math.abs(metrics.width * cfg.xOffsetPercent / 100) + event.width * 0.5; // Same horizontal list offset, mirrored to the opposite screen side.
     center.addScaledVector(cameraRight, -mirroredListOffset);
     center.y += metrics.combinedHeight * cfg.yOffsetPercent / 100;
     event.plane.position.copy(center);
