@@ -68,6 +68,44 @@ const cloudEntrance = Core.findEdgePathRun(cloudGrid, 20, 8, 'north');
 assert.equal(cloudEntrance.widthCells, 5, 'wilderness scenery should select the widest generated north-edge path run');
 assert.equal(cloudEntrance.center, 13.5, 'wilderness scenery should center itself on the generated entrance, not a hardcoded column');
 
+const Border = window.BorderTerrain;
+assert.equal(Border.CLOUD_FOREST_BASE_TREE_SPACING_WORLD, 1, 'Cloud Forest scenery must translate the generator tree spacing to one world unit');
+const denseLayout = Border.buildDenseCloudForestLayout(12, 6, 6, 1.5, () => 2);
+const scales = new Set(denseLayout.map(entry => entry.scale));
+assert(scales.has(1), 'dense layout must include full-height Shadewoods');
+assert(scales.has(0.75), 'dense layout must fill gaps with 75% Shadewoods');
+assert(scales.has(0.5), 'dense layout must fill remaining gaps with 50% Shadewoods');
+assert(denseLayout.every(entry => Math.abs(entry.x - 6) >= 1.5), 'all tree layers must preserve the authored town-path cut');
+const fullTrees = denseLayout.filter(entry => entry.scale === 1);
+for (let i = 0; i < fullTrees.length; i++) {
+  for (let j = i + 1; j < fullTrees.length; j++) {
+    const dx = Math.abs(fullTrees[i].x - fullTrees[j].x);
+    const dz = Math.abs(fullTrees[i].z - fullTrees[j].z);
+    if (dx < 1e-6 || dz < 1e-6) assert(Math.max(dx, dz) >= 1 - 1e-6, 'full-height centers must retain the one-world-unit base spacing');
+  }
+}
+
+const syntheticWorkspace = {
+  maps: [{
+    id: 'map_generated_wilderness_root', cols: 3, rows: 4, tiles: {
+      '0,0': { type: 'rock', plateau: 'boundary_a', borderEscarpment: true, generatedBorderEscarpment: true, borderEscarpmentSide: 'north', borderEscarpmentDepth: 2 },
+      '1,0': { type: 'path', plateau: 'boundary_b', borderEscarpment: true, generatedBorderEscarpment: true, borderEscarpmentSide: 'north', borderEscarpmentDepth: 2 },
+      '0,1': { type: 'grass', plateau: 'interior_a' },
+      '1,1': { type: 'path', plateau: 'interior_b' },
+    }, generatedFrom: {}
+  }],
+  generatorPreset: {},
+};
+Border.removeCloudForestNorthBoundaryCliffs(syntheticWorkspace);
+const normalizedRoot = syntheticWorkspace.maps[0];
+assert.equal(normalizedRoot.tiles['0,0'].plateau, 'interior_a', 'north cliff tile should inherit its inward plateau instead of a boundary-cliff plateau');
+assert.equal(normalizedRoot.tiles['0,0'].type, 'grass', 'north cliff rock should become ordinary ground');
+assert.equal(normalizedRoot.tiles['0,0'].borderEntryGate, true, 'raised north-edge ground must merge as a flat plateau top rather than an incline wall');
+assert.equal(normalizedRoot.tiles['0,0'].borderEscarpment, undefined);
+assert.equal(normalizedRoot.tiles['1,0'].plateau, 'interior_b');
+assert.equal(normalizedRoot.tiles['1,0'].type, 'path', 'the actual generated entrance path must survive cliff removal');
+assert(normalizedRoot.generatedFrom.northBoundaryCliffsRemoved >= 2);
+
 const scene = { items: [], add(obj) { this.items.push(obj); }, remove() {} };
 window.BorderTerrain.init({
   getTownScene: () => scene,
@@ -86,4 +124,4 @@ window.BorderTerrain.init({
 });
 window.BorderTerrain.buildTownBorderTerrain();
 assert(scene.items.length >= 8, `expected terrain, cliff, route and water meshes; got ${scene.items.length}`);
-console.log(`PASS background scenery: ${attachments.length} attachments; ${scene.items.length} generated scene meshes; cloud entrance ${cloudEntrance.widthCells} tiles at ${cloudEntrance.center}.`);
+console.log(`PASS background scenery: ${attachments.length} attachments; ${scene.items.length} generated town meshes; cloud entrance ${cloudEntrance.widthCells} tiles at ${cloudEntrance.center}; dense layout ${denseLayout.length} trees.`);
