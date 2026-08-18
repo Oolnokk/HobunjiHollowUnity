@@ -30,10 +30,11 @@
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null; // Resolves docs/ regardless of whether the caller is game or a nested tool.
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href); // Used to build absolute hand-module URLs from both call sites.
   const handScripts = [
-    new URL('config/hand-model-profiles.js?v=20260817b', docsBase).href,
+    new URL('config/hand-model-profiles.js?v=20260817c', docsBase).href,
     new URL('js/arm-bones.js?v=20260817b', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/procedural-arm-animation.js?v=20260817c', docsBase).href,
+    new URL('js/procedural-hand-double-side.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-portrait-shoulders.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260817b', docsBase).href,
     new URL('js/procedural-hand-frame-driver-owner.js?v=20260817a', docsBase).href,
