@@ -29,6 +29,7 @@
   // docs/index.html or the editor's large inline module.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
+  const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
     new URL('config/hand-model-profiles.js?v=20260817d', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260817a', docsBase).href,
@@ -41,11 +42,13 @@
     new URL('js/procedural-hand-frame-driver.js?v=20260817c', docsBase).href,
     new URL('js/procedural-hand-frame-driver-owner.js?v=20260817a', docsBase).href,
   ];
-  if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
+  if (isAttackEditor) {
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260817b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260817a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260817b', docsBase).href);
+  } else {
+    handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
   }
 
   function loadSequentially(urls) {
