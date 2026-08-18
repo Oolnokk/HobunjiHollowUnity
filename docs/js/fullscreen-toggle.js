@@ -34,16 +34,16 @@
       #${BUTTON_ID} {
         position: fixed;
         top: calc(env(safe-area-inset-top, 0px) + 10px);
-        right: calc(env(safe-area-inset-right, 0px) + 10px);
+        left: calc(env(safe-area-inset-left, 0px) + 10px);
         z-index: 23000;
-        width: 48px;
-        height: 48px;
+        width: 36px;
+        height: 36px;
         display: grid;
         place-items: center;
         margin: 0;
         padding: 0;
         border: 2px solid rgba(255,255,255,.82);
-        border-radius: 12px;
+        border-radius: 9px;
         background: rgba(13,16,22,.74);
         color: #fff;
         box-shadow: 0 3px 12px rgba(0,0,0,.48), inset 0 0 0 1px rgba(0,0,0,.42);
@@ -62,11 +62,11 @@
         border-color: #dfffdc;
       }
       #${BUTTON_ID}[data-supported="false"] { opacity: .58; }
-      #${BUTTON_ID} svg { width: 27px; height: 27px; display: block; pointer-events: none; }
+      #${BUTTON_ID} svg { width: 20px; height: 20px; display: block; pointer-events: none; }
       #${FEEDBACK_ID} {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 66px);
-        right: calc(env(safe-area-inset-right, 0px) + 10px);
+        top: calc(env(safe-area-inset-top, 0px) + 52px);
+        left: calc(env(safe-area-inset-left, 0px) + 10px);
         z-index: 23001;
         max-width: min(82vw, 330px);
         padding: 7px 10px;
@@ -81,9 +81,9 @@
       }
       #${FEEDBACK_ID}.show { opacity: 1; transform: translateY(0); }
       @media (pointer: coarse) {
-        #${BUTTON_ID} { width: 54px; height: 54px; border-radius: 14px; }
-        #${BUTTON_ID} svg { width: 31px; height: 31px; }
-        #${FEEDBACK_ID} { top: calc(env(safe-area-inset-top, 0px) + 72px); }
+        #${BUTTON_ID} { width: 41px; height: 41px; border-radius: 11px; }
+        #${BUTTON_ID} svg { width: 23px; height: 23px; }
+        #${FEEDBACK_ID} { top: calc(env(safe-area-inset-top, 0px) + 57px); }
       }
     `;
     document.head.appendChild(style);
