@@ -1,23 +1,25 @@
-// Adds a second, slightly higher cloud-shaped opacity cutout to base arm sprites only.
+// Adds a second, slightly higher cloud opacity cutout to the base arm sprites only.
 //
-// The species' existing portraitOpacityMaskLayer is still applied by portrait-utils
-// at the end of the full portrait and therefore continues to affect the whole avatar.
-// This adapter reuses that same cloud image/xform, shifts it upward, and pre-masks
-// each raw arm layer before that arm is composited. Torso and overwear never enter
-// the temporary arm canvas, so this higher mask cannot punch holes through them.
+// This deliberately does NOT replace renderPortraitProfile(), drawPortraitLayer(),
+// or drawPortraitLayerWarped(). The canonical portrait renderer must remain the
+// sole owner of its deformation grids. Instead, after an ordinary front portrait
+// finishes rendering, we build a separate alphaMap: white everywhere, with the
+// intersection of raw arm alpha and the higher cloud mask punched to black.
+// PNGPlaneAvatar then applies that alphaMap to the finished portrait material.
+// Torso, overwear and every other portrait layer are therefore untouched.
 (function (global) {
   'use strict';
 
-  const originalRender = global.renderPortraitProfile || global.renderProfile;
-  const originalDraw = global.drawPortraitLayer;
-  const originalDrawWarped = global.drawPortraitLayerWarped;
-  if (typeof originalRender !== 'function' || typeof originalDraw !== 'function' || typeof originalDrawWarped !== 'function') return;
-  if (originalRender.__hobunjiArmCloudMaskWrapped) return;
+  const previewApi = global.NpcAvatarPreview;
+  const avatarApi = global.PNGPlaneAvatar;
+  if (!previewApi?.renderProfileToCanvas || !avatarApi?.buildSinglePlaneAvatarModel) return;
+  if (previewApi.renderProfileToCanvas.__hobunjiArmCloudAlphaWrapped) return;
 
-  const contextConfig = new WeakMap();
-  const scratchByContext = new WeakMap();
-  const maskImageCache = new Map();
-  const warnedWarpFallbacks = new Set();
+  const LOGICAL_W = 200;
+  const LOGICAL_H = 200;
+  const LAYER_SIZE = 80;
+  const DEFAULT_AX_OFFSET = 0.12;
+  const imageCache = new Map();
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
 
@@ -30,10 +32,10 @@
     return new URL(`assets/${raw.replace(/^\.\//, '')}`, docsBase).href;
   }
 
-  function loadMask(path) {
+  function loadImage(path) {
     const url = resolveAssetPath(path);
     if (!url) return Promise.resolve(null);
-    if (maskImageCache.has(url)) return maskImageCache.get(url);
+    if (imageCache.has(url)) return imageCache.get(url);
     const promise = new Promise(resolve => {
       const image = new Image();
       image.crossOrigin = 'anonymous';
@@ -41,18 +43,8 @@
       image.onerror = () => resolve(null);
       image.src = url;
     });
-    maskImageCache.set(url, promise);
+    imageCache.set(url, promise);
     return promise;
-  }
-
-  function normalizedXform(layer) {
-    const xf = layer?.xform && typeof layer.xform === 'object' ? layer.xform : {};
-    return {
-      ax: Number(layer?.ax ?? xf.ax) || 0,
-      ay: Number(layer?.ay ?? xf.ay) || 0,
-      sx: Number(layer?.sx ?? xf.sx ?? xf.scaleX) || 1,
-      sy: Number(layer?.sy ?? xf.sy ?? xf.scaleY) || 1,
-    };
   }
 
   function resolvedFighterFor(profile) {
@@ -64,139 +56,154 @@
       || fighter;
   }
 
-  function renderConfig(profile) {
-    const fighter = resolvedFighterFor(profile);
-    const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
-    if (!maskLayer?.url) return null;
-    const armUrls = new Set((fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
-      .filter(layer => /arm[lr]/i.test(String(layer?.id || '')))
-      .map(layer => String(layer?.url || ''))
-      .filter(Boolean));
-    if (!armUrls.size) return null;
-    const base = normalizedXform(maskLayer);
-    const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
-    const axOffset = Number.isFinite(configuredOffset) ? configuredOffset : 0.12;
+  function xformFor(layer) {
+    if (layer?.xformPreset && typeof global.getPortraitXformPreset === 'function') {
+      return global.getPortraitXformPreset(layer.xformPreset);
+    }
+    const xf = layer?.xform && typeof layer.xform === 'object' ? layer.xform : {};
     return {
-      armUrls,
-      maskPath: maskLayer.url,
-      maskXform: { ...base, ax: base.ax + axOffset },
+      ax: Number(layer?.ax ?? xf.ax) || 0,
+      ay: Number(layer?.ay ?? xf.ay) || 0,
+      sx: Number(layer?.sx ?? xf.sx ?? xf.scaleX ?? xf.scaleMulX) || 1,
+      sy: Number(layer?.sy ?? xf.sy ?? xf.scaleY ?? xf.scaleMulY) || 1,
     };
   }
 
-  function scratchFor(ctx) {
-    const width = ctx?.canvas?.width || 1;
-    const height = ctx?.canvas?.height || 1;
-    let record = scratchByContext.get(ctx);
-    if (!record || record.canvas.width !== width || record.canvas.height !== height) {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      record = { canvas, ctx: canvas.getContext('2d') };
-      scratchByContext.set(ctx, record);
+  function drawLogicalImage(ctx, image, xform, canvas) {
+    if (!ctx || !image || !canvas) return;
+    const scaleX = canvas.width / LOGICAL_W;
+    const scaleY = canvas.height / LOGICAL_H;
+    const h = LAYER_SIZE * xform.sy;
+    const w = (image.naturalWidth / Math.max(1, image.naturalHeight)) * LAYER_SIZE * xform.sx;
+    const cx = LOGICAL_W / 2 + xform.ay * LAYER_SIZE;
+    const cy = LOGICAL_H / 2 - xform.ax * LAYER_SIZE;
+    ctx.drawImage(image,
+      (cx - w / 2) * scaleX,
+      (cy - h / 2) * scaleY,
+      w * scaleX,
+      h * scaleY,
+    );
+  }
+
+  async function buildArmCloudAlphaMap(sourceCanvas, profile) {
+    const fighter = resolvedFighterFor(profile);
+    const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
+    const armLayers = (fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
+      .filter(layer => /arm[lr]/i.test(String(layer?.id || '')) && layer?.url);
+    if (!sourceCanvas?.width || !sourceCanvas?.height || !maskLayer?.url || !armLayers.length) return null;
+
+    const [maskImage, ...armImages] = await Promise.all([
+      loadImage(maskLayer.url),
+      ...armLayers.map(layer => loadImage(layer.url)),
+    ]);
+    if (!maskImage || armImages.every(image => !image)) return null;
+
+    // Build the exact arm-only coverage first. Torso/overwear never enter this canvas.
+    const intersection = document.createElement('canvas');
+    intersection.width = sourceCanvas.width;
+    intersection.height = sourceCanvas.height;
+    const ictx = intersection.getContext('2d');
+    for (let index = 0; index < armLayers.length; index++) {
+      const image = armImages[index];
+      if (image) drawLogicalImage(ictx, image, xformFor(armLayers[index]), intersection);
     }
-    return record;
+
+    // Keep only the pixels where that arm coverage intersects the higher cloud.
+    const maskXform = xformFor(maskLayer);
+    const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
+    maskXform.ax += Number.isFinite(configuredOffset) ? configuredOffset : DEFAULT_AX_OFFSET;
+    ictx.save();
+    ictx.globalCompositeOperation = 'destination-in';
+    drawLogicalImage(ictx, maskImage, maskXform, intersection);
+    ictx.restore();
+
+    // Three.js alphaMap samples the texture's green channel. White preserves the
+    // finished portrait; transparent/black pixels from destination-out remove only
+    // the higher-cloud/arm intersection.
+    const alphaCanvas = document.createElement('canvas');
+    alphaCanvas.width = sourceCanvas.width;
+    alphaCanvas.height = sourceCanvas.height;
+    const actx = alphaCanvas.getContext('2d');
+    actx.fillStyle = '#ffffff';
+    actx.fillRect(0, 0, alphaCanvas.width, alphaCanvas.height);
+    actx.globalCompositeOperation = 'destination-out';
+    actx.drawImage(intersection, 0, 0);
+    actx.globalCompositeOperation = 'source-over';
+    return alphaCanvas;
   }
 
-  function applyMask(ctx, image, xform) {
-    const logicalW = 200, logicalH = 200, layerSize = 80;
-    const h = layerSize * xform.sy;
-    const w = (image.naturalWidth / Math.max(1, image.naturalHeight)) * layerSize * xform.sx;
-    const cx = logicalW / 2 + xform.ay * layerSize;
-    const cy = logicalH / 2 - xform.ax * layerSize;
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.drawImage(image, cx - w / 2, cy - h / 2, w, h);
-    ctx.restore();
-  }
-
-  function shouldMaskArm(ctx, sourceKey) {
-    const cfg = contextConfig.get(ctx);
-    return !!(cfg && cfg.armUrls.has(String(sourceKey || '')) && cfg.maskImage);
-  }
-
-  function drawArmIsolated(ctx, drawFn) {
-    const cfg = contextConfig.get(ctx);
-    if (!cfg) return drawFn(ctx);
-    const scratch = scratchFor(ctx);
-    const sctx = scratch.ctx;
-    sctx.save();
-    sctx.setTransform(1, 0, 0, 1, 0, 0);
-    sctx.clearRect(0, 0, scratch.canvas.width, scratch.canvas.height);
-    sctx.restore();
-
-    const transform = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
-    if (transform && typeof sctx.setTransform === 'function') sctx.setTransform(transform);
-    else sctx.setTransform(1, 0, 0, 1, 0, 0);
-    sctx.globalAlpha = ctx.globalAlpha;
-    sctx.globalCompositeOperation = 'source-over';
-    sctx.filter = 'none';
-    drawFn(sctx);
-    applyMask(sctx, cfg.maskImage, cfg.maskXform);
-
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.filter = 'none';
-    ctx.drawImage(scratch.canvas, 0, 0);
-    ctx.restore();
-  }
-
-  const wrappedDraw = function armCloudMaskedPortraitLayer(ctx, img, xform, tint, sourceKey) {
-    if (!shouldMaskArm(ctx, sourceKey)) return originalDraw(ctx, img, xform, tint, sourceKey);
-    return drawArmIsolated(ctx, offCtx => originalDraw(offCtx, img, xform, tint, sourceKey));
-  };
-
-  const wrappedDrawWarped = function armCloudMaskedWarpedLayer(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey) {
-    if (!shouldMaskArm(ctx, sourceKey)) {
-      return originalDrawWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey);
-    }
-    try {
-      return drawArmIsolated(ctx, offCtx => originalDrawWarped(
-        offCtx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey,
-      ));
-    } catch (error) {
-      // Portrait animation data can briefly expose an incomplete deformation grid
-      // while a profile/animation is being rebuilt. The ordinary renderer used to
-      // survive because the next frame replaced it; the isolated arm pass must not
-      // turn that transient state into a rejected avatar build. Draw the exact same
-      // tinted arm without warp for this one frame and still apply the arm-only mask.
-      const warningKey = `${speciesId || 'unknown'}:${gender || 'unknown'}:${sourceKey || 'arm'}`;
-      if (!warnedWarpFallbacks.has(warningKey)) {
-        warnedWarpFallbacks.add(warningKey);
-        console.warn('[arm-cloud-mask] incomplete portrait deformation grid; using unwarped arm fallback', {
-          speciesId, gender, sourceKey, message: error?.message || String(error),
-        });
+  const originalRenderToCanvas = previewApi.renderProfileToCanvas.bind(previewApi);
+  const wrappedRenderToCanvas = async function armCloudAlphaRenderToCanvas(canvas, profile, renderOptions = {}) {
+    const rendered = await originalRenderToCanvas(canvas, profile, renderOptions);
+    // Head-only and behind-view canvases are auxiliary inputs to the shared neck/
+    // back-face rig. Only the canonical front portrait owns this alphaMap.
+    if (rendered && renderOptions?.onlyHeadSprite !== true && renderOptions?.portraitView !== 'behind' && renderOptions?.view !== 'behind') {
+      try {
+        canvas.hobunjiArmCloudAlphaMap = await buildArmCloudAlphaMap(canvas, profile);
+      } catch (error) {
+        // A decorative cloud mask must never be capable of rejecting avatar construction.
+        canvas.hobunjiArmCloudAlphaMap = null;
+        console.warn('[arm-cloud-mask] alpha-map build skipped:', error);
       }
-      return drawArmIsolated(ctx, offCtx => originalDraw(offCtx, img, xform, tint, sourceKey));
     }
+    return rendered;
   };
+  wrappedRenderToCanvas.__hobunjiArmCloudAlphaWrapped = true;
+  previewApi.renderProfileToCanvas = wrappedRenderToCanvas;
 
-  global.drawPortraitLayer = wrappedDraw;
-  global.drawPortraitLayerWarped = wrappedDrawWarped;
-
-  const wrappedRender = async function armCloudMaskAwareRender(canvas, profile, renderOptions) {
-    const cfg = renderConfig(profile);
-    if (!cfg || !canvas?.getContext) return originalRender(canvas, profile, renderOptions);
-    cfg.maskImage = await loadMask(cfg.maskPath);
-    if (!cfg.maskImage) return originalRender(canvas, profile, renderOptions);
-    const ctx = canvas.getContext('2d');
-    contextConfig.set(ctx, cfg);
-    try {
-      return await originalRender(canvas, profile, renderOptions);
-    } finally {
-      contextConfig.delete(ctx);
+  function applyAlphaMap(THREE, avatarRoot, alphaCanvas) {
+    if (!THREE?.CanvasTexture || !avatarRoot?.traverse || !alphaCanvas) return null;
+    const texture = new THREE.CanvasTexture(alphaCanvas);
+    texture.name = 'portrait_arm_cloud_alpha_map';
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    let applied = 0;
+    avatarRoot.traverse(node => {
+      if (!node?.isMesh || !node.material) return;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (!material || !('map' in material)) continue;
+        material.alphaMap = texture;
+        material.transparent = true;
+        material.needsUpdate = true;
+        applied++;
+      }
+    });
+    if (!applied) {
+      texture.dispose();
+      return null;
     }
+    avatarRoot.userData.armCloudAlphaTexture = texture;
+    return texture;
+  }
+
+  const originalBuildAvatar = avatarApi.buildSinglePlaneAvatarModel;
+  const wrappedBuildAvatar = function armCloudAlphaAvatarBuild(THREE, sourceCanvas, options = {}) {
+    const avatarRoot = originalBuildAvatar.call(this, THREE, sourceCanvas, options);
+    if (avatarRoot && sourceCanvas?.hobunjiArmCloudAlphaMap) {
+      applyAlphaMap(THREE, avatarRoot, sourceCanvas.hobunjiArmCloudAlphaMap);
+    }
+    return avatarRoot;
   };
-  wrappedRender.__hobunjiArmCloudMaskWrapped = true;
-  global.renderPortraitProfile = wrappedRender;
-  global.renderProfile = wrappedRender;
+  wrappedBuildAvatar.__hobunjiArmCloudAlphaWrapped = true;
+  avatarApi.buildSinglePlaneAvatarModel = wrappedBuildAvatar;
+
+  const originalDisposeAvatar = avatarApi.disposeAvatarModel?.bind(avatarApi);
+  if (originalDisposeAvatar) {
+    avatarApi.disposeAvatarModel = function armCloudAlphaDispose(avatarRoot) {
+      avatarRoot?.userData?.armCloudAlphaTexture?.dispose?.();
+      if (avatarRoot?.userData) avatarRoot.userData.armCloudAlphaTexture = null;
+      return originalDisposeAvatar(avatarRoot);
+    };
+  }
 
   global.PortraitArmCloudMask = {
-    get defaultAxOffset() { return 0.12; },
+    mode: 'png-plane-alpha-map',
+    get defaultAxOffset() { return DEFAULT_AX_OFFSET; },
     get configuredAxOffset() {
       const value = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
-      return Number.isFinite(value) ? value : 0.12;
+      return Number.isFinite(value) ? value : DEFAULT_AX_OFFSET;
     },
   };
 })(window);
