@@ -98,6 +98,13 @@
         if (Object.keys(kept).length) clean[weapon] = kept;
       });
       rawLoadoutLoad(clean);
+      if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.combatLoadout = JSON.parse(JSON.stringify(clean));
+      try {
+        const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Used to persist the migration so stale legacy defaults cannot revive after a later unlock/restart.
+        const id = window.__hobunjiPlayerProfile?.characterId; // Used to update only the active character's cleaned combat loadout.
+        const ch = (meta?.characters || []).find(entry => entry.id === id); // Used to store the same clean loadout the runtime now uses.
+        if (ch) { ch.combatLoadout = clean; localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta)); }
+      } catch (_) {}
     }
     queueDecorate();
   }
