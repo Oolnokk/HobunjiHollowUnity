@@ -182,7 +182,7 @@
     const dyeCatalog = window.ScratchbonesAccount.getDyeCatalog();
     for (const [tintKey, dyeId] of Object.entries(dyes)) {
       const dye = dyeCatalog.find(d => d.id === dyeId);
-      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) };
+      if (dye) profile.bodyColors = { ...(profile.bodyColors || {}), [tintKey]: { ...(dye.color || {}), ...(dye.hex ? { hex: dye.hex, tintMode: 'hexShadeFill' } : {}) } };
     }
     return profile;
   }
@@ -205,16 +205,4 @@
     normalizeNpcImport,
     seededRng,
   };
-
-  // Animation Author already loads this shared preview adapter as part of its
-  // repository runtime bundle. Use that existing hook to install the small shoulder
-  // coordinate companion panel beside its Attachment Rig Coordinates controls,
-  // instead of forking the author tool's large inline state machine.
-  if (/\/tools\/animation-author\//.test(location.pathname) && !window.__hobunjiShoulderPointAuthorLoader) {
-    window.__hobunjiShoulderPointAuthorLoader = true;
-    const script = document.createElement('script');
-    script.src = new URL('../../js/animation-author-hand-shoulder-points.js?v=20260818a', location.href).href;
-    script.onerror = () => console.warn('[animation-author] shoulder point author failed to load');
-    document.head.appendChild(script);
-  }
 })();
