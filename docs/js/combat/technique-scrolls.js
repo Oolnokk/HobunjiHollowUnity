@@ -25,6 +25,8 @@
   let bountyDeps = null; // Used to detect the exact bounty transition that deserves a scroll reward.
   let unlocked = new Set(); // Used as the authoritative persisted set of learned slottable attacks.
   let rawList = null; // Used by scroll rolls to see locked registry entries after the public list is filtered.
+  let rawLoadoutLoad = null; // Used to rewrite legacy/default-polluted loadout records into explicit player choices only.
+  let rawLoadoutSerialize = null; // Used to inspect the unfiltered per-weapon loadout state while cleaning explicit slot choices.
   let lastEvent = null; // Used by mobile-friendly debug inspection.
   let decoratePending = false; // Used to coalesce loadout UI placeholder/status repairs after rerenders.
 
@@ -84,8 +86,19 @@
     } catch (_) {}
   }
   function loadUnlocks(data) {
-    const saved = Array.isArray(data?.combatTechniqueUnlocks) ? data.combatTechniqueUnlocks : []; // Used so old saves migrate to the new locked-by-default rules rather than being grandfathered.
+    const hasUnlockSave = Array.isArray(data?.combatTechniqueUnlocks); // Used to distinguish post-scroll saves from legacy saves whose loadout may contain implicit defaults.
+    const saved = hasUnlockSave ? data.combatTechniqueUnlocks : []; // Used so old saves migrate to the new locked-by-default rules rather than being grandfathered.
     unlocked = new Set(saved.filter(id => typeof id === 'string' && id));
+    if (rawLoadoutLoad) {
+      const source = hasUnlockSave && data?.combatLoadout && typeof data.combatLoadout === 'object' ? data.combatLoadout : {}; // Used to discard legacy implicit defaults while preserving explicit learned choices from new-format saves.
+      const clean = {}; // Used to keep only saved slots whose techniques are currently learned.
+      Object.entries(source).forEach(([weapon, slots]) => {
+        const kept = {};
+        ['tap2', 'hold1', 'hold2'].forEach(slot => { const id = slots?.[slot]; if (typeof id === 'string' && isUnlocked(id)) kept[slot] = id; });
+        if (Object.keys(kept).length) clean[weapon] = kept;
+      });
+      rawLoadoutLoad(clean);
+    }
     queueDecorate();
   }
   function unlockAbility(id, source = 'Technique Scroll') {
@@ -107,6 +120,8 @@
     const getLoadout = combat.loadout.get.bind(combat.loadout); // Used to preserve the loadout object shape while replacing gated slots.
     const setSlot = combat.loadout.setSlot.bind(combat.loadout); // Used after validating the requested technique is learned.
     const serialize = combat.loadout.serialize.bind(combat.loadout); // Used to distinguish explicit choices from legacy implicit default slots.
+    const load = combat.loadout.load.bind(combat.loadout); // Used to remove defaults that original setSlot injects when a weapon gets its first explicit choice.
+    rawLoadoutSerialize = serialize; rawLoadoutLoad = load;
     combat.abilities.listForCategories = cats => rawList(cats).filter(def => !isTechnique(def) || unlocked.has(def.id));
     combat.loadout.getSlot = slot => {
       const id = getSlot(slot); // Used as the underlying stored/default candidate.
@@ -116,7 +131,18 @@
       return isUnlocked(id) ? id : null;
     };
     combat.loadout.get = () => ({ ...getLoadout(), tap1: combat.loadout.getSlot('tap1'), tap2: combat.loadout.getSlot('tap2'), hold1: combat.loadout.getSlot('hold1'), hold2: combat.loadout.getSlot('hold2') });
-    combat.loadout.setSlot = (slot, id) => slot !== 'tap1' && id && !isUnlocked(id) ? false : setSlot(slot, id);
+    combat.loadout.setSlot = (slot, id) => {
+      if (slot !== 'tap1' && id && !isUnlocked(id)) return false;
+      const key = combat.deps?.currentWeaponKey?.() || 'none'; // Used to preserve only choices that existed before this one explicit slot change.
+      const beforeAll = rawLoadoutSerialize(); // Used as the clean explicit record before original setSlot potentially seeds legacy defaults.
+      const before = { ...(beforeAll?.[key] || {}) };
+      if (!setSlot(slot, id)) return false;
+      const clean = rawLoadoutSerialize(); // Used to replace the just-created default-filled record with explicit choices only.
+      clean[key] = { ...before, [slot]: id };
+      rawLoadoutLoad(clean);
+      setSlot(slot, id); // Persists the now-clean record; the weapon already exists so no defaults are reintroduced.
+      return true;
+    };
     combat.loadout.isTechniqueUnlocked = isUnlocked;
     combat.loadout.getUnlockedTechniqueIds = () => [...unlocked].sort();
     combat.loadout.__techniqueScrollsPatched = true;
