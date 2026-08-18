@@ -90,6 +90,12 @@
     ['js/drunk-prone-composition-bridge.js?v=20260812b', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
+    ['js/combat/combat-grehlr-burrow.js?v=20260817a', () => !!window.HobunjiGrehlrBurrow],
+    ['js/combat/combat-corroded-health.js?v=20260817a', () => !!window.HobunjiCorrodedHealth],
+    ['js/combat/combat-drenkirra-pellet.js?v=20260817a', () => !!window.HobunjiDrenkirraPellet],
+    ['js/combat/combat-grehlr-drenkirra-followup.js?v=20260817a', () => !!window.HobunjiGrehlrDrenkirraFollowup],
+    ['js/wildlife-territorial.js?v=20260817a', () => !!window.HobunjiTerritorialWildlife],
+    ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
   ];
 
   function loadModule(src, alreadyLoaded) {
