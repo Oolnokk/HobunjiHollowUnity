@@ -40,6 +40,7 @@
     new URL('js/hand-shoulder-pose-runtime.js?v=20260818a', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
+    new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260818e', docsBase).href,
