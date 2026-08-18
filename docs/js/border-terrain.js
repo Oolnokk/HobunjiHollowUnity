@@ -3,7 +3,8 @@
 
   // Procedural border terrain surrounding the playable farm, town, and
   // wilderness-zone grids. Town background scenery additionally consumes
-  // path/river edge attachments derived from authored map splines.
+  // path/river edge attachments derived from authored map splines or, for
+  // legacy maps, from painted edge-water tiles.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -88,7 +89,7 @@
 
   // ── Shared background-scenery attachment contract ────────────────────────
   // These helpers are deliberately pure and exported as window.BackgroundScenery
-  // so the dedicated author tool and the runtime use the exact same edge rules.
+  // so the author tool and runtime use the same edge rules.
   const BG_DEFAULTS=Object.freeze({schema:'hobunji_background_scenery.v1',ridgeClearanceTiles:0,borderDepthTiles:18,defaultExtensionLengthTiles:18,routeShoulderTiles:1.5,riverBankTiles:1.25,riverChannelDepth:0.22,waterfallThreshold:0.75,attachments:Object.freeze({})});
   const bgClamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const bgEdgeNormal=e=>e==='north'?[0,-1]:e==='south'?[0,1]:e==='west'?[-1,0]:[1,0];
@@ -98,11 +99,95 @@
   function bgAttachPosition(node,edge,map){const[c,r]=node;if(edge==='north')return[c+0.5,0];if(edge==='south')return[c+0.5,map.rows];if(edge==='west')return[0,r+0.5];return[map.cols,r+0.5];}
   function bgRawDirectionAt(nodes,i,edge){const n=bgEdgeNormal(edge),p=nodes[i];if(i===0&&nodes[1])return[p[0]-nodes[1][0],p[1]-nodes[1][1]];if(i===nodes.length-1&&nodes[i-1])return[p[0]-nodes[i-1][0],p[1]-nodes[i-1][1]];const a=nodes[i-1],b=nodes[i+1],va=a?[p[0]-a[0],p[1]-a[1]]:n,vb=b?[p[0]-b[0],p[1]-b[1]]:n;return(va[0]*n[0]+va[1]*n[1])>=(vb[0]*n[0]+vb[1]*n[1])?va:vb;}
   function bgDirectionFromRaw(raw,edge){const n=bgEdgeNormal(edge);let d=bgNormalizeDir(raw,n),out=d[0]*n[0]+d[1]*n[1];if(out<0.35)d=bgNormalizeDir([d[0]+n[0]*(0.45-out),d[1]+n[1]*(0.45-out)],n);return d;}
+
+  function bgWaterTileRuns(map) {
+    const waterTypes = new Set(['river', 'stream', 'waterfall']);
+    const edgeValues = { north: [], south: [], west: [], east: [] };
+    for (const [key, tile] of Object.entries(map?.tiles || {})) {
+      if (!waterTypes.has(String(tile?.type || '').toLowerCase())) continue;
+      const [c, r] = key.split(',').map(Number);
+      if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+      if (r === 0) edgeValues.north.push({ axis: c, c, r, type: tile.type });
+      if (r === map.rows - 1) edgeValues.south.push({ axis: c, c, r, type: tile.type });
+      if (c === 0) edgeValues.west.push({ axis: r, c, r, type: tile.type });
+      if (c === map.cols - 1) edgeValues.east.push({ axis: r, c, r, type: tile.type });
+    }
+    const runs = [];
+    for (const side of ['north','south','west','east']) {
+      const items = edgeValues[side].sort((a,b)=>a.axis-b.axis);
+      let run = [];
+      const flush = () => { if (run.length) runs.push({ side, items: run }); run = []; };
+      for (const item of items) {
+        if (run.length && item.axis > run[run.length-1].axis + 1) flush();
+        run.push(item);
+      }
+      flush();
+    }
+    return runs;
+  }
+
+  // Older exterior maps paint their river/stream tiles but don't serialize a
+  // `rivers` spline array. In that case derive stable boundary centerlines from
+  // contiguous water runs on each tile edge. Corner spill (a wide north-entry
+  // stream also occupying a few west-edge cells) is suppressed in favour of
+  // north/south so one waterway doesn't create a bogus second attachment.
+  function bgInferWaterAttachments(map) {
+    const runs = bgWaterTileRuns(map);
+    if (!runs.length) return [];
+    const near = (run, end) => {
+      const vals = run.items.map(x => x.axis);
+      return end === 'start' ? Math.min(...vals) <= 2 : Math.max(...vals) >= ((run.side === 'north' || run.side === 'south') ? map.cols - 3 : map.rows - 3);
+    };
+    const hasCornerRun = (side, end) => runs.some(r => r.side === side && near(r, end));
+    const filtered = runs.filter(run => {
+      if (run.side === 'west' && near(run,'start') && hasCornerRun('north','start')) return false;
+      if (run.side === 'west' && near(run,'end') && hasCornerRun('south','start')) return false;
+      if (run.side === 'east' && near(run,'start') && hasCornerRun('north','end')) return false;
+      if (run.side === 'east' && near(run,'end') && hasCornerRun('south','end')) return false;
+      return true;
+    });
+    return filtered.map((run, index) => {
+      const side = run.side;
+      const axisCenter = run.items.reduce((sum, item) => sum + item.axis + 0.5, 0) / run.items.length;
+      const node = side === 'north' ? [axisCenter - 0.5, 0]
+        : side === 'south' ? [axisCenter - 0.5, map.rows - 1]
+        : side === 'west' ? [0, axisCenter - 0.5]
+        : [map.cols - 1, axisCenter - 0.5];
+      const types = run.items.map(item => String(item.type || '').toLowerCase());
+      const sourceType = types.includes('river') ? 'river' : types.includes('waterfall') ? 'waterfall' : 'stream';
+      const n = bgEdgeNormal(side);
+      const startAxis = run.items[0].axis, endAxis = run.items[run.items.length - 1].axis;
+      return {
+        id: `river:edge-water:${side}:${startAxis}-${endAxis}`,
+        kind: 'river',
+        sourceId: `edge-water-${side}-${index}`,
+        sourceLabel: `${side} edge ${sourceType}`,
+        sourceType,
+        nodeIndex: 0,
+        node,
+        mapCols: map.cols,
+        mapRows: map.rows,
+        candidateEdges: [side],
+        edge: side,
+        position: bgAttachPosition(node, side, map),
+        rawDirection: n,
+        direction: n,
+        width: Math.max(1, run.items.length),
+        seed: ((startAxis + 1) * 73856093 ^ (endAxis + 1) * 19349663 ^ index * 83492791) >>> 0,
+        paintTiles: true,
+        inferredFromEdgeTiles: true,
+      };
+    });
+  }
+
   function collectBoundaryAttachments(map){
     if(!map||!Number.isFinite(map.cols)||!Number.isFinite(map.rows))return[];
     const saved=map.backgroundScenery?.attachments||{},out=[];
     const scan=(items,kind)=>{for(const src of items||[]){const nodes=Array.isArray(src.nodes)?src.nodes:[];for(let i=0;i<nodes.length;i++){const cand=bgEdgeCandidates(nodes[i],map);if(!cand.length)continue;const id=`${kind}:${src.id||'unnamed'}:${i===0?'start':i===nodes.length-1?'end':`node-${i}`}`;const raw=bgRawDirectionAt(nodes,i,cand[0]),edge=bgChooseEdge(cand,raw,kind,saved[id]?.edge),width=kind==='route'?Math.max(0.25,Number(src.pathWidth)||1):Math.max(0.25,Number(src.width)||(src.kind==='stream'?1:3));out.push({id,kind,sourceId:src.id||'',sourceLabel:src.label||src.id||kind,sourceType:kind==='route'?'path':(src.kind||'river'),nodeIndex:i,node:[nodes[i][0],nodes[i][1]],mapCols:map.cols,mapRows:map.rows,candidateEdges:cand,edge,position:bgAttachPosition(nodes[i],edge,map),rawDirection:raw,direction:bgDirectionFromRaw(raw,edge),width,seed:Number(src.seed)||1,paintTiles:src.paintTiles!==false});}}};
-    scan(map.routes,'route'); scan(map.rivers,'river'); return out;
+    scan(map.routes,'route');
+    scan(map.rivers,'river');
+    if (!out.some(a => a.kind === 'river')) out.push(...bgInferWaterAttachments(map));
+    return out;
   }
   function resolveBackgroundSceneryConfig(map){const raw=map?.backgroundScenery&&typeof map.backgroundScenery==='object'?map.backgroundScenery:{};return{schema:'hobunji_background_scenery.v1',ridgeClearanceTiles:bgClamp(Number.isFinite(Number(raw.ridgeClearanceTiles))?Number(raw.ridgeClearanceTiles):BG_DEFAULTS.ridgeClearanceTiles,0,8),borderDepthTiles:bgClamp(Number.isFinite(Number(raw.borderDepthTiles))?Number(raw.borderDepthTiles):BG_DEFAULTS.borderDepthTiles,6,30),defaultExtensionLengthTiles:bgClamp(Number.isFinite(Number(raw.defaultExtensionLengthTiles))?Number(raw.defaultExtensionLengthTiles):BG_DEFAULTS.defaultExtensionLengthTiles,1,40),routeShoulderTiles:bgClamp(Number.isFinite(Number(raw.routeShoulderTiles))?Number(raw.routeShoulderTiles):BG_DEFAULTS.routeShoulderTiles,0,8),riverBankTiles:bgClamp(Number.isFinite(Number(raw.riverBankTiles))?Number(raw.riverBankTiles):BG_DEFAULTS.riverBankTiles,0,8),riverChannelDepth:bgClamp(Number.isFinite(Number(raw.riverChannelDepth))?Number(raw.riverChannelDepth):BG_DEFAULTS.riverChannelDepth,0,2),waterfallThreshold:bgClamp(Number.isFinite(Number(raw.waterfallThreshold))?Number(raw.waterfallThreshold):BG_DEFAULTS.waterfallThreshold,0.1,5),attachments:raw.attachments&&typeof raw.attachments==='object'?JSON.parse(JSON.stringify(raw.attachments)): {}};}
   function resolveAttachmentSettings(a,s,o={}){return{enabled:o.enabled!==false,edge:a.candidateEdges.includes(o.edge)?o.edge:a.edge,lengthTiles:bgClamp(Number.isFinite(Number(o.lengthTiles))?Number(o.lengthTiles):s.defaultExtensionLengthTiles,1,40),widthScale:bgClamp(Number.isFinite(Number(o.widthScale))?Number(o.widthScale):1,0.25,4),shoulderTiles:bgClamp(Number.isFinite(Number(o.shoulderTiles))?Number(o.shoulderTiles):s.routeShoulderTiles,0,8),bankTiles:bgClamp(Number.isFinite(Number(o.bankTiles))?Number(o.bankTiles):s.riverBankTiles,0,8),channelDepth:bgClamp(Number.isFinite(Number(o.channelDepth))?Number(o.channelDepth):s.riverChannelDepth,0,2),waterfallThreshold:bgClamp(Number.isFinite(Number(o.waterfallThreshold))?Number(o.waterfallThreshold):s.waterfallThreshold,0.1,5)};}
@@ -111,7 +196,81 @@
   function bgDistToSegment(px,pz,a,b){const dx=b[0]-a[0],dz=b[1]-a[1],d2=dx*dx+dz*dz;if(d2<1e-8)return Math.hypot(px-a[0],pz-a[1]);const t=bgClamp(((px-a[0])*dx+(pz-a[1])*dz)/d2,0,1),x=a[0]+dx*t,z=a[1]+dz*t;return Math.hypot(px-x,pz-z);}
   function bgDistToPolyline(px,pz,pts){let best=Infinity;for(let i=0;i<pts.length-1;i++)best=Math.min(best,bgDistToSegment(px,pz,pts[i],pts[i+1]));return best;}
   function bgDensify(pts,step=0.5){if(pts.length<2)return pts.slice();const out=[pts[0].slice()];for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1],dx=b[0]-a[0],dz=b[1]-a[1],n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/step));for(let j=1;j<=n;j++){const t=j/n;out.push([a[0]+dx*t,a[1]+dz*t]);}}return out;}
-  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline};
+  window.BackgroundScenery={DEFAULTS:BG_DEFAULTS,edgeNormal:bgEdgeNormal,collectBoundaryAttachments,resolveConfig:resolveBackgroundSceneryConfig,resolveAttachmentSettings,buildContinuationPolyline,inferWaterAttachments:bgInferWaterAttachments};
+
+  // Scenery paths use the same WallBuilder paving recipe/tint/brick transform
+  // settings as the normal path-brick renderer in game.js. It lives here
+  // because background paths are outside the playable grid and therefore are
+  // deliberately absent from preparePathSplineData's PATH-tile selection.
+  const SCENERY_PATH_RECIPE_ID = 'town_path_surface';
+  const SCENERY_PATH_CHUNK_SIZE = 10;
+  let sceneryPathWallBuilder = null;
+  let sceneryPathReadyPromise = null;
+  let sceneryPathGroups = [];
+  function ensureSceneryPathSurfaceReady() {
+    if (sceneryPathReadyPromise) return sceneryPathReadyPromise;
+    if (typeof WallBuilder === 'undefined') return Promise.reject(new Error('WallBuilder unavailable'));
+    sceneryPathWallBuilder = new WallBuilder({ glbBasePath: 'assets/models/' });
+    sceneryPathReadyPromise = Promise.all([
+      sceneryPathWallBuilder.loadDefaultGlb(),
+      fetch('assets/models/recipes/walls/wallrecipe2.json').then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' fetching wallrecipe2.json');
+        return r.json();
+      }),
+    ]).then(([, recipe]) => {
+      sceneryPathWallBuilder.addRecipe(SCENERY_PATH_RECIPE_ID, recipe);
+      sceneryPathWallBuilder.tintDefaultGlb('assets/textures/carved_smooth.png', '#545039');
+    });
+    return sceneryPathReadyPromise;
+  }
+  function clearSceneryPathGroups(townScene) {
+    for (const group of sceneryPathGroups) {
+      townScene?.remove(group);
+      try { WallBuilder.disposeGroup(group); } catch (_) {}
+    }
+    sceneryPathGroups = [];
+  }
+  function buildSceneryPathBrickSurface(routeContinuations, townScene, sampleHeight) {
+    clearSceneryPathGroups(townScene);
+    if (!routeContinuations.length) return Promise.resolve(false);
+    return ensureSceneryPathSurfaceReady().then(() => {
+      const containsPoint = (x, z) => routeContinuations.some(c => bgDistToPolyline(x, z, c.points) <= c.a.width * c.settings.widthScale * 0.5);
+      let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity,maxHalf=0;
+      for (const c of routeContinuations) {
+        maxHalf = Math.max(maxHalf, c.a.width * c.settings.widthScale * 0.5);
+        for (const p of c.points) { minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minZ=Math.min(minZ,p[1]);maxZ=Math.max(maxZ,p[1]); }
+      }
+      minX-=maxHalf+0.8;maxX+=maxHalf+0.8;minZ-=maxHalf+0.8;maxZ+=maxHalf+0.8;
+      const size=SCENERY_PATH_CHUNK_SIZE;
+      for(let cz=Math.floor(minZ/size)*size;cz<maxZ;cz+=size){
+        for(let cx=Math.floor(minX/size)*size;cx<maxX;cx+=size){
+          const y=deps.NORMAL_TOP+0.01;
+          const panel={id:'scenery_path_surface_chunk',width:size,height:size,wallRecipeId:SCENERY_PATH_RECIPE_ID,position:[cx+size/2,y,cz+size/2],rotationDeg:[0,0,0],corners:[[cx,y,cz+size],[cx+size,y,cz+size],[cx+size,y,cz],[cx,y,cz]]};
+          const opts={usePlaceholder:true,unitMult:0.55,densityMult:1,rockScale:1.15,preScale:[1,1,0.32],brickJitter:{rotYDeg:8,shiftU:0.04,shiftV:0.03}};
+          const group=sceneryPathWallBuilder.build([panel],opts);
+          group.name='SceneryPathBrickSurfaceChunk';
+          const m=new THREE.Matrix4(),p=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3();
+          let anyKept=false;
+          group.traverse(o=>{
+            if(!o.isInstancedMesh)return;
+            const n=o.count;let kept=0;
+            for(let i=0;i<n;i++){
+              o.getMatrixAt(i,m);m.decompose(p,q,s);
+              if(!containsPoint(p.x,p.z))continue;
+              p.y+=sampleHeight(p.x,p.z)-deps.NORMAL_TOP;
+              m.compose(p,q,s);
+              if(kept!==i)o.setMatrixAt(kept,m);
+              kept++;
+            }
+            o.count=kept;o.instanceMatrix.needsUpdate=true;o.castShadow=true;o.receiveShadow=true;if(kept)anyKept=true;
+          });
+          if(!anyKept){WallBuilder.disposeGroup(group);continue;}
+          townScene.add(group);sceneryPathGroups.push(group);
+        }
+      }
+      return sceneryPathGroups.length>0;
+    });
+  }
 
   let _townBorderGrassPoints=[];
   let townBorderGrassBillMesh=null;
@@ -150,7 +309,16 @@
     const cliffMat=deps.resolveCliffMat('map_hobunji_town');function elevStoneSkin(gjMin,gjMax,giMin,giMax){const positions=[],skinUv=[],idxArr=[];let vi=0;for(let gj=gjMin;gj<gjMax;gj++)for(let gi=giMin;gi<giMax;gi++){const y00=Y[gj*GW+gi],y10=Y[gj*GW+gi+1],y01=Y[(gj+1)*GW+gi],y11=Y[(gj+1)*GW+gi+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz<=0.194)continue;const x0=(gi-BV)*0.5,x1=x0+0.5,z0=(gj-BV)*0.5,z1=z0+0.5;positions.push(x0,y00,z0,x1,y10,z0,x0,y01,z1,x1,y11,z1);skinUv.push(x0,z0,x1,z0,x0,z1,x1,z1);idxArr.push(vi,vi+2,vi+3,vi,vi+3,vi+1);vi+=4;}if(!positions.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(skinUv,2));g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr),1));g.computeVertexNormals();townScene.add(new THREE.Mesh(g,cliffMat));}
     elevStoneSkin(0,BV,0,GW-1);elevStoneSkin(BV,GH-1-BV,0,BV);elevStoneSkin(BV,GH-1-BV,GW-1-BV,GW-1);elevStoneSkin(GH-1-BV,GH-1,0,BV);elevStoneSkin(GH-1-BV,GH-1,GW-1-BV,GW-1);
     function addRibbon(c,material,yLift){const samples=bgDensify(c.points,0.45);if(samples.length<2)return null;const verts=[],uvs=[],idx=[];let vDist=0;for(let i=0;i<samples.length;i++){const p=samples[i],p0=samples[Math.max(0,i-1)],p1=samples[Math.min(samples.length-1,i+1)],dx=p1[0]-p0[0],dz=p1[1]-p0[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,y=sampleHeight(p[0],p[1])+yLift;if(i)vDist+=Math.hypot(p[0]-samples[i-1][0],p[1]-samples[i-1][1]);verts.push(p[0]+px*half,y,p[1]+pz*half,p[0]-px*half,y,p[1]-pz*half);uvs.push(0,vDist,Math.max(1,c.a.width*c.settings.widthScale),vDist);if(i){const v=i*2;idx.push(v-2,v,v+1,v-2,v+1,v-1);}}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));g.setIndex(idx);g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.renderOrder=2;townScene.add(m);return{samples,mesh:m};}
-    let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025);
+
+    // Use the same WallBuilder paving recipe as normal playable paths. Keep a
+    // flat-material fallback only for a failed recipe/GLB load.
+    buildSceneryPathBrickSurface(routeContinuations,townScene,sampleHeight).then(built=>{
+      if(built)return;
+      let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025);
+    }).catch(()=>{
+      let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025);
+    });
+
     const waterMat=new THREE.MeshStandardMaterial({color:0x4f9fbd,transparent:true,opacity:0.78,roughness:0.28,metalness:0,side:THREE.DoubleSide,depthWrite:false});
     for(const c of riverContinuations){const built=addRibbon(c,waterMat,0.035);if(!built)continue;const s=built.samples;for(let i=0;i<s.length-1;i++){const a=s[i],b=s[i+1],ya=sampleHeight(a[0],a[1])+0.035,yb=sampleHeight(b[0],b[1])+0.035;if(Math.abs(ya-yb)<c.settings.waterfallThreshold)continue;const mx=(a[0]+b[0])*0.5,mz=(a[1]+b[1])*0.5,dx=b[0]-a[0],dz=b[1]-a[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,top=Math.max(ya,yb),bot=Math.min(ya,yb),v=[mx+px*half,top,mz+pz*half,mx-px*half,top,mz-pz*half,mx+px*half,bot,mz+pz*half,mx-px*half,bot,mz-pz*half],g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,3,0,3,1]);g.computeVertexNormals();const fall=new THREE.Mesh(g,waterMat);fall.renderOrder=3;townScene.add(fall);}}
     _townBorderGrassPoints=[];for(let cj=0;cj<CH;cj++)for(let ci=0;ci<CW;ci++){if(isPlayable(ci,cj)||vSteps(ci,cj)>16)continue;const y00=Y[cj*GW+ci],y10=Y[cj*GW+ci+1],y01=Y[(cj+1)*GW+ci],y11=Y[(cj+1)*GW+ci+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz>0.194)continue;const seed=(ci*7919+cj*104173)>>>0;if(deps.mbRng(seed)()>0.44)continue;const px=(ci-BV)*0.5+0.25,pz=(cj-BV)*0.5+0.25,py=(y00+y10+y01+y11)/4;_townBorderGrassPoints.push({px,pz,py,seed});}_buildTownBorderGrassBillboards();
