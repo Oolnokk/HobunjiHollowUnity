@@ -41,6 +41,8 @@ assert(gripModes.includes("'palm-parallel'"), 'shared grip modes must include pa
 assert(gripModes.includes("'palm-perpendicular'"), 'shared grip modes must include palm-perpendicular');
 assert(gripModes.includes('pickshovel') && gripModes.includes("return 'palm-perpendicular'"), 'pick shovel must default to perpendicular grip');
 assert(gripModes.includes('PALM_CLEARANCE'), 'default grips must offset the palm from a zero-origin handle');
+assert(gripModes.includes('multiplyQuat(modeQ, fineQ)'), 'grip mode and fine hand rotation must compose as quaternions, not Euler addition');
+assert(gripModes.includes('eulerYXZFromQuat'), 'composed hand rotation must convert back to the frame driver YXZ convention');
 assert(gripEditor.includes('handGripModeSelect'), 'attack editor must expose grip modes as a dropdown');
 
 assert(medialWrists.includes('MEDIAL_YAW_DEG = 90'), 'idle wrists must rotate ninety degrees from front/back into a medial basis');
@@ -58,13 +60,17 @@ assert(forearmFollow.includes('shoulderToElbow'), 'upper arm must simply connect
 
 assert(biceps.includes('BICEP_WEIGHT = 0.94'), 'painted arm vertices must be strongly bicep weighted');
 assert(biceps.includes('forearmWeight: 0'), 'painted arm vertices must have zero forearm influence');
-assert(biceps.includes('new THREE.Skeleton([...oldSkeleton.bones, left.bone, right.bone])'), 'portrait skeleton must contain real bicep bones');
+assert(biceps.includes("[...oldSkeleton.bones, left.bone, right.bone]"), 'portrait skeleton must contain real bicep bones');
+assert(biceps.includes('oldSkeleton.boneInverses.map'), 'adding biceps must preserve existing torso/neck inverse bind matrices');
+assert(biceps.includes('[...oldInverses, leftInverse, rightInverse]'), 'only new bicep inverse binds should be appended');
 assert(biceps.includes('BEFORE') && biceps.includes('inverse'), 'bicep bones must be placed in idle pose before inverse bind calculation');
 
 assert(materialRoles.includes("pachyderm: 'mashtzarr'"), 'pachyderm hands must reuse mashtzarr foot material slots');
 assert(materialRoles.includes("sloth: 'tletingan'"), 'sloth hands must reuse tletingan foot material slots');
 assert(materialRoles.includes("feline: 'mao-ao'"), 'feline hands must reuse feline foot material slots');
 assert(materialRoles.includes('...footRoles'), 'hand material role mapping must copy the configured foot role table');
+assert(materialRoles.includes("MAT_None_7a4e2e: 'bone'"), 'pachyderm/sloth hand slot-1 export alias must inherit the foot bone role');
+assert(materialRoles.includes("MAT_EyeSurface_0c0c0c: 'body'"), 'pachyderm/sloth hand slot-2 export alias must inherit the foot body role');
 
 assert(armBones.includes('DEFAULT_MIN_ELBOW_DEG'), 'arm IK must constrain elbow folding');
 assert(armBones.includes('DEFAULT_MAX_ELBOW_DEG'), 'arm IK must constrain elbow hyperextension');
@@ -90,4 +96,4 @@ assert(bootstrap.includes('procedural-hand-portrait-shoulders.js'), 'portrait sh
 assert(bootstrap.includes('attack-editor-hand-inverse-configurator.js'), 'editor inverse-hand authoring adapter must be parser-loaded');
 assert(bootstrap.includes('attack-editor-hand-grip-mode.js'), 'editor grip-mode dropdown must be parser-loaded');
 
-console.log('procedural hands: expanded reach + hand-driven forearm + bicep skinning + foot material roles + reversible transforms PASS');
+console.log('procedural hands: expanded reach + hand-driven forearm + bicep skinning + foot material roles + quaternion transforms PASS');
