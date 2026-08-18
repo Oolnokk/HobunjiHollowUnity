@@ -74,13 +74,6 @@
     return tankanFontPromise;
   }
 
-  // Interaction prompts sit in state.active with lifetimeMs: Infinity for as
-  // long as the player stands near their target, so avatarMetrics() runs
-  // every frame for that root the whole time — cache the resolved avatar
-  // child (once actually found) instead of re-walking the subtree each
-  // call. Checked for .parent on reuse so a torn-down/re-skinned avatar
-  // (detached from the scene graph) is detected and re-resolved rather than
-  // silently reused stale.
   const _avatarRootCache = new WeakMap();
   function avatarMetrics(root) {
     const THREE = state.deps?.THREE;
@@ -236,22 +229,20 @@
   function claimFloatOffset(root, bounds) {
     const worldHeight = state.settings.floatPlus.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
-    const pathXClearance = worldHeight * 0.24; // Covers two popups' full Float+ horizontal wobble range.
-    const pathYClearance = 0.075; // Covers the maximum difference in Float+ upward travel.
+    const pathXClearance = worldHeight * 0.24;
+    const pathYClearance = 0.075;
     const isFree = point => existing.every(event =>
       Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
       Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance
     );
-    const searchCount = Math.max(240, (existing.length + 1) * 240); // Expands instead of reusing an occupied fallback point.
+    const searchCount = Math.max(240, (existing.length + 1) * 240);
     for (let index = 0; index < searchCount; index++) {
       const angle = index * 2.399963229728653;
-      // Keeps the prototype's first 240-point radius, then grows outward as
-      // needed so simultaneous numbers always receive distinct clear space.
       const radius = Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
       const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius * 0.62 };
       if (isFree(point)) return point;
     }
-    const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0); // Collision-safe last resort above every active popup.
+    const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0);
     return { x: 0, y: topEdge + bounds.height * 0.5 + pathYClearance };
   }
 
@@ -444,8 +435,6 @@
           ? (Math.max(1, list.length) - 1) * 0.5
           : (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
         center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing;
-        // Plane geometry is centered on its position. Shift by half its width so
-        // every variable-width row begins at the configured horizontal anchor.
         if (state.settings.centeredFiveRow.textAlign === 'left') center.addScaledVector(cameraRight, event.width * 0.5);
       }
       event.plane.position.copy(center);
