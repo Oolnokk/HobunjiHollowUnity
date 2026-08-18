@@ -13,11 +13,26 @@
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
   });
+  // Canonical alignment authored on Mao'ao and intentionally reused for every
+  // species/model. Species still choose their own GLB and anatomy scale; only the
+  // tool-relative hand setup is shared. Kenkari/Rakako'an use the opposite source-X
+  // mirror on their parrot hand model below.
+  const MAO_AO_HAND_TRANSFORM = Object.freeze({
+    position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
+    rotationDeg: Object.freeze({ pitch: 90, yaw: -28, roll: 92 }),
+  });
 
   function identityTransform() {
     return {
       position: { ...IDENTITY_TRANSFORM.position },
       rotationDeg: { ...IDENTITY_TRANSFORM.rotationDeg },
+    };
+  }
+
+  function maoAoHandTransform() {
+    return {
+      position: { ...MAO_AO_HAND_TRANSFORM.position },
+      rotationDeg: { ...MAO_AO_HAND_TRANSFORM.rotationDeg },
     };
   }
 
@@ -39,7 +54,7 @@
         glb: 'assets/models/hands/hand_pachyderm.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: identityTransform(),
+        handFromTool: maoAoHandTransform(),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
@@ -48,7 +63,7 @@
         glb: 'assets/models/hands/hand_sloth.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: identityTransform(),
+        handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
@@ -56,15 +71,16 @@
         glb: 'assets/models/hands/hand_feline.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: identityTransform(),
+        handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
       },
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
         scale: DEFAULT_MODEL_SCALE,
-        mirrorX: true,
-        handFromTool: identityTransform(),
+        // Kenkari/Rakako'an use the Mao'ao setup with the source handedness flipped.
+        mirrorX: false,
+        handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
       },
