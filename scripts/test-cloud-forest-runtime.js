@@ -93,7 +93,9 @@ assert(heightAt(5, -1) > 4 && heightAt(5, -1) < 4.2, 'first world should rise on
 assert(Math.abs(heightAt(5, -3) - 4.35) < 1e-6, 'subtle shoulder should total 0.35 worlds over 3 worlds');
 assert(heightAt(5, -18) > 19.3, 'outer hillside should become very steep');
 
-// Forest density should be deterministic, full-height only, and leave the road open.
+// Match the visible Shadewood density of generated Cloud Forest rather than
+// using tree density as the impassability barrier. All scenery trees stay full
+// size and the town-road corridor stays open.
 const layoutA = V2.buildForestLayout(40, 18, 20, 3, () => 5);
 const layoutB = V2.buildForestLayout(40, 18, 20, 3, () => 5);
 assert.deepStrictEqual(layoutA, layoutB, 'background forest scatter should be deterministic');
