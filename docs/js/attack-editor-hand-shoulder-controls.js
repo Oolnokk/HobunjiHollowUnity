@@ -27,8 +27,6 @@
     const headUrl = sourceFighter.headUrl
       ? `${sourceFighter.headUrl}${String(sourceFighter.headUrl).includes('?') ? '&' : '?'}hobunjiHideArms=1`
       : sourceFighter.headUrl;
-    // The private id/head query prevents portrait-utils' resolver from swapping this
-    // clone straight back to the catalog fighter (which would restore its arms).
     const fighter = {
       ...sourceFighter,
       id: `__hobunji_no_arm_preview__${sourceFighter.id || 'fighter'}`,
@@ -36,40 +34,18 @@
       headUrl,
       bodyLayers,
     };
-    return {
-      ...profile,
-      fighter,
-      // Shoulder scanning still reads the real arm sprites even while they are hidden.
-      __hobunjiShoulderSourceFighter: sourceFighter,
-    };
+    return { ...profile, fighter, __hobunjiShoulderSourceFighter: sourceFighter };
   }
 
-  // Wrap both aliases because some editor paths call renderProfile directly while
-  // NpcAvatarPreview calls renderPortraitProfile. Both aliases currently point to
-  // the same shoulder-scan wrapper, so guard against wrapping it twice.
-  const renderWrapperMap = new Map();
-  function wrapRender(original) {
-    if (typeof original !== 'function') return original;
-    if (renderWrapperMap.has(original)) return renderWrapperMap.get(original);
-    const wrapped = function attackEditorHideArmRender(canvas, profile, renderOptions = {}) {
-      if (canvas) canvas.__hobunjiHideArmSpritesPreview = hideArmSprites;
-      return original.call(this, canvas, noArmPreviewProfile(profile), renderOptions);
-    };
-    wrapped.__hobunjiAttackEditorArmHideWrapped = true;
-    renderWrapperMap.set(original, wrapped);
-    return wrapped;
-  }
-  global.renderPortraitProfile = wrapRender(global.renderPortraitProfile);
-  global.renderProfile = wrapRender(global.renderProfile);
-
-  // portrait-arm-cloud-mask wraps NpcAvatarPreview before this script loads. Make
-  // this the outermost adapter so hidden-arm previews cannot receive an arm-shaped
-  // alpha cutout after the filtered portrait has already rendered.
+  // Keep global renderPortraitProfile/renderProfile completely untouched. The editor
+  // preview adapter is the only place that needs arm hiding, and when the toggle is
+  // off it passes the exact original profile through unchanged.
   const previewApi = global.NpcAvatarPreview;
   if (previewApi?.renderProfileToCanvas && !previewApi.renderProfileToCanvas.__hobunjiAttackEditorArmHideWrapped) {
     const originalPreviewRender = previewApi.renderProfileToCanvas.bind(previewApi);
     const wrappedPreviewRender = async function attackEditorArmHidePreview(canvas, profile, renderOptions = {}) {
-      const result = await originalPreviewRender(canvas, profile, renderOptions);
+      const previewProfile = hideArmSprites ? noArmPreviewProfile(profile) : profile;
+      const result = await originalPreviewRender(canvas, previewProfile, renderOptions);
       if (hideArmSprites && canvas) canvas.hobunjiArmCloudAlphaMap = null;
       return result;
     };
@@ -91,13 +67,14 @@
   `;
   const status = document.getElementById('handEffectiveStatus');
   if (status?.parentElement === handCard) handCard.insertBefore(group, status);
-  else handCard.appendChild(group);
+  else handCard?.appendChild(group);
 
   const pitch = document.getElementById('handShoulderAimPitch');
   const yaw = document.getElementById('handShoulderAimYaw');
   const roll = document.getElementById('handShoulderAimRoll');
   const hide = document.getElementById('handHideArmSpritesPreview');
   const compassStatus = document.getElementById('handShoulderAimStatus');
+  if (!pitch || !yaw || !roll || !hide || !compassStatus) return;
 
   function currentModel() {
     return profiles.data?.models?.[profileSelect.value] || null;
@@ -139,12 +116,8 @@
 
   function requestPreviewRebuild() {
     const species = document.getElementById('avatarSpecies');
-    if (species) {
-      species.dispatchEvent(new Event('change', { bubbles: true }));
-      species.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      global.ProceduralHandFrameDriver?.syncNow?.();
-    }
+    if (species) species.dispatchEvent(new Event('change', { bubbles: true }));
+    else global.ProceduralHandFrameDriver?.syncNow?.();
   }
 
   pitch.addEventListener('change', () => setAxis('pitch', pitch.checked));
