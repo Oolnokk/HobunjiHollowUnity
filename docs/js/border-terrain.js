@@ -49,7 +49,7 @@
     const RIM_V = 20, RIM_MIN = deps.NORMAL_TOP + 3.0;
     for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) { if (gj >= RIM_V && gj <= GH - 1 - RIM_V && gi >= RIM_V && gi <= GW - 1 - RIM_V) continue; const k = gj * GW + gi; if (Y[k] < RIM_MIN) Y[k] = RIM_MIN; }
     const pos = new Float32Array(GW * GH * 3), uv = new Float32Array(GW * GH * 2);
-    for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) { const k = gj * GW + gi, wx = (gi - BV) * 0.5, wz = (gj - BV) * 0.5; pos[k*3] = wx; pos[k*3+1] = Y[k]; pos[k*3+2] = wz; uv[k*2] = wx; uv[k*2+1] = wz; }
+    for (let gj = 0; gj < GH; gj++) for (let gi = 0; gi < GW; gi++) { const k = gj*GW+gi, wx = (gi - BV) * 0.5, wz = (gj - BV) * 0.5; pos[k*3] = wx; pos[k*3+1] = Y[k]; pos[k*3+2] = wz; uv[k*2] = wx; uv[k*2+1] = wz; }
     const indices = [];
     for (let cj = 0; cj < GH - 1; cj++) for (let ci = 0; ci < GW - 1; ci++) { if (isPlayable(ci, cj)) continue; const v00 = cj*GW+ci, v10=v00+1, v01=(cj+1)*GW+ci, v11=v01+1; indices.push(v00,v01,v11,v00,v11,v10); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1)); geo.computeVertexNormals();
@@ -484,4 +484,281 @@
 
   function setGrassVisible(enabled){if(townBorderGrassBillMesh)townBorderGrassBillMesh.visible=enabled;}
   window.BorderTerrain={init,buildBorderTerrain,buildZoneBorderTerrain,buildTownBorderTerrain,buildTownBorderGrassBillboards:_buildTownBorderGrassBillboards,setGrassVisible};
+})();
+
+// Cloud Forest north-edge authored scenery v2. Kept as a wrapper around the
+// generic border module so the density/culling experiment stays isolated from
+// the shared farm/town/wilderness border math above.
+(() => {
+  'use strict';
+
+  const CLOUD_ID = 'map_southern_cloud_forest';
+  const NORTH_DEPTH = 18;
+  const BASE_TREE_SPACING_WORLD = 1;
+  const FOREST_CHUNK_WIDTH = 10;
+  const FOREST_CHUNK_DEPTH = 6;
+  const PATH_CLEARANCE = 1.15;
+
+  function _hash01(x, z, salt = 0) {
+    let h = (2166136261 ^ (Math.round(x * 8) * 374761393) ^ (Math.round(z * 8) * 668265263) ^ (salt * 2246822519)) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+    return (h >>> 0) / 4294967296;
+  }
+
+  function removeCloudForestNorthBoundaryCliffs(workspace) {
+    const root = workspace?.maps?.find(m => !m?.isSubmap) || workspace?.maps?.[0];
+    if (!root?.tiles) return workspace;
+    let removed = 0;
+    for (const [key, tile] of Object.entries(root.tiles)) {
+      if (!tile?.borderEscarpment || tile.borderEscarpmentSide !== 'north') continue;
+      const [c, r] = key.split(',').map(Number);
+      let inward = null;
+      for (let d = 1; d <= 24 && r + d < root.rows; d++) {
+        const candidate = root.tiles[`${c},${r + d}`];
+        if (!candidate || candidate.borderEscarpment || candidate.distantBoundaryLandscape) continue;
+        inward = candidate;
+        break;
+      }
+      if (inward?.plateau) tile.plateau = inward.plateau;
+      else delete tile.plateau;
+      if (tile.type === 'rock') tile.type = 'grass';
+      if (tile.plateau) tile.borderEntryGate = true;
+      else delete tile.borderEntryGate;
+      delete tile.borderEscarpment;
+      delete tile.generatedBorderEscarpment;
+      delete tile.borderEscarpmentDepth;
+      delete tile.borderEscarpmentSide;
+      delete tile.borderEscarpmentHeightBonus;
+      removed++;
+    }
+    if (removed) {
+      root.generatedFrom = { ...(root.generatedFrom || {}), northBoundaryCliffsRemoved: removed };
+      workspace.generatorPreset = { ...(workspace.generatorPreset || {}), northBoundaryCliffsRemoved: true };
+    }
+    return workspace;
+  }
+
+  function buildDenseCloudForestLayout(zcols, depth, pathCenter, clearHalf, heightAt = () => 0) {
+    const entries = [];
+    const insidePath = x => Math.abs(x - pathCenter) < clearHalf;
+    const add = (x, z, scale, layer, salt) => {
+      if (x < 0 || x > zcols || z > -0.35 || z < -depth + 0.25 || insidePath(x)) return;
+      entries.push({
+        x, z, y: heightAt(x, z) + 0.02, scale, layer,
+        yaw: (_hash01(x, z, 7100 + salt) - 0.5) * 0.34,
+        seedA: Math.round(x * 97 + (-z) * 31 + salt * 503),
+        seedB: Math.round((-z) * 89 + x * 17 + salt * 997),
+      });
+    };
+
+    // Wilderness TREE_SPACING_MIN_DIST is 1 final tile. Final wilderness tile
+    // coordinates map 1:1 to world units, so the full-height layer uses a
+    // literal one-world-unit center lattice without pretending this scenery is
+    // itself tile-authored.
+    for (let z = 0.5; z < depth; z += BASE_TREE_SPACING_WORLD) {
+      for (let x = 0.5; x < zcols; x += BASE_TREE_SPACING_WORLD) add(x, -z, 1, 'full', 1);
+    }
+    // 75% trees occupy square gaps between four full-height centers.
+    for (let z = 1; z < depth; z += BASE_TREE_SPACING_WORLD) {
+      for (let x = 1; x < zcols; x += BASE_TREE_SPACING_WORLD) add(x, -z, 0.75, 'threeQuarter', 2);
+    }
+    // 50% trees occupy alternating edge-midpoint gaps so the wall becomes
+    // nearly visually solid while avoiding exact center overlaps.
+    for (let iz = 0; iz < Math.floor(depth); iz++) {
+      for (let ix = 0; ix < Math.floor(zcols); ix++) {
+        if (((ix + iz) & 1) === 0) add(ix + 1, -(iz + 0.5), 0.5, 'half', 3);
+        else add(ix + 0.5, -(iz + 1), 0.5, 'half', 4);
+      }
+    }
+    return entries;
+  }
+
+  function makeInclineSampler(slope, zcols, depth = NORTH_DEPTH) {
+    const pos = slope?.geometry?.getAttribute?.('position');
+    if (!pos?.array?.length) return () => 0;
+    const step = 0.5;
+    const xCount = Math.round(zcols / step) + 1;
+    const zCount = Math.round(depth / step) + 1;
+    const yAt = (ix, iz) => pos.array[(Math.max(0, Math.min(zCount - 1, iz)) * xCount + Math.max(0, Math.min(xCount - 1, ix))) * 3 + 1] || 0;
+    return (x, z) => {
+      const gx = Math.max(0, Math.min(xCount - 1, x / step));
+      const gz = Math.max(0, Math.min(zCount - 1, -z / step));
+      const x0 = Math.floor(gx), z0 = Math.floor(gz), x1 = Math.min(xCount - 1, x0 + 1), z1 = Math.min(zCount - 1, z0 + 1);
+      const tx = gx - x0, tz = gz - z0;
+      const a = yAt(x0, z0) * (1 - tx) + yAt(x1, z0) * tx;
+      const b = yAt(x0, z1) * (1 - tx) + yAt(x1, z1) * tx;
+      return a * (1 - tz) + b * tz;
+    };
+  }
+
+  function removeSceneObject(scene, object) {
+    if (!scene || !object) return;
+    scene.remove?.(object);
+    if (Array.isArray(scene.items)) {
+      const i = scene.items.indexOf(object);
+      if (i >= 0) scene.items.splice(i, 1);
+    }
+    object.geometry?.dispose?.();
+  }
+
+  function replaceNorthRuntimeCliff(scene, added, slope, zcols, heightAt) {
+    const generic = added.find(o => o?.geometry?.getAttribute?.('position') && !o?.userData?.backgroundScenery);
+    if (generic) {
+      const p = generic.geometry.getAttribute('position');
+      let changed = false;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX ? p.getX(i) : p.array[i * 3];
+        const z = p.getZ ? p.getZ(i) : p.array[i * 3 + 2];
+        if (x < 0 || x > zcols || z > 0 || z < -NORTH_DEPTH) continue;
+        const y = heightAt(x, z) - 0.02;
+        if (p.setY) p.setY(i, y); else p.array[i * 3 + 1] = y;
+        changed = true;
+      }
+      if (changed) {
+        p.needsUpdate = true;
+        generic.geometry.computeVertexNormals?.();
+        generic.geometry.computeBoundingBox?.();
+        generic.geometry.computeBoundingSphere?.();
+      }
+    }
+
+    // Generic wilderness stone skins are added one side at a time. Delete only
+    // the skin whose complete Z bounds live north of the playable seam.
+    for (const obj of added) {
+      if (obj === generic || obj === slope || obj?.userData?.backgroundScenery || !obj?.geometry) continue;
+      obj.geometry.computeBoundingBox?.();
+      const box = obj.geometry.boundingBox;
+      if (box && box.max.z <= 0.001 && box.min.z < -0.05) removeSceneObject(scene, obj);
+    }
+  }
+
+  function instanceDenseShadewoodForest(scene, entries) {
+    const FG = window.FoliageGenerator;
+    if (!FG?.buildShadewoodMesh || !entries.length || typeof THREE === 'undefined') return { chunks: 0, instances: 0 };
+    const chunkMap = new Map();
+    for (const e of entries) {
+      const key = `${Math.floor(e.x / FOREST_CHUNK_WIDTH)},${Math.floor((-e.z) / FOREST_CHUNK_DEPTH)}`;
+      let list = chunkMap.get(key);
+      if (!list) chunkMap.set(key, list = []);
+      list.push(e);
+    }
+
+    let chunkCount = 0, instanceCount = 0;
+    for (const list of chunkMap.values()) {
+      const buckets = new Map();
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const e of list) {
+        minX = Math.min(minX, e.x); maxX = Math.max(maxX, e.x); minZ = Math.min(minZ, e.z); maxZ = Math.max(maxZ, e.z);
+        const tree = FG.buildShadewoodMesh(e.seedA, e.seedB);
+        if (!tree) continue;
+        tree.position.set(e.x, e.y, e.z);
+        tree.rotation.y += e.yaw;
+        tree.scale.multiplyScalar(e.scale);
+        tree.updateMatrixWorld(true);
+        tree.traverse(o => {
+          if (!o?.isMesh || !o.geometry || !o.material) return;
+          const material = Array.isArray(o.material) ? o.material[0] : o.material;
+          if (!material) return;
+          let byMaterial = buckets.get(o.geometry);
+          if (!byMaterial) buckets.set(o.geometry, byMaterial = new Map());
+          let matrices = byMaterial.get(material);
+          if (!matrices) byMaterial.set(material, matrices = []);
+          matrices.push(o.matrixWorld.clone());
+        });
+        instanceCount++;
+      }
+      if (!buckets.size) continue;
+      const group = new THREE.Group();
+      group.name = `AuthoredCloudForestDenseChunk_${chunkCount}`;
+      for (const [geometry, byMaterial] of buckets) {
+        for (const [material, matrices] of byMaterial) {
+          const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
+          for (let i = 0; i < matrices.length; i++) mesh.setMatrixAt(i, matrices[i]);
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.castShadow = false;
+          mesh.receiveShadow = true;
+          // Parent-level cullSphere participates in the existing ~7 Hz
+          // camera-aligned vegetation culler. Disable child frustum tests so a
+          // base geometry sphere at the origin cannot incorrectly reject a
+          // transformed instance cloud.
+          mesh.frustumCulled = false;
+          mesh.userData.backgroundScenery = true;
+          group.add(mesh);
+        }
+      }
+      const cx = (minX + maxX) * 0.5, cz = (minZ + maxZ) * 0.5;
+      const pad = 3.2;
+      const xzRadius = Math.hypot((maxX - minX) * 0.5 + pad, (maxZ - minZ) * 0.5 + pad);
+      group.userData.backgroundScenery = true;
+      group.userData.denseForestWall = true;
+      group.userData.skipOcclusionFade = true;
+      group.userData.cullSphere = { x: cx, z: cz, radius: xzRadius, xzRadius };
+      scene.add?.(group);
+      if (Array.isArray(scene.items) && !scene.items.includes(group)) scene.items.push(group);
+      chunkCount++;
+    }
+    return { chunks: chunkCount, instances: instanceCount };
+  }
+
+  function installGeneratorPatch() {
+    const gen = window.WildernessMapGenerator;
+    if (!gen?.generateZoneWorkspace || gen.__cloudForestNorthNoCliffPatch) return;
+    const original = gen.generateZoneWorkspace;
+    gen.generateZoneWorkspace = function (zoneMapId, ...args) {
+      const value = original.call(this, zoneMapId, ...args);
+      const apply = workspace => zoneMapId === CLOUD_ID ? removeCloudForestNorthBoundaryCliffs(workspace) : workspace;
+      return value && typeof value.then === 'function' ? value.then(apply) : apply(value);
+    };
+    gen.__cloudForestNorthNoCliffPatch = true;
+  }
+
+  function installBorderPatch() {
+    const BT = window.BorderTerrain;
+    if (!BT?.buildZoneBorderTerrain || BT.__cloudForestDenseNorthPatch) return;
+    const original = BT.buildZoneBorderTerrain;
+    BT.buildZoneBorderTerrain = function (scene, zcols, zrows, mapId, zoneBaseElev = 0, zGrid = null) {
+      const before = new Set(scene?.children || scene?.items || []);
+      const result = original.call(this, scene, zcols, zrows, mapId, zoneBaseElev, zGrid);
+      if (mapId !== CLOUD_ID || !scene) return result;
+      const collection = scene.children || scene.items || [];
+      const added = collection.filter(o => !before.has(o));
+      const slope = added.find(o => o?.name === 'AuthoredCloudForestNorthIncline') || collection.find(o => o?.name === 'AuthoredCloudForestNorthIncline');
+      if (!slope) return result;
+      const heightAt = makeInclineSampler(slope, zcols, NORTH_DEPTH);
+
+      // The earlier sparse experiment physically copied every tree's vertices.
+      // Remove it before building the dense instanced wall.
+      for (const obj of [...collection]) if (obj?.userData?.bakedForestWall) removeSceneObject(scene, obj);
+      replaceNorthRuntimeCliff(scene, added, slope, zcols, heightAt);
+
+      const meta = scene.userData?.authoredCloudForestScenery || {};
+      const pathCenter = Number.isFinite(meta.pathCenter) ? meta.pathCenter : zcols * 0.5;
+      const pathWidth = Math.max(3.25, Number(meta.pathWidth) || 0);
+      const clearHalf = pathWidth * 0.5 + PATH_CLEARANCE;
+      const layout = buildDenseCloudForestLayout(zcols, NORTH_DEPTH, pathCenter, clearHalf, heightAt);
+      const stats = instanceDenseShadewoodForest(scene, layout);
+      scene.userData = scene.userData || {};
+      scene.userData.authoredCloudForestScenery = {
+        ...meta,
+        pathCenter,
+        pathWidth,
+        treeCount: layout.length,
+        fullHeightCount: layout.filter(e => e.scale === 1).length,
+        threeQuarterCount: layout.filter(e => e.scale === 0.75).length,
+        halfHeightCount: layout.filter(e => e.scale === 0.5).length,
+        baseTreeSpacingWorld: BASE_TREE_SPACING_WORLD,
+        instanced: true,
+        cullChunks: stats.chunks,
+        northBoundaryCliffsRemoved: true,
+      };
+      return result;
+    };
+    BT.__cloudForestDenseNorthPatch = true;
+    BT.removeCloudForestNorthBoundaryCliffs = removeCloudForestNorthBoundaryCliffs;
+    BT.buildDenseCloudForestLayout = buildDenseCloudForestLayout;
+    BT.CLOUD_FOREST_BASE_TREE_SPACING_WORLD = BASE_TREE_SPACING_WORLD;
+  }
+
+  installGeneratorPatch();
+  installBorderPatch();
 })();
