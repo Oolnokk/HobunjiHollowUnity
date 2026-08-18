@@ -7,6 +7,8 @@
 
   const STORAGE_KEY = 'hobunjiWorldPopupSettings.v1';
   const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used for popup measurement and canvas rendering.
+  const TANKAN_FONT_FAMILY = "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used by the persistent Quick Attack condition callout.
+  const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'; // Existing HUD font used to render the vertical Hahai condition callout.
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
@@ -17,11 +19,12 @@
     centeredFiveRow: { worldHeight: 0.32, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 3200, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
-      masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff',
+      masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
     },
   };
   const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
-  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false, interactionSignature: '' };
+  const state = { deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false, interactionSignature: '', conditionCallout: null };
+  let tankanFontPromise = null; // Used to load the existing Tankan OTF once before redrawing any persistent callout canvas.
 
   const clone = value => JSON.parse(JSON.stringify(value));
   const merge = (base, extra) => {
@@ -59,6 +62,16 @@
     try { local = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (_) {}
     state.settings = normalizeSettings(merge(authored, local));
     return state.settings;
+  }
+
+  function ensureTankanFont() {
+    if (tankanFontPromise) return tankanFontPromise;
+    if (typeof FontFace !== 'function' || !document.fonts) return Promise.resolve(false);
+    tankanFontPromise = new FontFace('TankanScript', `url('${TANKAN_FONT_URL}')`, { weight: 'normal', style: 'normal' })
+      .load()
+      .then(font => { document.fonts.add(font); return true; })
+      .catch(() => false);
+    return tankanFontPromise;
   }
 
   // Interaction prompts sit in state.active with lifetimeMs: Infinity for as
@@ -150,6 +163,55 @@
     plane.frustumCulled = false;
     plane.userData.isBillboard = true;
     return { plane, geometry, material, texture, width: aspect * size, height: size };
+  }
+
+  function drawConditionCallout(parts, text) {
+    const chars = Array.from(text || 'Hahai!');
+    const ctx = parts.ctx;
+    const canvas = parts.canvas;
+    const fontPx = 64;
+    const row = 66;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${fontPx}px ${TANKAN_FONT_FAMILY}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    for (let index = 0; index < chars.length; index++) {
+      const y = 20 + row * (index + 0.5);
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = 'rgba(15,10,8,.92)';
+      ctx.strokeText(chars[index], canvas.width / 2, y);
+      ctx.fillStyle = state.settings.colors.conditionReady || '#fff4e2';
+      ctx.fillText(chars[index], canvas.width / 2, y);
+    }
+    parts.texture.needsUpdate = true;
+  }
+
+  function makeConditionCalloutPlane(text, layout) {
+    const THREE = state.deps.THREE;
+    const chars = Array.from(text || 'Hahai!');
+    const canvas = document.createElement('canvas');
+    canvas.width = 112;
+    canvas.height = Math.max(112, 40 + chars.length * 66);
+    const ctx = canvas.getContext('2d');
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    const aspect = canvas.width / canvas.height;
+    const geometry = new THREE.PlaneGeometry(aspect, 1);
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(geometry, material);
+    const totalHeight = layout.worldHeight * Math.max(2.7, chars.length * 0.82); // Keeps each stacked glyph close to one normal reward-list row in apparent size.
+    plane.scale.setScalar(totalHeight);
+    plane.renderOrder = 1201;
+    plane.frustumCulled = false;
+    plane.userData.isBillboard = true;
+    const parts = { plane, geometry, material, texture, canvas, ctx, width: aspect * totalHeight, height: totalHeight };
+    drawConditionCallout(parts, text);
+    ensureTankanFont().then(loaded => {
+      if (loaded && !parts.material.disposed) drawConditionCallout(parts, text); // Redraw once the real Tankan glyphs are available instead of leaving an early fallback rasterized into the texture.
+    });
+    return parts;
   }
 
   function dispose(event) {
@@ -277,6 +339,46 @@
     });
   }
 
+  function clearConditionCallout() {
+    if (!state.conditionCallout) return;
+    dispose(state.conditionCallout);
+    state.conditionCallout = null;
+  }
+
+  function setConditionCallout(root, enabled, options = {}) {
+    if (!enabled || !root || !state.deps) {
+      clearConditionCallout();
+      return null;
+    }
+    const text = String(options.text || 'Hahai!');
+    const scene = options.scene || state.deps.getActiveScene?.();
+    if (!scene) {
+      clearConditionCallout();
+      return null;
+    }
+    const signature = `${root.uuid || root.name || 'root'}|${text}`;
+    const existing = state.conditionCallout;
+    if (existing?.signature === signature) {
+      if (existing.plane.parent !== scene) {
+        existing.plane.parent?.remove(existing.plane);
+        scene.add(existing.plane);
+      }
+      existing.scene = scene;
+      return existing.sequence;
+    }
+
+    clearConditionCallout();
+    const parts = makeConditionCalloutPlane(text, state.settings.centeredFiveRow);
+    const event = {
+      ...parts, root, scene, text, signature,
+      kind: 'conditionReady', conditionCallout: true,
+      sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: Infinity,
+    };
+    scene.add(event.plane);
+    state.conditionCallout = event;
+    return event.sequence;
+  }
+
   function syncInteractionPrompts(options = {}) {
     const buttons = Array.isArray(options.buttons) ? options.buttons : [];
     const isWorldInteraction = typeof options.isWorldInteraction === 'function'
@@ -299,6 +401,24 @@
       return { ...button, text: `${keyHint}${button.label}` };
     });
     return setInteractionPrompts(options.root, prompts, { scene: options.scene });
+  }
+
+  function updateConditionCallout(camera, cameraRight) {
+    const event = state.conditionCallout;
+    if (!event) return;
+    const metrics = avatarMetrics(event.root);
+    if (!metrics || !event.root?.parent) {
+      clearConditionCallout();
+      return;
+    }
+    const cfg = state.settings.centeredFiveRow;
+    const center = metrics.center.clone();
+    const mirroredListOffset = Math.abs(metrics.width * cfg.xOffsetPercent / 100) + event.width * 0.5; // Mirrors the regular reward list onto the opposite screen side of the character.
+    center.addScaledVector(cameraRight, -mirroredListOffset);
+    center.y += metrics.combinedHeight * cfg.yOffsetPercent / 100;
+    event.plane.position.copy(center);
+    event.plane.quaternion.copy(camera.quaternion);
+    event.material.opacity = 1;
   }
 
   function update(now) {
@@ -334,11 +454,13 @@
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       event.plane.scale.setScalar(state.settings[event.mode].worldHeight * pop);
     }
+    updateConditionCallout(camera, cameraRight);
   }
 
   function init(deps) {
     state.deps = deps;
     loadSettings();
+    ensureTankanFont();
     return api;
   }
 
@@ -346,6 +468,7 @@
     state.active.splice(0).forEach(dispose);
     state.pending.length = 0;
     state.interactionSignature = '';
+    clearConditionCallout();
   }
 
   function applySettings(settings) {
@@ -354,6 +477,12 @@
     return clone(state.settings);
   }
 
-  const api = { init, update, showChange, queueReward, setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts, avatarCentroidWorld, loadSettings, applySettings, clear, defaults: clone(DEFAULTS), storageKey: STORAGE_KEY };
+  const api = {
+    init, update, showChange, queueReward,
+    setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
+    setConditionCallout, clearConditionCallout,
+    avatarCentroidWorld, loadSettings, applySettings, clear,
+    defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
+  };
   window.WorldPopupText = api;
 })();
