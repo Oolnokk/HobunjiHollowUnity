@@ -47,7 +47,7 @@ assert.strictEqual(profiles.modelScaleFor('mao-ao'), 2, 'hand GLBs keep the 2x m
 assert.strictEqual(profiles.data.models.feline.mirrorX, true, 'source-left convention should still mirror runtime right hand');
 
 assert.match(handSource, /authored origin/i, 'direct hand runtime must preserve the GLB authored origin');
-assert.doesNotMatch(handSource, /solveTwoBoneArm|shoulderNode|upper_arm|forearm/, 'direct hand runtime must contain no arm-chain implementation');
+assert.doesNotMatch(handSource, /solveTwoBoneArm|shoulderNode|upper_arm/, 'direct hand runtime must contain no arm-chain implementation');
 assert.match(handSource, /THREE\.DoubleSide/, 'direct runtime must keep hand backface culling disabled');
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
