@@ -19,6 +19,9 @@ const gripEditorSource = read('docs/js/attack-editor-hand-grip-mode.js');
 const heldSource = read('docs/js/held-action-animations.js');
 const bridgeSource = read('docs/js/player-body-attachment-bridge.js');
 const weaponScaleSource = read('docs/js/weapon-png-scale.js');
+const armCompassSource = read('docs/js/portrait-arm-compass.js');
+const handCompassAimSource = read('docs/js/procedural-hand-compass-aim.js');
+const materialRoleSource = read('docs/js/procedural-hand-foot-material-roles.js');
 
 const storage = new Map();
 const sandbox = {
@@ -88,9 +91,22 @@ assert.match(editorUiSource, /Final hand size = <b>model scale × species\/gende
 assert.match(editorUiSource, /hand-model-profiles\.json/, 'editor must retain reusable hand profile export');
 assert.match(heldSource, /procedural-hand-attachments\.js/, 'bootstrap must load the direct hand runtime');
 assert.match(heldSource, /hand-tool-grips\.js/, 'bootstrap must load tool grip sockets');
+assert.match(heldSource, /portrait-arm-compass\.js/, 'bootstrap must separate the raw arm sprites before hand attachment');
+assert.match(heldSource, /procedural-hand-compass-aim\.js/, 'bootstrap must connect arm compass rotation and wrist roll before the frame driver');
 assert.match(heldSource, /weapon-png-scale\.js/, 'game bootstrap must load baseline weapon PNG scaling');
 assert.doesNotMatch(heldSource, /arm-bones\.js|procedural-arm-animation\.js|portrait-biceps|forearm-follow|arm-length/, 'bootstrap must not load deleted arm systems');
 assert.match(bridgeSource, /ProceduralHandAttachments\?\.installGameRuntime/, 'gameplay dependency bridge must target direct hands');
+
+assert.match(armCompassSource, /SHOULDER_DROP_FRAC = 0\.10/, 'shoulder origin must be first opaque arm region plus 10% portrait height');
+assert.match(armCompassSource, /bodyLayers\.filter\(layer => !ARM_ID_RE\.test/, 'base portrait must omit neutral raw arms so no ghost arm remains');
+assert.match(armCompassSource, /scanArmAnchors\(canvas\)/, 'each separated arm must be scanned for shoulder/wrist anchors');
+assert.match(handCompassAimSource, /record\.pivot\.rotation\.z = record\.armAngleRad/, 'arm sprite must rotate in 2D around its shoulder pivot');
+assert.match(handCompassAimSource, /setFromAxisAngle\(zAxis, correction\)/, 'hand wrist alignment must correct local roll only');
+assert.match(handCompassAimSource, /set\(0, 1, 0\)\.applyQuaternion/, 'GLB local +Y/top must be treated as the wrist direction');
+assert.doesNotMatch(handCompassAimSource, /solveTwoBoneArm|elbow|reach clamp/i, 'compass presentation must not reintroduce arm IK');
+
+assert.match(materialRoleSource, /MAT_None_7a4e2e: 'keratin'/, 'parrot first export material must be flipped to keratin');
+assert.match(materialRoleSource, /MAT_EyeSurface_0c0c0c: 'body'/, 'parrot second export material must be flipped to body');
 
 assert.match(weaponScaleSource, /BASE_WEAPON_PNG_SCALE = 1\.15/, 'unscaled weapon PNG baseline must be 1.15x');
 for (const key of ['hatchet', 'bronzehoe', 'pickshovel', 'fishingspear', 'fishingmace']) {
@@ -108,4 +124,4 @@ for (const removed of [
   'docs/js/procedural-hand-arm-length.js',
 ]) assert(!fs.existsSync(path.join(root, removed)), `${removed} should be physically removed`);
 
-console.log('procedural hands: shared Mao\'ao setup, parrot mirror flip, direct sockets, and 1.15 weapon PNG baseline PASS');
+console.log('procedural hands: direct sockets + 2D compass arms + wrist roll-to-shoulder + shared Mao\'ao setup PASS');
