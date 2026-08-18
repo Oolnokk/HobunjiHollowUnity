@@ -9,6 +9,7 @@
 
   const IDLE = Object.freeze({ pitch: 1, yaw: 0, roll: 1 });
   const ACTIVE = Object.freeze({ pitch: 0, yaw: 0, roll: 1 });
+  let capturedMelee = null;
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
   const normalize = (raw, fallback = ACTIVE) => ({
@@ -67,6 +68,49 @@
     return side === 'left' && !secondaryGripActive(toolKey) ? { ...IDLE } : weights;
   }
 
+  // WeaponToolStances has to remain authoritative for transforming actual tool
+  // poses. Once it has installed its wrapper, place this capture OUTSIDE it so we
+  // see editor-authored shoulderAim metadata before its numeric pose normalizer
+  // intentionally strips unknown fields.
+  function installMeleeCapture() {
+    const deps = global.Combat?.deps;
+    if (!deps?.__weaponToolStanceVisualHooks || deps.__hobunjiShoulderPoseCapture) return false;
+
+    const wrapStart = name => {
+      const original = deps[name];
+      if (typeof original !== 'function') return;
+      deps[name] = function shoulderPoseAwareCombatStart(durationS, opts = {}) {
+        capturedMelee = {
+          durationS: Math.max(0.001, Number(durationS) || 0.5),
+          opts: opts && typeof opts === 'object' ? opts : {},
+          startedAt: performance.now(),
+          kind: name === 'triggerWeaponHoldVisual' ? 'hold' : 'swing',
+        };
+        return original.call(this, durationS, opts);
+      };
+    };
+    wrapStart('triggerWeaponSwingVisual');
+    wrapStart('triggerWeaponHoldVisual');
+
+    for (const name of ['releaseWeaponSwingHold','cancelWeaponSwingHold']) {
+      const original = deps[name];
+      if (typeof original !== 'function') continue;
+      deps[name] = function shoulderPoseAwareCombatEnd(...args) {
+        const result = original.apply(this, args);
+        if (name === 'cancelWeaponSwingHold') capturedMelee = null;
+        return result;
+      };
+    }
+    Object.defineProperty(deps, '__hobunjiShoulderPoseCapture', { value: true, configurable: true });
+    return true;
+  }
+
+  function captureLoop() {
+    installMeleeCapture();
+    global.requestAnimationFrame?.(captureLoop);
+  }
+  global.requestAnimationFrame?.(captureLoop);
+
   function rangedWeights(side) {
     const action = global.__rangedDebug?.playerAction || null;
     if (!action?.itemKey || !action?.kind || !(Number(action.durationS) > 0)) return null;
@@ -93,19 +137,31 @@
   }
 
   function gameWeights(side) {
-    // Ranged load/fire has its own timeline and exposes the live player action.
-    // Evaluate it directly before the melee stance system.
     const ranged = rangedWeights(side);
     if (ranged) return ranged;
 
     const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
-    if (!active) return { ...IDLE };
+    if (!active) {
+      capturedMelee = null;
+      return { ...IDLE };
+    }
 
-    // Melee's current committed per-pose entries all use Neutral=Pitch+Roll and
-    // Windup/Strike=Roll-only. WeaponToolStances already computes the exact amount
-    // of Neutral blended into its four-phase cycle, so it is the precise Pitch
-    // influence for these individually-authored animation profiles.
+    const toolKey = snapshot?.itemKey || snapshot?.shape || '';
+    const rawPose = capturedMelee?.opts?.pose;
+    if (hasAuthoredPoseAim(rawPose)) {
+      const timing = {
+        windupFrac: capturedMelee.opts.windupFrac ?? 0.16,
+        strikeFrac: capturedMelee.opts.strikeFrac ?? 0.55,
+        holdFrac: capturedMelee.opts.holdFrac ?? 0.68,
+      };
+      const sequence = capturedMelee.opts.sequence || 'attack';
+      return applyLeftIdleRule(side, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
+    }
+
+    // Current committed melee profiles all use Neutral=Pitch+Roll and active
+    // Windup/Strike=Roll-only. WeaponToolStances exposes its exact Neutral blend
+    // weight, including hold/release timing, so it is the precise Pitch influence.
     const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
     const authored = global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey);
     const profile = normalizePoseSet(authored || {});
@@ -115,11 +171,10 @@
       yaw: profile.strike.yaw + (profile.neutral.yaw - profile.strike.yaw) * neutralWeight,
       roll: profile.strike.roll + (profile.neutral.roll - profile.strike.roll) * neutralWeight,
     };
-    return applyLeftIdleRule(side, snapshot?.itemKey || snapshot?.shape || '', weights);
+    return applyLeftIdleRule(side, toolKey, weights);
   }
 
   function currentWeights(side) {
-    // Attack Editor owns its own timeline and exposes the exact authored pose boxes.
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentWeights) {
       const weights = editor.currentWeights();
@@ -138,5 +193,6 @@
     lerp,
     weightsAt,
     currentWeights,
+    installMeleeCapture,
   });
 })(window);
