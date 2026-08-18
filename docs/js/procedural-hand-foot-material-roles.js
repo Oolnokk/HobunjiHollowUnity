@@ -1,7 +1,7 @@
 // Reuses the proven procedural-foot GLB material-slot mapping for hand GLBs
-// exported from the same source projects. This keeps species whose foot files
-// swap Mat 1 / Mat 2 roles consistent between feet and hands without duplicating
-// a second hard-coded truth table.
+// exported from the same source projects. The live foot config is authoritative;
+// the fallback table below mirrors it exactly for nested tools that happen to load
+// the hand bootstrap before SCRATCHBONES_CONFIG is available.
 (function (global) {
   'use strict';
 
@@ -14,15 +14,20 @@
     sloth: 'tletingan',
     feline: 'mao-ao',
   };
+  const fallbackRoles = {
+    pachyderm: { 'Mat 1': 'bone', 'Mat 2': 'body' },
+    sloth: { 'Mat 1': 'bone', 'Mat 2': 'body' },
+    feline: { 'Mat 1': 'body' },
+  };
 
   profiles.mutate(data => {
     for (const [modelKey, speciesId] of Object.entries(correspondingFootSpecies)) {
       const model = data.models?.[modelKey];
-      const footRoles = feet?.[speciesId]?.materialRoles;
-      if (!model || !footRoles) continue;
+      if (!model) continue;
+      const footRoles = feet?.[speciesId]?.materialRoles || fallbackRoles[modelKey];
       model.materialRoles = {
         ...(model.materialRoles || {}),
-        ...footRoles,
+        ...(footRoles || {}),
       };
     }
 
@@ -42,5 +47,6 @@
 
   global.ProceduralHandFootMaterialRoles = Object.freeze({
     correspondingFootSpecies: { ...correspondingFootSpecies },
+    fallbackRoles: JSON.parse(JSON.stringify(fallbackRoles)),
   });
 })(window);
