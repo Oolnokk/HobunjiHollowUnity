@@ -253,6 +253,7 @@
       `Target: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
       `Bonus ready: ${state.ready ? 'YES' : 'no'}`,
       `Condition: ${state.equipped?.definition?.condKey || '-'}`,
+      `Condition state: ${state.conditions ? JSON.stringify(state.conditions) : '-'}`,
       `Generic telegraph: ${state.target?.telegraphState || '-'}`,
       `Animal attack: ${state.target?._animalAttack?.id || '-'} / ${state.target?._animalAttack?.state?.stage || '-'}`,
       `Popup root: ${state.root ? 'yes' : 'no'}`,
