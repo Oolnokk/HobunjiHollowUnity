@@ -77,6 +77,8 @@ assert.match(handSource, /THREE\.DoubleSide/, 'direct runtime must keep hand bac
 assert.match(driverSource, /placeHandWorld\?\.\('right'/, 'right hand must follow primary tool grip');
 assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optional second grip');
 assert.match(driverSource, /setSideIdle\?\.\('left'/, 'left hand must idle on one-handed tools');
+assert.match(driverSource, /profile: options\.profile \|\| null/, 'avatar profile must be retained for post-build shoulder scanning');
+assert.match(driverSource, /profile: record\.profile/, 'hand attachment must receive the original avatar profile');
 assert.doesNotMatch(driverSource, /clampDeltaWorld|armLength|elbow/, 'driver must never perform arm reach correction');
 
 const gripSandbox = { window: {}, localStorage: sandbox.localStorage };
@@ -100,7 +102,7 @@ assert.match(editorUiSource, /Final hand size = <b>model scale × species\/gende
 assert.match(editorUiSource, /hand-model-profiles\.json/, 'editor must retain reusable hand profile export');
 assert.match(heldSource, /procedural-hand-attachments\.js/, 'bootstrap must load the direct hand runtime');
 assert.match(heldSource, /hand-tool-grips\.js/, 'bootstrap must load tool grip sockets');
-assert.match(heldSource, /portrait-hand-shoulder-scan\.js/, 'bootstrap must load shoulder metadata scan');
+assert.match(heldSource, /portrait-hand-shoulder-scan\.js/, 'bootstrap must load shoulder scan API');
 assert.match(heldSource, /procedural-hand-shoulder-aim\.js/, 'bootstrap must load hand-only shoulder compass');
 assert.match(heldSource, /attack-editor-hand-shoulder-controls\.js/, 'Attack Editor must load shoulder-axis and arm-preview controls');
 assert.match(heldSource, /weapon-png-scale\.js/, 'game bootstrap must load baseline weapon PNG scaling');
@@ -109,19 +111,25 @@ assert.doesNotMatch(heldSource, /arm-bones\.js|procedural-arm-animation\.js|port
 assert.match(bridgeSource, /ProceduralHandAttachments\?\.installGameRuntime/, 'gameplay dependency bridge must target direct hands');
 
 assert.match(shoulderScanSource, /SHOULDER_DROP_FRAC = 0\.10/, 'shoulder target must be first opaque arm row plus 10% portrait height');
-assert.match(shoulderScanSource, /hobunjiHandShoulders/, 'raw arm scan must store shoulder metadata for the hand runtime');
+assert.match(shoulderScanSource, /async function scanProfile\(/, 'shoulder scanner must expose an explicit post-build scan');
+assert.match(shoulderScanSource, /scanProfile,/, 'shoulder scanner API must export scanProfile');
+assert.doesNotMatch(shoulderScanSource, /renderPortraitProfile\s*=|renderProfile\s*=|__hobunjiHandShoulderScanWrapped/, 'shoulder scanner must never wrap the portrait renderer');
 assert.doesNotMatch(shoulderScanSource, /PlaneGeometry|pivot\.rotation|arm_compass_sprite/, 'shoulder scan must never create or rotate arm visuals');
+
 assert.match(shoulderAimSource, /new THREE\.Vector3\(0, 1, 0\)/, 'GLB local +Y/top must be treated as the wrist direction');
+assert.match(shoulderAimSource, /shoulderScanner\.scanProfile\(options\.profile/, 'shoulder aim must request its scan after hand/avatar attachment');
+assert.match(shoulderAimSource, /scanState = 'error'/, 'scan failures must be isolated from avatar rebuild and exposed in debug state');
 assert.match(shoulderAimSource, /setFromUnitVectors\(currentTop, targetDirection\)/, 'compass must derive one coherent full orientation toward the shoulder');
 assert.match(shoulderAimSource, /enabled\.pitch \? aimedEuler\.x : currentEuler\.x/, 'pitch toggle must independently adopt shoulder target');
 assert.match(shoulderAimSource, /enabled\.yaw \? aimedEuler\.y : currentEuler\.y/, 'yaw toggle must independently adopt shoulder target');
 assert.match(shoulderAimSource, /enabled\.roll \? aimedEuler\.z : currentEuler\.z/, 'roll toggle must independently adopt shoulder target');
-assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|arm sprite|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
+assert.doesNotMatch(shoulderAimSource, /PlaneGeometry|solveTwoBoneArm|elbow|reach clamp/i, 'hand compass must not animate arm sprites or reintroduce IK');
 
 for (const id of ['handShoulderAimPitch', 'handShoulderAimYaw', 'handShoulderAimRoll', 'handHideArmSpritesPreview']) {
   assert(shoulderControlsSource.includes(id), `Attack Editor must expose ${id}`);
 }
-assert.match(shoulderControlsSource, /__hobunjiShoulderSourceFighter/, 'hidden-arm preview must preserve real arm source for shoulder scanning');
+assert.match(shoulderControlsSource, /previewApi\.renderProfileToCanvas/, 'arm hiding should be scoped to the Attack Editor preview adapter');
+assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|global\.renderProfile\s*=/, 'preview arm hiding must not monkeypatch global portrait renderers');
 assert.match(shoulderControlsSource, /hobunjiArmCloudAlphaMap = null/, 'hidden-arm preview must disable the old arm cloud alpha cutout');
 assert.doesNotMatch(shoulderControlsSource, /saveLocal\(.*hideArm|hideArm.*localStorage/s, 'arm visibility must remain preview-only and unpersisted');
 
@@ -146,4 +154,4 @@ for (const removed of [
   'docs/js/procedural-hand-compass-aim.js',
 ]) assert(!fs.existsSync(path.join(root, removed)), `${removed} should be physically removed`);
 
-console.log('procedural hands: direct sockets + hand-only shoulder axis compass + preview arm hide + shared Mao\'ao setup PASS');
+console.log('procedural hands: renderer-safe post-build shoulder compass + preview arm hide + shared Mao\'ao setup PASS');
