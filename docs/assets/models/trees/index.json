@@ -1,0 +1,14 @@
+{
+  "schema": "hobunji_tree_assets.v1",
+  "basePath": "assets/models/trees/",
+  "generatedBy": "docs/tools/tree-asset-exporter/index.html",
+  "note": "These six filenames are the baked variants FoliageGenerator will prefer when present. Missing files fall back to procedural trees.",
+  "assets": [
+    { "species": "crowned_pine", "variant": 1, "filename": "crowned_pine_01.glb", "builder": "buildCrownedPineMesh", "seed": 1 },
+    { "species": "crowned_pine", "variant": 2, "filename": "crowned_pine_02.glb", "builder": "buildCrownedPineMesh", "seed": 2 },
+    { "species": "crowned_pine", "variant": 3, "filename": "crowned_pine_03.glb", "builder": "buildCrownedPineMesh", "seed": 3 },
+    { "species": "shadewood", "variant": 1, "filename": "shadewood_01.glb", "builder": "buildShadewoodMesh", "seed": 1 },
+    { "species": "shadewood", "variant": 2, "filename": "shadewood_02.glb", "builder": "buildShadewoodMesh", "seed": 2 },
+    { "species": "shadewood", "variant": 3, "filename": "shadewood_03.glb", "builder": "buildShadewoodMesh", "seed": 3 }
+  ]
+}

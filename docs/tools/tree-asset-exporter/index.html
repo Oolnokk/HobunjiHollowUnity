@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <base href="../../">
+  <title>Hobunji Hollow — Tree Asset Exporter</title>
+  <link rel="stylesheet" href="tools/tree-asset-exporter/exporter.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="js/foliage-generator.js?v=20260818-tree-export"></script>
+  <script src="js/tree-asset-library.js?v=20260818a"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🌲 Wilderness Tree Asset Exporter</h1>
+      <p>Build the six fixed full-size tree variants used by wilderness generation, bake them to GLB, and package them at their exact runtime paths.</p>
+    </div>
+    <button id="export-all" class="primary">Export all 6 as ZIP</button>
+  </header>
+
+  <main>
+    <section class="panel asset-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Expected assets</h2>
+          <p class="muted">Runtime folder: <code>docs/assets/models/trees/</code></p>
+        </div>
+        <span id="ready-pill" class="pill">Preparing…</span>
+      </div>
+      <div id="asset-list" class="asset-list"></div>
+      <div class="help">
+        <strong>Upload workflow</strong>
+        <p>The ZIP mirrors the repository path. Extract it at repo root, or open <code>docs/assets/models/trees/</code> on GitHub and upload the six GLBs together. The committed <code>index.json</code> already keeps that folder present.</p>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="panel-head">
+        <div>
+          <h2 id="preview-title">Preview</h2>
+          <p id="preview-meta" class="muted">Select a variant.</p>
+        </div>
+        <button id="export-one">Export selected GLB</button>
+      </div>
+      <div id="viewport"></div>
+      <div id="status" role="status">Initializing procedural tree builders…</div>
+    </section>
+  </main>
+
+  <script src="tools/tree-asset-exporter/exporter.js?v=20260818a"></script>
+</body>
+</html>
