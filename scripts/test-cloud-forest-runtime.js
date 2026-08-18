@@ -72,6 +72,27 @@ assert.equal(root.tiles['0,0'].borderEntryGate, true, 'retained boundary plateau
 assert.equal(workspace.plateauGroups.find(g => g.id === 'north_wall').elevation, 2, 'north boundary group should normalize to inland tier');
 assert.equal(workspace.maps[1].elevation, 2, 'matching boundary submap should normalize with its plateau group');
 
+// Synthetic authored-scenery slope: constant seam Y=4 across a 10-wide map.
+// The new profile should stay subtle for the first 3 worlds, then become much
+// steeper while remaining continuous rather than snapping into a wall.
+const slopePositions = new Float32Array((10 / 0.5 + 1) * 3);
+for (let i = 0; i < slopePositions.length / 3; i++) {
+  slopePositions[i * 3] = i * 0.5;
+  slopePositions[i * 3 + 1] = 4;
+  slopePositions[i * 3 + 2] = 0;
+}
+const slopeAttribute = {
+  array: slopePositions,
+  count: slopePositions.length / 3,
+  getY(i) { return slopePositions[i * 3 + 1]; },
+};
+const slope = { geometry: { getAttribute(name) { return name === 'position' ? slopeAttribute : null; } } };
+const heightAt = V2.makeSteepNorthProfile(slope, 10, 18);
+assert(Math.abs(heightAt(5, 0) - 4) < 1e-6, 'slope must weld exactly to playable seam');
+assert(heightAt(5, -1) > 4 && heightAt(5, -1) < 4.2, 'first world should rise only subtly');
+assert(Math.abs(heightAt(5, -3) - 4.35) < 1e-6, 'subtle shoulder should total 0.35 worlds over 3 worlds');
+assert(heightAt(5, -18) > 19.3, 'outer hillside should become very steep');
+
 // Forest density should be deterministic, full-height only, and leave the road open.
 const layoutA = V2.buildForestLayout(40, 18, 20, 3, () => 5);
 const layoutB = V2.buildForestLayout(40, 18, 20, 3, () => 5);
