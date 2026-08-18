@@ -38,13 +38,14 @@
     };
   }
 
-  function addBicepBone(THREE, skinnedPlane, torsoBone, rig, side) {
+  function addBicepBone(THREE, torsoBone, rig, side) {
     const shoulderNode = rig.group.getObjectByName(`${side}_shoulder`);
-    if (!shoulderNode) return null;
+    const upperNode = rig.group.getObjectByName(`${side}_upper_arm`);
+    if (!shoulderNode || !upperNode) return null;
     const bone = new THREE.Bone();
     bone.name = `${side}_portrait_bicep_bone`;
     torsoBone.add(bone);
-    return { side, bone, shoulderNode, upperNode: rig.group.getObjectByName(`${side}_upper_arm`) };
+    return { side, bone, shoulderNode, upperNode };
   }
 
   function updateBoneTransform(THREE, rec, rig, skinnedPlane, torsoBone) {
@@ -125,9 +126,15 @@
     if (!skinnedPlane?.isSkinnedMesh || !oldSkeleton || !torsoBone || !scan) return rig;
     if (avatarRoot.userData?.portraitBicepSkinning) return rig;
 
-    const left = addBicepBone(THREE, skinnedPlane, torsoBone, rig, 'left');
-    const right = addBicepBone(THREE, skinnedPlane, torsoBone, rig, 'right');
+    const left = addBicepBone(THREE, torsoBone, rig, 'left');
+    const right = addBicepBone(THREE, torsoBone, rig, 'right');
     if (!left || !right) return rig;
+
+    // Put the new bones at the current idle shoulder/upper-arm transforms BEFORE
+    // constructing the replacement Skeleton. Those transforms become the inverse
+    // bind pose, so adding the bones does not make the portrait jump on frame one.
+    updateBoneTransform(THREE, left, rig, skinnedPlane, torsoBone);
+    updateBoneTransform(THREE, right, rig, skinnedPlane, torsoBone);
 
     // Create a fresh skeleton so Three r128 resizes boneMatrices correctly;
     // pushing into oldSkeleton.bones would leave its typed bone-matrix buffer short.
