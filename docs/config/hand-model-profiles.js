@@ -1,5 +1,7 @@
 // Reusable hand-model profiles shared by gameplay and the Attack Animation Editor.
 // Model scale corrects the imported GLB itself. Species/gender scale is applied on top.
+// Source-hand convention: every GLB is a RIGHT hand, back/top of palm toward camera,
+// fingers pointed down, thumb pointed right, with the intended tool grip at local 0,0,0.
 // handFromTool is the inverse-animation transform: where the hand root should sit and
 // point relative to the held tool's attach frame. The tool remains authoritative unless
 // that requested hand target exceeds arm reach, at which point runtime/editor pull the
@@ -7,6 +9,7 @@
 (function (global) {
   'use strict';
 
+  const DEFAULT_MODEL_SCALE = 2;
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
@@ -22,11 +25,18 @@
   const DEFAULT_DATA = {
     schema: 'hobunji_hand_model_profiles.v1',
     handHeightFraction: 0.12,
+    sourceBasis: {
+      handedness: 'right',
+      palmBackFacesCamera: true,
+      fingersPoint: 'down',
+      thumbPoints: 'right',
+      toolGripOrigin: { x: 0, y: 0, z: 0 },
+    },
     colors: { bone: '#D8C7A3', keratin: '#44484D' },
     models: {
       pachyderm: {
         glb: 'assets/models/hands/hand_pachyderm.glb',
-        scale: 1,
+        scale: DEFAULT_MODEL_SCALE,
         handFromTool: identityTransform(),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
@@ -34,21 +44,21 @@
       },
       sloth: {
         glb: 'assets/models/hands/hand_sloth.glb',
-        scale: 1,
+        scale: DEFAULT_MODEL_SCALE,
         handFromTool: identityTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
       feline: {
         glb: 'assets/models/hands/hand_feline.glb',
-        scale: 1,
+        scale: DEFAULT_MODEL_SCALE,
         handFromTool: identityTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
       },
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
-        scale: 1,
+        scale: DEFAULT_MODEL_SCALE,
         handFromTool: identityTransform(),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
@@ -91,9 +101,12 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    next.sourceBasis = next.sourceBasis || clone(DEFAULT_DATA.sourceBasis);
     next.models = next.models || {};
     for (const model of Object.values(next.models)) {
       if (!model || typeof model !== 'object') continue;
+      const modelScale = Number(model.scale);
+      if (!Number.isFinite(modelScale) || modelScale <= 0) model.scale = DEFAULT_MODEL_SCALE;
       // Older drafts authored a tool socket on the hand. Migrate that into the
       // direct hand-from-tool convention. Position/rotation negation is exact for
       // identity/single-axis drafts and a safe visual approximation for any old
@@ -178,7 +191,7 @@
   }
   function modelScaleFor(speciesId) {
     const value = Number(modelForSpecies(speciesId)?.scale);
-    return Number.isFinite(value) && value > 0 ? value : 1;
+    return Number.isFinite(value) && value > 0 ? value : DEFAULT_MODEL_SCALE;
   }
   function effectiveScaleFor(speciesId, gender) {
     return modelScaleFor(speciesId) * speciesScaleFor(speciesId, gender);
