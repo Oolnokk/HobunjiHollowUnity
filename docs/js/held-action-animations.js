@@ -38,6 +38,7 @@
     new URL('js/procedural-arm-animation.js?v=20260817c', docsBase).href,
     new URL('js/procedural-hand-double-side.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-model-mirror.js?v=20260817a', docsBase).href,
+    new URL('js/procedural-hand-medial-wrists.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-portrait-shoulders.js?v=20260817a', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260817c', docsBase).href,
     new URL('js/procedural-hand-frame-driver-owner.js?v=20260817a', docsBase).href,
