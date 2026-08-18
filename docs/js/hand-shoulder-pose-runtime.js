@@ -55,40 +55,69 @@
     return lerp(poses.strike, poses.neutral, (t - hf) / Math.max(1e-6, 1 - hf));
   }
 
+  function secondaryGripActive(toolKey) {
+    return !!global.HobunjiHandToolGrips?.secondaryGripForTool?.(toolKey || '');
+  }
+
+  function applyLeftIdleRule(side, toolKey, weights) {
+    return side === 'left' && !secondaryGripActive(toolKey) ? { ...IDLE } : weights;
+  }
+
+  function rangedWeights(side) {
+    const action = global.__rangedDebug?.playerAction || null;
+    if (!action?.itemKey || !action?.kind || !(Number(action.durationS) > 0)) return null;
+    const def = global.RangedWeapons?.config?.[action.itemKey] || null;
+    if (!def) return null;
+    const kind = action.kind === 'load' ? 'load' : 'fire';
+    const progress = clamp01(Number(action.t) / Number(action.durationS));
+    const timing = kind === 'load' ? {
+      windupFrac: def.reloadWindupFrac ?? 0.55,
+      strikeFrac: def.reloadStrikeFrac ?? 0.56,
+      holdFrac: def.reloadHoldFrac ?? 0.57,
+    } : {
+      windupFrac: def.fireWindupFrac ?? 0.02,
+      strikeFrac: def.fireAtFrac ?? 0.18,
+      holdFrac: def.fireHoldFrac ?? (def.fireAtFrac ?? 0.18),
+    };
+    const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
+    const key = `ranged:${action.itemKey}:${kind}`;
+    const authored = global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {};
+    return applyLeftIdleRule(side, action.itemKey, weightsAt(progress, timing, authored, sequence));
+  }
+
   function gameWeights(side) {
+    // Ranged load/fire has its own timeline and exposes the live player action.
+    // Evaluate it directly before the melee stance system.
+    const ranged = rangedWeights(side);
+    if (ranged) return ranged;
+
     const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
     const active = snapshot?.combatNeutralInjected === true && Number.isFinite(Number(snapshot?.combatProgress));
     if (!active) return { ...IDLE };
 
-    // Existing committed attacks all deliberately use Neutral=Pitch+Roll and
-    // active endpoints=Roll. WeaponToolStances already exposes its exact neutral
-    // interpolation weight, so this remains phase-accurate even for hold/release.
-    // Explicit future per-pose metadata can override through shoulderAimRuntimePose.
-    const explicit = global.HOBUNJI_ACTIVE_HAND_SHOULDER_POSE || null;
-    let weights = explicit?.weights
-      ? normalize(explicit.weights, ACTIVE)
-      : { pitch: clamp01(snapshot.combatNeutralWeight), yaw: 0, roll: 1 };
-
-    if (side === 'left') {
-      const toolKey = snapshot?.itemKey || snapshot?.shape || '';
-      const secondary = global.HobunjiHandToolGrips?.secondaryGripForTool?.(toolKey) || null;
-      if (!secondary) weights = { ...IDLE };
-    }
-    return weights;
+    // Melee's current committed per-pose entries all use Neutral=Pitch+Roll and
+    // Windup/Strike=Roll-only. WeaponToolStances already computes the exact amount
+    // of Neutral blended into its four-phase cycle, so it is the precise Pitch
+    // influence for these individually-authored animation profiles.
+    const profileKey = `melee:${snapshot?.combatAnim || 'thrust'}`;
+    const authored = global.HobunjiHandShoulderPoseProfiles?.forKey?.(profileKey);
+    const profile = normalizePoseSet(authored || {});
+    const neutralWeight = clamp01(snapshot.combatNeutralWeight);
+    const weights = {
+      pitch: profile.strike.pitch + (profile.neutral.pitch - profile.strike.pitch) * neutralWeight,
+      yaw: profile.strike.yaw + (profile.neutral.yaw - profile.strike.yaw) * neutralWeight,
+      roll: profile.strike.roll + (profile.neutral.roll - profile.strike.roll) * neutralWeight,
+    };
+    return applyLeftIdleRule(side, snapshot?.itemKey || snapshot?.shape || '', weights);
   }
 
   function currentWeights(side) {
-    // Attack Editor owns its own timeline and can expose the exact authored pose
-    // boxes. Use that first so editing/scrubbing previews the lerped influences.
+    // Attack Editor owns its own timeline and exposes the exact authored pose boxes.
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentWeights) {
-      const active = editor.currentWeights();
-      if (side === 'left') {
-        const toolKey = document.getElementById('toolSpriteSelect')?.value || '';
-        const secondary = global.HobunjiHandToolGrips?.secondaryGripForTool?.(toolKey) || null;
-        if (!secondary) return { ...IDLE };
-      }
-      return normalize(active, IDLE);
+      const weights = editor.currentWeights();
+      const toolKey = document.getElementById('toolSpriteSelect')?.value || '';
+      return applyLeftIdleRule(side, toolKey, normalize(weights, IDLE));
     }
     return gameWeights(side);
   }
