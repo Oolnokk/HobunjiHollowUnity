@@ -133,4 +133,8 @@
     serialize: () => JSON.stringify(data, null, 2),
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
+
+  // Animation Author and the game share origin, so a point placed in the author
+  // can be tested immediately in the preview/game without manually re-importing it.
+  loadLocal();
 })(window);
