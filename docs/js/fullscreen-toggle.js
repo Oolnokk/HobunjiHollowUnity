@@ -62,7 +62,7 @@
         border-color: #dfffdc;
       }
       #${BUTTON_ID}[data-supported="false"] { opacity: .58; }
-      #${BUTTON_ID} svg { width: 20px; height: 20px; display: block; pointer-events: none; }
+      #${BUTTON_ID} svg { width: 20.25px; height: 20.25px; display: block; pointer-events: none; }
       #${FEEDBACK_ID} {
         position: fixed;
         top: calc(env(safe-area-inset-top, 0px) + 52px);
@@ -81,9 +81,9 @@
       }
       #${FEEDBACK_ID}.show { opacity: 1; transform: translateY(0); }
       @media (pointer: coarse) {
-        #${BUTTON_ID} { width: 41px; height: 41px; border-radius: 11px; }
-        #${BUTTON_ID} svg { width: 23px; height: 23px; }
-        #${FEEDBACK_ID} { top: calc(env(safe-area-inset-top, 0px) + 57px); }
+        #${BUTTON_ID} { width: 40.5px; height: 40.5px; border-radius: 10.5px; }
+        #${BUTTON_ID} svg { width: 23.25px; height: 23.25px; }
+        #${FEEDBACK_ID} { top: calc(env(safe-area-inset-top, 0px) + 56.5px); }
       }
     `;
     document.head.appendChild(style);
