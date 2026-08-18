@@ -1,7 +1,7 @@
 // Reuses the proven procedural-foot GLB material-slot mapping for hand GLBs
 // exported from the same source projects. The live foot config is authoritative;
-// the fallback table below mirrors it exactly for nested tools that happen to load
-// the hand bootstrap before SCRATCHBONES_CONFIG is available.
+// the fallback table mirrors it for nested tools, while handExportAliases maps the
+// actual hand-export material names onto those same source-project slots.
 (function (global) {
   'use strict';
 
@@ -20,6 +20,28 @@
     feline: { 'Mat 1': 'body' },
   };
 
+  // These are the material names currently present in the hand GLB exports.
+  // The hands were exported from the same source projects as the corresponding
+  // feet, so preserve slot meaning rather than the old provisional role guesses:
+  // slot 1 = bone and slot 2 = body for pachyderm/sloth, slot 1 = body for feline.
+  const handExportAliases = {
+    pachyderm: {
+      MAT_None_7a4e2e: 'bone',
+      MAT_EyeSurface_0c0c0c: 'body',
+    },
+    sloth: {
+      MAT_None_7a4e2e: 'bone',
+      MAT_EyeSurface_0c0c0c: 'body',
+    },
+    feline: {
+      MAT_None_7a4e2e: 'body',
+    },
+    parrot: {
+      MAT_None_7a4e2e: 'body',
+      MAT_EyeSurface_0c0c0c: 'keratin',
+    },
+  };
+
   profiles.mutate(data => {
     for (const [modelKey, speciesId] of Object.entries(correspondingFootSpecies)) {
       const model = data.models?.[modelKey];
@@ -28,19 +50,20 @@
       model.materialRoles = {
         ...(model.materialRoles || {}),
         ...(footRoles || {}),
+        ...(handExportAliases[modelKey] || {}),
       };
     }
 
     // Kenkari-family feet are procedural rather than GLB-backed, so there is no
-    // foot material table to inherit. Keep the hand export's known aliases while
-    // also accepting the same generic Mat 1 / Mat 2 naming used by the other
-    // source projects.
+    // foot GLB table to inherit. Keep both the generic slot aliases and the known
+    // parrot hand-export aliases on their existing body/keratin roles.
     const parrot = data.models?.parrot;
     if (parrot) {
       parrot.materialRoles = {
         ...(parrot.materialRoles || {}),
         'Mat 1': 'body',
         'Mat 2': 'keratin',
+        ...handExportAliases.parrot,
       };
     }
   });
@@ -48,5 +71,6 @@
   global.ProceduralHandFootMaterialRoles = Object.freeze({
     correspondingFootSpecies: { ...correspondingFootSpecies },
     fallbackRoles: JSON.parse(JSON.stringify(fallbackRoles)),
+    handExportAliases: JSON.parse(JSON.stringify(handExportAliases)),
   });
 })(window);
