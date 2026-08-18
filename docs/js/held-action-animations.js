@@ -4,7 +4,6 @@
 (() => {
   'use strict';
 
-  // Used by the runtime's drink playback and the editor's Drink preset.
   const drink = {
     version: 1,
     kind: 'hobunji_held_action_animation',
@@ -23,35 +22,26 @@
 
   window.HeldActionAnimations = Object.freeze({ drink });
 
-  // This shared file is already parser-loaded immediately after PNGPlaneAvatar
-  // in both gameplay and the Attack Animation Editor. Keep hand bootstrapping
-  // here so the hand feature no longer needs conflict-prone script-tag edits in
-  // docs/index.html or the editor's large inline module.
+  // Shared direct-hand bootstrap. Hands now attach to tool socket frames only;
+  // arm bones/IK/shoulder tracking/reach clamps are intentionally absent.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
-    new URL('config/hand-model-profiles.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-foot-material-roles.js?v=20260818a', docsBase).href,
-    new URL('js/hand-grip-modes.js?v=20260817a', docsBase).href,
-    new URL('js/arm-bones.js?v=20260817c', docsBase).href,
+    new URL('config/hand-model-profiles.js?v=20260818b', docsBase).href,
+    new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
+    new URL('js/hand-grip-modes.js?v=20260818b', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
-    new URL('js/procedural-arm-animation.js?v=20260817c', docsBase).href,
-    new URL('js/procedural-hand-double-side.js?v=20260817a', docsBase).href,
-    new URL('js/procedural-hand-model-mirror.js?v=20260817a', docsBase).href,
-    new URL('js/procedural-hand-medial-wrists.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-portrait-shoulders.js?v=20260817a', docsBase).href,
-    new URL('js/procedural-arm-portrait-biceps.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-forearm-follow.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-arm-length.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20260817c', docsBase).href,
-    new URL('js/procedural-hand-frame-driver-owner.js?v=20260817a', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20260818d', docsBase).href,
   ];
   if (isAttackEditor) {
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260817b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260817b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260818a', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
   }
