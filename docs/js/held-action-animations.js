@@ -46,7 +46,7 @@
     new URL('js/procedural-hand-skinned-held-registration.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-two-bone-skin.js?v=20260819d', docsBase).href,
     new URL('js/procedural-hand-skinned-outline.js?v=20260819d', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260819e', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260819f', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260819f', docsBase).href,
     new URL('js/procedural-hand-lifecycle-guard.js?v=20260819a', docsBase).href,
   ];
@@ -60,7 +60,7 @@
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-forearm-rig.js?v=20260819c', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-forearm-rig.js?v=20260819d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819e', docsBase).href);
     handScripts.push(new URL('js/attack-editor-animation-state-guard.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-initialization-guard.js?v=20260819a', docsBase).href);
