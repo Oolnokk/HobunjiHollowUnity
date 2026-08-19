@@ -1,10 +1,9 @@
-// Semantic coordinate frames shared by hand/tool authoring and runtime diagnostics.
+// Semantic coordinate frames shared by hand/tool authoring and runtime presentation.
 //
 // Tool basis is authored from three points on the raw PNG: haft butt, head/top,
 // and blade/working side. Hand basis maps semantic Fingers/Thumb/Palm directions
-// onto signed local axes of each reusable GLB profile. This module stores metadata
-// only; existing grip transforms remain authoritative until a caller deliberately
-// chooses to consume the semantic frame.
+// onto signed local axes of each reusable GLB profile. Approved authoring results
+// live here as fallbacks; explicit editor/profile data can override them later.
 (function (global) {
   'use strict';
 
@@ -17,6 +16,32 @@
   const HAND_BASIS_VERSION = 1;
   const EPSILON = 1e-6;
   const SIGNED_AXES = Object.freeze(['+x', '-x', '+y', '-y', '+z', '-z']);
+
+  // First visually approved semantic basis. These exact raw-PNG marker coordinates
+  // are the source of truth for the hatchet until the author explicitly overrides it.
+  const APPROVED_TOOL_BASES = Object.freeze({
+    hatchet: Object.freeze({
+      version: TOOL_BASIS_VERSION,
+      markers: Object.freeze({
+        butt: Object.freeze({ u: 0.3612074435865743, v: 0.31670838948802604 }),
+        head: Object.freeze({ u: 0.4270044884741022, v: 0.8571504134000086 }),
+        working: Object.freeze({ u: 0.7559960381062183, v: 0.8049483838056785 }),
+      }),
+    }),
+  });
+
+  // First visually approved hand-model semantic basis. Feline raw local -Y points
+  // toward the fingers, +X toward the thumb, and -Z outward from the palm.
+  const APPROVED_HAND_BASES = Object.freeze({
+    feline: Object.freeze({
+      version: HAND_BASIS_VERSION,
+      axes: Object.freeze({ fingers: '-y', thumb: '+x', palm: '-z' }),
+    }),
+  });
+
+  function clone(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -95,13 +120,21 @@
     return data.tools[key];
   }
 
+  function rawToolBasis(key) {
+    const authored = toolGrips.data?.tools?.[key]?.semanticBasis || null;
+    if (authored) return { raw: authored, source: 'authored' };
+    const approved = APPROVED_TOOL_BASES[key] || null;
+    return { raw: approved, source: approved ? 'approved-default' : 'none' };
+  }
+
   function toolBasisFor(value) {
     const key = toolBasisKeyFor(value);
-    const raw = toolGrips.data?.tools?.[key]?.semanticBasis || null;
-    const derived = deriveToolBasis(raw?.markers || raw);
+    const selected = rawToolBasis(key);
+    const derived = deriveToolBasis(selected.raw?.markers || selected.raw);
     return {
       key,
       version: TOOL_BASIS_VERSION,
+      source: selected.source,
       ...derived,
       canonical: { x: 'working-side', y: 'haft-butt-to-head', z: 'sprite-plane-normal' },
     };
@@ -113,8 +146,11 @@
     if (!key) return null;
     toolGrips.mutate(data => {
       const entry = ensureToolEntry(data, key);
+      const startingMarkers = entry.semanticBasis?.markers
+        || APPROVED_TOOL_BASES[key]?.markers
+        || {};
       const markers = {
-        ...(entry.semanticBasis?.markers || {}),
+        ...clone(startingMarkers),
         [markerName]: normalizePoint2(point),
       };
       const derived = deriveToolBasis(markers);
@@ -187,11 +223,14 @@
 
   function handBasisForModel(modelKey) {
     const model = profiles.data?.models?.[modelKey] || null;
-    const raw = model?.semanticBasis?.axes || model?.semanticBasis || {};
-    const validated = validateHandAxes(raw);
+    const authored = model?.semanticBasis || null;
+    const approved = APPROVED_HAND_BASES[modelKey] || null;
+    const raw = authored || approved || {};
+    const validated = validateHandAxes(raw?.axes || raw);
     return {
       modelKey: modelKey || null,
       version: HAND_BASIS_VERSION,
+      source: authored ? 'authored' : approved ? 'approved-default' : 'none',
       ...validated,
       canonical: { x: 'thumb-side', y: 'wrist-to-fingers', z: 'palm-facing' },
     };
@@ -210,7 +249,7 @@
       model.semanticBasis = {
         version: HAND_BASIS_VERSION,
         axes: { ...validated.axes },
-        vectors: JSON.parse(JSON.stringify(validated.vectors)),
+        vectors: clone(validated.vectors),
         handedness: validated.handedness,
         canonical: { x: 'thumb-side', y: 'wrist-to-fingers', z: 'palm-facing' },
       };
@@ -227,8 +266,115 @@
     return true;
   }
 
+  function normalizeQuaternion(raw) {
+    const x = Number(raw?.x) || 0;
+    const y = Number(raw?.y) || 0;
+    const z = Number(raw?.z) || 0;
+    const w = Number.isFinite(Number(raw?.w)) ? Number(raw.w) : 1;
+    const length = Math.hypot(x, y, z, w) || 1;
+    return { x: x / length, y: y / length, z: z / length, w: w / length };
+  }
+
+  function multiplyQuaternion(a, b) {
+    return normalizeQuaternion({
+      x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+      y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+      z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+      w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    });
+  }
+
+  // Converts a row-major proper 3x3 rotation matrix into a plain quaternion.
+  // Keeping this Three-independent lets editor ESM Three and gameplay r128 consume
+  // exactly the same semantic correction without sharing Object3D instances.
+  function quaternionFromMatrix3(m) {
+    const m11 = Number(m?.[0]) || 0;
+    const m12 = Number(m?.[1]) || 0;
+    const m13 = Number(m?.[2]) || 0;
+    const m21 = Number(m?.[3]) || 0;
+    const m22 = Number(m?.[4]) || 0;
+    const m23 = Number(m?.[5]) || 0;
+    const m31 = Number(m?.[6]) || 0;
+    const m32 = Number(m?.[7]) || 0;
+    const m33 = Number(m?.[8]) || 0;
+    const trace = m11 + m22 + m33;
+    let x;
+    let y;
+    let z;
+    let w;
+    if (trace > 0) {
+      const s = 0.5 / Math.sqrt(trace + 1);
+      w = 0.25 / s;
+      x = (m32 - m23) * s;
+      y = (m13 - m31) * s;
+      z = (m21 - m12) * s;
+    } else if (m11 > m22 && m11 > m33) {
+      const s = 2 * Math.sqrt(Math.max(EPSILON, 1 + m11 - m22 - m33));
+      w = (m32 - m23) / s;
+      x = 0.25 * s;
+      y = (m12 + m21) / s;
+      z = (m13 + m31) / s;
+    } else if (m22 > m33) {
+      const s = 2 * Math.sqrt(Math.max(EPSILON, 1 + m22 - m11 - m33));
+      w = (m13 - m31) / s;
+      x = (m12 + m21) / s;
+      y = 0.25 * s;
+      z = (m23 + m32) / s;
+    } else {
+      const s = 2 * Math.sqrt(Math.max(EPSILON, 1 + m33 - m11 - m22));
+      w = (m21 - m12) / s;
+      x = (m13 + m31) / s;
+      y = (m23 + m32) / s;
+      z = 0.25 * s;
+    }
+    return normalizeQuaternion({ x, y, z, w });
+  }
+
+  function toolRawToCanonicalQuaternionFor(value) {
+    const basis = toolBasisFor(value);
+    if (!basis.complete || !basis.axes) return null;
+    const x = basis.axes.x;
+    const y = basis.axes.y;
+    const z = basis.axes.zSign;
+    return quaternionFromMatrix3([
+      x.x, x.y, 0,
+      y.x, y.y, 0,
+      0, 0, z,
+    ]);
+  }
+
+  // Tool holders historically expect a normal vertical sprite to be laid flat
+  // with its semantic +Y/head direction toward engine -Z. Keep that established
+  // holder convention, but derive the correction from authored semantics instead
+  // of assuming the raw PNG itself was vertical/top-up.
+  function toolEngineQuaternionFor(value) {
+    const rawToCanonical = toolRawToCanonicalQuaternionFor(value);
+    if (!rawToCanonical) return null;
+    const half = -Math.PI / 4;
+    const layFlat = { x: Math.sin(half), y: 0, z: 0, w: Math.cos(half) };
+    return multiplyQuaternion(layFlat, rawToCanonical);
+  }
+
+  function handRawToCanonicalQuaternionForModel(modelKey) {
+    const basis = handBasisForModel(modelKey);
+    if (!basis.valid || !basis.vectors || basis.handedness !== 'right-handed') return null;
+    const x = basis.vectors.thumb;
+    const y = basis.vectors.fingers;
+    const z = basis.vectors.palm;
+    return quaternionFromMatrix3([
+      x.x, x.y, x.z,
+      y.x, y.y, y.z,
+      z.x, z.y, z.z,
+    ]);
+  }
+
+  function handRawToCanonicalQuaternionForSpecies(speciesId) {
+    return handRawToCanonicalQuaternionForModel(profiles.modelKeyForSpecies?.(speciesId));
+  }
+
   global.HobunjiHandToolSemanticBasis = Object.freeze({
     signedAxes: SIGNED_AXES,
+    approvedDefaults: Object.freeze({ tools: APPROVED_TOOL_BASES, hands: APPROVED_HAND_BASES }),
     toolBasisKeyFor,
     deriveToolBasis,
     toolBasisFor,
@@ -239,5 +385,9 @@
     handBasisForSpecies,
     setHandAxesForModel,
     clearHandBasisForModel,
+    toolRawToCanonicalQuaternionFor,
+    toolEngineQuaternionFor,
+    handRawToCanonicalQuaternionForModel,
+    handRawToCanonicalQuaternionForSpecies,
   });
 })(window);
