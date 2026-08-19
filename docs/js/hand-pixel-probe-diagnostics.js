@@ -19,6 +19,8 @@
     const skinRegistration = window.ProceduralHandSkinnedHeldRegistration?.getDebug?.() || null;
     const lifecycle = window.ProceduralHandLifecycleGuard?.getDebug?.() || null;
     const bodyBridge = window.PlayerBodyAttachmentBridge?.getDebug?.() || null;
+    const semanticHands = window.ProceduralHandSemanticBasisRuntime?.getDebug?.() || null;
+    const semanticTool = window.SemanticToolBasisRuntime?.getDebug?.() || null;
     const lines = ['', SECTION];
 
     if (parity) {
@@ -39,6 +41,19 @@
       );
     } else {
       lines.push('Skinned outline: module missing');
+    }
+
+    if (semanticHands || semanticTool) {
+      const handRows = semanticHands?.rigs || [];
+      const correctedHands = handRows.filter(row => !!row?.correction).length;
+      lines.push(
+        `Semantic basis: handRigs=${semanticHands?.activeRigs ?? '-'} correctedHands=${correctedHands} `
+        + `tool=${semanticTool?.currentToolKey || '-'} toolSource=${semanticTool?.currentBasisSource || 'none'} `
+        + `toolComplete=${semanticTool?.currentBasisComplete ? 'yes' : 'no'} `
+        + `toolFrames=${semanticTool?.appliedFrames ?? '-'} dynamicTwist=${Number(semanticTool?.lastDynamicTwistDeg || 0).toFixed(2)}°`
+      );
+    } else {
+      lines.push('Semantic basis: modules missing');
     }
 
     if (xray) {
@@ -81,11 +96,15 @@
     if (Array.isArray(frame) && frame.length) {
       for (const rec of frame) {
         const hand = rec?.hand || {};
+        const semantic = hand.semanticHandBasis || null;
+        const semanticTag = semantic?.valid
+          ? ` semantic=${semantic.source || 'yes'}(${semantic.axes?.fingers || '?'}/${semantic.axes?.thumb || '?'}/${semantic.axes?.palm || '?'})`
+          : '';
         lines.push(
           `Hand ${rec.speciesId || '?'} ${rec.gender || '-'} tool=${rec.toolKey || '-'} secondary=${rec.secondaryActive ? 'yes' : 'no'} `
           + `hooked=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
           + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
-          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}`
+          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}${semanticTag}`
         );
       }
     } else {
