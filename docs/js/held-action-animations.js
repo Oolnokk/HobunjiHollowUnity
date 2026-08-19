@@ -46,7 +46,7 @@
     new URL('js/procedural-hand-outline-parity.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260819a', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20260818g', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20260819a', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
