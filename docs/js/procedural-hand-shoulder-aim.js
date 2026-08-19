@@ -3,8 +3,8 @@
 // Shoulder targets come from manually authored 200x200 portrait points when present;
 // a side at 0,0 falls back to portrait-hand-shoulder-scan.js. This module NEVER
 // rotates the hand socket. Grip direction belongs entirely to the hand/tool frame;
-// only the child forearm bone receives shoulder-target rotation.
-// Source GLB basis: +Y = wrist, +Z = palm, +X = thumb.
+// only the child forearm bone receives shoulder-target rotation. Which raw GLB axis
+// points toward the wrist is resolved by the semantic hand basis in two-bone skin.
 (function (global) {
   'use strict';
 
@@ -118,6 +118,8 @@
         source: shoulderSource[side],
         targetKind: 'shoulder',
         shoulderWorld: { x: target.x, y: target.y, z: target.z },
+        wristAxis: skin?.wristAxis || null,
+        wristAxisLabel: skin?.wristAxisLabel || null,
         residualDeg: skin?.residualDeg ?? null,
         axisWeights: skin?.axisWeights || null,
         fullAimDeg: skin?.fullAimDeg || null,
@@ -202,6 +204,7 @@
 
     const originalDebug = rig.getDebug?.bind(rig);
     rig.getDebug = function forearmAimDebug() {
+      const twoBone = originalDebug?.()?.twoBoneSkin || null;
       return {
         ...(originalDebug?.() || {}),
         shoulderCompass: {
@@ -209,7 +212,7 @@
           handSocketRotationUntouched: true,
           shoulderFacingBasis: 'procedural-hand-raw-facing',
           forearmAxisTrackingExperimental: settings?.forearmAxisTracking !== false,
-          localBasis: { positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' },
+          localBasis: twoBone?.localBasis || { wrist: '+Y', source: 'legacy' },
           scanState,
           scanError,
           shoulderSource: { ...shoulderSource },
@@ -233,6 +236,6 @@
     mode: 'forearm-bone-shoulder-per-axis',
     handSocketRotationUntouched: true,
     shoulderFacingBasis: 'procedural-hand-raw-facing',
-    localBasis: Object.freeze({ positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' }),
+    localBasis: Object.freeze({ source: 'semantic-hand-basis', legacyWrist: '+Y' }),
   });
 })(window);
