@@ -44,10 +44,21 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 .tab-group{align-self:center;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding:0 6px;border-left:1px solid var(--border);margin-left:4px;flex-shrink:0}
 .tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}
 .tab.active .tab-dot{background:var(--ok)}
+#workflow-bar{display:none;align-items:center;gap:10px;padding:6px 9px;background:rgba(106,167,255,.07);border-bottom:1px solid var(--border);flex-shrink:0;min-width:0}
+#workflow-bar.visible{display:flex}
+#workflow-title{font-size:11px;white-space:nowrap}
+#workflow-copy{font-size:11px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#workflow-btn{margin-left:auto;white-space:nowrap;flex-shrink:0}
+#workflow-btn:focus-visible{outline:2px solid var(--warn);outline-offset:2px}
 #frames{flex:1;position:relative;min-height:0}
 .frame-wrap{position:absolute;inset:0;display:none}
 .frame-wrap.active{display:block}
 iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
+@media (max-width:700px){
+  #workflow-copy{display:none}
+  #workflow-title{overflow:hidden;text-overflow:ellipsis}
+  #workflow-btn{padding:6px 8px}
+}
 </style>
 </head>
 <body>
@@ -137,6 +148,11 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
           <span class="tab-dot"></span>💰 Loot &amp; Shop Editor
         </button>
       </div>
+      <div id="workflow-bar" role="region" aria-live="polite">
+        <strong id="workflow-title"></strong>
+        <span id="workflow-copy"></span>
+        <button type="button" id="workflow-btn"></button>
+      </div>
       <div id="frames">
         <div class="frame-wrap active" id="fw-map-editor">
           <iframe src="map-editor/index.html" title="Map Editor" id="if-map-editor"></iframe>
@@ -219,15 +235,129 @@ PanelUI.makeResizableEdge(document.getElementById('npc-sidebar'), {
   storageKey: 'hobunji_hub_npc_sidebar_width_v1'
 });
 
+// ── Contextual workflow shortcuts ────────────────────────────────────────────
+const workflowBar = document.getElementById('workflow-bar');
+const workflowTitle = document.getElementById('workflow-title');
+const workflowCopy = document.getElementById('workflow-copy');
+const workflowBtn = document.getElementById('workflow-btn');
+const WORKFLOW_HELP = {
+  'procedural-animation-editor': {
+    title: 'Ragdoll / Footing recording',
+    copy: 'Jump to the existing ragdoll physics recorder, blend-space baker, and Footing authoring controls.',
+    button: '🎥 Find recorder',
+    action: 'ragdoll'
+  },
+  'ambient-dialogue-editor': {
+    title: 'Player greeting names',
+    copy: '{targetName} for the Player comes from the speaking NPC’s conditioned Nicknames phrase pool in Dialogue Editor.',
+    button: '👋 Edit address terms',
+    action: 'player-address'
+  },
+  'dialogue-editor': {
+    title: 'Player greeting names',
+    copy: 'The selected NPC’s Nicknames phrase pool controls what that NPC may call the player in {targetName} greetings.',
+    button: '👋 Find Nicknames',
+    action: 'nicknames'
+  }
+};
+
+function updateWorkflowBar(target) {
+  const def = WORKFLOW_HELP[target];
+  workflowBar.classList.toggle('visible', !!def);
+  if (!def) return;
+  workflowTitle.textContent = def.title;
+  workflowCopy.textContent = def.copy;
+  workflowBtn.textContent = def.button;
+  workflowBtn.dataset.action = def.action;
+}
+
+function isUsefulWorkflowTarget(el) {
+  if (!el) return false;
+  const style = el.ownerDocument?.defaultView?.getComputedStyle?.(el);
+  return !style || style.display !== 'none';
+}
+
+function findWorkflowTarget(doc, terms) {
+  const selector = 'button,summary,[role="button"],[role="tab"],label,legend,h1,h2,h3,h4,h5,[title],[aria-label]';
+  const candidates = [...doc.querySelectorAll(selector)];
+  for (const term of terms) {
+    const q = term.toLowerCase();
+    const hit = candidates.find(el => {
+      const haystack = [el.textContent, el.id, el.className, el.getAttribute?.('title'), el.getAttribute?.('aria-label')]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(q) && isUsefulWorkflowTarget(el);
+    });
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function revealWorkflowTarget(target) {
+  for (let node = target; node; node = node.parentElement) {
+    if (node.tagName === 'DETAILS') node.open = true;
+  }
+  const clickable = target.closest('button,summary,[role="button"],[role="tab"]');
+  if (clickable) clickable.click();
+  const focusTarget = clickable || target;
+  setTimeout(() => {
+    focusTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    try { focusTarget.focus({ preventScroll: true }); } catch (_) {}
+    const oldOutline = focusTarget.style.outline;
+    const oldOffset = focusTarget.style.outlineOffset;
+    focusTarget.style.outline = '3px solid #fbbf24';
+    focusTarget.style.outlineOffset = '3px';
+    setTimeout(() => {
+      focusTarget.style.outline = oldOutline;
+      focusTarget.style.outlineOffset = oldOffset;
+    }, 2200);
+  }, 80);
+}
+
+function focusIframeWorkflow(frameId, terms, attempts=0) {
+  const iframe = document.getElementById(frameId);
+  try {
+    const doc = iframe?.contentDocument;
+    if (doc?.body) {
+      const target = findWorkflowTarget(doc, terms);
+      if (target) {
+        revealWorkflowTarget(target);
+        return true;
+      }
+    }
+  } catch (_) {}
+  if (attempts < 24) {
+    setTimeout(() => focusIframeWorkflow(frameId, terms, attempts + 1), 250);
+    return false;
+  }
+  if (frameId === 'if-dialogue-editor') {
+    workflowCopy.textContent = 'Select an NPC in Dialogue Editor, then choose its Nicknames phrase pool. That pool supplies {targetName} for player greetings.';
+  } else {
+    workflowCopy.textContent = 'The ragdoll/Footing workflow is in this editor, but the Hub could not auto-focus its control. Scroll for the Footing / ragdoll authoring panel.';
+  }
+  return false;
+}
+
+workflowBtn.addEventListener('click', () => {
+  const action = workflowBtn.dataset.action;
+  if (action === 'ragdoll') {
+    focusIframeWorkflow('if-procedural-animation-editor', ['ragdoll', 'footing', 'break-throw', 'impact']);
+    return;
+  }
+  if (action === 'player-address') {
+    switchToTab('dialogue-editor');
+    focusIframeWorkflow('if-dialogue-editor', ['nicknames', 'nickname']);
+    return;
+  }
+  if (action === 'nicknames') {
+    focusIframeWorkflow('if-dialogue-editor', ['nicknames', 'nickname']);
+  }
+});
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 const tabs = document.querySelectorAll('.tab');
 const frames = document.querySelectorAll('.frame-wrap');
 tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const target = tab.dataset.target;
-    tabs.forEach(t => t.classList.toggle('active', t === tab));
-    frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + target));
-  });
+  tab.addEventListener('click', () => switchToTab(tab.dataset.target));
 });
 
 // ── NPC Database sidebar → Character Studio bridge ───────────────────────────
@@ -269,6 +399,7 @@ function renderNpcList(npcs) {
 function switchToTab(target) {
   tabs.forEach(t => t.classList.toggle('active', t.dataset.target === target));
   frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + target));
+  updateWorkflowBar(target);
 }
 
 function openInStudio(npcId) {
@@ -308,6 +439,7 @@ document.getElementById('npc-search').addEventListener('input', e => {
 });
 
 loadNpcDb();
+updateWorkflowBar('map-editor');
 
 // ── Hub bridge: map editor → Interior Editor ─────────────────────────────────
 window.addEventListener('message', e => {
