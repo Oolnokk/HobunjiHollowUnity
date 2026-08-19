@@ -1,18 +1,17 @@
 // Runtime two-bone skinning for static hand GLBs.
 //
-// Local source-GLB basis is authoritative:
-//   +Y = toward wrist / forearm / shoulder
-//   +Z = toward palm
-//   +X = toward thumb
+// The hand's semantic basis is authoritative when present. The forearm axis is
+// wrist-facing (the opposite of authored Fingers), so models no longer have to
+// be exported with raw +Y toward the wrist. Legacy unauthored models still use +Y.
 // The hand bone inherits the authored tool/grip socket. The forearm bone alone aims
-// +Y at its target. Experimental per-axis tracking can take Pitch/Yaw/Roll from that
-// solve independently; unchecked components remain identity on the child bone and
-// therefore inherit the hand/grip direction on those axes.
+// its semantic wrist axis at the shoulder target. Experimental per-axis tracking
+// can still borrow Pitch/Yaw/Roll components from that solve independently.
 (function (global) {
   'use strict';
 
   const hands = global.ProceduralHandAttachments;
   const profiles = global.HobunjiHandModelProfiles;
+  const basisApi = global.HobunjiHandToolSemanticBasis;
   const settings = global.HobunjiHandExperimentalRigSettings;
   const poseRuntime = global.HobunjiHandShoulderPoseRuntime;
   if (!hands?.attach || !profiles || hands.attach.__hobunjiTwoBoneSkinWrapped) return;
@@ -21,10 +20,10 @@
   const controllers = new Set();
   let showBoneGuides = false;
 
-  const DEFAULT_JOINT_Y_PERCENT = 0.62;
+  const DEFAULT_JOINT_Y_PERCENT = 0.62; // Legacy config key; now means percent along the semantic wrist axis.
   const DEFAULT_BLEND_WIDTH_PERCENT = 0.62;
   const DEFAULT_CROSS_BONE_WEIGHT = 0.04;
-  const LOCAL_FOREARM_AXIS = Object.freeze({ x: 0, y: 1, z: 0 });
+  const LEGACY_WRIST_AXIS = Object.freeze({ x: 0, y: 1, z: 0 });
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, Number(value) || 0));
@@ -67,12 +66,31 @@
     target.onAfterRender = source.onAfterRender;
   }
 
-  function rootLocalYBounds(THREE, modelRoot, meshes) {
+  function wristAxisForModel(THREE, modelKey) {
+    const raw = basisApi?.handWristVectorForModel?.(modelKey) || LEGACY_WRIST_AXIS;
+    const axis = new THREE.Vector3(Number(raw.x) || 0, Number(raw.y) || 0, Number(raw.z) || 0);
+    if (axis.lengthSq() < 1e-10) axis.set(LEGACY_WRIST_AXIS.x, LEGACY_WRIST_AXIS.y, LEGACY_WRIST_AXIS.z);
+    return axis.normalize();
+  }
+
+  function axisLabel(vector) {
+    if (!vector) return '+Y';
+    const entries = [['x', Number(vector.x) || 0], ['y', Number(vector.y) || 0], ['z', Number(vector.z) || 0]];
+    entries.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    const [axis, value] = entries[0];
+    return `${value < 0 ? '-' : '+'}${axis.toUpperCase()}`;
+  }
+
+  // Project every source vertex onto the semantic wrist direction instead of
+  // assuming raw local Y. This projection is in modelRoot-local coordinates, so
+  // parent source-hand/pair mirrors cannot corrupt skin weighting.
+  function rootLocalAxisBounds(THREE, modelRoot, meshes, wristAxis) {
     modelRoot.updateMatrixWorld(true);
     const rootInverse = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
     const toRoot = new THREE.Matrix4();
     const point = new THREE.Vector3();
-    let minY = Infinity, maxY = -Infinity;
+    let min = Infinity;
+    let max = -Infinity;
     for (const mesh of meshes) {
       const position = mesh.geometry?.getAttribute?.('position');
       if (!position) continue;
@@ -80,17 +98,19 @@
       toRoot.multiplyMatrices(rootInverse, mesh.matrixWorld);
       for (let i = 0; i < position.count; i++) {
         point.fromBufferAttribute(position, i).applyMatrix4(toRoot);
-        minY = Math.min(minY, point.y);
-        maxY = Math.max(maxY, point.y);
+        const distance = point.dot(wristAxis);
+        min = Math.min(min, distance);
+        max = Math.max(max, distance);
       }
     }
-    if (!Number.isFinite(minY) || !Number.isFinite(maxY) || Math.abs(maxY - minY) < 1e-7) {
-      return { minY: -0.5, maxY: 0.5, height: 1 };
+    if (!Number.isFinite(min) || !Number.isFinite(max) || Math.abs(max - min) < 1e-7) {
+      return { min: -0.5, max: 0.5, extent: 1, height: 1 };
     }
-    return { minY, maxY, height: Math.max(1e-7, maxY - minY) };
+    const extent = Math.max(1e-7, max - min);
+    return { min, max, extent, height: extent };
   }
 
-  function skinGeometryForBones(THREE, geometry, toRoot, bounds, config) {
+  function skinGeometryForBones(THREE, geometry, toRoot, bounds, config, wristAxis) {
     const position = geometry?.getAttribute?.('position');
     if (!position) return false;
     let indices = geometry.getAttribute('skinIndex')?.array;
@@ -105,8 +125,9 @@
     const span = 1 - cross * 2;
     for (let i = 0; i < position.count; i++) {
       point.fromBufferAttribute(position, i).applyMatrix4(toRoot);
-      const yPercent = clamp((point.y - bounds.minY) / bounds.height, 0, 1);
-      const forearmMix = smoothstep(blendStart, blendEnd, yPercent);
+      const along = point.dot(wristAxis);
+      const wristPercent = clamp((along - bounds.min) / bounds.extent, 0, 1);
+      const forearmMix = smoothstep(blendStart, blendEnd, wristPercent);
       const forearmWeight = cross + span * forearmMix;
       const offset = i * 4;
       indices[offset] = 0;
@@ -162,14 +183,16 @@
     if (configsEqual(next, skinRig.config)) return false;
     const jointChanged = !skinRig.config || Math.abs(next.jointYPercent - skinRig.config.jointYPercent) > 1e-8;
     skinRig.config = next;
-    skinRig.jointY = skinRig.bounds.minY + skinRig.bounds.height * next.jointYPercent;
-    skinRig.forearmBone.position.y = skinRig.jointY;
+    skinRig.jointCoordinate = skinRig.bounds.min + skinRig.bounds.extent * next.jointYPercent;
+    skinRig.jointY = skinRig.jointCoordinate; // Compatibility alias for older diagnostics/editor readers.
+    skinRig.forearmBone.position.copy(skinRig.wristAxis).multiplyScalar(skinRig.jointCoordinate);
     for (const binding of skinRig.weightBindings) {
-      skinGeometryForBones(THREE, binding.mesh.geometry, binding.toRoot, skinRig.bounds, next);
+      skinGeometryForBones(THREE, binding.mesh.geometry, binding.toRoot, skinRig.bounds, next, skinRig.wristAxis);
       binding.mesh.normalizeSkinWeights?.();
     }
     if (jointChanged) recalcSkeletonBind(skinRig);
     skinRig.visual.userData.forearmJointYPercent = next.jointYPercent;
+    skinRig.visual.userData.forearmJointAxis = skinRig.wristAxisLabel;
     skinRig.visual.userData.forearmBlendWidthPercent = next.blendWidthPercent;
     skinRig.visual.userData.crossBoneWeight = next.crossBoneWeight;
     return true;
@@ -190,10 +213,13 @@
     });
     if (!sourceMeshes.length) return null;
 
+    const modelKey = visual.userData?.handModelKey || null;
+    const wristAxis = wristAxisForModel(THREE, modelKey);
+    const wristAxisLabel = axisLabel(wristAxis);
     const config = rigConfig(model);
     modelRoot.updateMatrixWorld(true);
-    const bounds = rootLocalYBounds(THREE, modelRoot, sourceMeshes);
-    const jointY = bounds.minY + bounds.height * config.jointYPercent;
+    const bounds = rootLocalAxisBounds(THREE, modelRoot, sourceMeshes, wristAxis);
+    const jointCoordinate = bounds.min + bounds.extent * config.jointYPercent;
     const rootInverse = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
     const toRootBySource = new Map();
     for (const mesh of sourceMeshes) {
@@ -205,7 +231,7 @@
     handBone.name = 'hand_bone';
     const forearmBone = new THREE.Bone();
     forearmBone.name = 'forearm_bone';
-    forearmBone.position.set(0, jointY, 0);
+    forearmBone.position.copy(wristAxis).multiplyScalar(jointCoordinate);
     handBone.add(forearmBone);
     modelRoot.add(handBone);
 
@@ -213,7 +239,7 @@
     const weightBindings = [];
     for (const source of sourceMeshes) {
       const toRoot = toRootBySource.get(source);
-      if (!skinGeometryForBones(THREE, source.geometry, toRoot, bounds, config)) continue;
+      if (!skinGeometryForBones(THREE, source.geometry, toRoot, bounds, config, wristAxis)) continue;
       const skinned = replaceWithSkinnedMesh(THREE, source);
       if (!skinned) continue;
       skinnedMeshes.push(skinned);
@@ -232,12 +258,12 @@
       mesh.normalizeSkinWeights?.();
     }
 
-    const handGuide = new THREE.AxesHelper(bounds.height * 0.18);
+    const handGuide = new THREE.AxesHelper(bounds.extent * 0.18);
     handGuide.name = 'hand_bone_guide';
     handGuide.visible = showBoneGuides;
     handGuide.renderOrder = 70;
     handBone.add(handGuide);
-    const forearmGuide = new THREE.AxesHelper(bounds.height * 0.22);
+    const forearmGuide = new THREE.AxesHelper(bounds.extent * 0.22);
     forearmGuide.name = 'forearm_bone_guide';
     forearmGuide.visible = showBoneGuides;
     forearmGuide.renderOrder = 70;
@@ -259,7 +285,10 @@
       skeleton,
       skinnedMeshes,
       weightBindings,
-      jointY,
+      wristAxis,
+      wristAxisLabel,
+      jointCoordinate,
+      jointY: jointCoordinate, // Compatibility alias; this coordinate need not be raw Y anymore.
       bounds,
       config,
       targetWorld: null,
@@ -272,6 +301,7 @@
     };
     visual.userData.twoBoneSkinRig = skinRig;
     visual.userData.forearmJointYPercent = config.jointYPercent;
+    visual.userData.forearmJointAxis = wristAxisLabel;
     visual.userData.forearmBlendWidthPercent = config.blendWidthPercent;
     visual.userData.crossBoneWeight = config.crossBoneWeight;
     return skinRig;
@@ -282,9 +312,8 @@
       left: { targetWorld: null, targetKind: 'shoulder', lastRig: null },
       right: { targetWorld: null, targetKind: 'shoulder', lastRig: null },
     };
-    const localUp = new THREE.Vector3(LOCAL_FOREARM_AXIS.x, LOCAL_FOREARM_AXIS.y, LOCAL_FOREARM_AXIS.z);
     const targetLocal = new THREE.Vector3();
-    const aimedUp = new THREE.Vector3();
+    const aimedAxis = new THREE.Vector3();
     const fullAim = new THREE.Quaternion();
     const aimEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
@@ -337,7 +366,7 @@
         return false;
       }
       targetLocal.normalize();
-      fullAim.setFromUnitVectors(localUp, targetLocal).normalize();
+      fullAim.setFromUnitVectors(skinRig.wristAxis, targetLocal).normalize();
       aimEuler.setFromQuaternion(fullAim, 'YXZ');
       const weights = axisWeights(side);
       const fullDeg = {
@@ -358,8 +387,8 @@
       }
       skinRig.forearmBone.updateMatrix?.();
       skinRig.forearmBone.updateMatrixWorld?.(true);
-      aimedUp.copy(localUp).applyQuaternion(skinRig.forearmBone.quaternion).normalize();
-      const dot = clamp(aimedUp.dot(targetLocal), -1, 1);
+      aimedAxis.copy(skinRig.wristAxis).applyQuaternion(skinRig.forearmBone.quaternion).normalize();
+      const dot = clamp(aimedAxis.dot(targetLocal), -1, 1);
       skinRig.residualDeg = THREE.MathUtils.radToDeg(Math.acos(dot));
       skinRig.aimApplied = true;
       skinRig.targetWorld = state.targetWorld.clone();
@@ -457,7 +486,10 @@
         sides[side] = skinRig ? {
           rigged: true,
           jointY: skinRig.jointY,
+          jointCoordinate: skinRig.jointCoordinate,
           jointYPercent: skinRig.config.jointYPercent,
+          wristAxis: { x: skinRig.wristAxis.x, y: skinRig.wristAxis.y, z: skinRig.wristAxis.z },
+          wristAxisLabel: skinRig.wristAxisLabel,
           blendWidthPercent: skinRig.config.blendWidthPercent,
           crossBoneWeight: skinRig.config.crossBoneWeight,
           aimApplied: skinRig.aimApplied,
@@ -470,14 +502,20 @@
           targetWorld: skinRig.targetWorld ? { x: skinRig.targetWorld.x, y: skinRig.targetWorld.y, z: skinRig.targetWorld.z } : null,
         } : { rigged: false };
       }
+      const semantic = basisApi?.handBasisForSpecies?.(rig.speciesId) || null;
       return {
         ...(originalDebug?.() || {}),
         twoBoneSkin: {
-          mode: 'hand-grip-plus-forearm-target',
+          mode: 'hand-grip-plus-semantic-forearm-target',
           handBoneAuthority: 'tool/grip socket',
           forearmBoneAuthority: settings?.bicepElbowTracking ? 'elbow target' : 'shoulder target',
           forearmAxisTrackingExperimental: settings?.forearmAxisTracking === true,
-          localBasis: { positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' },
+          localBasis: semantic?.valid ? {
+            fingers: semantic.axes?.fingers,
+            thumb: semantic.axes?.thumb,
+            palm: semantic.axes?.palm,
+            wrist: axisLabel(wristAxisForModel(THREE, semantic.modelKey)),
+          } : { wrist: '+Y', source: 'legacy' },
           sides,
         },
       };
@@ -525,8 +563,8 @@
   });
 
   global.ProceduralHandTwoBoneSkin = Object.freeze({
-    mode: 'runtime-two-bone-skin',
-    localBasis: Object.freeze({ positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' }),
+    mode: 'runtime-two-bone-skin-semantic-wrist-axis',
+    localBasis: Object.freeze({ source: 'semantic-hand-basis', legacyWrist: '+Y' }),
     defaults: Object.freeze({
       jointYPercent: DEFAULT_JOINT_Y_PERCENT,
       blendWidthPercent: DEFAULT_BLEND_WIDTH_PERCENT,
