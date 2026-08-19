@@ -12,20 +12,29 @@
 // Procedural Animation editor. The historical 'breakThrow' bank remains an
 // alias so existing game.js call sites automatically use the new default.
 //
-// Usage:
-//   await ImpactBlendLibrary.load()
-//   ImpactBlendLibrary.getClip('impact', 'front') -> { durationSeconds, frames } | null
+// The knockdown asset is a losslessly-compressed runtime projection of the
+// author's full editor export: it keeps every value sampled by
+// impact-ragdoll-playback.js (time, body Y/quaternion, and both recorded leg
+// chains) while omitting authoring-only diagnostics/events from game download.
 (() => {
   "use strict";
 
-  // Relative to the config/ directory (see resolveConfigBase) — mirrors
-  // portrait-breathing.js's own 'animations/breathing-default.json' path.
   const BANK_ASSETS = {
-    impact: { path: "animations/impact-blend-v3.json", gzip: false },
-    knockdown: { path: "animations/knockdown-blend-v1.json.gz", gzip: true },
+    impact: {
+      format: "editor-json",
+      path: "animations/impact-blend-v3.json",
+    },
+    knockdown: {
+      format: "runtime-gzip-base64-parts",
+      parts: [
+        "animations/knockdown-blend-v1.runtime.b64.0",
+        "animations/knockdown-blend-v1.runtime.b64.1",
+        "animations/knockdown-blend-v1.runtime.b64.2",
+      ],
+    },
   };
   const BANK_ALIASES = {
-    breakThrow: 'knockdown',
+    breakThrow: "knockdown",
   };
 
   const banks = {}; // bankId -> { front, back, left, right } clip data
@@ -35,32 +44,98 @@
     return window.SCRATCHBONES_CONFIG?.game?.assets?.portrait?.configBase || "./config/";
   }
 
-  async function readJsonResponse(resp, gzip) {
-    if (!gzip) return resp.json();
-    if (typeof DecompressionStream !== 'function' || !resp.body) {
-      throw new Error('This browser cannot decompress the authored knockdown asset.');
+  function quaternionFromArray(values) {
+    const q = Array.isArray(values) ? values : [];
+    return {
+      x: Number(q[0]) || 0,
+      y: Number(q[1]) || 0,
+      z: Number(q[2]) || 0,
+      w: Number.isFinite(Number(q[3])) ? Number(q[3]) : 1,
+    };
+  }
+
+  // Rebuild the minimum nested shape already consumed by
+  // impact-ragdoll-playback.js. This is intentionally not a second animation
+  // schema at runtime; once loaded, callers receive the same frame shape they
+  // received from the full editor JSON.
+  function expandRuntimeFrame(frame) {
+    const leg = value => ({
+      thighQuaternion: quaternionFromArray(value?.tq),
+      calfLocalQuaternion: quaternionFromArray(value?.cq),
+      upperLength: Number(value?.u) || 0,
+      lowerLength: Number(value?.l) || 0,
+    });
+    return {
+      t: Number(frame?.t) || 0,
+      ragdoll: {
+        body: {
+          localPosition: { x: 0, y: Number(frame?.body?.y) || 0, z: 0 },
+          localQuaternion: quaternionFromArray(frame?.body?.q),
+        },
+        ik: {
+          left: leg(frame?.left),
+          right: leg(frame?.right),
+        },
+      },
+    };
+  }
+
+  async function fetchText(base, relativePath) {
+    const url = new URL(base + relativePath, window.location.href).toString();
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status} loading ${relativePath}`);
+    return response.text();
+  }
+
+  async function readRuntimeParts(base, asset) {
+    if (typeof DecompressionStream !== "function") {
+      throw new Error("This browser cannot decompress the authored knockdown asset.");
     }
-    const stream = resp.body.pipeThrough(new DecompressionStream('gzip'));
+    const encoded = (await Promise.all(asset.parts.map(path => fetchText(base, path)))).join("").replace(/\s+/g, "");
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
     return new Response(stream).json();
+  }
+
+  async function readAsset(base, asset) {
+    if (asset.format === "runtime-gzip-base64-parts") return readRuntimeParts(base, asset);
+    const url = new URL(base + asset.path, window.location.href).toString();
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status} loading ${asset.path}`);
+    return response.json();
+  }
+
+  function normalizedClip(data, direction, format) {
+    if (format === "runtime-gzip-base64-parts") {
+      const source = data?.clips?.[direction];
+      if (!source || !Array.isArray(source.frames) || !source.frames.length) return null;
+      return {
+        durationSeconds: Number(source.durationSeconds) || 0,
+        frames: source.frames.map(expandRuntimeFrame),
+      };
+    }
+    const clip = data?.clips?.[direction]?.clip;
+    if (!clip || !Array.isArray(clip.frames) || !clip.frames.length) return null;
+    return {
+      durationSeconds: Number(clip.durationSeconds) || 0,
+      frames: clip.frames,
+    };
   }
 
   async function loadBank(bankId, asset) {
     const base = String(resolveConfigBase()).replace(/\/?$/, "/");
-    const url = new URL(base + asset.path, window.location.href).toString();
     try {
-      const resp = await fetch(url);
-      if (!resp.ok) { console.warn(`[ImpactBlendLibrary] ${bankId} not found:`, url); return; }
-      const data = await readJsonResponse(resp, asset.gzip);
+      const data = await readAsset(base, asset);
       const clips = {};
       for (const direction of ["front", "back", "left", "right"]) {
-        const clip = data?.clips?.[direction]?.clip;
-        if (clip && Array.isArray(clip.frames) && clip.frames.length) {
-          clips[direction] = { durationSeconds: Number(clip.durationSeconds) || 0, frames: clip.frames };
-        }
+        const clip = normalizedClip(data, direction, asset.format);
+        if (clip) clips[direction] = clip;
       }
       banks[bankId] = clips;
-    } catch (e) {
-      console.warn(`[ImpactBlendLibrary] failed to load ${bankId}`, e);
+    } catch (error) {
+      console.warn(`[ImpactBlendLibrary] failed to load ${bankId}`, error);
     }
   }
 
