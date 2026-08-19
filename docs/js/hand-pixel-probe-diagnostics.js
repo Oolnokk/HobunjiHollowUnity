@@ -17,6 +17,7 @@
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
     const skinRegistration = window.ProceduralHandSkinnedHeldRegistration?.getDebug?.() || null;
     const lifecycle = window.ProceduralHandLifecycleGuard?.getDebug?.() || null;
+    const bodyBridge = window.PlayerBodyAttachmentBridge?.getDebug?.() || null;
     const lines = ['', SECTION];
 
     if (parity) {
@@ -53,6 +54,16 @@
         + `detachedPruned=${lifecycle.staleDetachedPruned ?? '-'} duplicatePruned=${lifecycle.duplicatePlayerPruned ?? '-'} `
         + `last=${lifecycle.lastPruneReason || '-'}`
       );
+    }
+
+    if (bodyBridge) {
+      lines.push(
+        `Hand deadzone: source=${bodyBridge.handDeadzoneSource || '-'} `
+        + `counterYaw=${Number(bodyBridge.handDeadzoneCompensationDeg || 0).toFixed(2)}° `
+        + `playerRoots=${bodyBridge.handDeadzonePlayerRoots ?? '-'} updates=${bodyBridge.handDeadzoneUpdates ?? '-'}`
+      );
+    } else {
+      lines.push('Hand deadzone: body attachment bridge missing');
     }
 
     if (Array.isArray(frame) && frame.length) {
