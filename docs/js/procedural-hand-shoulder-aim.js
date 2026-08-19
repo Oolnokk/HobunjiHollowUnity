@@ -1,8 +1,10 @@
-// Resolves portrait shoulder targets and routes them to the separated arm bones.
-// Hand socket rotation is never modified here. Normally the forearm points at the
-// shoulder. With experimental bicep/elbow tracking enabled, the forearm instead
-// points at a pose-authored 3D elbow coordinate and the PNG-plane bicep bone points
-// at that same coordinate from its fixed shoulder root.
+// Forearm-only shoulder tracking.
+//
+// Shoulder targets come from manually authored 200x200 portrait points when present;
+// a side at 0,0 falls back to portrait-hand-shoulder-scan.js. This module NEVER
+// rotates the hand socket. Grip direction belongs entirely to the hand/tool frame;
+// only the child forearm bone receives shoulder-target rotation.
+// Source GLB basis: +Y = wrist, +Z = palm, +X = thumb.
 (function (global) {
   'use strict';
 
@@ -10,7 +12,6 @@
   const scanner = global.PortraitHandShoulderScan;
   const points = global.HobunjiHandShoulderPoints;
   const settings = global.HobunjiHandExperimentalRigSettings;
-  const elbowRuntime = global.HobunjiHandElbowPoseRuntime;
   if (!hands?.attach || hands.attach.__hobunjiShoulderAimWrapped) return;
 
   const originalAttach = hands.attach.bind(hands);
@@ -28,8 +29,6 @@
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
     const shoulderWorld = new THREE.Vector3();
-    const elbowAvatar = new THREE.Vector3();
-    const elbowWorld = new THREE.Vector3();
     const debugBySide = { left: null, right: null };
     let scanState = scanner?.scanProfile || scanner?.scanSpecies ? 'pending' : 'unavailable';
     let scanError = null;
@@ -84,49 +83,20 @@
       return shoulderWorld;
     }
 
-    function elbowInWorld(side) {
-      const normalized = elbowRuntime?.currentNormalized?.(side) || null;
-      if (!normalized) return null;
-      elbowAvatar.set(
-        (Number(normalized.x) || 0) * modelHeight,
-        (Number(normalized.y) || 0) * modelHeight,
-        (Number(normalized.z) || 0) * modelHeight,
-      );
-      elbowWorld.copy(elbowAvatar);
-      avatarRoot.updateWorldMatrix?.(true, false);
-      avatarRoot.localToWorld(elbowWorld);
-      return { world: elbowWorld, normalized };
-    }
-
     function aimSide(side) {
       if (disposed) return false;
-      const shoulder = shoulderInWorld(side);
-      if (!shoulder) {
+      const target = shoulderInWorld(side);
+      if (!target) {
         debugBySide[side] = { applied: false, reason: shoulderSource[side] || scanState };
         return false;
       }
-
-      const bicepRig = avatarRoot.userData?.bicepRig;
-      bicepRig?.setShoulderWorld?.(side, shoulder);
-      const useElbow = settings?.bicepElbowTracking === true;
-      const elbow = useElbow ? elbowInWorld(side) : null;
-      const target = elbow?.world || shoulder;
-      const targetKind = elbow ? 'elbow' : 'shoulder';
-      const applied = !!rig.aimForearmAtWorld(side, target, { targetKind });
-
-      if (useElbow && elbow && bicepRig?.available) bicepRig.aimAtWorld?.(side, elbow.world);
-      else bicepRig?.reset?.(side);
-
-      const handDebug = rig.getDebug?.() || {};
-      const skin = handDebug?.twoBoneSkin?.sides?.[side] || null;
-      const bicep = bicepRig?.getDebug?.()?.sides?.[side] || null;
+      const applied = !!rig.aimForearmAtWorld(side, target, { targetKind: 'shoulder' });
+      const skin = rig.getDebug?.()?.twoBoneSkin?.sides?.[side] || null;
       debugBySide[side] = {
         applied,
         source: shoulderSource[side],
-        targetKind,
-        shoulderWorld: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
-        elbowNormalized: elbow?.normalized ? { ...elbow.normalized } : null,
-        elbowWorld: elbow ? { x: elbow.world.x, y: elbow.world.y, z: elbow.world.z } : null,
+        targetKind: 'shoulder',
+        shoulderWorld: { x: target.x, y: target.y, z: target.z },
         residualDeg: skin?.residualDeg ?? null,
         axisWeights: skin?.axisWeights || null,
         fullAimDeg: skin?.fullAimDeg || null,
@@ -134,7 +104,6 @@
         jointYPercent: skin?.jointYPercent ?? null,
         blendWidthPercent: skin?.blendWidthPercent ?? null,
         crossBoneWeight: skin?.crossBoneWeight ?? null,
-        bicepResidualDeg: bicep?.residualDeg ?? null,
         reason: applied ? null : (skin?.rigged === false ? 'forearm-rig-pending' : null),
       };
       return applied;
@@ -175,7 +144,6 @@
       scanState = fallback ? 'pending' : 'manual';
       if (!fallback) aimAll();
     });
-    const unsubscribeSettings = settings?.subscribe?.(() => aimAll());
 
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
@@ -185,6 +153,7 @@
         return result;
       };
     }
+
     const originalSetSideIdle = rig.setSideIdle?.bind(rig);
     if (originalSetSideIdle) {
       rig.setSideIdle = function forearmAimSetSideIdle(side) {
@@ -193,6 +162,7 @@
         return result;
       };
     }
+
     const originalUseIdlePose = rig.useIdlePose?.bind(rig);
     if (originalUseIdlePose) {
       rig.useIdlePose = function forearmAimUseIdlePose() {
@@ -206,7 +176,6 @@
     rig.dispose = function forearmAimDispose() {
       disposed = true;
       unsubscribePoints?.();
-      unsubscribeSettings?.();
       return originalDispose?.();
     };
 
@@ -215,9 +184,9 @@
       return {
         ...(originalDebug?.() || {}),
         shoulderCompass: {
-          mode: settings?.bicepElbowTracking ? 'forearm-and-bicep-to-elbow' : 'forearm-to-shoulder',
+          mode: 'forearm-bone-shoulder-per-axis',
           handSocketRotationUntouched: true,
-          forearmAxisTrackingExperimental: settings?.forearmAxisTracking === true,
+          forearmAxisTrackingExperimental: settings?.forearmAxisTracking !== false,
           localBasis: { positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' },
           scanState,
           scanError,
@@ -239,7 +208,7 @@
   hands.attach = wrappedAttach;
 
   global.ProceduralHandShoulderAim = Object.freeze({
-    mode: 'separated-forearm-bicep-targeting',
+    mode: 'forearm-bone-shoulder-per-axis',
     handSocketRotationUntouched: true,
     localBasis: Object.freeze({ positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' }),
   });
