@@ -1,12 +1,12 @@
-// Keeps inverted-shell hand outlines on the exact transform used by the visible hand.
+// Keeps every procedural-hand outline pass on the exact transform used by the visible hand.
 //
 // Hand placement has a deliberate late pre-render sync: an invisible sentinel updates
 // the hand sockets after toolHolder's render-time stance hook has produced its final
-// matrix. The outline renderer may then run a second pass with scene.autoUpdate=false,
-// so recomputing or reusing transforms independently can put the shell on a different
-// matrix than the hand that was actually drawn. Capture each hand mesh's matrixWorld
-// at its visible draw, then temporarily reuse that exact matrix for the immediately
-// following shell draw. Authored hand/tool transforms are never modified.
+// matrix. Outline rendering then uses separate shell and material-ID passes, often with
+// scene.autoUpdate=false. Capture each hand mesh's matrixWorld at its visible draw and
+// temporarily reuse that exact matrix for every outline override draw. The same meshes
+// are also registered with HeldObjectRenderOrder so hands x-ray grass/ground exactly
+// like held tool sprites while ordinary scene occluders still block them.
 (function (global) {
   'use strict';
 
@@ -15,10 +15,12 @@
   if (!THREE || !hands?.attach || hands.attach.__hobunjiHandOutlineParityWrapped) return;
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
-  const MAX_SNAPSHOT_AGE_MS = 120; // Prevents an old visible frame from being reused after a render interruption.
+  const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
-  let missedShellSnapshots = 0; // Shell draws where no recent visible matrix was available.
+  let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
+  let missedOutlineSnapshots = 0; // Outline draws where no recent visible matrix was available.
+  let heldXrayTaggedMeshes = 0; // Current-or-former procedural hand meshes registered with the selective ground x-ray system.
 
   function isShellMaterial(material) {
     return !!(
@@ -28,22 +30,61 @@
     );
   }
 
-  function isVisibleHandDraw(scene, material) {
-    // scene.overrideMaterial is how the shell/material-ID passes replace the hand's
-    // normal material. A normal draw therefore gives us the matrix that produced the
-    // hand pixels the player actually sees, regardless of render-target plumbing.
-    return !scene?.overrideMaterial && !isShellMaterial(material);
+  function isMaterialIdMaterial(material) {
+    return !!(
+      material?.isShaderMaterial
+      && material.uniforms?.uIdColor
+    );
   }
 
-  function installMeshHook(mesh, rigState) {
-    if (!mesh?.isMesh || mesh.userData?.__hobunjiHandOutlineParity) return false;
+  function outlinePassKind(scene, material) {
+    if (!scene?.overrideMaterial) return null;
+    if (isShellMaterial(material)) return 'shell';
+    if (isMaterialIdMaterial(material)) return 'material-id';
+    return null;
+  }
+
+  function isVisibleHandDraw(scene, material) {
+    // Any ordinary draw with the mesh's own material is a valid source matrix.
+    // This includes the held-object selective overlay, which is the actual visible
+    // hand draw once ground x-ray registration is active.
+    return !scene?.overrideMaterial && !isShellMaterial(material) && !isMaterialIdMaterial(material);
+  }
+
+  function markHeldXray(mesh, rigState, side) {
+    if (!mesh?.isMesh) return false;
+    mesh.userData = mesh.userData || {};
+    mesh.userData.hobunjiProceduralHand = true;
+    mesh.userData.hobunjiProceduralHandSide = side || mesh.userData.hobunjiProceduralHandSide || null;
+    if (mesh.userData.__hobunjiHandHeldXray) return false;
+
+    // markHeldPlane accepts arbitrary Mesh/SkinnedMesh objects despite its legacy
+    // name; it is the existing public entry point for the selective non-ground
+    // depth replay used by tool sprites.
+    const xray = global.HeldObjectRenderOrder;
+    const registered = !!xray?.markHeldPlane?.(mesh);
+    if (!registered && !xray?.installed) {
+      // The game normally loads HeldObjectRenderOrder before hands. Keep the tag
+      // anyway so its fallback scene scan can adopt the mesh if load order changes.
+      mesh.userData.hobunjiHeldObjectPlane = true;
+    }
+    mesh.userData.__hobunjiHandHeldXray = true;
+    rigState.heldXrayMeshes++;
+    heldXrayTaggedMeshes++;
+    return true;
+  }
+
+  function installMeshHook(mesh, rigState, side) {
+    if (!mesh?.isMesh) return false;
+    markHeldXray(mesh, rigState, side);
+    if (mesh.userData?.__hobunjiHandOutlineParity) return false;
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
     const previousAfter = typeof mesh.onAfterRender === 'function' ? mesh.onAfterRender : null;
     const state = {
       visibleMatrixWorld: new THREE.Matrix4(), // Last matrix used by an ordinary visible hand draw.
       visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
-      restoreStack: [], // Supports nested/grouped draw callbacks without leaking a temporary shell matrix.
+      restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary outline matrix.
     };
 
     mesh.onBeforeRender = function handOutlineParityBefore(...args) {
@@ -61,7 +102,8 @@
         return;
       }
 
-      if (!isShellMaterial(material)) {
+      const passKind = outlinePassKind(scene, material);
+      if (!passKind) {
         state.restoreStack.push(null);
         return;
       }
@@ -69,19 +111,23 @@
       const ageMs = now - state.visibleCapturedAt;
       if (!(ageMs >= 0 && ageMs <= MAX_SNAPSHOT_AGE_MS)) {
         state.restoreStack.push(null);
-        rigState.missedShellSnapshots++;
-        missedShellSnapshots++;
+        rigState.missedOutlineSnapshots++;
+        missedOutlineSnapshots++;
         return;
       }
 
-      // onBeforeRender runs before WebGLRenderer derives modelViewMatrix and
-      // normalMatrix, so replacing matrixWorld here makes the shell use the exact
-      // transform of the visible hand while still letting Three.js calculate all
-      // camera/normal state normally for this pass.
+      // Object3D.onBeforeRender runs before WebGLRenderer derives modelViewMatrix
+      // and normalMatrix. Replacing matrixWorld here therefore freezes shell and
+      // material-ID rendering to the exact transform that produced the visible hand.
       state.restoreStack.push(this.matrixWorld.clone());
       this.matrixWorld.copy(state.visibleMatrixWorld);
-      rigState.lockedShellDraws++;
-      lockedShellDraws++;
+      if (passKind === 'shell') {
+        rigState.lockedShellDraws++;
+        lockedShellDraws++;
+      } else {
+        rigState.lockedMaterialIdDraws++;
+        lockedMaterialIdDraws++;
+      }
     };
 
     mesh.onAfterRender = function handOutlineParityAfter(...args) {
@@ -96,8 +142,16 @@
     return true;
   }
 
+  function scanVisual(root, rigState, side) {
+    root?.traverse?.(child => installMeshHook(child, rigState, side));
+  }
+
   function scanRig(rig, rigState) {
-    rig?.group?.traverse?.(child => installMeshHook(child, rigState));
+    const left = rig?.group?.getObjectByName?.('left_hand_visual') || null;
+    const right = rig?.group?.getObjectByName?.('right_hand_visual') || null;
+    if (left) scanVisual(left, rigState, 'left');
+    if (right) scanVisual(right, rigState, 'right');
+    if (!left && !right) rig?.group?.traverse?.(child => installMeshHook(child, rigState, null));
   }
 
   function waitForInitialGlbs(rig, rigState, attempt = 0) {
@@ -117,9 +171,11 @@
 
     const rigState = {
       hookedMeshes: 0, // Number of current-or-former hand meshes that received matrix-lock hooks.
+      heldXrayMeshes: 0, // Hand meshes registered with selective ground/grass x-ray.
       baseMatrixCaptures: 0, // Visible hand draws captured for this hand rig.
       lockedShellDraws: 0, // Shell draws that reused the exact visible hand matrix.
-      missedShellSnapshots: 0, // Shell draws without a recent visible matrix to reuse.
+      lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible hand matrix.
+      missedOutlineSnapshots: 0, // Outline draws without a recent visible matrix to reuse.
     };
     activeRigs.add(rig);
     scanRig(rig, rigState);
@@ -144,9 +200,11 @@
           outlineMatrixParity: true,
           outlineMatrixSource: 'visible-hand-draw',
           outlineHookedMeshes: rigState.hookedMeshes,
+          heldXrayMeshes: rigState.heldXrayMeshes,
           outlineBaseMatrixCaptures: rigState.baseMatrixCaptures,
           outlineLockedShellDraws: rigState.lockedShellDraws,
-          outlineMissedShellSnapshots: rigState.missedShellSnapshots,
+          outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
+          outlineMissedSnapshots: rigState.missedOutlineSnapshots,
         };
       };
     }
@@ -171,8 +229,11 @@
         activeRigs: activeRigs.size,
         baseMatrixCaptures,
         lockedShellDraws,
-        missedShellSnapshots,
+        lockedMaterialIdDraws,
+        missedOutlineSnapshots,
+        heldXrayTaggedMeshes,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
+        heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
     },
   });
