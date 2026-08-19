@@ -13,6 +13,7 @@
     if (!report || !text.startsWith('Pixel Probe report') || text.includes(SECTION)) return;
 
     const parity = window.HobunjiHandOutlineParity?.getDebug?.() || null;
+    const skinnedOutline = window.ProceduralHandSkinnedOutline?.getDebug?.() || null;
     const frame = window.ProceduralHandFrameDriver?.getDebug?.() || [];
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
     const skinRegistration = window.ProceduralHandSkinnedHeldRegistration?.getDebug?.() || null;
@@ -28,6 +29,15 @@
       );
     } else {
       lines.push('Outline parity: module missing');
+    }
+
+    if (skinnedOutline) {
+      lines.push(
+        `Skinned outline: mode=${skinnedOutline.mode || '-'} rigs=${skinnedOutline.activeRigs ?? '-'} `
+        + `shells=${skinnedOutline.installedShells ?? '-'} rigidPassDisabled=${skinnedOutline.disabledGlobalShellMeshes ?? '-'}`
+      );
+    } else {
+      lines.push('Skinned outline: module missing');
     }
 
     if (xray) {
@@ -60,7 +70,8 @@
       lines.push(
         `Hand deadzone: source=${bodyBridge.handDeadzoneSource || '-'} `
         + `counterYaw=${Number(bodyBridge.handDeadzoneCompensationDeg || 0).toFixed(2)}° `
-        + `playerRoots=${bodyBridge.handDeadzonePlayerRoots ?? '-'} updates=${bodyBridge.handDeadzoneUpdates ?? '-'}`
+        + `playerRoots=${bodyBridge.handDeadzonePlayerRoots ?? '-'} updates=${bodyBridge.handDeadzoneUpdates ?? '-'} `
+        + `preRender=${bodyBridge.handDeadzonePreRenderSyncs ?? '-'}`
       );
     } else {
       lines.push('Hand deadzone: body attachment bridge missing');
