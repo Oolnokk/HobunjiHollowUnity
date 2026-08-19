@@ -59,6 +59,11 @@
     return !!(entity?.avatarRef?.group && entity?.def?.sprites);
   }
 
+  function animalFootingIsFull(entity) {
+    const max = Number(window.ResourceSystem?.getEffectiveMax?.(entity, 'footing')) || Number(entity?.maxFooting) || 0;
+    return max > 0 && Number(entity?.footing) >= max - 0.05;
+  }
+
   function resetAnimalPlaneRestPose(entity) {
     if (entity?.avatarRef?.frontPlane) entity.avatarRef.frontPlane.rotation.y = Math.PI / 2;
     if (entity?.avatarRef?.backPlane) entity.avatarRef.backPlane.rotation.y = -Math.PI / 2;
@@ -108,6 +113,11 @@
       animalStates.delete(entity);
       return;
     }
+
+    // Players choose when to recover from prone. Animals have no recovery
+    // input, so the existing Footing sequence itself is their stand-up trigger:
+    // remain down through the prone recovery delay/regen, then get up at full.
+    if (entity.prone && animalFootingIsFull(entity)) entity.prone = false;
 
     if (entity.prone) {
       if (visual.phase !== 'fall' && visual.phase !== 'hold') {
