@@ -15,6 +15,8 @@
     const parity = window.HobunjiHandOutlineParity?.getDebug?.() || null;
     const frame = window.ProceduralHandFrameDriver?.getDebug?.() || [];
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
+    const skinRegistration = window.ProceduralHandSkinnedHeldRegistration?.getDebug?.() || null;
+    const lifecycle = window.ProceduralHandLifecycleGuard?.getDebug?.() || null;
     const lines = ['', SECTION];
 
     if (parity) {
@@ -34,6 +36,23 @@
       );
     } else {
       lines.push('Held x-ray: module missing');
+    }
+
+    if (skinRegistration) {
+      lines.push(
+        `Skinned hand registry: adopted=${skinRegistration.adopted ?? '-'} inheritedTags=${skinRegistration.inheritedTags ?? '-'} `
+        + `pending=${skinRegistration.pending ?? '-'} renderer=${skinRegistration.heldRendererReady ? 'ready' : 'waiting'}`
+      );
+    } else {
+      lines.push('Skinned hand registry: bridge missing');
+    }
+
+    if (lifecycle) {
+      lines.push(
+        `Hand lifecycle: tracked=${lifecycle.trackedRigs ?? '-'} player=${lifecycle.playerRigs ?? '-'} `
+        + `detachedPruned=${lifecycle.staleDetachedPruned ?? '-'} duplicatePruned=${lifecycle.duplicatePlayerPruned ?? '-'} `
+        + `last=${lifecycle.lastPruneReason || '-'}`
+      );
     }
 
     if (Array.isArray(frame) && frame.length) {
