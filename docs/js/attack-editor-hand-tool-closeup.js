@@ -50,7 +50,8 @@
   let toolTexture = null;
   let loadedToolKey = '';
   let toolRequestSerial = 0; // Rejects stale texture callbacks after rapid tool switching.
-  let refitRequested = true; // Set by relevant editor controls; consumed once by the render loop.
+  let refitRequested = true; // Only initial entry/manual Refit may set this; authoring edits preserve the camera.
+  let hasInitialFit = false; // Keeps orbit/zoom persistent after the first successful content fit.
   let lastSecondGripActive = false;
   let lastToolScale = NaN;
   let lastStyle = '';
@@ -96,17 +97,9 @@
     toggle.addEventListener('click', () => setEnabled(true));
     $('handToolCloseupBack')?.addEventListener('click', () => setEnabled(false));
     $('handToolCloseupRefit')?.addEventListener('click', requestRefit);
-    $('handToolCloseupSecond')?.addEventListener('change', requestRefit);
-
-    // Refit after any grip/model/tool control that can materially change the close-up bounds.
-    document.getElementById('sidebar')?.addEventListener('input', event => {
-      const id = String(event.target?.id || '');
-      if (id.startsWith('hand') || id === 'neutral_scale' || id === 'toolSpriteSelect' || id === 'animStyle') requestRefit();
-    });
-    document.getElementById('sidebar')?.addEventListener('change', event => {
-      const id = String(event.target?.id || '');
-      if (id.startsWith('hand') || id === 'avatarSpecies' || id === 'avatarGender' || id === 'toolSpriteSelect' || id === 'animStyle') requestRefit();
-    });
+    // Toggling any authored/display value updates geometry immediately but does
+    // not touch OrbitControls. Refit is deliberately explicit so a carefully
+    // chosen macro camera angle survives slider/number/mirror/grip changes.
     return true;
   }
 
@@ -117,7 +110,7 @@
     if (overlay) overlay.style.display = enabled ? 'block' : 'none';
     if (enabled) {
       resize();
-      requestRefit();
+      if (!hasInitialFit) requestRefit();
       syncAll();
     }
     return enabled;
@@ -174,7 +167,6 @@
     toolPlane = plane;
     lastToolScale = NaN;
     lastStyle = '';
-    requestRefit();
   }
 
   function disposeHandRig() {
@@ -202,7 +194,6 @@
     });
     handRigSpecies = species;
     handRigGender = gender;
-    requestRefit();
     return handRig;
   }
 
@@ -271,11 +262,7 @@
       secondaryAxes.visible = false;
     }
 
-    const secondActive = !!(secondary && showSecond);
-    if (secondActive !== lastSecondGripActive) {
-      lastSecondGripActive = secondActive;
-      requestRefit();
-    }
+    lastSecondGripActive = !!(secondary && showSecond);
   }
 
   function syncToolVisual() {
@@ -287,7 +274,6 @@
     if (!Number.isFinite(lastToolScale) || Math.abs(scale - lastToolScale) > 0.00001) {
       toolRoot.scale.setScalar(scale);
       lastToolScale = scale;
-      requestRefit();
     }
 
     const style = currentStyle();
@@ -296,7 +282,6 @@
       // matching the frame-driver fix that prevents sweep presentation rotation feeding back.
       toolPlane.rotation.z = style === 'sweep' ? -Math.PI / 2 : 0;
       lastStyle = style;
-      requestRefit();
     }
   }
 
@@ -337,6 +322,7 @@
     camera.far = Math.max(20, distance * 30);
     camera.updateProjectionMatrix();
     controls.update();
+    hasInitialFit = true;
     return true;
   }
 
@@ -358,7 +344,7 @@
     const grip = gripModes.currentModeKey?.() || '-';
     const secondary = toolGrips.secondaryGripForTool?.(toolGripKey()) || null;
     const mirror = profiles.modelForSpecies?.(species)?.horizontalMirrorX === true ? 'mirrored' : 'normal';
-    status.textContent = `HAND + TOOL CLOSE-UP · ${species}/${gender} → ${model} · ${currentToolKey() || '-'} · grip ${grip} · ${mirror} · right=primary${secondary ? ' · left=secondary enabled' : ' · left=hidden (secondary off)'} · drag=orbit · wheel/pinch=zoom`;
+    status.textContent = `HAND + TOOL CLOSE-UP · ${species}/${gender} → ${model} · ${currentToolKey() || '-'} · grip ${grip} · ${mirror} · right=primary${secondary ? ' · left=secondary enabled' : ' · left=hidden (secondary off)'} · drag=orbit · wheel/pinch=zoom · camera preserved until Refit`;
   }
 
   function syncAll() {
@@ -431,9 +417,6 @@
     resize();
     syncAll();
     global.addEventListener('resize', resize);
-    profiles.subscribe?.(() => requestRefit());
-    gripModes.subscribe?.(() => requestRefit());
-    toolGrips.subscribe?.(() => requestRefit());
     animate();
   }
 
@@ -451,7 +434,11 @@
         model: profiles.modelKeyForSpecies?.(currentSpecies()) || null,
         tool: currentToolKey(),
         gripMode: gripModes.currentModeKey?.() || null,
-        secondaryActive: !!toolGrips.secondaryGripForTool?.(toolGripKey()),
+        secondaryActive: lastSecondGripActive,
+        cameraAutoRefit: false,
+        hasInitialFit,
+        cameraPosition: camera ? { x: camera.position.x, y: camera.position.y, z: camera.position.z } : null,
+        target: controls ? { x: controls.target.x, y: controls.target.y, z: controls.target.z } : null,
       };
     },
   });
