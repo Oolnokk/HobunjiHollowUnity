@@ -1,12 +1,5 @@
-// Adds a second, slightly higher cloud opacity cutout to the base arm sprites only.
-//
-// This deliberately does NOT replace renderPortraitProfile(), drawPortraitLayer(),
-// or drawPortraitLayerWarped(). The canonical portrait renderer must remain the
-// sole owner of its deformation grids. Instead, after an ordinary front portrait
-// finishes rendering, we build a separate alphaMap: white everywhere, with the
-// intersection of raw arm alpha and the higher cloud mask punched to black.
-// PNGPlaneAvatar then applies that alphaMap to the finished portrait material.
-// Torso, overwear and every other portrait layer are therefore untouched.
+// Builds arm-only portrait coverage masks and the existing higher-cloud alpha cutout.
+// The side masks are also consumed by the experimental PNG-plane bicep skinning rig.
 (function (global) {
   'use strict';
 
@@ -85,30 +78,83 @@
     );
   }
 
-  async function buildArmCloudAlphaMap(sourceCanvas, profile) {
+  function makeCanvasLike(sourceCanvas) {
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceCanvas.width;
+    canvas.height = sourceCanvas.height;
+    return canvas;
+  }
+
+  function boundsForAlpha(canvas, threshold = 8) {
+    if (!canvas?.width || !canvas?.height) return null;
+    let data;
+    try { data = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data; }
+    catch (_) { return null; }
+    let left = canvas.width, right = -1, top = canvas.height, bottom = -1;
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        if (data[(y * canvas.width + x) * 4 + 3] <= threshold) continue;
+        left = Math.min(left, x); right = Math.max(right, x);
+        top = Math.min(top, y); bottom = Math.max(bottom, y);
+      }
+    }
+    return right < 0 ? null : { left, right, top, bottom };
+  }
+
+  function sideForArmLayer(layer) {
+    const id = String(layer?.id || '');
+    if (/armL/i.test(id)) return 'left';
+    if (/armR/i.test(id)) return 'right';
+    return null;
+  }
+
+  async function buildArmCoverageCanvases(sourceCanvas, profile) {
     const fighter = resolvedFighterFor(profile);
-    const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
     const armLayers = (fighter?.bodyLayers || profile?.fighter?.bodyLayers || [])
       .filter(layer => /arm[lr]/i.test(String(layer?.id || '')) && layer?.url);
-    if (!sourceCanvas?.width || !sourceCanvas?.height || !maskLayer?.url || !armLayers.length) return null;
+    if (!sourceCanvas?.width || !sourceCanvas?.height || !armLayers.length) return null;
 
-    const [maskImage, ...armImages] = await Promise.all([
-      loadImage(maskLayer.url),
-      ...armLayers.map(layer => loadImage(layer.url)),
-    ]);
-    if (!maskImage || armImages.every(image => !image)) return null;
+    const images = await Promise.all(armLayers.map(layer => loadImage(layer.url)));
+    if (images.every(image => !image)) return null;
+    const left = makeCanvasLike(sourceCanvas);
+    const right = makeCanvasLike(sourceCanvas);
+    const combined = makeCanvasLike(sourceCanvas);
+    const sideCtx = { left: left.getContext('2d'), right: right.getContext('2d') };
+    const combinedCtx = combined.getContext('2d');
 
-    // Build the exact arm-only coverage first. Torso/overwear never enter this canvas.
-    const intersection = document.createElement('canvas');
-    intersection.width = sourceCanvas.width;
-    intersection.height = sourceCanvas.height;
-    const ictx = intersection.getContext('2d');
     for (let index = 0; index < armLayers.length; index++) {
-      const image = armImages[index];
-      if (image) drawLogicalImage(ictx, image, xformFor(armLayers[index]), intersection);
+      const image = images[index];
+      if (!image) continue;
+      const layer = armLayers[index];
+      const side = sideForArmLayer(layer);
+      const xf = xformFor(layer);
+      drawLogicalImage(combinedCtx, image, xf, combined);
+      if (side) drawLogicalImage(sideCtx[side], image, xf, side === 'left' ? left : right);
     }
 
-    // Keep only the pixels where that arm coverage intersects the higher cloud.
+    return {
+      left,
+      right,
+      combined,
+      bounds: {
+        left: boundsForAlpha(left),
+        right: boundsForAlpha(right),
+        combined: boundsForAlpha(combined),
+      },
+    };
+  }
+
+  async function buildArmCloudAlphaMap(sourceCanvas, profile, coverage) {
+    const fighter = resolvedFighterFor(profile);
+    const maskLayer = fighter?.opacityMaskLayer || profile?.fighter?.opacityMaskLayer || null;
+    if (!sourceCanvas?.width || !sourceCanvas?.height || !maskLayer?.url || !coverage?.combined) return null;
+    const maskImage = await loadImage(maskLayer.url);
+    if (!maskImage) return null;
+
+    const intersection = makeCanvasLike(sourceCanvas);
+    const ictx = intersection.getContext('2d');
+    ictx.drawImage(coverage.combined, 0, 0);
+
     const maskXform = xformFor(maskLayer);
     const configuredOffset = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
     maskXform.ax += Number.isFinite(configuredOffset) ? configuredOffset : DEFAULT_AX_OFFSET;
@@ -117,12 +163,7 @@
     drawLogicalImage(ictx, maskImage, maskXform, intersection);
     ictx.restore();
 
-    // Three.js alphaMap samples the texture's green channel. White preserves the
-    // finished portrait; transparent/black pixels from destination-out remove only
-    // the higher-cloud/arm intersection.
-    const alphaCanvas = document.createElement('canvas');
-    alphaCanvas.width = sourceCanvas.width;
-    alphaCanvas.height = sourceCanvas.height;
+    const alphaCanvas = makeCanvasLike(sourceCanvas);
     const actx = alphaCanvas.getContext('2d');
     actx.fillStyle = '#ffffff';
     actx.fillRect(0, 0, alphaCanvas.width, alphaCanvas.height);
@@ -135,15 +176,15 @@
   const originalRenderToCanvas = previewApi.renderProfileToCanvas.bind(previewApi);
   const wrappedRenderToCanvas = async function armCloudAlphaRenderToCanvas(canvas, profile, renderOptions = {}) {
     const rendered = await originalRenderToCanvas(canvas, profile, renderOptions);
-    // Head-only and behind-view canvases are auxiliary inputs to the shared neck/
-    // back-face rig. Only the canonical front portrait owns this alphaMap.
     if (rendered && renderOptions?.onlyHeadSprite !== true && renderOptions?.portraitView !== 'behind' && renderOptions?.view !== 'behind') {
       try {
-        canvas.hobunjiArmCloudAlphaMap = await buildArmCloudAlphaMap(canvas, profile);
+        const coverage = await buildArmCoverageCanvases(canvas, profile);
+        canvas.hobunjiArmCoverageBySide = coverage;
+        canvas.hobunjiArmCloudAlphaMap = await buildArmCloudAlphaMap(canvas, profile, coverage);
       } catch (error) {
-        // A decorative cloud mask must never be capable of rejecting avatar construction.
+        canvas.hobunjiArmCoverageBySide = null;
         canvas.hobunjiArmCloudAlphaMap = null;
-        console.warn('[arm-cloud-mask] alpha-map build skipped:', error);
+        console.warn('[arm-cloud-mask] arm masks skipped:', error);
       }
     }
     return rendered;
@@ -181,8 +222,9 @@
   const originalBuildAvatar = avatarApi.buildSinglePlaneAvatarModel;
   const wrappedBuildAvatar = function armCloudAlphaAvatarBuild(THREE, sourceCanvas, options = {}) {
     const avatarRoot = originalBuildAvatar.call(this, THREE, sourceCanvas, options);
-    if (avatarRoot && sourceCanvas?.hobunjiArmCloudAlphaMap) {
-      applyAlphaMap(THREE, avatarRoot, sourceCanvas.hobunjiArmCloudAlphaMap);
+    if (avatarRoot) {
+      avatarRoot.userData.armCoverageBySide = sourceCanvas?.hobunjiArmCoverageBySide || null;
+      if (sourceCanvas?.hobunjiArmCloudAlphaMap) applyAlphaMap(THREE, avatarRoot, sourceCanvas.hobunjiArmCloudAlphaMap);
     }
     return avatarRoot;
   };
@@ -199,7 +241,8 @@
   }
 
   global.PortraitArmCloudMask = {
-    mode: 'png-plane-alpha-map',
+    mode: 'png-plane-alpha-map-plus-arm-coverage',
+    buildArmCoverageCanvases,
     get defaultAxOffset() { return DEFAULT_AX_OFFSET; },
     get configuredAxOffset() {
       const value = Number(global.SCRATCHBONES_CONFIG?.game?.portrait?.armOnlyOpacityMask?.axOffset);
