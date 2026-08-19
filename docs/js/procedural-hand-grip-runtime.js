@@ -15,6 +15,22 @@
     return gripModes.modes[key] ? key : null;
   }
 
+  function visualStillActive() {
+    return global.WeaponToolStances?.debugSnapshot?.()?.combatNeutralInjected === true;
+  }
+
+  function clearWhenVisualEnds(token, notBeforeMs = 0) {
+    const check = () => {
+      if (generation !== token) return;
+      if (performance.now() < notBeforeMs || visualStillActive()) {
+        global.requestAnimationFrame(check);
+        return;
+      }
+      gripModes.clearRuntimeMode();
+    };
+    global.requestAnimationFrame(check);
+  }
+
   function beginTemporaryMode(rawMode, durationS) {
     const key = validMode(rawMode);
     const token = ++generation;
@@ -24,9 +40,10 @@
     }
     gripModes.setRuntimeMode(key);
     const duration = Math.max(0, Number(durationS) || 0);
-    setTimeout(() => {
-      if (generation === token) gripModes.clearRuntimeMode();
-    }, duration * 1000 + 40);
+    // durationS does not always include a wrapper-authored hold/return tail. Keep
+    // the mode at least through the requested duration, then wait for the stance
+    // visual itself to report completion before restoring the normal tool default.
+    clearWhenVisualEnds(token, performance.now() + duration * 1000);
     return token;
   }
 
@@ -37,7 +54,15 @@
     else gripModes.clearRuntimeMode();
   }
 
-  function endHeldMode() {
+  function releaseHeldModeAfterVisual() {
+    const token = ++generation;
+    // Do not clear here. releaseWeaponSwingHold() advances the existing held
+    // windup into its strike/return, and the same authored grip must survive that
+    // continuation. The next visual completion restores the ordinary grip mode.
+    clearWhenVisualEnds(token);
+  }
+
+  function cancelHeldMode() {
     ++generation;
     gripModes.clearRuntimeMode();
   }
@@ -73,8 +98,9 @@
     const release = deps.releaseWeaponSwingHold;
     if (typeof release === 'function' && !release.__hobunjiGripModeWrapped) {
       const wrappedRelease = function handGripModeRelease(...args) {
-        endHeldMode();
-        return release.apply(this, args);
+        const result = release.apply(this, args);
+        releaseHeldModeAfterVisual();
+        return result;
       };
       wrappedRelease.__hobunjiGripModeWrapped = true;
       deps.releaseWeaponSwingHold = wrappedRelease;
@@ -83,7 +109,7 @@
     const cancel = deps.cancelWeaponSwingHold;
     if (typeof cancel === 'function' && !cancel.__hobunjiGripModeWrapped) {
       const wrappedCancel = function handGripModeCancel(...args) {
-        endHeldMode();
+        cancelHeldMode();
         return cancel.apply(this, args);
       };
       wrappedCancel.__hobunjiGripModeWrapped = true;
@@ -101,6 +127,6 @@
 
   global.ProceduralHandGripRuntime = {
     get installed() { return installed; },
-    clear: endHeldMode,
+    clear: cancelHeldMode,
   };
 })(window);
