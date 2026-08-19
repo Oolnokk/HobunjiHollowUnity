@@ -11,7 +11,8 @@
   const hands = global.ProceduralHandAttachments;
   const gripModes = global.HobunjiHandGripModes;
   const toolGrips = global.HobunjiHandToolGrips;
-  if (!profiles || !hands?.attach || !gripModes || !toolGrips) return;
+  const semanticBasis = global.HobunjiHandToolSemanticBasis;
+  if (!profiles || !hands?.attach || !gripModes || !toolGrips || !semanticBasis) return;
 
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('../../', location.href);
@@ -46,6 +47,7 @@
   let handRigSpecies = '';
   let handRigGender = '';
   let toolRoot = null;
+  let toolBasisRoot = null; // Semantic/raw-PNG orientation layer between the tool pose and the sprite plane.
   let toolPlane = null;
   let toolTexture = null;
   let loadedToolKey = '';
@@ -55,6 +57,8 @@
   let lastSecondGripActive = false;
   let lastToolScale = NaN;
   let lastStyle = '';
+  let lastToolBasisSource = 'none';
+  let lastToolBasisApplied = false;
 
   function currentSpecies() { return String($('avatarSpecies')?.value || '').trim(); }
   function currentGender() { return String($('avatarGender')?.value || 'male').trim(); }
@@ -81,7 +85,9 @@
 
     overlay = document.createElement('div');
     overlay.id = 'handToolCloseupViewport';
-    overlay.style.cssText = 'position:absolute;inset:0;z-index:7;display:none;background:#0b0f14;overflow:hidden';
+    // Must sit above the enter button. setEnabled also hides the opener so the
+    // Full Avatar button can never be blocked by the control that entered this view.
+    overlay.style.cssText = 'position:absolute;inset:0;z-index:9;display:none;background:#0b0f14;overflow:hidden';
     overlay.innerHTML = `
       <div style="position:absolute;left:10px;top:10px;z-index:4;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
         <button id="handToolCloseupBack" class="secondary" style="font-size:12px;padding:6px 9px">← Full Avatar</button>
@@ -99,7 +105,7 @@
     $('handToolCloseupRefit')?.addEventListener('click', requestRefit);
     // Toggling any authored/display value updates geometry immediately but does
     // not touch OrbitControls. Refit is deliberately explicit so a carefully
-    // chosen macro camera angle survives slider/number/mirror/grip changes.
+    // chosen macro camera angle survives slider/number/mirror/grip/basis changes.
     return true;
   }
 
@@ -108,6 +114,11 @@
   function setEnabled(value) {
     enabled = !!value;
     if (overlay) overlay.style.display = enabled ? 'block' : 'none';
+    const toggle = $('handToolCloseupToggle');
+    if (toggle) {
+      toggle.style.visibility = enabled ? 'hidden' : '';
+      toggle.style.pointerEvents = enabled ? 'none' : '';
+    }
     if (enabled) {
       resize();
       if (!hasInitialFit) requestRefit();
@@ -125,8 +136,39 @@
     });
     toolTexture?.dispose?.();
     toolRoot = null;
+    toolBasisRoot = null;
     toolPlane = null;
     toolTexture = null;
+  }
+
+  function applyToolPresentationBasis() {
+    if (!toolBasisRoot || !toolPlane) return false;
+    const key = toolGripKey();
+    const basis = semanticBasis.toolBasisFor?.(key) || null;
+    const correction = basis?.complete ? semanticBasis.toolEngineQuaternionFor?.(key) : null;
+    const def = toolDef(currentToolKey());
+    const style = currentStyle();
+
+    toolBasisRoot.quaternion.identity();
+    toolPlane.rotation.set(0, 0, 0);
+    if (correction) {
+      // Authored semantics own the raw sprite orientation. +Y means haft butt→head,
+      // +X means working side, and the shared engine mapping lays that canonical
+      // frame into the same holder space used by gameplay. No style-specific raw
+      // PNG twist is allowed to reinterpret the authored axes.
+      toolBasisRoot.quaternion.set(correction.x, correction.y, correction.z, correction.w).normalize();
+      lastToolBasisSource = basis.source || 'semantic';
+      lastToolBasisApplied = true;
+    } else {
+      // Exact legacy fallback for every unauthored tool.
+      toolPlane.rotation.x = def?.flip ? Math.PI / 2 : -Math.PI / 2;
+      toolPlane.rotation.z = style === 'sweep' ? -Math.PI / 2 : 0;
+      lastToolBasisSource = 'legacy-raw-png';
+      lastToolBasisApplied = false;
+    }
+    toolBasisRoot.updateMatrix?.();
+    toolPlane.updateMatrix?.();
+    return lastToolBasisApplied;
   }
 
   async function rebuildTool(key) {
@@ -156,17 +198,21 @@
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(geometry, material);
     plane.name = 'hand_tool_closeup_plane';
-    plane.rotation.x = def.flip ? Math.PI / 2 : -Math.PI / 2;
 
+    const basisRoot = new THREE.Group();
+    basisRoot.name = 'hand_tool_closeup_semantic_basis';
+    basisRoot.add(plane);
     const root = new THREE.Group();
     root.name = 'hand_tool_closeup_tool';
-    root.add(plane);
+    root.add(basisRoot);
     contentRoot.add(root);
     toolTexture = texture;
     toolRoot = root;
+    toolBasisRoot = basisRoot;
     toolPlane = plane;
     lastToolScale = NaN;
     lastStyle = '';
+    applyToolPresentationBasis();
   }
 
   function disposeHandRig() {
@@ -276,13 +322,10 @@
       lastToolScale = scale;
     }
 
-    const style = currentStyle();
-    if (style !== lastStyle) {
-      // This is visual sprite basis only. Hand direction remains owned by the grip frame,
-      // matching the frame-driver fix that prevents sweep presentation rotation feeding back.
-      toolPlane.rotation.z = style === 'sweep' ? -Math.PI / 2 : 0;
-      lastStyle = style;
-    }
+    // Re-evaluate every frame so Basis authoring updates the actual Hand + Tool
+    // presentation immediately without rebuilding or disturbing OrbitControls.
+    applyToolPresentationBasis();
+    lastStyle = currentStyle();
   }
 
   function contentBounds() {
@@ -335,6 +378,14 @@
     camera.updateProjectionMatrix();
   }
 
+  function mirrorLabelForSpecies(species) {
+    const model = profiles.modelForSpecies?.(species) || null;
+    const axes = global.ProceduralHandPairMirror?.axesForModel?.(model) || null;
+    if (!axes) return model?.horizontalMirrorX === true ? 'mirror X' : 'mirror none';
+    const enabledAxes = ['x', 'y', 'z'].filter(axis => axes[axis]).map(axis => axis.toUpperCase());
+    return `mirror ${enabledAxes.length ? enabledAxes.join('+') : 'none'}`;
+  }
+
   function updateStatus() {
     const status = $('handToolCloseupStatus');
     if (!status) return;
@@ -343,8 +394,10 @@
     const model = profiles.modelKeyForSpecies?.(species) || '-';
     const grip = gripModes.currentModeKey?.() || '-';
     const secondary = toolGrips.secondaryGripForTool?.(toolGripKey()) || null;
-    const mirror = profiles.modelForSpecies?.(species)?.horizontalMirrorX === true ? 'mirrored' : 'normal';
-    status.textContent = `HAND + TOOL CLOSE-UP · ${species}/${gender} → ${model} · ${currentToolKey() || '-'} · grip ${grip} · ${mirror} · right=primary${secondary ? ' · left=secondary enabled' : ' · left=hidden (secondary off)'} · drag=orbit · wheel/pinch=zoom · camera preserved until Refit`;
+    const handBasis = semanticBasis.handBasisForSpecies?.(species) || null;
+    const toolBasisText = lastToolBasisApplied ? `toolBasis=${lastToolBasisSource}` : 'toolBasis=legacy';
+    const handBasisText = handBasis?.valid ? `handBasis=${handBasis.source || 'semantic'}` : 'handBasis=legacy';
+    status.textContent = `HAND + TOOL CLOSE-UP · ${species}/${gender} → ${model} · ${currentToolKey() || '-'} · grip ${grip} · ${mirrorLabelForSpecies(species)} · ${toolBasisText} · ${handBasisText} · right=primary${secondary ? ' · left=secondary enabled' : ' · left=hidden (secondary off)'} · drag=orbit · wheel/pinch=zoom · camera preserved until Refit`;
   }
 
   function syncAll() {
@@ -426,12 +479,15 @@
     get enabled() { return enabled; },
     get initialized() { return initialized; },
     getDebug() {
+      const species = currentSpecies();
+      const toolBasis = semanticBasis.toolBasisFor?.(toolGripKey()) || null;
+      const handBasis = semanticBasis.handBasisForSpecies?.(species) || null;
       return {
         enabled,
         initialized,
-        species: currentSpecies(),
+        species,
         gender: currentGender(),
-        model: profiles.modelKeyForSpecies?.(currentSpecies()) || null,
+        model: profiles.modelKeyForSpecies?.(species) || null,
         tool: currentToolKey(),
         gripMode: gripModes.currentModeKey?.() || null,
         secondaryActive: lastSecondGripActive,
@@ -439,6 +495,9 @@
         hasInitialFit,
         cameraPosition: camera ? { x: camera.position.x, y: camera.position.y, z: camera.position.z } : null,
         target: controls ? { x: controls.target.x, y: controls.target.y, z: controls.target.z } : null,
+        semanticToolBasis: toolBasis ? { source: toolBasis.source, complete: toolBasis.complete, axes: toolBasis.axes } : null,
+        semanticToolBasisApplied: lastToolBasisApplied,
+        semanticHandBasis: handBasis ? { source: handBasis.source, valid: handBasis.valid, axes: handBasis.axes } : null,
       };
     },
   });
