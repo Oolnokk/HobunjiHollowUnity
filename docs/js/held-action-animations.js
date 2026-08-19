@@ -14,8 +14,6 @@
     strikeFrac: 0.62,
     holdFrac: 0.78,
     poses: {
-      // Legacy shoulderAim metadata remains readable for old exports; the current
-      // runtime keeps grip direction on the hand bone and always aims the forearm bone.
       neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { pitch: true, yaw: false, roll: true } },
       windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
       strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { pitch: false, yaw: false, roll: true } },
@@ -24,9 +22,6 @@
 
   window.HeldActionAnimations = Object.freeze({ drink });
 
-  // Shared hand bootstrap. Static hand GLBs are converted at runtime into a smooth
-  // two-bone skin: the hand follows the authored tool/grip frame while the forearm
-  // independently points toward the shoulder coordinate.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
@@ -37,32 +32,33 @@
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260819b', docsBase).href,
-    new URL('js/hand-shoulder-pose-runtime.js?v=20260818c', docsBase).href,
-    new URL('js/portrait-arm-cloud-mask.js?v=20260817a', docsBase).href,
+    new URL('js/hand-experimental-rig-settings.js?v=20260819a', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20260819a', docsBase).href,
+    new URL('js/hand-elbow-pose-runtime.js?v=20260819a', docsBase).href,
+    new URL('js/portrait-arm-cloud-mask.js?v=20260819a', docsBase).href,
+    new URL('js/procedural-avatar-bicep-rig.js?v=20260819a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-two-bone-skin.js?v=20260819a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260819b', docsBase).href,
+    new URL('js/procedural-hand-two-bone-skin.js?v=20260819c', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260819c', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260819a', docsBase).href,
   ];
   if (isAttackEditor) {
-    // The editor starts its first avatar rebuild immediately after these parser-time
-    // scripts. Repair the shared NpcAvatarPreview dependency before any hand/editor
-    // adapters run so a missed/cached helper request cannot strand the preview.
     handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260819a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260819a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818c', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260819a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-forearm-rig.js?v=20260819a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-forearm-rig.js?v=20260819b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-elbow-controls.js?v=20260819a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819c', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
