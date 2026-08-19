@@ -272,3 +272,12 @@
     DEFAULT_CLEARABLE_TYPES,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
+
+// Keep the Cloud Forest / wilderness-entry fix in its own module, but load it
+// synchronously here: this script already sits after wilderness-map-generator.js
+// and before border-terrain.js in docs/index.html. document.write preserves that
+// ordering without making the large index or generator files carry the patch.
+if (typeof document !== 'undefined' && document.currentScript) {
+  const cloudRuntimeSrc = new URL('cloud-forest-runtime.js', document.currentScript.src).href;
+  document.write('<script src="' + cloudRuntimeSrc + '"></' + 'script>');
+}

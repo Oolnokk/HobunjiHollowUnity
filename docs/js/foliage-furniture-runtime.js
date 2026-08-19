@@ -262,3 +262,24 @@
   };
   return api;
 });
+
+// Baked full-size wilderness trees are optional.  Load their small adapter here
+// because this module is already part of every wilderness-capable game boot and
+// runs after foliage-generator.js.  The adapter only changes the two existing
+// variant getters after a GLB has actually loaded; absent assets keep using the
+// procedural variants with no gameplay dependency on the upload batch.
+(function autoLoadBakedTreeAssets(root) {
+  if (!root?.document || root.__treeAssetLibraryBootstrapped) return;
+  root.__treeAssetLibraryBootstrapped = true;
+  const activate = () => {
+    try { root.TreeAssetLibrary?.install?.(root.FoliageGenerator); }
+    catch (error) { console.warn('[TreeAssetLibrary] optional baked-tree install failed:', error); }
+  };
+  if (root.TreeAssetLibrary) { activate(); return; }
+  const script = root.document.createElement('script');
+  script.src = 'js/tree-asset-library.js?v=20260818a';
+  script.async = true;
+  script.onload = activate;
+  script.onerror = () => { /* optional runtime optimization; procedural fallback remains */ };
+  root.document.head.appendChild(script);
+})(typeof window !== 'undefined' ? window : null);
