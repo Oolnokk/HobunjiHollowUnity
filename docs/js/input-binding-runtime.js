@@ -97,13 +97,40 @@
   }
 
   // Mouse input is intercepted before game.js's old threeContainer bubble
-  // listener. Nothing is hardcoded to left/right here beyond naming the
-  // physical controls: the actual action comes exclusively from inputBindings.
+  // listener. Campfire gets first refusal here because this early binding
+  // runtime itself loads before campfire-system.js: while a portable placement
+  // is armed, re-dispatch the click as touch-style pointer input so the later
+  // CampfireSystem capture listener owns it instead of Attack Button 1/2. When
+  // Interact itself is mouse-bound, sleeping at a nearby campfire goes straight
+  // through the same keybind mapping rather than hardcoding a mouse button.
   window.addEventListener('pointerdown', event => {
     if (event.pointerType !== 'mouse' || bindingCaptureOpen()) return;
     const code = MOUSE_CODES[event.button];
     if (!code || !gameplayMouseTarget(event.target)) return;
+    const campfire = window.CampfireSystem;
+    if (campfire?.armed) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try {
+        event.target.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          pointerType: 'touch',
+          clientX: event.clientX,
+          clientY: event.clientY,
+          button: 0,
+          buttons: 1,
+        }));
+      } catch (_) {}
+      return;
+    }
     const actionId = actionFor('desktop', code);
+    if (actionId === 'interact' && campfire?.nearCampfire?.()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      campfire.beginSleep?.();
+      return;
+    }
     mousePresses.set(event.button, { actionId, code });
     event.preventDefault();
     event.stopImmediatePropagation();
