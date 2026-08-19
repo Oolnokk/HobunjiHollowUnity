@@ -83,17 +83,19 @@
   }
 
   function emitFootingBreak(entity, reason) {
+    const info = reasonInfo(reason);
     const motion = resolveBreakMotion(entity, reason);
-    const detail = {
-      entity,
-      reason: reasonInfo(reason).label || 'footing',
+    const snapshot = {
+      reason: info.label || 'footing',
       fallX: motion.x,
       fallY: motion.y,
       cause: motion.cause,
       at: nowMs(),
     };
-    entity.lastFootingBreak = detail;
-    window.dispatchEvent(new CustomEvent('hobunji-footing-break', { detail }));
+    entity.lastFootingBreak = snapshot;
+    window.dispatchEvent(new CustomEvent('hobunji-footing-break', {
+      detail: { entity, ...snapshot },
+    }));
 
     // Some older callers only used the zero return value as a signal and set
     // prone immediately after spendFooting returns. Give them the current call
