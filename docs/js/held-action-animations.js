@@ -41,6 +41,7 @@
     new URL('js/procedural-hand-pair-mirror.js?v=20260819b', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
+    new URL('js/procedural-hand-skinned-held-registration.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-two-bone-skin.js?v=20260819c', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260819d', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260819f', docsBase).href,
