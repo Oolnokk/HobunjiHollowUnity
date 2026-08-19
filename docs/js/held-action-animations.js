@@ -31,7 +31,7 @@
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20260819c', docsBase).href,
-    new URL('js/hand-tool-semantic-basis.js?v=20260819a', docsBase).href,
+    new URL('js/hand-tool-semantic-basis.js?v=20260819b', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260819b', docsBase).href,
     new URL('js/hand-experimental-rig-settings.js?v=20260819b', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260819a', docsBase).href,
@@ -40,6 +40,7 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-pair-mirror.js?v=20260819c', docsBase).href,
+    new URL('js/procedural-hand-semantic-basis-runtime.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-skinned-held-registration.js?v=20260819a', docsBase).href,
@@ -63,10 +64,11 @@
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819e', docsBase).href);
     handScripts.push(new URL('js/attack-editor-animation-state-guard.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-initialization-guard.js?v=20260819a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-tool-closeup.js?v=20260819c', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-tool-basis-author.js?v=20260819a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-tool-closeup.js?v=20260819d', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-tool-basis-author.js?v=20260819b', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260819a', docsBase).href);
+    handScripts.push(new URL('js/semantic-tool-basis-runtime.js?v=20260819a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260818a', docsBase).href);
