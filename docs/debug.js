@@ -2,6 +2,24 @@
 (function () {
   'use strict';
 
+  // Cloud Forest boundary options must arm their WildernessMapGenerator guard
+  // before wilderness-map-generator.js and border-terrain.js execute. Because
+  // debug.js is parser-loaded near the top of index.html, document.write keeps
+  // this small compatibility hook synchronous without changing the large HTML
+  // boot manifest. Outside initial parsing, fall back to a normal script tag.
+  (function loadCloudForestSceneryOptionsEarly() {
+    const src = 'js/cloud-forest-scenery-options.js?v=20260818b';
+    if (window.CloudForestSceneryOptions || document.querySelector('script[data-cloud-forest-scenery-options]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-cloud-forest-scenery-options="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.cloudForestSceneryOptions = '1';
+    document.head.appendChild(script);
+  })();
+
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
   const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
 
