@@ -158,9 +158,12 @@
     if (originalRefresh) {
       rig.refreshModelProfile = function skinnedOutlineRefresh(...refreshArgs) {
         const result = originalRefresh(...refreshArgs);
+        // Observe settlement only to rescan replaced GLBs. The original promise is
+        // still returned to the real caller, so this side observer must never throw
+        // and create a second unhandled rejection path of its own.
         Promise.resolve(result).then(
-          value => { scanRig(rig); return value; },
-          error => { scanRig(rig); throw error; }
+          () => scanRig(rig),
+          () => scanRig(rig)
         );
         return result;
       };
