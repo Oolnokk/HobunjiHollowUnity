@@ -23,25 +23,31 @@
 
   function installScaleFreePlacement(THREE, rig) {
     const parent = rig?.parent;
-    if (!parent?.isObject3D || rig.__hobunjiScaleFreeWorldPlacement) return rig;
+    const handRoot = rig?.group;
+    if (!parent?.isObject3D || !handRoot?.isObject3D || rig.__hobunjiScaleFreeWorldPlacement) return rig;
 
-    const parentWorldQuaternion = new THREE.Quaternion(); // Reused by placeHandWorld; avoids per-frame allocation for the parent basis.
-    const localQuaternion = new THREE.Quaternion(); // Reused by placeHandWorld to convert the desired world orientation into parent-local space.
+    const handRootWorldQuaternion = new THREE.Quaternion(); // Reused by placeHandWorld; includes the hand root's dead-zone counter-rotation.
+    const localQuaternion = new THREE.Quaternion(); // Reused by placeHandWorld to convert the desired world orientation into hand-root-local space.
 
     rig.placeHandWorld = function scaleFreePlaceHandWorld(side, worldPosition, worldQuaternion) {
-      const socket = rig.group?.getObjectByName?.(`${side}_hand_socket`);
+      const socket = handRoot.getObjectByName?.(`${side}_hand_socket`);
       if (!socket || !worldPosition || !worldQuaternion) return false;
 
-      // Position conversion intentionally keeps the real matrix hierarchy because
-      // reflected scale must mirror attachment offsets just like the body artwork.
-      parent.updateWorldMatrix?.(true, false);
+      // Convert through the HAND ROOT, not merely its parent. The player hand root
+      // now deliberately counter-rotates against the PNG billboard's perpClamp
+      // dead zone. Converting only through playerMesh would apply that correction
+      // a second time to tool-driven sockets and pull the hand away from the tool.
+      // Using the full root matrix here guarantees an authored WORLD position stays
+      // exactly that world position regardless of the root's anatomical-facing fix.
+      handRoot.updateWorldMatrix?.(true, false);
       const localPosition = worldPosition.clone();
-      parent.worldToLocal(localPosition);
+      handRoot.worldToLocal(localPosition);
 
-      // Orientation conversion deliberately ignores scale/reflection. This is the
-      // same convention used by PlayerBodyTransformComposer and WeaponToolStances.
-      hierarchyWorldQuaternion(THREE, parent, parentWorldQuaternion);
-      localQuaternion.copy(parentWorldQuaternion).invert().multiply(worldQuaternion).normalize();
+      // Orientation uses the same root boundary for the same reason, but remains
+      // scale/reflection-free: mirrored portrait scale must never become a false
+      // 180-degree hand rotation.
+      hierarchyWorldQuaternion(THREE, handRoot, handRootWorldQuaternion);
+      localQuaternion.copy(handRootWorldQuaternion).invert().multiply(worldQuaternion).normalize();
 
       socket.position.copy(localPosition);
       socket.quaternion.copy(localQuaternion);
@@ -55,7 +61,8 @@
     rig.getDebug = function scaleFreeHandDebug() {
       return {
         ...(originalDebug?.() || {}),
-        worldQuaternionBasis: 'scale-free-hierarchy',
+        worldQuaternionBasis: 'scale-free-hand-root-hierarchy',
+        worldPlacementBoundary: 'procedural-hand-root',
       };
     };
 
@@ -70,6 +77,6 @@
   hands.attach = wrappedAttach;
 
   global.ProceduralHandScaleFreeWorld = Object.freeze({
-    mode: 'scale-free-quaternion-hierarchy',
+    mode: 'scale-free-hand-root-quaternion-hierarchy',
   });
 })(window);
