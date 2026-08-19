@@ -17,6 +17,7 @@
     furnitureDeps: null,
     worldDeps: null,
     calendarDeps: null,
+    camera: null,
     armed: false,
     record: null,
     visual: null,
@@ -27,8 +28,16 @@
     pendingSleep: null,
     controllerWasDown: false,
     actionButtonId: '',
-    lastNear: false,
   };
+
+  const pointerRay = typeof THREE !== 'undefined' ? new THREE.Raycaster() : null;
+  const pointerNdc = typeof THREE !== 'undefined' ? new THREE.Vector2() : null;
+  const pointerPlane = typeof THREE !== 'undefined' ? new THREE.Plane(new THREE.Vector3(0, 1, 0), 0) : null;
+  const pointerHit = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+  const downRay = typeof THREE !== 'undefined' ? new THREE.Raycaster() : null;
+  const downOrigin = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+  const downDirection = typeof THREE !== 'undefined' ? new THREE.Vector3(0, -1, 0) : null;
+  const normalScratch = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
 
   function log(message, level = 'info', category = 'world') {
     window.__farmLog?.(`[campfire] ${message}`, level, category);
@@ -135,9 +144,86 @@
   function isPortableMap(area = currentArea()) {
     const deps = state.worldDeps;
     if (!area || !deps) return false;
-    // A campfire is an outdoor campsite. Farm and generated exterior zones are
-    // valid; house/building interiors are map changes and therefore clear it.
+    // Campsites are outdoor-only. Farm and generated exterior zones are valid;
+    // interiors/buildings/town are map changes and therefore destroy the camp.
     return area === 'farm' || !!deps.EXTERIOR_ZONES?.[area];
+  }
+
+  function areaBounds(area = currentArea()) {
+    const d = state.worldDeps;
+    if (!d) return null;
+    if (area === 'farm') return { cols: Number(d.COLS) || 1, rows: Number(d.ROWS) || 1 };
+    const z = d.EXTERIOR_ZONES?.[area];
+    if (!z) return null;
+    const built = d.buildZoneScene?.(area);
+    return {
+      cols: Number(built?.cols ?? z.cols) || 1,
+      rows: Number(built?.rows ?? z.rows) || 1,
+    };
+  }
+
+  function clampTile(value, max) {
+    return Math.max(0, Math.min(Math.max(0, max - 1), Math.floor(value)));
+  }
+
+  function pointerTile(clientX, clientY) {
+    if (!state.camera || !pointerRay || !pointerPlane || !pointerHit) return null;
+    const canvas = document.getElementById('threeContainer');
+    const rect = canvas?.getBoundingClientRect?.();
+    if (!rect?.width || !rect?.height) return null;
+    pointerNdc.x = ((Number(clientX) - rect.left) / rect.width) * 2 - 1;
+    pointerNdc.y = -((Number(clientY) - rect.top) / rect.height) * 2 + 1;
+    pointerRay.setFromCamera(pointerNdc, state.camera);
+    if (!pointerRay.ray.intersectPlane(pointerPlane, pointerHit)) return null;
+    const bounds = areaBounds();
+    if (!bounds) return null;
+    return {
+      col: clampTile(pointerHit.x, bounds.cols),
+      row: clampTile(pointerHit.z, bounds.rows),
+    };
+  }
+
+  function objectBelongsToIgnoredRoot(object) {
+    const d = state.worldDeps;
+    let node = object;
+    while (node) {
+      if (node === state.visual?.group || node === d?.playerMesh || node === d?.toolHolder || node === d?.reticleMesh || node === d?.reticleCircleMesh || node === d?.reticleRingMesh || node === d?.reticleWavyGroup) return true;
+      node = node.parent;
+    }
+    return false;
+  }
+
+  function likelyNonGroundObject(object) {
+    if (!object) return true;
+    if (objectBelongsToIgnoredRoot(object)) return true;
+    if (object.userData?.isBillboard || object.userData?.isPngPlaneAvatar) return true;
+    const names = [];
+    let node = object;
+    for (let depth = 0; node && depth < 4; depth++, node = node.parent) names.push(String(node.name || ''));
+    const name = names.join(' ').toLowerCase();
+    return /avatar|creature|npc|companion|foliage|tree|shrub|bush|crop|furniture|building|roof|wall|door|totem|tent/.test(name);
+  }
+
+  // Placement uses the same y=0 screen-plane convention as game.js's normal
+  // furniture picker to choose a tile, then resolves that tile's actual visible
+  // surface with a downward ray so plateau/ramp camps don't sink to elevation 0.
+  function surfaceYAtTile(col, row) {
+    const scene = state.worldDeps?.getActiveScene?.();
+    if (!scene || !downRay || !downOrigin || !downDirection) return 0;
+    downOrigin.set(col + 0.5, 256, row + 0.5);
+    downRay.set(downOrigin, downDirection);
+    downRay.near = 0;
+    downRay.far = 512;
+    const hits = downRay.intersectObjects(scene.children || [], true);
+    for (const hit of hits) {
+      if (!hit?.object?.isMesh || likelyNonGroundObject(hit.object)) continue;
+      if (hit.face?.normal && normalScratch) {
+        normalScratch.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+        if (normalScratch.y < 0.35) continue;
+      }
+      if (Number.isFinite(hit.point?.y)) return hit.point.y;
+    }
+    return 0;
   }
 
   function disposeVisual() {
@@ -179,11 +265,11 @@
       group.add(stone);
     }
     for (const rot of [-Math.PI / 4, Math.PI / 4, Math.PI / 2]) {
-      const log = markOutlined(new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.085, 0.62, 7), logMat.clone()));
-      log.rotation.z = Math.PI / 2;
-      log.rotation.y = rot;
-      log.position.y = 0.14;
-      group.add(log);
+      const logMesh = markOutlined(new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.085, 0.62, 7), logMat.clone()));
+      logMesh.rotation.z = Math.PI / 2;
+      logMesh.rotation.y = rot;
+      logMesh.position.y = 0.14;
+      group.add(logMesh);
     }
     const ember = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.23, 0.05, 10), emberMat);
     ember.position.y = 0.09;
@@ -233,60 +319,54 @@
     return had;
   }
 
-  function placementPoint() {
-    const deps = state.worldDeps;
-    const reticle = deps?.reticleMesh;
-    if (!reticle?.position) return null;
-    return {
-      col: Math.floor(reticle.position.x),
-      row: Math.floor(reticle.position.z),
-      // The reticle is intentionally lifted a hair above the walk surface.
-      surfaceY: Math.max(0, Number(reticle.position.y) - 0.03),
-    };
-  }
-
-  function placeAtReticle() {
-    const deps = state.worldDeps;
-    const craftDeps = state.craftingDeps;
+  function placeAtTile(col, row) {
+    const d = state.worldDeps;
     const area = currentArea();
-    if (!deps || !craftDeps?.inventory) return false;
+    if (!d || !state.craftingDeps?.inventory) return false;
     if (!isPortableMap(area)) {
-      deps.showToast?.('Campfires can only be placed outdoors.', false);
+      d.showToast?.('Campfires can only be placed outdoors.', false);
       return false;
     }
     if (ownedCount() < 1) {
-      deps.showToast?.('No Campfire in inventory.', false);
+      d.showToast?.('No Campfire in inventory.', false);
       armPlacement(false);
       return false;
     }
-    const p = placementPoint();
-    if (!p || !Number.isFinite(p.col) || !Number.isFinite(p.row)) return false;
+    const bounds = areaBounds(area);
+    if (!bounds) return false;
+    col = clampTile(col, bounds.cols);
+    row = clampTile(row, bounds.rows);
 
     // One campsite per map visit. Replacing it intentionally does not refund
     // the old kit; the newly placed fire consumes the new crafted kit.
     if (state.record) destroy({ refund: false, persist: false, reason: 'replaced by a newer campfire' });
     setOwnedCount(ownedCount() - 1);
-    const player = deps.player;
     state.record = {
       version: STATE_VERSION,
       area,
-      col: p.col,
-      row: p.row,
-      surfaceY: p.surfaceY,
+      col,
+      row,
+      surfaceY: surfaceYAtTile(col, row),
       placedAt: Date.now(),
-      checkpoint: {
-        x: Number(player?.x) || (p.col + 0.5) * deps.TILE,
-        y: Number(player?.y) || (p.row + 0.5) * deps.TILE,
-        angle: Number(player?.angle) || 0,
-      },
+      checkpoint: null,
     };
     persistRecord();
     ensureVisual();
     armPlacement(false);
-    deps.showToast?.(`${ICON} Campfire placed. Sleeping here saves this spot for your next login.`, true);
+    d.showToast?.(`${ICON} Campfire placed. Sleep here to make this your next-login checkpoint.`, true);
     state.furnitureDeps?.render?.();
     syncActionButton();
     return true;
+  }
+
+  function placeAtPointer(clientX, clientY) {
+    if (!state.armed) return false;
+    const tile = pointerTile(clientX, clientY);
+    if (!tile) {
+      state.worldDeps?.showToast?.('Could not find a ground tile there.', false);
+      return false;
+    }
+    return placeAtTile(tile.col, tile.row);
   }
 
   function armPlacement(enabled = true) {
@@ -305,10 +385,10 @@
   }
 
   function nearCampfire() {
-    const deps = state.worldDeps;
-    if (!state.record || currentArea() !== state.record.area || !deps?.player || !deps.TILE) return false;
-    const px = Number(deps.player.x) / deps.TILE;
-    const pz = Number(deps.player.y) / deps.TILE;
+    const d = state.worldDeps;
+    if (!state.record || currentArea() !== state.record.area || !d?.player || !d.TILE) return false;
+    const px = Number(d.player.x) / d.TILE;
+    const pz = Number(d.player.y) / d.TILE;
     return Math.hypot(px - (state.record.col + 0.5), pz - (state.record.row + 0.5)) <= INTERACT_RADIUS_TILES;
   }
 
@@ -316,10 +396,7 @@
     if (!nearCampfire() || state.pendingSleep) return false;
     const calendar = state.calendarDeps?.calendar;
     if (!calendar || typeof window.CalendarSystem?.openTimePassage !== 'function') return false;
-    state.pendingSleep = {
-      day: Number(calendar.day),
-      time01: Number(calendar.time01),
-    };
+    state.pendingSleep = { day: Number(calendar.day), time01: Number(calendar.time01) };
     window.CalendarSystem.openTimePassage('sleep');
     return true;
   }
@@ -332,34 +409,30 @@
     const changed = Number(calendar.day) !== pending.day || Math.abs(Number(calendar.time01) - pending.time01) > 1e-6;
     if (!changed) return;
     state.pendingSleep = null;
-    const deps = state.worldDeps;
-    if (!state.record || currentArea() !== state.record.area || !deps?.player) return;
+    const d = state.worldDeps;
+    if (!state.record || currentArea() !== state.record.area || !d?.player) return;
     state.record.checkpoint = {
-      x: Number(deps.player.x),
-      y: Number(deps.player.y),
-      angle: Number(deps.player.angle) || 0,
+      x: Number(d.player.x),
+      y: Number(d.player.y),
+      angle: Number(d.player.angle) || 0,
     };
     state.record.sleptAt = Date.now();
     persistRecord();
     state.craftingDeps?.saveMemberWorldData?.();
-    deps.showToast?.('🔥 Campfire checkpoint saved. You will return here next login.', true);
+    d.showToast?.('🔥 Campfire checkpoint saved. You will return here next login.', true);
     log(`sleep checkpoint saved area=${state.record.area} x=${state.record.checkpoint.x.toFixed(1)} y=${state.record.checkpoint.y.toFixed(1)}`, 'info', 'storage');
   }
 
   function addPlayerObjects(scene) {
     const d = state.worldDeps;
     if (!scene || !d) return;
-    for (const object of [d.playerMesh, d.playerGroundShadow, d.toolHolder, d.reticleMesh, d.reticleCircleMesh, d.reticleRingMesh, d.reticleWavyGroup]) {
-      if (object) scene.add(object);
-    }
+    for (const object of [d.playerMesh, d.playerGroundShadow, d.toolHolder, d.reticleMesh, d.reticleCircleMesh, d.reticleRingMesh, d.reticleWavyGroup]) if (object) scene.add(object);
   }
 
   function removePlayerObjects(scene) {
     const d = state.worldDeps;
     if (!scene || !d) return;
-    for (const object of [d.playerMesh, d.playerGroundShadow, d.toolHolder, d.reticleMesh, d.reticleCircleMesh, d.reticleRingMesh, d.reticleWavyGroup]) {
-      if (object) scene.remove(object);
-    }
+    for (const object of [d.playerMesh, d.playerGroundShadow, d.toolHolder, d.reticleMesh, d.reticleCircleMesh, d.reticleRingMesh, d.reticleWavyGroup]) if (object) scene.remove(object);
   }
 
   function restoreCheckpoint() {
@@ -409,7 +482,7 @@
     state.lastArea = currentArea();
     if (state.record?.checkpoint) restoreCheckpoint();
     else if (state.record?.area === currentArea()) ensureVisual();
-    log(state.record ? `restored persisted campfire state for ${state.record.area}` : 'no persisted campfire for this member', 'info', 'storage');
+    log(state.record ? `restored persisted campfire state for ${state.record.area}${state.record.checkpoint ? ' with checkpoint' : ' (not yet slept)'}` : 'no persisted campfire for this member', 'info', 'storage');
   }
 
   function mapLifecycleTick() {
@@ -428,11 +501,7 @@
     if (state.lastArea && area && area !== state.lastArea) {
       const old = state.lastArea;
       state.lastArea = area;
-      if (state.record) {
-        // Any actual map transition invalidates the campsite, even if the
-        // player later returns to the same map during this session.
-        destroy({ refund: false, persist: true, reason: `map changed ${old} -> ${area}` });
-      }
+      if (state.record) destroy({ refund: false, persist: true, reason: `map changed ${old} -> ${area}` });
       armPlacement(false);
     } else if (area) {
       state.lastArea = area;
@@ -479,7 +548,6 @@
       delete button.dataset.campfireInjected;
       state.actionButtonId = '';
     }
-    state.lastNear = near;
   }
 
   function updateVisual(now) {
@@ -498,7 +566,6 @@
     finishSleepCheckpointIfNeeded();
     syncActionButton();
     updateVisual(now);
-
     const interactCode = window.InputBindingRuntime?.bindingFor?.('controller', 'interact');
     const down = nearCampfire() && controllerCodeDown(interactCode);
     if (down && !state.controllerWasDown) beginSleep();
@@ -509,10 +576,6 @@
   function physicalAction(event) {
     if (!nearCampfire() || state.armed) return null;
     if (event.type === 'keydown') return window.InputBindingRuntime?.actionFor?.('desktop', event.code);
-    if (event.type === 'pointerdown' && event.pointerType === 'mouse') {
-      const code = event.button === 0 ? 'MouseLeft' : event.button === 2 ? 'MouseRight' : '';
-      return code ? window.InputBindingRuntime?.actionFor?.('desktop', code) : null;
-    }
     return null;
   }
 
@@ -521,20 +584,14 @@
     return !!three && (target === three || three.contains(target));
   }
 
-  // Campfire placement owns the next game-canvas pointer before attack/mouse
-  // binding handlers. Campfire sleep owns whichever physical input is bound to
-  // Interact rather than hardcoding E/left-click/controller buttons.
+  // Touch/pen placement can arrive here directly. Mouse placement is routed
+  // through InputBindingRuntime (which registered its capture listener earlier)
+  // and calls the same public placeAtPointer method below.
   window.addEventListener('pointerdown', event => {
-    if (state.armed && gameplayPointerTarget(event.target)) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      placeAtReticle();
-      return;
-    }
-    if (!gameplayPointerTarget(event.target) || physicalAction(event) !== 'interact') return;
+    if (!state.armed || !gameplayPointerTarget(event.target) || event.pointerType === 'mouse') return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    beginSleep();
+    placeAtPointer(event.clientX, event.clientY);
   }, true);
 
   window.addEventListener('keydown', event => {
@@ -558,8 +615,7 @@
     if (typeof rawInit === 'function') {
       value.init = function campfireDevSpawnerInit(injectedDeps, ...rest) {
         state.worldDeps = injectedDeps;
-        const result = rawInit.call(this, injectedDeps, ...rest);
-        return result;
+        return rawInit.call(this, injectedDeps, ...rest);
       };
     }
     value.__campfirePatched = true;
@@ -572,6 +628,19 @@
     if (typeof rawInit === 'function') {
       value.init = function campfireCalendarInit(injectedDeps, ...rest) {
         state.calendarDeps = injectedDeps;
+        return rawInit.call(this, injectedDeps, ...rest);
+      };
+    }
+    value.__campfirePatched = true;
+    return value;
+  }
+
+  function patchPixelProbe(value) {
+    if (!value || value.__campfirePatched) return value;
+    const rawInit = value.init;
+    if (typeof rawInit === 'function') {
+      value.init = function campfirePixelProbeInit(injectedDeps, ...rest) {
+        state.camera = injectedDeps?.camera || state.camera;
         return rawInit.call(this, injectedDeps, ...rest);
       };
     }
@@ -592,13 +661,8 @@
     });
   }
 
-  function attachCraftingDeps(deps) {
-    state.craftingDeps = deps;
-  }
-
-  function attachFurnitureDeps(deps) {
-    state.furnitureDeps = deps;
-  }
+  function attachCraftingDeps(deps) { state.craftingDeps = deps; }
+  function attachFurnitureDeps(deps) { state.furnitureDeps = deps; }
 
   function snapshot() {
     return {
@@ -609,8 +673,10 @@
       portableMap: isPortableMap(),
       near: nearCampfire(),
       campfire: state.record ? JSON.parse(JSON.stringify(state.record)) : null,
+      checkpointActive: !!state.record?.checkpoint,
       visualLive: !!state.visual?.group?.parent,
       bootstrapDone: state.bootstrapDone,
+      cameraReady: !!state.camera,
       profileKey: state.profileKey,
     };
   }
@@ -623,6 +689,7 @@
     ownedCount,
     woodCount,
     armPlacement,
+    placeAtPointer,
     get armed() { return state.armed; },
     canPlaceHere: isPortableMap,
     current: () => state.record ? JSON.parse(JSON.stringify(state.record)) : null,
@@ -634,6 +701,7 @@
 
   interceptGlobal('DevSpawner', patchDevSpawner);
   interceptGlobal('CalendarSystem', patchCalendarSystem);
+  interceptGlobal('PixelProbe', patchPixelProbe);
   requestAnimationFrame(tick);
   log('portable campfire runtime installed; waiting for game dependencies.', 'info', 'general');
 })();
