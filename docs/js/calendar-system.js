@@ -29,17 +29,19 @@
   const GAME_START_MONTH_INDEX = 3; // Used by civilDayOffset() so raw game day 1 remains Waxingheat 1.
   const GAME_START_CIVIL_DAY_OFFSET = GAME_START_MONTH_INDEX * DAYS_PER_MONTH; // Used by every civil year/month derivation.
 
-  // game.js currently advances one represented 6:00→22:00 day in 288 real
-  // seconds. A Stardew-like pace for those 16 represented clock-hours is
-  // about 672 seconds, so natural time writes are scaled to 3/7 of the old
-  // rate. Explicit loads, sleep/wait skips, and rollover subtraction bypass
-  // this shim.
+  // game.js still writes time01 against its private legacy 288-second scalar,
+  // while this module slows those writes to the established 672-second pace.
+  // FULL_DAY_HOURS is deliberately independent from NIGHT_HOUR: 22:00 remains
+  // a lighting/night threshold, not the end of the playable day. The spooky
+  // runtime adds the final 16/24 pace correction so 24 hours preserve the
+  // same seconds-per-game-hour as the former represented 06:00→22:00 span.
   const BASE_DAY_LENGTH_SECONDS = 288; // Used only to derive the compatibility scale from game.js's existing private clock constant.
-  const TARGET_DAY_LENGTH_SECONDS = 672; // Used by natural-time scaling and the mobile-visible time debug report.
+  const TARGET_DAY_LENGTH_SECONDS = 672; // Used by natural-time scaling and the mobile-visible time debug report before the spooky runtime's 24h correction.
   const NATURAL_TIME_WRITE_SCALE = BASE_DAY_LENGTH_SECONDS / TARGET_DAY_LENGTH_SECONDS; // Applied only to tiny positive frame-to-frame time01 writes.
+  const FULL_DAY_HOURS = 24; // Used by clock conversion and time passage so 22:00 is never treated as a rollover boundary.
   const MAX_NATURAL_TIME_WRITE = 0.02; // Used by the time01 setter to distinguish normal frame ticks from explicit jumps.
   const PLAYER_ACTION_LOCK_ID = 'player'; // Used while the sleep/wait modal or iris transition owns input.
-  const MAX_PASSAGE_HOURS = 16; // Used by the shared duration selector; matches the game's represented 6:00→22:00 clock span.
+  const MAX_PASSAGE_HOURS = FULL_DAY_HOURS; // Used by Sleep/Wait so seated chair waiting can cross midnight and span a complete day.
   const TIME_PASSAGE_FIRST_TICK_MS = 1000; // Used so the first fully-black countdown hour remains visible for one complete real second.
   const TIME_PASSAGE_TICK_DECAY = 0.8; // Used to shorten each subsequent countdown interval by exactly 20 percent.
 
@@ -79,7 +81,7 @@
     installTimePassageRuntime();
     debugLog(`calendar epoch ready: game day 1 = Waxingheat 1, ${FIRST_AOT_YEAR} AoT; Firstrise 1 begins each civil year`);
     debugLog(`Tothal cycle ${yearNumber()} = ${aotYearNumber()} AoT; deterministic y${yearNumber()} seed preserved`);
-    debugLog(`natural clock target: ${TARGET_DAY_LENGTH_SECONDS}s per represented day (${NATURAL_TIME_WRITE_SCALE.toFixed(3)}x previous clock rate)`);
+    debugLog(`natural clock target: ${TARGET_DAY_LENGTH_SECONDS}s base represented day (${NATURAL_TIME_WRITE_SCALE.toFixed(3)}x legacy write rate); ${FULL_DAY_HOURS}h clock enabled`);
   }
 
   function positiveModulo(value, modulus) {
@@ -91,7 +93,7 @@
   }
 
   function getHour(time01 = deps.calendar.time01) {
-    return deps.MORNING_HOUR + time01 * (deps.NIGHT_HOUR - deps.MORNING_HOUR);
+    return positiveModulo(deps.MORNING_HOUR + time01 * FULL_DAY_HOURS, FULL_DAY_HOURS);
   }
 
   // ── Calendar derivations ───────────────────────────────────────────
@@ -270,7 +272,7 @@
   }
 
   function activeClockHours() {
-    return deps.NIGHT_HOUR - deps.MORNING_HOUR;
+    return FULL_DAY_HOURS;
   }
 
   function previewAfterHours(hours, day = deps.calendar.day, time01 = deps.calendar.time01) {
@@ -578,10 +580,11 @@
       return;
     }
 
-    // Let game.js perform its private advanceDay() work at the exact hour that
-    // crosses the represented 22:00→next-day-06:00 boundary. This keeps crop,
-    // weather, Tothal, livestock, respawn, and procedural daily systems in
-    // step with the visible Skyrim-style hourly count.
+    // Let game.js perform its private advanceDay() work only at the true
+    // 06:00→next-day-06:00 boundary. 22:00 is just the ordinary night-lighting
+    // threshold and must not advance the day. This keeps crop, weather,
+    // Tothal, livestock, respawn, and procedural daily systems aligned with
+    // the visible hourly count.
     setTime01Raw(deps.calendar.time01 + 1 / activeClockHours());
     const timeoutAt = performance.now() + 1800; // Used to fail visibly instead of holding complete black forever if the private rollover loop stops.
     while ((deps.calendar.day < target.day || deps.calendar.time01 >= 1) && performance.now() < timeoutAt) {
@@ -881,6 +884,8 @@
       nextTothalSeedCycle: deps ? yearNumber(nextShiftDay) : null,
       naturalClockTargetSecondsPerRepresentedDay: TARGET_DAY_LENGTH_SECONDS,
       naturalClockScale: NATURAL_TIME_WRITE_SCALE,
+      fullDayHours: FULL_DAY_HOURS,
+      maxPassageHours: MAX_PASSAGE_HOURS,
       modalKind: _timePassageKind,
       selectedHours: _selectedPassageHours,
       preview: deps ? formatCalendarDateTimeFull(target.day, target.time01) : null,
@@ -942,6 +947,8 @@
       FIRST_AOT_YEAR,
       DAYS_PER_MONTH,
       YEAR_LENGTH_DAYS,
+      FULL_DAY_HOURS,
+      MAX_PASSAGE_HOURS,
       MONTH_NAMES: [...MONTH_NAMES],
       TARGET_DAY_LENGTH_SECONDS,
     }),
