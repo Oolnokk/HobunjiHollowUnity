@@ -2,8 +2,8 @@
 //
 // Weapon basis is marked directly on the raw sprite (haft butt -> head/top plus
 // blade/working side). Hand basis maps semantic Fingers/Thumb/Palm to signed GLB
-// local axes. This intentionally authors metadata without moving the hand/tool;
-// grip calibration remains visually stable while the engine gains a canonical frame.
+// local axes. The close-up previews those choices on the actual rendered hand root
+// before Apply, so source-hand mirrors, pair mirrors, scale and grip transforms are visible.
 (function (global) {
   'use strict';
 
@@ -107,7 +107,7 @@
     panel.id = 'handToolBasisPanel';
     panel.style.cssText = [
       'position:absolute','right:10px','top:52px','z-index:6','display:none',
-      'width:min(340px,calc(100% - 20px))','max-height:calc(100% - 64px)','overflow:auto',
+      'width:min(360px,calc(100% - 20px))','max-height:calc(100% - 64px)','overflow:auto',
       'padding:10px','border:1px solid rgba(255,255,255,.16)','border-radius:10px',
       'background:rgba(7,10,15,.94)','box-shadow:0 8px 24px rgba(0,0,0,.35)',
       'font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace','color:#e8eef7',
@@ -134,7 +134,11 @@
 
       <div style="padding:8px;border:1px solid rgba(255,255,255,.10);border-radius:8px;margin-bottom:9px">
         <b>Hand-model axes</b>
-        <div style="color:#aebbd0;margin:4px 0 7px">Tell the engine which signed <b>GLB-local</b> axes point toward the fingers, thumb, and outward palm. These three must use different X/Y/Z axes.</div>
+        <div style="color:#aebbd0;margin:4px 0 7px">Tell the engine which signed <b>raw GLB-local</b> axes point toward the fingers, thumb, and outward palm. These three must use different X/Y/Z axes.</div>
+        <div style="padding:6px 7px;margin:6px 0 8px;border:1px solid rgba(255,255,255,.10);border-radius:7px;background:rgba(255,255,255,.035)">
+          The rendered right hand shows live labeled arrows: <b style="color:#55e98d">FINGERS +Y</b> · <b style="color:#ff7b83">THUMB +X</b> · <b style="color:#79b6ff">PALM +Z</b>.<br>
+          The arrows are solved from the <b>actual rendered GLB root</b> after grip/socket rotation, semantic correction, source-hand reflection, pair X/Y/Z mirrors, scale and imported hierarchy. Changing a selector previews it immediately; <b>Apply hand axes</b> commits it.
+        </div>
         <label style="display:grid;grid-template-columns:1fr 120px;gap:8px;align-items:center;margin:5px 0"><span>Fingers (+Y semantic)</span><select id="handToolBasisFingers"></select></label>
         <label style="display:grid;grid-template-columns:1fr 120px;gap:8px;align-items:center;margin:5px 0"><span>Thumb (+X semantic)</span><select id="handToolBasisThumb"></select></label>
         <label style="display:grid;grid-template-columns:1fr 120px;gap:8px;align-items:center;margin:5px 0"><span>Palm facing (+Z semantic)</span><select id="handToolBasisPalm"></select></label>
@@ -158,8 +162,12 @@
     toggle.addEventListener('click', () => {
       panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
       refreshAll();
+      closeup.refreshHandBasisPreview?.();
     });
-    $('handToolBasisClose')?.addEventListener('click', () => { panel.style.display = 'none'; });
+    $('handToolBasisClose')?.addEventListener('click', () => {
+      panel.style.display = 'none';
+      closeup.refreshHandBasisPreview?.();
+    });
 
     for (const button of panel.querySelectorAll('.handToolBasisMarker')) {
       button.addEventListener('click', () => {
@@ -179,14 +187,31 @@
     $('handToolBasisClearHand')?.addEventListener('click', () => {
       basisApi.clearHandBasisForModel(currentModelKey());
       refreshHandFields();
+      closeup.refreshHandBasisPreview?.();
     });
     $('handToolBasisSave')?.addEventListener('click', saveDraft);
     $('handToolBasisCopy')?.addEventListener('click', copyCurrentBasis);
 
+    const semanticSelects = {
+      fingers: $('handToolBasisFingers'),
+      thumb: $('handToolBasisThumb'),
+      palm: $('handToolBasisPalm'),
+    };
+    for (const [key, select] of Object.entries(semanticSelects)) {
+      select?.addEventListener('change', () => {
+        refreshHandDraftStatus();
+        closeup.flashHandBasisAxis?.(key);
+        closeup.refreshHandBasisPreview?.();
+      });
+    }
+
     $('toolSpriteSelect')?.addEventListener('change', refreshAll);
     $('avatarSpecies')?.addEventListener('change', refreshAll);
     $('handProfileSelect')?.addEventListener('change', refreshAll);
-    profiles.subscribe?.(() => refreshHandFields());
+    profiles.subscribe?.(() => {
+      refreshHandFields();
+      closeup.refreshHandBasisPreview?.();
+    });
     toolGrips.subscribe?.(() => {
       refreshToolStatus();
       drawToolPreview();
@@ -357,6 +382,41 @@
     }
   }
 
+  function draftHandAxes() {
+    return {
+      fingers: String($('handToolBasisFingers')?.value || '').toLowerCase(),
+      thumb: String($('handToolBasisThumb')?.value || '').toLowerCase(),
+      palm: String($('handToolBasisPalm')?.value || '').toLowerCase(),
+    };
+  }
+
+  function refreshHandDraftStatus() {
+    const status = $('handToolBasisHandStatus');
+    if (!status) return null;
+    const modelKey = currentModelKey();
+    const raw = draftHandAxes();
+    const result = basisApi.validateHandAxes(raw);
+    const chosen = Object.values(raw).filter(Boolean).length;
+    if (!result?.complete) {
+      status.textContent = `${modelKey || 'hand model'}: PREVIEW ${chosen}/3 axes · ${result?.error || 'Choose all three directions.'}`;
+      status.style.color = '#fbbf24';
+      return result;
+    }
+    if (!result.valid) {
+      status.textContent = `${modelKey || 'hand model'}: INVALID PREVIEW · ${result.error || 'Axes conflict.'}`;
+      status.style.color = '#fb7185';
+      return result;
+    }
+    if (result.rotationSupported !== true) {
+      status.textContent = `${modelKey}: REFLECTION PREVIEW · Fingers ${raw.fingers.toUpperCase()} · Thumb ${raw.thumb.toUpperCase()} · Palm ${raw.palm.toUpperCase()} · ${result.handedness}. Arrows can show this, but a quaternion cannot apply a left-handed/reflected basis. Flip one sign before Apply.`;
+      status.style.color = '#fbbf24';
+      return result;
+    }
+    status.textContent = `${modelKey}: READY · Fingers ${raw.fingers.toUpperCase()} · Thumb ${raw.thumb.toUpperCase()} · Palm ${raw.palm.toUpperCase()} · ${result.handedness} · arrows show actual rendered directions`;
+    status.style.color = '#86efac';
+    return result;
+  }
+
   function refreshHandFields() {
     const fingers = $('handToolBasisFingers');
     const thumb = $('handToolBasisThumb');
@@ -368,23 +428,23 @@
     fingers.innerHTML = axisOptions(basis.axes?.fingers || '');
     thumb.innerHTML = axisOptions(basis.axes?.thumb || '');
     palm.innerHTML = axisOptions(basis.axes?.palm || '');
-    if (basis.valid) {
-      status.textContent = `${modelKey}: COMPLETE · Fingers ${basis.axes.fingers.toUpperCase()} · Thumb ${basis.axes.thumb.toUpperCase()} · Palm ${basis.axes.palm.toUpperCase()} · ${basis.handedness}`;
-      status.style.color = '#86efac';
-    } else {
-      status.textContent = `${modelKey || 'hand model'}: ${basis.error || 'Axes not authored yet.'}`;
-      status.style.color = '#fbbf24';
-    }
+    refreshHandDraftStatus();
   }
 
   function commitHandAxes() {
-    const raw = {
-      fingers: $('handToolBasisFingers')?.value || '',
-      thumb: $('handToolBasisThumb')?.value || '',
-      palm: $('handToolBasisPalm')?.value || '',
-    };
-    const result = basisApi.setHandAxesForModel(currentModelKey(), raw);
+    const raw = draftHandAxes();
+    const validation = basisApi.validateHandAxes(raw);
     const status = $('handToolBasisHandStatus');
+    if (!validation?.valid || validation.rotationSupported !== true) {
+      if (status) {
+        status.textContent = validation?.valid
+          ? 'Cannot Apply: that triplet is a reflection/left-handed frame. The arrows still preview it; flip one sign to make a proper rotation.'
+          : (validation?.error || 'Invalid hand axes.');
+        status.style.color = '#fb7185';
+      }
+      return;
+    }
+    const result = basisApi.setHandAxesForModel(currentModelKey(), raw);
     if (!result?.valid) {
       if (status) {
         status.textContent = result?.error || 'Invalid hand axes.';
@@ -393,6 +453,7 @@
       return;
     }
     refreshHandFields();
+    closeup.refreshHandBasisPreview?.();
   }
 
   function saveDraft() {
@@ -417,11 +478,12 @@
     const payload = {
       tool: basisApi.toolBasisFor(currentToolValue()),
       hand: basisApi.handBasisForModel(currentModelKey()),
+      handPreview: closeup.getDebug?.()?.handBasisPreview || null,
     };
     try {
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
       if (status) {
-        status.textContent = 'Copied current semantic basis JSON.';
+        status.textContent = 'Copied current semantic basis JSON + rendered preview audit.';
         status.style.color = '#86efac';
       }
     } catch (error) {
@@ -447,6 +509,7 @@
     refreshToolStatus();
     refreshHandFields();
     drawToolPreview();
+    closeup.refreshHandBasisPreview?.();
   }
 
   function boot() {
@@ -458,6 +521,11 @@
           return {
             tool: basisApi.toolBasisFor(currentToolValue()),
             hand: basisApi.handBasisForModel(currentModelKey()),
+            handDraft: {
+              axes: draftHandAxes(),
+              validation: basisApi.validateHandAxes(draftHandAxes()),
+            },
+            renderedPreview: closeup.getDebug?.()?.handBasisPreview || null,
             pendingMarker,
             panelVisible: panel?.style.display !== 'none',
             closeupLayerZ: Number($('handToolCloseupViewport')?.style.zIndex) || null,
