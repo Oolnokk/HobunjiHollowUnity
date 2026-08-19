@@ -37,6 +37,24 @@
     document.head.appendChild(script);
   })();
 
+  // The dedicated spooky track must own the Music scheduler during 01:00-05:00,
+  // not merely mute whatever Audio elements happen to exist at that moment.
+  // Load this before Music is assigned; it waits for the module and wraps only
+  // updateAmbientCues(), leaving SFX, rain and exterior BGS on their normal paths.
+  (function loadSpookyMusicGateEarly() {
+    const src = 'js/spooky-music-gate.js?v=20260819a'; // Cache-busted scheduler gate paired with spooky-night.js.
+    if (window.SpookyMusicGate || document.querySelector('script[data-hobunji-spooky-music-gate]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-spooky-music-gate="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset.hobunjiSpookyMusicGate = '1';
+    document.head.appendChild(script);
+  })();
+
   // Mouse bindings must own the capture phase before calendar/gameplay modules
   // register legacy left/right-click shortcuts. The live binding tables do not
   // exist yet; input-binding-runtime reads them lazily after InputSettingsPanel
