@@ -21,10 +21,28 @@ function diagnosticsText(){
 function renderDiagnostics(){
   const log=$('diagLog');if(!log)return;log.textContent=diagnosticsText();$('diagHealth').textContent=state.errors.length?`${state.errors.length} error(s)`:'Healthy';$('diagHealth').style.color=state.errors.length?'var(--bad)':'var(--good)';
 }
+function openDiagnostics(){
+  $('diagDrawer').classList.remove('hidden');renderDiagnostics();
+}
 async function copyDiagnostics(){
   const text=diagnosticsText();
   try{await navigator.clipboard.writeText(text);logEvent('Copied diagnostic report')}
   catch{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();logEvent('Copied diagnostic report using fallback')}
+}
+function openPlayerAddressTerms(){
+  const npc=currentNpc();if(!npc)return false;
+  const pool=(npc.phrasePools||[]).find(p=>String(p.name||'').trim().toLowerCase()==='nicknames');
+  if(!pool){
+    openPoolModal();
+    logEvent('Nicknames phrase pool not found for selected NPC',npc.id);
+    const addBtn=$('addPoolBtn');
+    if(addBtn){const oldTitle=addBtn.title;addBtn.title='Create a phrase pool named Nicknames for this NPC';addBtn.style.outline='3px solid var(--warn)';addBtn.style.outlineOffset='2px';setTimeout(()=>{addBtn.style.outline='';addBtn.style.outlineOffset='';addBtn.title=oldTitle},2200)}
+    return false;
+  }
+  poolSel={poolId:pool.id,expandedEntryId:null};
+  openPoolModal();
+  logEvent('Opened player address terms',npc.id);
+  return true;
 }
 
 function wire(){
@@ -32,8 +50,9 @@ function wire(){
   $('importBtn').onclick=()=>$('fileInput').click();$('fileInput').onchange=e=>{const file=e.target.files[0];if(file)loadFile(file);e.target.value=''};
   $('undoBtn').onclick=undo;$('redoBtn').onclick=redo;$('exportDbBtn').onclick=exportDatabase;$('exportBtn').onclick=exportLayout;
   $('saveDbOverrideBtn').onclick=saveDbOverride;$('clearDbOverrideBtn').onclick=clearDbOverride;$('poolModalBtn').onclick=openPoolModal;$('poolModalClose').onclick=closePoolModal;$('addPoolBtn').onclick=addPool;
+  $('playerAddressTermsBtn').onclick=openPlayerAddressTerms;$('playerAddressTermsBtn').title='Open this NPC’s Nicknames phrase pool — the address terms used for player {targetName} greetings';
   $('randomPromptBtn').onclick=openRandomPrompt;$('randomPromptClose').onclick=closeRandomPrompt;$('rerollBtn').onclick=rerollPrompts;
-  $('diagBtn').onclick=()=>{$('diagDrawer').classList.toggle('hidden');renderDiagnostics()};$('closeDiag').onclick=()=>$('diagDrawer').classList.add('hidden');$('copyDiag').onclick=copyDiagnostics;$('clearDiag').onclick=()=>{state.errors=[];state.events=[];$('errorCount').textContent='0';$('errorBadge').classList.remove('show');renderDiagnostics()};
+  $('diagBtn').onclick=()=>{$('diagDrawer').classList.toggle('hidden');renderDiagnostics()};$('errorBadge').onclick=openDiagnostics;$('errorBadge').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openDiagnostics()}};$('errorBadge').style.cursor='pointer';$('closeDiag').onclick=()=>$('diagDrawer').classList.add('hidden');$('copyDiag').onclick=copyDiagnostics;$('clearDiag').onclick=()=>{state.errors=[];state.events=[];$('errorCount').textContent='0';$('errorBadge').classList.remove('show');renderDiagnostics()};
   $('closeNodeEditor').onclick=()=>{state.nodeId=null;state.editorMode='tree';renderGraph();syncAuthoringButtons()};
   $('npcSelect').onchange=e=>{state.npcId=e.target.value;state.treeId=currentNpc()?.dialogueTrees?.[0]?.id||null;state.nodeId=null;state.editorMode='tree';poolSel={poolId:null,expandedEntryId:null};state.millerPath=[];resetGraphScale();renderAll();logEvent('Selected NPC',state.npcId)};
   $('treeSearch').oninput=e=>{state.search=e.target.value;renderNavigator()};
@@ -47,6 +66,7 @@ function wire(){
   addEventListener('pointermove',updateTreePointerDrag,{passive:false});addEventListener('pointerup',finishTreePointerDrag,{passive:false});addEventListener('pointercancel',finishTreePointerDrag,{passive:false});
   addEventListener('keydown',e=>{const tag=e.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if((e.key==='Delete'||e.key==='Backspace')&&state.nodeId){e.preventDefault();deleteNode()}});
   addEventListener('resize',()=>{if(innerWidth>720)$('controlPanel').classList.remove('open')});
+  window._dialogueEditorBridge=Object.assign(window._dialogueEditorBridge||{}, {openPhrasePool:name=>String(name||'').trim().toLowerCase()==='nicknames'?openPlayerAddressTerms():false,openDiagnostics,getErrors:()=>[...state.errors]});
 }
 
 try{wire();resetHistory('No edits yet');renderAll();Promise.all([loadMapRegistry(),loadShopRegistry()]).finally(()=>bootDatabase());logEvent('Dialogue editor initialized',{presets:PRESETS.length})}catch(e){captureError('Initialization failed',e)}
