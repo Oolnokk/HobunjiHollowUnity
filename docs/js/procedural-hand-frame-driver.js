@@ -191,17 +191,15 @@
     return plane;
   }
 
-  // The visible weapon plane has a sweep-only child rotation that fades from the
-  // neutral sprite basis into the -90° attack basis. Hands used to follow only
-  // toolHolder, so that child-only visual correction made the apparent grip rotate
-  // between Neutral/Windup/Strike even with shoulder aiming disabled. Preserve the
-  // existing Neutral calibration and apply only the plane's delta-from-Neutral to
-  // the hand socket frame.
+  // The visible weapon plane can carry sweep-only child rotations that are purely
+  // presentation corrections. Keep measuring that delta for mobile diagnostics,
+  // but never feed it back into the physical hand socket. Grip direction is owned
+  // only by toolHolder + authored grip mode/model alignment, independent of animation.
   function visualGripBasisDelta(record, toolHolder) {
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
     const plane = findToolVisualPlane(toolHolder);
-    if (!plane?.rotation) return { quaternion: identity, source: 'none', angleDeg: 0 };
+    if (!plane?.rotation) return { quaternion: identity, source: 'none', angleDeg: 0, appliedToHand: false };
 
     const currentEuler = plane.rotation.clone();
     const neutralEuler = plane.rotation.clone();
@@ -209,20 +207,15 @@
 
     if (inAttackEditor()) {
       const style = String(document.getElementById('animStyle')?.value || '').toLowerCase();
-      if (style !== 'sweep') return { quaternion: identity, source, angleDeg: 0 };
-      // In the editor Neutral is z=0; applyPoseToRig writes the animated sweep
-      // basis directly onto this child plane as z=-90°..0°.
+      if (style !== 'sweep') return { quaternion: identity, source, angleDeg: 0, appliedToHand: false };
       neutralEuler.z = 0;
       source = 'editor-sweep-plane';
     } else {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
       const isSweep = snapshot?.activeSlot === 'weapon'
         && (snapshot?.combatAnim === 'sweep' || (!snapshot?.combatAnim && snapshot?.sourceAnimStyle === 'sweep'));
-      if (!isSweep) return { quaternion: identity, source, angleDeg: 0 };
+      if (!isSweep) return { quaternion: identity, source, angleDeg: 0, appliedToHand: false };
 
-      // weapon-tool-stances temporarily adds this compensation during
-      // updateMatrixWorld and then restores plane.rotation.z. Reconstruct the
-      // rendered current basis here; Neutral is always the +90° compensation.
       const currentCompDeg = Number(snapshot?.sweepPlaneNeutralCompensationDeg);
       currentEuler.z += record.THREE.MathUtils.degToRad(Number.isFinite(currentCompDeg) ? currentCompDeg : 0);
       neutralEuler.z += Math.PI / 2;
@@ -233,7 +226,7 @@
     const neutralQ = new Quaternion().setFromEuler(neutralEuler);
     const delta = currentQ.multiply(neutralQ.invert()).normalize();
     const angleDeg = record.THREE.MathUtils.radToDeg(2 * Math.acos(Math.min(1, Math.abs(delta.w))));
-    return { quaternion: delta, source, angleDeg };
+    return { quaternion: delta, source, angleDeg, appliedToHand: false };
   }
 
   function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
@@ -245,12 +238,14 @@
     let position;
     // Used as the scale-free world orientation of the tool socket. Do not use
     // getWorldQuaternion(): the game player hierarchy can contain negative scale.
-    let quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
-    quaternion.multiply(visualBasis.quaternion);
+    // Deliberately do not multiply the visible sprite-plane basis here: that child
+    // rotation is presentation-only and must never change hand/grip direction.
+    const quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
     if (secondaryGrip) {
       const p = secondaryGrip.position || {};
-      position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
-        .applyQuaternion(visualBasis.quaternion);
+      // Secondary grips are authored in the same toolHolder-local frame as the
+      // primary socket, not in the rotating child sprite's display frame.
+      position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
       toolHolder.localToWorld(position);
       quaternion.multiply(quaternionFromDeg(record, secondaryGrip.rotationDeg || {}));
     } else {
@@ -304,6 +299,7 @@
         direct: true,
         clamped: false,
         noArmIK: true,
+        gripAuthority: 'tool-holder-plus-authored-grip-only',
         quaternionNativeGripComposition: !!primary.authored.rotationQuaternion,
         scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
@@ -404,6 +400,7 @@
         gender: record.gender,
         mode: 'direct-tool-attachments',
         noArmIK: true,
+        gripAuthority: 'tool-holder-plus-authored-grip-only',
         toolKey: record.lastToolKey,
         secondaryActive: record.secondaryActive,
         scaleFreeWorldQuaternion: true,
