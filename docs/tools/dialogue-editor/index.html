@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="dialogue-editor-graph.css">
 <link rel="stylesheet" href="dialogue-editor-authoring.css">
 <script src="../../js/local-db-overrides.js"></script>
+<script src="dialogue-editor-db-loader.js"></script>
 <script src="../../js/condition-registry.js"></script>
 </head>
 <body>
@@ -24,7 +25,7 @@
     <span class="pill topOptional"><span class="statusDot"></span><span id="statusText">Loading repository database…</span></span>
     <span class="pill topOptional" title="Most recent change">Access Shop nodes + business-aware Shop or Chat trees</span>
     <div class="topSpacer"></div>
-    <span class="pill" id="errorBadge">Errors: <b id="errorCount">0</b></span>
+    <span class="pill" id="errorBadge" role="button" tabindex="0" title="Open diagnostics">Errors: <b id="errorCount">0</b></span>
     <button class="secondary" id="undoBtn" title="Undo (Ctrl/Cmd+Z)" disabled>↶</button>
     <button class="secondary" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷</button>
     <span class="pill topOptional" id="historyLabel">No edits yet</span>
@@ -34,6 +35,7 @@
     <button class="secondary topOptional" id="clearDbOverrideBtn">Clear Local</button>
     <span class="pill topOptional" id="dbOverrideStatus">no local override</span>
     <button class="secondary topOptional" id="poolModalBtn" disabled>Phrase Pools</button>
+    <button class="secondary topOptional" id="playerAddressTermsBtn" title="Edit what this NPC may call the player in {targetName} greetings">👋 Address Terms</button>
     <button class="secondary topOptional" id="randomPromptBtn" disabled>🎲 Prompt</button>
     <button class="secondary topOptional" id="exportBtn">Layout</button>
     <button class="secondary" id="diagBtn">Diagnostics</button>
