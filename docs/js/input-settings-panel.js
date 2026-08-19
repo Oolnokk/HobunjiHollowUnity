@@ -27,12 +27,39 @@
     }
   }
 
+  function installPixelProbeArmGuard() {
+    const button = document.getElementById('debugProbeArmBtn');
+    if (!button || button.dataset.manualArmGuard === '1') return;
+    button.dataset.manualArmGuard = '1';
+
+    let pointerIntent = false; // Used to prove a pointer activation actually began on the explicit Debug-tab Pixel Probe button.
+    button.addEventListener('pointerdown', event => {
+      pointerIntent = true;
+      event.stopPropagation();
+    }, { capture: true });
+    button.addEventListener('pointercancel', () => {
+      pointerIntent = false;
+    }, { capture: true });
+    button.addEventListener('click', event => {
+      const pointerActivation = pointerIntent;
+      const keyboardActivation = event.detail === 0 && document.activeElement === button; // Enter/Space activation remains available when the probe button itself is focused.
+      pointerIntent = false;
+      if (pointerActivation || keyboardActivation) {
+        event.stopPropagation(); // PixelProbe's existing target listener is allowed to arm only after this explicit button intent.
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation(); // Blocks Settings-open/click-through or programmatic clicks from reaching PixelProbe.armPixelProbe().
+    }, { capture: true });
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     // This init is called by game.js only after its core dependency/bootstrap
     // pass succeeds. Starting optional helper fetches here preserves the
     // parser-serialized startup path and prevents helpers from running against
     // half-initialized game closures if an earlier boot dependency fails.
+    installPixelProbeArmGuard();
     ensureRuntimeHelpers();
   }
 
