@@ -1,12 +1,23 @@
 // Scheduler-level spooky-night music ownership. During 01:00-05:00 this makes
 // only Music.updateAmbientCues() observe audio as disabled, so its own slot
 // retirement prevents normal exploration/night BGM and cues from respawning.
+// It also supplies a tiny fallback bed for interior/other maps where the main
+// spooky spatial mixer intentionally has factor=0, so inn/chair testing is not silent.
 (() => {
   'use strict';
   if (window.SpookyMusicGate) return;
 
-  let installed = false; // Exposed in diagnostics so mobile tests can verify the scheduler wrapper actually armed.
-  let lastActive = false; // Used to emit one transition log instead of one message per animation frame.
+  const TRACK_URL = 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg';
+  const INTERIOR_FACTOR = 0.02;
+  const FALLBACK_FADE_SECONDS = 0.8;
+
+  let installed = false;
+  let lastActive = false;
+  let fallbackTrack = null;
+  let fallbackTarget = 0;
+  let fallbackPlayPending = false;
+  let fallbackLastAt = performance.now();
+  let fallbackLastError = '';
 
   function log(message, level = 'info') {
     const logger = window.__farmLog;
@@ -18,6 +29,84 @@
     return window.SpookyNight?.isActive?.() === true;
   }
 
+  function realAudioConfig() {
+    return window.AudioSystem?.gameAudioConfig?.() || window.SCRATCHBONES_CONFIG?.game?.audio || {};
+  }
+
+  function ensureFallbackTrack() {
+    if (fallbackTrack) return fallbackTrack;
+    const NativeAudio = window.Audio?.__nativeAudio || window.Audio;
+    if (typeof NativeAudio !== 'function') return null;
+    let url = TRACK_URL;
+    try { url = new URL(TRACK_URL, document.baseURI).href; } catch (_) {}
+    const audio = new NativeAudio(url);
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = 0;
+    audio._spookyNightTrack = true;
+    audio.addEventListener('canplaythrough', () => log(`fallback track ready ${audio.src}`, 'bgm'), { once: true });
+    audio.addEventListener('playing', () => {
+      fallbackLastError = '';
+      log(`fallback track playing ${audio.src} volume=${audio.volume.toFixed(3)}`, 'bgm');
+    });
+    audio.addEventListener('error', () => {
+      fallbackLastError = `media code=${audio.error?.code || 'none'} ${audio.error?.message || ''}`.trim();
+      log(`fallback track error ${audio.src}: ${fallbackLastError}`, 'warn');
+    });
+    try { audio.load(); } catch (_) {}
+    fallbackTrack = audio;
+    return audio;
+  }
+
+  function requestFallbackPlay() {
+    const audio = ensureFallbackTrack();
+    if (!audio || fallbackPlayPending || !audio.paused) return;
+    fallbackPlayPending = true;
+    let result;
+    try { result = audio.play(); }
+    catch (error) {
+      fallbackPlayPending = false;
+      fallbackLastError = error?.name || String(error || 'play failed');
+      log(`fallback play threw: ${fallbackLastError}`, 'warn');
+      return;
+    }
+    Promise.resolve(result).catch(error => {
+      fallbackLastError = error?.name || String(error || 'play failed');
+      if (fallbackLastError !== 'NotAllowedError' && fallbackLastError !== 'AbortError') {
+        log(`fallback play failed: ${fallbackLastError}`, 'warn');
+      }
+    }).finally(() => { fallbackPlayPending = false; });
+  }
+
+  for (const eventName of ['pointerdown', 'keydown', 'touchstart']) {
+    document.addEventListener(eventName, () => {
+      if (fallbackTarget > 0.001) requestFallbackPlay();
+    }, { capture: true, passive: eventName === 'touchstart' });
+  }
+
+  function updateFallback(now) {
+    const dt = Math.max(0, Math.min(0.25, (now - fallbackLastAt) / 1000));
+    fallbackLastAt = now;
+    const snap = window.SpookyNight?.snapshot?.() || null;
+    const cfg = realAudioConfig();
+    const bgmMaster = Math.max(0, Math.min(1, Number(cfg.bgmVolume ?? 0.48)));
+    const enabled = cfg.enabled !== false && cfg.bgmEnabled !== false;
+
+    // Main SpookyNight intentionally reports mode=other/factor=0 for interiors.
+    // Give those maps the same almost-silent bed as the town center/farm.
+    const needsInteriorBed = !!snap?.active && enabled && snap.mode === 'other' && Number(snap.spatialFactor || 0) <= 0.001;
+    fallbackTarget = needsInteriorBed ? bgmMaster * INTERIOR_FACTOR : 0;
+
+    const audio = ensureFallbackTrack();
+    if (audio) {
+      const blend = FALLBACK_FADE_SECONDS <= 0 ? 1 : 1 - Math.exp(-dt * 4.6 / FALLBACK_FADE_SECONDS);
+      audio.volume = Math.max(0, Math.min(1, audio.volume + (fallbackTarget - audio.volume) * blend));
+      if (fallbackTarget > 0.001) requestFallbackPlay();
+      else if (audio.volume <= 0.002 && !audio.paused) audio.pause();
+    }
+    requestAnimationFrame(updateFallback);
+  }
+
   function install() {
     const music = window.Music;
     if (!music || typeof music.updateAmbientCues !== 'function') return false;
@@ -26,7 +115,7 @@
       return true;
     }
 
-    const rawUpdateAmbientCues = music.updateAmbientCues; // Existing scheduler entry point retained for normal hours and called inside the temporary config gate below.
+    const rawUpdateAmbientCues = music.updateAmbientCues;
     function spookyGatedAmbientCues(...args) {
       const active = spookyActive();
       if (active !== lastActive) {
@@ -40,8 +129,6 @@
       const audioSystem = window.AudioSystem;
       const rawGameAudioConfig = audioSystem?.gameAudioConfig;
       if (typeof rawGameAudioConfig !== 'function') {
-        // Keep running rather than breaking the game if AudioSystem is not ready;
-        // spooky-night's older per-track muting remains a last-resort fallback.
         log('AudioSystem.gameAudioConfig unavailable; scheduler gate fell back to existing spooky muting.', 'warn');
         return rawUpdateAmbientCues.apply(this, args);
       }
@@ -51,12 +138,8 @@
         return { ...config, enabled: false };
       };
       try {
-        // Music.updateAmbientCues() treats enabled=false as an instruction to
-        // stop ambient cue/BGM/combat slots and return before scheduling more.
         return rawUpdateAmbientCues.apply(this, args);
       } finally {
-        // Restore immediately so rain audio, exterior BGS, SFX and other audio
-        // systems never observe the temporary spooky-only music gate.
         audioSystem.gameAudioConfig = rawGameAudioConfig;
       }
     }
@@ -76,8 +159,20 @@
   window.SpookyMusicGate = Object.freeze({
     install,
     isInstalled: () => installed,
-    snapshot: () => ({ installed, active: spookyActive(), musicReady: !!window.Music?.updateAmbientCues }),
+    snapshot: () => ({
+      installed,
+      active: spookyActive(),
+      musicReady: !!window.Music?.updateAmbientCues,
+      fallbackTarget,
+      fallbackVolume: fallbackTrack?.volume || 0,
+      fallbackPaused: fallbackTrack?.paused ?? true,
+      fallbackReadyState: fallbackTrack?.readyState ?? null,
+      fallbackCurrentTime: fallbackTrack?.currentTime || 0,
+      fallbackError: fallbackLastError || null,
+      trackUrl: TRACK_URL,
+    }),
   });
 
   armWhenReady();
+  requestAnimationFrame(updateFallback);
 })();
