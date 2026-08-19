@@ -6,6 +6,7 @@
 
   const SCHEMA = 'hobunji_hand_tool_grips.v1';
   const LOCAL_KEY = 'hobunji.handToolGrips.v1';
+  const SECONDARY_DEFAULTS_VERSION = 2; // Marks data after the old auto-enabled hatchet/hoe secondary defaults have been migrated.
 
   function identityTransform() {
     return {
@@ -16,19 +17,20 @@
 
   const DEFAULT_DATA = {
     schema: SCHEMA,
+    secondaryDefaultsVersion: SECONDARY_DEFAULTS_VERSION,
     tools: {
-      // Initial two-handed tools requested. These offsets are conservative
-      // starting points and are intentionally editable in the Attack Editor.
+      // Keep useful authored starting offsets, but a secondary grip is genuinely
+      // optional: every tool starts one-handed until the user explicitly enables it.
       hatchet: {
         secondaryGrip: {
-          enabled: true,
+          enabled: false,
           position: { x: 0, y: -0.28, z: 0 },
           rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
         },
       },
       hoe: {
         secondaryGrip: {
-          enabled: true,
+          enabled: false,
           position: { x: 0, y: -0.32, z: 0 },
           rotationDeg: { pitch: 0, yaw: 0, roll: 0 },
         },
@@ -73,9 +75,39 @@
     };
   }
 
-  function normalizeData(raw) {
+  function matchesLegacyAutoDefault(key, secondary) {
+    if (secondary?.enabled !== true) return false;
+    const expectedY = key === 'hatchet' ? -0.28 : key === 'hoe' ? -0.32 : null;
+    if (expectedY == null) return false;
+    const p = secondary.position || {};
+    const r = secondary.rotationDeg || {};
+    return numberOrZero(p.x) === 0
+      && numberOrZero(p.y) === expectedY
+      && numberOrZero(p.z) === 0
+      && numberOrZero(r.pitch) === 0
+      && numberOrZero(r.yaw) === 0
+      && numberOrZero(r.roll) === 0;
+  }
+
+  function migrateLegacySecondaryDefaults(raw) {
     const next = clone(raw || DEFAULT_DATA);
+    if ((Number(next.secondaryDefaultsVersion) || 0) >= SECONDARY_DEFAULTS_VERSION) return next;
+
+    // Older builds silently started hatchet/hoe in two-hand mode. That produced
+    // exactly a duplicate primary-hand frame with only a vertical offset. Migrate
+    // only that untouched legacy signature; customized secondary grips are kept.
+    for (const key of ['hatchet', 'hoe']) {
+      const secondary = next.tools?.[key]?.secondaryGrip;
+      if (matchesLegacyAutoDefault(key, secondary)) secondary.enabled = false;
+    }
+    next.secondaryDefaultsVersion = SECONDARY_DEFAULTS_VERSION;
+    return next;
+  }
+
+  function normalizeData(raw) {
+    const next = migrateLegacySecondaryDefaults(raw || DEFAULT_DATA);
     next.schema = SCHEMA;
+    next.secondaryDefaultsVersion = SECONDARY_DEFAULTS_VERSION;
     if (!next.tools || typeof next.tools !== 'object') next.tools = {};
     for (const entry of Object.values(next.tools)) {
       if (!entry || typeof entry !== 'object') continue;
