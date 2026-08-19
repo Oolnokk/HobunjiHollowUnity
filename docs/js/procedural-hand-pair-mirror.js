@@ -53,6 +53,12 @@
     return changed;
   }
 
+  function settle(result, callback) {
+    // Reapply after either successful or failed async model refresh without creating
+    // an extra unhandled rejection branch solely for mirror bookkeeping.
+    Promise.resolve(result).then(callback, callback);
+  }
+
   // Hand rigs subscribe to profile mutations after this module loads. Wrap those
   // subscriptions so the pair reflection is re-applied after async GLB replacement,
   // not just to the synchronous fallback mesh installed at refresh start.
@@ -65,7 +71,7 @@
         finally {
           global.requestAnimationFrame?.(refreshAll);
         }
-        Promise.resolve(result).finally(() => {
+        settle(result, () => {
           refreshAll();
           global.requestAnimationFrame?.(refreshAll);
         });
@@ -89,7 +95,7 @@
     if (originalRefresh) {
       rig.refreshModelProfile = function pairMirrorRefresh(...refreshArgs) {
         const result = originalRefresh(...refreshArgs);
-        Promise.resolve(result).finally(() => applyRig(rig));
+        settle(result, () => applyRig(rig));
         return result;
       };
     }
