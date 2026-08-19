@@ -9,6 +9,7 @@
   'use strict';
 
   const profiles = global.HobunjiHandModelProfiles;
+  const basisApi = global.HobunjiHandToolSemanticBasis;
   if (!profiles) return;
 
   const activeRigs = new Set();
@@ -26,6 +27,16 @@
   function normalizeGender(value) {
     const gender = String(value || '').trim().toLowerCase();
     return gender === 'female' || gender === 'f' ? 'female' : 'male';
+  }
+
+  function semanticFitAxis(modelKey) {
+    const axis = String(basisApi?.handFitAxisForModel?.(modelKey) || 'y').toLowerCase();
+    return ['x', 'y', 'z'].includes(axis) ? axis : 'y';
+  }
+
+  function semanticSourceMirrorAxis(modelKey) {
+    const axis = String(basisApi?.handSourceMirrorAxisForModel?.(modelKey) || 'x').toLowerCase();
+    return ['x', 'y', 'z'].includes(axis) ? axis : 'x';
   }
 
   function resolveAssetPath(path) {
@@ -135,19 +146,33 @@
     clone.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(clone);
     const size = bounds.getSize(new THREE.Vector3());
-    const rawHeight = Math.max(0.000001, size.y);
+    const fitAxis = semanticFitAxis(modelKey); // Fingers/wrist axis; legacy models without basis data remain Y.
+    const rawFitExtent = Math.max(0.000001, Math.abs(Number(size[fitAxis]) || 0));
     const modelScale = Number(model.scale) > 0 ? Number(model.scale) : 1;
     const speciesScale = Number(options.speciesScale) > 0 ? Number(options.speciesScale) : 1;
-    const canonicalFit = options.baseTargetHeight / rawHeight;
+    const canonicalFit = options.baseTargetHeight / rawFitExtent;
     const finalScale = canonicalFit * modelScale * speciesScale;
 
-    // mirrorX=true means the source is the authored LEFT hand: left keeps the
-    // source geometry and right mirrors it across local X. false reverses that.
+    // Preserve any authored GLB root scale and layer our normalization on top.
+    // The current four hand assets export identity roots, but silently replacing a
+    // future non-identity root scale would otherwise introduce another hidden basis.
+    const sourceRootScale = clone.scale.clone();
+
+    // mirrorX still means "source asset is left-handed" for compatibility. The
+    // reflection AXIS is now semantic: making the opposite hand must flip whichever
+    // raw local axis actually points toward the thumb, not blindly raw X.
     const sourceIsLeft = model.mirrorX !== false;
     const mirrorSign = side === 'right'
       ? (sourceIsLeft ? -1 : 1)
       : (sourceIsLeft ? 1 : -1);
-    clone.scale.set(finalScale * mirrorSign, finalScale, finalScale);
+    const sourceMirrorAxis = semanticSourceMirrorAxis(modelKey);
+    const scale = {
+      x: sourceRootScale.x * finalScale,
+      y: sourceRootScale.y * finalScale,
+      z: sourceRootScale.z * finalScale,
+    };
+    scale[sourceMirrorAxis] *= mirrorSign;
+    clone.scale.set(scale.x, scale.y, scale.z);
 
     const group = new THREE.Group();
     group.name = `${side}_hand_visual`;
@@ -156,18 +181,23 @@
     group.userData.modelScale = modelScale;
     group.userData.speciesScale = speciesScale;
     group.userData.canonicalFit = canonicalFit;
+    group.userData.semanticFitAxis = fitAxis;
+    group.userData.rawFitExtent = rawFitExtent;
+    group.userData.sourceHandMirrorAxis = sourceMirrorAxis;
+    group.userData.sourceHandMirrorSign = mirrorSign;
+    group.userData.sourceRootScale = { x: sourceRootScale.x, y: sourceRootScale.y, z: sourceRootScale.z };
     group.userData.authoredOriginPreserved = true;
     markOutline(group);
     return group;
   }
 
-  function buildFallbackHand(THREE, size, color, side, sourceIsLeft) {
+  function buildFallbackHand(THREE, size, color, side, sourceIsLeft, mirrorAxis = 'x') {
     const geometry = new THREE.SphereGeometry(size * 0.42, 14, 10);
     geometry.scale(0.72, 1, 0.55);
     const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geometry, material);
     const sign = side === 'right' ? (sourceIsLeft ? -1 : 1) : (sourceIsLeft ? 1 : -1);
-    mesh.scale.x = sign;
+    if (['x', 'y', 'z'].includes(mirrorAxis)) mesh.scale[mirrorAxis] = sign;
     const group = new THREE.Group();
     group.add(mesh);
     markOutline(group);
@@ -261,9 +291,10 @@
     function installFallback(values) {
       const baseTargetHeight = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
       const sourceIsLeft = values.model?.mirrorX !== false;
+      const mirrorAxis = semanticSourceMirrorAxis(values.modelKey);
       const color = bodyColorHex(speciesId, options.bodyColors);
       for (const side of ['left', 'right']) {
-        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft));
+        installVisual(side, buildFallbackHand(THREE, baseTargetHeight * values.effectiveScale, color, side, sourceIsLeft, mirrorAxis));
       }
     }
 
@@ -350,6 +381,7 @@
         disposeObjectResources(root);
       },
       getDebug() {
+        const rightVisual = root.getObjectByName?.('right_hand_visual');
         return {
           speciesId,
           gender,
@@ -362,6 +394,13 @@
           effectiveScale: state.effectiveScale,
           glb: state.glb,
           loadError: state.loadError,
+          transformAudit: rightVisual?.userData?.handModelKey ? {
+            fitAxis: rightVisual.userData.semanticFitAxis || 'y',
+            rawFitExtent: Number(rightVisual.userData.rawFitExtent) || null,
+            sourceMirrorAxis: rightVisual.userData.sourceHandMirrorAxis || 'x',
+            sourceMirrorSign: Number(rightVisual.userData.sourceHandMirrorSign) || 1,
+            sourceRootScale: rightVisual.userData.sourceRootScale || null,
+          } : null,
         };
       },
     };
