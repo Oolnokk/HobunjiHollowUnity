@@ -238,11 +238,21 @@
     };
     avatarRoot.userData.bicepRig = api;
     active.add(api);
+    // The Attack Editor rewrites torso/head weights immediately after avatar build.
+    // Re-apply on the next frame so the arm channels compose with that final neck
+    // weighting instead of being overwritten by it.
+    global.requestAnimationFrame?.(() => api.reapplyWeights());
     return api;
   }
 
   const wrappedBuild = function bicepRigAvatarBuild(THREE, sourceCanvas, options = {}) {
-    const avatarRoot = originalBuild.call(this, THREE, sourceCanvas, options);
+    // Game avatars normally use a cheaper rigid plane. The bicep experiment needs
+    // the existing neck-rigged SkinnedMesh, so request it only while this experiment
+    // is enabled. The Attack Editor already requests neckRig=true explicitly.
+    const buildOptions = settings?.bicepElbowTracking === true && options.neckRig !== true
+      ? { ...options, neckRig: true }
+      : options;
+    const avatarRoot = originalBuild.call(this, THREE, sourceCanvas, buildOptions);
     if (avatarRoot) installBicepRig(THREE, avatarRoot, sourceCanvas);
     return avatarRoot;
   };
