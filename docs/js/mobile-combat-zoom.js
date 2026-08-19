@@ -1,27 +1,27 @@
 // Adaptive mobile gameplay zoom.
 //
-// Mobile rests at 200% zoom. If a live hostile is outside that framing but
-// would be visible at 150%, this solves the closest (most zoomed-in) framing
-// that still includes the hostile and smoothly eases toward it. As the hostile
-// moves closer, that solved zoom naturally rises back toward 200% instead of
-// snapping between two fixed camera distances.
+// Mobile rests at 200% outside combat. When a live hostile is close enough
+// to matter, combat framing settles at 175%; enemies farther toward the edge
+// continuously widen the view as far as 125%. Once no relevant hostile remains,
+// framing smoothly returns to the 200% non-combat view.
 (() => {
   'use strict';
 
-  const REST_ZOOM = 2.0; // Used as the normal mobile framing when no nearby off-screen hostile needs extra context.
-  const WIDE_ZOOM = 1.5; // Used as the widest automatic framing; matches the game's former 150% default.
+  const OUT_OF_COMBAT_ZOOM = 2.0; // Used as the normal mobile framing when no nearby hostile is influencing combat context.
+  const COMBAT_BASE_ZOOM = 1.75; // Used when relevant hostiles are all comfortably framed nearby.
+  const WIDE_ZOOM = 1.25; // Used as the widest automatic combat framing for relevant distant threats.
   const FRAME_INSET = 0.92; // Used to bring the hostile's body centroid comfortably inside the viewport instead of exactly onto its edge.
   const ZOOM_PADDING = 0.018; // Used to leave a small amount of breathing room after solving the just-visible zoom.
   const RESPONSE_PER_SECOND = 4.2; // Used by the exponential lerp so zoom changes settle smoothly instead of switching instantly.
   const SCAN_INTERVAL_MS = 70; // Used to avoid projecting every hostile every render frame while keeping combat response quick.
-  const DYNAMIC_OPTION_ID = 'mobileCombatZoomDynamicOption'; // Used for intermediate 150-200% values in the existing camera-zoom select.
+  const DYNAMIC_OPTION_ID = 'mobileCombatZoomDynamicOption'; // Used for intermediate 125-200% values in the existing camera-zoom select.
 
-  let currentZoom = REST_ZOOM; // Used as the helper's authoritative automatic zoom value after initialization.
-  let targetZoom = REST_ZOOM; // Used as the distance-derived zoom that the render-frame lerp approaches.
+  let currentZoom = OUT_OF_COMBAT_ZOOM; // Used as the helper's authoritative automatic zoom value after initialization.
+  let targetZoom = OUT_OF_COMBAT_ZOOM; // Used as the combat-context zoom that the render-frame lerp approaches.
   let lastAppliedZoom = NaN; // Used to avoid dispatching redundant setting-change events for imperceptible differences.
   let lastFrameAt = performance.now(); // Used to make the lerp frame-rate independent.
   let nextScanAt = 0; // Used to throttle the hostile visibility solve separately from the smooth per-frame interpolation.
-  let influencingHostiles = 0; // Used by the exposed debug surface to show how many enemies currently widen the camera.
+  let influencingHostiles = 0; // Used by the exposed debug surface to show how many enemies currently affect combat framing.
   let initialized = false; // Used to ensure the mobile 200% default is applied only after game.js has installed its zoom listener.
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
@@ -47,7 +47,7 @@
   function applyZoom(value, force = false) {
     const select = zoomSelect();
     if (!select) return false;
-    const zoom = clamp(value, WIDE_ZOOM, REST_ZOOM);
+    const zoom = clamp(value, WIDE_ZOOM, OUT_OF_COMBAT_ZOOM);
     if (!force && Number.isFinite(lastAppliedZoom) && Math.abs(zoom - lastAppliedZoom) < 0.0015) return true;
 
     const exact = [...select.options].find(option =>
@@ -105,7 +105,7 @@
   function projectionBasis(snapshot, candidateZoom) {
     // updateCameraPosition uses distanceTiles / zoomScale. Scaling the current
     // target→camera vector by currentZoom/candidateZoom reconstructs the same
-    // camera ray at any candidate 150-200% zoom without needing private game.js
+    // camera ray at any candidate 125-200% zoom without needing private game.js
     // camera variables.
     const targetToCamera = snapshot.camera.clone().sub(snapshot.target);
     if (targetToCamera.lengthSq() < 1e-8) return null;
@@ -133,47 +133,47 @@
     return nx <= FRAME_INSET && ny <= FRAME_INSET;
   }
 
-  function widestRelevantZoomForHostile(hostile, snapshot) {
+  function combatZoomForHostile(hostile, snapshot) {
     const root = targetRoot(hostile);
     const point = root && window.WorldPopupText?.avatarCentroidWorld?.(root); // Used to test the same live body centroid used by combat popup text.
     if (!point) return null;
 
-    // Already comfortably visible at 200%: this enemy should not pull the
-    // camera outward. Not visible even at 150%: it is too far/off-angle to be
-    // the nearby context the user asked this system to reveal.
-    if (isPointVisibleAtZoom(point, REST_ZOOM, snapshot)) return null;
+    // Anything outside even the 125% frame is too far/off-angle to count as
+    // current combat context. A hostile that fits at 175% is "closeby" and
+    // simply activates the combat baseline instead of pulling the camera wider.
     if (!isPointVisibleAtZoom(point, WIDE_ZOOM, snapshot)) return null;
+    if (isPointVisibleAtZoom(point, COMBAT_BASE_ZOOM, snapshot)) return COMBAT_BASE_ZOOM;
 
-    // Visibility is monotonic across this narrow distance range. Binary-search
-    // the highest zoom at which the hostile still fits, producing a continuous
-    // distance/edge-position driven result between 150% and 200%.
+    // Between those thresholds, binary-search the highest zoom that still
+    // includes the hostile. This keeps the distance/edge response continuous
+    // instead of snapping from 175% straight to 125%.
     let visibleZoom = WIDE_ZOOM;
-    let hiddenZoom = REST_ZOOM;
+    let hiddenZoom = COMBAT_BASE_ZOOM;
     for (let iteration = 0; iteration < 9; iteration++) {
       const candidate = (visibleZoom + hiddenZoom) * 0.5;
       if (isPointVisibleAtZoom(point, candidate, snapshot)) visibleZoom = candidate;
       else hiddenZoom = candidate;
     }
-    return clamp(visibleZoom - ZOOM_PADDING, WIDE_ZOOM, REST_ZOOM);
+    return clamp(visibleZoom - ZOOM_PADDING, WIDE_ZOOM, COMBAT_BASE_ZOOM);
   }
 
   function solveTargetZoom() {
     const snapshot = cameraSnapshot();
     if (!snapshot) {
       influencingHostiles = 0;
-      return REST_ZOOM;
+      return OUT_OF_COMBAT_ZOOM;
     }
 
-    let solved = REST_ZOOM;
+    let solved = OUT_OF_COMBAT_ZOOM;
     let count = 0;
     for (const hostile of currentAreaHostiles()) {
-      const hostileZoom = widestRelevantZoomForHostile(hostile, snapshot);
+      const hostileZoom = combatZoomForHostile(hostile, snapshot);
       if (hostileZoom == null) continue;
-      solved = Math.min(solved, hostileZoom); // Used so multiple nearby off-screen enemies can all fit when 150% framing permits it.
+      solved = Math.min(solved, hostileZoom); // Used so the widest relevant enemy determines framing when several are in combat context.
       count++;
     }
     influencingHostiles = count;
-    return solved;
+    return count > 0 ? solved : OUT_OF_COMBAT_ZOOM;
   }
 
   function shouldSuspendDynamicScan() {
@@ -199,11 +199,11 @@
 
     if (!initialized) {
       initialized = true;
-      currentZoom = REST_ZOOM;
-      targetZoom = REST_ZOOM;
+      currentZoom = OUT_OF_COMBAT_ZOOM;
+      targetZoom = OUT_OF_COMBAT_ZOOM;
       lastFrameAt = nowMs;
       nextScanAt = nowMs;
-      applyZoom(REST_ZOOM, true); // Used to change the mobile default from the game's existing 150% startup value to 200%.
+      applyZoom(OUT_OF_COMBAT_ZOOM, true); // Used to preserve 200% as the mobile default whenever combat context is absent.
     }
 
     const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameAt) / 1000));
@@ -237,7 +237,9 @@
       currentZoom,
       targetZoom,
       influencingHostiles,
-      restZoom: REST_ZOOM,
+      outOfCombatZoom: OUT_OF_COMBAT_ZOOM,
+      combatBaseZoom: COMBAT_BASE_ZOOM,
+      restZoom: OUT_OF_COMBAT_ZOOM, // Backward-compatible alias for existing debug callers.
       wideZoom: WIDE_ZOOM,
     }),
     refresh: () => { nextScanAt = 0; },
