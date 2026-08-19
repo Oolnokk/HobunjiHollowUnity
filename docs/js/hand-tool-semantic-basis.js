@@ -191,6 +191,11 @@
     return SIGNED_AXES.includes(key) ? key[1] : null;
   }
 
+  function negateVector3(vector) {
+    if (!vector) return null;
+    return { x: -(Number(vector.x) || 0), y: -(Number(vector.y) || 0), z: -(Number(vector.z) || 0) };
+  }
+
   function validateHandAxes(raw = {}) {
     const fingers = String(raw.fingers || '').toLowerCase();
     const thumb = String(raw.thumb || '').toLowerCase();
@@ -211,13 +216,18 @@
       z: tv.x * fv.y - tv.y * fv.x,
     };
     const determinant = cross.x * pv.x + cross.y * pv.y + cross.z * pv.z;
+    const handedness = determinant >= 0 ? 'right-handed' : 'left-handed';
     return {
       complete: true,
       valid: true,
       error: null,
       axes: { fingers, thumb, palm },
       vectors: { fingers: fv, thumb: tv, palm: pv },
-      handedness: determinant >= 0 ? 'right-handed' : 'left-handed',
+      handedness,
+      // A quaternion can only represent a proper/right-handed orthonormal basis.
+      // Left-handed authoring is preserved as metadata and previewable, but callers
+      // must not silently pretend a reflection is a rotation.
+      rotationSupported: handedness === 'right-handed',
     };
   }
 
@@ -238,6 +248,48 @@
 
   function handBasisForSpecies(speciesId) {
     return handBasisForModel(profiles.modelKeyForSpecies?.(speciesId));
+  }
+
+  function semanticHandVectorForModel(modelKey, semanticName) {
+    const basis = handBasisForModel(modelKey);
+    return basis?.valid ? clone(basis.vectors?.[semanticName] || null) : null;
+  }
+
+  function handWristVectorForModel(modelKey) {
+    return negateVector3(semanticHandVectorForModel(modelKey, 'fingers'));
+  }
+
+  function handWristVectorForSpecies(speciesId) {
+    return handWristVectorForModel(profiles.modelKeyForSpecies?.(speciesId));
+  }
+
+  // Hand visual normalization should measure along the fingers/wrist anatomical
+  // axis, not blindly along raw Y. Missing semantic data deliberately retains Y.
+  function handFitAxisForModel(modelKey) {
+    const basis = handBasisForModel(modelKey);
+    return basis?.valid ? (axisLetter(basis.axes?.fingers) || 'y') : 'y';
+  }
+
+  // Converting a source left/right hand into the opposite side must reflect the
+  // anatomical thumb axis. Before semantic authoring existed this was assumed X.
+  function handSourceMirrorAxisForModel(modelKey) {
+    const basis = handBasisForModel(modelKey);
+    return basis?.valid ? (axisLetter(basis.axes?.thumb) || 'x') : 'x';
+  }
+
+  function handTransformAuditForModel(modelKey) {
+    const basis = handBasisForModel(modelKey);
+    return {
+      modelKey: modelKey || null,
+      source: basis?.source || 'none',
+      valid: basis?.valid === true,
+      handedness: basis?.handedness || null,
+      rotationSupported: basis?.rotationSupported === true,
+      axes: basis?.axes ? { ...basis.axes } : null,
+      fitAxis: handFitAxisForModel(modelKey),
+      sourceMirrorAxis: handSourceMirrorAxisForModel(modelKey),
+      wristVector: handWristVectorForModel(modelKey),
+    };
   }
 
   function setHandAxesForModel(modelKey, rawAxes) {
@@ -357,7 +409,7 @@
 
   function handRawToCanonicalQuaternionForModel(modelKey) {
     const basis = handBasisForModel(modelKey);
-    if (!basis.valid || !basis.vectors || basis.handedness !== 'right-handed') return null;
+    if (!basis.valid || !basis.vectors || basis.rotationSupported !== true) return null;
     const x = basis.vectors.thumb;
     const y = basis.vectors.fingers;
     const z = basis.vectors.palm;
@@ -380,9 +432,17 @@
     toolBasisFor,
     setToolMarker,
     clearToolBasis,
+    signedAxisVector,
+    axisLetter,
     validateHandAxes,
     handBasisForModel,
     handBasisForSpecies,
+    semanticHandVectorForModel,
+    handWristVectorForModel,
+    handWristVectorForSpecies,
+    handFitAxisForModel,
+    handSourceMirrorAxisForModel,
+    handTransformAuditForModel,
     setHandAxesForModel,
     clearHandBasisForModel,
     toolRawToCanonicalQuaternionFor,
