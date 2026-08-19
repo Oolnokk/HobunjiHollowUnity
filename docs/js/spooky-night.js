@@ -79,6 +79,7 @@
     function TrackedAudio(...args) {
       const audio = new NativeAudio(...args); // Added to the tracking set for later _trackUrl inspection.
       state.trackedAudio.add(audio);
+      queueMicrotask(() => { if (!audio._trackUrl) state.trackedAudio.delete(audio); }); // Drops ordinary SFX/BGS after Music has had one synchronous turn to tag scheduler tracks.
       audio.addEventListener?.('emptied', () => {
         if (!audio._trackUrl && audio.paused) state.trackedAudio.delete(audio);
       });
