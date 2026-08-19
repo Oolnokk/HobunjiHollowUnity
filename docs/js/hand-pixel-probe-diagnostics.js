@@ -97,14 +97,20 @@
       for (const rec of frame) {
         const hand = rec?.hand || {};
         const semantic = hand.semanticHandBasis || null;
+        const audit = hand.transformAudit || null;
+        const skin = hand.twoBoneSkin?.sides?.right || null;
         const semanticTag = semantic?.valid
           ? ` semantic=${semantic.source || 'yes'}(${semantic.axes?.fingers || '?'}/${semantic.axes?.thumb || '?'}/${semantic.axes?.palm || '?'})`
           : '';
+        const auditTag = audit
+          ? ` fit=${String(audit.fitAxis || '?').toUpperCase()} sourceMirror=${String(audit.sourceMirrorAxis || '?').toUpperCase()}(${audit.sourceMirrorSign ?? '?'})`
+          : '';
+        const wristTag = skin?.rigged ? ` wrist=${skin.wristAxisLabel || '?'}` : '';
         lines.push(
           `Hand ${rec.speciesId || '?'} ${rec.gender || '-'} tool=${rec.toolKey || '-'} secondary=${rec.secondaryActive ? 'yes' : 'no'} `
           + `hooked=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
           + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
-          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}${semanticTag}`
+          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}${semanticTag}${auditTag}${wristTag}`
         );
       }
     } else {
