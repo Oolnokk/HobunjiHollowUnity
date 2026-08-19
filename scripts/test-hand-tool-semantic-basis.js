@@ -44,7 +44,11 @@ assert.strictEqual(tool.complete, true, 'three tool markers should complete the 
 assert(Math.abs(tool.axes.y.x) < 1e-9 && tool.axes.y.y > 0.999, 'butt→head should resolve semantic +Y');
 assert(tool.axes.x.x > 0.999 && Math.abs(tool.axes.x.y) < 1e-9, 'working side should resolve semantic +X');
 assert.strictEqual(tool.axes.zSign, 1, 'X×Y should resolve the raw sprite +Z sign');
-assert.deepStrictEqual(window.HobunjiHandToolGrips.data.tools.hatchet.semanticBasis.markers.working, { u: 0.9, v: 0.2 });
+assert.strictEqual(
+  JSON.stringify(window.HobunjiHandToolGrips.data.tools.hatchet.semanticBasis.markers.working),
+  JSON.stringify({ u: 0.9, v: 0.2 }),
+  'authored working-side marker should persist in the shared tool config',
+);
 
 const hand = basis.setHandAxesForModel('feline', { fingers: '-y', thumb: '+x', palm: '-z' });
 assert.strictEqual(hand.valid, true, 'three distinct signed hand axes should be accepted');
