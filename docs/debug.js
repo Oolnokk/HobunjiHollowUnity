@@ -20,6 +20,23 @@
     document.head.appendChild(script);
   })();
 
+  // The spooky-night adapter must observe CalendarSystem/Music/WildernessMap
+  // before those modules assign their globals, so load it synchronously from
+  // the same early bootstrap rather than adding another large index.html edit.
+  (function loadSpookyNightEarly() {
+    const src = 'js/spooky-night.js?v=20260819a'; // Used as the cache-busted early runtime URL for the overnight systems.
+    if (window.SpookyNight || document.querySelector('script[data-hobunji-spooky-night]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-spooky-night="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script'); // Fallback used only when debug.js itself was injected after parsing.
+    script.src = src;
+    script.async = false;
+    script.dataset.hobunjiSpookyNight = '1';
+    document.head.appendChild(script);
+  })();
+
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
   const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
 
