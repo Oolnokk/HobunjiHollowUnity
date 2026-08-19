@@ -173,16 +173,11 @@
   }
 
   function beginPlayerFallback(entity, detail) {
-    // Existing strike call sites already choose their hit-relative pole and may
-    // start playback later in the same call stack. Defer one frame and only
-    // fill the gap for new/non-strike sources that did not start a knockdown.
-    requestAnimationFrame(() => {
-      if (!entity?.prone || entity.health <= 0) return;
-      const playback = window.ImpactRagdollPlayback;
-      if (!playback?.trigger || playback.isActive?.()) return;
-      const direction = cardinalFromFallVector(entity, detail?.fallX, detail?.fallY);
-      playback.trigger('breakThrow', direction);
-    });
+    if (!entity?.prone || entity.health <= 0) return;
+    const playback = window.ImpactRagdollPlayback;
+    if (!playback?.trigger || playback.isActive?.()) return;
+    const direction = cardinalFromFallVector(entity, detail?.fallX, detail?.fallY);
+    playback.trigger('breakThrow', direction);
   }
 
   function onFootingBreak(event) {
@@ -192,9 +187,9 @@
     breakCount++;
     entity._footingKnockdownDirection = cardinalFromFallVector(entity, detail.fallX, detail.fallY);
 
-    // Wait until the caller that spent the final Footing point has had a chance
-    // to set the shared prone state. The bridge also supplies a microtask
-    // fallback for sources that do not yet have an explicit zero-Footing branch.
+    // Wait one frame so the original strike handler can keep its already-authored
+    // hit-relative direction. If it started playback, the fallback sees it active
+    // and does nothing. Non-strike/new sources instead use the break vector here.
     requestAnimationFrame(() => {
       if (!entity.prone || entity.health <= 0) return;
       if (isLocalPlayer(entity)) beginPlayerFallback(entity, detail);
