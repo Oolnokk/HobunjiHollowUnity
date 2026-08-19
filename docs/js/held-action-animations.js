@@ -36,7 +36,7 @@
     new URL('js/hand-shoulder-pose-runtime.js?v=20260819a', docsBase).href,
     new URL('js/hand-elbow-pose-runtime.js?v=20260819a', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20260819a', docsBase).href,
-    new URL('js/procedural-avatar-bicep-rig.js?v=20260819a', docsBase).href,
+    new URL('js/procedural-avatar-bicep-rig.js?v=20260819b', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
@@ -58,7 +58,8 @@
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-forearm-rig.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-elbow-controls.js?v=20260819a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819c', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-bicep-weight-coherence.js?v=20260819a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819d', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
