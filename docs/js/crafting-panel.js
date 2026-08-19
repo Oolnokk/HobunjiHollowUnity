@@ -1,15 +1,32 @@
+// CampfireSystem must install before game.js initializes DevSpawner/CalendarSystem
+// so it can capture the live map/player/calendar dependencies without adding new
+// wiring to the large game closure.
+(() => {
+  if (window.CampfireSystem || document.querySelector('script[data-hobunji-campfire-system]')) return;
+  const src = 'js/campfire-system.js?v=20260819a';
+  if (document.readyState === 'loading') {
+    document.write(`<script src="${src}" data-hobunji-campfire-system="1"><\/script>`);
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = src;
+  script.async = false;
+  script.dataset.hobunjiCampfireSystem = '1';
+  document.head.appendChild(script);
+})();
+
 (() => {
   'use strict';
 
-  // Crafting tab (Inventory panel's Crafting sub-tab) — turns an owned
-  // furniture blueprint into the finished furniture item using wood (any
-  // log — pine or shadewood) and stone gathered with the axe and pick.
-  // Reachable from anywhere, not gated to standing at the carpenter's
-  // shop, same as any other Inventory tab. Extracted out of game.js
-  // following the same window.<Namespace> + init(deps) pattern as its
-  // sibling systems.
+  // Crafting tab (Inventory panel's Crafting sub-tab) — furniture blueprints
+  // plus a small set of blueprint-free survival recipes. Furniture still turns
+  // an owned blueprint into the finished item using wood + stone; Campfire is
+  // deliberately different because it is a disposable portable campsite.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    window.CampfireSystem?.attachCraftingDeps?.(injectedDeps);
+  }
 
   let craftingActiveCategory = 'all';
 
@@ -56,6 +73,30 @@
     deps.saveMemberWorldData();
   }
 
+  function appendCampfireRecipe(list) {
+    if (craftingActiveCategory !== 'all' || !window.CampfireSystem) return false;
+    const cost = window.CampfireSystem.CRAFT_COST;
+    const haveWood = ownedWoodCount();
+    const haveStone = deps.inventory.stone || 0;
+    const owned = window.CampfireSystem.ownedCount?.() || 0;
+    const canBuild = haveWood >= cost.wood && haveStone >= cost.stone;
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    row.innerHTML = `
+      <div class="sh-icon">🔥</div>
+      <div class="sh-info">
+        <div class="sh-name">Campfire</div>
+        <div class="sh-desc">Survival recipe — no blueprint. Needs ${cost.wood} Wood (have ${haveWood}) + ${cost.stone} Stone (have ${haveStone}). ${owned} ready to place.</div>
+      </div>
+      <button class="shop-buy-btn" data-craft-campfire ${canBuild ? '' : 'disabled'}>Craft</button>
+    `;
+    row.querySelector('[data-craft-campfire]')?.addEventListener('click', () => {
+      if (window.CampfireSystem.craft?.()) renderCraftingPanel();
+    });
+    list.appendChild(row);
+    return true;
+  }
+
   function renderCraftingPanel() {
     bindCraftingTabs();
     const list = document.getElementById('craftingList');
@@ -63,7 +104,8 @@
     list.innerHTML = '';
     const visible = deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => craftingActiveCategory === 'all' || bp.category === craftingActiveCategory);
     const owned = visible.filter(bp => (deps.inventory[bp.key] || 0) > 0);
-    if (!owned.length) {
+    const hasCampfireRecipe = appendCampfireRecipe(list);
+    if (!owned.length && !hasCampfireRecipe) {
       const empty = document.createElement('div');
       empty.className = 'ii-empty';
       empty.textContent = "No blueprints yet — buy one from the carpenter's shop.";
