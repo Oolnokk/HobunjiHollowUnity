@@ -45,7 +45,7 @@
     new URL('js/procedural-hand-attachments.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20260818c', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260818d', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260818g', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -61,6 +61,7 @@
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260818c', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819a', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
