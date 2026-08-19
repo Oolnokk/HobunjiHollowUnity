@@ -97,12 +97,10 @@
   }
 
   // Mouse input is intercepted before game.js's old threeContainer bubble
-  // listener. Campfire gets first refusal here because this early binding
-  // runtime itself loads before campfire-system.js: while a portable placement
-  // is armed, re-dispatch the click as touch-style pointer input so the later
-  // CampfireSystem capture listener owns it instead of Attack Button 1/2. When
-  // Interact itself is mouse-bound, sleeping at a nearby campfire goes straight
-  // through the same keybind mapping rather than hardcoding a mouse button.
+  // listener. Campfire gets first refusal because this runtime registers before
+  // campfire-system.js: armed placement consumes the click and passes the exact
+  // screen coordinate directly to CampfireSystem instead of turning it into an
+  // Attack Button press. A mouse-bound Interact likewise opens campfire Sleep.
   window.addEventListener('pointerdown', event => {
     if (event.pointerType !== 'mouse' || bindingCaptureOpen()) return;
     const code = MOUSE_CODES[event.button];
@@ -111,17 +109,7 @@
     if (campfire?.armed) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      try {
-        event.target.dispatchEvent(new PointerEvent('pointerdown', {
-          bubbles: true,
-          cancelable: true,
-          pointerType: 'touch',
-          clientX: event.clientX,
-          clientY: event.clientY,
-          button: 0,
-          buttons: 1,
-        }));
-      } catch (_) {}
+      campfire.placeAtPointer?.(event.clientX, event.clientY);
       return;
     }
     const actionId = actionFor('desktop', code);
