@@ -29,6 +29,11 @@
     scatterbow: { sprite: 'assets/toolsprites/ranged_scatterbow.png' },
     scatterbowLoaded: { sprite: 'assets/toolsprites/ranged_scatterbow_loaded.png' },
   });
+  const HAND_BASIS_VISUALS = Object.freeze({
+    thumb: Object.freeze({ label: 'THUMB  +X', color: 0xff5f68 }),
+    fingers: Object.freeze({ label: 'FINGERS  +Y', color: 0x55e98d }),
+    palm: Object.freeze({ label: 'PALM  +Z', color: 0x65a9ff }),
+  });
 
   const $ = id => document.getElementById(id);
   let enabled = false; // True while the close-up overlay replaces the normal viewport visually.
@@ -59,6 +64,11 @@
   let lastStyle = '';
   let lastToolBasisSource = 'none';
   let lastToolBasisApplied = false;
+  let handBasisPreviewRoot = null; // Editor-only arrows live outside reflected hand hierarchy and follow its actual world frame.
+  let handBasisPreviewEntries = null; // Semantic key -> ArrowHelper/label pair reused while authoring.
+  let handBasisPreviewDebug = null; // Mobile-readable resolved directions and transform layers for the current preview.
+  let handBasisFlashKey = ''; // Last semantic selector edited; temporarily emphasized on the rendered hand.
+  let handBasisFlashUntil = 0; // performance.now timestamp ending the emphasis pulse.
 
   function currentSpecies() { return String($('avatarSpecies')?.value || '').trim(); }
   function currentGender() { return String($('avatarGender')?.value || 'male').trim(); }
@@ -96,7 +106,7 @@
           <input id="handToolCloseupSecond" type="checkbox" checked style="width:auto;margin:0"> Show second hand if enabled
         </label>
       </div>
-      <div id="handToolCloseupStatus" style="position:absolute;left:10px;bottom:10px;z-index:4;max-width:min(680px,92%);padding:7px 9px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(0,0,0,.58);font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#e8eef7;pointer-events:none"></div>
+      <div id="handToolCloseupStatus" style="position:absolute;left:10px;bottom:10px;z-index:4;max-width:min(760px,92%);padding:7px 9px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(0,0,0,.58);font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#e8eef7;pointer-events:none"></div>
     `;
     viewport.appendChild(overlay);
 
@@ -123,6 +133,8 @@
       resize();
       if (!hasInitialFit) requestRefit();
       syncAll();
+    } else if (handBasisPreviewRoot) {
+      handBasisPreviewRoot.visible = false;
     }
     return enabled;
   }
@@ -220,6 +232,7 @@
     handRig = null;
     handRigSpecies = '';
     handRigGender = '';
+    handBasisPreviewDebug = null;
   }
 
   function ensureHandRig() {
@@ -328,6 +341,205 @@
     lastStyle = currentStyle();
   }
 
+  function basisPanelVisible() {
+    const panel = $('handToolBasisPanel');
+    return !!panel && panel.style.display !== 'none';
+  }
+
+  function currentHandBasisPreviewSelection() {
+    const species = currentSpecies();
+    const committed = semanticBasis.handBasisForSpecies?.(species) || null;
+    const ids = { fingers: 'handToolBasisFingers', thumb: 'handToolBasisThumb', palm: 'handToolBasisPalm' };
+    const axes = {};
+    let hasUi = false;
+    let differs = false;
+    for (const [key, id] of Object.entries(ids)) {
+      const select = $(id);
+      const value = String(select?.value || '').toLowerCase();
+      if (select) hasUi = true;
+      axes[key] = value || String(committed?.axes?.[key] || '').toLowerCase();
+      if (select && value !== String(committed?.axes?.[key] || '').toLowerCase()) differs = true;
+    }
+    const vectors = Object.fromEntries(Object.entries(axes).map(([key, value]) => [key, semanticBasis.signedAxisVector?.(value) || null]));
+    const validation = semanticBasis.validateHandAxes?.(axes) || null;
+    return {
+      source: hasUi && differs ? 'draft-ui' : (committed?.source || 'none'),
+      axes,
+      vectors,
+      validation,
+      committed,
+    };
+  }
+
+  function renderedRightHandFrame() {
+    const visual = handRig?.group?.getObjectByName?.('right_hand_visual') || null;
+    if (!visual?.userData?.handModelKey) return { visual, modelRoot: null };
+    const skinRig = visual.userData?.twoBoneSkinRig || null;
+    const modelRoot = skinRig?.modelRoot
+      || visual.children?.find(child => child?.isObject3D && !/guide/i.test(String(child.name || '')))
+      || null;
+    return { visual, modelRoot, skinRig };
+  }
+
+  function configureOverlayObject(object) {
+    object.renderOrder = 120;
+    object.traverse?.(node => {
+      node.renderOrder = 120;
+      const materials = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
+      for (const material of materials) {
+        material.depthTest = false;
+        material.depthWrite = false;
+        material.transparent = true;
+      }
+    });
+  }
+
+  function makeLabelSprite(text, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(4,7,11,.88)';
+    ctx.fillRect(2, 7, 252, 50);
+    ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(2.5, 7.5, 251, 49);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 25px ui-monospace,monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 32);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.userData.hobunjiBasisLabelTexture = texture;
+    configureOverlayObject(sprite);
+    return sprite;
+  }
+
+  function ensureHandBasisPreviewObjects() {
+    if (handBasisPreviewRoot) return;
+    handBasisPreviewRoot = new THREE.Group();
+    handBasisPreviewRoot.name = 'hand_semantic_basis_visual_feedback';
+    handBasisPreviewRoot.renderOrder = 120;
+    contentRoot.add(handBasisPreviewRoot);
+    handBasisPreviewEntries = {};
+    for (const [key, def] of Object.entries(HAND_BASIS_VISUALS)) {
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 0.08, def.color, 0.025, 0.015);
+      arrow.name = `hand_semantic_${key}_arrow`;
+      configureOverlayObject(arrow);
+      const label = makeLabelSprite(def.label, def.color);
+      label.name = `hand_semantic_${key}_label`;
+      handBasisPreviewRoot.add(arrow);
+      handBasisPreviewRoot.add(label);
+      handBasisPreviewEntries[key] = { arrow, label };
+    }
+  }
+
+  function transformRawDirectionToContent(modelRoot, rawVector, originWorld, originLocal) {
+    if (!rawVector) return null;
+    const tipWorld = modelRoot.localToWorld(new THREE.Vector3(
+      Number(rawVector.x) || 0,
+      Number(rawVector.y) || 0,
+      Number(rawVector.z) || 0,
+    ));
+    const tipLocal = contentRoot.worldToLocal(tipWorld.clone());
+    const delta = tipLocal.sub(originLocal);
+    const worldScale = originWorld.distanceTo(tipWorld);
+    if (delta.lengthSq() < 1e-12 || worldScale < 1e-8) return null;
+    return { direction: delta.normalize(), transformedUnitLength: worldScale };
+  }
+
+  function syncHandBasisPreview() {
+    if (!THREE || !contentRoot) return;
+    ensureHandBasisPreviewObjects();
+    const shouldShow = enabled && basisPanelVisible();
+    handBasisPreviewRoot.visible = shouldShow;
+    if (!shouldShow) {
+      handBasisPreviewDebug = { visible: false, reason: enabled ? 'basis-panel-closed' : 'closeup-disabled' };
+      return;
+    }
+
+    const { visual, modelRoot, skinRig } = renderedRightHandFrame();
+    const selection = currentHandBasisPreviewSelection();
+    if (!visual || !modelRoot) {
+      handBasisPreviewRoot.visible = false;
+      handBasisPreviewDebug = { visible: false, reason: 'rendered-glb-pending', source: selection.source, axes: selection.axes };
+      return;
+    }
+
+    // Do not duplicate transform math. Derive every arrow from the ACTUAL GLB
+    // modelRoot after socket/grip rotation, semantic correction, source-hand
+    // reflection, pair X/Y/Z reflections, scale and imported hierarchy have all
+    // participated. This also avoids negative-scale quaternion decomposition.
+    contentRoot.updateMatrixWorld(true);
+    modelRoot.updateWorldMatrix?.(true, true);
+    const originWorld = modelRoot.localToWorld(new THREE.Vector3(0, 0, 0));
+    const originLocal = contentRoot.worldToLocal(originWorld.clone());
+    const directions = {};
+    const now = performance.now();
+    const flashActive = now < handBasisFlashUntil ? handBasisFlashKey : '';
+
+    for (const [key, entry] of Object.entries(handBasisPreviewEntries)) {
+      const transformed = transformRawDirectionToContent(modelRoot, selection.vectors[key], originWorld, originLocal);
+      const visible = !!transformed;
+      entry.arrow.visible = visible;
+      entry.label.visible = visible;
+      if (!visible) {
+        directions[key] = null;
+        continue;
+      }
+      const pulse = flashActive === key ? 1.14 + Math.sin(now * 0.035) * 0.07 : 1;
+      const length = Math.max(0.045, transformed.transformedUnitLength * 0.62) * pulse;
+      entry.arrow.position.copy(originLocal);
+      entry.arrow.setDirection(transformed.direction);
+      entry.arrow.setLength(length, Math.max(0.014, length * 0.27), Math.max(0.009, length * 0.16));
+      entry.label.position.copy(originLocal).addScaledVector(transformed.direction, length * 1.22);
+      entry.label.scale.set(Math.max(0.07, length * 1.25), Math.max(0.018, length * 0.31), 1);
+      directions[key] = {
+        x: transformed.direction.x,
+        y: transformed.direction.y,
+        z: transformed.direction.z,
+        transformedUnitLength: transformed.transformedUnitLength,
+      };
+    }
+
+    const modelKey = visual.userData?.handModelKey || profiles.modelKeyForSpecies?.(currentSpecies()) || null;
+    const transformAudit = semanticBasis.handTransformAuditForModel?.(modelKey) || null;
+    handBasisPreviewDebug = {
+      visible: true,
+      source: selection.source,
+      axes: { ...selection.axes },
+      valid: selection.validation?.valid === true,
+      handedness: selection.validation?.handedness || null,
+      rotationSupported: selection.validation?.rotationSupported === true,
+      modelKey,
+      modelRootName: modelRoot.name || '(unnamed GLB root)',
+      anchor: 'authored-glb-origin',
+      origin: { x: originLocal.x, y: originLocal.y, z: originLocal.z },
+      renderedDirections: directions,
+      semanticCorrectionApplied: visual.userData?.hobunjiSemanticHandBasisApplied === true,
+      pairMirrorAxes: { ...(visual.userData?.hobunjiPairMirrorAxes || {}) },
+      sourceMirrorAxis: visual.userData?.sourceHandMirrorAxis || transformAudit?.sourceMirrorAxis || 'x',
+      sourceMirrorSign: Number(visual.userData?.sourceHandMirrorSign) || 1,
+      fitAxis: visual.userData?.semanticFitAxis || transformAudit?.fitAxis || 'y',
+      forearmWristAxis: skinRig?.wristAxisLabel || null,
+      flash: flashActive || null,
+    };
+  }
+
+  function flashHandBasisAxis(key) {
+    const semantic = String(key || '').toLowerCase();
+    if (!HAND_BASIS_VISUALS[semantic]) return false;
+    handBasisFlashKey = semantic;
+    handBasisFlashUntil = performance.now() + 650;
+    syncHandBasisPreview();
+    return true;
+  }
+
   function contentBounds() {
     contentRoot.updateMatrixWorld(true);
     const box = new THREE.Box3();
@@ -397,13 +609,17 @@
     const handBasis = semanticBasis.handBasisForSpecies?.(species) || null;
     const toolBasisText = lastToolBasisApplied ? `toolBasis=${lastToolBasisSource}` : 'toolBasis=legacy';
     const handBasisText = handBasis?.valid ? `handBasis=${handBasis.source || 'semantic'}` : 'handBasis=legacy';
-    status.textContent = `HAND + TOOL CLOSE-UP · ${species}/${gender} → ${model} · ${currentToolKey() || '-'} · grip ${grip} · ${mirrorLabelForSpecies(species)} · ${toolBasisText} · ${handBasisText} · right=primary${secondary ? ' · left=secondary enabled' : ' · left=hidden (secondary off)'} · drag=orbit · wheel/pinch=zoom · camera preserved until Refit`;
+    const vizText = handBasisPreviewDebug?.visible
+      ? `basisViz=actual-root ${handBasisPreviewDebug.axes?.fingers || '?'}/${handBasisPreviewDebug.axes?.thumb || '?'}/${handBasisPreviewDebug.axes?.palm || '?'}`
+      : 'basisViz=off';
+    status.textContent = `HAND + TOOL CLOSE-UP · ${species}/${gender} → ${model} · ${currentToolKey() || '-'} · grip ${grip} · ${mirrorLabelForSpecies(species)} · ${toolBasisText} · ${handBasisText} · ${vizText} · right=primary${secondary ? ' · left=secondary enabled' : ' · left=hidden (secondary off)'} · drag=orbit · wheel/pinch=zoom · camera preserved until Refit`;
   }
 
   function syncAll() {
     if (!initialized) return;
     syncToolVisual();
     syncHandPlacement();
+    syncHandBasisPreview();
     updateStatus();
   }
 
@@ -476,6 +692,8 @@
   global.HobunjiAttackEditorHandToolCloseup = Object.freeze({
     setEnabled,
     requestRefit,
+    flashHandBasisAxis,
+    refreshHandBasisPreview: syncHandBasisPreview,
     get enabled() { return enabled; },
     get initialized() { return initialized; },
     getDebug() {
@@ -498,6 +716,7 @@
         semanticToolBasis: toolBasis ? { source: toolBasis.source, complete: toolBasis.complete, axes: toolBasis.axes } : null,
         semanticToolBasisApplied: lastToolBasisApplied,
         semanticHandBasis: handBasis ? { source: handBasis.source, valid: handBasis.valid, axes: handBasis.axes } : null,
+        handBasisPreview: handBasisPreviewDebug,
       };
     },
   });
