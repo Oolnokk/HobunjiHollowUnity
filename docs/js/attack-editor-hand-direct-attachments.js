@@ -33,7 +33,7 @@
   section.id = 'handSecondaryGripGroup';
   section.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Optional second hand grip</div>
-    <div class="help" style="margin-bottom:6px">Primary/right hand = the tool's existing attach origin. This secondary frame is tool-local and, when enabled, places the left hand. Hatchet and hoe start enabled; other tools start one-handed.</div>
+    <div class="help" style="margin-bottom:6px">Primary/right hand = the tool's existing attach origin. This secondary frame is tool-local and, when enabled, places the left hand. All tools start one-handed; enable this only when you want to author a deliberate second-hand grip.</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handSecondaryGripEnabled" style="width:auto;margin-right:6px">Attach left hand to secondary grip</label></div>
     <div id="handSecondaryGripPositionFields"></div>
     <div id="handSecondaryGripRotationFields"></div>
