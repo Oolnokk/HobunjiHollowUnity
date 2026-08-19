@@ -314,15 +314,24 @@
     const totalS = Math.max(0.05, duration + returnTailS + holdS);
     const wf = Math.max(0, Math.min(0.99, windupFrac * duration / totalS));
     const sf = Math.max(wf, Math.min(0.99, strikeFrac * duration / totalS));
+    const authoredHoldFrac = Number(opts?.holdFrac); // Used below so wrapper timing follows the same authored return point as game/editor playback.
+    const authoredHf = Number.isFinite(authoredHoldFrac)
+      ? Math.max(sf, Math.min(0.99, Math.max(strikeFrac, authoredHoldFrac) * duration / totalS))
+      : null;
+    const holdSource = holdS > 0 ? 'hold-seconds' : authoredHf != null ? 'authored-hold-frac' : 'legacy-auto'; // Exposed in debugSnapshot for mobile parity checks.
     const hf = holdS > 0
       ? Math.min(0.99, sf + holdS / totalS)
-      : Math.min(0.99, sf + (1 - sf) * 0.3);
+      : authoredHf != null
+        ? authoredHf
+        : Math.min(0.99, sf + (1 - sf) * 0.3);
     combatVisualState = {
       anim: opts?.anim || activeState().def?.animStyle || 'thrust',
       totalS,
       wf,
       sf,
       hf,
+      holdSource,
+      authoredHoldFrac: Number.isFinite(authoredHoldFrac) ? authoredHoldFrac : null,
       elapsedS: 0,
       lastNow: performance.now(),
       held: !!held,
@@ -534,6 +543,13 @@
       combatAnim: visual?.anim || null,
       combatProgress: visual?.progress ?? null,
       combatNeutralWeight: visual ? neutralWeightForVisual(visual) : null,
+      combatTimeline: visual ? {
+        windupFrac: visual.wf,
+        strikeFrac: visual.sf,
+        holdFrac: visual.hf,
+        authoredHoldFrac: visual.authoredHoldFrac,
+        holdSource: visual.holdSource,
+      } : null,
       sweepPlaneNeutralCompensationDeg: visual?.anim === 'sweep'
         ? Math.round(90 * neutralWeightForVisual(visual))
         : (state.activeSlot === 'weapon' && state.def?.animStyle === 'sweep' ? 90 : 0),
