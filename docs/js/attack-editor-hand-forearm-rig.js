@@ -1,4 +1,4 @@
-// Attack Editor controls for the separated hand/forearm/bicep rig.
+// Attack Editor controls for the separated hand/forearm rig.
 (function (global) {
   'use strict';
 
@@ -17,45 +17,41 @@
   const card = profileSelect.closest('.card');
   if (!card) return;
 
-  // Master switches live at the top because both systems are intentionally easy
-  // to disable while their behavior is still being tuned.
+  // Keep the promising per-axis forearm experiment easy to disable without ever
+  // handing shoulder authority back to the hand/grip socket.
   const experimental = document.createElement('div');
   experimental.className = 'poseGroup';
   experimental.id = 'handExperimentalRigGroup';
   experimental.innerHTML = `
-    <div class="poseGroupHead"><span class="dot" style="background:#f472b6"></span>Experimental arm rig</div>
+    <div class="poseGroupHead"><span class="dot" style="background:#f472b6"></span>Experimental forearm tracking</div>
     <div class="field"><label class="fieldRow" style="cursor:pointer;margin:0">
       <input id="handExperimentalForearmAxes" type="checkbox" style="width:auto;margin-right:6px">
       Per-axis forearm target tracking
     </label></div>
-    <div class="help" style="margin:4px 0 8px">Checked Pitch/Yaw/Roll components come from the forearm target. Unchecked components stay at identity on the forearm bone and therefore inherit the hand/grip direction.</div>
-    <div class="field"><label class="fieldRow" style="cursor:pointer;margin:0">
-      <input id="handExperimentalBicepElbow" type="checkbox" style="width:auto;margin-right:6px">
-      PNG bicep + pose elbow tracking
-    </label></div>
-    <div class="help">When enabled, both the GLB forearm and the painted PNG arm aim at the pose's 3D elbow target. Neither bone is translated to that target.</div>
+    <div class="help">On by default. Checked Pitch/Yaw/Roll components follow the shoulder target. Unchecked components stay at identity on the forearm child bone, so those axes inherit the hand's authored grip direction.</div>
   `;
   const profileField = profileSelect.closest('.field');
   if (profileField?.parentElement === card) card.insertBefore(experimental, profileField);
   else card.prepend(experimental);
 
-  // Restore the old per-pose checkboxes, but redefine them strictly as FOREARM
-  // child-bone axes. They no longer rotate the hand socket or grip frame.
+  // These legacy checkbox containers are retained as pose data, but now control
+  // ONLY the child forearm bone. They never rotate the hand socket.
   for (const box of document.querySelectorAll('[data-hand-shoulder-phase]')) {
     box.style.display = '';
     const phase = box.dataset.handShoulderPhase || 'pose';
     const title = box.querySelector('.help b');
-    if (title) title.textContent = `Forearm target axes — ${phase}`;
+    if (title) title.textContent = `Forearm shoulder axes — ${phase}`;
     for (const axis of ['pitch', 'yaw', 'roll']) {
       const input = box.querySelector(`#handShoulderAim_${phase}_${axis}`);
       const label = input?.closest('label');
       if (!label) continue;
       const pretty = axis[0].toUpperCase() + axis.slice(1);
       for (const node of [...label.childNodes]) {
-        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) node.textContent = `${pretty} tracks target`;
+        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) node.textContent = `${pretty} tracks shoulder`;
       }
     }
   }
+
   const oldAnimationStatus = $('handShoulderAnimationStateStatus');
   if (oldAnimationStatus) oldAnimationStatus.style.display = '';
   const oldCompassStatus = $('handShoulderAimStatus');
@@ -63,9 +59,9 @@
   const shoulderPreview = $('handHideArmSpritesPreview')?.closest('.poseGroup');
   if (shoulderPreview) {
     const head = shoulderPreview.querySelector('.poseGroupHead');
-    if (head) head.innerHTML = '<span class="dot" style="background:#fb7185"></span>Forearm / bicep target preview';
+    if (head) head.innerHTML = '<span class="dot" style="background:#fb7185"></span>Forearm shoulder tracking preview';
     const firstHelp = shoulderPreview.querySelector('.help');
-    if (firstHelp) firstHelp.innerHTML = '<b>Hand direction always remains grip-authored.</b> Forearm axes optionally track the active shoulder/elbow target. The bicep experiment uses the PNG arm silhouette and the same elbow target.';
+    if (firstHelp) firstHelp.innerHTML = '<b>Hand direction always remains grip-authored.</b> The forearm child bone can independently borrow selected Pitch/Yaw/Roll components from the shoulder-target solve.';
   }
 
   const group = document.createElement('div');
@@ -99,7 +95,6 @@
   const crossRange = $('handForearmCross');
   const crossNumber = $('handForearmCrossNumber');
   const axisToggle = $('handExperimentalForearmAxes');
-  const bicepToggle = $('handExperimentalBicepElbow');
   let reloadTimer = 0;
 
   function currentModel() { return profiles.data.models?.[profileSelect.value] || null; }
@@ -118,13 +113,11 @@
 
   function syncExperimentalUi() {
     axisToggle.checked = settings?.forearmAxisTracking !== false;
-    bicepToggle.checked = settings?.bicepElbowTracking === true;
     const enabled = axisToggle.checked;
     for (const box of document.querySelectorAll('[data-hand-shoulder-phase]')) {
       box.style.opacity = enabled ? '1' : '0.48';
       for (const input of box.querySelectorAll('input[type=checkbox]')) input.disabled = !enabled;
     }
-    global.HobunjiAttackEditorElbowControls?.syncVisibility?.();
   }
 
   function syncFields() {
@@ -186,17 +179,11 @@
     syncExperimentalUi();
     refreshLive();
   });
-  bicepToggle.addEventListener('change', () => {
-    settings?.setBicepElbowTracking?.(bicepToggle.checked);
-    syncExperimentalUi();
-    refreshLive();
-  });
   settings?.subscribe?.(() => syncExperimentalUi());
 
-  // One delegated live-sync safety net covers the many independently-authored hand
-  // editor adapters. Socket/grip values update the frame immediately; settings that
-  // genuinely alter the imported GLB (scale/mirror/model mapping) get a short
-  // debounced reload instead of waiting for some unrelated control to rebuild it.
+  // One delegated live-sync safety net covers the independently-authored hand
+  // editor adapters. Socket/grip values update immediately; settings that genuinely
+  // alter the imported GLB use a short debounced profile reload.
   function liveInput(event) {
     const id = String(event.target?.id || '');
     if (!id || !event.target?.closest?.('.card') || event.target.closest('.card') !== card) return;
@@ -220,13 +207,12 @@
     if (!status) return;
     const hand = currentDebug()?.hand || null;
     const debug = hand?.twoBoneSkin?.sides?.right || null;
-    const shoulder = hand?.shoulderCompass?.sides?.right || null;
     if (!debug?.rigged) {
       status.textContent = 'Two-bone skin pending GLB load.';
       return;
     }
     const weights = debug.axisWeights || {};
-    status.textContent = `Right: joint ${(Number(debug.jointYPercent) * 100).toFixed(1)}% · blend ${(Number(debug.blendWidthPercent) * 100).toFixed(0)}% · cross ${(Number(debug.crossBoneWeight) * 100).toFixed(1)}% · target=${debug.targetKind || 'shoulder'} · axes P/Y/R ${(Number(weights.pitch) * 100).toFixed(0)}/${(Number(weights.yaw) * 100).toFixed(0)}/${(Number(weights.roll) * 100).toFixed(0)}% · forearm residual ${Number(debug.residualDeg || 0).toFixed(2)}°${shoulder?.bicepResidualDeg != null ? ` · bicep ${Number(shoulder.bicepResidualDeg).toFixed(2)}°` : ''}.`;
+    status.textContent = `Right: joint ${(Number(debug.jointYPercent) * 100).toFixed(1)}% · blend ${(Number(debug.blendWidthPercent) * 100).toFixed(0)}% · cross ${(Number(debug.crossBoneWeight) * 100).toFixed(1)}% · shoulder axes P/Y/R ${(Number(weights.pitch) * 100).toFixed(0)}/${(Number(weights.yaw) * 100).toFixed(0)}/${(Number(weights.roll) * 100).toFixed(0)}% · residual ${Number(debug.residualDeg || 0).toFixed(2)}°.`;
   }
 
   profileSelect.addEventListener('change', syncFields);
