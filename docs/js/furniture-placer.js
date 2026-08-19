@@ -92,7 +92,8 @@
     if (!rec) return false;
     const row = document.createElement('div');
     row.className = 'farm-row';
-    row.innerHTML = `<span class="farm-row-icon">🔥</span><span class="farm-row-name">Campfire</span><span class="farm-note">${rec.col}, ${rec.row} · checkpoint</span>`;
+    const stateLabel = rec.checkpoint ? 'checkpoint active' : 'sleep to set checkpoint';
+    row.innerHTML = `<span class="farm-row-icon">🔥</span><span class="farm-row-name">Campfire</span><span class="farm-note">${rec.col}, ${rec.row} · ${stateLabel}</span>`;
     const removeBtn = document.createElement('button');
     removeBtn.className = 'settings-small-btn';
     removeBtn.textContent = 'Remove';
