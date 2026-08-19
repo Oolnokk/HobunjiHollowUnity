@@ -22,6 +22,7 @@
   const MAX_CROP_SCALE = 0.975;
   const MAX_READY_ROTATION_STEP = 0.18;
   const SPARKLES_PER_CROP = 4;
+  const DISCOVERY_INTERVAL_MS = 100; // 10 Hz scene scan; cached ready roots render smoothly between scans.
   const candidateState = new WeakMap();
   const sceneState = new WeakMap();
   let lastReadyCount = 0;
@@ -74,6 +75,7 @@
     if (!state) {
       state = {
         lastRawRotation: rawRotation,
+        lastObservedAt: nowMs,
         minY: rawY,
         maxY: rawY,
         stableY: rawY,
@@ -84,12 +86,17 @@
       return state;
     }
 
+    const elapsedMs = Math.max(1, nowMs - state.lastObservedAt);
     const rotationStep = Math.abs(rawRotation - state.lastRawRotation);
+    // Normalize to a ~60 Hz frame step so the original ready-motion threshold
+    // remains meaningful even though discovery now runs at only 10 Hz.
+    const normalizedRotationStep = rotationStep * Math.min(1, 16.667 / elapsedMs);
     state.lastRawRotation = rawRotation;
+    state.lastObservedAt = nowMs;
     state.minY = Math.min(state.minY, rawY);
     state.maxY = Math.max(state.maxY, rawY);
     state.stableY = (state.minY + state.maxY) * 0.5;
-    if (rotationStep > 0.00001 && rotationStep < MAX_READY_ROTATION_STEP) state.lastMotionAt = nowMs;
+    if (normalizedRotationStep > 0.00001 && normalizedRotationStep < MAX_READY_ROTATION_STEP) state.lastMotionAt = nowMs;
     state.ready = nowMs - state.lastMotionAt < 250;
     return state;
   }
@@ -123,6 +130,7 @@
       positionAttribute: null,
       scanValidThisTurn: false,
       scanResetQueued: false,
+      lastDiscoveryAt: -Infinity,
     };
     sceneState.set(scene, record);
     return record;
@@ -178,8 +186,7 @@
     });
   }
 
-  function scanScene(scene, record) {
-    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  function discoverReadyRoots(scene, record, nowMs) {
     const readyRoots = [];
     scene?.children?.forEach?.(root => {
       if (!plausibleCropRoot(root, scene)) return;
@@ -189,16 +196,26 @@
       readyRoots.push({ root, state, scale });
     });
     record.readyRoots = readyRoots;
-    record.scanValidThisTurn = true;
+    record.lastDiscoveryAt = nowMs;
     lastReadyCount = readyRoots.length;
-    updateSparkles(record, readyRoots, nowMs);
+  }
+
+  function refreshSceneTurn(scene, record) {
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (nowMs - record.lastDiscoveryAt >= DISCOVERY_INTERVAL_MS) {
+      discoverReadyRoots(scene, record, nowMs);
+    }
+    // Sparkle animation only touches the small cached ready set; the full scene
+    // discovery walk above stays at 10 Hz.
+    updateSparkles(record, record.readyRoots, nowMs);
+    record.scanValidThisTurn = true;
     queueTurnReset(record);
   }
 
   function prepare(scene) {
     if (!scene) return [];
     const record = ensureSceneState(scene);
-    if (!record.scanValidThisTurn) scanScene(scene, record);
+    if (!record.scanValidThisTurn) refreshSceneTurn(scene, record);
 
     const restore = [];
     for (const entry of record.readyRoots) {
@@ -241,6 +258,7 @@
       readyCrops: lastReadyCount,
       sparklesPerCrop: SPARKLES_PER_CROP,
       coalescedPerTurn: true,
+      discoveryHz: 1000 / DISCOVERY_INTERVAL_MS,
     }),
   };
 })();
