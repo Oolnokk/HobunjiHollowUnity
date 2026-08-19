@@ -292,12 +292,12 @@ function findWorkflowTarget(doc, terms) {
   return null;
 }
 
-function revealWorkflowTarget(target) {
+function revealWorkflowTarget(target, activate=false) {
   for (let node = target; node; node = node.parentElement) {
     if (node.tagName === 'DETAILS') node.open = true;
   }
   const clickable = target.closest('button,summary,[role="button"],[role="tab"]');
-  if (clickable) clickable.click();
+  if (activate && clickable) clickable.click();
   const focusTarget = clickable || target;
   setTimeout(() => {
     focusTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
@@ -313,20 +313,20 @@ function revealWorkflowTarget(target) {
   }, 80);
 }
 
-function focusIframeWorkflow(frameId, terms, attempts=0) {
+function focusIframeWorkflow(frameId, terms, activate=false, attempts=0) {
   const iframe = document.getElementById(frameId);
   try {
     const doc = iframe?.contentDocument;
     if (doc?.body) {
       const target = findWorkflowTarget(doc, terms);
       if (target) {
-        revealWorkflowTarget(target);
+        revealWorkflowTarget(target, activate);
         return true;
       }
     }
   } catch (_) {}
   if (attempts < 24) {
-    setTimeout(() => focusIframeWorkflow(frameId, terms, attempts + 1), 250);
+    setTimeout(() => focusIframeWorkflow(frameId, terms, activate, attempts + 1), 250);
     return false;
   }
   if (frameId === 'if-dialogue-editor') {
@@ -345,11 +345,11 @@ workflowBtn.addEventListener('click', () => {
   }
   if (action === 'player-address') {
     switchToTab('dialogue-editor');
-    focusIframeWorkflow('if-dialogue-editor', ['nicknames', 'nickname']);
+    focusIframeWorkflow('if-dialogue-editor', ['nicknames', 'nickname'], true);
     return;
   }
   if (action === 'nicknames') {
-    focusIframeWorkflow('if-dialogue-editor', ['nicknames', 'nickname']);
+    focusIframeWorkflow('if-dialogue-editor', ['nicknames', 'nickname'], true);
   }
 });
 
