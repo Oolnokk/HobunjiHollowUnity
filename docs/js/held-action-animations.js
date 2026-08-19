@@ -44,6 +44,7 @@
     new URL('js/procedural-hand-two-bone-skin.js?v=20260819c', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260819d', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260819f', docsBase).href,
+    new URL('js/procedural-hand-lifecycle-guard.js?v=20260819a', docsBase).href,
   ];
   if (isAttackEditor) {
     handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20260818a', docsBase).href);
