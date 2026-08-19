@@ -12,17 +12,34 @@
 
   const DEFAULT_MODEL_SCALE = 2;
   const PARROT_MODEL_SCALE = 3;
-  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
+  const SHARED_ALIGNMENT_PRESET = 'attack-editor-closeup-visual-grips-v1';
   const MODEL_SCALE_PRESET = 'parrot-3x-v1';
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
   });
-  // Canonical alignment is intentionally reused for every species/model.
-  // Kenkari/Rakako'an use the opposite source-X mirror on their parrot hand model below.
-  const MAO_AO_HAND_TRANSFORM = Object.freeze({
-    position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
-    rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }),
+
+  // These are the literal model-field values that produced the approved visual
+  // hand/tool relationship in the Attack Editor's Hand + Tool close-up. The
+  // rendered result is authoritative; gameplay and the close-up both compose
+  // these through HobunjiHandGripModes.effectiveFrameForSpecies().
+  const AUTHORED_HAND_TRANSFORMS = Object.freeze({
+    feline: Object.freeze({
+      position: Object.freeze({ x: 0, y: 0.10, z: 0.08 }),
+      rotationDeg: Object.freeze({ pitch: -90, yaw: 0, roll: 0 }),
+    }),
+    sloth: Object.freeze({
+      position: Object.freeze({ x: 0, y: 0.26, z: 0.50 }),
+      rotationDeg: Object.freeze({ pitch: -90, yaw: 0, roll: 0 }),
+    }),
+    parrot: Object.freeze({
+      position: Object.freeze({ x: 0, y: 0.17, z: 0.07 }),
+      rotationDeg: Object.freeze({ pitch: -90, yaw: 0, roll: 0 }),
+    }),
+    pachyderm: Object.freeze({
+      position: Object.freeze({ x: 0, y: 0.07, z: 0.10 }),
+      rotationDeg: Object.freeze({ pitch: -70, yaw: 0, roll: 0 }),
+    }),
   });
 
   function identityTransform() {
@@ -32,10 +49,11 @@
     };
   }
 
-  function maoAoHandTransform() {
+  function authoredHandTransform(modelKey) {
+    const source = AUTHORED_HAND_TRANSFORMS[modelKey] || IDENTITY_TRANSFORM;
     return {
-      position: { ...MAO_AO_HAND_TRANSFORM.position },
-      rotationDeg: { ...MAO_AO_HAND_TRANSFORM.rotationDeg },
+      position: { ...source.position },
+      rotationDeg: { ...source.rotationDeg },
     };
   }
 
@@ -48,6 +66,11 @@
     alignmentPreset: SHARED_ALIGNMENT_PRESET,
     modelScalePreset: MODEL_SCALE_PRESET,
     handHeightFraction: 0.12,
+    visualCalibration: {
+      source: 'attack-editor-hand-tool-closeup',
+      authority: 'rendered-hand-tool-relationship',
+      baselineGripMode: 'palm-parallel',
+    },
     sourceBasis: {
       handedness: 'left',
       rightHandTransform: 'mirror-x',
@@ -63,7 +86,8 @@
         glb: 'assets/models/hands/hand_pachyderm.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: maoAoHandTransform(),
+        horizontalMirrorX: true,
+        handFromTool: authoredHandTransform('pachyderm'),
         // Legacy no-op retained so older code/config readers do not break.
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
@@ -72,7 +96,8 @@
         glb: 'assets/models/hands/hand_sloth.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: maoAoHandTransform(),
+        horizontalMirrorX: true,
+        handFromTool: authoredHandTransform('sloth'),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'bone' },
       },
@@ -80,16 +105,19 @@
         glb: 'assets/models/hands/hand_feline.glb',
         scale: DEFAULT_MODEL_SCALE,
         mirrorX: true,
-        handFromTool: maoAoHandTransform(),
+        horizontalMirrorX: true,
+        handFromTool: authoredHandTransform('feline'),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body' },
       },
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
         scale: PARROT_MODEL_SCALE,
-        // Kenkari/Rakako'an use the shared setup with the source handedness flipped.
+        // Source-handedness remains opposite for this asset. Pair-wide visual
+        // mirroring is a separate authored setting and is enabled below.
         mirrorX: false,
-        handFromTool: maoAoHandTransform(),
+        horizontalMirrorX: true,
+        handFromTool: authoredHandTransform('parrot'),
         toolGrip: identityTransform(),
         materialRoles: { MAT_None_7a4e2e: 'body', MAT_EyeSurface_0c0c0c: 'keratin' },
       },
@@ -221,6 +249,13 @@
     const migrateParrotScale = next.modelScalePreset !== MODEL_SCALE_PRESET;
     next.alignmentPreset = SHARED_ALIGNMENT_PRESET;
     next.modelScalePreset = MODEL_SCALE_PRESET;
+    next.visualCalibration = {
+      ...clone(DEFAULT_DATA.visualCalibration),
+      ...(next.visualCalibration || {}),
+      source: 'attack-editor-hand-tool-closeup',
+      authority: 'rendered-hand-tool-relationship',
+      baselineGripMode: 'palm-parallel',
+    };
     next.sourceBasis = {
       ...clone(DEFAULT_DATA.sourceBasis),
       ...(next.sourceBasis || {}),
@@ -242,15 +277,18 @@
       if (migrateParrotScale && modelKey === 'parrot' && Number(model.scale) === DEFAULT_MODEL_SCALE) {
         model.scale = PARROT_MODEL_SCALE;
       }
-      // Existing local/exported drafts from before this shared direction migrate once.
-      // After the marker is present, editor changes remain freely editable.
+      // This preset is intentionally a visual calibration migration. Old local
+      // drafts used the previous shared Mao'ao transform, which would otherwise
+      // silently override the newly approved close-up result when the editor loads.
       if (migrateToSharedAlignment) {
-        model.handFromTool = maoAoHandTransform();
+        model.handFromTool = authoredHandTransform(modelKey);
+        model.horizontalMirrorX = true;
         model.mirrorX = modelKey === 'parrot' ? false : true;
       } else {
         // New/missing values inherit the corrected left-source convention. Explicit
         // false remains a valid per-model override for a GLB authored as a right hand.
         model.mirrorX = model.mirrorX !== false;
+        if (typeof model.horizontalMirrorX !== 'boolean') model.horizontalMirrorX = true;
       }
       // Older hand-profile drafts may still contain model.shoulderAim. It is now
       // deliberately discarded because shoulder-axis choices belong to poses.
