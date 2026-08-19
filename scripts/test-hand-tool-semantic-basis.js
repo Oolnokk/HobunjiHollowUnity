@@ -85,7 +85,7 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(rotatedAudit.wristVector)), { x
 
 // A left-handed triplet is legitimate reflection metadata but cannot silently be
 // converted to a quaternion. The UI must surface that rather than pretending Apply worked.
-const reflected = basis.validateHandAxes({ fingers: '+y', thumb: '+x', palm: '+z' });
+const reflected = basis.validateHandAxes({ fingers: '+y', thumb: '+x', palm: '-z' });
 assert.strictEqual(reflected.valid, true);
 assert.strictEqual(reflected.handedness, 'left-handed');
 assert.strictEqual(reflected.rotationSupported, false);
