@@ -328,9 +328,12 @@
     const distance = Math.max(0.18, radius / Math.max(0.15, Math.sin(halfFov)) * 1.15);
     controls.target.copy(center);
     camera.position.copy(center).addScaledVector(direction, distance);
-    controls.minDistance = Math.max(0.03, radius * 0.25);
+    // Grip calibration needs true macro inspection. The previous radius*0.25
+    // floor stopped well before the hand filled the viewport; allow roughly
+    // an order of magnitude more dolly-in while keeping a tiny nonzero floor.
+    controls.minDistance = Math.max(0.004, radius * 0.025);
     controls.maxDistance = Math.max(2, radius * 12);
-    camera.near = Math.max(0.002, distance / 150);
+    camera.near = Math.max(0.00025, distance / 1000);
     camera.far = Math.max(20, distance * 30);
     camera.updateProjectionMatrix();
     controls.update();
@@ -397,7 +400,7 @@
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b0f14);
-    camera = new THREE.PerspectiveCamera(42, 1, 0.002, 30);
+    camera = new THREE.PerspectiveCamera(42, 1, 0.00025, 30);
     camera.position.set(0.65, 0.45, 0.85);
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, 2));
