@@ -94,6 +94,11 @@
     return { x: x / length, y: y / length, z: z / length, w: w / length };
   }
 
+  function inverseQuat(rawQuat) {
+    const q = normalizeQuat(rawQuat); // Used to derive the actual spatial delta between the calibrated and mode-adjusted authored frames.
+    return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
+  }
+
   function rotateVectorByQuat(vector = {}, rawQuat = {}) {
     const q = normalizeQuat(rawQuat);
     const vx = Number(vector.x) || 0;
@@ -136,23 +141,32 @@
 
   function combine(base, mode) {
     const bp = base?.position || {};
+    const br = base?.rotationDeg || {};
     const mp = mode?.position || {};
-    const modeQ = quatFromYXZ(mode?.rotationDeg || {});
-    const fineQ = quatFromYXZ(base?.rotationDeg || {});
-    const rotationQuaternion = normalizeQuat(multiplyQuat(modeQ, fineQ));
+    const mr = mode?.rotationDeg || {};
+    const fineQ = quatFromYXZ(br);
 
-    // Compose this as a real rigid transform: the model-fine translation lives
-    // inside the selected grip basis, so changing grip orientation must rotate it.
-    // Plain XYZ addition made perpendicular grips orbit/slide as though their
-    // translation still belonged to the unrotated palm-parallel frame.
-    const rotatedFinePosition = rotateVectorByQuat(bp, modeQ);
+    // Grip-mode axes are authoring axes, not pre-calibration/world axes. Applying
+    // +90° pitch before the shared -90° yaw calibration turned Palm Perpendicular
+    // into an apparent roll. Build the target authored Euler first so the preset
+    // changes exactly the named axis, then derive the rigid spatial delta from it.
+    const targetRotation = {
+      pitch: (Number(br.pitch) || 0) + (Number(mr.pitch) || 0),
+      yaw: (Number(br.yaw) || 0) + (Number(mr.yaw) || 0),
+      roll: (Number(br.roll) || 0) + (Number(mr.roll) || 0),
+    };
+    const rotationQuaternion = normalizeQuat(quatFromYXZ(targetRotation));
+    const modeDeltaQ = normalizeQuat(multiplyQuat(rotationQuaternion, inverseQuat(fineQ)));
+
+    // Keep translation a true rigid transform under the same effective mode delta.
+    const rotatedFinePosition = rotateVectorByQuat(bp, modeDeltaQ);
     return {
       position: {
         x: (Number(mp.x) || 0) + rotatedFinePosition.x,
         y: (Number(mp.y) || 0) + rotatedFinePosition.y,
         z: (Number(mp.z) || 0) + rotatedFinePosition.z,
       },
-      rotationDeg: eulerYXZFromQuat(rotationQuaternion),
+      rotationDeg: targetRotation,
       rotationQuaternion,
     };
   }
