@@ -170,13 +170,23 @@
     return quaternionFromDeg(record, authored.rotationDeg || {});
   }
 
+  function hierarchyWorldQuaternion(record, node, target = new record.THREE.Quaternion()) {
+    const chain = []; // Used below to compose node-local rotations without decomposing mirrored matrixWorld values.
+    for (let cursor = node; cursor?.isObject3D; cursor = cursor.parent) chain.push(cursor);
+    target.identity();
+    for (let i = chain.length - 1; i >= 0; i -= 1) target.multiply(chain[i].quaternion);
+    return target.normalize();
+  }
+
   function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
     toolHolder.updateWorldMatrix?.(true, true);
 
     let position;
-    let quaternion = toolHolder.getWorldQuaternion(new Quaternion());
+    // Used as the scale-free world orientation of the tool socket. Do not use
+    // getWorldQuaternion(): the game player hierarchy can contain negative scale.
+    let quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
     if (secondaryGrip) {
       const p = secondaryGrip.position || {};
       position = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0);
@@ -231,6 +241,7 @@
         clamped: false,
         noArmIK: true,
         quaternionNativeGripComposition: !!primary.authored.rotationQuaternion,
+        scaleFreeWorldQuaternion: true,
         toolKey: toolKey || null,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         secondaryActive: record.secondaryActive,
@@ -330,6 +341,7 @@
         noArmIK: true,
         toolKey: record.lastToolKey,
         secondaryActive: record.secondaryActive,
+        scaleFreeWorldQuaternion: true,
         handFromTool: global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
           || profiles.handTransformForSpecies?.(record.speciesId)
           || null,
