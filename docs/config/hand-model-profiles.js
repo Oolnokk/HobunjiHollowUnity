@@ -11,18 +11,18 @@
   'use strict';
 
   const DEFAULT_MODEL_SCALE = 2;
-  const SHARED_ALIGNMENT_PRESET = 'mao-ao-shared-v1';
+  const PARROT_MODEL_SCALE = 3;
+  const SHARED_ALIGNMENT_PRESET = 'all-species-direction-90--90-0-v1';
+  const MODEL_SCALE_PRESET = 'parrot-3x-v1';
   const IDENTITY_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: 0, y: 0, z: 0 }),
     rotationDeg: Object.freeze({ pitch: 0, yaw: 0, roll: 0 }),
   });
-  // Canonical alignment authored on Mao'ao and intentionally reused for every
-  // species/model. Species still choose their own GLB and anatomy scale; only the
-  // tool-relative hand setup is shared. Kenkari/Rakako'an use the opposite source-X
-  // mirror on their parrot hand model below.
+  // Canonical alignment is intentionally reused for every species/model.
+  // Kenkari/Rakako'an use the opposite source-X mirror on their parrot hand model below.
   const MAO_AO_HAND_TRANSFORM = Object.freeze({
     position: Object.freeze({ x: -0.07, y: -0.13, z: 0.21 }),
-    rotationDeg: Object.freeze({ pitch: 90, yaw: -28, roll: 92 }),
+    rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }),
   });
 
   function identityTransform() {
@@ -39,9 +39,14 @@
     };
   }
 
+  function defaultScaleForModel(modelKey) {
+    return modelKey === 'parrot' ? PARROT_MODEL_SCALE : DEFAULT_MODEL_SCALE;
+  }
+
   const DEFAULT_DATA = {
     schema: 'hobunji_hand_model_profiles.v1',
     alignmentPreset: SHARED_ALIGNMENT_PRESET,
+    modelScalePreset: MODEL_SCALE_PRESET,
     handHeightFraction: 0.12,
     sourceBasis: {
       handedness: 'left',
@@ -81,8 +86,8 @@
       },
       parrot: {
         glb: 'assets/models/hands/hand_parrot.glb',
-        scale: DEFAULT_MODEL_SCALE,
-        // Kenkari/Rakako'an use the Mao'ao setup with the source handedness flipped.
+        scale: PARROT_MODEL_SCALE,
+        // Kenkari/Rakako'an use the shared setup with the source handedness flipped.
         mirrorX: false,
         handFromTool: maoAoHandTransform(),
         toolGrip: identityTransform(),
@@ -126,8 +131,10 @@
 
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
-    const migrateToSharedMaoAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
+    const migrateToSharedAlignment = next.alignmentPreset !== SHARED_ALIGNMENT_PRESET;
+    const migrateParrotScale = next.modelScalePreset !== MODEL_SCALE_PRESET;
     next.alignmentPreset = SHARED_ALIGNMENT_PRESET;
+    next.modelScalePreset = MODEL_SCALE_PRESET;
     next.sourceBasis = {
       ...clone(DEFAULT_DATA.sourceBasis),
       ...(next.sourceBasis || {}),
@@ -143,10 +150,15 @@
     for (const [modelKey, model] of Object.entries(next.models)) {
       if (!model || typeof model !== 'object') continue;
       const modelScale = Number(model.scale);
-      if (!Number.isFinite(modelScale) || modelScale <= 0) model.scale = DEFAULT_MODEL_SCALE;
-      // Existing local/exported drafts from before this shared setup migrate once.
+      if (!Number.isFinite(modelScale) || modelScale <= 0) model.scale = defaultScaleForModel(modelKey);
+      // A stored parrot value of exactly 2 is the former source default. Migrate it
+      // once to the new 3x pre-scale while preserving genuinely custom values.
+      if (migrateParrotScale && modelKey === 'parrot' && Number(model.scale) === DEFAULT_MODEL_SCALE) {
+        model.scale = PARROT_MODEL_SCALE;
+      }
+      // Existing local/exported drafts from before this shared direction migrate once.
       // After the marker is present, editor changes remain freely editable.
-      if (migrateToSharedMaoAlignment) {
+      if (migrateToSharedAlignment) {
         model.handFromTool = maoAoHandTransform();
         model.mirrorX = modelKey === 'parrot' ? false : true;
       } else {
@@ -238,7 +250,7 @@
   }
   function modelScaleFor(speciesId) {
     const value = Number(modelForSpecies(speciesId)?.scale);
-    return Number.isFinite(value) && value > 0 ? value : DEFAULT_MODEL_SCALE;
+    return Number.isFinite(value) && value > 0 ? value : defaultScaleForModel(modelKeyForSpecies(speciesId));
   }
   function effectiveScaleFor(speciesId, gender) {
     return modelScaleFor(speciesId) * speciesScaleFor(speciesId, gender);
