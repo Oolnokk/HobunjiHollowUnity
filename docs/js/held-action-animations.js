@@ -26,7 +26,7 @@
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('./', location.href);
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
   const handScripts = [
-    new URL('config/hand-model-profiles.js?v=20260819a', docsBase).href,
+    new URL('config/hand-model-profiles.js?v=20260819b', docsBase).href,
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
@@ -62,7 +62,7 @@
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819e', docsBase).href);
     handScripts.push(new URL('js/attack-editor-animation-state-guard.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-initialization-guard.js?v=20260819a', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-tool-closeup.js?v=20260819b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-tool-closeup.js?v=20260819c', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260819a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
