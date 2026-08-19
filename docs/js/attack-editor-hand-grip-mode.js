@@ -122,9 +122,10 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      if (gripModes.modes[parsed?.gripMode]) {
-        setTimeout(() => applyMode(parsed.gripMode, true), 0);
-      }
+      setTimeout(() => {
+        if (gripModes.modes[parsed?.gripMode]) applyMode(parsed.gripMode, true);
+        else chooseDefaultForTool();
+      }, 0);
     } catch (_) {}
   });
 
