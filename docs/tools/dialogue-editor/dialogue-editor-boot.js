@@ -50,7 +50,7 @@ function wire(){
   $('importBtn').onclick=()=>$('fileInput').click();$('fileInput').onchange=e=>{const file=e.target.files[0];if(file)loadFile(file);e.target.value=''};
   $('undoBtn').onclick=undo;$('redoBtn').onclick=redo;$('exportDbBtn').onclick=exportDatabase;$('exportBtn').onclick=exportLayout;
   $('saveDbOverrideBtn').onclick=saveDbOverride;$('clearDbOverrideBtn').onclick=clearDbOverride;$('poolModalBtn').onclick=openPoolModal;$('poolModalClose').onclick=closePoolModal;$('addPoolBtn').onclick=addPool;
-  $('playerAddressTermsBtn').onclick=openPlayerAddressTerms;$('playerAddressTermsBtn').title='Open this NPC’s Nicknames phrase pool — the address terms used for player {targetName} greetings';
+  $('playerAddressTermsBtn').onclick=openPlayerAddressTerms;$('playerAddressTermsBtn').title='Open this NPC’s Nicknames phrase pool — the address terms used for player {targetName} greetings';$('playerAddressTermsBtn').classList.remove('topOptional');
   $('randomPromptBtn').onclick=openRandomPrompt;$('randomPromptClose').onclick=closeRandomPrompt;$('rerollBtn').onclick=rerollPrompts;
   $('diagBtn').onclick=()=>{$('diagDrawer').classList.toggle('hidden');renderDiagnostics()};$('errorBadge').onclick=openDiagnostics;$('errorBadge').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openDiagnostics()}};$('errorBadge').style.cursor='pointer';$('closeDiag').onclick=()=>$('diagDrawer').classList.add('hidden');$('copyDiag').onclick=copyDiagnostics;$('clearDiag').onclick=()=>{state.errors=[];state.events=[];$('errorCount').textContent='0';$('errorBadge').classList.remove('show');renderDiagnostics()};
   $('closeNodeEditor').onclick=()=>{state.nodeId=null;state.editorMode='tree';renderGraph();syncAuthoringButtons()};
