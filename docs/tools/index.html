@@ -85,70 +85,30 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
     <div id="tab-area">
       <div id="tabbar">
         <span class="tab-group" style="border:none;margin:0">Game</span>
-        <button class="tab active" data-target="map-editor">
-          <span class="tab-dot"></span>🗺 Map Editor
-        </button>
-        <button class="tab" data-target="schedule-editor">
-          <span class="tab-dot"></span>🕒 Schedule Editor
-        </button>
-        <button class="tab" data-target="character-studio">
-          <span class="tab-dot"></span>🧍 Character Studio
-        </button>
-        <button class="tab" data-target="color-editor">
-          <span class="tab-dot"></span>🎨 Body &amp; Dye Colors
-        </button>
-        <button class="tab" data-target="dialogue-editor">
-          <span class="tab-dot"></span>💬 Dialogue Editor
-        </button>
-        <button class="tab" data-target="ambient-dialogue-editor">
-          <span class="tab-dot"></span>🗨 Ambient Dialogue
-        </button>
-        <button class="tab" data-target="cutscene-director">
-          <span class="tab-dot"></span>🎬 Cutscene Director
-        </button>
-        <button class="tab" data-target="animation-author">
-          <span class="tab-dot"></span>🕺 Animation Author
-        </button>
-        <button class="tab" data-target="procedural-animation-editor">
-          <span class="tab-dot"></span>🦶 Procedural Animation
-        </button>
+        <button class="tab active" data-target="map-editor"><span class="tab-dot"></span>🗺 Map Editor</button>
+        <button class="tab" data-target="schedule-editor"><span class="tab-dot"></span>🕒 Schedule Editor</button>
+        <button class="tab" data-target="character-studio"><span class="tab-dot"></span>🧍 Character Studio</button>
+        <button class="tab" data-target="color-editor"><span class="tab-dot"></span>🎨 Body &amp; Dye Colors</button>
+        <button class="tab" data-target="dialogue-editor"><span class="tab-dot"></span>💬 Dialogue Editor</button>
+        <button class="tab" data-target="ambient-dialogue-editor"><span class="tab-dot"></span>🗨 Ambient Dialogue</button>
+        <button class="tab" data-target="cutscene-director"><span class="tab-dot"></span>🎬 Cutscene Director</button>
+        <button class="tab" data-target="animation-author"><span class="tab-dot"></span>🕺 Animation Author</button>
+        <button class="tab" data-target="procedural-animation-editor"><span class="tab-dot"></span>🦶 Procedural Animation</button>
         <span class="tab-group">Combat</span>
-        <button class="tab" data-target="world-popup-editor">
-          <span class="tab-dot"></span>🔢 Popup Text Editor
-        </button>
-        <button class="tab" data-target="attack-animation-editor">
-          <span class="tab-dot"></span>⚔ Attack Animation Editor
-        </button>
+        <button class="tab" data-target="world-popup-editor"><span class="tab-dot"></span>🔢 Popup Text Editor</button>
+        <button class="tab" data-target="attack-animation-editor"><span class="tab-dot"></span>⚔ Attack Animation Editor</button>
         <span class="tab-group">Assets</span>
-        <button class="tab" data-target="house-piece-author">
-          <span class="tab-dot"></span>🏠 House Editor
-        </button>
-        <button class="tab" data-target="wall-builder">
-          <span class="tab-dot"></span>🧱 Wall Builder
-        </button>
-        <button class="tab" data-target="furniture-avatar-author">
-          <span class="tab-dot"></span>🪑 Furniture + Avatar Author
-        </button>
-        <button class="tab" data-target="fish-editor">
-          <span class="tab-dot"></span>🐟 Fish Editor
-        </button>
-        <button class="tab" data-target="tree-asset-exporter">
-          <span class="tab-dot"></span>🌲 Tree Assets
-        </button>
+        <button class="tab" data-target="house-piece-author"><span class="tab-dot"></span>🏠 House Editor</button>
+        <button class="tab" data-target="wall-builder"><span class="tab-dot"></span>🧱 Wall Builder</button>
+        <button class="tab" data-target="furniture-avatar-author"><span class="tab-dot"></span>🪑 Furniture + Avatar Author</button>
+        <button class="tab" data-target="fish-editor"><span class="tab-dot"></span>🐟 Fish Editor</button>
+        <button class="tab" data-target="tree-asset-exporter"><span class="tab-dot"></span>🌲 Tree Assets</button>
         <span class="tab-group">World</span>
-        <button class="tab" data-target="background-scenery-author">
-          <span class="tab-dot"></span>🏞 Background Scenery
-        </button>
-        <button class="tab" data-target="building-interior-author">
-          <span class="tab-dot"></span>🏠 Interior Editor
-        </button>
-        <button class="tab" data-target="locale-editor">
-          <span class="tab-dot"></span>🌿 Locale Editor
-        </button>
+        <button class="tab" data-target="background-scenery-author"><span class="tab-dot"></span>🏞 Background Scenery</button>
+        <button class="tab" data-target="building-interior-author"><span class="tab-dot"></span>🏠 Interior Editor</button>
+        <button class="tab" data-target="locale-editor"><span class="tab-dot"></span>🌿 Locale Editor</button>
         <span class="tab-group">Economy</span>
-        <button class="tab" data-target="loot-shop-editor">
-          <span class="tab-dot"></span>💰 Loot &amp; Shop Editor
-        </button>
+        <button class="tab" data-target="loot-shop-editor"><span class="tab-dot"></span>💰 Loot &amp; Shop Editor</button>
       </div>
       <div id="workflow-bar" role="region" aria-live="polite">
         <strong id="workflow-title"></strong>
@@ -156,66 +116,26 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <div id="workflow-actions"></div>
       </div>
       <div id="frames">
-        <div class="frame-wrap active" id="fw-map-editor">
-          <iframe src="map-editor/index.html" title="Map Editor" id="if-map-editor"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-schedule-editor">
-          <iframe src="schedule-editor/index.html" title="Schedule Editor" id="if-schedule-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-character-studio">
-          <iframe src="character-studio/index.html" title="Character Studio" id="if-character-studio" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-color-editor">
-          <iframe src="color-editor/index.html" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-dialogue-editor">
-          <iframe src="dialogue-editor/index.html" title="Dialogue Editor" id="if-dialogue-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-ambient-dialogue-editor">
-          <iframe src="ambient-dialogue-editor/index.html" title="Ambient Dialogue Editor" id="if-ambient-dialogue-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-cutscene-director">
-          <iframe src="cutscene-director/index.html" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-animation-author">
-          <iframe src="animation-author/index.html" title="Animation Author" id="if-animation-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-procedural-animation-editor">
-          <iframe src="procedural-animation-editor/index.html" title="Procedural Animation" id="if-procedural-animation-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-attack-animation-editor">
-          <iframe src="attack-animation-editor/index.html" title="Attack Animation Editor" id="if-attack-animation-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-world-popup-editor">
-          <iframe src="world-popup-editor/index.html" title="World Popup Text Editor" id="if-world-popup-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-house-piece-author">
-          <iframe src="house-piece-author/index.html" title="House Editor" id="if-house-piece-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-wall-builder">
-          <iframe src="wall-builder/index.html" title="Wall Builder" id="if-wall-builder" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-furniture-avatar-author">
-          <iframe src="furniture-avatar-author/index.html" title="Furniture + Avatar Author" id="if-furniture-avatar-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-fish-editor">
-          <iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-tree-asset-exporter">
-          <iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-background-scenery-author">
-          <iframe src="background-scenery-author/index.html" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-building-interior-author">
-          <iframe src="building-interior-author/index.html" title="Interior Editor" id="if-building-interior-author" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-locale-editor">
-          <iframe src="locale-editor/index.html" title="Locale Editor" id="if-locale-editor" loading="lazy"></iframe>
-        </div>
-        <div class="frame-wrap" id="fw-loot-shop-editor">
-          <iframe src="loot-shop-editor/index.html" title="Loot & Shop Editor" id="if-loot-shop-editor" loading="lazy"></iframe>
-        </div>
+        <div class="frame-wrap active" id="fw-map-editor"><iframe src="map-editor/index.html" title="Map Editor" id="if-map-editor"></iframe></div>
+        <div class="frame-wrap" id="fw-schedule-editor"><iframe src="schedule-editor/index.html" title="Schedule Editor" id="if-schedule-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-character-studio"><iframe src="character-studio/index.html" title="Character Studio" id="if-character-studio" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-color-editor"><iframe src="color-editor/index.html" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-dialogue-editor"><iframe src="dialogue-editor/index.html" title="Dialogue Editor" id="if-dialogue-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-ambient-dialogue-editor"><iframe src="ambient-dialogue-editor/index.html" title="Ambient Dialogue Editor" id="if-ambient-dialogue-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-cutscene-director"><iframe src="cutscene-director/index.html" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-animation-author"><iframe src="animation-author/index.html" title="Animation Author" id="if-animation-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-procedural-animation-editor"><iframe src="procedural-animation-editor/index.html" title="Procedural Animation" id="if-procedural-animation-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-attack-animation-editor"><iframe src="attack-animation-editor/index.html" title="Attack Animation Editor" id="if-attack-animation-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-world-popup-editor"><iframe src="world-popup-editor/index.html" title="World Popup Text Editor" id="if-world-popup-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-house-piece-author"><iframe src="house-piece-author/index.html" title="House Editor" id="if-house-piece-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-wall-builder"><iframe src="wall-builder/index.html" title="Wall Builder" id="if-wall-builder" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-furniture-avatar-author"><iframe src="furniture-avatar-author/index.html" title="Furniture + Avatar Author" id="if-furniture-avatar-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-fish-editor"><iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-tree-asset-exporter"><iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-background-scenery-author"><iframe src="background-scenery-author/index.html" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-building-interior-author"><iframe src="building-interior-author/index.html" title="Interior Editor" id="if-building-interior-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-locale-editor"><iframe src="locale-editor/index.html" title="Locale Editor" id="if-locale-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-loot-shop-editor"><iframe src="loot-shop-editor/index.html" title="Loot & Shop Editor" id="if-loot-shop-editor" loading="lazy"></iframe></div>
       </div>
     </div>
   </div>
@@ -244,11 +164,11 @@ const workflowCopy = document.getElementById('workflow-copy');
 const workflowActions = document.getElementById('workflow-actions');
 const WORKFLOW_HELP = {
   'procedural-animation-editor': {
-    title: 'Ragdoll / Footing / impact blendspaces',
-    copy: 'Direct access to the physics recorder and the existing baked impact blendspace authoring section.',
+    title: 'Procedural animation panels',
+    copy: 'The old nested authoring sections are exposed as direct tabs/panels; these shortcuts select the exact panel without starting an action.',
     actions: [
-      { button: '🎥 Ragdoll recorder', action: 'ragdoll' },
-      { button: '💥 Impact blendspaces', action: 'impact-blendspace' }
+      { button: '🎥 Ragdoll / Footing', action: 'ragdoll' },
+      { button: '💥 Impact blendspace', action: 'impact-blendspace' }
     ]
   },
   'ambient-dialogue-editor': {
@@ -336,28 +256,60 @@ function focusIframeWorkflow(frameId, terms, activate=false, attempts=0, fallbac
   if (fallback) workflowCopy.textContent = fallback;
   else if (frameId === 'if-dialogue-editor') {
     workflowCopy.textContent = 'Select an NPC in Dialogue Editor, then choose its Nicknames phrase pool. That pool supplies {targetName} for player greetings.';
-  } else {
-    workflowCopy.textContent = 'The ragdoll/Footing workflow is in this editor, but the Hub could not auto-focus its control. Scroll for the Footing / ragdoll authoring panel.';
   }
   return false;
 }
+
+function installProceduralEditorTabs() {
+  const iframe = document.getElementById('if-procedural-animation-editor');
+  try {
+    const doc = iframe?.contentDocument;
+    if (!doc?.head || !doc.body) return false;
+    if (iframe.contentWindow?.ProceduralAnimationEditorNav) return true;
+    if (doc.getElementById('proceduralPanelTabsLoader')) return true;
+    const script = doc.createElement('script');
+    script.id = 'proceduralPanelTabsLoader';
+    script.src = 'panel-tabs.js?v=1';
+    script.async = false;
+    script.addEventListener('error', () => {
+      script.remove();
+      workflowCopy.textContent = 'Could not load the procedural panel tabs. Reload the Procedural Animation editor and try again.';
+    }, { once: true });
+    doc.head.appendChild(script);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function selectProceduralEditorTab(tabId, attempts=0) {
+  const iframe = document.getElementById('if-procedural-animation-editor');
+  installProceduralEditorTabs();
+  try {
+    const nav = iframe?.contentWindow?.ProceduralAnimationEditorNav;
+    if (nav?.selectTab?.(tabId)) return true;
+  } catch (_) {}
+  if (attempts < 24) {
+    setTimeout(() => selectProceduralEditorTab(tabId, attempts + 1), 250);
+    return false;
+  }
+  workflowCopy.textContent = 'The Procedural Animation tab loaded, but its panel-navigation bridge did not initialize. Reload that editor and try again.';
+  return false;
+}
+
+const proceduralIframe = document.getElementById('if-procedural-animation-editor');
+proceduralIframe.addEventListener('load', installProceduralEditorTabs);
 
 workflowActions.addEventListener('click', event => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
   if (action === 'ragdoll') {
-    focusIframeWorkflow('if-procedural-animation-editor', ['ragdoll', 'footing', 'break-throw', 'impact']);
+    selectProceduralEditorTab('ragdoll');
     return;
   }
   if (action === 'impact-blendspace') {
-    focusIframeWorkflow(
-      'if-procedural-animation-editor',
-      ['baked impact blend space', 'auto-build 4-way from current settings', 'ragdollblendautobuildbtn'],
-      false,
-      0,
-      'The impact blendspace authoring block exists in Procedural Animation, but the Hub could not reveal it automatically. Look inside the ragdoll/Footing panel for “Baked impact blend space”.'
-    );
+    selectProceduralEditorTab('impact-blendspace');
     return;
   }
   if (action === 'player-address') {
@@ -427,13 +379,13 @@ function switchToTab(target) {
   tabs.forEach(t => t.classList.toggle('active', t.dataset.target === target));
   frames.forEach(f => f.classList.toggle('active', f.id === 'fw-' + target));
   updateWorkflowBar(target);
+  if (target === 'procedural-animation-editor') setTimeout(installProceduralEditorTabs, 0);
 }
 
 function openInStudio(npcId) {
   selectedNpcId = npcId;
   const q = document.getElementById('npc-search').value.toLowerCase();
   renderNpcList(q ? allNpcs.filter(n => matchNpc(n, q)) : allNpcs);
-  // Switch to Character Studio tab and select the NPC via its bridge
   switchToTab('character-studio');
   const iframe = document.getElementById('if-character-studio');
   const tryBridge = (attempts=0) => {
@@ -467,6 +419,14 @@ document.getElementById('npc-search').addEventListener('input', e => {
 
 loadNpcDb();
 updateWorkflowBar('map-editor');
+
+// In-file debug hooks for checking the Hub/animator bridge without mutating editor state.
+window.__EDITOR_HUB_DEBUG__ = {
+  switchToTab,
+  installProceduralEditorTabs,
+  selectProceduralEditorTab,
+  getProceduralEditorNav: () => document.getElementById('if-procedural-animation-editor')?.contentWindow?.ProceduralAnimationEditorNav || null
+};
 
 // ── Hub bridge: map editor → Interior Editor ─────────────────────────────────
 window.addEventListener('message', e => {
