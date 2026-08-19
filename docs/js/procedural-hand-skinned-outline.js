@@ -10,16 +10,16 @@
 (function (global) {
   'use strict';
 
-  const THREE = global.THREE;
   const hands = global.ProceduralHandAttachments;
-  if (!THREE || !hands?.attach || hands.attach.__hobunjiSkinnedHandOutlineWrapped) return;
+  if (!hands?.attach || hands.attach.__hobunjiSkinnedHandOutlineWrapped) return;
 
   const tracked = new Set(); // Rigs whose async GLB/two-bone replacements may need a dedicated shell.
+  const threeByRig = new WeakMap(); // Preserves the Three.js instance that created each rig (editor close-up imports its own instance).
   let installedShells = 0; // Number of live-or-former hand mesh shells installed for diagnostics.
   let disabledGlobalShellMeshes = 0; // Skinned hand meshes removed from the rigid global shell/material-ID passes.
   let heldShellsRegistered = 0; // Dedicated shells explicitly adopted by the held-object ground-xray registry.
 
-  function geometryThickness(mesh) {
+  function geometryThickness(THREE, mesh) {
     const geometry = mesh?.geometry;
     if (!geometry) return 0.01;
     geometry.computeBoundingBox?.();
@@ -30,7 +30,7 @@
     return span * 0.015;
   }
 
-  function makeShellMaterial(thickness) {
+  function makeShellMaterial(THREE, thickness) {
     const material = new THREE.MeshBasicMaterial({
       color: 0x050505,
       side: THREE.BackSide,
@@ -67,8 +67,8 @@
     return false;
   }
 
-  function installForMesh(mesh) {
-    if (!mesh?.isSkinnedMesh || !mesh.geometry || !mesh.skeleton || mesh.userData?.__hobunjiSkinnedOutlineInstalled) return false;
+  function installForMesh(THREE, mesh) {
+    if (!THREE || !mesh?.isSkinnedMesh || !mesh.geometry || !mesh.skeleton || mesh.userData?.__hobunjiSkinnedOutlineInstalled) return false;
     const parent = mesh.parent;
     if (!parent) return false;
 
@@ -79,7 +79,7 @@
     mesh.layers.disable(3);
     disabledGlobalShellMeshes += 1;
 
-    const shell = new THREE.SkinnedMesh(mesh.geometry, makeShellMaterial(geometryThickness(mesh)));
+    const shell = new THREE.SkinnedMesh(mesh.geometry, makeShellMaterial(THREE, geometryThickness(THREE, mesh)));
     shell.name = `${mesh.name || 'hand'}_skinned_outline_shell`;
     shell.position.copy(mesh.position);
     shell.quaternion.copy(mesh.quaternion);
@@ -122,21 +122,22 @@
     return true;
   }
 
-  function scanRig(rig) {
+  function scanRig(THREE, rig) {
+    if (!THREE) return 0;
     let installed = 0;
     for (const side of ['left', 'right']) {
       const visual = rig?.group?.getObjectByName?.(`${side}_hand_visual`);
       visual?.traverse?.(node => {
         if (node?.userData?.hobunjiProceduralHandSkinnedShell) return;
-        if (installForMesh(node)) installed += 1;
+        if (installForMesh(THREE, node)) installed += 1;
       });
     }
     return installed;
   }
 
-  function settleScan(rig, attempt = 0) {
+  function settleScan(THREE, rig, attempt = 0) {
     if (!tracked.has(rig)) return;
-    scanRig(rig);
+    scanRig(THREE, rig);
     const debug = rig.getDebug?.() || {};
     const left = rig.group?.getObjectByName?.('left_hand_visual');
     const right = rig.group?.getObjectByName?.('right_hand_visual');
@@ -144,15 +145,16 @@
     left?.traverse?.(node => { if (node?.isSkinnedMesh && !node.userData?.hobunjiProceduralHandSkinnedShell) skinned += 1; });
     right?.traverse?.(node => { if (node?.isSkinnedMesh && !node.userData?.hobunjiProceduralHandSkinnedShell) skinned += 1; });
     if (skinned > 0 || debug.loadError || attempt >= 120) return;
-    global.setTimeout?.(() => settleScan(rig, attempt + 1), 50);
+    global.setTimeout?.(() => settleScan(THREE, rig, attempt + 1), 50);
   }
 
   const originalAttach = hands.attach;
-  const wrappedAttach = function skinnedOutlineHandAttach(...args) {
-    const rig = originalAttach.apply(this, args);
+  const wrappedAttach = function skinnedOutlineHandAttach(THREE, ...args) {
+    const rig = originalAttach.call(this, THREE, ...args);
     if (!rig) return rig;
     tracked.add(rig);
-    settleScan(rig);
+    threeByRig.set(rig, THREE || global.THREE);
+    settleScan(threeByRig.get(rig), rig);
 
     const originalRefresh = typeof rig.refreshModelProfile === 'function' ? rig.refreshModelProfile.bind(rig) : null;
     if (originalRefresh) {
@@ -162,8 +164,8 @@
         // still returned to the real caller, so this side observer must never throw
         // and create a second unhandled rejection path of its own.
         Promise.resolve(result).then(
-          () => scanRig(rig),
-          () => scanRig(rig)
+          () => scanRig(threeByRig.get(rig), rig),
+          () => scanRig(threeByRig.get(rig), rig)
         );
         return result;
       };
@@ -183,7 +185,9 @@
   hands.attach = wrappedAttach;
 
   global.ProceduralHandSkinnedOutline = Object.freeze({
-    refreshAll() { for (const rig of tracked) scanRig(rig); },
+    refreshAll() {
+      for (const rig of tracked) scanRig(threeByRig.get(rig) || global.THREE, rig);
+    },
     getDebug() {
       return {
         activeRigs: tracked.size,
