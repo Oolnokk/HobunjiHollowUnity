@@ -12,6 +12,8 @@ const gripSource = read('docs/js/hand-tool-grips.js');
 const basisSource = read('docs/js/hand-tool-semantic-basis.js');
 const authorSource = read('docs/js/attack-editor-hand-tool-basis-author.js');
 const closeupSource = read('docs/js/attack-editor-hand-tool-closeup.js');
+const attachmentSource = read('docs/js/procedural-hand-attachments.js');
+const twoBoneSource = read('docs/js/procedural-hand-two-bone-skin.js');
 const handRuntimeSource = read('docs/js/procedural-hand-semantic-basis-runtime.js');
 const toolRuntimeSource = read('docs/js/semantic-tool-basis-runtime.js');
 const heldSource = read('docs/js/held-action-animations.js');
@@ -63,6 +65,30 @@ assert.strictEqual(approvedHand.axes.fingers, '-y');
 assert.strictEqual(approvedHand.axes.thumb, '+x');
 assert.strictEqual(approvedHand.axes.palm, '-z');
 assert.strictEqual(approvedHand.handedness, 'right-handed');
+assert.strictEqual(approvedHand.rotationSupported, true);
+
+const felineAudit = basis.handTransformAuditForModel('feline');
+assert.strictEqual(felineAudit.fitAxis, 'y', 'feline normalization should follow its authored finger/wrist Y axis');
+assert.strictEqual(felineAudit.sourceMirrorAxis, 'x', 'feline opposite-hand generation should reflect its authored thumb X axis');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(felineAudit.wristVector)), { x: 0, y: 1, z: 0 });
+
+// Verify the transform consumers are genuinely axis-agnostic, not merely passing
+// because the first approved feline happens to use the old X/Y assumptions.
+const rotatedHand = basis.setHandAxesForModel('sloth', { fingers: '-z', thumb: '+y', palm: '-x' });
+assert.strictEqual(rotatedHand.valid, true);
+assert.strictEqual(rotatedHand.handedness, 'right-handed');
+assert.strictEqual(rotatedHand.rotationSupported, true);
+const rotatedAudit = basis.handTransformAuditForModel('sloth');
+assert.strictEqual(rotatedAudit.fitAxis, 'z', 'normalization must follow a non-Y finger/wrist axis');
+assert.strictEqual(rotatedAudit.sourceMirrorAxis, 'y', 'opposite-hand reflection must follow a non-X thumb axis');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(rotatedAudit.wristVector)), { x: 0, y: 0, z: 1 });
+
+// A left-handed triplet is legitimate reflection metadata but cannot silently be
+// converted to a quaternion. The UI must surface that rather than pretending Apply worked.
+const reflected = basis.validateHandAxes({ fingers: '+y', thumb: '+x', palm: '+z' });
+assert.strictEqual(reflected.valid, true);
+assert.strictEqual(reflected.handedness, 'left-handed');
+assert.strictEqual(reflected.rotationSupported, false);
 
 // Feline raw→semantic is a 180° X correction: +X stays thumbward while raw
 // -Y becomes fingers +Y and raw -Z becomes palm +Z.
@@ -104,16 +130,37 @@ assert.match(authorSource, /Blade \/ working side/, 'basis UI must expose the bl
 assert.match(authorSource, /Fingers \(\+Y semantic\)/, 'basis UI must expose hand finger direction');
 assert.match(authorSource, /Thumb \(\+X semantic\)/, 'basis UI must expose hand thumb direction');
 assert.match(authorSource, /Palm facing \(\+Z semantic\)/, 'basis UI must expose hand palm direction');
+assert.match(authorSource, /actual rendered GLB root/, 'basis UI must explain that on-hand feedback uses the rendered transform stack');
+assert.match(authorSource, /flashHandBasisAxis/, 'changing a hand axis should visibly emphasize that semantic arrow');
+assert.match(authorSource, /rotationSupported !== true/, 'editor must reject a reflection frame instead of silently skipping quaternion correction');
 assert.match(authorSource, /overlay\.style\.zIndex = '9'/, 'basis guard keeps Hand + Tool overlay above its enter button');
+
 assert.match(closeupSource, /z-index:9/, 'close-up itself must own the exit-button stacking fix');
 assert.match(closeupSource, /toolEngineQuaternionFor/, 'close-up must consume the shared semantic tool orientation');
+assert.match(closeupSource, /modelRoot\.localToWorld/, 'basis arrows must derive directions from the actual rendered GLB root');
+assert.match(closeupSource, /contentRoot\.worldToLocal/, 'world-derived basis arrows must be converted back into their non-reflected overlay parent');
+assert.match(closeupSource, /hand_semantic_basis_visual_feedback/, 'close-up must create an editor-only on-hand basis overlay');
+assert.match(closeupSource, /THUMB  \+X/, 'on-hand basis feedback must include a thumb label, not color alone');
+assert.match(closeupSource, /FINGERS  \+Y/, 'on-hand basis feedback must include a fingers label, not color alone');
+assert.match(closeupSource, /PALM  \+Z/, 'on-hand basis feedback must include a palm label, not color alone');
 assert.match(closeupSource, /camera preserved until Refit/, 'semantic basis changes must preserve the close-up camera');
+
+assert.match(attachmentSource, /handFitAxisForModel/, 'GLB size normalization must use the authored anatomical fit axis');
+assert.match(attachmentSource, /handSourceMirrorAxisForModel/, 'opposite-hand generation must use the authored thumb axis');
+assert.match(attachmentSource, /sourceRootScale/, 'attachment normalization must preserve imported root scale instead of silently overwriting it');
+assert.match(twoBoneSource, /point\.dot\(wristAxis\)/, 'forearm skin weights must project onto the semantic wrist axis');
+assert.match(twoBoneSource, /setFromUnitVectors\(skinRig\.wristAxis, targetLocal\)/, 'forearm aim must rotate the semantic wrist axis toward its target');
+assert.doesNotMatch(twoBoneSource, /const yPercent = clamp\(\(point\.y/, 'forearm weights must no longer be hardcoded to raw Y');
+
 assert.match(handRuntimeSource, /handRawToCanonicalQuaternionForSpecies/, 'game/editor hand visuals must consume the same semantic hand correction');
 assert.match(toolRuntimeSource, /toolEngineQuaternionFor/, 'gameplay tool plane must consume the same semantic tool correction');
 assert.match(toolRuntimeSource, /legacyBaseZ = anim === 'sweep' \? -Math\.PI \/ 2 : 0/, 'semantic gameplay must remove the old sweep raw-PNG base rotation');
-assert.match(heldSource, /hand-tool-semantic-basis\.js\?v=20260819b/, 'updated shared semantic basis must load in game and editor');
+assert.match(heldSource, /hand-tool-semantic-basis\.js\?v=20260819c/, 'audited shared semantic basis must load in game and editor');
+assert.match(heldSource, /procedural-hand-attachments\.js\?v=20260819a/, 'semantic fit/mirror attachment update must be cache-busted');
+assert.match(heldSource, /procedural-hand-two-bone-skin\.js\?v=20260819d/, 'semantic wrist-axis skin update must be cache-busted');
+assert.match(heldSource, /attack-editor-hand-tool-closeup\.js\?v=20260819e/, 'on-model semantic feedback must be cache-busted');
+assert.match(heldSource, /attack-editor-hand-tool-basis-author\.js\?v=20260819c/, 'basis authoring feedback controls must be cache-busted');
 assert.match(heldSource, /procedural-hand-semantic-basis-runtime\.js/, 'semantic hand presentation runtime must load in game and editor');
 assert.match(heldSource, /semantic-tool-basis-runtime\.js/, 'semantic tool presentation runtime must load in gameplay');
-assert.match(heldSource, /attack-editor-hand-tool-basis-author\.js/, 'basis authoring UI must load after the close-up');
 
-console.log('PASS: approved Hatchet/Feline semantic basis drives shared editor/runtime presentation contract');
+console.log('PASS: audited semantic hand/tool basis drives fit, handedness, forearm and rendered on-model feedback contract');
