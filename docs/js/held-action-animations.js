@@ -30,7 +30,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260818b', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20260818a', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20260819c', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20260819b', docsBase).href,
     new URL('js/hand-experimental-rig-settings.js?v=20260819b', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20260819a', docsBase).href,
@@ -50,13 +50,14 @@
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20260819b', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260819a', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260819b', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-shoulder-animation-state.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-forearm-rig.js?v=20260819c', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260819e', docsBase).href);
     handScripts.push(new URL('js/attack-editor-animation-state-guard.js?v=20260819b', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-initialization-guard.js?v=20260819a', docsBase).href);
   } else {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260819a', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
