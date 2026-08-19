@@ -20,7 +20,7 @@
   const pending = new Set(); // Tagged replacement skins waiting for HeldObjectRenderOrder to finish loading.
   const adopted = new WeakSet(); // Prevents diagnostic counters from growing when a skin is reparented.
   let adoptedCount = 0; // Number of replacement SkinnedMesh identities explicitly entered into the held registry.
-  let inheritedTagCount = 0; // Adopted skins that copied the old mesh's held-registration marker.
+  let inheritedTagCount = 0; // Adopted skins that arrived carrying the old mesh's held-registration marker.
   let flushTimer = 0; // Deferred retry while the held-object renderer is not available yet.
 
   function isProceduralHandSkin(object) {
@@ -48,6 +48,9 @@
       return false;
     }
 
+    const inheritedHeldTag = object.userData?.__hobunjiHandHeldXray === true
+      || object.userData?.hobunjiHeldObjectPlane === true;
+
     // markHeldPlane always adds this exact object to HeldObjectRenderOrder's
     // iterable registry, even when the copied hobunjiHeldObjectPlane tag means
     // its boolean return value says the semantic tag was already present.
@@ -60,7 +63,7 @@
     if (!adopted.has(object)) {
       adopted.add(object);
       adoptedCount += 1;
-      if (object.userData.__hobunjiHandHeldXray === true || object.userData.hobunjiHeldObjectPlane === true) inheritedTagCount += 1;
+      if (inheritedHeldTag) inheritedTagCount += 1;
     }
     return true;
   }
