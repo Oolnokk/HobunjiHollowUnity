@@ -1,24 +1,16 @@
 (() => {
   'use strict';
 
-  // A discoverable, inventory-scoped alternative to the hidden "scroll the
-  // hotbar to a furniture item, then aim and interact" flow that's the only way
-  // to place furniture otherwise. Deliberately NOT a spawn-for-free cheat
-  // tool (unlike the farm editor/dev spawner, which are dev-mode-gated) —
-  // works exactly like the farm editor's own paint brush: pick a piece here,
-  // then tap/click a tile on the actual game view and it's placed
-  // immediately, taken out of inventory. All placement validation (area,
-  // tile clearance) and inventory consumption stays exactly where it
-  // already lived (the decorative/processing placement functions
-  // in game.js) — this module only decides which owned items are worth
-  // listing and arms/disarms deps.armFurniturePlacement, the same "which
-  // item is the next click-to-place tile for" state the farm editor's own
-  // brush toggle uses.
+  // A discoverable, inventory-scoped furniture/portable-object placer. Normal
+  // furniture still delegates to game.js's authoritative placement machinery;
+  // Campfire is a special portable campsite because it must work in wilderness
+  // maps and deliberately must NOT enter the persistent farm-layout system.
   let deps = null;
   let _open = false;
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.CampfireSystem?.attachFurnitureDeps?.({ ...injectedDeps, render });
   }
 
   function _ownedPlaceableHere() {
@@ -28,8 +20,6 @@
       .filter(def => !def.fixture)
       .filter(def => def.area === 'any' || def.area === area)
       .filter(def => (deps.inventory[def.itemKey] || 0) > 0);
-    // Processing stations use the outdoor farm grid and world-object map;
-    // list the same owned catalog here without pretending they are decor.
     const processing = area === 'farm'
       ? Object.values(deps.getProcessingFurnitureDefs())
         .filter(def => (deps.inventory[def.itemKey] || 0) > 0)
@@ -37,20 +27,27 @@
     return decorative.concat(processing);
   }
 
-  // Only a normal ownership/permission check — NOT dev-mode gated, unlike
-  // the farm editor/dev spawner buttons that share this same top-right UI
-  // slot by default (see .fp-shifted below). Hidden while the game is
-  // paused (the main menu overlay is open) since the button sits in the
-  // same fixed top-right corner the menu panel covers.
+  function _campfireAvailableHere() {
+    const system = window.CampfireSystem;
+    return !!system?.canPlaceHere?.() && (system.ownedCount?.() || 0) > 0;
+  }
+
+  function _campfirePlacedHere() {
+    const rec = window.CampfireSystem?.current?.();
+    return rec && rec.area === deps.getCurrentArea() ? rec : null;
+  }
+
+  // Normal furniture retains the farm permission gate. A portable campfire is
+  // also available on wilderness maps, where farm permissions are irrelevant.
   function refreshVisibility() {
     const btn = document.getElementById('furniturePlacerBtn');
     if (!btn || !deps) return;
     const area = deps.getCurrentArea();
-    const show = !deps.isPaused() && (area === 'farm' || area === 'interior') && deps.hasFarmPermission('placeFurniture');
+    const normalArea = area === 'farm' || area === 'interior';
+    const normalAllowed = normalArea && deps.hasFarmPermission('placeFurniture');
+    const campfireRelevant = _campfireAvailableHere() || !!_campfirePlacedHere();
+    const show = !deps.isPaused() && (normalAllowed || campfireRelevant);
     btn.style.display = show ? '' : 'none';
-    // Takes the farm editor pencil's own slot by default (empty for
-    // virtually every player, since dev mode is off) — only shifts one
-    // slot over while dev mode is on and that slot is actually occupied.
     btn.classList.toggle('fp-shifted', deps.isDevMode());
     if (!show && _open) toggle();
   }
@@ -64,26 +61,73 @@
     if (!_open) {
       deps.armFurniturePlacement(null);
       deps.armFurnitureMove(null);
+      window.CampfireSystem?.armPlacement?.(false);
     }
     if (_open) render();
+  }
+
+  function appendCampfireOwnedRow(list) {
+    const system = window.CampfireSystem;
+    if (!system?.canPlaceHere?.() || (system.ownedCount?.() || 0) <= 0) return false;
+    const count = system.ownedCount();
+    const isArmed = !!system.armed;
+    const row = document.createElement('div');
+    row.className = 'farm-row' + (isArmed ? ' selected' : '');
+    row.innerHTML = `<span class="farm-row-icon">🔥</span><span class="farm-row-name">Campfire</span><span class="farm-note">${count} owned · portable</span>`;
+    const btn = document.createElement('button');
+    btn.className = 'settings-small-btn';
+    btn.textContent = isArmed ? 'Cancel' : 'Place';
+    btn.addEventListener('click', () => {
+      deps.armFurniturePlacement(null);
+      deps.armFurnitureMove(null);
+      system.armPlacement(!isArmed);
+      render();
+    });
+    row.appendChild(btn);
+    list.appendChild(row);
+    return true;
+  }
+
+  function appendCampfirePlacedRow(list, rec) {
+    if (!rec) return false;
+    const row = document.createElement('div');
+    row.className = 'farm-row';
+    row.innerHTML = `<span class="farm-row-icon">🔥</span><span class="farm-row-name">Campfire</span><span class="farm-note">${rec.col}, ${rec.row} · checkpoint</span>`;
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'settings-small-btn';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+      window.CampfireSystem?.remove?.(true);
+      render();
+    });
+    row.appendChild(removeBtn);
+    list.appendChild(row);
+    return true;
   }
 
   function render() {
     const hint = document.getElementById('furniturePlacerHint');
     const list = document.getElementById('furniturePlacerList');
-    if (!list) return;
+    if (!list || !deps) return;
     const owned = _ownedPlaceableHere();
     const placed = deps.getPlacedFurniture();
+    const campfirePlaced = _campfirePlacedHere();
+    const campfireOwned = _campfireAvailableHere();
     const armed = deps.getArmedFurniturePlacementKey();
     const moveArmedId = deps.getArmedFurnitureMoveId();
     if (hint) {
-      hint.textContent = moveArmedId
-        ? 'Tap a clear tile to move the selected furniture there.'
-        : (owned.length || placed.length)
-          ? 'Place owned furniture, or move/remove furniture already in this area.'
-          : "You don't own or have any furniture placed here yet.";
+      hint.textContent = window.CampfireSystem?.armed
+        ? 'Tap a clear tile in the game view to place the campfire. The previous campfire will be destroyed.'
+        : moveArmedId
+          ? 'Tap a clear tile to move the selected furniture there.'
+          : (owned.length || placed.length || campfireOwned || campfirePlaced)
+            ? 'Place owned furniture or your portable campfire; campfires are limited to one per map visit.'
+            : "You don't own or have any placeable objects here yet.";
     }
     list.innerHTML = '';
+
+    appendCampfireOwnedRow(list);
+
     owned.forEach(def => {
       const count = deps.inventory[def.itemKey] || 0;
       const isArmed = armed === def.itemKey;
@@ -94,18 +138,23 @@
       btn.className = 'settings-small-btn';
       btn.textContent = isArmed ? 'Cancel' : 'Place';
       btn.addEventListener('click', () => {
+        window.CampfireSystem?.armPlacement?.(false);
         deps.armFurniturePlacement(isArmed ? null : def.itemKey);
         render();
       });
       row.appendChild(btn);
       list.appendChild(row);
     });
-    if (placed.length) {
+
+    if (placed.length || campfirePlaced) {
       const title = document.createElement('div');
       title.className = 'house-layout-section-title';
       title.textContent = 'Placed Here';
       list.appendChild(title);
     }
+
+    appendCampfirePlacedRow(list, campfirePlaced);
+
     placed.forEach(obj => {
       const def = obj.placementKind === 'processing'
         ? deps.getProcessingFurnitureDefs()[obj.key]
