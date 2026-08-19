@@ -29,6 +29,8 @@
     const shoulderAvatar = {};
     const shoulderSource = { left: 'pending', right: 'pending' };
     const shoulderWorld = new THREE.Vector3();
+    const rawFacingShoulderLocal = new THREE.Vector3(); // Reused when removing the portrait-only dead-zone yaw from shoulder coordinates.
+    const rawFacingYawQuaternion = new THREE.Quaternion(); // Reused Y-only anatomical counter-rotation copied from the hand root.
     const debugBySide = { left: null, right: null };
     let scanState = scanner?.scanProfile || scanner?.scanSpecies ? 'pending' : 'unavailable';
     let scanError = null;
@@ -80,6 +82,25 @@
       shoulderWorld.copy(source);
       avatarRoot.updateWorldMatrix?.(true, false);
       avatarRoot.localToWorld(shoulderWorld);
+
+      // avatarRoot is the 2D billboard and therefore includes perpClamp's camera-
+      // relative snap. The hand/leg anatomy deliberately does not. If the hand
+      // root is a sibling under the same body parent, rotate the shoulder point by
+      // that root's already-resolved Y counter-rotation before aiming the forearm.
+      // This uses the same authority as the hands themselves instead of duplicating
+      // dead-zone math or deriving a second camera-dependent solution here.
+      const bodyParent = avatarRoot.parent;
+      const handRoot = rig.group;
+      const counterYaw = Number(handRoot?.rotation?.y) || 0;
+      if (bodyParent?.isObject3D && handRoot?.parent === bodyParent && Math.abs(counterYaw) > 1e-9) {
+        bodyParent.updateWorldMatrix?.(true, false);
+        rawFacingShoulderLocal.copy(shoulderWorld);
+        bodyParent.worldToLocal(rawFacingShoulderLocal);
+        rawFacingYawQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), counterYaw);
+        rawFacingShoulderLocal.applyQuaternion(rawFacingYawQuaternion);
+        shoulderWorld.copy(rawFacingShoulderLocal);
+        bodyParent.localToWorld(shoulderWorld);
+      }
       return shoulderWorld;
     }
 
@@ -186,6 +207,7 @@
         shoulderCompass: {
           mode: 'forearm-bone-shoulder-per-axis',
           handSocketRotationUntouched: true,
+          shoulderFacingBasis: 'procedural-hand-raw-facing',
           forearmAxisTrackingExperimental: settings?.forearmAxisTracking !== false,
           localBasis: { positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' },
           scanState,
@@ -210,6 +232,7 @@
   global.ProceduralHandShoulderAim = Object.freeze({
     mode: 'forearm-bone-shoulder-per-axis',
     handSocketRotationUntouched: true,
+    shoulderFacingBasis: 'procedural-hand-raw-facing',
     localBasis: Object.freeze({ positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' }),
   });
 })(window);
