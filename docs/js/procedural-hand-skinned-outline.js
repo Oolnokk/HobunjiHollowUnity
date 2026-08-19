@@ -17,6 +17,7 @@
   const tracked = new Set(); // Rigs whose async GLB/two-bone replacements may need a dedicated shell.
   let installedShells = 0; // Number of live-or-former hand mesh shells installed for diagnostics.
   let disabledGlobalShellMeshes = 0; // Skinned hand meshes removed from the rigid global shell/material-ID passes.
+  let heldShellsRegistered = 0; // Dedicated shells explicitly adopted by the held-object ground-xray registry.
 
   function geometryThickness(mesh) {
     const geometry = mesh?.geometry;
@@ -51,6 +52,19 @@
     };
     material.customProgramCacheKey = () => `hobunji-hand-skinned-shell-${thickness.toFixed(8)}`;
     return material;
+  }
+
+  function registerHeldShell(shell) {
+    if (!shell?.isMesh) return false;
+    shell.userData = shell.userData || {};
+    shell.userData.hobunjiHeldObjectPlane = true;
+    const renderer = global.HeldObjectRenderOrder;
+    if (renderer?.markHeldPlane) {
+      renderer.markHeldPlane(shell);
+      heldShellsRegistered += 1;
+      return true;
+    }
+    return false;
   }
 
   function installForMesh(mesh) {
@@ -94,6 +108,12 @@
       if (appended >= 0) parent.children.splice(appended, 1);
       parent.children.splice(index, 0, shell);
     }
+
+    // The visible hand is intentionally rendered by the held-object selective
+    // overlay so grass/terrain cannot cover it. Register its dedicated shell in
+    // that SAME overlay; otherwise the hand could x-ray the ground while its
+    // outline remained behind it, which would look like another transform error.
+    registerHeldShell(shell);
 
     mesh.userData.__hobunjiSkinnedOutlineInstalled = true;
     mesh.userData.hobunjiOutlineSource = 'dedicated-skinned-shell';
@@ -166,6 +186,7 @@
         activeRigs: tracked.size,
         installedShells,
         disabledGlobalShellMeshes,
+        heldShellsRegistered,
         mode: 'shared-skeleton-backside-shell',
       };
     },
