@@ -103,6 +103,17 @@
     status.style.color = mismatch ? '#fbbf24' : '';
   }
 
+  function syncHandToolContext(reason) {
+    // Programmatic preset changes already load the correct tool sprite in the core
+    // editor. Refresh only hand-owned state here so that sprite is not loaded twice.
+    global.HobunjiAttackEditorHandGripMode?.syncForTool?.();
+    global.HobunjiAttackEditorDirectHandAttachments?.syncFields?.();
+    frameDriver?.syncNow?.();
+    syncSerial += 1;
+    lastReason = reason || 'tool context';
+    updateStatus();
+  }
+
   // The older configurator schedules its own species refresh with setTimeout(0) and
   // preserves the previous profile by design. Schedule ours afterward so the new
   // species becomes the editor target, while a later manual profile pick still works.
@@ -150,14 +161,11 @@
     presetButton.addEventListener('click', () => {
       presetToolBeforeClick = toolSelect.value;
       // Core applyPreset runs later in the target/bubble phase. If it swaps the
-      // selector programmatically, replay the selector's normal public change path
-      // so grip-mode and secondary-grip adapters receive exactly the same update as
-      // a manual tool change.
+      // selector programmatically, refresh the hand adapters directly rather than
+      // replaying a real selector change (which would also reload the sprite twice).
       setTimeout(() => {
-        if (toolSelect.value !== presetToolBeforeClick) {
-          toolSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          lastReason = 'preset changed tool';
-        } else {
+        if (toolSelect.value !== presetToolBeforeClick) syncHandToolContext('preset changed tool');
+        else {
           frameDriver?.syncNow?.();
           lastReason = 'preset same tool';
           updateStatus();
@@ -175,6 +183,7 @@
 
   global.HobunjiAttackEditorHandStateCoherence = Object.freeze({
     syncSpeciesModelContext,
+    syncHandToolContext,
     updateStatus,
     get statusText() { return status?.textContent || ''; },
   });
