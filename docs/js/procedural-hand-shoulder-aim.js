@@ -15,18 +15,8 @@
   if (!hands?.attach || hands.attach.__hobunjiShoulderAimWrapped) return;
 
   const originalAttach = hands.attach.bind(hands);
-  const TWO_PI = Math.PI * 2;
 
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
-  function shortestAngleDelta(from, to) {
-    let delta = (Number(to) || 0) - (Number(from) || 0);
-    while (delta > Math.PI) delta -= TWO_PI;
-    while (delta < -Math.PI) delta += TWO_PI;
-    return delta;
-  }
-  function lerpAngle(from, to, weight) {
-    return (Number(from) || 0) + shortestAngleDelta(from, to) * clamp01(weight);
-  }
 
   function installShoulderAim(THREE, rig, options = {}) {
     const avatarRoot = options.avatarRoot || rig?.avatarRoot || null;
@@ -47,10 +37,12 @@
     const targetDirection = new THREE.Vector3();
     const currentTop = new THREE.Vector3();
     const deltaQuaternion = new THREE.Quaternion();
-    const aimedQuaternion = new THREE.Quaternion();
-    const currentEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-    const aimedEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-    const outputEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const weightedDeltaQuaternion = new THREE.Quaternion();
+    const authoredQuaternion = new THREE.Quaternion();
+    const outputQuaternion = new THREE.Quaternion();
+    const deltaEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const weightedDeltaEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const debugEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const debugBySide = { left: null, right: null };
     let scanState = scanner?.scanProfile || scanner?.scanSpecies ? 'pending' : 'unavailable';
     let scanError = null;
@@ -117,6 +109,24 @@
       return shoulderParent;
     }
 
+    function quaternionDebug(q) {
+      return {
+        x: Number(q.x.toFixed(5)),
+        y: Number(q.y.toFixed(5)),
+        z: Number(q.z.toFixed(5)),
+        w: Number(q.w.toFixed(5)),
+      };
+    }
+
+    function eulerDebug(q) {
+      debugEuler.setFromQuaternion(q, 'YXZ');
+      return {
+        pitch: THREE.MathUtils.radToDeg(debugEuler.x),
+        yaw: THREE.MathUtils.radToDeg(debugEuler.y),
+        roll: THREE.MathUtils.radToDeg(debugEuler.z),
+      };
+    }
+
     function aimSide(side) {
       if (disposed) return false;
       const socket = socketFor(side);
@@ -138,19 +148,25 @@
       }
       targetDirection.normalize();
 
-      currentTop.copy(localTop).applyQuaternion(socket.quaternion).normalize();
-      deltaQuaternion.setFromUnitVectors(currentTop, targetDirection);
-      aimedQuaternion.copy(deltaQuaternion).multiply(socket.quaternion);
-
-      currentEuler.setFromQuaternion(socket.quaternion, 'YXZ');
-      aimedEuler.setFromQuaternion(aimedQuaternion, 'YXZ');
-      outputEuler.set(
-        lerpAngle(currentEuler.x, aimedEuler.x, weights.pitch),
-        lerpAngle(currentEuler.y, aimedEuler.y, weights.yaw),
-        lerpAngle(currentEuler.z, aimedEuler.z, weights.roll),
+      // Shoulder aim is a CORRECTION from the authored hand frame, not a new
+      // absolute Euler orientation. Decomposing the authored 90-degree-pitch hand
+      // into absolute YXZ Euler values hits a gimbal singularity and makes a
+      // roll-only or pitch-only correction rewrite unrelated axes. Instead derive
+      // the shortest parent-space correction, weight only that small delta, then
+      // pre-multiply it onto the untouched authored quaternion.
+      authoredQuaternion.copy(socket.quaternion).normalize();
+      currentTop.copy(localTop).applyQuaternion(authoredQuaternion).normalize();
+      deltaQuaternion.setFromUnitVectors(currentTop, targetDirection).normalize();
+      deltaEuler.setFromQuaternion(deltaQuaternion, 'YXZ');
+      weightedDeltaEuler.set(
+        deltaEuler.x * weights.pitch,
+        deltaEuler.y * weights.yaw,
+        deltaEuler.z * weights.roll,
         'YXZ',
       );
-      socket.quaternion.setFromEuler(outputEuler);
+      weightedDeltaQuaternion.setFromEuler(weightedDeltaEuler).normalize();
+      outputQuaternion.copy(weightedDeltaQuaternion).multiply(authoredQuaternion).normalize();
+      socket.quaternion.copy(outputQuaternion);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
 
@@ -159,21 +175,20 @@
         applied: true,
         source: shoulderSource[side],
         shoulder: { x: shoulder.x, y: shoulder.y, z: shoulder.z },
-        authoredDeg: {
-          pitch: THREE.MathUtils.radToDeg(currentEuler.x),
-          yaw: THREE.MathUtils.radToDeg(currentEuler.y),
-          roll: THREE.MathUtils.radToDeg(currentEuler.z),
+        authoredQuaternion: quaternionDebug(authoredQuaternion),
+        authoredDeg: eulerDebug(authoredQuaternion),
+        correctionDeg: {
+          pitch: THREE.MathUtils.radToDeg(deltaEuler.x),
+          yaw: THREE.MathUtils.radToDeg(deltaEuler.y),
+          roll: THREE.MathUtils.radToDeg(deltaEuler.z),
         },
-        aimedDeg: {
-          pitch: THREE.MathUtils.radToDeg(aimedEuler.x),
-          yaw: THREE.MathUtils.radToDeg(aimedEuler.y),
-          roll: THREE.MathUtils.radToDeg(aimedEuler.z),
+        appliedCorrectionDeg: {
+          pitch: THREE.MathUtils.radToDeg(weightedDeltaEuler.x),
+          yaw: THREE.MathUtils.radToDeg(weightedDeltaEuler.y),
+          roll: THREE.MathUtils.radToDeg(weightedDeltaEuler.z),
         },
-        outputDeg: {
-          pitch: THREE.MathUtils.radToDeg(outputEuler.x),
-          yaw: THREE.MathUtils.radToDeg(outputEuler.y),
-          roll: THREE.MathUtils.radToDeg(outputEuler.z),
-        },
+        outputQuaternion: quaternionDebug(outputQuaternion),
+        outputDeg: eulerDebug(outputQuaternion),
       };
       return true;
     }
@@ -255,7 +270,7 @@
       return {
         ...(originalDebug?.() || {}),
         shoulderCompass: {
-          mode: 'per-pose-weighted-hand-only',
+          mode: 'weighted-relative-quaternion-delta',
           localTopAxis: '+Y',
           scanState,
           scanError,
@@ -276,7 +291,7 @@
   hands.attach = wrappedAttach;
 
   global.ProceduralHandShoulderAim = Object.freeze({
-    mode: 'per-pose-weighted-hand-only',
+    mode: 'weighted-relative-quaternion-delta',
     localTopAxis: '+Y',
     idleWeights: Object.freeze({ pitch: 1, yaw: 0, roll: 1 }),
     activeWeights: Object.freeze({ pitch: 0, yaw: 0, roll: 1 }),
