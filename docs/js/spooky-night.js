@@ -1,12 +1,12 @@
-// Spooky-night runtime: exposes the formerly skipped 22:00-06:00 hours,
-// spatially mixes Just Beyond the Torchlight, and adds wilderness torchfall darkness.
+// Spooky-night runtime: exposes the full 24-hour clock,
+// spatially mixes Just Beyond the Torchlight from 01:00-05:00, and adds wilderness torchfall darkness.
 (function installSpookyNight(root) {
   'use strict';
   if (!root || root.SpookyNight) return;
 
   const TRACK_URL = 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg'; // Used by the dedicated spooky-night BGM loop.
-  const SPOOKY_START_HOUR = 22; // Used to enter the formerly skipped overnight span.
-  const SPOOKY_END_HOUR = 6; // Used to leave spooky night when the next gameplay day begins.
+  const SPOOKY_START_HOUR = 1; // Used to enter the spooky window at 1:00 AM.
+  const SPOOKY_END_HOUR = 5; // Used to leave the spooky window at 5:00 AM.
   const ORIGINAL_REPRESENTED_HOURS = 16; // Used to preserve the existing seconds-per-game-hour pacing after extending the clock to 24h.
   const EXTENDED_REPRESENTED_HOURS = 24; // Used by the calendar init adapter and overnight time mapping.
   const EXTRA_PACE_SCALE = ORIGINAL_REPRESENTED_HOURS / EXTENDED_REPRESENTED_HOURS; // Applied on top of CalendarSystem's existing natural-time shim.
@@ -27,7 +27,7 @@
     spatialFactor: 0, // Current 0..1 location factor exposed in diagnostics.
     previousArea: '', // Used to detect wilderness entry and refresh the entrance tile.
     wildernessEntrances: new Map(), // zoneId -> {c,r}; used as the distance origin for wilderness volume growth.
-    mutedTracks: new Map(), // Music-owned Audio -> prior muted value; restored at dawn.
+    mutedTracks: new Map(), // Music-owned Audio -> prior muted value; restored when spooky hours end.
     trackedAudio: new Set(), // Audio elements created after this early hook; used to suppress competing Music tracks only.
     overlay: null, // Dedicated wilderness-darkness canvas inserted over the existing lighting canvas.
     overlayCtx: null, // 2D context used to draw the torchfall darkness mask.
@@ -50,6 +50,17 @@
 
   function modulo24(hour) {
     return ((Number(hour) % 24) + 24) % 24;
+  }
+
+  function hourInWindow(hour, startHour, endHour) {
+    if (!Number.isFinite(hour)) return false;
+    const hour24 = modulo24(hour); // Normalized hour used for both wrapped and same-day windows.
+    const start24 = modulo24(startHour); // Normalized lower bound used by the window test below.
+    const end24 = modulo24(endHour); // Normalized exclusive upper bound used by the window test below.
+    if (start24 === end24) return true;
+    return start24 < end24
+      ? hour24 >= start24 && hour24 < end24
+      : hour24 >= start24 || hour24 < end24;
   }
 
   function installGlobalInterceptor(name, patcher) {
@@ -101,8 +112,10 @@
       const current = Number(originalGet.call(calendar)); // Used to identify tiny natural game-loop increments.
       const numeric = Number(nextValue);
       const delta = numeric - current;
-      const naturalWrite = root.__hobunjiGameStarted === true
-        && Number.isFinite(delta)
+      // game.js owns the global rollover check at time01 >= 1. Scale every tiny
+      // positive frame write here, independent of the current map/interior, so
+      // time01 reaches 1 at the next 06:00 instead of the old 22:00 boundary.
+      const naturalWrite = Number.isFinite(delta)
         && delta > 0
         && delta <= 0.02;
       const adjusted = naturalWrite ? current + delta * EXTRA_PACE_SCALE : numeric;
@@ -132,11 +145,11 @@
         const deps24 = {
           ...injectedDeps,
           NIGHT_HOUR: Number.isFinite(morning) ? morning + EXTENDED_REPRESENTED_HOURS : 30,
-        }; // Calendar-only clone: makes time01 0..1 map 06:00→next 06:00 without mutating game.js's shared 22:00 night threshold.
+        }; // Calendar-only clone: makes time01 0..1 map 06:00→next 06:00 while game.js's private rollover still keys off time01 itself.
         state.calendarDeps = deps24;
         const result = rawInit.call(this, deps24);
         installExtendedDayPace(deps24.calendar);
-        log('24-hour clock armed: 22:00-06:00 now advances normally; existing daytime seconds-per-hour preserved.', 'info', 'world');
+        log('24-hour clock armed globally: rollover now occurs at 06:00; 01:00-05:00 are spooky hours.', 'info', 'world');
         return result;
       };
     }
@@ -148,7 +161,8 @@
         return {
           ...value,
           spookyNightExtendedClock: true,
-          spookyNightHours: `${SPOOKY_START_HOUR}:00-${String(SPOOKY_END_HOUR).padStart(2, '0')}:00`,
+          spookyNightHours: `${String(SPOOKY_START_HOUR).padStart(2, '0')}:00-${String(SPOOKY_END_HOUR).padStart(2, '0')}:00`,
+          spookyNightRolloverHour: '06:00',
           naturalClockTargetSecondsPerRepresentedDay: Math.round((Number(value.naturalClockTargetSecondsPerRepresentedDay) || 672) / EXTRA_PACE_SCALE),
         };
       };
@@ -182,7 +196,7 @@
   }
 
   function isSpookyHour(hour = currentHour()) {
-    return Number.isFinite(hour) && (hour >= SPOOKY_START_HOUR || hour < SPOOKY_END_HOUR);
+    return hourInWindow(hour, SPOOKY_START_HOUR, SPOOKY_END_HOUR);
   }
 
   function townMap() {
