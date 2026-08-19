@@ -37,6 +37,24 @@
     document.head.appendChild(script);
   })();
 
+  // Mouse bindings must own the capture phase before calendar/gameplay modules
+  // register legacy left/right-click shortcuts. The live binding tables do not
+  // exist yet; input-binding-runtime reads them lazily after InputSettingsPanel
+  // publishes the shared context during game boot.
+  (function loadInputBindingRuntimeEarly() {
+    const src = 'js/input-binding-runtime.js?v=20260819a'; // Cache-busted runtime URL for first-class mouse/attack/menu bindings.
+    if (window.InputBindingRuntime || document.querySelector('script[data-hobunji-input-binding-runtime]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-input-binding-runtime="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset.hobunjiInputBindingRuntime = '1';
+    document.head.appendChild(script);
+  })();
+
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
   const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
 
