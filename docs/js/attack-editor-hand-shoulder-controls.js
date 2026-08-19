@@ -18,6 +18,7 @@
   });
   const poseAim = Object.fromEntries(PHASES.map(phase => [phase, { ...DEFAULTS[phase] }]));
   let hideArmSprites = false;
+  let poseAimSource = 'defaults'; // Shown in the mobile-readable status so preset/reset/import state transitions are easy to verify.
 
   function resolvedFighter(profile) {
     const fighter = profile?.fighter || null;
@@ -102,6 +103,9 @@
   const compassStatus = document.getElementById('handShoulderAimStatus');
   const jsonView = document.getElementById('jsonView');
   const loadFile = document.getElementById('loadFile');
+  const resetPosesButton = document.getElementById('resetPosesBtn'); // Used below to restore shoulder metadata whenever numeric poses are reset.
+  const loadPresetButton = document.getElementById('loadPresetBtn'); // Used below to prevent a newly loaded preset inheriting the previous animation's shoulder metadata.
+  const presetSelect = document.getElementById('presetSelect'); // Supplies the selected preset id to the post-preset shoulder-state restore.
   if (!hide || !compassStatus || !jsonView) return;
 
   function normalizeBooleanAim(raw, fallback) {
@@ -121,7 +125,7 @@
     }
     hide.checked = hideArmSprites;
     const weights = currentWeights();
-    compassStatus.textContent = `Live lerp: Pitch ${(weights.pitch * 100).toFixed(0)}% · Yaw ${(weights.yaw * 100).toFixed(0)}% · Roll ${(weights.roll * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'}.`;
+    compassStatus.textContent = `Live lerp: Pitch ${(weights.pitch * 100).toFixed(0)}% · Yaw ${(weights.yaw * 100).toFixed(0)}% · Roll ${(weights.roll * 100).toFixed(0)}% · arms ${hideArmSprites ? 'hidden' : 'visible'} · source ${poseAimSource}.`;
   }
 
   function injectPoseAimIntoObject(parsed) {
@@ -158,8 +162,17 @@
     try { jsonView.value = jsonView.value; } catch (_) {}
   }
 
+  function replacePoseAim(source, sourceLabel) {
+    for (const phase of PHASES) poseAim[phase] = normalizeBooleanAim(source?.[phase]?.shoulderAim, DEFAULTS[phase]);
+    poseAimSource = sourceLabel || 'defaults';
+    syncCheckboxes();
+    refreshJsonExtension();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+  }
+
   function setAxis(phase, axis, value) {
     poseAim[phase][axis] = !!value;
+    poseAimSource = 'manual edit';
     refreshJsonExtension();
     global.ProceduralHandFrameDriver?.syncNow?.();
     syncCheckboxes();
@@ -201,6 +214,20 @@
     requestPreviewRebuild();
   });
 
+  resetPosesButton?.addEventListener('click', () => {
+    // Numeric Reset returns to the editor's canonical pose defaults; keep the
+    // independently-owned shoulder metadata on the same deterministic reset path.
+    setTimeout(() => replacePoseAim(null, 'pose reset'), 0);
+  });
+
+  loadPresetButton?.addEventListener('click', () => {
+    const presetId = String(presetSelect?.value || ''); // Captured before the core module swaps pose data later in the same click dispatch.
+    setTimeout(() => {
+      const sharedPoses = presetId === 'drink' ? global.HeldActionAnimations?.drink?.poses : null;
+      replacePoseAim(sharedPoses, sharedPoses ? `preset ${presetId}` : `preset ${presetId || 'default'}`);
+    }, 0);
+  });
+
   // Restore per-pose boxes from exported JSON. Missing older data deliberately
   // migrates to Neutral Pitch+Roll and active Roll-only.
   loadFile?.addEventListener('change', async () => {
@@ -208,14 +235,7 @@
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      for (const phase of PHASES) {
-        poseAim[phase] = normalizeBooleanAim(parsed?.poses?.[phase]?.shoulderAim, DEFAULTS[phase]);
-      }
-      setTimeout(() => {
-        syncCheckboxes();
-        refreshJsonExtension();
-        global.ProceduralHandFrameDriver?.syncNow?.();
-      }, 0);
+      replacePoseAim(parsed?.poses, 'JSON import');
     } catch (_) {}
   });
 
@@ -223,7 +243,7 @@
   let lastStatusSignature = '';
   function statusFrame() {
     const w = currentWeights();
-    const signature = `${hideArmSprites}|${w.pitch.toFixed(2)}|${w.yaw.toFixed(2)}|${w.roll.toFixed(2)}`;
+    const signature = `${hideArmSprites}|${poseAimSource}|${w.pitch.toFixed(2)}|${w.yaw.toFixed(2)}|${w.roll.toFixed(2)}`;
     if (signature !== lastStatusSignature) {
       lastStatusSignature = signature;
       syncCheckboxes();
@@ -238,6 +258,7 @@
   global.HobunjiAttackEditorHandShoulderControls = {
     get hideArmSprites() { return hideArmSprites; },
     get poseAim() { return JSON.parse(JSON.stringify(poseAim)); },
+    get poseAimSource() { return poseAimSource; },
     currentWeights,
     setHideArmSprites(value) {
       hideArmSprites = !!value;
