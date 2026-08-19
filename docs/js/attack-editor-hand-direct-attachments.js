@@ -83,7 +83,9 @@
     const mappedKey = profiles.modelKeyForSpecies?.(species);
     const modelScale = Number(profiles.data.models?.[mappedKey]?.scale) || 1;
     const speciesScale = Number(profiles.speciesScaleFor?.(species, gender)) || 1;
-    const debug = global.ProceduralHandFrameDriver?.getDebug?.().find(entry => entry?.speciesId === species) || null;
+    const debug = global.ProceduralHandFrameDriver?.getDebug?.().find(entry => entry?.speciesId === species && entry?.gender === gender)
+      || global.ProceduralHandFrameDriver?.getDebug?.().find(entry => entry?.speciesId === species)
+      || null;
     if (effectiveStatus) {
       const second = debug?.secondaryActive ? `left→${debug.toolKey || currentToolKey()} secondary` : 'left→idle';
       effectiveStatus.textContent = `${mappedKey || 'no model'}: model ${modelScale.toFixed(3)} × species ${speciesScale.toFixed(3)} = effective ${(modelScale * speciesScale).toFixed(3)} · direct attachment · right→primary · ${second} · NO ARM IK`;
@@ -166,6 +168,12 @@
   $('handSecondaryGripReset').addEventListener('click', () => {
     toolGrips.clearLocal();
     syncFields();
+  });
+
+  global.HobunjiAttackEditorDirectHandAttachments = Object.freeze({
+    syncFields,
+    refreshDirectStatus,
+    get toolKey() { return currentToolKey(); },
   });
 
   syncFields();
