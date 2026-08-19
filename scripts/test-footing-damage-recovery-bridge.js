@@ -10,6 +10,14 @@ const source = fs.readFileSync(modulePath, 'utf8');
 
 let now = 1000;
 let lastTickOptions = null;
+const events = [];
+
+class CustomEvent {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.detail = options.detail;
+  }
+}
 
 const ResourceSystem = {
   spendFooting(entity, amount) {
@@ -26,13 +34,16 @@ const ResourceSystem = {
   },
 };
 
-const player = { footing: 100, maxFooting: 100, prone: false };
+const player = { footing: 100, maxFooting: 100, prone: false, health: 100, facing: 0 };
 const context = {
   console,
+  CustomEvent,
+  queueMicrotask: fn => fn(),
   performance: { now: () => now },
   window: {
     ResourceSystem,
     Combat: { deps: { player } },
+    dispatchEvent(event) { events.push(event); return true; },
   },
 };
 context.globalThis = context.window;
@@ -76,6 +87,51 @@ assert.strictEqual(player.footing, 73);
 assert.strictEqual(lastTickOptions.footingRegenPerSec, 3);
 assert.strictEqual(lastTickOptions.staminaRegenPerSec, 9);
 
+// Strike-caused zero Footing uses the strike's already-assigned knockback vector.
+player.prone = false;
+player.footing = 10;
+player.knockbackVX = 0;
+player.knockbackVY = 500;
+player.vx = -100;
+player.vy = 0;
+assert.strictEqual(ResourceSystem.spendFooting(player, 5, 'weapon hit'), 10);
+const strikeBreak = events.at(-1);
+assert.strictEqual(strikeBreak.type, 'hobunji-footing-break');
+assert.strictEqual(strikeBreak.detail.cause, 'strike-knockback');
+assert.strictEqual(strikeBreak.detail.fallX, 0);
+assert.strictEqual(strikeBreak.detail.fallY, 1);
+assert.strictEqual(player.prone, true);
+
+// Non-strike zero Footing ignores stale knockback and follows current movement.
+player.prone = false;
+player.footing = 10;
+player.vx = -3;
+player.vy = 4;
+player.knockbackVX = 800;
+player.knockbackVY = 0;
+assert.strictEqual(ResourceSystem.spendFooting(player, 5, { reason: 'terrain balance loss', strike: false }), 10);
+const movementBreak = events.at(-1);
+assert.strictEqual(movementBreak.detail.cause, 'movement');
+assert.ok(Math.abs(movementBreak.detail.fallX + 0.6) < 1e-9);
+assert.ok(Math.abs(movementBreak.detail.fallY - 0.8) < 1e-9);
+
+// If a non-strike source breaks Footing while stationary, facing is the stable fallback.
+player.prone = false;
+player.footing = 10;
+player.vx = 0;
+player.vy = 0;
+player.facing = Math.PI / 2;
+assert.strictEqual(ResourceSystem.spendFooting(player, 5, { reason: 'balance effect', strike: false }), 10);
+const facingBreak = events.at(-1);
+assert.strictEqual(facingBreak.detail.cause, 'facing');
+assert.ok(Math.abs(facingBreak.detail.fallX) < 1e-9);
+assert.ok(Math.abs(facingBreak.detail.fallY - 1) < 1e-9);
+assert.deepStrictEqual(
+  Object.keys(player.lastFootingBreak).sort(),
+  ['at', 'cause', 'fallX', 'fallY', 'reason'].sort(),
+  'stored break diagnostics must stay serializable and must not retain the entity itself'
+);
+
 // A hit while prone cannot refresh an already-expired recovery timer.
 player.prone = true;
 now = 5000;
@@ -97,5 +153,6 @@ assert.strictEqual(debug.recoveryDelaySeconds, 1.5);
 assert.strictEqual(debug.fullRecoverySeconds, 3);
 assert.strictEqual(debug.defaultFootingRegenPerSec, 100 / 3);
 assert.strictEqual(debug.lastFootingDamageAt, null);
+assert.strictEqual(debug.lastFootingBreak.cause, 'facing');
 
-console.log('Footing timing checks passed.');
+console.log('Footing timing and zero-break direction checks passed.');
