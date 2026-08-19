@@ -126,11 +126,13 @@
   }
 
   function handTransformForRecord(record) {
-    const raw = profiles.handTransformForSpecies?.(record.speciesId)
+    const raw = global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
+      || profiles.handTransformForSpecies?.(record.speciesId)
       || profiles.modelForSpecies?.(record.speciesId)?.handFromTool
       || {};
     const p = raw.position || {};
     const r = raw.rotationDeg || {};
+    const q = raw.rotationQuaternion || null;
     const modelHeight = Number(record.avatarRoot?.userData?.portraitModelHeight) || 0.9;
     const effectiveScale = Number(profiles.effectiveScaleFor?.(record.speciesId, record.gender)) || 1;
     const unit = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12) * effectiveScale;
@@ -145,6 +147,9 @@
         yaw: Number(r.yaw) || 0,
         roll: Number(r.roll) || 0,
       },
+      rotationQuaternion: q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))
+        ? { x: Number(q.x), y: Number(q.y), z: Number(q.z), w: Number(q.w) }
+        : null,
     };
   }
 
@@ -155,6 +160,14 @@
       record.THREE.MathUtils.degToRad(Number(rotation.roll) || 0),
       'YXZ',
     ));
+  }
+
+  function quaternionFromAuthored(record, authored = {}) {
+    const q = authored.rotationQuaternion;
+    if (q && [q.x, q.y, q.z, q.w].every(value => Number.isFinite(Number(value)))) {
+      return new record.THREE.Quaternion(Number(q.x), Number(q.y), Number(q.z), Number(q.w)).normalize();
+    }
+    return quaternionFromDeg(record, authored.rotationDeg || {});
   }
 
   function toolSocketWorld(record, toolHolder, secondaryGrip = null) {
@@ -182,7 +195,7 @@
       .applyQuaternion(socketFrame.quaternion);
     return {
       position: socketFrame.position.clone().add(offset),
-      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromDeg(record, authored.rotationDeg)),
+      quaternion: socketFrame.quaternion.clone().multiply(quaternionFromAuthored(record, authored)),
       authored,
     };
   }
@@ -217,6 +230,7 @@
         direct: true,
         clamped: false,
         noArmIK: true,
+        quaternionNativeGripComposition: !!primary.authored.rotationQuaternion,
         toolKey: toolKey || null,
         gripMode: global.HobunjiHandGripModes?.currentModeKey?.() || null,
         secondaryActive: record.secondaryActive,
@@ -316,7 +330,9 @@
         noArmIK: true,
         toolKey: record.lastToolKey,
         secondaryActive: record.secondaryActive,
-        handFromTool: profiles.handTransformForSpecies?.(record.speciesId) || null,
+        handFromTool: global.HobunjiHandGripModes?.effectiveFrameForSpecies?.(record.speciesId)
+          || profiles.handTransformForSpecies?.(record.speciesId)
+          || null,
         secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey) || null,
         hand: record.rig?.getDebug?.() || null,
         hasPreRenderSentinel: !!record.syncSentinel,
