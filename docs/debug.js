@@ -73,6 +73,24 @@
     document.head.appendChild(script);
   })();
 
+  // Seated head facing needs the same live camera/player/sit references already
+  // injected into PixelProbe later in game boot. Load this before PixelProbe is
+  // assigned so it can tap that dependency handoff and correct the neck at the
+  // renderer boundary, after game.js's ordinary head-aim update for the frame.
+  (function loadSeatedHeadFacingEarly() {
+    const src = 'js/seated-head-facing.js?v=20260819a'; // Cache-busted seated front/back hemisphere controller.
+    if (window.SeatedHeadFacing || document.querySelector('script[data-hobunji-seated-head-facing]')) return;
+    if (document.readyState === 'loading') {
+      document.write(`<script src="${src}" data-hobunji-seated-head-facing="1"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset.hobunjiSeatedHeadFacing = '1';
+    document.head.appendChild(script);
+  })();
+
   const DEBUG_PREFS_KEY = 'hobunji_debug_categories_v1';
   const DEBUG_CATEGORIES = Object.freeze(['general','render','assets','world','foliage','combat','ui','audio','storage']);
 
@@ -182,7 +200,6 @@
       debugPrefs.categories[category] = !!enabled;
       savePrefs();
       _renderDebugPanel();
-      return true;
     },
     enableAll() {
       debugPrefs.master = true;
