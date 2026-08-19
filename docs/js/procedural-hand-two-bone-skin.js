@@ -1,16 +1,20 @@
 // Runtime two-bone skinning for static hand GLBs.
 //
-// The authored grip frame stays on the hand socket. This adapter converts each
-// loaded static hand visual into a two-bone skin once per model instance:
-//   hand bone    = authored tool/grip orientation
-//   forearm bone = continuously aimed toward the portrait shoulder target
-// Vertex weights are a broad smoothstep over model-local Y with a non-zero floor
-// on both bones so almost the entire mesh participates in both transforms.
+// Local source-GLB basis is authoritative:
+//   +Y = toward wrist / forearm / shoulder
+//   +Z = toward palm
+//   +X = toward thumb
+// The hand bone inherits the authored tool/grip socket. The forearm bone alone aims
+// +Y at its target. Experimental per-axis tracking can take Pitch/Yaw/Roll from that
+// solve independently; unchecked components remain identity on the child bone and
+// therefore inherit the hand/grip direction on those axes.
 (function (global) {
   'use strict';
 
   const hands = global.ProceduralHandAttachments;
   const profiles = global.HobunjiHandModelProfiles;
+  const settings = global.HobunjiHandExperimentalRigSettings;
+  const poseRuntime = global.HobunjiHandShoulderPoseRuntime;
   if (!hands?.attach || !profiles || hands.attach.__hobunjiTwoBoneSkinWrapped) return;
 
   const originalAttach = hands.attach.bind(hands);
@@ -25,13 +29,11 @@
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, Number(value) || 0));
   }
-
   function smoothstep(edge0, edge1, value) {
     if (edge1 <= edge0) return value >= edge1 ? 1 : 0;
     const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
     return t * t * (3 - 2 * t);
   }
-
   function rigConfig(model) {
     const raw = model?.forearmRig || {};
     return {
@@ -39,6 +41,12 @@
       blendWidthPercent: clamp(Number.isFinite(Number(raw.blendWidthPercent)) ? Number(raw.blendWidthPercent) : DEFAULT_BLEND_WIDTH_PERCENT, 0.05, 1.5),
       crossBoneWeight: clamp(Number.isFinite(Number(raw.crossBoneWeight)) ? Number(raw.crossBoneWeight) : DEFAULT_CROSS_BONE_WEIGHT, 0.001, 0.24),
     };
+  }
+  function configsEqual(a, b) {
+    return !!a && !!b
+      && Math.abs(a.jointYPercent - b.jointYPercent) < 1e-8
+      && Math.abs(a.blendWidthPercent - b.blendWidthPercent) < 1e-8
+      && Math.abs(a.crossBoneWeight - b.crossBoneWeight) < 1e-8;
   }
 
   function copyObjectProps(source, target) {
@@ -64,21 +72,18 @@
     const rootInverse = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
     const toRoot = new THREE.Matrix4();
     const point = new THREE.Vector3();
-    let minY = Infinity;
-    let maxY = -Infinity;
-
+    let minY = Infinity, maxY = -Infinity;
     for (const mesh of meshes) {
       const position = mesh.geometry?.getAttribute?.('position');
       if (!position) continue;
       mesh.updateWorldMatrix?.(true, false);
       toRoot.multiplyMatrices(rootInverse, mesh.matrixWorld);
-      for (let i = 0; i < position.count; i += 1) {
+      for (let i = 0; i < position.count; i++) {
         point.fromBufferAttribute(position, i).applyMatrix4(toRoot);
         minY = Math.min(minY, point.y);
         maxY = Math.max(maxY, point.y);
       }
     }
-
     if (!Number.isFinite(minY) || !Number.isFinite(maxY) || Math.abs(maxY - minY) < 1e-7) {
       return { minY: -0.5, maxY: 0.5, height: 1 };
     }
@@ -88,31 +93,35 @@
   function skinGeometryForBones(THREE, geometry, toRoot, bounds, config) {
     const position = geometry?.getAttribute?.('position');
     if (!position) return false;
-
-    const indices = new Uint16Array(position.count * 4);
-    const weights = new Float32Array(position.count * 4);
+    let indices = geometry.getAttribute('skinIndex')?.array;
+    let weights = geometry.getAttribute('skinWeight')?.array;
+    if (!indices || indices.length !== position.count * 4) indices = new Uint16Array(position.count * 4);
+    if (!weights || weights.length !== position.count * 4) weights = new Float32Array(position.count * 4);
     const point = new THREE.Vector3();
     const halfBlend = config.blendWidthPercent * 0.5;
     const blendStart = config.jointYPercent - halfBlend;
     const blendEnd = config.jointYPercent + halfBlend;
     const cross = config.crossBoneWeight;
     const span = 1 - cross * 2;
-
-    for (let i = 0; i < position.count; i += 1) {
+    for (let i = 0; i < position.count; i++) {
       point.fromBufferAttribute(position, i).applyMatrix4(toRoot);
       const yPercent = clamp((point.y - bounds.minY) / bounds.height, 0, 1);
       const forearmMix = smoothstep(blendStart, blendEnd, yPercent);
       const forearmWeight = cross + span * forearmMix;
-      const handWeight = 1 - forearmWeight;
       const offset = i * 4;
       indices[offset] = 0;
       indices[offset + 1] = 1;
-      weights[offset] = handWeight;
+      indices[offset + 2] = 0;
+      indices[offset + 3] = 0;
+      weights[offset] = 1 - forearmWeight;
       weights[offset + 1] = forearmWeight;
+      weights[offset + 2] = 0;
+      weights[offset + 3] = 0;
     }
-
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+    geometry.getAttribute('skinIndex').needsUpdate = true;
+    geometry.getAttribute('skinWeight').needsUpdate = true;
     return true;
   }
 
@@ -138,11 +147,43 @@
     return skinned;
   }
 
+  function recalcSkeletonBind(skinRig) {
+    const saved = skinRig.forearmBone.quaternion.clone();
+    skinRig.forearmBone.quaternion.identity();
+    skinRig.modelRoot.updateMatrixWorld(true);
+    skinRig.skeleton.calculateInverses();
+    skinRig.forearmBone.quaternion.copy(saved);
+    skinRig.modelRoot.updateMatrixWorld(true);
+  }
+
+  function applyConfigLive(THREE, skinRig, model) {
+    if (!skinRig) return false;
+    const next = rigConfig(model);
+    if (configsEqual(next, skinRig.config)) return false;
+    const jointChanged = !skinRig.config || Math.abs(next.jointYPercent - skinRig.config.jointYPercent) > 1e-8;
+    skinRig.config = next;
+    skinRig.jointY = skinRig.bounds.minY + skinRig.bounds.height * next.jointYPercent;
+    skinRig.forearmBone.position.y = skinRig.jointY;
+    for (const binding of skinRig.weightBindings) {
+      skinGeometryForBones(THREE, binding.mesh.geometry, binding.toRoot, skinRig.bounds, next);
+      binding.mesh.normalizeSkinWeights?.();
+    }
+    if (jointChanged) recalcSkeletonBind(skinRig);
+    skinRig.visual.userData.forearmJointYPercent = next.jointYPercent;
+    skinRig.visual.userData.forearmBlendWidthPercent = next.blendWidthPercent;
+    skinRig.visual.userData.crossBoneWeight = next.crossBoneWeight;
+    return true;
+  }
+
   function rigStaticVisual(THREE, visual, model) {
-    if (!visual || visual.userData?.twoBoneSkinRig) return visual?.userData?.twoBoneSkinRig || null;
+    if (!visual) return null;
+    const existing = visual.userData?.twoBoneSkinRig || null;
+    if (existing) {
+      applyConfigLive(THREE, existing, model);
+      return existing;
+    }
     const modelRoot = visual.children?.find(child => child?.isObject3D && child.name !== 'hand_bone_guide') || visual.children?.[0] || null;
     if (!modelRoot) return null;
-
     const sourceMeshes = [];
     modelRoot.traverse?.(node => {
       if (node?.isMesh && !node?.isSkinnedMesh && node.geometry?.getAttribute?.('position')) sourceMeshes.push(node);
@@ -154,10 +195,10 @@
     const bounds = rootLocalYBounds(THREE, modelRoot, sourceMeshes);
     const jointY = bounds.minY + bounds.height * config.jointYPercent;
     const rootInverse = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
-    const toRootByMesh = new Map();
+    const toRootBySource = new Map();
     for (const mesh of sourceMeshes) {
       mesh.updateWorldMatrix?.(true, false);
-      toRootByMesh.set(mesh, new THREE.Matrix4().multiplyMatrices(rootInverse, mesh.matrixWorld));
+      toRootBySource.set(mesh, new THREE.Matrix4().multiplyMatrices(rootInverse, mesh.matrixWorld));
     }
 
     const handBone = new THREE.Bone();
@@ -169,11 +210,14 @@
     modelRoot.add(handBone);
 
     const skinnedMeshes = [];
+    const weightBindings = [];
     for (const source of sourceMeshes) {
-      const geometry = source.geometry;
-      if (!skinGeometryForBones(THREE, geometry, toRootByMesh.get(source), bounds, config)) continue;
+      const toRoot = toRootBySource.get(source);
+      if (!skinGeometryForBones(THREE, source.geometry, toRoot, bounds, config)) continue;
       const skinned = replaceWithSkinnedMesh(THREE, source);
-      if (skinned) skinnedMeshes.push(skinned);
+      if (!skinned) continue;
+      skinnedMeshes.push(skinned);
+      weightBindings.push({ mesh: skinned, toRoot });
     }
     if (!skinnedMeshes.length) {
       modelRoot.remove(handBone);
@@ -207,46 +251,51 @@
       });
     }
 
-    const rig = {
+    const skinRig = {
+      visual,
       modelRoot,
       handBone,
       forearmBone,
       skeleton,
       skinnedMeshes,
+      weightBindings,
       jointY,
       bounds,
       config,
       targetWorld: null,
+      targetKind: 'shoulder',
       residualDeg: null,
       aimApplied: false,
+      axisWeights: { pitch: 1, yaw: 1, roll: 1 },
+      fullAimDeg: { pitch: 0, yaw: 0, roll: 0 },
+      appliedAimDeg: { pitch: 0, yaw: 0, roll: 0 },
     };
-    visual.userData.twoBoneSkinRig = rig;
+    visual.userData.twoBoneSkinRig = skinRig;
     visual.userData.forearmJointYPercent = config.jointYPercent;
     visual.userData.forearmBlendWidthPercent = config.blendWidthPercent;
     visual.userData.crossBoneWeight = config.crossBoneWeight;
-    return rig;
+    return skinRig;
   }
 
   function installTwoBoneController(THREE, rig) {
     const sideState = {
-      left: { targetWorld: null, lastRig: null },
-      right: { targetWorld: null, lastRig: null },
+      left: { targetWorld: null, targetKind: 'shoulder', lastRig: null },
+      right: { targetWorld: null, targetKind: 'shoulder', lastRig: null },
     };
     const localUp = new THREE.Vector3(LOCAL_FOREARM_AXIS.x, LOCAL_FOREARM_AXIS.y, LOCAL_FOREARM_AXIS.z);
-    const shoulderLocal = new THREE.Vector3();
     const targetLocal = new THREE.Vector3();
     const aimedUp = new THREE.Vector3();
+    const fullAim = new THREE.Quaternion();
+    const aimEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
     function socketFor(side) {
       return rig.group?.getObjectByName?.(`${side}_hand_socket`) || null;
     }
-
     function visualFor(side) {
       const socket = socketFor(side);
       if (!socket) return null;
       return socket.children?.find(child => child?.userData?.handModelKey) || null;
     }
-
     function ensureSideRig(side) {
       const visual = visualFor(side);
       if (!visual) return null;
@@ -260,15 +309,27 @@
       return skinRig;
     }
 
+    function axisWeights(side) {
+      if (settings?.forearmAxisTracking !== true) return { pitch: 1, yaw: 1, roll: 1 };
+      const raw = poseRuntime?.currentWeights?.(side) || { pitch: 1, yaw: 1, roll: 1 };
+      return {
+        pitch: clamp(raw.pitch, 0, 1),
+        yaw: clamp(raw.yaw, 0, 1),
+        roll: clamp(raw.roll, 0, 1),
+      };
+    }
+
     function aimSide(side) {
       const state = sideState[side];
       const skinRig = ensureSideRig(side);
       if (!skinRig || !state.targetWorld) return false;
+      const modelKey = skinRig.visual.userData?.handModelKey;
+      applyConfigLive(THREE, skinRig, profiles.data?.models?.[modelKey]);
 
       skinRig.modelRoot.updateWorldMatrix?.(true, true);
-      shoulderLocal.copy(state.targetWorld);
-      skinRig.modelRoot.worldToLocal(shoulderLocal);
-      targetLocal.copy(shoulderLocal).sub(skinRig.forearmBone.position);
+      targetLocal.copy(state.targetWorld);
+      skinRig.modelRoot.worldToLocal(targetLocal);
+      targetLocal.sub(skinRig.forearmBone.position);
       if (targetLocal.lengthSq() < 1e-10) {
         skinRig.forearmBone.quaternion.identity();
         skinRig.aimApplied = false;
@@ -276,7 +337,25 @@
         return false;
       }
       targetLocal.normalize();
-      skinRig.forearmBone.quaternion.setFromUnitVectors(localUp, targetLocal).normalize();
+      fullAim.setFromUnitVectors(localUp, targetLocal).normalize();
+      aimEuler.setFromQuaternion(fullAim, 'YXZ');
+      const weights = axisWeights(side);
+      const fullDeg = {
+        pitch: THREE.MathUtils.radToDeg(aimEuler.x),
+        yaw: THREE.MathUtils.radToDeg(aimEuler.y),
+        roll: THREE.MathUtils.radToDeg(aimEuler.z),
+      };
+
+      if (settings?.forearmAxisTracking === true) {
+        skinRig.forearmBone.rotation.set(
+          aimEuler.x * weights.pitch,
+          aimEuler.y * weights.yaw,
+          aimEuler.z * weights.roll,
+          'YXZ',
+        );
+      } else {
+        skinRig.forearmBone.quaternion.copy(fullAim);
+      }
       skinRig.forearmBone.updateMatrix?.();
       skinRig.forearmBone.updateMatrixWorld?.(true);
       aimedUp.copy(localUp).applyQuaternion(skinRig.forearmBone.quaternion).normalize();
@@ -284,6 +363,14 @@
       skinRig.residualDeg = THREE.MathUtils.radToDeg(Math.acos(dot));
       skinRig.aimApplied = true;
       skinRig.targetWorld = state.targetWorld.clone();
+      skinRig.targetKind = state.targetKind;
+      skinRig.axisWeights = { ...weights };
+      skinRig.fullAimDeg = fullDeg;
+      skinRig.appliedAimDeg = {
+        pitch: fullDeg.pitch * weights.pitch,
+        yaw: fullDeg.yaw * weights.yaw,
+        roll: fullDeg.roll * weights.roll,
+      };
       return true;
     }
 
@@ -294,13 +381,13 @@
       aimSide('right');
     }
 
-    rig.aimForearmAtWorld = function aimForearmAtWorld(side, shoulderWorld) {
-      if (!sideState[side] || !shoulderWorld) return false;
+    rig.aimForearmAtWorld = function aimForearmAtWorld(side, targetWorld, options = {}) {
+      if (!sideState[side] || !targetWorld) return false;
       if (!sideState[side].targetWorld) sideState[side].targetWorld = new THREE.Vector3();
-      sideState[side].targetWorld.copy(shoulderWorld);
+      sideState[side].targetWorld.copy(targetWorld);
+      sideState[side].targetKind = String(options.targetKind || 'shoulder');
       return aimSide(side);
     };
-
     rig.clearForearmTarget = function clearForearmTarget(side) {
       const state = sideState[side];
       if (!state) return false;
@@ -313,8 +400,14 @@
       }
       return true;
     };
-
     rig.refreshForearmSkin = function refreshForearmSkin() {
+      for (const side of ['left', 'right']) {
+        const skinRig = ensureSideRig(side);
+        if (skinRig) {
+          const modelKey = skinRig.visual.userData?.handModelKey;
+          applyConfigLive(THREE, skinRig, profiles.data?.models?.[modelKey]);
+        }
+      }
       ensureAll();
       return true;
     };
@@ -328,7 +421,6 @@
         return result;
       };
     }
-
     const originalSetSideIdle = rig.setSideIdle?.bind(rig);
     if (originalSetSideIdle) {
       rig.setSideIdle = function twoBoneSetSideIdle(side) {
@@ -338,7 +430,6 @@
         return result;
       };
     }
-
     const originalUseIdlePose = rig.useIdlePose?.bind(rig);
     if (originalUseIdlePose) {
       rig.useIdlePose = function twoBoneUseIdlePose() {
@@ -347,11 +438,12 @@
         return result;
       };
     }
-
     const originalRefresh = rig.refreshModelProfile?.bind(rig);
     if (originalRefresh) {
       rig.refreshModelProfile = async function twoBoneRefreshModelProfile() {
         const result = await originalRefresh();
+        sideState.left.lastRig = null;
+        sideState.right.lastRig = null;
         ensureAll();
         return result;
       };
@@ -369,7 +461,11 @@
           blendWidthPercent: skinRig.config.blendWidthPercent,
           crossBoneWeight: skinRig.config.crossBoneWeight,
           aimApplied: skinRig.aimApplied,
+          targetKind: skinRig.targetKind,
           residualDeg: skinRig.residualDeg,
+          axisWeights: { ...skinRig.axisWeights },
+          fullAimDeg: { ...skinRig.fullAimDeg },
+          appliedAimDeg: { ...skinRig.appliedAimDeg },
           vertexMeshes: skinRig.skinnedMeshes.length,
           targetWorld: skinRig.targetWorld ? { x: skinRig.targetWorld.x, y: skinRig.targetWorld.y, z: skinRig.targetWorld.z } : null,
         } : { rigged: false };
@@ -377,10 +473,11 @@
       return {
         ...(originalDebug?.() || {}),
         twoBoneSkin: {
-          mode: 'hand-grip-plus-forearm-shoulder',
+          mode: 'hand-grip-plus-forearm-target',
           handBoneAuthority: 'tool/grip socket',
-          forearmBoneAuthority: 'shoulder target',
-          localForearmAxis: '+Y',
+          forearmBoneAuthority: settings?.bicepElbowTracking ? 'elbow target' : 'shoulder target',
+          forearmAxisTrackingExperimental: settings?.forearmAxisTracking === true,
+          localBasis: { positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' },
           sides,
         },
       };
@@ -398,16 +495,14 @@
           }
         }
       },
-      refresh: ensureAll,
+      refresh: rig.refreshForearmSkin,
     };
     controllers.add(controller);
-
     const originalDispose = rig.dispose?.bind(rig);
     rig.dispose = function twoBoneDispose() {
       controllers.delete(controller);
       return originalDispose?.();
     };
-
     requestAnimationFrame(ensureAll);
     return rig;
   }
@@ -425,13 +520,18 @@
     return showBoneGuides;
   };
 
+  settings?.subscribe?.(() => {
+    for (const controller of controllers) controller.refresh?.();
+  });
+
   global.ProceduralHandTwoBoneSkin = Object.freeze({
     mode: 'runtime-two-bone-skin',
+    localBasis: Object.freeze({ positiveY: 'wrist', positiveZ: 'palm', positiveX: 'thumb' }),
     defaults: Object.freeze({
       jointYPercent: DEFAULT_JOINT_Y_PERCENT,
       blendWidthPercent: DEFAULT_BLEND_WIDTH_PERCENT,
       crossBoneWeight: DEFAULT_CROSS_BONE_WEIGHT,
     }),
-    refreshAll() { for (const controller of controllers) controller.refresh(); },
+    refreshAll() { for (const controller of controllers) controller.refresh?.(); },
   });
 })(window);
