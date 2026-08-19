@@ -14,7 +14,8 @@
   let gameDeps = null;
   let handDeadzoneCompensationRad = 0; // Latest player-hand local-Y correction copied from the procedural feet rig.
   let handDeadzoneSource = 'none'; // Mobile/Pixel-Probe-readable source for the current hand-facing correction.
-  let handDeadzoneUpdates = 0; // Number of frames where a player hand root actually needed a new correction.
+  let handDeadzoneUpdates = 0; // Number of times a player hand root actually needed a new correction.
+  let handDeadzonePreRenderSyncs = 0; // Same-frame corrections run immediately before the hand frame driver sentinel.
 
   function chainFutureSetter(name, beforeSet) {
     const desc = Object.getOwnPropertyDescriptor(window, name);
@@ -113,7 +114,29 @@
     }
   }
 
+  // The ordinary RAF sweep can run before game.js resolves THIS frame's dead-zone
+  // state. Chain the frame driver's invisible pre-render sentinel too, so the hand
+  // root copies the leg correction after game.js has updated it but before the hand
+  // sockets are solved/drawn. This removes a one-frame snap lag at dead-zone edges.
+  function installHandSentinelHooks(playerMesh) {
+    if (!playerMesh?.isObject3D) return;
+    for (const sentinel of playerMesh.children || []) {
+      if (!/_direct_hand_sync$/i.test(String(sentinel?.name || ''))) continue;
+      sentinel.userData = sentinel.userData || {};
+      if (sentinel.userData.__hobunjiDeadzoneSyncHook) continue;
+      const previousBefore = typeof sentinel.onBeforeRender === 'function' ? sentinel.onBeforeRender : null;
+      sentinel.onBeforeRender = function deadzoneSyncedHandFrame(...args) {
+        syncProceduralHandDeadzone();
+        handDeadzonePreRenderSyncs += 1;
+        return previousBefore?.apply(this, args);
+      };
+      sentinel.userData.__hobunjiDeadzoneSyncHook = true;
+    }
+  }
+
   function syncHandDeadzoneFrame() {
+    const playerMesh = gameDeps?.playerMesh || composer.getPlayerMesh?.() || null;
+    installHandSentinelHooks(playerMesh);
     syncProceduralHandDeadzone();
     requestAnimationFrame(syncHandDeadzoneFrame);
   }
@@ -132,6 +155,7 @@
         handDeadzoneCompensationDeg: handDeadzoneCompensationRad * 180 / Math.PI,
         handDeadzonePlayerRoots: playerHandRoots(playerMesh).length,
         handDeadzoneUpdates,
+        handDeadzonePreRenderSyncs,
         activeShoulderPets: (window.Combat?.deps?.companionObjects
           ? Array.from(window.Combat.deps.companionObjects).filter(companion =>
               companion?.health > 0
