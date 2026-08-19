@@ -43,7 +43,7 @@
     new URL('js/procedural-hand-scale-free-world.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-skinned-held-registration.js?v=20260819a', docsBase).href,
     new URL('js/procedural-hand-two-bone-skin.js?v=20260819c', docsBase).href,
-    new URL('js/procedural-hand-skinned-outline.js?v=20260819c', docsBase).href,
+    new URL('js/procedural-hand-skinned-outline.js?v=20260819d', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20260819e', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20260819f', docsBase).href,
     new URL('js/procedural-hand-lifecycle-guard.js?v=20260819a', docsBase).href,
@@ -68,7 +68,7 @@
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20260819c', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20260819d', docsBase).href);
   }
 
   function loadSequentially(urls) {
