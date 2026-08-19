@@ -1,5 +1,5 @@
 // Keeps the Attack Animation Editor's hand authoring context coherent and exposes
-// a mobile-readable summary of the separated hand / forearm / bicep authorities.
+// a mobile-readable summary of the separated hand / forearm authorities.
 (function (global) {
   'use strict';
 
@@ -85,10 +85,10 @@
       ? `P/Y/R ${fmt((axis.pitch || 0) * 100, 0)}/${fmt((axis.yaw || 0) * 100, 0)}/${fmt((axis.roll || 0) * 100, 0)}%`
       : 'P/Y/R -';
     const rigText = skin?.rigged
-      ? `hand=grip · forearm→${target?.targetKind || skin.targetKind || 'shoulder'} ${axisText} residual ${fmt(target?.residualDeg ?? skin.residualDeg, 2)}°${target?.bicepResidualDeg != null ? ` · bicep→elbow ${fmt(target.bicepResidualDeg, 2)}°` : ''}`
+      ? `hand=grip · forearm→shoulder ${axisText} residual ${fmt(target?.residualDeg ?? skin.residualDeg, 2)}°`
       : `forearm ${target?.reason || compass?.scanState || 'pending'}`;
-    const experiments = `axisExp=${settings?.forearmAxisTracking !== false ? 'ON' : 'OFF'} · bicepExp=${settings?.bicepElbowTracking === true ? 'ON' : 'OFF'}`;
-    status.textContent = `Context #${syncSerial} (${lastReason}) · ${species} → ${mapped}${mismatch ? ` [editing ${selected}]` : ''} · tool ${tool} · grip ${mode} · ${experiments} · ${rigText}`;
+    const experiment = `axisExp=${settings?.forearmAxisTracking !== false ? 'ON' : 'OFF'}`;
+    status.textContent = `Context #${syncSerial} (${lastReason}) · ${species} → ${mapped}${mismatch ? ` [editing ${selected}]` : ''} · tool ${tool} · grip ${mode} · ${experiment} · ${rigText}`;
     status.style.color = mismatch ? '#fbbf24' : '';
   }
 
